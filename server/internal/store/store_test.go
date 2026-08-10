@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/url"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -43,10 +42,15 @@ func testDatabaseURL(t *testing.T, name string) string {
 	}
 	defer admin.Close(context.Background())
 
-	// CREATE DATABASE cannot run in a transaction and has no IF NOT EXISTS, so an already-present
-	// database is an expected error rather than a failure.
-	if _, err := admin.Exec(context.Background(), "CREATE DATABASE "+name); err != nil &&
-		!strings.Contains(err.Error(), "already exists") {
+	// **Dropped and recreated, not reused.** The schema is applied with `CREATE TABLE IF NOT
+	// EXISTS`, so a database left over from a previous run keeps whatever shape it had — and a
+	// changed column would then be tested in its old form, silently, which is a green that means
+	// nothing. Building it from scratch every run is the only way the schema under test is the
+	// schema in the file.
+	if _, err := admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
+		t.Fatalf("dropping %s: %v", name, err)
+	}
+	if _, err := admin.Exec(context.Background(), "CREATE DATABASE "+name); err != nil {
 		t.Fatalf("creating %s: %v", name, err)
 	}
 
@@ -145,7 +149,7 @@ func TestItemArrivingAfterDeletionIsDuplicateNotResurrection(t *testing.T) {
 	// reason the tombstone is keyed on it rather than being a column.
 	queuedKey, tree := uuid.New(), uuid.New()
 
-	if _, err := store.DeleteAccount(context.Background(), user.ID, LeaveRecords, []uuid.UUID{queuedKey}); err != nil {
+	if _, err := store.DeleteAccount(context.Background(), user.ID, LeaveRecords, []uuid.UUID{queuedKey}, ""); err != nil {
 		t.Fatalf("deleting account: %v", err)
 	}
 
@@ -183,7 +187,7 @@ func TestDeletionLeaveRecordsAnonymizesRatherThanDeletes(t *testing.T) {
 	key, tree := uuid.New(), uuid.New()
 	applyVisit(t, store, key, tree, UserOwner(user.ID), time.Now().UTC())
 
-	if _, err := store.DeleteAccount(context.Background(), user.ID, LeaveRecords, nil); err != nil {
+	if _, err := store.DeleteAccount(context.Background(), user.ID, LeaveRecords, nil, ""); err != nil {
 		t.Fatalf("deleting: %v", err)
 	}
 
@@ -211,7 +215,7 @@ func TestDeletionEraseEverythingRemovesTheRows(t *testing.T) {
 	key, tree := uuid.New(), uuid.New()
 	applyVisit(t, store, key, tree, UserOwner(user.ID), time.Now().UTC())
 
-	if _, err := store.DeleteAccount(context.Background(), user.ID, EraseEverything, nil); err != nil {
+	if _, err := store.DeleteAccount(context.Background(), user.ID, EraseEverything, nil, ""); err != nil {
 		t.Fatalf("deleting: %v", err)
 	}
 	var count int
@@ -344,7 +348,7 @@ func TestClaimDoesNotAdoptAnonymizedRows(t *testing.T) {
 
 	key, tree := uuid.New(), uuid.New()
 	applyVisit(t, store, key, tree, UserOwner(first.ID), time.Now().UTC())
-	if _, err := store.DeleteAccount(context.Background(), first.ID, LeaveRecords, nil); err != nil {
+	if _, err := store.DeleteAccount(context.Background(), first.ID, LeaveRecords, nil, ""); err != nil {
 		t.Fatalf("deleting: %v", err)
 	}
 
@@ -517,7 +521,7 @@ func TestProximityDedupeTripsWithinTenMetres(t *testing.T) {
 
 	// San Francisco, where the corpus is. One degree of latitude is ~111.32 km, so 5 m is ~4.5e-5°.
 	const lat, lon = 37.7601, -122.5050
-	if _, _, err := store.AddTree(context.Background(), uuid.New(), lat, lon, "A tree", DeviceOwner(deviceID)); err != nil {
+	if _, err := store.AddTree(context.Background(), uuid.New(), lat, lon, "A tree", DeviceOwner(deviceID)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -562,8 +566,17 @@ func TestRefreshTokenRotatesAndTheOldOneIsSpent(t *testing.T) {
 	if _, _, err := store.RotateSession(context.Background(), first, second, expiry); err != nil {
 		t.Fatalf("first rotation: %v", err)
 	}
+	// A replay of a rotated token is a *reuse*, not merely a spent token: it means two parties
+	// hold it. The store revokes the whole family on the way out.
 	_, _, err := store.RotateSession(context.Background(), first, third, expiry)
-	if !errors.Is(err, ErrSessionSpent) {
-		t.Fatalf("replaying a rotated refresh token returned %v, want ErrSessionSpent", err)
+	if !errors.Is(err, ErrSessionReused) {
+		t.Fatalf("replaying a rotated refresh token returned %v, want ErrSessionReused", err)
+	}
+
+	// The successor is dead too. Leaving it live would let whoever triggered the reuse keep a
+	// 60-day session while the legitimate holder noticed nothing.
+	fourth := []byte("hash-four------------------------")
+	if _, _, err := store.RotateSession(context.Background(), second, fourth, expiry); !errors.Is(err, ErrSessionSpent) {
+		t.Fatalf("after a detected reuse the successor rotated with %v, want ErrSessionSpent", err)
 	}
 }

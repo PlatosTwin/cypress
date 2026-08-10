@@ -210,15 +210,3 @@ func (s *Store) DeletePhotoByContributor(ctx context.Context, id uuid.UUID, owne
 	}
 	return nil
 }
-
-// RescreenBacklogCount counts what the pipeline will have to run over when it lands.
-//
-// `blur_applied = false` is the cursor and needs no new bookkeeping: it is truthfully false on
-// every row in existence, because nothing in this repository has ever raised it.
-func (s *Store) RescreenBacklogCount(ctx context.Context) (int, error) {
-	var count int
-	err := s.pool.QueryRow(ctx, `
-		SELECT count(*) FROM photos WHERE blur_applied = false AND deleted_at IS NULL
-	`).Scan(&count)
-	return count, err
-}

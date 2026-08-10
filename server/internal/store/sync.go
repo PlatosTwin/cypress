@@ -181,11 +181,18 @@ type DeletionReport struct {
 // have not arrived; they will arrive after the deletion, and the mark has to be waiting. The
 // caller passes those keys in `pendingKeys` — the client knows them, because they are its own
 // outbox — and every one is tombstoned whether or not a row exists for it.
+// UnrevokedAppleToken is a token whose revocation has not yet succeeded.
+//
+// It is passed to DeleteAccount rather than read from the row inside it, because the caller is the
+// only thing that knows whether Apple accepted the revocation, and the row is about to be gone.
+type UnrevokedAppleToken string
+
 func (s *Store) DeleteAccount(
 	ctx context.Context,
 	userID uuid.UUID,
 	choice DeletionChoice,
 	pendingKeys []uuid.UUID,
+	unrevoked UnrevokedAppleToken,
 ) (DeletionReport, error) {
 	var report DeletionReport
 	err := s.Tx(ctx, func(tx pgx.Tx) error {
@@ -286,6 +293,25 @@ func (s *Store) DeleteAccount(
 		// Sessions and the device link go with the account. `ON DELETE CASCADE` would take the
 		// sessions anyway; it is stated because the row order in a deletion should not depend on a
 		// foreign key's mood.
+		// **The obligation outlives the account, so the credential has to as well.**
+		//
+		// `DELETE FROM users` below takes `apple_refresh_token` with it. If Apple refused the
+		// revocation — an outage, a rotated key — that would discard the only credential that could
+		// ever satisfy R72 ruling 2's requirement, and the person would be told their account was
+		// deleted while Apple still held a live grant. So the token is parked first, in a table that
+		// holds a token and nothing that could say whose it was.
+		if unrevoked != "" {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO pending_apple_revocations (refresh_token, first_failed_at, last_attempted_at)
+				VALUES ($1, $2, $2)
+				ON CONFLICT (refresh_token) DO UPDATE SET
+					last_attempted_at = excluded.last_attempted_at,
+					attempts = pending_apple_revocations.attempts + 1
+			`, string(unrevoked), now); err != nil {
+				return err
+			}
+		}
+
 		if _, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
 			return err
 		}

@@ -17,6 +17,10 @@ type GroveEntry struct {
 	TreeUUID      uuid.UUID
 	LastVisitedAt *time.Time
 	IsFavorite    bool
+	// HeroPhotoID is the photograph the row draws instead of the accent tile (#176) — a photo fact
+	// the phone cannot answer for a photograph it never wrote, which is the class of thing this
+	// service exists to supply. Nil when the tree has no live photograph.
+	HeroPhotoID *uuid.UUID
 	// Record is the per-kind tally, or nil when this read could not prove it counted everything
 	// (ERRATA E38). Zero is a claim about a person's history; nil is "this read did not answer
 	// that", and the Trees list draws no tally for nil.
@@ -33,6 +37,7 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		       AND deleted_at IS NULL
 		       AND kind <> 'private_reminder'
 		)
+		, tallied AS (
 		SELECT m.tree_uuid,
 		       max(m.occurred_at) FILTER (WHERE m.kind = 'visit') AS last_visited_at,
 		       coalesce(bool_or(f.is_favorite), false) AS is_favorite,
@@ -46,7 +51,25 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		        AND f.is_favorite
 		        AND (($1::uuid IS NOT NULL AND f.user_id = $1) OR ($2::uuid IS NOT NULL AND f.device_id = $2))
 		 GROUP BY m.tree_uuid
-		 ORDER BY last_visited_at DESC NULLS LAST
+		)
+		SELECT t.tree_uuid, t.last_visited_at, t.is_favorite,
+		       t.visits, t.observations, t.measurements, t.care_events,
+		       hero.id AS hero_photo_id
+		  FROM tallied t
+		  -- The hero (#176). Visible means the same two rules the profile applies: publicly visible,
+		  -- or this contributor's own and not deleted (ERRATA E37, E215). A row that drew a
+		  -- stranger's unmoderated photograph as its hero is the disagreement E215 exists to stop.
+		  LEFT JOIN LATERAL (
+		      SELECT p.id FROM photos p
+		       WHERE p.tree_uuid = t.tree_uuid
+		         AND p.deleted_at IS NULL
+		         AND (p.moderation_state = 'approved'
+		              OR ($1::uuid IS NOT NULL AND p.user_id = $1)
+		              OR ($2::uuid IS NOT NULL AND p.device_id = $2))
+		       ORDER BY p.captured_at DESC
+		       LIMIT 1
+		  ) hero ON true
+		 ORDER BY t.last_visited_at DESC NULLS LAST
 	`, owner.UserID, owner.DeviceID)
 	if err != nil {
 		return nil, err
@@ -58,13 +81,17 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		var entry GroveEntry
 		var visits, observations, measurements, careEvents int
 		if err := rows.Scan(&entry.TreeUUID, &entry.LastVisitedAt, &entry.IsFavorite,
-			&visits, &observations, &measurements, &careEvents); err != nil {
+			&visits, &observations, &measurements, &careEvents, &entry.HeroPhotoID); err != nil {
 			return nil, err
 		}
 		// Not nil: this query counted every kind it reports, over the whole set rather than a page,
 		// which is the condition E38 attaches to being allowed to state a total.
+		// **`GroveRecord`'s names, not this table's.** The client's field is `checkIns`, and its own
+		// comment says so explicitly — "named for the control, not for the `observations` table".
+		// A response spelling it `observations` maps three of four and silently drops check-ins to
+		// zero, which is the claim E38 spends a whole type making unwritable.
 		entry.Record = map[string]int{
-			"visits": visits, "observations": observations,
+			"visits": visits, "checkIns": observations,
 			"measurements": measurements, "careEvents": careEvents,
 		}
 		entries = append(entries, entry)
@@ -105,6 +132,9 @@ func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 			   AND deleted_at IS NULL AND kind <> 'private_reminder'
 			UNION
+			-- community_trees.id IS the client's tree UUID (see schema.sql), so this arm and
+			-- the one above are the same id space. They were not always, which is the defect
+			-- that put a tree on screen 01 under a name no other route answered to.
 			SELECT DISTINCT id FROM community_trees
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 			   AND deleted_at IS NULL`
@@ -220,9 +250,8 @@ func (s *Store) GroveSpeciesKnown(ctx context.Context, owner Owner) ([]KnownSpec
 // local answer is missing *precisely the thing the read is for*. "The photo propagates to all other
 // users" is somebody else's profile returning a photograph their device never wrote.
 type TreeCommunity struct {
-	Photos       []PhotoRecord
-	VisitCount   int
-	PhotoTallies map[uuid.UUID]int
+	Photos     []PhotoRecord
+	VisitCount int
 }
 
 // TreeCommunityHalf reads it.
@@ -239,18 +268,28 @@ func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (Tree
 	if err != nil {
 		return TreeCommunity{}, err
 	}
-	return TreeCommunity{Photos: photos, VisitCount: visits, PhotoTallies: map[uuid.UUID]int{}}, nil
+	return TreeCommunity{Photos: photos, VisitCount: visits}, nil
 }
 
 // ── `POST /trees` and the 10 m proximity dedupe ────────────────────────────────────────────────
 
-// NearbyTree is a dedupe candidate.
+// NearbyTree is a dedupe candidate, carrying what the client's `NearbyTree` needs to be built.
+//
+// The client type wraps a whole `Tree`, not an id, so a candidate list of bare ids cannot construct
+// one — and a *community-added* tree is by definition absent from the installed city file, so the
+// phone cannot fill the gap locally either. Everything a `Tree` needs that this service actually
+// knows is therefore carried here; see `proximityCandidate` in the api package for the mapping and
+// for what is deliberately fixed rather than stored.
 type NearbyTree struct {
-	ID        uuid.UUID
-	Lat       float64
-	Lon       float64
-	Name      string
-	DistanceM float64
+	ID          uuid.UUID
+	Lat         float64
+	Lon         float64
+	DisplayName string
+	SpeciesID   *uuid.UUID
+	Placement   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DistanceM   float64
 }
 
 // ProximityDedupeRadiusM is `TreeDraft.proximityDedupeRadiusM`: 10 m, any species (BUILD-PLAN §6).
@@ -276,7 +315,8 @@ func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]N
 	lonDelta := radiusM / (metresPerDegreeLat * cosLat)
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, lat, lon, coalesce(display_name, ''),
+		SELECT id, lat, lon, coalesce(display_name, ''), species_id, coalesce(placement, ''),
+		       created_at, updated_at,
 		       6371000 * 2 * asin(sqrt(
 		           power(sin(radians(lat - $1) / 2), 2) +
 		           cos(radians($1)) * cos(radians(lat)) *
@@ -296,7 +336,8 @@ func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]N
 	var candidates []NearbyTree
 	for rows.Next() {
 		var tree NearbyTree
-		if err := rows.Scan(&tree.ID, &tree.Lat, &tree.Lon, &tree.Name, &tree.DistanceM); err != nil {
+		if err := rows.Scan(&tree.ID, &tree.Lat, &tree.Lon, &tree.DisplayName, &tree.SpeciesID,
+			&tree.Placement, &tree.CreatedAt, &tree.UpdatedAt, &tree.DistanceM); err != nil {
 			return nil, err
 		}
 		// The box is a prefilter and admits corners beyond the radius; the haversine is the answer.
@@ -307,23 +348,46 @@ func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]N
 	return candidates, rows.Err()
 }
 
-// AddTree inserts a community tree, deduping on its client key.
-func (s *Store) AddTree(ctx context.Context, clientUUID uuid.UUID, lat, lon float64, name string, owner Owner) (uuid.UUID, ApplyOutcome, error) {
+// CommunityTreeExists reports whether this exact tree has already been recorded.
+//
+// `POST /trees` calls it **before** the proximity query. Without that ordering a byte-identical
+// retry — the flap-replay case the outbox exists for — runs the 10 m dedupe against the row it
+// created moments ago, matches itself at zero metres, and comes back `conflict`. That code is
+// non-retryable, so the item fails terminally and the contributor is offered a resolution sheet
+// listing their own submission.
+func (s *Store) CommunityTreeExists(ctx context.Context, id uuid.UUID) (bool, error) {
+	var found bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM community_trees WHERE id = $1)`, id).Scan(&found)
+	return found, err
+}
+
+// AddTree inserts a community tree under the client's own id.
+func (s *Store) AddTree(ctx context.Context, id uuid.UUID, lat, lon float64, name string, owner Owner) (ApplyOutcome, error) {
 	now := s.now()
-	id := uuid.New()
-	var stored uuid.UUID
-	err := s.pool.QueryRow(ctx, `
+	tag, err := s.pool.Exec(ctx, `
 		INSERT INTO community_trees
-		    (id, client_uuid, lat, lon, display_name, user_id, device_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, nullif($5, ''), $6, $7, $8, $8)
-		ON CONFLICT (client_uuid) DO UPDATE SET updated_at = community_trees.updated_at
-		RETURNING id
-	`, id, clientUUID, lat, lon, name, owner.UserID, owner.DeviceID, now).Scan(&stored)
+		    (id, lat, lon, display_name, user_id, device_id, created_at, updated_at)
+		VALUES ($1, $2, $3, nullif($4, ''), $5, $6, $7, $7)
+		ON CONFLICT (id) DO NOTHING
+	`, id, lat, lon, name, owner.UserID, owner.DeviceID, now)
 	if err != nil {
-		return uuid.Nil, Applied, err
+		return Applied, err
 	}
-	if stored != id {
-		return stored, Duplicate, nil
+	if tag.RowsAffected() == 0 {
+		return Duplicate, nil
 	}
-	return stored, Applied, nil
+	return Applied, nil
+}
+
+// CommunityTree is a stored community tree, as the proximity candidate list needs it.
+type CommunityTree struct {
+	ID          uuid.UUID
+	Lat         float64
+	Lon         float64
+	DisplayName string
+	SpeciesID   *uuid.UUID
+	Placement   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }

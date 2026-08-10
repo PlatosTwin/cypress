@@ -122,9 +122,20 @@ func (s *Server) photoReceived(w http.ResponseWriter, r *http.Request, who calle
 // photoData is `GET /photos/{id}`.
 //
 // This is the R-required grade of spec §3.1 and the acceptance criterion's last mile: the bytes a
-// device never wrote. It answers a **redirect** to the public object rather than proxying the
-// binary, because a 256 MB machine that streams every photograph on every profile read is the one
-// way this service falls over under success.
+// device never wrote.
+//
+// ── What it answers, and why it is not the binary ──────────────────────────────────────────────
+//
+// A **presigned GET URL**, not the bytes: a 256 MB machine that streams every photograph on every
+// profile read is the one way this service falls over under success. It previously answered a bare
+// `storage_key`, which fetches nothing — uploads are presigned PUTs, so the bucket is not
+// anonymously readable, and a key on its own is a string the client cannot do anything with. The
+// symmetry with `PhotoUploadTicket`, which hands the client a `destination` URL for writing, is the
+// shape to keep: a URL for reading.
+//
+// Not a 302 redirect, because `photoData(id:)` returns `Data` and the client decides when to fetch;
+// handing back a URL lets it cache, defer on cellular, and fail that fetch separately from this
+// call.
 //
 // ── Whose photograph may be read ───────────────────────────────────────────────────────────────
 //
@@ -159,9 +170,14 @@ func (s *Server) photoData(w http.ResponseWriter, r *http.Request, who caller) e
 		return apierr.New(apierr.NotFound, "That photo is not here.")
 	}
 
+	source, err := s.Presigner.PresignGet(photo.StorageKey, presignLifetime)
+	if err != nil {
+		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+	}
 	writeJSON(w, s.Log, http.StatusOK, map[string]any{
 		"photo_id":    photo.ID,
-		"storage_key": photo.StorageKey,
+		"url":         source,
+		"expires_in":  int(presignLifetime.Seconds()),
 		"shot_type":   photo.ShotType,
 		"captured_at": photo.CapturedAt,
 	})

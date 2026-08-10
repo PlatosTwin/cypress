@@ -26,7 +26,11 @@ func (s *Server) grove(w http.ResponseWriter, r *http.Request, who caller) error
 			"tree_uuid":       entry.TreeUUID,
 			"last_visited_at": entry.LastVisitedAt,
 			"is_favorite":     entry.IsFavorite,
-			"record":          entry.Record,
+			// `GroveRecord`'s own field names — `checkIns`, not `observations`. See store.Grove.
+			"record": entry.Record,
+			// #176's hero: the photograph the row draws instead of the accent tile. A photo fact
+			// the phone cannot answer for a photograph it never wrote.
+			"hero_photo_id": entry.HeroPhotoID,
 		})
 	}
 	// `total` is stated because this read counted the whole set rather than a page. `Series` exists

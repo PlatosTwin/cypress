@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,7 +13,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -77,10 +78,15 @@ func testDatabaseURL(t *testing.T, name string) string {
 	}
 	defer admin.Close(context.Background())
 
-	// CREATE DATABASE cannot run in a transaction and has no IF NOT EXISTS, so an already-present
-	// database is an expected error rather than a failure.
-	if _, err := admin.Exec(context.Background(), "CREATE DATABASE "+name); err != nil &&
-		!strings.Contains(err.Error(), "already exists") {
+	// **Dropped and recreated, not reused.** The schema is applied with `CREATE TABLE IF NOT
+	// EXISTS`, so a database left over from a previous run keeps whatever shape it had — and a
+	// changed column would then be tested in its old form, silently, which is a green that means
+	// nothing. Building it from scratch every run is the only way the schema under test is the
+	// schema in the file.
+	if _, err := admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
+		t.Fatalf("dropping %s: %v", name, err)
+	}
+	if _, err := admin.Exec(context.Background(), "CREATE DATABASE "+name); err != nil {
 		t.Fatalf("creating %s: %v", name, err)
 	}
 
@@ -147,6 +153,23 @@ func (h *harness) do(t *testing.T, method, path, bearer string, body any) *httpt
 	recorder := httptest.NewRecorder()
 	h.handler.ServeHTTP(recorder, request)
 	return recorder
+}
+
+// syncOne posts a single item and returns its verdict.
+func (h *harness) syncOne(t *testing.T, bearer string, item map[string]any) syncResult {
+	t.Helper()
+	recorder := h.do(t, http.MethodPost, Prefix+"/sync", bearer, map[string]any{"items": []any{item}})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("sync returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct{ Results []syncResult }
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Results) != 1 {
+		t.Fatalf("got %d results, want 1", len(response.Results))
+	}
+	return response.Results[0]
 }
 
 // envelopeOf decodes the error body under the client's rules.
@@ -505,7 +528,11 @@ func TestDeletionRefusesAnUnknownChoice(t *testing.T) {
 	}
 }
 
-// TestDeletionProceedsWhenApplesRevocationFails covers the outage case.
+// TestDeletionProceedsWhenApplesRevocationFails covers the outage case, and what it must not lose.
+//
+// The previous version of this test queried `count(*) FROM users` into a string, compared it to
+// "0" inside an `err == nil` guard, and its only consequence was `t.Log` — so it could not fail,
+// and it was the guard for the claim that the token survives a failed revocation. It did not.
 func TestDeletionProceedsWhenApplesRevocationFails(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
@@ -517,12 +544,121 @@ func TestDeletionProceedsWhenApplesRevocationFails(t *testing.T) {
 		t.Fatalf("deletion returned %d; refusing to delete an account because a third party is "+
 			"having an outage breaks the promise R3 already ships", recorder.Code)
 	}
-	// The token is deliberately not cleared, so the revocation can be retried by an operator.
-	var stored string
+
+	var users int
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM users WHERE id = $1`, session.UserID).Scan(&users); err != nil {
+		t.Fatal(err)
+	}
+	if users != 0 {
+		t.Fatalf("the account survived the deletion (%d rows)", users)
+	}
+
+	// The obligation outlives the row. R72 ruling 2 makes the revocation a requirement, not an
+	// attempt; discarding the token would leave the person deleted here and still granted at Apple,
+	// with nothing that could ever put it right.
+	var parked string
 	err := h.store.Pool().QueryRow(context.Background(),
-		`SELECT count(*) FROM users WHERE id = $1`, session.UserID).Scan(&stored)
-	if err == nil && stored != "0" {
-		t.Log("user row state after a failed revocation:", stored)
+		`SELECT coalesce(max(refresh_token), '') FROM pending_apple_revocations`).Scan(&parked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parked != "apple-refresh-abc" {
+		t.Fatalf("after a failed revocation the parked token is %q, want the stored refresh token. "+
+			"Without it nothing can ever retry, and Apple still holds a live grant.", parked)
+	}
+}
+
+// TestSuccessfulRevocationParksNothing is the other arm: the queue is for failures only.
+func TestSuccessfulRevocationParksNothing(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+
+	recorder := h.do(t, http.MethodDelete, Prefix+"/me", session.AccessToken,
+		map[string]any{"choice": "leaveRecords", "pending_client_uuids": []uuid.UUID{}})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("deletion returned %d", recorder.Code)
+	}
+
+	var parked int
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM pending_apple_revocations`).Scan(&parked); err != nil {
+		t.Fatal(err)
+	}
+	if parked != 0 {
+		t.Fatalf("a successful revocation parked %d tokens; the queue would never drain", parked)
+	}
+}
+
+// ── B1: the door on the wire is the door that is applied ───────────────────────────────────────
+
+// TestTheChoiceOnTheWireIsTheChoiceApplied is the end-to-end version, per door.
+//
+// Spec §6.3: "The choice travels on the wire; it is not a server default." The previous tests
+// proved the choice was *parsed* (`TestDeletionRefusesAnUnknownChoice`) and that the store erases
+// when handed the constant (`TestDeletionEraseEverythingRemovesTheRows`, which calls the store
+// directly and never crosses the handler). Nothing proved the handler passed the person's answer
+// through — substituting `choice = store.LeaveRecords` immediately before the store call left the
+// whole suite green, which is a server that keeps everything somebody asked to have erased.
+func TestTheChoiceOnTheWireIsTheChoiceApplied(t *testing.T) {
+	for _, door := range []struct {
+		choice        string
+		wantRowsAfter int
+		wantAnonymous bool
+		why           string
+	}{
+		{"leaveRecords", 1, true,
+			"the leaving door keeps contributions on the trees they were made about, with the name taken off"},
+		{"eraseEverything", 0, false,
+			"the erasing door deletes them outright"},
+	} {
+		t.Run(door.choice, func(t *testing.T) {
+			h := newHarness(t)
+			session := h.signIn(t, nil)
+
+			key, tree := uuid.New(), uuid.New()
+			sync := h.do(t, http.MethodPost, Prefix+"/sync", session.AccessToken,
+				map[string]any{"items": []any{map[string]any{
+					"client_uuid": key, "kind": "visit", "tree_uuid": tree,
+					"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+				}}})
+			if sync.Code != http.StatusOK {
+				t.Fatalf("sync returned %d: %s", sync.Code, sync.Body.String())
+			}
+
+			recorder := h.do(t, http.MethodDelete, Prefix+"/me", session.AccessToken,
+				map[string]any{"choice": door.choice, "pending_client_uuids": []uuid.UUID{}})
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("deletion returned %d: %s", recorder.Code, recorder.Body.String())
+			}
+
+			var rows int
+			if err := h.store.Pool().QueryRow(context.Background(),
+				`SELECT count(*) FROM contributions WHERE client_uuid = $1`, key).Scan(&rows); err != nil {
+				t.Fatal(err)
+			}
+			if rows != door.wantRowsAfter {
+				t.Fatalf("%s: %d rows remain, want %d — %s",
+					door.choice, rows, door.wantRowsAfter, door.why)
+			}
+
+			if door.wantAnonymous {
+				var ownerUser, ownerDevice *uuid.UUID
+				var anonymizedAt *time.Time
+				err := h.store.Pool().QueryRow(context.Background(),
+					`SELECT user_id, device_id, anonymized_at FROM contributions WHERE client_uuid = $1`, key).
+					Scan(&ownerUser, &ownerDevice, &anonymizedAt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ownerUser != nil || ownerDevice != nil {
+					t.Error("the surviving row still names an owner")
+				}
+				if anonymizedAt == nil {
+					t.Error("the surviving row is ownerless but unmarked")
+				}
+			}
+		})
 	}
 }
 
@@ -761,4 +897,651 @@ func TestHealthReportsTheSHA(t *testing.T) {
 	if _, found := body["placeholder"]; found {
 		t.Error("health still reports `placeholder`")
 	}
+}
+
+// ── B2: a byte-identical retry of POST /trees ──────────────────────────────────────────────────
+
+// TestReplayingATreeIsDuplicateNotAConflictWithItself is the flap-replay case §6.1 exists for.
+//
+// The dedupe is "10 m, any species", so a retry of the same submission matches the row it created
+// moments ago at zero metres. Answering `conflict` there is not a near-miss: the code is
+// non-retryable, so the item fails terminally and screen 17 offers the contributor a resolution
+// sheet listing their own submission.
+func TestReplayingATreeIsDuplicateNotAConflictWithItself(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+
+	const lat, lon = 37.7601, -122.5050
+	body := map[string]any{
+		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "display_name": "A tree",
+	}
+
+	first := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, body)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first submission returned %d: %s", first.Code, first.Body.String())
+	}
+	var firstBody struct {
+		ID     uuid.UUID `json:"id"`
+		Status string    `json:"status"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatal(err)
+	}
+	if firstBody.Status != "applied" {
+		t.Fatalf("first submission = %q, want applied", firstBody.Status)
+	}
+
+	replay := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, body)
+	if replay.Code != http.StatusOK {
+		envelope := decodeEnvelope(t, replay)
+		t.Fatalf("the replay returned %d %s — it collided with the row it had just created; "+
+			"conflict is non-retryable, so the item fails terminally and the contributor is shown "+
+			"their own submission as a duplicate candidate",
+			replay.Code, envelope.Error.Code)
+	}
+	var replayBody struct {
+		ID     uuid.UUID `json:"id"`
+		Status string    `json:"status"`
+	}
+	if err := json.Unmarshal(replay.Body.Bytes(), &replayBody); err != nil {
+		t.Fatal(err)
+	}
+	if replayBody.Status != "duplicate" {
+		t.Fatalf("the replay = %q, want duplicate — a success that changes nothing", replayBody.Status)
+	}
+	if replayBody.ID != firstBody.ID {
+		t.Errorf("the replay reported id %v, the original %v", replayBody.ID, firstBody.ID)
+	}
+}
+
+// TestATreeIdIsTheClientsOwnId is M4: one identity, or the reads disagree.
+func TestATreeIdIsTheClientsOwnId(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+	treeID := uuid.New()
+
+	added := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+		"client_uuid": treeID, "lat": 37.7601, "lon": -122.5050, "display_name": "Mine",
+	})
+	if added.Code != http.StatusOK {
+		t.Fatalf("add returned %d: %s", added.Code, added.Body.String())
+	}
+	var addBody struct {
+		ID uuid.UUID `json:"id"`
+	}
+	if err := json.Unmarshal(added.Body.Bytes(), &addBody); err != nil {
+		t.Fatal(err)
+	}
+	if addBody.ID != treeID {
+		t.Fatalf("POST /trees answered id %v for a tree the client called %v; a second identity "+
+			"means the reads disagree about which one names the tree", addBody.ID, treeID)
+	}
+
+	membership := h.do(t, http.MethodGet, Prefix+"/me/map-membership?kind=yours", deviceToken, nil)
+	var response struct {
+		TreeIDs []uuid.UUID `json:"tree_ids"`
+	}
+	if err := json.Unmarshal(membership.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, id := range response.TreeIDs {
+		if id == treeID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("map membership returned %v, which does not include the tree the contributor "+
+			"added (%v) — screen 01 would draw it under an id no other route answers to",
+			response.TreeIDs, treeID)
+	}
+
+	// And the id it reports is one the profile route actually answers to.
+	profile := h.do(t, http.MethodGet, Prefix+"/trees/"+treeID.String(), deviceToken, nil)
+	if profile.Code != http.StatusOK {
+		t.Fatalf("the profile route returned %d for the id membership reported", profile.Code)
+	}
+}
+
+// TestProximityConflictCandidatesCarryAWholeTree is M3.
+//
+// `ProximityConflict.candidates` is `[NearbyTree]`, which wraps a whole `Tree` — a candidate list of
+// bare ids cannot build one, and a community-added tree is by definition absent from the installed
+// city file, so the phone cannot fill the gap locally either.
+func TestProximityConflictCandidatesCarryAWholeTree(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+
+	const lat, lon = 37.7601, -122.5050
+	if got := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "display_name": "A tree",
+	}); got.Code != http.StatusOK {
+		t.Fatalf("first tree returned %d: %s", got.Code, got.Body.String())
+	}
+
+	second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon, "display_name": "Same tree",
+	})
+	if second.Code == http.StatusOK {
+		t.Fatal("a tree 5 m from another was accepted")
+	}
+
+	var body struct {
+		Detail struct {
+			Candidates []struct {
+				Tree struct {
+					ID                uuid.UUID `json:"id"`
+					Source            string    `json:"source"`
+					Status            string    `json:"status"`
+					VerificationState string    `json:"verification_state"`
+					Placement         string    `json:"placement"`
+					Coordinate        struct {
+						Lat float64 `json:"lat"`
+						Lon float64 `json:"lon"`
+					} `json:"coordinate"`
+					CreatedAt time.Time `json:"created_at"`
+				} `json:"tree"`
+				DistanceM             float64 `json:"distance_m"`
+				SpeciesScientificName *string `json:"species_scientific_name"`
+				SpeciesCommonName     *string `json:"species_common_name"`
+				Tell                  *struct {
+					Icon string `json:"icon"`
+					Text string `json:"text"`
+				} `json:"tell"`
+			} `json:"candidates"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the conflict body does not decode into NearbyTree's shape: %v\n%s",
+			err, second.Body.String())
+	}
+	if len(body.Detail.Candidates) != 1 {
+		t.Fatalf("got %d candidates, want 1", len(body.Detail.Candidates))
+	}
+
+	candidate := body.Detail.Candidates[0]
+	if candidate.Tree.ID.IsNil() {
+		t.Error("the candidate carries no tree id; NearbyTree.id is tree.id")
+	}
+	if candidate.Tree.Source != "community" {
+		t.Errorf("source = %q, want community — this table holds nothing else", candidate.Tree.Source)
+	}
+	if candidate.Tree.VerificationState != "unverified" {
+		t.Errorf("verification_state = %q, want unverified — a community submission is neither a "+
+			"city row nor org-confirmed", candidate.Tree.VerificationState)
+	}
+	if candidate.Tree.Status == "" || candidate.Tree.Placement == "" {
+		t.Error("Tree's non-optional enum fields are empty; a decoder would throw on them")
+	}
+	if candidate.Tree.Coordinate.Lat == 0 || candidate.Tree.Coordinate.Lon == 0 {
+		t.Error("the tree carries no coordinate")
+	}
+	if candidate.Tree.CreatedAt.IsZero() {
+		t.Error("Tree.createdAt is non-optional and did not arrive")
+	}
+	if candidate.DistanceM <= 0 || candidate.DistanceM > 10 {
+		t.Errorf("distance_m = %v, want a real distance inside the 10 m radius", candidate.DistanceM)
+	}
+	// Present-and-null rather than absent: the client decodes an optional, and a missing key is a
+	// different thing from a stated "we do not know".
+	if candidate.Tell != nil {
+		t.Error("a tell was invented; IDTip comes from the curated pipeline and the seed leaves it empty")
+	}
+	if candidate.SpeciesScientificName != nil || candidate.SpeciesCommonName != nil {
+		t.Error("species names were invented; this service holds no species table")
+	}
+	for _, key := range []string{"species_scientific_name", "species_common_name", "tell"} {
+		if !bytes.Contains(second.Body.Bytes(), []byte(`"`+key+`"`)) {
+			t.Errorf("%s is absent rather than null; the client decodes an optional, and absent is "+
+				"a different fact from stated-as-unknown", key)
+		}
+	}
+}
+
+// ── B3: is_favorite must not be fabricated ─────────────────────────────────────────────────────
+
+func TestFavoriteToggleReadsTheStateFromThePayload(t *testing.T) {
+	h := newHarness(t)
+	deviceUUID := uuid.New()
+	deviceToken := h.registerDeviceToken(t, deviceUUID)
+	tree := uuid.New()
+
+	// The client's own payload, verbatim — `FavoriteToggle` encodes `isFavorite`, and the top-level
+	// mirror is absent because nothing on the client knows to write it yet.
+	result := h.syncOne(t, deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "kind": "favorite_toggle", "tree_uuid": tree,
+		"occurred_at": time.Now().UTC(),
+		"payload":     json.RawMessage(`{"isFavorite":true,"treeID":"` + tree.String() + `"}`),
+	})
+	if result.Status != "applied" {
+		t.Fatalf("status = %q, want applied", result.Status)
+	}
+
+	var stored bool
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT is_favorite FROM favorites WHERE tree_uuid = $1`, tree).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !stored {
+		t.Fatal("the payload said the tree is a favorite and the row says it is not; as a plain " +
+			"bool the absent top-level field wrote false and answered `applied`, so the heart went " +
+			"off and nothing errored")
+	}
+}
+
+func TestFavoriteToggleWithNoStateAnywhereIsRefused(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+	tree := uuid.New()
+
+	result := h.syncOne(t, deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "kind": "favorite_toggle", "tree_uuid": tree,
+		"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{"treeID":"` + tree.String() + `"}`),
+	})
+	if result.Status != "failed" {
+		t.Fatalf("status = %q, want failed — a missing required field must be an error, not a "+
+			"fabricated false", result.Status)
+	}
+	if result.Error == nil || *result.Error != apierr.ValidationFailed {
+		t.Fatalf("error = %v, want validation_failed", result.Error)
+	}
+
+	var rows int
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM favorites WHERE tree_uuid = $1`, tree).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatal("a refused toggle still wrote a favorite row")
+	}
+}
+
+func TestFavoriteToggleDisagreeingWithItselfIsRefused(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+	tree := uuid.New()
+
+	result := h.syncOne(t, deviceToken, map[string]any{
+		"client_uuid": uuid.New(), "kind": "favorite_toggle", "tree_uuid": tree,
+		"occurred_at": time.Now().UTC(), "is_favorite": false,
+		"payload": json.RawMessage(`{"isFavorite":true}`),
+	})
+	if result.Status != "failed" {
+		t.Fatalf("status = %q, want failed — two sources disagreeing about a toggle is a malformed "+
+			"item, not something to resolve by precedence", result.Status)
+	}
+}
+
+// ── B4: one bad item does not fail the batch ───────────────────────────────────────────────────
+
+// TestAnUnknownFieldFailsOnlyItsOwnItem is the handler's own header, made true.
+//
+// "Why every item gets an answer and the request does not fail… A batch that failed as a whole
+// would give every row the same verdict." Strict decoding at batch scope meant one additive field
+// on one item returned 400 with no results at all, and `validation_failed` is non-retryable, so a
+// client following the taxonomy failed its entire queue terminally.
+func TestAnUnknownFieldFailsOnlyItsOwnItem(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+
+	goodKey, badKey := uuid.New(), uuid.New()
+	recorder := h.do(t, http.MethodPost, Prefix+"/sync", deviceToken, map[string]any{"items": []any{
+		map[string]any{
+			"client_uuid": goodKey, "kind": "visit", "tree_uuid": uuid.New(),
+			"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+		},
+		map[string]any{
+			"client_uuid": badKey, "kind": "visit", "tree_uuid": uuid.New(),
+			"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+			"schema_version": 2,
+		},
+	}})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — one unrecognized field on one item must not fail the "+
+			"batch; the good item gets no verdict and the whole queue dies terminally", recorder.Code)
+	}
+	var response struct{ Results []syncResult }
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Results) != 2 {
+		t.Fatalf("got %d results for 2 items", len(response.Results))
+	}
+
+	byKey := map[uuid.UUID]syncResult{}
+	for _, result := range response.Results {
+		byKey[result.ClientUUID] = result
+	}
+	if byKey[goodKey].Status != "applied" {
+		t.Errorf("the well-formed item = %q, want applied", byKey[goodKey].Status)
+	}
+	bad, found := byKey[badKey]
+	if !found {
+		t.Fatal("the malformed item got no verdict naming it; a result the client cannot match to a " +
+			"queue row is one it has to discard")
+	}
+	if bad.Status != "failed" {
+		t.Errorf("the malformed item = %q, want failed", bad.Status)
+	}
+}
+
+// ── B6: the nonce ──────────────────────────────────────────────────────────────────────────────
+
+func TestNonceMustMatchWhenTheTokenCarriesOne(t *testing.T) {
+	h := newHarness(t)
+	raw := "the-app-generated-nonce"
+	h.apple.identity = apple.Identity{
+		Subject: "001234.abcdef.5678", Email: "a@b.test", Nonce: sha256Hex(raw),
+	}
+
+	// The happy arm: the raw nonce, hashed here, matching the claim.
+	recorder := h.do(t, http.MethodPost, Prefix+"/auth/oidc", "", map[string]any{
+		"identity_token": "t", "authorization_code": "c", "nonce": raw,
+		"device_uuid": nil, "license_version": nil,
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("a matching nonce was refused: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	// The bypass the previous guard allowed: omit the field and the comparison was skipped.
+	for name, nonce := range map[string]any{
+		"omitted":  "",
+		"wrong":    "some-other-nonce",
+		"the hash": sha256Hex(raw),
+	} {
+		recorder := h.do(t, http.MethodPost, Prefix+"/auth/oidc", "", map[string]any{
+			"identity_token": "t", "authorization_code": "c", "nonce": nonce,
+			"device_uuid": nil, "license_version": nil,
+		})
+		if recorder.Code == http.StatusOK {
+			t.Errorf("a %s nonce was accepted against a token carrying a nonce claim; anyone "+
+				"holding a captured identity token replays it this way", name)
+			continue
+		}
+		if code := decodeEnvelope(t, recorder).Error.Code; code != string(apierr.Unauthorized) {
+			t.Errorf("%s nonce: code = %q, want unauthorized", name, code)
+		}
+	}
+}
+
+// TestNonceIsRequiredWhenTheCallerSendsOne pins the other direction.
+func TestNonceIsRequiredWhenTheCallerSendsOne(t *testing.T) {
+	h := newHarness(t)
+	h.apple.identity = apple.Identity{Subject: "001234.abcdef.5678", Nonce: ""}
+
+	recorder := h.do(t, http.MethodPost, Prefix+"/auth/oidc", "", map[string]any{
+		"identity_token": "t", "authorization_code": "c", "nonce": "a-nonce-the-token-does-not-carry",
+		"device_uuid": nil, "license_version": nil,
+	})
+	if recorder.Code == http.StatusOK {
+		t.Fatal("the caller presented a nonce and the token carried none, and it was accepted")
+	}
+}
+
+// ── M1: re-registration retires the previous credential ────────────────────────────────────────
+
+func TestReRegisteringADeviceRetiresTheOldToken(t *testing.T) {
+	h := newHarness(t)
+	deviceUUID := uuid.New()
+
+	first := h.registerDeviceToken(t, deviceUUID)
+	if got := h.do(t, http.MethodGet, Prefix+"/me/grove", first, nil); got.Code != http.StatusOK {
+		t.Fatalf("the first token did not work: %d", got.Code)
+	}
+
+	second := h.registerDeviceToken(t, deviceUUID)
+	if second == first {
+		t.Fatal("re-registration returned the same token")
+	}
+
+	stale := h.do(t, http.MethodGet, Prefix+"/me/grove", first, nil)
+	if stale.Code != http.StatusUnauthorized {
+		t.Fatalf("the superseded token still answers %d; two holders would share one installation's "+
+			"queue with nothing to say so", stale.Code)
+	}
+	if got := h.do(t, http.MethodGet, Prefix+"/me/grove", second, nil); got.Code != http.StatusOK {
+		t.Fatalf("the new token does not work: %d", got.Code)
+	}
+}
+
+// ── M2: an idempotent sweep must not withdraw consent ──────────────────────────────────────────
+
+func TestClaimWithoutALicenseFieldLeavesConsentStanding(t *testing.T) {
+	h := newHarness(t)
+	deviceUUID := uuid.New()
+	h.registerDeviceToken(t, deviceUUID)
+	session := h.signIn(t, nil)
+
+	claim := func(body map[string]any) {
+		t.Helper()
+		recorder := h.do(t, http.MethodPost, Prefix+"/devices/claim", session.AccessToken, body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("claim returned %d: %s", recorder.Code, recorder.Body.String())
+		}
+	}
+	consentOnRecord := func() *string {
+		t.Helper()
+		var version *string
+		if err := h.store.Pool().QueryRow(context.Background(),
+			`SELECT license_version FROM users WHERE id = $1`, session.UserID).Scan(&version); err != nil {
+			t.Fatal(err)
+		}
+		return version
+	}
+
+	claim(map[string]any{"device_uuid": deviceUUID, "license_version": "odbl-1.0"})
+	if got := consentOnRecord(); got == nil || *got != "odbl-1.0" {
+		t.Fatalf("consent after the first claim = %v, want odbl-1.0", got)
+	}
+
+	// §6.2 has the client re-invoking this after every batch that applied anything — for reasons
+	// entirely unrelated to consent.
+	claim(map[string]any{"device_uuid": deviceUUID})
+	if got := consentOnRecord(); got == nil || *got != "odbl-1.0" {
+		t.Fatalf("a claim that said nothing about the licence left consent as %v; an omitted field "+
+			"is not a declined consent, and a sweep re-run for other reasons silently withdrew it", got)
+	}
+
+	// An explicit null *is* a decision, and is recorded as one.
+	claim(map[string]any{"device_uuid": deviceUUID, "license_version": nil})
+	if got := consentOnRecord(); got != nil {
+		t.Fatalf("an explicit null left consent as %v; a declined consent must be storable", got)
+	}
+}
+
+// ── M5: the grove's record keys are GroveRecord's ──────────────────────────────────────────────
+
+func TestGroveRecordUsesTheClientsFieldNames(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+	tree := uuid.New()
+
+	for _, kind := range []string{"visit", "observation", "measurement", "care_event"} {
+		h.syncOne(t, deviceToken, map[string]any{
+			"client_uuid": uuid.New(), "kind": kind, "tree_uuid": tree,
+			"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+		})
+	}
+
+	recorder := h.do(t, http.MethodGet, Prefix+"/me/grove", deviceToken, nil)
+	var grove struct {
+		Entries []struct {
+			TreeUUID    uuid.UUID      `json:"tree_uuid"`
+			Record      map[string]int `json:"record"`
+			HeroPhotoID *uuid.UUID     `json:"hero_photo_id"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &grove); err != nil {
+		t.Fatal(err)
+	}
+	if len(grove.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(grove.Entries))
+	}
+
+	record := grove.Entries[0].Record
+	// `GroveRecord`'s own field names. Its comment says `checkIns` is "named for the control, not
+	// for the `observations` table" — a response spelling it `observations` maps three of four and
+	// silently drops check-ins to zero.
+	for _, key := range []string{"visits", "checkIns", "measurements", "careEvents"} {
+		if record[key] != 1 {
+			t.Errorf("record[%q] = %d, want 1 (record = %v)", key, record[key], record)
+		}
+	}
+	if _, found := record["observations"]; found {
+		t.Error("the record still carries `observations`, which GroveRecord has no field for")
+	}
+}
+
+func TestGroveCarriesTheHeroPhoto(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+	tree := uuid.New()
+
+	h.syncOne(t, session.AccessToken, map[string]any{
+		"client_uuid": uuid.New(), "kind": "visit", "tree_uuid": tree,
+		"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+	})
+
+	begin := h.do(t, http.MethodPost, Prefix+"/photos/begin", session.AccessToken, map[string]any{
+		"tree_uuid": tree, "visit_client_uuid": nil, "shot_type": "full_tree",
+		"captured_at": time.Now().UTC(), "width": nil, "height": nil,
+		"public_lat": nil, "public_lon": nil,
+	})
+	var ticket beginPhotoResponse
+	if err := json.Unmarshal(begin.Body.Bytes(), &ticket); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := h.do(t, http.MethodGet, Prefix+"/me/grove", session.AccessToken, nil)
+	var grove struct {
+		Entries []struct {
+			HeroPhotoID *uuid.UUID `json:"hero_photo_id"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &grove); err != nil {
+		t.Fatal(err)
+	}
+	if len(grove.Entries) != 1 {
+		t.Fatalf("got %d entries", len(grove.Entries))
+	}
+	if grove.Entries[0].HeroPhotoID == nil || *grove.Entries[0].HeroPhotoID != ticket.PhotoID {
+		t.Fatalf("hero_photo_id = %v, want %v — #176's hero is a photo fact the phone cannot answer "+
+			"for a photograph it never wrote", grove.Entries[0].HeroPhotoID, ticket.PhotoID)
+	}
+}
+
+// ── M6: a photograph must arrive, not a key ────────────────────────────────────────────────────
+
+func TestPhotoDataAnswersAFetchableURL(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+
+	begin := h.do(t, http.MethodPost, Prefix+"/photos/begin", session.AccessToken, map[string]any{
+		"tree_uuid": uuid.New(), "visit_client_uuid": nil, "shot_type": "full_tree",
+		"captured_at": time.Now().UTC(), "width": nil, "height": nil,
+		"public_lat": nil, "public_lon": nil,
+	})
+	var ticket beginPhotoResponse
+	if err := json.Unmarshal(begin.Body.Bytes(), &ticket); err != nil {
+		t.Fatal(err)
+	}
+
+	reader := h.registerDeviceToken(t, uuid.New())
+	recorder := h.do(t, http.MethodGet, Prefix+"/photos/"+ticket.PhotoID.String(), reader, nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("photo read returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.URL == "" {
+		t.Fatal("no URL; a storage key alone fetches nothing — uploads are presigned PUTs, so the " +
+			"bucket is not anonymously readable")
+	}
+	parsed, err := url.Parse(body.URL)
+	if err != nil {
+		t.Fatalf("the URL does not parse: %v", err)
+	}
+	if parsed.Query().Get("X-Amz-Signature") == "" {
+		t.Error("the URL is not presigned; an anonymous GET against the S3 endpoint returns 403")
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(ticket.PhotoID.String())) {
+		t.Error("the response does not name the photograph it is about")
+	}
+}
+
+// ── M9: refresh, over the wire ─────────────────────────────────────────────────────────────────
+
+func TestRefreshRotatesAndAReuseKillsTheFamily(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+
+	refresh := func(token string) *httptest.ResponseRecorder {
+		return h.do(t, http.MethodPost, Prefix+"/auth/refresh", "",
+			map[string]any{"refresh_token": token})
+	}
+
+	first := refresh(session.RefreshToken)
+	if first.Code != http.StatusOK {
+		t.Fatalf("refresh returned %d: %s", first.Code, first.Body.String())
+	}
+	var rotated sessionResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &rotated); err != nil {
+		t.Fatal(err)
+	}
+	if rotated.RefreshToken == session.RefreshToken {
+		t.Fatal("the refresh token did not rotate")
+	}
+	if got := h.do(t, http.MethodGet, Prefix+"/me/grove", rotated.AccessToken, nil); got.Code != http.StatusOK {
+		t.Fatalf("the rotated access token does not work: %d", got.Code)
+	}
+
+	// The replay. This is the canonical signal that a refresh token leaked.
+	replay := refresh(session.RefreshToken)
+	if replay.Code != http.StatusUnauthorized {
+		t.Fatalf("replaying a spent refresh token returned %d, want 401", replay.Code)
+	}
+
+	// And the successor must not survive it: whoever holds it would otherwise keep a 60-day
+	// session, and the legitimate holder could not tell.
+	after := refresh(rotated.RefreshToken)
+	if after.Code == http.StatusOK {
+		t.Fatal("after a detected reuse the successor still refreshes; the theft is invisible and " +
+			"the thief keeps a 60-day session")
+	}
+	if got := h.do(t, http.MethodGet, Prefix+"/me/grove", rotated.AccessToken, nil); got.Code != http.StatusUnauthorized {
+		t.Fatalf("after a detected reuse the successor's access token still answers %d", got.Code)
+	}
+}
+
+// ── N4: an access token must not outlive the account ───────────────────────────────────────────
+
+func TestAnAccessTokenDoesNotOutliveTheAccount(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+
+	if got := h.do(t, http.MethodGet, Prefix+"/me/grove", session.AccessToken, nil); got.Code != http.StatusOK {
+		t.Fatalf("the session did not work before deletion: %d", got.Code)
+	}
+
+	recorder := h.do(t, http.MethodDelete, Prefix+"/me", session.AccessToken,
+		map[string]any{"choice": "eraseEverything", "pending_client_uuids": []uuid.UUID{}})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("deletion returned %d", recorder.Code)
+	}
+
+	after := h.do(t, http.MethodGet, Prefix+"/me/grove", session.AccessToken, nil)
+	if after.Code != http.StatusUnauthorized {
+		t.Fatalf("a deleted account's access token still answers %d — an empty grove reads as "+
+			"'you have contributed nothing', not as 'this account is gone'", after.Code)
+	}
+}
+
+func sha256Hex(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }

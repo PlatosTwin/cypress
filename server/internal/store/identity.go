@@ -72,14 +72,23 @@ func (s *Store) RegisterDevice(ctx context.Context, deviceUUID uuid.UUID) (uuid.
 	return id, err
 }
 
-// DeviceIDForUUID resolves a device UUID to its row id.
-func (s *Store) DeviceIDForUUID(ctx context.Context, deviceUUID uuid.UUID) (uuid.UUID, error) {
-	var id uuid.UUID
-	err := s.pool.QueryRow(ctx, `SELECT id FROM devices WHERE device_uuid = $1`, deviceUUID).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, ErrNotFound
-	}
-	return id, err
+// RevokeDeviceTokens retires every live credential over a device.
+//
+// Called on re-registration. Spec §5.8's "not an attestation" covers somebody minting a credential
+// for a *fresh* device id, which nothing can prevent and D9 requires be cheap. It does not cover
+// re-issuing over a **live** installation: without this, `device_uuid` is a bearer secret with
+// unlimited reissue and no revocation, and a second registration hands the caller read and write
+// authority over the first one's contributions while leaving its token working.
+//
+// Retiring the old tokens does not stop somebody who knows the id from minting a new one. What it
+// does is make the takeover *visible* — the real device's next call is a 401 and it re-registers —
+// instead of two holders sharing one queue silently. The column was already in the schema and
+// nothing wrote it.
+func (s *Store) RevokeDeviceTokens(ctx context.Context, deviceID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE device_tokens SET revoked_at = $2 WHERE device_id = $1 AND revoked_at IS NULL
+	`, deviceID, s.now())
+	return err
 }
 
 // ── Sessions ───────────────────────────────────────────────────────────────────────────────────
@@ -111,6 +120,7 @@ type Session struct {
 func (s *Store) RotateSession(ctx context.Context, presentedHash, nextHash []byte, expiresAt time.Time) (Session, uuid.UUID, error) {
 	var session Session
 	var nextID uuid.UUID
+	var reused bool
 	err := s.Tx(ctx, func(tx pgx.Tx) error {
 		// FOR UPDATE, because two drains racing on one phone would otherwise both read an unspent
 		// token and both mint a successor — and the loser's successor would be a live session
@@ -126,7 +136,25 @@ func (s *Store) RotateSession(ctx context.Context, presentedHash, nextHash []byt
 			return err
 		}
 		now := s.now()
-		if session.RevokedAt != nil || session.RotatedAt != nil || !now.Before(session.ExpiresAt) {
+		if session.RotatedAt != nil && session.RevokedAt == nil {
+			// **A replayed refresh token is the canonical signal that one leaked.** Refusing the
+			// replay alone leaves whoever holds the successor with a 60-day session, and the
+			// legitimate holder cannot tell. Revoking the whole family logs both parties out and
+			// makes the theft visible as a sign-in prompt rather than invisible as a shared
+			// account. The `revoked_at` column was already here and nothing wrote it.
+			if _, err := tx.Exec(ctx, `
+				UPDATE sessions SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL
+			`, session.UserID, now); err != nil {
+				return err
+			}
+			// **Return nil so the revocation commits.** Reporting the reuse as an error here would
+			// roll it back — the transaction would refuse the replay and leave the whole family
+			// live, which is the defense reading as though it had run. The condition is carried out
+			// past the commit instead.
+			reused = true
+			return nil
+		}
+		if session.RevokedAt != nil || !now.Before(session.ExpiresAt) {
 			return ErrSessionSpent
 		}
 		if _, err := tx.Exec(ctx, `UPDATE sessions SET rotated_at = $2 WHERE id = $1`, session.ID, now); err != nil {
@@ -139,11 +167,39 @@ func (s *Store) RotateSession(ctx context.Context, presentedHash, nextHash []byt
 		`, nextID, session.UserID, nextHash, now, expiresAt)
 		return err
 	})
+	if err == nil && reused {
+		return session, uuid.Nil, ErrSessionReused
+	}
 	return session, nextID, err
 }
 
-// ErrSessionSpent is a refresh token that verified but is expired, revoked or already rotated.
+// ErrSessionSpent is a refresh token that verified but is expired or revoked.
 var ErrSessionSpent = errors.New("session spent")
+
+// ErrSessionReused is a refresh token presented a second time after it was rotated.
+//
+// Distinct from ErrSessionSpent because it means something different: not "this is old" but "two
+// parties hold this". Both answer `unauthorized` on the wire — the client cannot act on the
+// difference — and they are kept apart so the log and the tests can.
+var ErrSessionReused = errors.New("session reused after rotation")
+
+// SessionIsLive reports whether a session row is still good.
+//
+// An access token is self-describing so a read costs no round trip — but it also cannot know that
+// the account behind it was deleted ten seconds ago, and it stays valid for up to fifteen minutes
+// after. In that window `GET /me/grove` answered `200 {"entries":[]}` for a deleted account, and a
+// `/sync` item answered `server_error`, which is **retryable**, so a straggler burned the full 48 h
+// backoff instead of taking the `duplicate` the tombstone gives keys that were declared pending.
+//
+// One indexed lookup on a primary key, on authenticated requests only. That is the price of the
+// access token not being a fifteen-minute lie about whether an account exists.
+func (s *Store) SessionIsLive(ctx context.Context, sessionID uuid.UUID) (bool, error) {
+	var live bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM sessions WHERE id = $1 AND revoked_at IS NULL AND expires_at > $2)
+	`, sessionID, s.now()).Scan(&live)
+	return live, err
+}
 
 // DeviceTokenOwner resolves a presented device token hash to its device.
 func (s *Store) DeviceTokenOwner(ctx context.Context, hash []byte) (uuid.UUID, error) {

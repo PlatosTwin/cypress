@@ -84,7 +84,7 @@ func (s *Server) Handler() http.Handler {
 	// rule that must not ship."
 	mux.Handle("POST "+Prefix+"/operator/photos/{id}/reject", s.operator(s.rejectPhoto))
 
-	return s.recoverPanics(mux)
+	return withTimeout(s.recoverPanics(mux))
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +103,6 @@ type caller struct {
 	UserID *uuid.UUID
 	// DeviceID is set for the anonymous device credential.
 	DeviceID *uuid.UUID
-	// DeviceUUID is the client-side handle, kept for the claim.
-	DeviceUUID uuid.UUID
 }
 
 func (c caller) owner() store.Owner {
@@ -191,22 +189,40 @@ func (s *Server) resolveCaller(r *http.Request) (caller, error) {
 		return caller{}, errNoSession
 	}
 
-	// An access token first: it is the common case and costs no database round trip.
+	// An access token first: it is the common case.
 	claims, err := s.Signer.Verify(presented)
 	if err == nil {
+		id, parseErr := uuid.Parse(claims.ID)
+		if parseErr != nil {
+			return caller{}, errNoSession
+		}
 		switch claims.Subject {
 		case tokens.SubjectUser:
-			id, parseErr := uuid.Parse(claims.ID)
-			if parseErr != nil {
+			// **One lookup, so the token cannot outlive the account by fifteen minutes.** Without
+			// it a deleted account's access token still answered `GET /me/grove` with an empty
+			// grove — which reads as "you have contributed nothing", not as "this account is gone"
+			// — and a straggling `/sync` item took `server_error`, which is *retryable*, so it
+			// burned the full 48 h backoff instead of the `duplicate` the tombstone gives.
+			sessionID, sessionErr := uuid.Parse(claims.SessionID)
+			if sessionErr != nil {
+				return caller{}, errNoSession
+			}
+			live, lookupErr := s.Store.SessionIsLive(r.Context(), sessionID)
+			if lookupErr != nil {
+				return caller{}, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", lookupErr)
+			}
+			if !live {
 				return caller{}, errNoSession
 			}
 			return caller{UserID: &id}, nil
 		case tokens.SubjectDevice:
-			id, parseErr := uuid.Parse(claims.ID)
-			if parseErr != nil {
-				return caller{}, errNoSession
-			}
 			return caller{DeviceID: &id}, nil
+		default:
+			// Fails closed. `Verify` already rejects an unknown subject, so this is unreachable —
+			// and it used to *fall through* to the device-token lookup below, which made it a
+			// second, weaker copy of a rule already held. A rule stated twice is a rule that can
+			// disagree with itself.
+			return caller{}, errNoSession
 		}
 	}
 	if errors.Is(err, tokens.ErrExpired) {
@@ -297,4 +313,17 @@ func parsePathUUID(r *http.Request, name string) (uuid.UUID, error) {
 
 // requestTimeout bounds a handler. One shared-cpu-1x machine cannot afford a query holding a
 // connection open indefinitely.
+//
+// It is applied by `withTimeout` below, wrapping the whole router. It was previously declared with
+// this comment and referenced by nothing, which is the kind of claim that reads as a guarantee
+// while being a decoration — `go vet` does not flag an unused const, so nothing else was going to
+// say so.
 const requestTimeout = 20 * time.Second
+
+func withTimeout(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}

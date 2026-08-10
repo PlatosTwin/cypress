@@ -1,8 +1,13 @@
 package api
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/apierr"
@@ -22,14 +27,62 @@ import (
 type oidcRequest struct {
 	IdentityToken     string `json:"identity_token"`
 	AuthorizationCode string `json:"authorization_code"`
-	// Nonce is what the app generated, compared against the token's claim.
+	// Nonce is the **raw** nonce the app generated, not its hash.
+	//
+	// ── Which side hashes, pinned here so step 4 does not have to guess ────────────────────────
+	//
+	// The Apple recipe has the client generate a random nonce, pass **SHA-256 hex of it** to
+	// `ASAuthorizationAppleIDRequest.nonce`, and keep the raw one. Apple then puts the hash in the
+	// identity token's `nonce` claim. So the raw value is the only thing that proves possession,
+	// and it is what travels here; **this service does the hashing** and compares against the
+	// claim. A client that sent the hash instead would be forwarding the same value an attacker
+	// who captured the token already has, which is the opposite of what the nonce is for.
 	Nonce string `json:"nonce"`
 	// DeviceUUID lets one round trip do the claim as well, which is what makes D9's "keep your
 	// three visits" true at the moment the person taps the button.
 	DeviceUUID *uuid.UUID `json:"device_uuid"`
-	// LicenseVersion is `AccountLinkRecord`'s consent. An explicit null is a *declined* consent
-	// and is stored as one (spec §5.6).
-	LicenseVersion *string `json:"license_version"`
+	// LicenseVersion is `AccountLinkRecord`'s consent, and it is raw so that **absent and null stay
+	// different facts** — see `consent` below.
+	LicenseVersion json.RawMessage `json:"license_version"`
+}
+
+// consent reads a `license_version` field that may be absent, null, or a string.
+//
+// ── Why a `*string` was wrong ──────────────────────────────────────────────────────────────────
+//
+// Spec §5.6: a missing `licenseVersion` is a **declined** consent and must arrive as an explicit
+// null rather than an omitted field the server defaults. A `*string` decodes both to `nil`, so the
+// server could not tell "the person declined" from "this request is not about consent" — and §6.2
+// has the client re-invoking `POST /devices/claim` after every batch that applied anything. A sweep
+// re-run for reasons entirely unrelated to consent therefore withdrew it.
+//
+// Returns (value, present). `present` false means the key was not in the body at all: write nothing.
+// `present` true with a nil value is the explicit null, which is a decision and is recorded.
+func consent(raw json.RawMessage) (version *string, present bool, err error) {
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+	if string(raw) == "null" {
+		return nil, true, nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, false, err
+	}
+	return &value, true, nil
+}
+
+// nonceMatches compares the raw nonce against the token's claim.
+//
+// Constant-time, and hex is lowercased before comparison because the claim's case is Apple's to
+// choose and a case mismatch would read as a forgery.
+func nonceMatches(raw, claim string) bool {
+	if raw == "" || claim == "" {
+		return false
+	}
+	sum := sha256.Sum256([]byte(raw))
+	hashed := hex.EncodeToString(sum[:])
+	return subtle.ConstantTimeCompare([]byte(hashed), []byte(strings.ToLower(claim))) == 1
 }
 
 type sessionResponse struct {
@@ -59,10 +112,21 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 		// the only thing a 401 is ever allowed to be about.
 		return apierr.Wrap(apierr.Unauthorized, "That sign-in could not be verified.", err)
 	}
-	// The nonce is checked here rather than by the verifier because only the caller knows what the
-	// app generated. Skipping it would leave a verified token replayable by anyone who captured one.
-	if request.Nonce != "" && identity.Nonce != request.Nonce {
-		return apierr.New(apierr.Unauthorized, "That sign-in could not be verified.")
+	// ── The nonce, and why the check cannot be conditional on the request carrying one ─────────
+	//
+	// It is checked here rather than by the verifier because only the caller knows what the app
+	// generated. It was previously guarded by `request.Nonce != ""`, which made the replay defense
+	// **opt-out by the party it defends against**: anybody holding a captured identity token simply
+	// omitted `nonce` and the comparison was skipped.
+	//
+	// So it fails closed. If the verified token carries a nonce claim, a matching raw nonce is
+	// required; if the caller sends one, the token must carry its hash. Only a token with no claim
+	// and a request with no nonce skips — and Apple always issues the claim when the app set one,
+	// so that pair means "this sign-in never had a nonce", not "the check was waived".
+	if identity.Nonce != "" || request.Nonce != "" {
+		if !nonceMatches(request.Nonce, identity.Nonce) {
+			return apierr.New(apierr.Unauthorized, "That sign-in could not be verified.")
+		}
 	}
 
 	refreshToken, err := s.Apple.ExchangeAuthorizationCode(r.Context(), request.AuthorizationCode)
@@ -75,8 +139,12 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
-	if request.LicenseVersion != nil || request.DeviceUUID != nil {
-		if err := s.Store.RecordLicenseConsent(r.Context(), user.ID, request.LicenseVersion); err != nil {
+	licenseVersion, licensePresent, err := consent(request.LicenseVersion)
+	if err != nil {
+		return apierr.New(apierr.ValidationFailed, "That request could not be read.")
+	}
+	if licensePresent {
+		if err := s.Store.RecordLicenseConsent(r.Context(), user.ID, licenseVersion); err != nil {
 			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 		}
 	}
@@ -154,6 +222,12 @@ func (s *Server) authRefresh(w http.ResponseWriter, r *http.Request) error {
 	session, nextSessionID, err := s.Store.RotateSession(
 		r.Context(), tokens.HashOpaque(request.RefreshToken), nextHash, refreshExpiry)
 	switch {
+	case errors.Is(err, store.ErrSessionReused):
+		// The family has been revoked by the store. The wire answer is the same `unauthorized` a
+		// spent token gets — the client cannot act on the difference, and telling a thief which of
+		// their guesses was a real token is not information to hand out.
+		s.Log.Warn("refresh token replayed after rotation; session family revoked")
+		return apierr.New(apierr.Unauthorized, "Your session has expired.")
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrSessionSpent):
 		return apierr.New(apierr.Unauthorized, "Your session has expired.")
 	case err != nil:
@@ -206,6 +280,14 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) error {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
+	// Re-registering retires whatever was live over this installation. It does not stop somebody
+	// who knows the id from minting a credential — nothing can, and D9 requires that be cheap — but
+	// it stops two holders sharing one queue *silently*: the real device's next call is a 401 and it
+	// re-registers, which is a visible event rather than an invisible one.
+	if err := s.Store.RevokeDeviceTokens(r.Context(), deviceID); err != nil {
+		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+	}
+
 	secret, hash, err := tokens.NewOpaque()
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
@@ -221,9 +303,9 @@ func (s *Server) registerDevice(w http.ResponseWriter, r *http.Request) error {
 
 type claimRequest struct {
 	DeviceUUID uuid.UUID `json:"device_uuid"`
-	// LicenseVersion is what `AccountLinkRecord` carries. An explicit null is a declined consent
-	// and must arrive as one rather than as an omitted field the server defaults (spec §5.6).
-	LicenseVersion *string `json:"license_version"`
+	// LicenseVersion is what `AccountLinkRecord` carries. Absent, null and a version string are
+	// three different facts here; see `consent`.
+	LicenseVersion json.RawMessage `json:"license_version"`
 }
 
 // claimDevice is the idempotent sweep.
@@ -251,11 +333,20 @@ func (s *Server) claimDevice(w http.ResponseWriter, r *http.Request, who caller)
 		return apierr.New(apierr.ValidationFailed, "That request was missing a device identifier.")
 	}
 
+	licenseVersion, licensePresent, parseErr := consent(request.LicenseVersion)
+	if parseErr != nil {
+		return apierr.New(apierr.ValidationFailed, "That request could not be read.")
+	}
+
 	if _, err := s.Store.RegisterDevice(r.Context(), request.DeviceUUID); err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
-	if err := s.Store.RecordLicenseConsent(r.Context(), *who.UserID, request.LicenseVersion); err != nil {
-		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+	// Only when the key was actually sent. The sweep is idempotent and is re-run for reasons that
+	// have nothing to do with consent; writing on every call made it withdraw one.
+	if licensePresent {
+		if err := s.Store.RecordLicenseConsent(r.Context(), *who.UserID, licenseVersion); err != nil {
+			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+		}
 	}
 
 	err := s.Store.ClaimDevice(r.Context(), request.DeviceUUID, *who.UserID)

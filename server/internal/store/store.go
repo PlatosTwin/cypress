@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -84,12 +83,6 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 // ErrNotFound is returned by every read that found nothing.
 var ErrNotFound = errors.New("not found")
-
-// IsUniqueViolation reports whether err is a Postgres unique-constraint failure.
-func IsUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
-}
 
 // Tx runs fn in a transaction, rolling back on error.
 func (s *Store) Tx(ctx context.Context, fn func(pgx.Tx) error) error {

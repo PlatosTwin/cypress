@@ -195,8 +195,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_device_tree
 -- A tree somebody added. `POST /trees`' 10 m proximity dedupe reads this and the seed inventory;
 -- only this half is writable.
 CREATE TABLE IF NOT EXISTS community_trees (
+    -- **The client's own tree UUID, and the idempotency key, and the id every other table means.**
+    --
+    -- There was briefly a server-minted `id` beside a `client_uuid`, and it gave a community tree
+    -- two identities that the reads then disagreed about: `contributions.tree_uuid`,
+    -- `photos.tree_uuid`, `GET /trees/{id}` and `IsFavorite` all key on the client's UUID, while
+    -- `MapMembership` returned the server's — so a tree somebody added appeared on screen 01 under
+    -- an id that named nothing in any other route. A tree must be addable offline and carry visits
+    -- before it ever syncs, so the client necessarily knows the id first; there is no second
+    -- identity for the server to contribute.
     id           UUID PRIMARY KEY,
-    client_uuid  UUID NOT NULL UNIQUE,
     lat          DOUBLE PRECISION NOT NULL CHECK (lat BETWEEN -90 AND 90),
     lon          DOUBLE PRECISION NOT NULL CHECK (lon BETWEEN -180 AND 180),
     display_name TEXT,
@@ -281,3 +289,24 @@ CREATE INDEX IF NOT EXISTS idx_photos_device ON photos (device_id);
 -- through it.
 CREATE INDEX IF NOT EXISTS idx_photos_rescreen_backlog
     ON photos (created_at) WHERE blur_applied = false AND deleted_at IS NULL;
+
+-- ── The revocation Apple would not take ────────────────────────────────────────────────────────
+
+-- A refresh token whose revocation failed, kept so it can be retried.
+--
+-- R72 ruling 2 makes the revocation call a compliance obligation: Apple requires it at deletion,
+-- and the authorization-code exchange exists for no other reason. `DELETE FROM users` therefore
+-- cannot be the end of the story on the outage path — it would discard the only credential that
+-- could ever satisfy the obligation, which is worse than the outage.
+--
+-- **It holds a token and nothing else.** No user id, no email, no device: a joining key here would
+-- re-create exactly what `AccountDeletionChoice` refuses a sentinel id for, and would turn a
+-- compliance queue into a record of who deleted their account. What a row says is "this credential
+-- is owed a revocation", which is all a retry needs.
+CREATE TABLE IF NOT EXISTS pending_apple_revocations (
+    -- The hash, not the token, would be useless: revoking needs the token itself.
+    refresh_token TEXT PRIMARY KEY,
+    first_failed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_attempted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    attempts INTEGER NOT NULL DEFAULT 1
+);

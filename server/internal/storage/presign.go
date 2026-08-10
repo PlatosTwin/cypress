@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -80,6 +81,20 @@ func (p *Presigner) WithClock(now func() time.Time) *Presigner {
 // the *permission* lasts. A client that took longer asks for another ticket, which costs one round
 // trip and keeps a leaked URL from being useful for three days.
 func (p *Presigner) PresignPut(key string, lifetime time.Duration) (string, error) {
+	return p.presign(http.MethodPut, key, lifetime)
+}
+
+// PresignGet returns a URL the client may GET the binary from, valid for lifetime.
+//
+// `GET /photos/{id}` hands this back rather than the bytes. The bucket is not anonymously readable
+// on the S3 API endpoints — `server/README.md` records that anonymous GET there returns 403 even
+// with the bucket public — so a storage key on its own fetches nothing and a presigned read is what
+// makes a photograph a device never wrote actually arrive.
+func (p *Presigner) PresignGet(key string, lifetime time.Duration) (string, error) {
+	return p.presign(http.MethodGet, key, lifetime)
+}
+
+func (p *Presigner) presign(method, key string, lifetime time.Duration) (string, error) {
 	if err := p.config.Validate(); err != nil {
 		return "", err
 	}
@@ -88,29 +103,62 @@ func (p *Presigner) PresignPut(key string, lifetime time.Duration) (string, erro
 		return "", fmt.Errorf("AWS_ENDPOINT_URL_S3 is not a URL: %w", err)
 	}
 
-	now := p.now().UTC()
-	stamp := now.Format("20060102T150405Z")
-	day := now.Format("20060102")
-	scope := strings.Join([]string{day, p.config.Region, "s3", "aws4_request"}, "/")
-
 	// Path-style addressing (`/bucket/key`) rather than virtual-host style. Tigris serves both, and
 	// path style keeps the signed host equal to the configured endpoint — a mismatch between the
 	// host in the signature and the host in the request is the standard way this fails, and it
 	// fails as an opaque SignatureDoesNotMatch.
 	canonicalURI := "/" + p.config.Bucket + "/" + strings.TrimPrefix(key, "/")
 
+	return signQuery(signInput{
+		Method:          method,
+		Scheme:          endpoint.Scheme,
+		Host:            endpoint.Host,
+		CanonicalURI:    canonicalURI,
+		AccessKeyID:     p.config.AccessKeyID,
+		SecretAccessKey: p.config.SecretAccessKey,
+		Region:          p.config.Region,
+		Now:             p.now().UTC(),
+		Lifetime:        lifetime,
+	}), nil
+}
+
+// signInput is everything one presigned URL depends on.
+//
+// The signing is split out from `presign` so it can be tested against **AWS's own published
+// example** — the documented `GET /test.txt` query-string vector, which uses virtual-host
+// addressing this service does not. A signature is either exactly right or opaquely wrong
+// (`SignatureDoesNotMatch` tells you nothing about which of nine things you got wrong), so the only
+// test worth having is one whose expected value comes from outside this file.
+type signInput struct {
+	Method          string
+	Scheme          string
+	Host            string
+	CanonicalURI    string
+	AccessKeyID     string
+	SecretAccessKey string
+	Region          string
+	Now             time.Time
+	Lifetime        time.Duration
+}
+
+// signQuery performs SigV4 query-string signing and returns the full URL.
+func signQuery(in signInput) string {
+	stamp := in.Now.Format("20060102T150405Z")
+	day := in.Now.Format("20060102")
+	scope := strings.Join([]string{day, in.Region, "s3", "aws4_request"}, "/")
+
 	query := url.Values{}
 	query.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
-	query.Set("X-Amz-Credential", p.config.AccessKeyID+"/"+scope)
+	query.Set("X-Amz-Credential", in.AccessKeyID+"/"+scope)
 	query.Set("X-Amz-Date", stamp)
-	query.Set("X-Amz-Expires", fmt.Sprintf("%d", int(lifetime.Seconds())))
+	query.Set("X-Amz-Expires", fmt.Sprintf("%d", int(in.Lifetime.Seconds())))
 	query.Set("X-Amz-SignedHeaders", "host")
 
 	canonicalRequest := strings.Join([]string{
-		"PUT",
-		canonicalURI,
+		in.Method,
+		in.CanonicalURI,
 		query.Encode(),
-		"host:" + endpoint.Host + "\n",
+		"host:" + in.Host + "\n",
 		"host",
 		// Presigned URLs sign the payload as UNSIGNED-PAYLOAD: the bytes are not known here, and
 		// the whole point of handing the client a URL is that this service never sees them.
@@ -127,14 +175,14 @@ func (p *Presigner) PresignPut(key string, lifetime time.Duration) (string, erro
 	signingKey := hmacSHA256(
 		hmacSHA256(
 			hmacSHA256(
-				hmacSHA256([]byte("AWS4"+p.config.SecretAccessKey), []byte(day)),
-				[]byte(p.config.Region)),
+				hmacSHA256([]byte("AWS4"+in.SecretAccessKey), []byte(day)),
+				[]byte(in.Region)),
 			[]byte("s3")),
 		[]byte("aws4_request"))
 
 	query.Set("X-Amz-Signature", hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign))))
 
-	return endpoint.Scheme + "://" + endpoint.Host + canonicalURI + "?" + query.Encode(), nil
+	return in.Scheme + "://" + in.Host + in.CanonicalURI + "?" + query.Encode()
 }
 
 func hmacSHA256(key, data []byte) []byte {
