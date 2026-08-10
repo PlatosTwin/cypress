@@ -231,7 +231,7 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 type addTreeRequest struct {
 	// ClientUUID is the tree's id, not a separate idempotency key. A tree is addable offline and
 	// carries visits before it ever syncs, so the client necessarily minted the id first; see
-	// `community_trees` in schema.sql.
+	// `community_trees` in `server/migrations/001_initial.sql`.
 	ClientUUID uuid.UUID `json:"client_uuid"`
 	Lat        float64   `json:"lat"`
 	Lon        float64   `json:"lon"`

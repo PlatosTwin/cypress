@@ -132,9 +132,10 @@ func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 			   AND deleted_at IS NULL AND kind <> 'private_reminder'
 			UNION
-			-- community_trees.id IS the client's tree UUID (see schema.sql), so this arm and
-			-- the one above are the same id space. They were not always, which is the defect
-			-- that put a tree on screen 01 under a name no other route answered to.
+			-- community_trees.id IS the client's tree UUID (see the table's own comment in
+			-- server/migrations/001_initial.sql), so this arm and the one above are the same
+			-- id space. They were not always, which is the defect that put a tree on screen 01
+			-- under a name no other route answered to.
 			SELECT DISTINCT id FROM community_trees
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 			   AND deleted_at IS NULL`
