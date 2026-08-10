@@ -182,13 +182,24 @@ public struct OutboxStore {
     ///   column predicate because whether a send is owed is a fact about the composition root, not
     ///   about the row: `AppSchema` v15's `done` CHECK deliberately does not name `remote_sent`,
     ///   since every row on every shipped build is locally applied and has never been sent anywhere.
-    ///   With no sink wired this is `false` and the statement is byte-for-byte the one that shipped.
+    ///   With no sink wired this is `false` and the statement is the one that shipped, with v15's
+    ///   rename applied to the column it reads.
+    ///
+    ///   **It has no default, deliberately.** The unsafe answer is `false`, and this parameter is
+    ///   the entire guard against a row that was never sent settling `done` — after which it is
+    ///   never due again, so it is never sent. A defaulted `false` would let a future caller forget
+    ///   it and compile; requiring it makes forgetting it a compile error. Same argument as
+    ///   `OutboxSendSink` carrying no `uploadPhoto`, and ERRATA E125 is what both are paying for.
+    ///
+    /// - Returns: whether the row actually settled. The `UPDATE` is conditional, so a caller that
+    ///   counts settlements has to count what it matched rather than the fact that it ran.
+    @discardableResult
     public func markDoneIfComplete(
         _ id: UUID,
-        requiringRemoteSend: Bool = false,
+        requiringRemoteSend: Bool,
         at date: Date,
         connection: SQLiteConnection
-    ) throws {
+    ) throws -> Bool {
         let sent = requiringRemoteSend ? " AND remote_sent = 1" : ""
         let statement = try connection.cachedStatement("""
             UPDATE outbox
@@ -197,7 +208,9 @@ public struct OutboxStore {
             """)
         _ = try statement.bind([":now": date, ":id": id])
         try statement.run()
+        let settled = connection.changes > 0
         _ = try statement.reset()
+        return settled
     }
 
     /// Records a failed attempt: the new state, the incremented count, the reason, and when to try

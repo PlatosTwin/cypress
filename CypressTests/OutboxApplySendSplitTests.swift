@@ -247,6 +247,126 @@ struct OutboxApplySendSplitTests {
         #expect(record.item.photos.isEmpty)
     }
 
+    // MARK: - 2b. The photograph is apply-side too
+
+    @Test("a send that fails still commits the photograph, because the binary is apply-side")
+    func aFailedSendDoesNotHoldBackThePhotoLocalCommit() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .connectionDropped)
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        let photo = OutboxPhoto(path: "/tmp/cypress-split-offline.jpg", shotType: .fullTree)
+        _ = try await queue.enqueue(
+            .visit(Visit(
+                treeID: UUID(),
+                attribution: Attribution.anonymous(deviceID: Self.deviceID),
+                capturedAt: Date()
+            )),
+            photos: [photo]
+        )
+
+        _ = try await queue.drain(photoUploadsAllowed: true)
+
+        // `apply.uploadPhoto` is the local commit of the photograph, exactly as `apply.sync` is the
+        // local commit of the note. Behind the send gate it never ran offline, and 48 h of that
+        // expires the row terminally with the binary still staged and nothing referencing it.
+        let uploaded = await apply.uploadedPhotoPaths
+        #expect(uploaded == [photo.path], "the binary was not offered to the apply sink offline")
+
+        let record = try #require(try await queue.records().first)
+        #expect(record.item.photos.isEmpty, "the staged binary is still queued after being ingested")
+        #expect(record.locallyApplied)
+        #expect(!record.remoteSent, "the send failed, so nothing may claim it was sent")
+        #expect(record.item.state == .pending, "the item is \(record.item.state), expected pending")
+    }
+
+    @Test("a binary waiting for wi-fi does not hold back the note's send")
+    func aDeferredBinaryDoesNotDelayTheJSON() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .allSucceed)
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        let photo = OutboxPhoto(path: "/tmp/cypress-split-metered.jpg", shotType: .leaf)
+        _ = try await queue.enqueue(
+            .visit(Visit(
+                treeID: UUID(),
+                attribution: Attribution.anonymous(deviceID: Self.deviceID),
+                capturedAt: Date()
+            )),
+            photos: [photo]
+        )
+
+        // Metered. BUILD-PLAN §4 and screen 17: notes and numbers sync on any connection; the
+        // toggle gates binaries and nothing else. Moving the photo phase ahead of the send is what
+        // could have broken this, so it is asserted rather than assumed.
+        let report = try await queue.drain(photoUploadsAllowed: false)
+        #expect(report.sent == 1, "a deferred binary stopped the note from being sent")
+        #expect(report.awaitingWifi == 1)
+        #expect(report.synced == 0, "an item waiting for wi-fi was counted as settled")
+        #expect(await apply.uploadedPhotoPaths.isEmpty, "a binary went out on a metered connection")
+
+        var record = try #require(try await queue.records().first)
+        #expect(record.remoteSent, "the note was not sent while its photograph waited")
+        #expect(record.item.state == .pending)
+        #expect(record.item.photos.count == 1)
+        #expect(record.item.failCount == 0, "waiting for wi-fi counted as a failure")
+
+        // Wi-fi arrives: only the binary is owed, and the server is not asked twice.
+        _ = try await queue.drain(photoUploadsAllowed: true)
+        record = try #require(try await queue.records().first)
+        #expect(record.item.state == .done)
+        #expect(await apply.uploadedPhotoPaths == [photo.path])
+        #expect(await send.offered.count == 1, "the note was offered to the server twice")
+    }
+
+    // MARK: - The composition root itself
+
+    @Test("the shipping composition root wires no send sink")
+    func dataLayerWiresNoSendSink() async throws {
+        // Not a double: `DataLayer.boot` is the wiring `CypressApp` runs, and one line of it
+        // omitting `send:` is the whole of today's safety (ERRATA E261 §2). A test that builds its
+        // own `OutboxQueue` proves the queue and not the wiring, so this one reads the real thing.
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-datalayer-sink-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Deliberately not removed on the way out. `DataLayer` holds the SQLite connection past this
+        // function's scope, and unlinking the file under an open handle is what prints
+        // `BUG IN CLIENT OF libsqlite3.dylib: … vnode unlinked while in use` — the same family as
+        // the `SQLITE_IOERR_VNODE` noise this project has already chased once. The directory is a
+        // per-run UUID under `NSTemporaryDirectory()`; the simulator sweeps it.
+
+        let data = try await DataLayer.boot(
+            databaseURL: directory.appendingPathComponent("cypress.sqlite"),
+            seedURL: nil
+        )
+        let tree = try await data.api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+                photoLocalPath: "/tmp/cypress-datalayer-sink.jpg",
+                attribution: Attribution.anonymous(deviceID: data.deviceID)
+            )
+        )
+        _ = try await data.outbox.enqueue(
+            .visit(Visit(
+                treeID: tree.id,
+                attribution: Attribution.anonymous(deviceID: data.deviceID),
+                capturedAt: Date()
+            ))
+        )
+        let report = try await data.outbox.drain()
+
+        #expect(
+            report.sent == 0,
+            "DataLayer wired a send sink: \(report.sent) items reached a server that does not exist yet"
+        )
+        let record = try #require(try await data.outbox.records().first)
+        #expect(record.locallyApplied, "the shipping wiring did not commit the contribution locally")
+        #expect(!record.remoteSent)
+        #expect(record.item.state == .done, "the shipping wiring did not settle an item")
+    }
+
     // MARK: - 4. The migration
 
     @Test("migrating a v14 database calls its queued work applied, and not sent")
@@ -319,7 +439,58 @@ struct OutboxApplySendSplitTests {
         #expect(!stored.remoteSent)
     }
 
+    @Test("the rebuild carries seq forward with rows, and restarts from 1 on an empty outbox")
+    func whatCopyingSeqActuallyBuys() throws {
+        // The measurement `applyV15`'s comment cites, kept because the tempting stronger sentence —
+        // "copying `seq` re-seeds `sqlite_sequence`, so no id is ever reused" — is false in the
+        // ordinary case, and it is inherited verbatim from v4.
+
+        // With rows: the counter comes across, so the next row sorts after the survivors.
+        let withRows = try SQLiteConnection(path: ":memory:")
+        try withRows.configureForWriting()
+        _ = try SchemaMigrator.migrate(AppSchema.migrations.filter { $0.version <= 14 }, on: withRows)
+        let now = SQLiteTimestamp.string(from: Date(timeIntervalSince1970: 1_800_000_000))
+        try withRows.execute("""
+            INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                json_synced, window_started_at, created_at, updated_at)
+            VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}','[]','pending',0,0,
+                '\(now)','\(now)','\(now)')
+            """)
+        let seqBefore = try Self.maxSeq(connection: withRows)
+        _ = try SchemaMigrator.migrate(AppSchema.migrations, on: withRows)
+        #expect(try Self.maxSeq(connection: withRows) == seqBefore, "the rebuild renumbered a live row")
+
+        // Empty — the state of a phone that drained everything and let `pruneCompleted` sweep the
+        // receipts. `DROP TABLE` takes the counter, and the next row starts from 1 again. Harmless,
+        // because `seq` only orders rows that are live at the same time and identity is `id` and
+        // `client_uuid`; recorded because the comment must not claim otherwise.
+        let empty = try SQLiteConnection(path: ":memory:")
+        try empty.configureForWriting()
+        _ = try SchemaMigrator.migrate(AppSchema.migrations.filter { $0.version <= 14 }, on: empty)
+        try empty.execute("""
+            INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                json_synced, window_started_at, created_at, updated_at)
+            VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}','[]','done',0,1,
+                '\(now)','\(now)','\(now)')
+            """)
+        try empty.execute("DELETE FROM outbox")
+        _ = try SchemaMigrator.migrate(AppSchema.migrations, on: empty)
+
+        let after = OutboxItem(kind: .visit, clientUUID: UUID(), payload: Data("{}".utf8))
+        try OutboxStore().enqueue(after, connection: empty)
+        #expect(
+            try Self.maxSeq(connection: empty) == 1,
+            "the empty-outbox rebuild did not restart the counter, so the comment is now wrong the other way"
+        )
+    }
+
     // MARK: - Helpers
+
+    private static func maxSeq(connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM outbox")
+        defer { statement.finalize() }
+        return try statement.fetchOne { try $0.int("n") } ?? -1
+    }
 
     private static func remoteSent(of id: UUID, in store: CypressStore) async throws -> Int {
         try await store.queue.read { connection in

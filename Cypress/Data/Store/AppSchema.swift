@@ -1471,9 +1471,19 @@ public enum AppSchema {
     /// SQLite cannot rename a column *and* rewrite a table-level CHECK in place, so this is the
     /// twelve-step rebuild v4 already performs on this table, for the reason v4 gives: the copy is
     /// column for column and carries `seq`, so FIFO order, retry counts, error text, the 48 h window
-    /// and the photo lists all come across untouched, and copying `seq` explicitly re-seeds
-    /// `sqlite_sequence` so no id is ever reused. A contributor with a queued visit sees the same
-    /// queue in the same order afterwards.
+    /// and the photo lists all come across untouched. A contributor with a queued visit sees the
+    /// same queue in the same order afterwards.
+    ///
+    /// **What copying `seq` does and does not buy.** It preserves the FIFO order of the rows that
+    /// exist, and it carries `sqlite_sequence` forward *when there are rows*. On an outbox that is
+    /// **empty** at upgrade time — the ordinary state of a phone that has drained everything and let
+    /// `pruneCompleted` sweep the receipts — the `INSERT … SELECT` writes nothing, `DROP TABLE` takes
+    /// the counter with it, and the new table starts from 1 again. Measured, not assumed
+    /// (`OutboxApplySendSplitTests`). It is harmless: `seq` only orders rows that are live at the
+    /// same time, and a row's identity is `id` and `client_uuid`, both uniquely indexed and both
+    /// copied verbatim. The stronger claim — "so no id is ever reused" — is what v4's comment says
+    /// at the same spot, and it is wrong there in the same way; that is shipped history and is not
+    /// edited from this migration.
     ///
     /// Idempotent by guard, for the reason v3 gives.
     private static func applyV15(_ connection: SQLiteConnection) throws {
