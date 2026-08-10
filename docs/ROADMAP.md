@@ -254,6 +254,55 @@ roads darker and exposes no way to recolor them independently. `MapCanvas(basema
 kept as the seam for a vector basemap. Not scheduled — it is a real visual departure from the mock,
 and worth doing only if the map's look is judged to matter more than the work.
 
+**`assertEveryControlIsLabeled` asserts over a screen it does not own.** `DeepLinkHarness
+.assertEveryControlIsLabeled` walks `app.buttons`, `app.staticTexts` and five more queries — *every
+element in the app*, not the screen under test. Screens 09, 10 and 18 are presented over the map tab
+root rather than pushed, so screen 01's MapKit annotations stay in the accessibility tree behind
+them and are read as part of that screen's audit. `DeepLinkSweepTests.testNothingIsAnnouncedTwice`
+does the same thing one query wider.
+
+Everything that has gone wrong with this is a consequence of the scope, and each fix so far has
+treated a consequence:
+
+- an annotation whose frame XCUITest can resolve no activation point inside makes `isHittable`
+  **raise** — fixed at the read (`XCUIElement.isHittableWithoutRaising`, `CypressUITests/UIWait.swift`);
+- which annotations land in that state depends on where the camera was left — fixed at the state
+  (`CYPRESS_MAP_CAMERA`, `Cypress/Features/Map/DebugMapCameraOverride.swift`);
+- enumerating that many elements against a live tree is itself a race — an index that stopped
+  resolving mid-walk failed CI three times with both of the above in place (indexes 25, 3 and 17,
+  the last on a tree byte-identical to a passing run). Fixed at the binding for
+  `testNothingIsAnnouncedTwice`: `allElementsBoundByAccessibilityElement` and one read of each
+  value into a plain `(String, CGRect)`, so nothing re-resolves a proxy mid-comparison.
+  `assertEveryControlIsLabeled` still walks by index and has not been seen to lose one. The reason
+  is worth a clause rather than being left as luck: it makes one pass and re-resolves no ordinal
+  *between two reads that have to agree with each other*, which is exactly the property
+  `testNothingIsAnnouncedTwice`'s pair-wise comparison did not have. That is not immunity, only a
+  smaller window — it still reads `.label` after `.exists`, and PR #66 measured on a device that the
+  sibling pair `.exists` then `.frame` **raises** rather than answering when the query stops
+  resolving in between.
+
+**The scope itself is untouched, and it is the actual defect**: a labeling audit of screen 18 that
+passes or fails on the contents of screen 01 is not an audit of screen 18. The shape of the repair is
+to scope the walk to the presented screen's own subtree — but that changes what the helper *claims*,
+and the claim is load-bearing: the helper's own comment records that it is scoped to what is hittable
+"for the same reason E116's version is", and four files depend on it. It needs its own red-proof
+(a genuinely unlabeled control on the screen under test must still be caught) and an argument about
+what happens to the elements that stop being examined.
+
+Not scheduled, deliberately, and the reason is the size and shape of the work rather than the state
+of any one run. The symptoms are each guarded — `HittabilityFilterGateTests`,
+`ContainerSpellingGateTests`, `FrameFinitenessGateTests`, `DebugMapCameraOverrideTests` — so what is
+left is a question about what the helper *claims* to examine, which no failure will report. The full
+history is in the errata entry for the hittability round.
+
+*This paragraph used to open "The suite is green", and that is why it does not now.* It was false at
+the head it was written on — CI run 31347748098 had `ui (3)` red on the very repair the third bullet
+above describes — and a decision not to schedule work should not rest on a sentence that has to be
+re-checked every time the tree moves. Two of the gates named here were widened on PR #66 after a
+reviewer red-proved that `if x.isHittable` and `descendants(matching: .scrollView)` walked straight
+past them, which is the other half of the same lesson: "guarded" is a claim about an instrument, and
+an instrument has a calibration.
+
 *(The "structural VoiceOver is not machine-checked" entry that stood here is resolved. `CypressUITests`
 is a black-box XCUITest target (E116), and `DebugDeepLink`'s `CYPRESS_SCREEN` environment variable
 opens any screen for it (E117), so fifteen structural tests now read the accessibility tree of the map

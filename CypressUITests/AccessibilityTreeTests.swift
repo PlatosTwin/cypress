@@ -59,35 +59,35 @@ final class AccessibilityTreeTests: XCTestCase {
     func testNoUnlabeledButtonsOnLaunch() {
         let app = launch()
         XCTAssertTrue(app.buttons.firstMatch.waitForExistence(timeout: 10))
+        // One read, above the loop: `app.frame` is a query. See `isHittableWithoutRaising(onScreen:)`.
+        let appFrame = app.frame
         for i in 0..<app.buttons.count {
             let button = app.buttons.element(boundBy: i)
             guard button.exists else { continue }
 
-            // **The frame is asked about before hittability, and that order is load-bearing.**
-            // `isHittable` does not return `false` for an element XCUITest cannot compute an
-            // activation point for — it *raises*, and the test fails with
+            // **The frame is asked about before hittability, and that order is load-bearing.** The
+            // whole of why is on `XCUIElement.isHittableWithoutRaising` (`UIWait.swift`), which is
+            // where this file's own hand-rolled version of the check now lives: `isHittable` does
+            // not return `false` for an element XCUITest cannot compute an activation point for, it
+            // *raises*, and this file found that first — on task #121's branch, when the map tests
+            // began pinning their own fix and the camera they leave behind changed.
             //
-            //     Failed to determine hittability of "City tree, Southern Magnolia" Button:
-            //     Activation point invalid and no suggested hit points based on element frame
+            // It stopped here, which is the reason it came back twice under other tests' names
+            // (`DeepLinkVoiceOverTests.testPinAdjust`, `DeepLinkSweepTests
+            // .testNothingIsAnnouncedTwice`). One spelling now, in the helper, guarded by
+            // `HittabilityFilterGateTests` — the same argument `deliberateDrag` settled for drags.
             //
-            // which is not a defect report about anything. Screen 01 is a full-bleed `Map` and its
-            // pins are SwiftUI annotations MapKit hosts and places itself; one sitting at the edge
-            // of the basemap can be in the tree with a frame that has no interior. Whether any pin
-            // is in that state depends on where the camera is, which depends on device state — so
-            // this failed on a device left pointed at one block and not on one left pointed at
-            // another, which is E202's shape wearing an accessibility failure's clothes. Found on
-            // task #121's branch, when the map tests began pinning their own fix and the camera they
-            // leave behind changed.
-            //
-            // An element with no interior is not reachable by an assistive technology either, so
-            // skipping it is the same judgment `isHittable` was being asked for — expressed in a
-            // way that cannot raise.
-            let frame = button.frame
-            guard frame.width > 0, frame.height > 0, frame.intersects(app.frame) else { continue }
-            guard button.isHittable else { continue }
+            // **All three conditions this file had are in the helper, including the on-screen one.**
+            // A first cut of the helper left that one behind, on the argument that a control
+            // scrolled off the glass answers `isHittable` perfectly well — true of a control inside
+            // a scroll view, and false of a MapKit annotation, which is placed in absolute screen
+            // coordinates and can sit entirely outside them. The frame that raised in
+            // `testPinAdjust` was `(-31.0, 850.0, 30.0, 30.0)`: finite, 30 × 30, and wholly off the
+            // left edge of a 402 pt device. This file had it right the first time.
+            guard button.isHittableWithoutRaising(onScreen: appFrame) else { continue }
             XCTAssertFalse(
                 button.label.trimmingCharacters(in: .whitespaces).isEmpty,
-                "an interactive control at \(frame) has no accessibility label"
+                "an interactive control at \(button.frame) has no accessibility label"
             )
         }
     }
