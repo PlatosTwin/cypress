@@ -12,8 +12,21 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
+# **Every directory the module compiles, and nothing else.**
+#
+# This is an allowlist, and an allowlist rots: `migrations/` was added after this file was written
+# and the first real image build died on
+# `no required module provides package github.com/PlatosTwin/cypress/server/migrations`. The SQL is
+# compiled in by `//go:embed`, so a missing directory is a *build* failure rather than a runtime
+# one — which is the good version of this mistake, but only because the embed happens to exist.
+#
+# `TestDockerfileCopiesEveryPackage` in `internal/store` is the guard: it reads this file and fails
+# when a package directory is not copied. Add a package, add a COPY.
+#
+# `testdata/` is deliberately absent: it is read only by tests, which do not run in this image.
 COPY main.go ./
 COPY internal ./internal
+COPY migrations ./migrations
 
 ARG GIT_SHA=unknown
 ENV CGO_ENABLED=0
