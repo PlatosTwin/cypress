@@ -145,13 +145,17 @@ final class MapFilterAccessibilityTests: XCTestCase {
     /// which is exactly why this waits for it rather than reading it once: see
     /// `ContainerSpellingResolution` (`UIWait.swift`), where the same pattern's un-waited read
     /// intermittently bound the *species legend* to a spelling that was about to disappear.
+    ///
+    /// **The default ceiling, not the 25 s the line it replaced used.** The old spelling gave the
+    /// container 25 s to *exist*; this one needs it to exist and then hold one spelling still for
+    /// `ContainerSpellingResolution.settlingWindow` within the same budget, so 25 s here would have
+    /// been a real four-second cut to a row that has never been measured arriving late.
     private func rowContainer(_ app: XCUIApplication) -> XCUIElement {
         resolvedContainer(
             app,
             labeled: Self.rowLabel,
             "the filter row's named container (“\(Self.rowLabel)”) — without it the row's chips "
-                + "arrive unannounced between the search field and the map",
-            timeout: 25
+                + "arrive unannounced between the search field and the map"
         )
     }
 
@@ -241,13 +245,15 @@ final class MapFilterAccessibilityTests: XCTestCase {
         let app = launch()
         _ = requireField(app)
 
-        // `rowContainer` waits, and fails with its own sentence naming both spellings it watched if
-        // the row never becomes a named container at all.
-        XCTAssertTrue(
-            rowContainer(app).exists,
-            "the filter row is not a named container in the accessibility tree, so its chips arrive "
-                + "unannounced between the search field and the map"
-        )
+        // `rowContainer` waits, and fails with its own sentence — naming both spellings it watched
+        // and which of them it actually saw — if the row never settles into a named container.
+        // Nothing is asserted on what it returns afterwards on purpose: on timeout the helper has
+        // already failed and returns a fallback so that *something* can be returned, so an
+        // `XCTAssertTrue(….exists)` here produced a SECOND failure for the one cause, carrying the
+        // older sentence ("the filter row is not a named container") as though it were the only
+        // explanation — and it was invisible only because this class sets `continueAfterFailure`
+        // to false, which is a setting about something else.
+        _ = rowContainer(app)
 
         let yours = chip(Self.alwaysOnToggle, app)
         assertReachable(yours, "the “\(Self.alwaysOnToggle)” chip")

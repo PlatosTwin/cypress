@@ -378,9 +378,28 @@ extension XCTestCase {
     /// spelling, and that is a real state this must not turn into a silent skip — the failure keeps
     /// `assertReachable`'s sentence for it, and names both queries it watched.
     ///
-    /// The `exists`-then-`frame` pair is two snapshots and can race, exactly as `settledFrame`'s own
-    /// loop can; a frame read of something that has just left the tree reads as unusable and simply
-    /// costs that spelling its round.
+    /// **`exists` then `frame` is two snapshots, and the second one RAISES.** An earlier version of
+    /// this comment claimed that a frame read of something which had just left the tree "reads as
+    /// unusable and simply costs that spelling its round". That was reasoned, not measured, and it
+    /// is false. Measured on 16 Plus `24D1629F-…` (PR #66, probe deleted after the run): a `.frame`
+    /// read through a query resolving to nothing retries for about two seconds and then fails the
+    /// test outright —
+    ///
+    ///     Failed to get matching snapshot: No matches found for
+    ///     Elements matching predicate '"…" IN identifiers'
+    ///
+    /// — with none of the sentences below, which is exactly the raise this helper exists to stop.
+    /// So the rectangle is taken through `XCUIElement.snapshot()`, which **throws a Swift error**
+    /// instead of raising (same run: `snapshot=threw` where `.frame` failed the test), and a
+    /// spelling that leaves the tree mid-round now really does just lose its round.
+    ///
+    /// `exists` stays in front of it because it is cheap on an absent element where `snapshot()`
+    /// spends its retry budget first — so the common case, one spelling present and one not, costs
+    /// what it always did.
+    ///
+    /// **The ceiling buys `timeout − settlingWindow`.** A container has to appear early enough to
+    /// then hold still for `settlingWindow` inside the same budget, so a caller sizing `timeout`
+    /// against an observed arrival time must add the window to it.
     func resolvedContainer(
         _ app: XCUIApplication,
         labeled label: String,
@@ -402,7 +421,10 @@ extension XCTestCase {
             var round: [ContainerSpelling: CGRect] = [:]
             for spelling in ContainerSpelling.allCases {
                 guard let element = elements[spelling], element.exists else { continue }
-                round[spelling] = element.frame
+                // `try?`, never `element.frame` — see the header. The raise this would otherwise
+                // produce is the one the whole round was spent removing.
+                guard let frame = try? element.snapshot().frame else { continue }
+                round[spelling] = frame
             }
             let now = Date().timeIntervalSince(start)
             if let resolved = resolution.observe(round, at: now, onScreen: screen),
