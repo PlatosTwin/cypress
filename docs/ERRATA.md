@@ -16174,6 +16174,13 @@ never reaches as high as the recenter control's problem position, so it needed n
 its own for this control's reachability. Nothing about the legend's, the FAB's, or the notice's own
 AX5 rendering changed.
 
+> **Corrected by E252 and E253.** The paragraph above holds for the recenter control and is false as
+> a statement about the legend, and reading it as the second is what made the legend invisible to
+> the round that wrote it. `MapSpeciesLegend` measures 262.67 pt at AX5, and its rectangle covered
+> all but the bottom 14 pt of the identify FAB — the screenshot named above was of the defect. E252
+> is the diagnosis and E253 the repair; the legend now takes a reservation of its own
+> (`MapLayout.legendReserved`). Do not re-derive "the legend needs no reservation" from this entry.
+
 **Measured, on the same device and launch state this entry's table used** (iPhone 16 Pro Max
 `DE8E11AE-…`, AX5, `CYPRESS_LOCATION=denied`):
 
@@ -16311,3 +16318,2320 @@ Sampled off the shipped renders on iPhone 16 Plus `24D1629F-9FA8-4E3D-812E-F6BC8
 dark, after confirming each image's page pixel was `#F5F6EF` and `#0E1712` respectively: the vacant
 tile is `#FAFBF4` with 872 px of `#C4CEB4` dash in light and `#18251D` with 882 px of `#364133` dash
 in dark, against the `elder` tile's solid `#E7EFE2` / `#27352B` one section above it.
+
+### E250 — The pan precondition, reopened: no reachable app-side mechanism for "landed, then snapped back" — instrumented instead of guessed at (task #241)
+
+#### The occurrence
+
+E242's amendment set the rule that the next occurrence of `MapPanTabSwitchUITests
+.testADeliberatePanSurvivesLeavingForJournalAndBack` failing on its own precondition reopens as its
+own ticket rather than becoming another rerun note. It occurred: run 31074532263 (PR #38, updated
+head `65b99e2`, shard `ui (4)`, 2026-08-06 ~05:59 UTC), with #230's retry (`panUntilMoved`, `c1501af`)
+present in the tree and exhausted — the same sentence as before, *"panning the map did not move the
+camera off the reader (the control reads 'Centered on you'), so there is no deliberate camera to
+preserve"*. This is the second post-#230 occurrence; the first was run 31067670540, recorded in
+E242's amendment. Both nights had heavily loaded runners (5+ concurrent full-suite runs).
+
+#### What the brief asked, checked against the code rather than assumed
+
+The brief's own framing was two candidate mechanisms: the synthesized drag never reaches the map, or
+it reaches the map and the camera is driven back to center by something else. Reading
+`MapHomeView.swift` and `MapAnnotationLayer.swift` end to end for every **writer of `position`** —
+not merely every caller of `flyTo(_:meters:)`, which is where a first pass of this entry stopped and
+why it claimed two — turns up **three**:
+
+1. `centerOnUserIfNeeded()` → `flyTo`, called from `.task` on appear and from `.onChange(of:
+   location.availability)`, gated by `hasCenteredOnUser` (a one-shot `@State`) and
+   `MapCameraMemory.shared.readerMovedCamera`.
+2. `recenter()` → `flyTo`, called only from a tap on the recenter control.
+3. `zoom(into cluster:)` (`MapHomeView.swift:715`), which writes `position` directly rather than
+   through `flyTo`. It is wired as `onSelectCluster:` and reached from
+   `MapAnnotationLayer`'s `mapView(_:didSelect:)` whenever the tapped annotation is a
+   `TreeClusterAnnotation`.
+
+Neither is reachable inside `panUntilMoved`'s own window (before `switchTabs` runs). `launchCentered()`
+already waits for the control to read `Centered on you` before returning, which means
+`hasCenteredOnUser` is `true` — and therefore (1) is a no-op — before the first `pan(app)` call. (2)
+never fires because the test never taps the control during `panUntilMoved`. That leaves
+`.onChange(of: location.availability)` as the only thing that could still move the camera, and it only
+fires when `location.availability` *changes* — and under `CYPRESS_LOCATION`, it cannot:
+`MapLocationProvider(pinnedAvailability:)` (`MapLocationProvider.swift`) attaches no `CLLocationManager`
+delegate and makes `start()`/`stop()` no-ops, so a pinned run publishes exactly one `Availability` for
+the life of the process. `.onChange` never fires a second time.
+
+Writer (3) is **not** ruled out by either of those latches, and the review of this branch was right
+to say so. The app's own gesture recognizers are installed with `cancelsTouchesInView = false`, so
+MapKit's selection handling runs on the same touch stream a synthesized drag travels on: a drag that
+begins on a cluster badge can plausibly reach `didSelect`. What it cannot do is produce *this*
+symptom in the obvious way — `zoom(into:)` moves the camera to the cluster's own region rather than
+back to the reader, which is a camera that moved. The residue, stated rather than waved away: a
+cluster sitting on the reader's own position would leave a camera that both moved and still reads as
+centered, so writer (3) is a path this entry narrows by argument, not one it eliminates by latch.
+
+**So, on the app's code as it stands today, "the gesture landed and the camera was driven back to
+center" has no reachable path through the two `flyTo` callers during this precondition.** That does
+not prove it cannot happen — a
+future code change could add one, or `MKMapView` itself could exhibit UIKit-side rubber-banding this
+investigation did not reproduce — but it means the far more likely mechanism, on the evidence
+available, is that the synthesized drag is not being read as a pan at all under load: the same shape
+#209 fixed once (too few intermediate touch events) and #230 retried around, just still possible on a
+worse night than either fix was tuned against.
+
+#### What was instrumented, and why a log line was tried first and dropped
+
+`MapPanProbe` (`Cypress/Features/Map/MapAnnotationLayer.swift`, `#if DEBUG`, armed by
+`CYPRESS_PAN_PROBE=1`) counts every state the reader's own pan/pinch recognizer reaches
+(`readerGesture(_:)`; `panBegan`/`panEnded`/`panCancelled`/`panFailed`, plus the translation UIKit
+itself measured at `.ended`) and every settle MapKit reports (`mapView(_:regionDidChangeAnimated:)`;
+count, last center, last span). `MapHomeView` exposes its summary through a hidden, zero-opacity,
+non-hit-testable accessibility element (`CypressPanProbe`), and `MapPanTabSwitchUITests.launchCentered()`
+now arms the probe unconditionally, so the *next* occurrence carries the trace in its own `XCTFail`
+text (`panUntilMoved`) instead of needing another investigation from zero.
+
+`NSLog` was tried first and measured wrong: a run armed with `NSLog` produced zero matching lines in
+`Tools/run_tests.sh`'s captured log, because `NSLog` writes to the unified log, which `xcodebuild
+test`'s own captured text does not contain. Plain `print` from the *app* process fares no better —
+the app under a UI test is a separate process from the one whose stdout `xcodebuild` captures, and
+only the test-runner process's own `print` calls (confirmed to work) show up in the log. The
+accessibility element has neither problem, and it is read the same way the test already reads the
+recenter control's own state, so nothing new had to be taught to the harness.
+
+**Why this one element is not `.accessibilityHidden(true)`, unlike `MapProbeOverlay`.** Review
+raised the tension with ARCHITECTURE §7 — identifiers scattered through production views are a tax
+this project declined to pay — and with this codebase's own precedent, `MapProbeOverlay`, which
+hides itself on the principle that an instrument must not participate in what it measures. The
+precedent does not transfer, for the reason that makes it a precedent: `MapProbeOverlay` is read by
+a human eye, so hiding it costs nothing, while this probe is read *through* the accessibility tree
+by XCUITest, and hiding it would make it unreadable — an instrument that cannot be read is not an
+instrument. What keeps it from participating is the gate instead: it exists only under `#if DEBUG`
+**and** only when `MapPanProbe.isEnabled` (the `CYPRESS_PAN_PROBE` launch variable) is set, so it is
+absent from the tree of every other test in the suite, at zero size, non-hit-testable, and at the
+lowest sort priority in the one run that asks for it. §7's tax is not paid by a view that does not
+exist in any shipping or ordinary-test configuration.
+
+**Red-proofed.** Temporarily made `pan(_:)` a no-op and ran
+`testADeliberatePanSurvivesLeavingForJournalAndBack` alone: it failed for the expected reason, and the
+`XCTFail` text read
+`… probe: panBegan=0 panEnded=0 panCancelled=0 panFailed=0 lastEndedTranslation=none settles=2
+lastSettleCenter=37.7599,-122.41480000000001 lastSettleSpan=0.0021063199576900615` — `panBegan=0`
+correctly reporting that no gesture reached the map, and the two settles and their center matching the
+opening fly-to rather than anything a pan would have produced. Restored `pan(_:)` before committing.
+
+**One residual ambiguity, stated rather than papered over.** `MapPanProbe` counts *our own* pan
+recognizer (added in `makeUIView`, `cancelsTouchesInView = false`), not MapKit's internal one — the
+two are independent recognizers on the same view. A future occurrence reading `panBegan > 0` with
+`settles` unchanged from the pre-drag baseline would say "a touch stream was read as a pan by
+*something*, but MapKit's own camera-driving recognizer did not agree" — a third, narrower shape
+between "never landed" and "landed then reverted" that this probe can surface but not itself resolve
+further. Worth knowing before trusting `panBegan > 0` alone as "the drag definitely worked."
+
+#### Local reproduction: attempted, not achieved
+
+Built once (`xcodebuild build-for-testing`, private `DerivedData`), then ran
+`testADeliberatePanSurvivesLeavingForJournalAndBack` alone 16 times against iPhone 16e
+`3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, under synthetic CPU load escalating across three batches — 6,
+then 16, then 26 concurrent `yes > /dev/null` processes on a 10-core Mac, standing in for the "3-core
+runner, 5+ concurrent full-suite runs" CI has reported. All 16 passed (`0 failures`). Load did perturb
+timing — one run under the heaviest batch took 77.9 s for a test that normally takes 19–30 s — so the
+load model is not inert, it simply did not cross the failure threshold in 16 tries. **Not
+reproduced.** A CPU-only busy-loop is not the same contention as several real `xcodebuild`/simulator
+processes competing for touch-delivery IPC, disk and memory, and this investigation did not have
+budget under the project's three-concurrent-`xcodebuild` cap to run enough real concurrent suites to
+approximate that more closely.
+
+#### What this round deliberately does not touch
+
+No change to `attempts`, `settleTimeout`, or any of `deliberateDrag`'s three numbers. Tuning any of
+them without a reproduction to test against would be a guess dressed as a fix, and the brief's own
+instruction — decide where the fix belongs on evidence, not by default — cuts the other way here: the
+evidence available rules out an app-side mechanism for this specific precondition and does not
+identify a concrete test-idiom defect either, past what #230 already hardened. No app code changed
+beyond the probe, which is inert (`#if DEBUG`, off unless armed, and armed only in this one test file)
+everywhere else.
+
+#### Verification
+
+Zero-warning line certified on a fresh `DerivedData` build (`Tools/verify_test_log.sh --warnings`),
+head `39600a7`: `SwiftCompile tasks=438`, `source=0` warnings, `files-checked=3`
+(`MapAnnotationLayer.swift`, `MapHomeView.swift`, `MapPanTabSwitchUITests.swift` all confirmed
+compiled).
+
+Two full `CypressUITests` suite runs, iPhone 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, via
+`Tools/run_tests.sh` + `Tools/verify_test_log.sh`:
+
+- Head `0a35781`, `CYPRESS-RUN: started 2026-08-06 16:54:15 PDT` — `VERIFY-OK: Executed 92 tests,
+  with 0 failures (0 unexpected) in 1371.898 (1376.480) seconds`, `XCTest skipped=0`,
+  `** TEST SUCCEEDED **`. A first pass of this entry described this run as the scheme's default test
+  plan, "so the `CypressTests` Swift Testing suite ran too." **The quoted line refutes that**, and
+  the tool says why: `verify_test_log.sh` builds its `VERIFY-OK` as
+  `${SWIFT_LINE:-$XCTEST_LINE}` and appends `| XCTest: …` whenever both ran, so a *bare*
+  `Executed N tests` line is emitted only when Swift Testing did **not** run. This was an XCTest-only
+  run, like the one below it. Read the shape of the line, not the intent of the command.
+- Head `39600a7` (current, after the stale-comment fix — a doc-comment-only change inside
+  `#if DEBUG`), `CYPRESS-RUN: started 2026-08-06 17:22:55 PDT`, `-only-testing:CypressUITests` —
+  `VERIFY-OK: Executed 92 tests, with 0 failures (0 unexpected) in 1431.214 (1435.775) seconds`,
+  `XCTest skipped=0`, `** TEST SUCCEEDED **`. `MapPanTabSwitchUITests`' both methods passed
+  (`testADeliberatePanSurvivesLeavingForJournalAndBack` 19.344s,
+  `testAnUntouchedCameraStillCentersOnTheReaderAfterTheRoundTrip` 8.944s).
+
+### E251 — The settle-under-load family gets two more members: an undersized budget (#244) and a cover with no departing predecessor to watch (#245)
+
+#### #244 — the premise, checked against CI, not assumed from the ticket
+
+The ticket cited main run 31096120555 (post-PR #41 merge, tree `73b4850`, shard `ui (3)`,
+2026-08-06) as a `DeepLinkSweepTests.testNothingIsAnnouncedTwice` failure on `treeProfile`. `gh run
+view` shows that run as `success`, and its `ui (3)` job as `success` — because the run's *second*
+attempt (`run_attempt=2`) is what `gh run view` shows by default, and attempt 2 passed. Attempt 1's
+`ui (3)` job (id `92598515285`) genuinely failed; its log, pulled by artifact ID rather than by
+name (both attempts uploaded an artifact called `ui-log-3`), reads:
+
+```
+DeepLinkSweepTests.swift:170: error: -[CypressUITests.DeepLinkSweepTests testNothingIsAnnouncedTwice]
+: failed - treeProfile's static text #5 ("DBH, 30–35 cm, from the city record") is in the
+accessibility tree but never became hittable within 5s — it is present and cannot be activated
+```
+
+So the failure is real. What it is *not* is a missing settle-or-finite treatment: `settledFrame`
+(task #239) already wraps every frame this method reads, `assertReachable`-first. The defect is the
+`timeout: 5` this call site passed to it — five seconds, against every other hittability wait in
+the suite's 10–30s, on a method that launches the app six times and, on CI, shares its shard with
+three other classes. The log's own timestamps confirm the shape: the predicate wait starts at
+t=30.75s and the failure lands at t≈35.8s — a clean 5s window, not a permanently-stuck element (the
+same static text is found and read again later in the same run, at t=60s+).
+
+#### #244 — the fix
+
+`DeepLinkSweepTests.swift`, `testNothingIsAnnouncedTwice`: `timeout: 5` → `timeout: 30`, matching
+`assertReachable`'s own default and every other call site in the suite. Nothing else about the
+method changed — the settle-or-finite treatment was already correct. Per `UIWait.swift`'s own
+rationale for the 30s default, this costs nothing when elements are reachable and only extends how
+long a genuine defect takes to report.
+
+**Red-proofed.** Temporarily read every static text on the `treeProfile` screen unfiltered (dropping
+the `isHittable` pre-filter, so genuinely off-screen elements reach `settledFrame`) and ran
+`CypressUITests/DeepLinkSweepTests/testNothingIsAnnouncedTwice` alone. It failed for the expected
+reason, at the new 30s budget:
+
+```
+DeepLinkSweepTests.swift:174: error: ... failed - treeProfile's static text #6 ("The city's street
+tree inventory records pruning by block, not by tree, so it says nothing about when this tree was
+last pruned.") is in the accessibility tree but never became hittable within 30s — it is present
+and cannot be activated
+```
+
+(four more off-screen texts failed the same way in the same run). Restored.
+
+#### #245 — the premise, checked against the code
+
+Found in PR #42 review, no recorded CI failure: `DeepLinkVoiceOverTests.testAModalIsolatesTheScreenBehindIt`
+reads `tab.isHittable` on the four tab-bar buttons immediately after `arrive()` returns, with no
+wait between them — checked directly against `DeepLinkVoiceOverTests.swift`, not assumed. The
+premise holds: `arrive()`'s existence check on the cover's own anchor text (`"Care log"`/`"Share
+this tree"`) is satisfied the instant that text enters the tree, and `BottomSheet`
+(`Cypress/DesignSystem/Components/BottomSheet.swift`) puts it there from the view's very first
+frame — the whole card sits at `.opacity(settled ? 1 : 0)` with `settled` (`hasRisen`) starting
+`false` and flipping only inside the `onAppear` animation. The anchor exists before the sheet has
+risen at all, not merely before it finishes rising, so a one-shot tab-bar check right after
+`arrive()` can land in that pre-rise instant, where the screen behind is still genuinely, correctly
+hittable — a false failure on a fast test, and on a loaded runner a wider window to land in.
+
+**The witness has to differ from the push side's, and does.** `waitForPushedScreenToArrive`
+(#243) waits for a known-hittable predecessor (the tab bar) to go *not* hittable — safe there
+because the tab bar was hittable a moment earlier, on the tab root the push started from. A
+`fullScreenCover` has no such predecessor to watch depart: 09 and 10 draw no close button (see
+`BottomSheet.swift`'s file header), and per `UIWait.swift`'s own rule, waiting on the negative
+predicate directly ("hittable == false") risks a slow runner satisfying it by never having drawn
+anything at all. `BottomSheet` gives VoiceOver a named "Dismiss" scrim control instead
+(`.accessibilityLabel("Dismiss")`, `.accessibilityAddTraits(.isButton)`, hidden only when there is
+no dismissal to offer) — present and traited as a button as soon as the cover mounts, but only
+*hittable* once `settled` has actually flipped. Waiting for `app.buttons["Dismiss"]` to become
+hittable is therefore a positive read of "the cover has risen," the correct departure signal for
+this presentation.
+
+#### #245 — the fix, and a first version that had to be thrown out
+
+Added `DeepLinkHarness.waitForCoverToArrive(_:screen:file:line:)` (`DeepLinkHarness.swift`).
+`testAModalIsolatesTheScreenBehindIt` calls it right after `arrive()`, before reading the tab bar's
+`isHittable` state.
+
+**The first version was wrong, not merely early, and stayed that way through a clean red-proof.**
+It waited for `BottomSheet`'s named "Dismiss" scrim control to become hittable, structured like
+`waitForPushedScreenToArrive`. Red-proofed clean in isolation (pointed the witness at a button that
+would never exist; failed with the expected "never became hittable" message; restored) — and then
+failed for real, twice, against the *real* "Dismiss" control: once buried in a full-scheme run
+(1 failure among 1348 tests), once alone in a `CypressUITests`-only run, both on device
+`DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`, both the same test, both the full 30s:
+
+```
+DeepLinkVoiceOverTests.swift:402: error: ... failed - careLog: the cover's own "Dismiss" scrim
+control never became hittable within 30s — this is still the pre-rise frame rather than the
+settled cover the test asked for
+```
+
+Not a race: `BottomSheet.swift`'s own file header explains why a full-height `.standard` card
+leaves only a thin status-bar strip of scrim exposed (`SheetExitUITests`'s header calls it "~8pt"),
+so the scrim's center — where `XCUIElement.isHittable` samples — sits under the opaque card for the
+entire life of the cover, forever, not just during the rise. VoiceOver's own traversal reaches
+"Dismiss" without hit-testing it (the drag-zone comment in `BottomSheet.swift` says so directly);
+`XCUIElement.isHittable` has no such exemption. A clean red-proof against a fabricated failure mode
+did not catch this, because the red-proof never exercised the *real* control — only the discipline
+of actually running the fix against a real screen did.
+
+Replaced with the witness `SheetExitUITests.waitForTitle` already uses successfully for these same
+two screens: `settledFrame` on the cover's own anchor text, which is ordinary card content, not
+covered by anything.
+
+**Red-proofed (the version that shipped).** Pointed `waitForCoverToArrive`'s anchor at text that
+will never exist and ran `testAModalIsolatesTheScreenBehindIt` alone. It failed for the expected
+reason:
+
+```
+DeepLinkVoiceOverTests.swift:403: error: ... failed - careLog: the cover's own
+"RedProof245v2NeverOnScreen" title never appeared in the accessibility tree at all within 30s
+```
+
+Restored, then ran clean alone (`Executed 1 test, with 0 failures`).
+
+#### Full-suite verification
+
+Full `CypressUITests` suite, device iPhone 16 Pro Max `DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`, tree
+`8f21eb1`, fresh DerivedData: `** TEST SUCCEEDED **`, `Executed 92 tests, with 0 failures`,
+`skipped=0` (`Tools/verify_test_log.sh`). Warnings certified on the same fresh build
+(`Tools/verify_test_log.sh --warnings`): `SwiftCompile tasks=438`, `source=0` warnings,
+`files-checked=3`, confirming `DeepLinkHarness.swift`, `DeepLinkSweepTests.swift` and
+`DeepLinkVoiceOverTests.swift` were all compiled. No app-code changes — `CypressUITests` only.
+
+A prior attempt at this same full-suite verification produced a false read: its log path
+(a generic `full-suite.log` in the shared scratchpad) was clobbered mid-run by an unrelated,
+concurrently running agent's process that reused the identical absolute path for a different
+worktree. The corruption was caught by cross-checking the log's own `CYPRESS-RUN` provenance header
+— it named the wrong worktree and device — and by reading results back out of this run's own
+`.xcresult` bundle (inside a uniquely-named DerivedData directory nothing else touched) instead of
+trusting the shared text log. Every log cited above came from a uniquely-named path.
+
+### E252 — The identify FAB's flaky AX5 guard was reporting a real occlusion badly: the species legend is drawn over it, and `isHittable` routes around an occlusion it can find one free point in (task #252)
+
+#### The premise this started from, and why it was wrong
+
+PR #51 added `CypressUITests/IdentifyFABReachabilityTests` and it was intermittent: six runs at the
+same commit, four green and two red, across an iPhone 16 Plus (430 pt) and an iPhone 16 Pro (402 pt).
+The failing runs said
+
+    … is in the accessibility tree but never became hittable within 30s — it is present and
+    cannot be activated
+
+while `MapRecenterUITests.testTheRecenterControlClearsTheFilterChipRowAtAX5WithLocationDenied`
+passed in the same suite run, on the same device, in the same AX5 + location-denied state. A
+30-sample poll of the control's own `isHittable` printed `hit=true` at every sample with an
+identical frame, and that run passed.
+
+From that the standing hypothesis was that this is **not** an app layout defect — the frame is
+stable and correct, the assertion is not reliably observing it — and that the cause is the several
+hundred `MKAnnotationView`s the FAB's 364 pt pill overlays, in the documented family of E202/E216
+pin-geometry failures.
+
+**Both halves are wrong.** The frame was stable, and it was not correct. There is no annotation
+involved.
+
+#### What the screen actually looked like
+
+Screen 01, AX5, `CYPRESS_LOCATION=denied`, iPhone 16 Pro, at `origin/main` `d84b7fc`:
+
+| element | frame |
+|---|---|
+| filter chip row | `(16, 158.33, 370, 59.67)` → bottom `218` |
+| species legend | `(16, 230, 344.33, 262.67)` → bottom **`492.67`** |
+| — its `Southern Magnolia` row | `(16, 365.33, 340.33, 59.67)` |
+| recenter control | `(342.33, 315, 44, 44)` |
+| **identify FAB** | `(22, 371, 364.33, 83)` |
+
+The legend's rectangle contains the recenter control entirely and contains all but the bottom 14 pt
+of the FAB. `MapHomeView.chrome` applies the bottom block first *so that the top block draws over
+it* — a deliberate ordering with its own note in that file — so this is not two rectangles sharing
+an area, it is the FAB **covered**. A screenshot of the running app shows the words `What tree is
+this?` behind an opaque `Southern Magnolia` legend chip, with only a `?` visible past its right
+edge. The same screenshot on an iPhone 16 Plus (430 pt) shows the same overlap.
+
+The one element that *did* overlap the FAB's own activation point in the accessibility dump was that
+legend row — a `button`, ahead of the FAB in tree order. The `AnnotationContainer` MapKit publishes
+is full-screen and `hittable=false`, and after the fix a tree pin (`City tree, Chinese Elm`,
+`hittable=false`) sits directly under the FAB's centre with the FAB reporting `hittable=true`. The
+annotations are behind the chrome and were never the mechanism.
+
+#### Why the guard was intermittent rather than red
+
+XCUITest resolves `isHittable` by hit-testing the element's activation point and then, when that
+resolves to something that is not the element or a descendant, points sampled inside the element's
+frame. A control covered everywhere except a 14 pt band therefore reports **reachable exactly when
+the sampling happens to find the band**. The green runs were the luck. That is the whole of the
+intermittency, and it explains every row of the tally without needing `camera-trees`, the device
+width, or the volume of prior accessibility querying to explain anything:
+
+- the failures clustered on runs with more prior AX traffic because more traffic is more chances,
+  not because traffic degrades anything;
+- the 30-sample poll that printed `hit=true` thirty times and then passed was thirty draws that all
+  found the band, which is what a heavily-covered but not-quite-fully-covered control does.
+
+**Proved rather than argued.** With the candidate fix below present and then disabled by one line,
+everything else identical (`fab2-redproof1.log`), the two geometric assertions go red naming the
+legend, and
+`testTheFABIsReachableAtAX5WithLocationDenied` — the hittability one — **passes, in 4.6 s**. One run,
+same launch, same device: the occlusion is present, the rectangles see it and the hittability check
+does not.
+
+#### The defect
+
+`MapLayout.topChromeReservedAX5(topInset:)` is `topInset + searchTopInset + searchBarHeightAX5 +
+chipRowTop + chipRowHeightAX5` — the search bar and the filter chip row. Its own doc says it is "the
+y-coordinate … of the chip row's own bottom edge", and that is exactly what it is. **The chip row is
+not the bottom of the top chrome.** Below it the same `VStack` also stacks the search status line,
+the `Needs care` toast (#247), and `MapSpeciesLegend`, whose four chips wrap onto as many lines as
+the species names need at the current type size — 262.67 pt of them at AX5. The reservation predicts
+216; the block ends at 492.67.
+
+This is #250's defect one child further down the same stack. #250 found the recenter control rising
+*behind the chip row*, "present in the tree, `isHittable == false`", and reserved for the two
+children a constant can bound. A third constant cannot fix the rest: the legend's height is a
+function of how many species the visible camera has coloured (0–4) and how their names wrap, so a
+worst case wide enough to be safe would be wrong by 260 pt whenever the legend is small and would
+spend the notice's whole budget on a legend that is not there.
+
+#### The fix that was tried, measured, and is **not** in this branch
+
+The obvious repair is to stop reserving the chip row's bottom edge and start reserving the top
+block's real one. It was built: `MapHomeView` measured that edge in a named coordinate space both
+overlays are children of, and `MapLayout.noticeMaxHeight` took a second budget from it, `min` with
+the constant path so a `GeometryReader` that had not run yet could not widen anything.
+
+**It works, and it is not reliable, and the difference took four measured attempts to see.**
+
+With it in place the standing occlusion is gone — legend bottom `492.67`, recenter top `504.67`, FAB
+`(22, 560.67, 364.33, 83)`, nothing overlapping, screenshotted. Two full `CypressUITests` runs on a
+430 pt iPhone 16 Plus were green (96 tests, 0 failures, twice) and one on the 402 pt iPhone 16 Pro
+was too. The next 402 pt run was not: the top chrome ended at `492.67` and the bottom chrome began
+at `437.0`, which is where it belongs for a **three**-row legend against a legend that had four.
+`topChromeBottom` was stale.
+
+A purpose-built diagnostic (`FABLagDiagTests`, sampling `legendBottom` against `recenterTop` every
+250 ms for 26 s over repeated launches) turned that into a measurement:
+
+| how the measurement was wired | launches overlapping, of those sampled |
+|---|---|
+| `.onChange(of: proxy.frame(…).maxY)` in a `.background`, read as `@State` | 1 of 4, for the whole 26 s |
+| `PreferenceKey` in a `.background`, read on the ancestor, `@MainActor` hop | 1 of 4, for the whole 26 s |
+| same, assigned directly with no hop | 2 of 4 — and they were *different* launches |
+| same, read on the block that produces it rather than the ancestor | 1 of 4 |
+
+It is not a lag. The stuck launches were stuck from the first sample to the last and never
+converged, while a hand launch of the same build converged correctly within ten seconds — so the
+value freezes at whatever the legend's height was on some early layout pass and the later passes,
+which certainly happen (the legend visibly grows from two rows to four as the map's palette
+arrives), do not reach it. Which launch froze moved when the `@MainActor` hop was removed, which is
+the signature of a race rather than a missing invalidation.
+
+**So the branch ships the diagnosis and not the repair.** A layout fix that is right three launches
+in four is worse than none: it would close this ticket, and the fourth launch would come back as
+somebody else's flaky test.
+
+#### What the next attempt should probably do, and what it should not
+
+**Not another measurement fed back through `@State`.** Four wirings of it were tried above. The
+shape is a feedback loop — top block's height → notice's budget → bottom block's position — resolved
+across two sibling `.overlay`s, and SwiftUI is under no obligation to run it to a fixed point on any
+particular pass.
+
+**A constant is available and it is the file's own idiom, with one real cost.** `searchBarHeightAX5`
+and `chipRowHeightAX5` are both AX5 *bounds* guarded by `AX5ReflowTests`; a `legendReservedAX5`
+measured the same way (four chips, the widest palette, through `ax5Size`) would need no measurement
+at run time and could not go stale. The cost is that it must be reserved unconditionally, as the
+other three are, and 262 pt of unconditional reservation would put the notice into a scroll at
+*ordinary* type sizes, where it is nowhere near its budget today. Gating it on
+`dynamicTypeSize.isAccessibilitySize` avoids that and buys a cliff at the AX1 boundary instead —
+which is the same bargain `bottomSlotReservedAboveAX5` already makes, and is a judgement rather than
+a fact.
+
+**Or the two blocks stop being two overlays.** One `VStack { topBlock; Spacer(minLength:
+chipRowTop); bottomBlock }` inside the same `Color.clear` has no feedback to resolve: the notice's
+`ScrollView` is the compressible member and SwiftUI compresses it in the same pass, with no state,
+no measurement and no staleness. This is the structurally correct answer. It also changes a decision
+that was made deliberately — `MapHomeView.chrome`'s note on the block ordering, and R25/#143's
+reading order — because the suggestion list would then push the bottom chrome instead of drawing
+over it. That is a product call, not a refactor.
+
+**While the arithmetic is being touched, one bug in it is worth carrying forward.** The existing
+`noticeMaxHeight` mixes coordinate spaces: `availableHeight` is `GeometryReader`'s `size.height`
+(the safe area, 781 pt on this device) while `topChromeReservedAX5` counts from the top of the
+screen, because `topInset` is one of its terms. It has been ~93 pt conservative on a notched phone
+the whole time. Harmless while the number subtracted was 216; it collapsed the notice to **16 pt**
+the first time a measured 492 was subtracted from the wrong one of the two, which is how it was
+found. The screen height is reconstructible with no measurement at all, as
+`availableHeight + topInset + proxy.safeAreaInsets.bottom`.
+
+#### Also true, and not fixed here
+
+`MapTreeCard` occupies the same bottom slot and is **not** given `noticeMaxHeight` — only the four
+`MapLocationNotice` arms are. A tall enough card at AX5 would push the same stack up in the same way.
+It was not reachable in this ticket's state (the card and the standing notice are different arms of
+the same `switch`) and it is not guarded.
+
+#### The guard exists and is not in this branch either, for the same reason
+
+`IdentifyFABReachabilityTests` was written, red-proved four ways, and removed before this branch was
+opened. It is at commit `89f5001`/`5a2112f` and should be resurrected the moment screen 01 passes
+it. What it asserts, and the proofs:
+
+| assertion | red-proved by | the failure it produced |
+|---|---|---|
+| the FAB is reachable at AX5 | `IdentifyFAB.offset(x: 2000)` | *"is in the accessibility tree but never became hittable within 30s"* |
+| the FAB's frame clears the species legend | the candidate fix disabled by one line | *"the identify control (22.0, 371.0, 364.33, 83.0) overlaps the species legend (16.0, 230.0, 344.33, 262.67)"* |
+| the FAB's frame clears the recenter control | `locateToFabGap` → `-10` | *"the identify control (22.0, 560.67, …) overlaps the recenter control (342.33, 526.67, 44, 44)"* |
+| the top chrome's bottom edge is above the bottom chrome's top edge | the candidate fix disabled | *"the top chrome ends at y 492.67 and the bottom chrome begins at y 315.0"* |
+
+(`.allowsHitTesting(false)` does **not** make an element unhittable to XCUITest — confirmed
+independently by PR #51's review, and the reason the first proof uses an offset.)
+
+It **drops** PR #51's chip-row assertion. With the legend present, the legend's rectangle lies
+strictly between the FAB and the chip row (chip row `y 158.33–218`, legend `y 230–492.67`), so that
+assertion can never be the one that fires; and it cannot be red-proved for its own reason either,
+because the 430 pt lift needed to put the FAB on the chip row puts the chip row *over* the FAB and
+the run then dies on the FAB's own hittability. An assertion that cannot be driven red is not a
+guard. PR #51's review had already flagged the same assertion as dominated, on weaker grounds.
+
+#### The same mistake again, one layer down: the guard measured through a hittability gate
+
+Worth carrying to whoever picks this up, because it cost a full-suite run to find. The guard's first
+version read every frame with `settledFrame`, which waits for the element to be **hittable** before
+reporting its frame. That is right for its eleven existing callers — they read a frame in order to
+touch something — and it is wrong for a guard against occlusion, for the reason this whole entry is
+about. A full-suite run on a loaded machine (`fab2-full-16pro-2.log`, 96 tests, 1 failure) reported:
+
+    testTheTopChromeStaysClearOfTheBottomChromeAtAX5WithLocationDenied :
+    the recenter control (“Center the map on you”) is in the accessibility tree but never
+    became hittable within 30s
+
+— one XCUITest button query in that test took **20 seconds** (`t = 7.08s` → `t = 27.03s`, three other
+agents building on the machine) — where the two rectangles the test was about to compare were
+readable throughout. The guard against occlusion had made itself depend on the thing an occlusion
+removes.
+
+The repair, also at `5a2112f`: `settledFrame` gains `requireHittable:`, default `true` so all eleven
+existing callers are untouched, and the geometric reads pass `false`. Nothing is weakened, because
+the claim changes with it — "these two rectangles do not intersect" is a different sentence from "a
+reader can press this", and the second is asserted on its own, once, where a 30 s wait is the point.
+The very next run proved the change: the same test failed again and this time printed
+`492.67 > 437.0`, which is the number that identified the stale measurement above. It is not in this
+branch only because its one caller is not.
+
+#### The rule worth keeping
+
+**A hittability check is not an occlusion check.** `isHittable` is allowed to route around an
+obstruction, and it will, which makes it a poor witness for exactly the defect it looks like it is
+testing. Where the claim is "nothing is on top of this control", assert the rectangles. Where the
+claim is "a finger can land on it", assert hittability — and understand that a green answer to the
+second is not an answer to the first.
+
+The corollary is the one this cost a night: **an intermittent UI test is a hypothesis about the
+test, not a finding.** Four green runs out of six looked like a flaky assertion and were a
+three-in-four chance of missing a defect that was on the screen the whole time, visible in a
+screenshot nobody had taken.
+
+### E253 — The species legend stops covering the identify FAB, and the reason the measured repair froze: `onChange` out of a `GeometryReader` is edge-triggered over a value SwiftUI is free to change without an edge (task #258)
+
+This closes the defect the previous round diagnosed and could not land. That round's entry is
+ERRATA **E252**, the diagnosis; this one is the mechanism it left open, the repair, and what the
+repair costs.
+
+#### The defect, re-measured on this branch before anything was changed
+
+`Tools/run_tests.sh EA0AD796-… fab258-repro-16pro.log -only-testing:CypressUITests/IdentifyFABReachabilityTests`,
+iPhone 16 Pro (402 pt), AX5, `CYPRESS_LOCATION=denied`, at this branch's merge-base with `main`:
+
+    the identify control (22.0, 371.0, 364.33, 83.0) overlaps the species legend
+    (16.0, 230.0, 344.33, 262.67)
+
+    the top chrome ends at y 492.67 and the bottom chrome begins at y 315.0
+
+and, in the same run, `testTheFABIsReachableAtAX5WithLocationDenied` **passed in 4.596 s**. One
+launch, one device: the occlusion is there, the rectangles see it, `isHittable` does not. Every
+frame matches the previous round's to the hundredth of a point, so the diagnosis is confirmed rather
+than assumed.
+
+#### Why the measured repair froze — the best explanation, and what it rests on
+
+The repair that was built and not landed measured the top block's real bottom edge in a
+`GeometryReader` inside a `.background`, and handed it to `@State` through
+`.onChange(of: proxy.frame(in:).maxY, initial: true)`. It froze on some launches, at whatever the
+legend's height had been on an early pass, for the whole life of the process. Which launch froze
+moved with the wiring, and four wirings were tried.
+
+It was instrumented rather than reasoned about. The branch `diag/258-freeze` carries the abandoned
+repair plus three probes published into the accessibility tree behind `CYPRESS_MAP_PROBE=1`:
+
+| probe | what it renders | where it renders |
+|---|---|---|
+| `chrome-live` | `proxy.frame(in:).maxY` | inside the measuring `GeometryReader`'s own closure |
+| `chrome-written` | the last value the `onChange` **action** was given | same closure, from plain non-observed storage |
+| `chrome-state` | what reached `@State` | outside the `GeometryReader` entirely |
+
+Two runs of 16 launches each on the iPhone 16 Pro, sampling at 3 s and again at 11 s after launch
+(`fab258-freeze-16pro.log`, `fab258-freeze2-16pro.log`). Three launches of the 32 froze, and they
+all say the same thing:
+
+    launch=4  live=492.667  written=425.0  state=425.0  writes=6  legendMaxY=492.667  overlap=true
+    launch=11 live=492.667                 state=357.33            legendMaxY=492.667  overlap=true
+
+against a healthy launch:
+
+    launch=5  live=492.667  written=492.667 state=492.667 writes=7 legendMaxY=492.667 overlap=false
+
+Three facts, each read off the probes:
+
+1. **No `@State` write was ever lost.** `state == written` on every launch, frozen or not. The
+   "SwiftUI discarded the write" hypothesis — E168's shape, and the obvious one to reach for in this
+   view — is **wrong**.
+2. **The `onChange` action was never called with the final value.** On the frozen launches its last
+   argument was a stale *intermediate*: 425.0 is the top block with a three-row legend, 357.33 with
+   a two-row one, against the four rows the legend actually had.
+3. **The closure it lives in did re-render with the final value**, because `chrome-live` — computed
+   from the same `proxy`, inside the same closure — reads 492.667 at both samples.
+
+So the geometry reached the `GeometryReader` and the transition did not reach `onChange`. The
+observed value was silently advanced without the action running. The `writes` count varies from
+launch to launch (5, 6, 7 across the healthy ones), which is the same thing seen from the other
+side: how many of the legend's growth passes SwiftUI coalesces is not fixed, and a coalesced last
+pass is a transition nobody is told about.
+
+**On that reading it never converges because `onChange` is edge-triggered and the value has no
+further edges.** Once the last transition is absorbed, the legend's height never changes again, so
+there is nothing left to re-deliver it — which is why the stuck launches were stuck from the first
+sample to the last, and why a longer settle would not have helped.
+
+**This is the best explanation available and it is not the only one the probes admit** (PR #60
+review, N1). `chrome-written` is written from inside the measuring closure into non-observed storage
+and read back out through the same render that publishes `chrome-live`, so it is not an independent
+witness. An alternative fitting all three facts equally well: the action *did* run with 492.667, and
+the probe's own write and the publication that exposes it were reordered, so `chrome-written` shows
+the previous value — which predicts `state == written` (both read from one stale publication) and
+`chrome-live == 492.667` just as well. Separating the two needs a witness outside the render that
+publishes it, and this entry does not have one. **Stated as inferred, not established.**
+
+What is **not** in doubt, and is what the design turns on: four wirings of the same idea were built
+and all four flaked, and all four deliver a layout measurement back into state as a *difference*.
+Which of the two mechanisms eats the difference does not change what to do about it.
+
+**This generalizes past `onChange`, which is why all four wirings flaked.** A `PreferenceKey` is
+delivered on change too. Any channel that carries a layout measurement back into state as a
+*difference* has this failure mode; the only question between wirings is which pass gets coalesced,
+which is what "which launch freezes moved with the wiring" was reporting.
+
+**The rule worth keeping — it survives either mechanism: do not close a layout loop through an
+edge-triggered channel.** If a number is needed before layout, take it from something that is known
+before layout.
+
+#### The repair
+
+The palette is known before layout. `MapSpeciesPalette` is model state `MapHomeView` already
+observes, so the number of chips the legend will draw is available without asking the layout system
+anything, and there is no channel to drop anything.
+
+`MapLayout` now splits the room below the filter chip row between the two things that grow into it:
+
+- `chromeSlackBelowChipRow(screenHeight:topInset:isAccessibilitySize:)` — the whole of that room, once.
+- `noticeFloor(isAccessibilitySize:)` — taken off it first, so the card below can never be zeroed.
+- `legendNaturalHeight(namedSpecies:isAccessibilitySize:)` — `count` chips and `count − 1` gaps. An
+  **upper bound by construction**: `FlowRow` puts at most one chip per line and every chip is one
+  line tall (`.lineLimit(1)`), so `count` chips take at most `count` lines. A legend whose names pair
+  up on a line is over-reserved, never under-reserved.
+- `legendReserved(…)` / `noticeMaxHeight(…)` — complementary halves of what is left, so no
+  arrangement of them hands the same point to both blocks.
+- `chromeBudgetShortfall(…)` — how far short a screen is of housing both, when it is.
+
+Every reservation on this screen is now a function of `dynamicTypeSize.isAccessibilitySize`, with
+both ends of the ramp measured through a harness that offers each control **the width screen 01
+actually gives it**:
+
+| reservation | AX5 | `.xxxLarge` |
+|---|---|---|
+| `searchBarHeight` | 77 (measures 76.67) | 50 (49.0) |
+| `chipRowHeight` | 60 (59.67) | 36 (34.67) |
+| `locateButtonHeight` | 44 (44.0, a fixed square) | 44 |
+| `fabHeight` | **136** (135.67) | **55** (54.0) |
+| `legendChipHeight` | 60 (59.67) | 36 (34.67) |
+| `noticeFloor` | **93** (92.67) | **66** (65.0) |
+
+#### The measurement that was wrong, and the harness that could not see it (PR #60 review B2)
+
+**`MapLayout.fabHeightAX5 = 83` was not a bound.** On any phone at or below 393 pt the FAB's label
+takes a third line and the control occupies **135.67 pt** — 52.67 pt past what
+`bottomSlotReservedAbove` reserved. Read off a running iPhone 16e (390 pt): `(127, 503.33, 247.33,
+135.67)`, against `(60, 571, 364.33, 83)` on an iPhone 16 Pro Max. It put the recenter control 30 pt
+up inside the species legend and **turned this ticket's own new guard red on a device it had not
+been run on** — the same defect one device over, found by a reviewer given 390 and 440 pt precisely
+because the author had 402 and 430.
+
+**Why no unit guard saw it, and why widening the sweep alone did not either.** The first repair was
+to sweep `ax5Size` over six widths. It found nothing: the FAB measured 83.0 pt at 375 pt just as at
+440. Width was never the blind spot by itself — **`ax5Size` offers the control the phone's width,
+and screen 01 offers it the phone's width less `sideInset` on each side.** The label wraps between
+361 pt and 370 pt of *content*, which is 393 pt and 402 pt of phone, and `phoneWidth = 393` sits
+three points on the safe side of a threshold that is not about phones at all.
+
+With the inset applied the harness reports 135.67 × 247.33 at 375/390/393 and 83.0 × 364 at
+402/430/440 — the two frames the reviewer read off two running devices. **That is the calibration:
+the instrument was believed only once it reproduced an answer already known.** Height bounds now go
+through `AX5ReflowTests.widestReflow(of:horizontalInset:)`; `ax5Size` stays the right instrument for
+a *width* guard, where the proposal is the claim being tested.
+
+`fabHeightAX5` is one number (136) rather than a `fabHeightAX5(contentWidth:)` with a wrap threshold
+in it: the threshold is a constant that moves the next time the label, the font or the glyph changes,
+and moves silently. The bound over-reserves 53 pt on phones wider than 393 pt, out of
+`MapLocationNotice`'s scroll budget and out of nothing else, and buys back margin on exactly the
+narrow phones where the review measured only 25.67 pt between the legend and this control. **E243's
+correction of this constant (137 → 83) was right about the safe-area inset it removed and wrong about
+the number it landed on; the width blindness came in with it unnoticed.**
+
+#### The constant this ticket "corrected" and should not have (PR #60 review B3)
+
+An earlier revision of this branch raised `searchBarHeightAX5` from 77 to 85, and said in this entry
+that #250's reservation "has been short since it landed". **That was wrong, and it was wrong by the
+same mechanism as B2 above.** The derivation was `158.33 − 12 − 62` from an iPhone 16 Pro's chip-row
+frame, with the 62 built from `topInset = 54` — and 54 is E243's *synthetic-window* inset, the exact
+number E243 exists to warn is not the app's. An iPhone 16 Pro Max reports the same chip-row `minY` of
+158.33 with a real inset of 62, so the subtraction was 8 pt out. Measured directly through the swept
+harness, the bar is **76.67 pt at all six widths**, which the original 77 bounds. Reverted.
+
+Worth keeping for the shape of it: the error was not in the arithmetic but in reading a number off
+the *measuring window* and using it as the *device's*, which is the failure this entry spends its
+first half describing in someone else's code.
+
+#### The notice can no longer be given nothing (PR #60 review B4)
+
+The first version of this split served the legend first out of the whole slack and gave
+`MapLocationNotice` the remainder — which on a 667 pt screen is **0.0 at every inset**.
+`MapHomeView.standingNotice` passes that straight into `MapLocationNotice(maxHeight:)` for all four
+arms, including the refused arm whose `Settings` button is the reader's only way to fix the
+permission the card is about. A `ScrollView` at `frame(maxHeight: 0)` draws nothing. **A fix for an
+unreachable FAB that makes the permission remedy unreachable instead has not fixed anything**, and
+R53 §6 ruled that this card *scrolls*, not that it disappears. The ordering guard was green
+throughout, because removing a control from the screen satisfies an ordering — the same failure
+class this ticket exists to close.
+
+`noticeFloorAX5` is now taken off the slack **before** the legend is served. The number is the card
+at its smallest that still carries an action — a one-line title, no message, the button — 92.67 pt,
+identical at all six widths. At that budget the button sits inside the visible window and is fully
+pressable without scrolling; the message and a second title line are what scroll.
+
+And because a split can genuinely fail, it now says so: `chromeBudgetShortfall(screenHeight:topInset:
+isAccessibilitySize:)` returns how many points short a screen is of housing both, and
+`AX5ReflowTests.theChromeBudgetCanHouseBothOccupants` asserts it is 0 for every screen and inset the
+app runs on. A device or a type-size change that makes screen 01 unhousable now fails the unit suite
+with a number instead of shipping a zero-height control.
+
+#### One reservation being AX5-only was affordable; six were not
+
+Correcting `fabHeightAX5` to 136 exposed a second-order defect immediately, in the ordinary-size half
+of the legend's own ceiling guard: `bottomSlotReservedAbove` is subtracted whatever the reader's text
+size is, on the standing argument that at ordinary sizes the notice is nowhere near its budget. True
+at 83, false at 136 — on a 667 pt phone the AX5 reservation put `MapSpeciesLegend` into a `ScrollView`
+**at the default content size**, a scroller over the map for a reader who had asked for nothing. So
+`bottomSlotReservedAbove`, `topChromeReserved` and `noticeFloor` all take `isAccessibilitySize` now,
+and every constant in the table above has a measured twin. The over-reservation that was harmless
+while it was one term stopped being harmless when it doubled.
+
+#### What it costs, at every width, said plainly
+
+`MapLocationNotice`'s AX5 budget, with location denied and a full four-species palette. These are
+computed from `MapLayout`, not read off five running screens — the model's credibility is that PR
+#60's reviewer independently predicted the *previous* revision's 75.0 pt budget from the same
+arithmetic and found exactly 75.0 on a running iPhone 16e.
+
+| phone | budget before #258 | this revision | legend |
+|---|---|---|---|
+| iPhone SE 375 × 667 | 301 (and wrong — see the coordinate-space note) | **93** | scrolls, ~51 pt of one chip |
+| iPhone 16e 390 × 844 | 301 | **93** | scrolls, 201 of 264 pt |
+| iPhone 16 Pro 402 × 874 | 301 | **93** | scrolls, 224 of 264 pt |
+| iPhone 16 Plus 430 × 932 | 301 | **103** | whole, 264 pt |
+| iPhone 16 Pro Max 440 × 956 | 301 | **127** | whole, 264 pt |
+
+**An earlier revision of this entry said 90 pt on a 402 pt phone and that number is withdrawn**; the
+review measured the shipped behavior at 75 pt on a 390 pt phone, with `Location is off` clipped
+mid-glyph and only the word "Location" legible. The floor is what answers that: at 93 pt the card's
+`Settings` button is fully visible and pressable without scrolling, and the *first* line of the title
+is legible. The second title line and the whole message scroll — on every phone at AX5. That is R53
+§6 applied where it bites, and it is a real reduction in what the reader sees, in this one state.
+**It is a trade rather than a free fix and the owner may want to look at it.**
+
+The direction is the one that matters: the alternative is the identify FAB covered, which is screen
+01's only entrance to the visit flow.
+
+#### The squeeze, and the one behavioral change — which is wider than first reported
+
+At AX5 with a full palette the chrome wants more than the glass has on the narrow phones, and
+arithmetic cannot conjure the points: something must yield. `MapSpeciesLegend` gains a `maxHeight:`
+and scrolls when it binds, on the argument R53 §6 made for the notice — a scrolled chip is reachable
+and a covered control is not, and the legend is also the species filter (#116), so its chips must
+stay pressable.
+
+**An earlier revision of this entry said the ceiling binds on no device the suite runs. That was true
+then and is not true now**, and the change is a direct consequence of correcting `fabHeightAX5`
+(+53 pt of reservation) and adding the notice's floor (+93). The boundary now sits **between 402 pt
+and 430 pt**: a four-chip AX5 legend needs 264 pt, the ceiling is 224 pt on an iPhone 16 Pro and
+274 pt on an iPhone 16 Plus. So the SE, the 16e and the 16 Pro scroll the legend at AX5 with a full
+palette; the 16 Plus and 16 Pro Max do not. At ordinary content sizes **none** of them do, on any
+supported screen, and that is asserted separately because it is the property worth defending: a
+scroller over the map costs the pan, and no reader at the default text size should pay it.
+
+**`MapLayout.legendMaxHeight` returns `nil` unless the ceiling actually binds**, and that `nil` is
+load-bearing rather than tidy. A non-nil ceiling puts the legend inside a `ScrollView`, and a
+`ScrollView` over a map takes touches across its whole frame where the bare `FlowRow` takes them only
+on the chips — `MapHomeView.chrome`'s own note, "the empty width beside a chip has never taken a
+touch". `AX5ReflowTests.theLegendCeilingBindsWhereTheArithmeticSaysItDoes` carries the boundary as a
+table of five named phones rather than a rule, so moving a constant across it is a decision somebody
+makes rather than a side effect somebody discovers.
+
+`MapSpeciesLegend`'s clamping branch is now tested — `theSpeciesLegendClampsToItsCeilingAtAX5`, using
+R53 §6's own bare-hosting pattern, because `ax5Size` mounts in a real window and reads a capped
+`ScrollView` as its unclamped content. PR #60's review measured that clamp independently
+(`unbounded=262.667 budget=131.333 bounded=131.333`) and was right that the branch shipped uncovered.
+
+#### Still not reserved, and now named rather than denied
+
+- **The `Needs care` toast.** `MapToast`'s doc claimed it "cannot cover the chips, the legend, the
+  recenter control, the FAB or the bottom card at any Dynamic Type size". The first two are true and
+  the rest never were — being in the flow of the top block says nothing about the *other* block, and
+  the card pushes everything below it in its own stack down by its own height. Reserving for it would
+  cost the notice that room in every second the toast is not on screen, which is almost all of them.
+  The comment is corrected; the gap is open. **PR #60's review sharpened what the gap is worth**: on
+  a 390 pt phone the margin between the legend's bottom edge and the FAB was 25.67 pt, not the ~78 pt
+  the arithmetic believed, so every toast re-created this ticket's occlusion there for three seconds.
+  Correcting `fabHeightAX5` is what buys that margin back; the toast is still unreserved.
+- **`MapSearchStatus`**, on the same reasoning, and with the additional one that it only exists while
+  a search is running — the state R25/#143 deliberately lets the top block draw over the bottom in.
+- **`MapTreeCard`** shares the bottom slot and is still not given `noticeMaxHeight` — only the four
+  `MapLocationNotice` arms are. Carried forward unchanged from E252.
+
+#### E248's "Scope held" paragraph is false, and now carries a correction pointing here
+
+E248's task-#250 half says the species legend "sits *below* the chip row … so it needed no
+reservation of its own for this control's reachability". **That is the claim this ticket refutes**,
+and it is the sentence that made the legend invisible to the round that wrote it. It was not a
+numbering matter and not something a branch could edit; it is annotated in place at E248, so the
+next reader does not re-derive it from an entry that still asserts it.
+
+#### The guard
+
+`CypressUITests/IdentifyFABReachabilityTests` is E252's file, restored from
+`89f5001`/`5a2112f`, together with `settledFrame(requireHittable:)` — a guard against occlusion must
+not gate its measurements on the thing an occlusion removes. Red-proved three ways on an iPhone 16
+Pro, each fired for its own reason:
+
+| break | what went red |
+|---|---|
+| `legendReserved` returns 0 | *"the identify control (22.0, 295.0, 364.33, 83.0) overlaps the species legend (16.0, 230.0, 344.33, 262.67)"* — and `testTheFABIsReachableAtAX5WithLocationDenied` **passed in 4.636 s** in the same run |
+| the recenter control's bottom padding → `-10` | *"the identify control (22.0, 571.0, …) overlaps the recenter control (342.33, 537.0, 44, 44)"* |
+| `IdentifyFAB.offset(x: 2000)` | *"is in the accessibility tree but never became hittable within 30s"* (33.2 s) |
+
+`.allowsHitTesting(false)` does **not** make an element unhittable to XCUITest, which is why the
+third proof uses an offset (measured independently in PR #51's review).
+
+#### Why three launches of a guard were not enough evidence, and what was
+
+The abandoned repair passed this same guard. A defect at one launch in eight is invisible to three
+launches. So the fix was run through a temporary 40-launch check on each of two devices
+(`fab258-repeat-16pro.log`, `fab258-repeat-16plus.log`): **80 launches, 0 overlaps.**
+
+At the freeze rate actually measured (3 of 32, ≈ 9.4 %), 80 clean launches would happen by luck with
+probability 0.906⁸⁰ ≈ 3.6 × 10⁻⁴; at the ~1-in-4 rate the previous round reported, ≈ 10⁻¹⁰.
+
+**An earlier revision of this entry also argued that byte-identical geometry across those 80 launches
+disproved a race. It does not, and the sentence is withdrawn** (PR #60 review, N2). A race that
+resolves the same way under a warm process and a warm asset cache produces exactly one number every
+time; identical output is evidence that nothing varied in those runs, not that nothing *can*. The
+launch count carries the claim on its own, and the stronger half of the argument was always that the
+channel which dropped the value no longer exists.
+
+**And 80 launches on two devices is not four widths.** The guard is red on a 390 pt phone at the
+revision that ran them — that is PR #60's B1 — so those 80 launches say nothing about the 16e. The
+run table at the end of this entry is the four-width verification.
+
+#### One more instrument-calibration note, paid for on the way
+
+The unit suite failed **twice in a row** on the iPhone 16 Pro on this branch, with no `✘` and no
+`Expectation failed` anywhere in either log — the test process exited mid-run
+(`Restarting after unexpected exit, crash, or test timeout`, preceded by `CAMetalLayer ignoring
+invalid setDrawableSize width=0.000000 height=0.000000`). Two failures at the same commit is not the
+shape of a flake, and the obvious reading was that this branch's four new `ax5Size` measurements had
+broken it.
+
+They had not. The controls:
+
+| tree | device | result |
+|---|---|---|
+| this branch | 16 Pro, busy machine | died mid-run, twice |
+| this branch | 16 Plus, quiet | `✔ Test run with 1286 tests in 127 suites passed` |
+| `origin/main` | 16 Pro, quiet | `✔ Test run with 1292 tests in 130 suites passed` |
+| this branch, merged | 16 Pro, quiet | `✔ Test run with 1297 tests in 130 suites passed` |
+
+Both failures fell inside a window when two other agents' reviewer worktrees were building on this
+machine; both greens are from a quiet one. `run_tests.sh`'s collision guard runs **at start**, so a
+run that is already going when a second one begins gets no warning at all — the guard cannot refuse
+on a collision that has not happened yet. **A crash with no failed assertion in the log is a
+machine-state report until a control says otherwise**, and the control that settles it is the same
+tree on a quiet machine plus a known-green tree on the same device. 1292 + 5 new tests = 1297, which
+is the other half of reading that table.
+
+And a smaller one, in the same family as the four ad-hoc-command errors CLAUDE.md lists: a progress
+poll built on `grep -c 'Test Case .* passed$'` reported **0** for nine minutes of a healthy run,
+because the line ends in `(4.596 seconds).` and not in `passed`. It had been calibrated against a
+looser pattern minutes earlier and then tightened without re-calibrating. The run was fine; the
+instrument was not.
+
+#### Verified on four widths, on the merged tree
+
+PR #60's review found this ticket's own guard red on an iPhone 16e, on a change verified only at
+402 pt and 430 pt — the two widths it had been tuned against. **A layout fix verified only on the
+widths it was tuned against is not verified**, and that is the durable lesson of the round rather
+than any one constant. All four now, every log carrying its own `CYPRESS-RUN` header, `head 2b63daf`,
+`active-city=none`, `camera-auto-healed no`, `XCTest skipped=0`:
+
+| log | device | width | result |
+|---|---|---|---|
+| `fab258-r3-16e.log` | iPhone 16e `3A1F212D` | 390 | `Executed 99 tests, with 0 failures in 1517.169s` |
+| `fab258-r3-16pro.log` | iPhone 16 Pro `EA0AD796` | 402 | `Executed 99 tests, with 0 failures in 1434.302s` |
+| `fab258-r3-16plus.log` | iPhone 16 Plus `24D1629F` | 430 | `Executed 99 tests, with 0 failures in 1456.284s` |
+| `fab258-r3-16promax.log` | iPhone 16 Pro Max `DE8E11AE` | 440 | `Executed 99 tests, with 0 failures in 1500.089s` |
+| `fab258-r3-unit.log` | 16 Pro Max | — | `Test run with 1310 tests in 132 suites passed` |
+| `fab258-r3-fresh-warnings.log` | 16e, **fresh** DerivedData | — | `VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=446 files-checked=7` |
+
+The warnings certifier was calibrated before it was believed (E203): naming a file the build did not
+compile returns `VERIFY-FAIL: cannot certify a warning count for: … — no SwiftCompile task for those
+files in this log`, so the green above is a certification rather than a no-op.
+
+#### The measurement artifact the four-width run found, which was not a layout defect
+
+Worth carrying, because it cost a wrong conclusion for ten minutes and the screenshot is what settled
+it. With the ceiling binding on the 16e, `testTheTopChromeStaysClearOfTheBottomChromeAtAX5WithLocationDenied`
+went red — legend `maxY` 477.67 against a bottom chrome at 429.33. The arithmetic said it should not:
+the notice was rendering at exactly its 92.67 pt floor, which only happens when the legend *is*
+clamped.
+
+A screenshot of the running app resolved it in one look: three legend chips, the fourth scrolled
+away, the FAB fully clear, the `Settings` button visible. **The layout was correct and the frame was
+not.** `.accessibilityElement(children: .contain)` sat on the `FlowRow` *inside* the `ScrollView`,
+so the labeled element's frame was the scroll **content** — 262.67 pt of rows — rather than the
+201 pt window that clips them. XCUITest measured the content, and so would VoiceOver's cursor.
+
+That is a real accessibility defect in its own right, not merely a test artifact: an element whose
+frame extends 48 pt over controls it does not draw on is wrong for every consumer of that frame. The
+label now sits on the outermost view in both branches. The guard was right to be red — it was
+reporting a rectangle that really was where it said it was.
+
+**And the rule underneath it is the one this whole ticket keeps paying for: look at the running
+screen.** The numbers said "clamped" and "not clamped" at the same time; only the screenshot said
+which half was lying.
+
+### E254 — Real tester feedback on build 18, and what the App Store Connect API will and will not tell us
+
+#### What was pulled, and how
+
+`Tools/appstore_connect.py feedback` and `.github/workflows/asc-feedback.yml` were added so this
+question can be asked at all. No machine of the owner's carries an App Store Connect key, by
+design; the credentials exist only as the three repository secrets, so the read runs on a GitHub
+runner and hands back an artifact. Same shape as `asc-status.yml`: ubuntu, no Xcode, about a
+minute.
+
+Four collections are read, all GET, nothing written. Every path and attribute name was taken from
+Apple's current documentation data on 2026-08-07, not from memory:
+
+| collection | endpoint |
+| --- | --- |
+| screenshot feedback | `GET /v1/apps/{id}/betaFeedbackScreenshotSubmissions` |
+| crash feedback | `GET /v1/apps/{id}/betaFeedbackCrashSubmissions` |
+| crash log text | `GET /v1/betaFeedbackCrashSubmissions/{id}/crashLog` |
+| public reviews | `GET /v1/apps/{id}/customerReviews` |
+| release state | `GET /v1/apps/{id}/appStoreVersions` |
+
+**Run 31195352441, 2026-08-07, `notes: []`** — nothing was truncated or forbidden:
+
+- **2 screenshot submissions**, both from one tester, both on **build 18**, both on an iPhone17_5
+  running iOS 26.5.2 at 390 × 844 pt, 40 seconds apart.
+- **0 crash submissions.** No tester has hit a crash TestFlight caught.
+- **0 customer reviews**, and this one is not evidence of anything: the app's only App Store
+  version is `1.0` in `PREPARE_FOR_SUBMISSION`. It has never been on the store, so
+  `customerReviews` cannot be anything but empty until it is. The command records
+  `appStoreVersionsReadable` precisely so an empty review list is never read as "nobody reviewed
+  it" when it means "there is nothing to review".
+
+Two notes on the tooling itself, both deliberate:
+
+- **Tester email is never read.** Both submission resources carry the tester's `email`. The
+  command asks for its fields by name and `email` is not among them, so it cannot reach a CI
+  artifact that anyone with repo access can download for months. The opaque tester relationship id
+  is kept instead, which is enough to tell testers apart and to tie several reports to one person.
+  Verified on the real artifact: zero `@` characters in the JSON. The address is also never
+  *fetched*: `include` asks only for `build`, because an included `betaTesters` resource carries
+  `email` too, and the tester id the command wants is in `relationships.tester.data.id` without it.
+  Not asking is structural where filtering afterwards is a promise.
+- **The screenshots are downloaded, not just linked.** Apple serves them from pre-signed URLs that
+  expire — the two here expire 2026-08-14 — so a JSON kept for comparison would point at nothing
+  within the week. The images travel in the artifact and the JSON records the expiry. The download
+  is `https`-only, size-capped, and writes to a filename this program constructs from a sanitized
+  id: the id, the URL and the body all come from the network, and none of them may decide what CI
+  reads off disk or where it writes.
+
+#### The feedback, and what it is
+
+##### 1. "Text about ghost photos is cut off and flows poorly" — a real defect, fixed here
+
+The tester circled the ghost caption on screen 04. The caption reads `no ghost yet · first photo`
+and renders as four lines of one or two words each, down the left of the viewfinder beside the
+shutter.
+
+Nothing is literally clipped — every word is present — but the tester's reading of it as "cut off"
+is fair, and one contributing cause is a straightforward transcription defect:
+
+`CypressFont.LineSpacing` states the project's CSS→SwiftUI conversion, because CSS `line-height`
+includes the glyph box and SwiftUI's `.lineSpacing()` is only the gap added between lines:
+
+    lineSpacing ≈ size × (lineHeight − 1.2)
+
+Its four numeric tokens obey it exactly — 15/1.55 → 5.25, 13.5/1.50 → 4.05, 12.5/1.45 → 3.125,
+11.5/1.30 → 1.15. (`speciesHero` and `treeNameHero` are clamped to 0: their mock line-heights are
+*tighter* than the natural box, so the formula would go negative. They sit outside the rule by
+their own documented intent, not in violation of it.) SCREENS 04 gives the caption mono 10.5px at
+`line-height:1.4`, which converts to **2.1**. `VisitMetrics.Camera.ghostCaptionLineSpacing` was
+**4.2** — `10.5 × 0.4`, which is the subtraction performed with the **wrong constant**: the font's
+natural line box taken as 1.0 instead of 1.2, and so double the leading the mock asks for.
+
+Worth being precise about, because the obvious gloss is wrong and this sentence is what a future
+engineer meets when the test goes red: the `− 1.2` did not go *missing*. Dropping it altogether
+would give `10.5 × 1.4 = 14.7`, not 4.2. The value has held 4.2 since the M0 walking-skeleton
+commit and was never revisited.
+
+Because the caption's `max-width:80px` wraps this string to four lines, the error was multiplied
+across three gaps: 6.3pt of extra stack, and a column that reads as four separately floating words
+rather than one small paragraph. Fixed to 2.1, pinned by `VisitCameraCaptionMetricsTests`.
+
+**This does not close the tester's report.** The remaining and larger half is the width, below.
+
+##### 2. The caption's `max-width:80px` against a string the mock never draws — owner decision
+
+SCREENS 04 specifies `max-width:80px` for the ghost caption and draws it with **`ghost overlay
+30%`**, 17 characters, which stacks to three lines. The app also uses that box for the no-ghost
+state, whose string `no ghost yet · first photo` is 26 characters and stacks to four. That state is
+not drawn in the mocks — the copy is the app's own — so the box was never sized against it.
+
+There are three ways out and all three are the owner's call, not a branch's:
+
+1. widen the cap, which changes a mock-specified metric for the state the mock *does* draw;
+2. shorten the app's own no-ghost copy so it fits the box the mock sized;
+3. leave it, on the grounds that the mock's own string stacks three lines deep on purpose and a
+   fourth is within the drawn intent.
+
+Worth noting that the project has already dropped this cap once, in the other direction. SCREENS
+04's accessibility variant — headed "(R14; …)", so the drop happens under R14's authority, though
+R14 itself rules on the viewfinder floor and the scrolling controls and never mentions the caption
+— says at `docs/distilled/SCREENS.md:839–840` that the cap "is the one part of it the type ramp
+cannot survive — at AX5 it is a column of single stacked syllables". The tester is reporting a
+milder form of the same symptom at the default type size, caused by a longer string rather than by
+the ramp. The precedent for dropping the cap therefore exists; whether it extends to the default
+size is a design decision.
+
+**Proposed ticket.** *Decide the ghost caption's no-ghost treatment.* Where:
+`VisitMetrics.Camera.ghostCaptionMaxWidth` and `VisitCameraModel.ghostCaption`
+(`Cypress/Features/Visit/VisitCameraModel.swift:159`). Verification: a screenshot of screen 04 on a
+390pt phone with no prior full-tree photo, next to the same screen with a ghost, both read on the
+device — this is a typography judgment and a simulator screenshot at the drawn size is the
+instrument.
+
+##### 3. "Where do leaf out full leaf flowering etc go?" — a genuine product gap, owner decision
+
+The tester circled the whole tray on screen 04 — the note field, the four phenology chips (`Leaf
+out`, `Full leaf`, `Flowering`, `Fruiting`) and `Log visit` — and asked where that data goes.
+
+Read literally it is a question about destination, not a bug report: having tagged a visit
+"Flowering", the tester could not find where that observation surfaces afterwards. This is not
+noise and it is not a defect either; it is a hole in the product's feedback loop, and answering it
+means deciding what a phenology observation is *for* once recorded. That is DECISIONS constraint 21
+territory — a screen or state not in the mocks is a stop-and-ask — and it is not a thing to invent
+from a branch.
+
+**Proposed ticket.** *Say where a phenology tag goes.* The cheapest honest answer is probably
+confirmation at the point of logging rather than a new surface, but the range runs from a sentence
+on the saved screen to a phenology history on the tree profile, and picking a point on that range
+is the owner's. Verification depends entirely on which is chosen.
+
+#### One thing found while checking, unrelated to the feedback
+
+`VisitMetrics.Saved.footnoteLineSpacing` is `6.5`. SCREENS (`docs/distilled/SCREENS.md:1352`)
+gives that footnote `line-height:1.5`; the 13.5px is not stated there but comes from the view's own
+`.cypressBody135(...)` at `VisitSavedView.swift:240`. The conversion therefore gives `4.05`, which
+is exactly `CypressFont.LineSpacing.body135` — and `.cypressBody135(...)` *already applies* it. So
+line 241 overrides a correct value with a wrong one, and the honest fix is to delete the modifier
+rather than edit the constant.
+
+This is **not** the caption's arithmetic repeated: the 1.0-line-box slip would give `13.5 × 0.5 =
+6.75`, not 6.5. The two are the same defect class only in the loose sense of deviating from the
+documented conversion. Different screen, no tester report attached, and a fix that changes a screen
+nobody complained about — tracked as ticket #257 rather than folded in here.
+
+#### What the API cannot tell us
+
+Worth writing down before someone asks this to do more than it can.
+
+- **There is exactly one active tester's worth of feedback.** Two submissions, one tester id, one
+  device, one build, 40 seconds apart. Nothing here supports a claim about how the app behaves
+  across devices or across people, and a future run that returns three more submissions from the
+  same id is still one person.
+- **Zero crashes is not zero crashiness.** `betaFeedbackCrashSubmissions` holds crashes a tester
+  chose to submit through TestFlight. A crash nobody reported is not in it, and neither are the
+  aggregate metrics; those live behind a different API and are a separate piece of work.
+- **The screenshot expiry is a real deadline.** Re-running the workflow after 2026-08-14 will
+  return fresh URLs for these two submissions, but an artifact older than its URLs cannot be
+  re-fetched from the JSON alone. The downloaded PNGs in the artifact are the durable copy.
+
+### E255 — A phenology observation was written, stored, read back — and never drawn anywhere
+
+#### The report
+
+Build 18 TestFlight feedback, pulled 2026-08-07 (see ERRATA **E254**): a tester circled screen
+04's whole tray — the note field, the observed-state chips and
+`Log visit` — and asked **"Where do leaf out full leaf flowering etc go?"**
+
+Read literally it is a question about destination. The answer was: nowhere.
+
+`visits.phenology_tags` has existed since `AppSchema`'s `visits` table, `ContributionStore`
+writes it, `ContributionStore.decodeVisit` reads it back into `Visit.phenologyTags`, and
+`TreeProfile.visits` carries it to the profile. `TreeProfilePresentation.activity` then built the
+`Visit` row's detail from `visit.note` alone:
+
+    detail: visit.note.map { " · “\($0)”" } ?? "",
+
+So a contributor who tapped `Flowering` and logged the visit without writing a note got a C9 row
+reading `Visit`, with a timestamp and nothing else. The record was complete and correct at every
+layer below the one the contributor could see. This is the class of defect a green suite ratifies:
+nothing was broken, a field was simply never read.
+
+The one place any of it did surface is screen 13's `Spring flush noted` moment, which reads
+`leaf_out` and only `leaf_out`, only in the current year, only when the visit series is complete,
+and expresses it as a sentence about the tree rather than as the observation the contributor made.
+Five of the six states reached no surface at all.
+
+#### Why the tree profile's activity feed, and why this is not constraint 21 territory
+
+SCREENS 03 §8 draws two C9 rows:
+
+| | label | detail |
+| --- | --- | --- |
+| 1 | `Visit` | ` · “Fog dripping off the crown”` |
+| 2 | `Care` | ` · watered, mulched` |
+
+The second row is the precedent, and it is exact. `watered, mulched` is not prose someone wrote —
+it is the `CareAction` vocabulary rendered as a comma-joined lowercase list, which is what
+`TreeProfilePresentation.careActionLabel` exists to produce. A C9 detail slot carrying a
+contribution's structured vocabulary is a drawn pattern on this screen.
+
+A visit's observed states are the same class of value, on the same feed, on the same kind of row,
+about the same contribution. Rendering them there is the drawn pattern applied to a field the row
+already had. No new screen, no new section, no new component, no new token, no new metric —
+`ActivityRow` and `TreeProfileView.activityFeed` are untouched.
+
+#### The one judgment call, and what actually decided it
+
+The mock never draws a row with **both** a note and a vocabulary list, so their order relative to
+each other is not drawn. It is decided in `visitDetail(note:phenologyTags:)`, **note first**:
+
+    Visit · “Fog dripping off the crown” · flowering      Oct 12
+    Care  · watered, mulched                              Sep 28
+    Visit · leaf out, fruiting                            Aug 30
+
+**The mock is not silent about the note's own position.** SCREENS 03 §8 draws
+`**Visit** · “Fog dripping off the crown”` — the note is placed, immediately after the label. So
+while the pair's order is undrawn, the note's position is not, and constraint 21's spirit is not to
+relocate what the mock draws in order to make room for what it does not. That is the reason, and it
+is a reading of the spec rather than of a screenshot.
+
+Two arguments were made for the reverse order and neither survived. Recording both, because the
+first is the one this change's whole case rests on elsewhere and its limit matters:
+
+- **Parallelism with `Care · watered, mulched` is weaker than it looks.** That row has no free text
+  competing for the slot, so putting the vocabulary first there is not a choice between two
+  orderings — it is the row's only content. The parallel this change rests on is about the detail
+  slot's *shape*, and it does not extend to what shares the slot with it.
+- **Line-breaking does not distinguish the two.** Whichever clause goes last can be widowed, so the
+  wrap is symmetric and cannot pick a winner. An earlier draft of this entry claimed screenshots had
+  settled it; they had not, and that claim is withdrawn.
+
+There is also a values argument, and it belongs to the owner rather than to this branch: the note is
+a volunteer's own sentence, and a civic app should not put machine vocabulary in front of a person's
+own words. With no note at all — the tester's case, and the common one — the row reads
+`Visit · flowering` either way round, so nothing is lost there.
+
+A designer may overrule this by swapping two lines. It is decided in one place and the tests name it
+as a decision rather than as a fact.
+
+##### The wrap artifact this order carries, stated plainly
+
+Note-first can leave a ` · ` at the head of a wrapped line. It does so on the project's own preview
+fixture — `TreeProfileSeedFixtures.visits[0]`, note `Fog dripping off the crown`, tag `flowering`,
+rendered by `PhenologyOnProfileShots` at the sweep's fixed 393 pt width:
+
+    Visit · “Fog dripping off the crown”
+    · flowering                                           Oct 12
+
+This is recorded because it is a **consequence** of the chosen order, not a reason for it — and
+because a review of this change reported the opposite ("the ` · ` never landed at the head of a
+wrapped line", across six specimens graded to walk the boundary). Both observations are correct: the
+break has an opportunity on each side of the separator, so a one-character difference in where the
+note ends decides whether the dot closes the earlier line or opens the next. The reviewer's
+specimens fell one way and the fixture's own note falls the other, which is why "never" is too
+strong. It is cosmetic, it is not a reason to move the clause the mock places, and anyone who meets
+it later should find it written down here rather than think it was missed.
+
+#### What was deliberately not done
+
+- **No new stage, no rename, no reorder.** The words are `PhenologyTagLabel`'s own chip copy
+  lowercased, so what a contributor tapped is what they read back, and the six of them are pinned
+  by value in `PhenologyStageVocabularyTests` (DECISIONS constraint 15). The reading order is
+  `VisitPhenologyVocabulary.order` — the same array the *app's* screen-04 chip row is built from,
+  `VisitCameraModel` through `VisitCameraView` — so no second ordering exists to drift from the
+  first. A row reads the same however the chips were tapped.
+
+- **The parallel with the care row stops at the detail slot's shape.** The `Care` row renders
+  `event.actions` in **stored** order; this renders states canonically. Nothing shows today because
+  the fixture's `[.watered, .mulched]` happens to match the mock. Two orderings for the same kind of
+  value on the same feed is worth closing and is filed separately; deliberately not widened into
+  here. (The neighboring `careActionLabel` is a second hand-written switch that does not derive from
+  `CareActionLabel.text` — it prints `weeded` where the chip says `Weeded basin` — which is the same
+  drift `phenologyTagLabel` avoids by deriving. Also filed, also not this change.)
+- **No schema change.** Both version spaces are untouched. The column this reads has existed since
+  `visits` was created and the decode already returned it.
+- **The deeper product question is still open.** "What is a phenology observation *for* once
+  recorded?" — aggregation across a tree's years, a species-level view, anything on screen 12 or 13
+  beyond today's spring-flush sentence — is not answered here and was not meant to be. This makes
+  the observation visible to the person who made it, on the tree they made it about.
+
+#### Two things found while checking, neither caused by this change
+
+- **A premise worth correcting, and the correction's own first draft was wrong.** E254 names
+  "the four phenology chips (`Leaf out`, `Full leaf`, `Flowering`, `Fruiting`)". The vocabulary is
+  **six**, and the reduction to four is D5's evergreen exclusion — but the source of each number is
+  not the mock, which is what an earlier draft of this entry said and had to be corrected in review:
+
+  - **The six are `PRODUCT.md:128`** — `phenology_tag: leaf_out | full_leaf | fall_color | bare |
+    flowering | fruiting` (BUILD-PLAN §4) — realized as `PhenologyTag`. A document, not a drawing.
+  - **The four are `Species.availablePhenologyTags`** (`Cypress/Core/Models/Species.swift:267-275`),
+    whose base set is exactly `{leafOut, fullLeaf, flowering, fruiting}` and which adds `fallColor`
+    **and** `bare` unless the species is a *known* evergreen.
+  - **SCREENS 04 draws neither.** It draws three chips — `New growth` (on), `Cones`, `Storm damage`
+    (`SCREENS.md:804`, and `PROTOTYPE-FLOW.md:27` and `:270` verbatim). `Leaf out`, `Full leaf` and
+    `Fruiting` appear nowhere in `SCREENS.md`, and `Flowering`'s only hits there are
+    `Red Flowering Gum`. (Calibrated before believing it: the same case-insensitive grep finds
+    `Fog dripping off the crown`, which is present, twice.)
+
+  So the app's screen 04 and the mock's screen 04 do not offer the same chips at all. That is a
+  separate discrepancy, older than this change and not touched by it. The lesson worth keeping is
+  the narrower one: **a count of phenology states must be read from `PhenologyTag` or from
+  `PRODUCT.md`, never from a mock** — including when the thing being written is itself a correction
+  of somebody else's wrong premise.
+
+- **C9 rows break mid-word at AX5, on the drawn row, before this change — and this change puts more
+  rows into it.** The AX5 capture added here (`phen-03-profile-observations-light-ax5`) shows the
+  mock's own untouched `Care · watered, mulched` rendering as `watere/d,` `mulch/ed`, and
+  `Care · weeded` as `weede/d` — the fixed-width mono timestamp column keeps its width while the
+  body's column collapses.
+
+  The defect is not caused by this change and is not changed in kind by it. But it is worsened in
+  reach, and understating that would misprice the ticket: **a visit tagged and left unwritten — the
+  exact case this change exists for — rendered as a single clean `Visit` line before, and now
+  renders `leaf`/`out,`/`fruitin`/`g` down four broken lines.** Rows that were not in the defect are
+  now in it.
+
+  It has gone unseen because **screen 03's own sweep entry does not pass `ax5ViewportHeight`**
+  (`CypressTests/ScreenSweepShots.swift:245`), so its AX5 capture is 2,556 px against this change's
+  8,100 px and stops mid-`Cupressus macrocarpa` — the activity feed has genuinely never been
+  photographed at an accessibility size. `DynamicTypeScreenshotTests.swift:137` shoots 03 at AX5 too,
+  but into a fixed 852 pt frame, so it does not reach the feed either. Same shape of gap as E199/#228
+  on screen 11, which is why `11-growth-history` asks for the tall viewport. Filed as **#262**; not
+  fixed here.
+
+#### Verification
+
+Final figures are from the **merged** tree (this branch merged with `origin/main` at `f8b61a4`),
+whose tree hash is `5219512658b4cda4a2eee584457ef15bda517107` — the same tree the adversarial
+reviewer measured independently, on a different device.
+
+- Unit, **fresh** DerivedData: see the run headers on the PR. `VERIFY-WARNINGS: source=0` over
+  `TreeProfilePresentation.swift` and `PhenologyOnProfileTests.swift`, certified from a build with
+  a nonzero `SwiftCompile` count that compiled both named files (E203).
+- UI: `** TEST SUCCEEDED **` with a nonzero executed count and `XCTest skipped=0`.
+- Five red-proofs, each read for its message rather than its color:
+  - phenology dropped from `visitDetail` → **four** tests red — `taggedVisitWithNoNoteReachesTheFeed`
+    on `(row?.detail → "") == " · flowering"`, `everyTagReachesTheFeed` on six issues,
+    `noteAndTagsCompose` on `" · “Fog…”" == " · “Fog…” · flowering"`, and `tagsRenderInSeasonalOrder`.
+    The drawn-row, bare-visit, empty-note, care-row and feed-mechanics tests and the whole vocabulary
+    suite stayed green, which is what says they are not agreeing with everything.
+  - seasonal order replaced by tap order → **only** `tagsRenderInSeasonalOrder`, on
+    `" · bare, fruiting, leaf out" == " · leaf out, fruiting, bare"`.
+  - `Flowering` renamed to `In bloom` in `PhenologyTagLabel` → `PhenologyStageVocabularyTests` on the
+    literal (`"in bloom" == "flowering"`, twice), **plus two plumbing tests** in the other suite —
+    four issues, not one. Pinning literals rather than looping over the enum is the point: a loop
+    agrees with any rename, and `everyTagReachesTheFeed` — which asserts against the same expression
+    the implementation evaluates — did stay green through this proof. `PhenologyStageVocabularyTests`
+    is the only thing between a copy change and the record.
+  - states put back before the note → **only** `noteAndTagsCompose`, on
+    `" · flowering · “Fog dripping off the crown”" == " · “Fog dripping off the crown” · flowering"`.
+  - the `!note.isEmpty` guard removed → **only** `emptyNoteRendersNothing`, on
+    `" · “” · flowering" == " · flowering"` and `" · “”" == ""`. The `MemorialCopy.visitDetail`
+    assertion in the same test stayed green, which is correct: it is the function the guard was
+    taken from and it was never missing it.
+
+**Correction to an earlier version of this entry.** It reported
+`Test run with 1290 tests in 129 suites passed` "on the merge-base tree". That figure is from this
+branch's own previous commit, not from the merge base — the change adds tests, so a merge-base count
+could not include them. A wrong provenance label on a count is the thing this repository files
+errata about, and it was caught in review rather than by its author.
+- Screen 03 photographed in four appearances with the feed carrying both compositions.
+
+### E256 — E196's AX5 punch list, re-verified a third time — eight items still gone, and the ninth's other half found in the chart C23 draws
+
+#### The premise this round carried, and what it was worth
+
+The brief carried E196's "Defects found at AX5 (find, don't fix)" — all nine items — as open work.
+It is not open, and it has not been for two rounds: **E199** (tasks #171, #172) fixed them and
+**E237** (task #228) re-verified every one against renders. The brief's own instruction was to
+verify rather than assume, so each item was re-rendered on the current tree and looked at rather
+than taken from either document.
+
+That was worth doing, but not for the reason the brief expected. Eight items are gone and stay
+gone. The ninth — §3, screen 11's overflow — is gone *as reported*, and re-reading its own renders
+with the defect no longer in the way showed the same screen still breaking in a place neither E199
+nor E237 looked: not the log rows both entries argued about, but the chart above them.
+
+#### The instrument
+
+`CypressTests/ScreenSweepShots` with `TEST_RUNNER_CYPRESS_SHOT_DIR` exported, iPhone 16 Pro Max
+`DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`, worktree `cypress-wt-ax5b` at `d84b7fc`
+(`origin/main`) — 235 PNGs, all mtimed inside the run that produced them, provenance read off the
+log's own `CYPRESS-RUN:` header before any of them was believed. `VERIFY-OK: Test run with 16 tests
+in 2 suites passed`. The sweep renders at 393 pt regardless of the device it runs on, so the
+capture is the narrow phone, not this one.
+
+#### Per-item verdicts, this round
+
+| # | Item (E196) | Verdict | What was looked at |
+|---|---|---|---|
+| 1 | 02 identify, populated — overflow | **Gone** | `02-identify-light-ax5.png`: title, GPS chip, amber pill (3 lines), callout, footer all inside 393 pt |
+| 2 | e02 denied notice — truncation | **Gone** | `e02-identify-denied-light-ax5.png`: no ellipsis; the sentence is cut only by the sweep's non-scrolling capture at the `ScrollView`'s own frame edge, as E199/E237 both record |
+| 3 | 11 growth history — overflow | **Gone as reported; a different half of the same screen is live** — see below | `11-growth-history-{light,dark}-ax5.png` |
+| 4 | 19 memorial — name column | **Gone** | `19-memorial-light-ax5.png`: `Judah Street` on its own full-width line under the badge |
+| 5 | 10 share — action captions | **Gone** | `10-share-light-ax5.png`: `Messages` intact, one destination per row, full URL (the AX line-cap release) |
+| 6 | 15 account ask — CTA | **Gone** | `15-account-ask-light-ax5.png`: `Continue with Google` on two lines, no ellipsis |
+| 7 | 07 species — fact chips | **Gone** | `07-species-light-ax5.png`: `Cupressaceae`, `Evergreen`, one chip per row |
+| 8 | 03/14 §9b — city-record grid | **Gone** | `c06-city-record-full-ramp-light-ax5.png`: `QuadActionRow` 2×2 with `Favorite`/`Care`/`Share`/`Report` whole, `StatGrid` one column, `#221277` whole, `DPW Maintained` and `A private party` breaking at their spaces |
+| 9 | 09 placeholder / 18 subtitle | **Gone** (09 was already stale at E199's writing) | `09-care-log-light-ax5.png`: `Photo or note` wraps as a caption; `18-next-tree-light-ax5.png`: the mono subtitle wraps inside the gutter |
+
+The serif titles that break mid-word in big type (`Grandmot / her / Cypress` on 03, 09, 10) are
+E196's own last paragraph — the system wrapping without hyphenation, recorded so nobody re-reports
+them as clipping. They are unchanged and are not a defect here either.
+
+#### What is still broken: `LineChart`'s own labels at AX5 (screen 11)
+
+E196 §3 named four symptoms on screen 11. Three are gone (the name pill, the back circle, the log
+rows E199 fixed with `ViewThatFits`). The fourth — "the unit labels at the left (`7 cm`, `4 m` —
+the leading digits are gone)" — is a survivor that had changed shape enough to read as fixed. E237
+looked at it and recorded "the leading unit-label digits (`47 cm`, `14 m`) are intact", which is
+true: both digits render. What neither entry asked was **where** they render.
+
+Two defects, both visible in the light and dark AX5 renders of screen 11, both in
+`Cypress/DesignSystem/Components/ChartCard.swift`, and both measured before being believed:
+
+1. **The baseline label is drawn outside the card.** `LineChart.labels(scale:)` places it with
+   `.position`, which centers it, at `chartGridlineX0 * scale + 16` — 25.97 pt from the plot's
+   leading edge on a 393 pt phone. At AX5 the label measures **111 pt** wide, so it spans
+   −29.5 … 81.5 pt: past the plot's leading edge by 29.5 pt, and past the card's own 16 pt of
+   padding by **13.5 pt**, where it is drawn over the page behind the card. The dark render is the
+   unambiguous one — `47 cm` sits on the page background, left of the card's rounded corner.
+2. **The year axis wraps mid-number.** The four labels need **356 pt** unclamped against the
+   **329 pt** the plot has, so the row wraps: `2019` renders as `201` over `9` and `2021` as `202`
+   over `1`, while `2023` and `2025` collide with no gap between them. A year reading as two
+   numbers is exactly the fragmentation E196 §8 named on the city record (`#22127 / 7`), one
+   component over.
+
+Neither is reachable by a width probe on the screen. `.position` draws outside its own frame
+without changing the size anything reports — the same blindness that made E199 delete its screen-11
+width guard as unable to fail — and the axis row is clamped to the width it is given, so it wraps
+instead of measuring wide. Only the renders, and a measurement of the labels against the budget
+they are placed in, can see either.
+
+#### The fix, and why it is not a new design decision
+
+Both are **typographic furniture** in the sense `cypressTypographicFurniture()` already defines
+(`CypressFont.swift`, and the four applications E-record'd at the AX sweep): things drawn as type
+and read as structure, placed by a geometry that cannot reflow around them. The rule's own list
+names "the twelve single letters under a month axis" — `ChartMonthAxis`, the sibling axis in this
+same file, on the bar chart 40 lines below. The line chart's year axis is the same object with
+four labels instead of twelve, and it was missed. The two in-plot value labels are the third case
+on that list — C19's pin count, "positioned by coordinate on a map that cannot reflow around it" —
+with the plot box in place of the map: its height is the mock's drawn 100 pt at every text size, by
+the file's own header note.
+
+So: `.cypressTypographicFurniture()` on the axis row, and on a new `ChartPlotLabel` that carries
+the styling `latestLabel`/`baselineLabel` used to carry inline. The cap is `.accessibility1`, not
+the drawn size — roughly double, which is the point of the cap being where it is.
+
+**Nothing moves at or below AX1.** The sweep's drawn-size renders of both screens that use this
+file (`11-growth-history-{light,dark}.png`, `13-activity-{light,dark}.png`) are **byte-identical**
+before and after the change, MD5-compared across the two runs.
+
+**That comparison is only sound because it was controlled, and the technique does not generalize —
+read this before reusing it.** This PR's review produced an accidental same-tree control: a sweep run
+that turned out not to have recompiled (`SwiftCompile tasks=0`, so the binary was unchanged) was
+compared against another run of the same tree, and **23 of the 235 renders differed**. The sweep is
+not byte-deterministic run to run. Byte-identity across a *widened* set would therefore report
+differences that are noise, and a future round that MD5s the whole sweep will generate false
+positives.
+
+What makes the claim above safe is not MD5 by itself but the pairing: the four named files were
+confirmed *individually* deterministic under the same-tree control, and screen 11's AX5 legs differ
+under the change while staying stable under that control — so the delta is attributable to the change
+rather than to the sweep. Any future use of this technique needs the control first, on exactly the
+files it intends to compare. Note also which artifact supplied that control: a build that compiled
+nothing is precisely what E203 makes `verify_test_log.sh --warnings` refuse to certify a warning count
+from, and it was still the only thing that made this result trustworthy.
+
+**One judgment call, flagged rather than buried.** Capping a *value* label is a stronger claim than
+capping a divider: `47 cm` and `64` are content, not furniture, even though their placement is.
+The argument for it is that neither number is only there — `LineChart.accessibilityLabel` speaks
+both ends of every series, and screen 11's measurement log lists every reading, with its method and
+date, at full scale directly below the chart. The alternative considered and not taken was dropping
+the in-plot labels entirely at accessibility sizes, which removes a number from the screen rather
+than capping its size. If the owner prefers that, it is a two-line change in the same place.
+
+#### Tests, and their red-proofs
+
+`CypressTests/AX5ReflowTests`, two guards, both measuring **through** `LineChart` and
+`ChartPlotLabel` rather than through a copy of their styling — a probe that applied its own cap
+would go on passing with the cap deleted from the component, which is the shape of guard this file
+already threw away once.
+
+- `theGrowthChartsYearAxisStaysOnOneLineAtAX5` — the chart with four year labels is no taller than
+  the chart with one. Red with the cap removed from the axis row:
+  `Expectation failed: (four → 195.0) == (one → 150.66666666666666)` / *"four year labels made the
+  chart 195.0 pt tall against 150.66666666666666 pt for a single label — the axis row wrapped, and
+  a wrapped year is two numbers"*. The other 13 tests passed in that run, so the guard fails for
+  its own reason and not the file's.
+- `theBaselineChartLabelStaysInsideItsCardAtAX5` — half the label's AX5 width fits between its
+  center and the card's leading edge. Red with the cap removed from `ChartPlotLabel`:
+  `Expectation failed: (measured.width / 2 → 55.5) <= (budget → 41.96969696969697)` / *"the
+  baseline label measured 111.0 pt, so centered at 25.96969696969697 pt it reaches
+  13.530303030303031 pt past the card's leading edge"* — the same 13.5 pt the dark render shows.
+
+Both assertions were **calibrated before they were written**: a throwaway probe measured the label
+widths at AX5 with and without the cap (111 → 57 pt for the baseline label, 89 → 45.7 pt per year)
+and was deleted before the first commit. The budget in the second guard is "inside the card", not
+"inside the plot", because the measurement showed the capped label still crosses the plot's leading
+edge by 2.5 pt — an assertion written to the stricter number would have been red on the fix, which
+is what the calibration was for.
+
+#### What was not done
+
+- **No production change for items 1–2 and 4–9.** They do not reproduce; there was nothing to fix.
+- **The `.position`-centered `latestLabel` on the right edge has no guard.** Centered at
+  `viewBox.width * scale - 14`, it would have to measure more than 28 pt to cross the plot's
+  trailing edge and more than 60 pt to leave the card; capped it measures 25.3 pt, and *uncapped*
+  it measured 45.7 pt — inside the card either way. A guard on it could not have failed against the
+  unfixed tree, so none was written (E199's own lesson about the screen-11 width test).
+
+### E257 — `accessibilitySortPriority` is invisible to every ordering API `CypressUITests` can reach, and the reason is that all of them report composition order — amends ERRATA E230
+
+#### Why this was reopened
+
+E230 measured one instrument (`debugDescription`, via `DeepLinkHarness.treeOrder`) against one
+mutation (screen 01's search field dropped from priority 6 to 2) and found no movement. It closed
+with an explicit piece of unfinished business, in its own closing paragraph (`docs/ERRATA.md`, E230,
+"Suggested follow-up, not done here") — **not** in `docs/ROADMAP.md`'s "Also outstanding", which
+cites E230 by number and does not restate the question. An earlier draft of this entry said it did;
+PR #54's review checked and it does not:
+
+> filing whether any lower-level XCUITest API exposes `accessibilityElements`-array order directly
+> rather than through `debugDescription`'s dump — not investigated here for lack of time, and worth
+> fifteen minutes before assuming it does not exist.
+
+That is the question this entry answers. It is answered in the direction E230 suspected, but the
+finding is stronger and more useful than "we tried another API too", because it identifies **what**
+these APIs report rather than only what they fail to report — which is what makes the negative
+result structural instead of a list of things that happened not to work.
+
+#### The instrument, and the case built to calibrate it
+
+Four arrangements of screen 01's search field and filter chips, selected at launch by a temporary
+`CYPRESS_AXORDER` environment variable so **one build** produced all four readings (a rebuild
+between conditions is exactly the confound E230 had to argue its way out of with a from-scratch
+430-file build):
+
+| mode | composition | geometry | sort priority |
+|---|---|---|---|
+| `control` | field, then chips | field above chips | field 6, chips 4 |
+| `priority` | field, then chips | field above chips | **field 2**, chips 4 |
+| `flat` | field, then chips | **chips above field** | **field 4, chips 4** |
+| `composition` | **chips, then field** | chips above field | field 6, chips 4 |
+
+`flat` inverts the geometry with `.offset`, which moves the rendered frame without touching layout
+order — and the frames in the dump confirm it took effect rather than being assumed: the field is
+drawn at y=175 with the chips at y=50, a 125 pt inversion of `control`'s field at y=55 and chips at
+y=110.
+
+**`composition` is the calibration case, and it is the reason anything below is believable.** E230
+already established that reordering the `VStack`'s children moves `debugDescription`, so its answer
+was known before the run. Any probe that could not tell `composition` apart from `control` would be
+a broken probe reporting a null result, not a framework limitation — which is the failure mode this
+project keeps paying for.
+
+Five probes were read in every mode: `treeOrder(app.debugDescription)`;
+`XCUIElementQuery.allElementsBoundByIndex`; `XCUIElementQuery.allElementsBoundByAccessibilityElement`;
+a depth-first walk of `try app.snapshot()`'s own `children` arrays; and `.children(matching: .any)`
+walked one query per level from the application element (217 nodes visited against a 400-node
+budget, so the walk completed rather than truncating).
+
+#### What was measured
+
+iPhone 16e simulator `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, 390 pt, one build, four launches.
+**All five probes agreed with each other in all four modes**, so one line per mode says everything:
+
+| mode | order reported by all five probes |
+|---|---|
+| `control` | field → chips |
+| `priority` | field → chips — *unchanged* |
+| `flat` | field → chips — *unchanged, with the chips drawn 125 pt above the field* |
+| `composition` | **chips → field** |
+
+`treeOrder`'s indices make the point in the smallest space: field=164, chips=165 in `control`,
+`priority` **and** `flat` — the same two integers, not merely the same relation — against chips=164,
+field=169 in `composition`.
+
+#### What this establishes
+
+1. **Sort priority is invisible**, confirming E230 across four more APIs than it tested.
+2. **Geometry is invisible too**, which E230 could not have concluded: its second experiment moved
+   `MapFilterChips` above `SearchBar` in the `VStack`, and that changes composition order *and*
+   geometry together. `flat` separates them, and geometry loses.
+3. Therefore **every way of reading the automation snapshot reports raw view-composition order** —
+   one `XCUIElementSnapshot`, five traversals and binding strategies over it, none of them a
+   computed reading order. The five are **not five independent instruments**, and nothing here
+   should be read as five agreeing witnesses: they share one blind spot by construction. That is
+   what makes the conclusion general in the direction it IS general — a tree that cannot show an
+   element moving 125 pt up the glass will not show a number that only matters to a sort the
+   accessibility server performs, whichever way you walk it.
+4. `composition` supplies a second, independent proof of (1) that does not depend on (3): the
+   shipped priorities were left intact there (field 6 > chips 4) and only the composition changed,
+   and every probe reported chips-before-field — the order the priorities say is wrong. A
+   priority-aware probe could not have printed that.
+
+**So the answer to E230's fifteen-minute question is: no such SNAPSHOT-READING API exists in this
+target, and the reason is not that the right traversal has not been found.** Looking for a sixth
+traversal is owed nothing.
+
+**What this does not close, and what the next person should try first.** Snapshot traversal is one
+class of API. A **focus engine** is another, and it does not read this tree: order there would come
+from the focus system walking the hierarchy, not from the automation snapshot. It is **unprobed by
+anyone so far**. PR #54's reviewer attempted it — `typeKey(.tab)` followed by a `hasFocus` sweep —
+and got `none`: no element reported focus at all on a simulator without Full Keyboard Access
+enabled. That is neither a counterexample nor a working probe, so the honest status is
+**inconclusive, and recorded here so it is not re-derived from scratch**. Anyone resuming this
+should start by enabling Full Keyboard Access on the device and re-running that probe, and only
+then decide whether a focus walk sees anything the snapshot does not. The same goes, a fortiori,
+for a real assistive technology, which is E192's physical-phone debt.
+
+#### What was done about it
+
+The gap E230 named — a shipped fix (task #143, E192) with no test behind it — is closed as far as it
+can be closed without VoiceOver on a physical phone, and no further:
+
+- **`CypressTests/MapSwipeOrderDeclarationTests`** (new) reads `MapHomeView.swift` off disk through
+  `AppSourceLiterals` — the helper `DrawnGlyphGuardTests` (R57) and `BritishSpellingGuardTests`
+  (R56) already use for source-level gates — and asserts that the top chrome block's declared
+  priorities **descend in the same order the block composes its children**. That agreement is the
+  entire reason a composition-order assertion says anything about reading order: if the two ever
+  disagree, `ReadingOrderAccessibilityTests
+  .testMapFieldPrecedesSuggestionsPrecedesFilterChipsInComposition` keeps passing while asserting
+  the opposite of what the app declares, and nothing anywhere says so. It also carries the
+  "can this sweep see its subject" test this project's source gates all carry, and that test earned
+  its place during the red-proof: with the block's opener perturbed, the descending check **passed
+  on an empty list** while the provenance check failed with `declarations.count → 0`.
+- The sweep excludes, by indentation, the `VStack`'s own `.accessibilitySortPriority(2)` — that
+  number ranks the top block against the bottom chrome, a different comparison among different
+  siblings, and including it would fail the suite on a correct tree.
+
+**What is still not proved, and this must not be read as if it were.** That VoiceOver honors the
+numbers. That the order a listener actually walks on screen 01 is the declared one. E192's "The
+debt" paragraph asked for a physical-phone pass with VoiceOver on, and that debt is unchanged by
+this entry. A green `MapSwipeOrderDeclarationTests` means the declaration is internally consistent.
+Nothing more.
+
+#### Scaffolding, and why none of it shipped
+
+The `CYPRESS_AXORDER` switch in `MapHomeView` and the probe class in `CypressUITests` were
+experiment apparatus and were reverted before this branch's first commit — they are on no branch and
+in no history. The measurements above are the artifact; the apparatus is described here in enough
+detail to rebuild it in an hour if anyone ever needs to re-run it against a future SDK, which is the
+only reason it would be worth rebuilding.
+
+**Say plainly what that costs a reader.** These numbers **cannot be re-derived from the tree — only
+re-measured.** Nothing in the repository lets anyone check the `.offset` that produced `flat`, the
+400-node budget, or the frames quoted above; the table is the artifact and CLAUDE.md's rule about
+not trusting an artifact you did not watch being produced applies to it as much as to anything else.
+PR #54's reviewer did rebuild the apparatus independently and reproduced every row (including the
+124.3 pt geometric inversion, the identical `priority`/`flat`/`control` indices, and
+`visited=218 truncated=false` on the level walk) — so the result has been measured twice, by two
+people, from two builds. The next reader after that has this paragraph and a rebuild, not a re-run.
+
+### E258 — R13 rules for SCREENS.md, the app draws PRODUCT.md, and the two tables have disagreed since the handoff
+
+Ticket #260. The app's five vitality anchor sentences (`Cypress/Core/Rubric/Vitality.swift`, `anchor`)
+are PRODUCT §3's, verbatim. RULINGS R13 says `SCREENS.md` holds screen 05's anchor sentences and "its
+wording is what ships". `SCREENS.md` 05 §3 carries five different sentences. All five rows differ.
+
+Everything below is read from git, from the handoff artifacts and from the code. Where a claim about
+1c469cf or 156389e is made, the commit was read; where a table is quoted, it was quoted out of the
+file at that commit, not from memory.
+
+---
+
+#### 1. The divergence arrived with the handoff. Neither distilled document invented it.
+
+`docs/distilled/PRODUCT.md` and `docs/distilled/SCREENS.md` landed in the **same commit**, 1c469cf
+(2026-07-21 15:43:07 -0700, "Add the Xcode project and the architecture contract"). Each is a faithful
+transcription of a **different** primary artifact, and the two primaries disagree.
+
+- `PRODUCT.md` §3's table is byte-identical to `SPEC-PHASE1.md` §6 (lines 174–178), which the design
+  handoff supplied as prose spec.
+- `SCREENS.md` 05 §3's table is byte-identical to `design_handoff_cypress/Cypress Screens.dc.html`
+  inside `Cypress.zip` — the design-tool export `SCREENS.md`'s own preamble names as its source,
+  including the en dashes in `25–50%` and the title `1 · Severe decline`. Extracted and grepped for
+  this entry.
+
+So there is no transcription error to correct in either distilled document, and no "wrong table" in
+the repository's own sense. Two artifacts handed over on the same day state the rubric copy
+differently, and both were distilled correctly.
+
+One trap worth naming, because an agent will grep for it: `mocks/cypress-mocks.html` (lines 528–532)
+carries a **third** variant — title `1 · Severe` rather than `1 · Severe decline`, and `25 to 50%
+dieback` rather than `25–50% dieback`. That file is not `SCREENS.md`'s source. The `.dc.html` export
+is, and `SCREENS.md` matches it exactly.
+
+#### 2. The code has carried PRODUCT's sentences since the hour it was written, and never changed.
+
+`Vitality.swift` was created in de47694 (2026-07-21 15:43:25), eighteen seconds after the distilled
+docs landed. It shipped PRODUCT's five sentences and a doc comment reading "verbatim from the PRODUCT
+§3 rubric table". The file has four commits in its whole life (de47694, 7978af4, 549750e, f268fdd);
+the five `anchor` strings are byte-identical in all four and at `HEAD`. Screen 05 was built an hour
+later, in 549750e (2026-07-21 16:40:56), and consumed `Vitality` rather than transcribing the export —
+which was deliberate architecture, and is why replacing the rubric is still an edit to one `Core`
+file.
+
+`PRODUCT.md` has been touched **once ever**, by 1c469cf. `SCREENS.md` has four commits (1c469cf,
+e48d81f, aba20c2, f268fdd) and its 05 §3 table is byte-identical in all four. **Neither table changed
+before R13, after R13, or at any point since.** Nothing moved. The conflict was fully formed at
+15:43:25 on 2026-07-21 and has been visible ever since.
+
+#### 3. What R13 was actually deciding, and what the evidence will and will not support.
+
+R13 is commit 156389e (2026-07-24 21:32:59), three days and five hours after screen 05 was built. It
+changed one file, `docs/RULINGS.md`, +28/−1. **No code change accompanied it and none has followed.**
+
+The question it answered had been standing in `RULINGS.md`'s own "What is still design's, and was not
+delegated" list since f98fe4f, worded:
+
+> The rubric wording on screen 05 — whether `PRODUCT.md` or `SCREENS.md` holds the anchor sentences.
+
+That is a **document-authority** question. Nothing in the posing says the two documents contain
+different text, and nothing in R13's commit message says the author compared them.
+
+The strongest single piece of evidence is R13's own illustrative example:
+
+> `1 · Severe decline · Mostly bare in season; over 50% dieback; survival doubtful`
+
+That string exists in **no document and in no mock**. `1 · Severe decline` is `SCREENS.md`'s title
+column; `Mostly bare in season; over 50% dieback; survival doubtful` is PRODUCT's anchor. It is
+exactly what `VitalityRow.title` and `VitalityRow.anchor` compose at runtime
+(`CheckInPresentation.swift:94, 97`). **R13's example was read off the running app, in the belief that
+what the app drew was screen 05's copy.**
+
+What the evidence supports: R13 decided which document holds the copy without comparing the two
+documents' contents, and illustrated its ruling with a sentence that the ruling, if applied, would
+delete.
+
+What the evidence does **not** support: that R13 would have been decided differently had the author
+compared them. Its rationale is general and provenance-based — "the app's words must be traceable to
+the screen that draws them, not assembled from a higher-tier document that never intended to be quoted
+letter-for-letter" — and checked against the design export three days later, that rationale points at
+the right artifact. The export really does draw those five short lines. **R13's holding is sound; its
+example is wrong.**
+
+Nor does git say whether the author opened `SCREENS.md` 05 §3 at all. There is no artifact of a
+reading. The inference above rests on the composed example and on the commit being docs-only.
+
+#### 4. Under R13's own split, the percentages were never SCREENS.md's to drop.
+
+R13 divides the ground cleanly: **meaning is `PRODUCT.md`'s, wording is `SCREENS.md`'s**, and a
+conflict about meaning — "a level added or redefined" — outranks `SCREENS.md`.
+
+Set the two tables side by side and the divergence is not uniform:
+
+| Level | `SCREENS.md` 05 §3 | PRODUCT §3 (shipped) | dieback band |
+|---|---|---|---|
+| 1 | `Mostly bare crown, major dead limbs` | `Mostly bare in season; over 50% dieback; survival doubtful` | dropped |
+| 2 | `Large dead sections, 25–50% dieback` | `Sparse canopy; major dead limbs; dieback 25 to 50%; stress obvious` | kept |
+| 3 | `Noticeably thin, 10–25% dieback` | `Noticeable thinning or discoloration; dieback 10 to 25%; still clearly viable` | kept |
+| 4 | `Canopy mostly full, isolated dead twigs` | `Canopy mostly full; minor thinning or isolated dead twigs (under 10% dieback)` | dropped |
+| 5 | `Dense canopy, vigorous new growth` | `Full, dense canopy for the season; vigorous new growth; no visible dieback` | dropped |
+
+`SCREENS.md` keeps the quantity on rows 2 and 3 and drops it on 1, 4 and 5. So the export's copy
+states a band for the middle of the scale and none at either end: a rater holding an estimate of 5
+percent, or of 60 percent, finds no row on the card that names a number they can match. That is not a
+rephrasing of the same five classes. **A class's dieback band is its operational definition — it is
+what makes level 1 level 1 — and a definition is meaning, which R13 puts in PRODUCT's hands.**
+
+The consequence matters beyond tidiness. Hallett, R.; Hallett, T. 2018, "Citizen science and tree
+health assessment: how useful are the data?", *Arboriculture & Urban Forestry* 44(6): 236–247 — fetched
+and read for this entry, not recalled — put 22 volunteers (17 high-school students and 5 adults, after
+a two-hour training session led by a Forest Service research ecologist) against an expert on a
+validation set of **59 living trees rated twice**. Fine-twig **dieback percentage** had the best
+overall volunteer/expert agreement of any variable, mean difference 3 percent, the two estimates
+within 10 percent of each other 76 percent of the time. The authors attribute that partly to the
+dieback rating having 21 possible categories against 5 for the ocular-estimate variables — which is a
+real caveat about scale granularity, and does not disturb the direction of the finding.
+
+Resolving toward `SCREENS.md` verbatim would therefore delete the best-agreeing cue in the literature
+from three of the five rows a volunteer reads at rating time, on a screen whose entire D3 argument is
+that the anchor must be visible when the rating is made.
+
+#### 5. Two defects in the shipped rubric text, confirmed — one of them narrower than reported.
+
+**(a) The bands overlap, but at one interior boundary, not three.** The candidates document
+(RULINGS **R69**) states that 10, 25 and 50 each belong to two rows. Read literally, they do not:
+
+- **0 percent** satisfies row 5 (`no visible dieback`) *and* row 4 (`under 10% dieback`). Genuinely
+  double-owned, and not previously reported.
+- **10 percent**: row 4 says *under* 10, which excludes it; row 3 says `10 to 25%`, which includes it.
+  Single owner, row 3.
+- **25 percent**: row 3 says `10 to 25%` and row 2 says `25 to 50%`. Both inclusive. **Genuinely
+  double-owned.**
+- **50 percent**: row 2 says `25 to 50%`, which includes it; row 1 says *over* 50, which excludes it.
+  Single owner, row 2.
+
+So the accurate statement is: **one interior boundary is ambiguous (25 percent) and one endpoint is
+(0 percent)**. `SCREENS.md`'s table has the same 25-percent overlap in its two numbered rows and, as
+§4 above says, no numeric statement at all outside them.
+
+The repair is the one Candidate A already carries: bands that partition the range with no shared
+endpoint — `No dead wood visible` / `1 to 10%` / `11 to 25%` / `26 to 50%` / `Over half`. Checked
+against every integer from 0 to 100, that assignment is exhaustive and non-overlapping, which the
+shipped table is not. (It leaves fractional values between bands undefined; volunteers estimating in
+whole percents or 5-percent bins never produce one, and the source protocol bins likewise.)
+
+**(b) Row 3 asks about discoloration in a month when discoloration is normal. Confirmed against the
+code, not the prose.** The shipped row 3 reads `Noticeable thinning or discoloration; dieback 10 to
+25%; still clearly viable`. `Vitality.isRatingPermitted` suppresses the section only for a
+`.deciduous` species whose month is outside `leafOnMonths`. `Species.leafOnMonths` derives the window
+as running "from the opening of the new-growth season to the **close of the fall-color season**", so
+`fall_color_months` sit *inside* the leaf-on window by construction — the same derivation E33
+rewrote when it replaced `fallColorMonths.last` with `MonthRange.spanning(_:)`. A red maple in October
+is therefore in leaf, ratable, and noticeably discolored, and the shipped anchor points its rater at
+row 3.
+
+Two things E33 makes precise and which should be stated rather than assumed. E33 did not create this;
+it corrected a *different* bug in the same derivation, and the fall-color-inside-leaf-on relationship
+is the intended behavior, not the defect. And E33 records that every `seasonal` in the shipped seed is
+empty, so every deciduous species currently takes the documented April–October fallback — which
+contains October, so the problem is live today rather than latent.
+
+The repair is copy, not gating: no candidate keeps "discoloration" unqualified in a row a seasonal
+color change satisfies. Adding a second condition to the gate would suppress the rubric in the fall
+for trees that are in leaf, which is what E33 exists to prevent.
+
+#### 6. Blast radius, measured.
+
+Both resolutions were measured by grep over `Cypress`, `CypressTests`, `CypressUITests`, `docs` and
+`Tools`. Nothing outside `docs/RULINGS.md` — which now also carries the candidates document, as
+RULINGS **R69** — cites R13 by number.
+
+**Rewriting the code to `SCREENS.md`'s five sentences.**
+- `Cypress/Core/Rubric/Vitality.swift`: five string literals, plus three doc comments that name
+  PRODUCT §3 as the source (file header, `label`, `anchor`).
+- **Zero test edits.** `ReadingOrderAccessibilityTests.testCheckInVitalityRowsReadInRubricOrder` is the
+  only test in either target carrying literal rubric copy, and it matches `hasPrefix` on
+  `VitalityRow.title` (`"1 · Severe decline"` … `"5 · Thriving"`) — six string sites, all titles, none
+  an anchor. No other test file contains an anchor fragment.
+- **No authored accessibility label.** `CheckInView.vitalityRow` is a `Button` with two `Text`
+  children, so VoiceOver reads title-then-anchor synthesized; the `hasPrefix` match survives.
+- No stored reference images anywhere in the repository, so no shot suite needs rebaselining.
+- No token, schema or migration change.
+- Cost: the rubric loses its dieback band on rows 1, 4 and 5 (§4), and keeps the 25-percent overlap on
+  rows 2 and 3 (§5a). It does drop `survival doubtful`, which is a gain.
+
+**Amending R13 and leaving the code alone.**
+- `docs/RULINGS.md` only. Zero code, zero test, zero token change.
+- Leaves `SCREENS.md` 05 §3 stating copy the app does not draw. That has to be annotated or
+  reconciled, or the next agent to read the two files re-files this ticket.
+
+**For completeness, since a future rubric may relabel rather than re-anchor.** A *label* change is
+more than the three edits previously measured. `Vitality.label`; `CypressColor.Vitality.name`;
+`ReadingOrderAccessibilityTests` (six literal sites); `StatusBadge.Kind.thriving` and its `title`,
+which draws the `THRIVING` badge on screens 01, 03, D1 and D2 documented in `SCREENS.md` §2 as one of
+exactly three; `CypressColor.thrivingBadgeFill`/`thrivingBadgeText` and their `Dark` pair;
+`TokenGallery` and `ComponentGallery` entries; and — not previously reported —
+`SpeciesPresentation.nearbySubtitle`, which lowercases `Vitality.label` into screen 07's nearby row
+(`214 photos · thriving`), so a relabel changes a verbatim `SCREENS.md` copy string on a **second**
+screen.
+
+#### 7. Which is the defect.
+
+**The code is not the defect, and R13 should not be reversed. R13 is defective in its example, and
+R13's holding, correctly applied, already decides the substance for PRODUCT's quantities.**
+
+1. R13's parenthetical quotes PRODUCT's sentence as though it were screen 05's copy (§3). That is a
+   factual error inside the ruling and should be corrected in place — it is a correction, not a
+   reversal.
+2. R13's holding stands: `SCREENS.md` owns screen copy, and the design export's five short lines are
+   genuinely the drawn copy. That was the right call on the right reasoning.
+3. But R13 reserves *meaning* to PRODUCT, and a dieback band is meaning (§4). `SCREENS.md` never had
+   authority to drop the quantity from rows 1, 4 and 5. What `SCREENS.md` does own here is the
+   register — short, comma-spliced, readable on a sidewalk — not the definition.
+4. So neither table ships as written. Both are draft v0 by PRODUCT §3's own words, both carry the
+   defects in §5, and both are superseded by the rubric the owner chose on 2026-08-07 (Candidate A,
+   RULINGS **R69**). Candidate A keeps a quantity in every row,
+   repairs the boundaries, and drops the discoloration clause and the prognosis.
+5. The resolution is therefore to close the fork rather than adjudicate it: **Candidate A's five
+   sentences land in PRODUCT §3, `SCREENS.md` 05 §3 and `Vitality.swift` together**, which is what
+   the candidates document already required of whichever candidate won.
+6. Until that lands, the app keeps PRODUCT's sentences. Rewriting `Vitality.anchor` to the export's
+   copy now would ship the weaker text — no band on three of five rows, against a published finding
+   that the band is the best-agreeing cue volunteers produce — and Candidate A would throw the work
+   away within the round.
+
+The one thing that should not happen is leaving the record as it stands, with a ruling whose example
+contradicts its holding and a screen spec that states copy the app does not draw.
+
+#### 8. What was not established
+
+- Whether R13's author opened `SCREENS.md` 05 §3. Git records the ruling and the code, not a reading.
+- Whether the two handoff artifacts disagreed deliberately. `SPEC-PHASE1.md` §6 and the `.dc.html`
+  export both predate this repository; nothing in `design_handoff_cypress/README.md` states a
+  precedence between prose spec and design export.
+- Nothing here was compiled and no test was run. This is a documentation branch; every mechanical
+  claim is from `git show`, from grep over the working tree, and from `unzip` of the committed
+  `Cypress.zip`.
+
+### E259 — E189's correction list missed E33, so "every `seasonal` in the shipped seed is empty" is still on the books — and the sentence #261 actually needs is a narrower one
+
+Ticket #261, found while confirming the second defect Candidate A repairs.
+
+E189 established that the seed carries seasonal data and listed what to correct at merge: R23, R23.1,
+R31, E183 §5 and `SeasonalWindowTests`' header. **E33 was not on that list and still ends with the
+sentence E189 refuted:**
+
+> This is latent, not live: every `seasonal` in the shipped seed is empty, so every deciduous species
+> takes the fallback today.
+
+`SeasonalWindowTests`' header was duly corrected and now cites E189. E33 was not, so an agent reading
+E33 — which is the natural place to read, because E33 is the entry about `leafOnMonths` — still gets
+the refuted sentence, with nothing pointing at E189. ERRATA **E258** (ticket #260) took it from E33
+and repeated it, which is how it reached ticket #261's brief.
+
+#### The measurement, against the seed this build ships
+
+`Cypress/Resources/cypress-seed.sqlite` and `Fixtures/seed/cypress-seed.sqlite` are identical
+(sha256 `c9a440b2…`, md5 `de7b55a957ef15439052af64305cfdbf`). This is **not** E189's binary — E189
+measured md5 `815ed501445e6f188cc7898e6b2901cb` — and the species count has moved with a re-ingest,
+so E189's own figures need reading with that in mind:
+
+| | E189's seed | this seed |
+|---|---|---|
+| species rows | 569 | **731** |
+| `seasonal <> '{}'` | 511 | **511** |
+| non-empty `bloom_months` | 11 | **11** |
+
+The seasonal data itself did not change; 162 species rows arrived carrying `{}`. E189's denominator
+is stale, its numerators are not, and nothing it concluded about `In bloom` is disturbed.
+
+Two figures E189 did not report, and #261 depends on the second:
+
+- **13 rows carry at least one non-empty array** (9 evergreen, 3 deciduous, 1 semi-deciduous). Eleven
+  carry `bloom_months`, **eight** carry `fruit_months` — seven rows carry both, which is why 11 + 8 + 1
+  does not sum to 13 — and `Ginkgo biloba` carries `fall_color_months` `[11, 12]`. So "511 carry a
+  non-empty `seasonal` JSON" means 511 rows whose JSON object has *keys*, not 511 rows with a calendar
+  in them — a distinction worth stating, since the two readings differ by a factor of forty.
+
+  The `fruit_months` figure first went into this entry as **three**, and how it went wrong is this
+  document's own subject one level down: it was counted by eye off a `GROUP BY seasonal` listing
+  instead of derived by a predicate, and seven of the eight sat in rows that also carried
+  `bloom_months` and read as bloom rows. Re-derived with
+  `json_array_length(COALESCE(json_extract(seasonal,'$.fruit_months'),'[]')) > 0`, which returns 8:
+  `Prunus cerasifera`, `Pittosporum undulatum`, `Acacia melanoxylon`, `Metrosideros excelsa`, `Olea
+  europaea`, `Myoporum laetum`, `Callistemon citrinus`, `Ligustrum lucidum`. A count read off a
+  listing is not a measurement.
+- **`new_growth_months` is empty on all 731 rows.** Zero exceptions, Ginkgo included.
+
+#### The sentence that should replace E33's
+
+`Species.leafOnMonths` derives a deciduous window from `MonthRange.spanning(newGrowthMonths)` **and**
+`MonthRange.spanning(fallColorMonths)`, falling back to April–October if *either* is absent. Because
+no row authors `new_growth_months`, the `guard` fails for every deciduous species and all 181 of them
+take the fallback today. E33's conclusion is therefore correct and its stated reason is not. The
+accurate form:
+
+> No species in the shipped seed authors `new_growth_months`, so every deciduous species takes the
+> April–October fallback today, and E33's wrapping-fall bug lands the moment one does.
+
+#### What that means for #261's row 3, stated no more strongly than the seed supports
+
+Draft v0's row 3 read "Noticeable thinning or discoloration", and `Vitality.isRatingPermitted` gates
+on leaf-on/leaf-off and nothing else. Two separate claims follow, and only the first is unconditional:
+
+- **By construction, for any species that authors both seasons.** `leafOnMonths` closes the window at
+  `fallColor.end`, so the entire authored fall-color season is inside leaf-on and therefore ratable.
+  That is not a bug in the derivation — it is what E33 established the window should be, and narrowing
+  the gate to exclude fall color would suppress the rubric for trees that are in leaf, which is what
+  E33 exists to prevent. Any species with an authored calendar is exposed the day it lands.
+- **Today, through the fallback only, and the seed does not author the botany.** All 181 deciduous
+  species take April–October. The single species with an authored fall-color calendar, `Ginkgo
+  biloba`, has it at `[11, 12]` — *outside* the fallback — so the app suppresses vitality for Ginkgo
+  in exactly the two months its calendar says it is discoloring, and **no row in the shipped seed is
+  simultaneously ratable and inside an authored fall-color window.** Saying the defect is "live today"
+  therefore rests on October being fall-color season for deciduous street trees in San Francisco,
+  which is real-world botany this seed does not state and this project must not invent (DECISIONS
+  constraint 15).
+
+The copy repair stands on the first bullet alone, and on something neither bullet needs: a rater
+cannot tell seasonal color from stress color by looking, and the anchor asked them to. E33 did not
+create any of this — it repaired a *different* bug in the same derivation, and fall color sitting
+inside the leaf-on window is the intended behavior, not the defect.
+
+#### Calibration
+
+Every count above is from a `sqlite3` predicate checked against an answer known in advance before it
+was believed. `SELECT count(*) FROM species` returns 731, which the candidates document (RULINGS **R69**)
+measured independently. `seasonal = '{}'` (220) plus `seasonal <> '{}'` (511) sums to 731, so the two
+predicates partition the table. The `json_array_length` predicate on `bloom_months` returns 11,
+matching E189's independent figure, and the same predicate on `new_growth_months` returns 0, matching
+the `guard`'s observed behavior.
+
+The one figure here that was **not** derived that way was wrong, which is the calibration lesson
+rather than an aside: `fruit_months` was eyeballed off a `GROUP BY` and reported as three against a
+true eight. The rule that catches it is the same rule the rest of this entry applies — a listing is
+not a count, and a predicate is.
+
+### E260 — The camera guard certified a camera the tests cannot use, and a red CI run would not say what failed (task #71)
+
+#### The occurrence
+
+`DeepLinkVoiceOverTests.testPinAdjust`, on iPhone 16 Pro `EA0AD796-…`, **at 402 pt**, fails on
+contact:
+
+    <unknown>:0: error: -[CypressUITests.DeepLinkVoiceOverTests testPinAdjust] :
+    Failed to determine hittability of "City tree, Southern Magnolia" Button:
+    Activation point invalid and no suggested hit points based on element frame
+
+The only thing wrong with the device is its remembered `map.lastCamera`,
+`[37.759899,-122.414803]` at zoom 18. `Tools/run_tests.sh` looked straight at that camera, stamped
+`camera-trees=501` and `camera-auto-healed no` in the header, and ran the suite on it. This is
+CLAUDE.md's own signature shape living inside the harness: **a guard reporting green precisely when
+its condition is present.**
+
+**The width qualifier is not decoration.** The same camera, the same test and main's own harness run
+`Executed 26 tests, with 0 failures` on a **430 pt** device — measured by this PR's reviewer, and the
+first draft of this entry was wrong to say the camera "fails on contact, every time". It fails at
+402 pt. E202 and E216 are both width-scoped for their own reasons, which is why `run_tests.sh`
+stamps `screen-width-pt` on every log and why `verify_test_log.sh` has `--expect-width` at all; a
+width-sensitive claim made without a width is not a claim about the app on the devices it ships to.
+
+The opposite geometry showed up in the same review and is worth recording beside it. The camera the
+reviewer used to break the guard's tolerance — `37.760040,-122.426903,0.001078,0.002590`, 49 m north
+with the longitude span 1.9× — **fails at 430 pt and passes at 402 pt**, the mirror image of the
+ticket's own camera. It does not pass cleanly: 254 s against 12.5 s for the same single test on the
+same device at the normalized camera. Two cameras, opposite width sensitivities, one shared cause
+underneath (`isHittable` raising on a background annotation), which is the argument for normalizing
+the camera rather than enumerating the bad ones.
+
+#### What the camera actually does, which is not what the E216 guard asks about
+
+The E202-B and E216 branches ask two geometric questions of the remembered camera — is it narrow
+enough for pins, and does the seed cover the ground under it. This camera answers both correctly.
+The mechanism has nothing to do with its own geometry:
+
+- Screen 18 (`pinAdjust`) is **presented over the map tab root**, not pushed — `DeepLinkVoiceOver
+  Tests`'s own file comment says so. Screen 01's annotations therefore stay in the accessibility
+  tree behind it, drawn at whatever `map.lastCamera` says.
+- `DeepLinkHarness.assertEveryControlIsLabeled` walks `app.buttons` — **every button in the app**,
+  background map pins included — and reads `element.isHittable` as its filter. An annotation the
+  remembered camera happens to place where XCUITest can compute no activation point does not answer
+  `false`; it **raises**, and the raise is the test failure.
+
+Which cameras do that is a fact about MapKit's layout of one particular block. It is not a
+geometry a rule can enumerate, and this was the *third* geometry after "too wide" (E202-B) and
+"over nothing" (E216).
+
+#### Pass and fail are a threshold on one continuous cost, not two states
+
+This is the most useful thing the ticket turned up, and it was only visible because two people
+measured the same camera on two different screens and got opposite verdicts.
+
+Back to back at **430 pt**, preflight bypassed, single test, controls on both sides:
+
+    normalized-default     12.365 s
+    ticket-camera          34.713 s
+    normalized-default-2   12.475 s
+
+That is 2.8× — on the width where the ticket's camera **passes**. At 402 pt the same comparison is
+254 s against 12.5 s, and there the test fails. The reviewer's camera behaves the same way with the
+widths swapped: it fails at 430 pt and passes at 402 pt, in 254 s against 12.5 s.
+
+So there are not two states. `assertEveryControlIsLabeled` reads `isHittable` on every button in
+the app, background map annotations included, and XCUITest spends retry budget on each annotation
+whose activation point it cannot resolve. A camera that leaves more unresolvable annotations behind
+costs more budget. It **raises** only when the budget finally runs out, and where that happens
+depends on how many such annotations the screen width put on the map. Pass and fail are two sides
+of one threshold on a continuous cost.
+
+**The sentence worth keeping: "it passes on this camera" is not evidence the camera is fine, only
+that the budget held.** A 20× runtime on an unchanged test is the same finding as a failure, arriving
+early. It is also why two careful people each failed to reproduce the other's red without either
+being wrong, and it is the real argument for normalizing the camera rather than enumerating bad
+ones: an enumeration can only ever list the cameras that have already crossed the threshold on some
+screen somebody happened to run.
+
+#### Two premises in the brief, checked rather than inherited
+
+Both were wrong, and one of them would have sent the repair to the wrong place.
+
+**"Only the stored camera differed."** The isolation run that passed came from a device that had
+been *erased*, which clears the location fix as well as the camera. Ran the missing cell: bad camera
++ the good fix at `37.7596,-122.4269`. It fails **identically**, same species, same message. The fix
+is not a variable here at all, and the reason is in the app: `DebugDeepLink.pinAdjustFix` anchors
+screen 18 to `MapLayout.defaultCenter` unconditionally, so the pin screen's own contents do not move
+with the device's location. Only the map *behind* it does.
+
+That also disposes of one of the two repairs the brief floated — "validate the deep-link fixtures'
+own targets fall within the computed camera". The fixtures resolve from a fixed anchor
+(`DebugDeepLink.center = MapLayout.defaultCenter`) no matter where the camera is pointed, so there
+is nothing there to validate.
+
+**"CI never uploads the UI log."** It does, and it has since `47b7d12` (2026-08-03): `unit` and
+every `ui` shard carry a `Keep the log, whatever happened` step with `if: always()`. The artifacts
+are present on all four red runs checked (31294993494, 31291434427, 31241508337, 31229960422), and
+`ui-1.log` from the first of those holds the full assertion — test name, source line, message.
+
+The *symptom* was real all the same. What GitHub shows a reader in the failing job is:
+
+    VERIFY-FAIL: ** TEST FAILED ** present
+
+and nothing else. The evidence existed and cost a download, an unzip and a grep to reach, so three
+red runs were written off as flake by people who never opened one. **A verdict a reader will not
+act on is a verdict that does not count** — which is a different defect from the missing upload
+that was reported, and it is fixed at `verify_test_log.sh` rather than in the workflow.
+
+#### The repairs
+
+**1. The guard normalizes instead of certifying (`Tools/run_tests.sh`).** The burden is inverted.
+Rather than listing bad cameras and certifying the rest — a blacklist, which is the shape that
+failed here — the admitted set is the app's own `MapLayout.defaultCenter` at
+`MapLayout.defaultSpanMeters` plus the **measured readback drift** around it, and anything outside
+is rewritten before the suite runs. `compute_safe_camera` prefers that point and keeps its
+densest-seed-bin computation as the fallback for a city whose inventory does not reach the app's
+default.
+
+*`viewport-trees` is honest about the stored camera and pessimistic about the screen.* It counts
+seed rows inside the rectangle the **stored spans** describe, not inside the rectangle MapKit
+actually draws — MapKit aspect-fits the region to the view, so the drawn rectangle is generally
+taller or wider than the stored one. Aspect-corrected, the ticket's camera at 430 pt holds 76 trees
+where the header reports 21. So the number is a floor, not a drawn-pin count, and it must not be
+read as "this is what the map shows". It is in the header to make the ±250 m box's blind spot
+visible, which it does at either precision.
+
+*The drift band, and why the first one was indefensible.* The first cut allowed 50 m of centre and a
+0.5×–2× span band while justifying the number, in its own comment, by a readback drift measured at
+~0.2 m and spans "a fraction of a percent" out — 250× and ~100× looser than its own evidence, and it
+compared only the longitude span, never the latitude one. "Exactly one camera is admitted" was
+therefore false in the script, the PR body and this entry: the admitted set was a 100 m disc crossed
+with a 4× span range, and the reviewer found a camera inside it that the guard certified and that
+then failed the ticket's own test. The band is now 2 m of centre and ±2 % on **both** spans — about
+ten times the drift actually measured (writing the target and letting the app run leaves 0.3 m of
+centre, 0.003 % and 0.05 % of span behind). A tolerance that contains the defect it was written for
+is that defect one level up.
+
+*The parse refuses rather than falls through.* `MapLayout.defaultCenter` is read out of the app's
+source, never copied as a literal — but the first cut's three unanchored `sed`s failed **silently**
+in every failure mode, and the caller read "could not parse" as "nothing to compare against",
+dropping out of the chain and stamping a clean flag over an arbitrary camera. That is the
+pre-existing false certification restored without a word. It now strips comments, scopes to
+`enum MapLayout`'s own braces, insists on exactly one declaration of each, cross-checks the result
+against `DebugLocationFixtures.missionDolores` in a different file, and **refuses** on any failure.
+`MapLayoutDefaultsAgreeTests` asserts the cross-check's premise in Swift, so the agreement the
+script leans on is itself guarded.
+
+The span needed one more thing, found in review after the coordinate was already safe, and it is
+worth recording because it is the same defect wearing the other value's clothes. `[0-9.]+` with no
+trailing anchor stops at the first character it cannot eat and reports what it got, so Swift's own
+digit separator — `CLLocationDistance = 3_00` — parsed as **3**, silently. Nothing downstream
+caught it: zoom capped at 21 (≥ 16, E202-B passes), `camera-trees=553` (E216 passes),
+`viewport-trees=0` which is *the same 0 the correct 120 m default reports* and so cannot
+discriminate, `camera_matches_target` comparing against the same wrong target and therefore
+converging, and the Swift test green because Swift reads 300 and 300 is under the pin threshold it
+asserts. Six checks, all agreeing, all wrong. The number must now end at a token boundary
+(`[0-9.]+([[:space:]]|$)`), which turns that into no match, and no match is a refusal.
+
+**The coordinate has a second declaration to be checked against and the span has none.** That
+asymmetry is why the span's only defence is the strictness of its own pattern, and why the pattern
+is anchored rather than permissive.
+
+*Two header flags, not one.* `camera-auto-healed` keeps E202-B's meaning — this device was in one of
+the two anomalous states — and stays rare, which is the only condition under which it discriminates.
+The routine #71 rewrite reports as `camera-normalized`. The split exists because
+`MapHomeView.swift` records that one granted launch at the project's canonical fix leaves
+`map.lastCamera` holding `(37.759899, −122.414803, 0.001081, 0.001362)`: **the ticket's hostile
+camera is what a healthy 402 pt device holds after a UI suite**, so normalization runs on most real
+runs. Reporting that under the anomaly flag would have made it fire every time and mean nothing.
+
+*Convergence is checked against whatever was written.* The first cut only verified convergence when
+the target came from the app default, so the densest-bin fallback would have re-triggered on every
+subsequent run and healed forever, each log claiming a repair.
+
+What this claims is deliberately weaker than what the old header implied. It does **not** claim the
+default camera can serve any given test; nothing in a shell script can know that, and the header now
+says so out loud — `viewport-trees=0` at the app's own default, because the camera it normalizes onto
+draws no pins inside its own 120 m rectangle. That is not a defect being hidden: `defaultSpanMeters`'
+own doc comment says Mission Dolores Park is 390 m across and the nearest inventoried tree is a block
+away, and the ±250 m `camera-trees` box cannot see it. Both counts are now printed, and neither is
+refused on. What the guard claims is that every run starts from **one** known camera — the one the
+suite is green on — instead of inheriting whichever of infinitely many the last run left behind.
+
+**2. A red verdict carries its own evidence (`Tools/verify_test_log.sh`).** `VERIFY-FAIL-DETAIL`
+prints the failing test names and their messages — deduped, first 25, each clipped to 400 columns —
+at all three failure verdicts (`** TEST FAILED **`, an XCTest `Executed … N failures` line, and a
+Swift Testing failure). It appears in the CI job log, in a local run, and on every later re-read of
+the artifact.
+
+**3. Retention and result bundles (`.github/workflows/testflight.yml`).** The existing log uploads
+gain `retention-days: 14` instead of the 90-day repository default — a CI log is read within days
+of the run or never, and a two-month-old log under a familiar name is exactly what CLAUDE.md's
+"never trust an artifact you did not watch being produced" rule is about. A new failure-only step
+keeps the `.xcresult` for `unit` and each `ui` shard (`if: failure()`, `if-no-files-found: ignore`),
+which carries the attachments and per-test source locations the text log cannot.
+
+#### The red-proofs
+
+*Guard, four cases, each run through the real script against real device state:*
+
+| stored camera | expected | observed |
+| --- | --- | --- |
+| `37.759899,-122.414803` z18, 501 trees (the ticket's) | normalize | `camera-normalized yes`, `auto-healed no` |
+| `37.760040,-122.426903,0.001078,0.002590` (the reviewer's, inside the old tolerance) | normalize | `camera-normalized yes`, `auto-healed no` |
+| the target, immediately after | **leave alone** | `auto-healed no`, `normalized no` |
+| `37.7596,-122.4269` spans `0.20/0.25` (zoom 11) | heal, E202-B branch | `auto-healed yes reason=E202-B too-wide`, `normalized no` |
+| `37.769402,-122.486198` (Golden Gate Park, 0 trees) | heal, E216 branch | `auto-healed yes reason=E216 uncovered`, `normalized no` |
+
+Rows 4 and 5 show the anomaly flag firing *without* the routine one, which is the split N1 asked
+for. Row 3 is the one that matters as much as row 1.
+
+*Parser, eight cases against a rig fed variants of the real file.* Control parses
+`37.7596 / -122.4269 / 120`. A **doc comment above the declaration citing a historical coordinate**
+— the rc=0 mis-parse the reviewer found, which under the old parser returned `37.7599,-122.4148`,
+the ticket's own bad block — now parses correctly, because comments are stripped first. Five shapes
+that break the anchor (`Coordinate(` split across lines, a wrapped `longitude:`,
+`CLLocationDistance(120)`, a computed `var`, the file renamed) all refuse with a message naming which
+declaration was not found. Making the two files disagree refuses with both coordinates quoted.
+
+Two more after the span anchor landed: `= 3_00` and `= 1_20`, Swift's own digit separator, both now
+refuse where `3_00` previously parsed as **3** in silence. And four spellings that must keep
+parsing, so the anchor is shown not to over-refuse: plain `120`, `120.0`, `120` with trailing
+whitespace, and `120` followed by a line comment. A guard that refuses everything is not a fix — the
+same standard the tolerance was held to.
+
+Building that rig found a bug in the parser it was built to test: with a value missing, the awk
+`END` line printed an empty field, `read` split on whitespace runs, and every later field shifted
+left — so the counts ended up holding coordinates and the refusal named the wrong declaration. The
+counts are now emitted first and every value has a `-` placeholder, so the line's arity is fixed.
+
+The second row is the one that matters as much as the first: a guard that refuses everything is not
+a fix, and the E202-B/E216 rows show the two existing branches still fire with their own
+diagnostics rather than being swallowed by the new one.
+
+*End to end, same test, same camera, same tree:*
+
+- before — `VERIFY-FAIL: ** TEST FAILED ** present`, the hittability message quoted at the top.
+- after — the guard heals, and `Executed 1 test, with 0 failures (0 unexpected) in 12.524s`.
+
+*Failure excerpt, calibrated before it was believed* (CLAUDE.md: run the instrument against a case
+whose answer you already know). Four logs: a local UI log with one known failure → 1 line, the right
+one; a CI unit log of 1,317 passing tests → silent; a CI UI log with one known failure → 1 line, the
+right one; a green CI UI shard → silent. A looser pattern (`error:` or `failed` alone) reports 37
+lines on that green unit log, because xcodebuild prints both words routinely in builds that are
+fine. The Swift Testing branch was red-proved separately by breaking a real test and running it
+alone; it printed the test, the file and line, and the expectation, and the break was reverted.
+
+*What the CI evidence does and does not show.* A first pass offered "the same grep finds failure
+lines in this branch's job log and none in five pre-change ones" as proof the failures were
+pre-existing. It is not: a grep for the new feature's own output over logs written before the
+feature existed **must** return zero, so it measures the feature's absence and nothing about the
+failures. It is good evidence for the *other* claim — that the job log genuinely never carried this
+text — and it is only used for that now. The attribution rests on different evidence: pre-change run
+`31294993494`'s `ui-1.log` fails on the same test with the same message, and both failing shards'
+headers read `map.lastCamera=[n/a (app not installed)]`, so the new branch had no camera to act on
+and demonstrably did not fire. The diff does change CI behaviour in one real way — it adds
+`-resultBundlePath` to `xcodebuild` — so the inertness claim is made about the camera guard
+specifically, not about the whole diff.
+
+#### Not done, and why
+
+- **The test's own fragility is untouched.** `assertEveryControlIsLabeled` asserting over elements
+  of a screen it does not own — the map behind a presented cover — is the deeper defect, and the
+  brief's other option (have the deep-link tests pin their own opening camera, the way R58's
+  `CYPRESS_LOCATION` pins location) is the fix for it. That needs a DEBUG seam in app code and its
+  own unit tests, which is a second ticket, not a rider on a harness change. Until it exists, a
+  device state the harness does not model can still reach these tests.
+- **The tolerance is a width, not a claim.** `CAMERA_CENTER_TOLERANCE_M=2` with `±2 %` on both
+  spans exists to absorb MapKit's own readback drift, measured on a device. It is not an assertion
+  that everything inside 2 m is equally good — it is the width of "the same camera".
+- **Retention was set to 30 days for the text logs and 14 for the result bundles**, not 14 for
+  both. An errata entry cites the run it was written from, and a citation whose artifact expires
+  before the next reader follows it is its own small false green; 30 days outlives a review round.
+  The bundles are ~110 MB each, so size is what gets rationed.
+- **The excerpt still prints two lines per Swift Testing failure**, not one: the issue line (which
+  carries the expectation) and the test line. Only the two aggregate shapes are dropped. Cutting
+  further would mean parsing Swift Testing's output rather than filtering it.
+- **The harness now hard-depends on the shape of two Swift source files, and that is a new class
+  of harness outage.** `run_tests.sh` refuses — every run, unit and UI alike — if it cannot parse
+  `MapLayout.defaultCenter`/`defaultSpanMeters` out of `MapKitBasemap.swift` or
+  `DebugLocationFixtures.missionDolores` out of `DebugLocationOverride.swift`, or if the two
+  disagree. A **legitimate** refactor of either file therefore blocks the suite until somebody
+  reads the refusal and updates the parser. That is deliberate — the alternative is the silent
+  fall-through this ticket exists to remove, and refusing loudly is the whole design — but it is a
+  real cost and it is written here rather than left to be discovered. Three things make it
+  survivable: the refusal names the file and says which declaration it could not find,
+  `MapLayoutDefaultsAgreeTests` goes red in the same run so the cause is visible from the test
+  suite as well as the harness, and `CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1` is an escape hatch that
+  stamps its own use into the log. The shapes it accepts are enumerated in the red-proof table
+  above, which is the list to read before reshaping either declaration.
+- **`viewport-trees` is reported and never refused on.** A camera whose own rectangle holds no
+  trees is the app's documented behaviour at its own default, so a guard that refused it would
+  refuse the app. Whether the suite *should* open somewhere with pins in view is a product
+  question, not a harness one.
+
+### E261 — Four things the #158 spec found that are true whatever was ruled
+
+Ticket #158, whose deliverable is `docs/design-proposals/2026-08-09-task158-live-layer.md`. These four
+are not part of what the owner ruled on. They are facts about the code, found while reading for that
+document, and they are recorded here because they outlive the proposal.
+
+Everything below was read from the declaration, not from a comment about it.
+
+---
+
+#### 1. The two schema-version spaces no longer collide at 14
+
+CLAUDE.md's numbering section said: *"There are two schema-version spaces and they now genuinely
+collide at 14."* Read from the code at `0e1df35`:
+
+- `AppSchema.currentVersion` (`Cypress/Data/Store/AppSchema.swift`) is the maximum
+  `Migration(version:)` in the table, and the newest entry is **14** — *"a species claim can be
+  corrected, and the correction keeps it."*
+- `SeedDatabase.newestKnownSchemaVersion` (`Cypress/Data/Store/SeedDatabase.swift`) is **16**, set by
+  task #237: `dim_city`, joined through `id_spaces.city_id`, and the drop of `id_spaces.short_name`.
+
+They are 14 and 16. They collided when that bullet was written and they do not now.
+
+The bullet is the one place in CLAUDE.md documenting its own failure mode — *"this bullet claimed the
+writable one was 13 for a round after v14 landed, which is the confusion it exists to prevent"* — so
+this is the **second** time the same sentence has gone stale, in the same direction, for the same
+reason. The rule the bullet states is what caught it: read both from the code, never from that file.
+
+The correction to CLAUDE.md is landing separately (PR #65) rather than from this branch, because it is
+a shared root file. **The rule needs no change — only its example, and the entry worth keeping is that
+the example is what rots.** A version number written into prose is a number that will be wrong; the
+two constants above are the only place either question has an answer.
+
+#### 2. The outbox drain is what commits a contribution to the local database
+
+`Cypress/Data/DataLayer.swift` wires the queue's transport to `LocalAPI`:
+`OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))`. A visit reaches its tree
+because a drain called `LocalAPI.sync`, which called `apply(_:)`, which called
+`contributions.insert`. There is no other path: the six outbox writers enqueue and return, and every
+read in the app is `LocalAPI` over the same local tables.
+
+So `sync` is doing two jobs that look like one — *send* and *commit* — and they are indistinguishable
+at the seam. Repointing the transport at `RemoteAPI` when the service lands does not add a network to
+an existing local write; **it removes the local write**, and the person's own grove, journal and
+profile timeline go empty for everything they contributed. Nothing would report it as an error,
+because every layer would be behaving exactly as written.
+
+Not a defect in the shipping build — today the transport cannot be anything but local. Recorded
+because it is invisible right up to the moment somebody makes the one-line change that looks like the
+whole job.
+
+The `outbox` table cannot express the split as it stands: one completion flag, `json_synced`, under
+`CHECK (state <> 'done' OR (json_synced = 1 AND json_array_length(photo_paths) = 0))`. Two sinks means
+a second flag and a rewritten table-level constraint — a migration in the `AppSchema.currentVersion`
+space, named in the proposal's §7 and deliberately not written there.
+
+#### 3. A lapsed session would convert the whole queue to terminal failures in one pass
+
+`APIError.unauthorized.retryable` is **`false`** (`Cypress/Core/APIError.swift`), and
+`OutboxRetryPolicy.nextState` (`Cypress/Core/Models/OutboxItem.swift`) reads exactly that: a
+non-retryable code moves an item to `.failed` immediately, without touching the 48 h window.
+`OutboxFailureReason`'s sentence for that code, in `Cypress/Data/Outbox/OutboxViewState.swift`, is
+*"Sign in to send this."*
+
+Both are correct alone. Together, against a real server, one expired access token does not slow a
+drain down — it ends it, marking every item in the batch terminally failed and telling a person who is
+signed in to sign in. Screen 17's promise ("an item that cannot sync says so, says why, and waits for
+you") would be kept in form and broken in substance: the items are not waiting, they have been given
+up on, and the reason given is false.
+
+The fix is at the transport and belongs to whoever builds #158: a 401 is a fact about the session, not
+about the item, so it refreshes and replays the batch once, and a failed refresh fails the batch as a
+transport failure — which `OutboxQueue.drain` already handles by keeping every item alive on the
+backoff. `unauthorized` should reach an item only when the item genuinely is not this identity's to
+send, which is what the copy already means.
+
+Recorded now rather than at build time because it is a two-line interaction between two files that
+each read correctly on their own, and the failure it produces looks like a server outage.
+
+#### 4. `RemoteAPI` conforms to `CypressAPI` while implementing fewer than two thirds of it
+
+`CypressAPI` declares **31** requirements. `RemoteAPI` (`Cypress/Data/API/RemoteAPI.swift`) declares
+**17** methods. The other fourteen are satisfied by protocol-extension defaults, and the conformance
+compiles either way.
+
+Ten of the fourteen throw `.notFound` — the four species-claim methods
+(`Cypress/Data/API/SpeciesClaim.swift`), the three record-defect methods
+(`Cypress/Data/API/RecordDefect.swift`), and `photoData`, `setPhotoVote`, `deletePhoto`
+(`Cypress/Data/API/PhotoAccess.swift`). Those are loud.
+
+**Four return a value, and three of those four are the finding.** `speciesGuide`
+(`Cypress/Data/API/SpeciesGuide.swift`) returns the field-guide entry with no population facts;
+`mapMembership` (`Cypress/Data/API/MapMembership.swift`) returns the empty set; `deviceContributions`
+(`Cypress/Data/API/DeviceContributions.swift`) returns `.none`; `isFavorite` derives from `grove()`.
+
+Every one of those defaults is correct **for what it was written for** — an implementation with
+nothing behind it, saying nothing rather than saying zero. What makes this an entry is that they are
+also what a *finished* `RemoteAPI` would inherit if somebody forgot a method: a species guide with no
+population line, a map on which nothing is yours or favorited, and a device that has contributed
+nothing — rendered as answers, silently, with the conformance complete and the build green.
+
+`deviceContributions` is the one that should stay inherited, and `RemoteAPI` says so in a comment
+where the method would be. The other thirteen are places where "it compiles" is not evidence of an
+implementation. The general form of the trap is already numbered — ERRATA **E125**, the day an
+extension member's static dispatch made every photograph in the app fail to load on a build whose
+tests all passed — and this is its other half: not a requirement that should have been in the
+protocol, but a requirement that is in the protocol and whose default is comfortable enough to hide
+a missing implementation.
+
+The cheap guard, named rather than written: a test that holds `any CypressAPI` and asserts each
+method reaches the concrete implementation rather than the extension. **This is now task #76**, and
+its ordering is part of the finding rather than a scheduling detail: it runs before or alongside the
+work that completes `RemoteAPI`, never after. A conformance that compiles while fourteen methods are
+missing cannot report whether the fifteenth was written — so landing the guard first leaves every
+unimplemented method failing until it is real, and landing it afterwards means auditing an
+implementation the compiler has agreed with the whole way.
