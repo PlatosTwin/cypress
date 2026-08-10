@@ -1705,6 +1705,12 @@ func TestTheAddressIsTheClientsAddress(t *testing.T) {
 	if err := json.Unmarshal(second.Body.Bytes(), &envelope); err != nil {
 		t.Fatal(err)
 	}
+	// Indexed only after checking. A bare `[0]` panics the whole package when an injection makes
+	// the list empty, which turns a red-proof's message into a stack trace and takes every other
+	// test in the binary down with it.
+	if len(envelope.Detail.Candidates) != 1 {
+		t.Fatalf("got %d candidates, want 1: %s", len(envelope.Detail.Candidates), second.Body.String())
+	}
 	candidate := envelope.Detail.Candidates[0]
 	if candidate.Tree.Address == nil || *candidate.Tree.Address != "123 Judah St" {
 		t.Fatalf("address = %v, want the street address the client sent", candidate.Tree.Address)

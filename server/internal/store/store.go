@@ -10,7 +10,6 @@ package store
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"time"
@@ -19,20 +18,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//go:embed schema.sql
-var schemaSQL string
-
-// SchemaVersion is this service's own counter. It is not either of the app's two schema-version
-// spaces (see schema.sql's header) and it advances independently of both.
-const SchemaVersion = 1
-
 // Store holds the pool.
 type Store struct {
 	pool *pgxpool.Pool
 	now  func() time.Time
 }
 
-// Open connects and applies the schema.
+// Open connects and brings the schema up to date.
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
@@ -60,26 +52,6 @@ func (s *Store) Now() time.Time { return s.now() }
 
 // Close releases the pool.
 func (s *Store) Close() { s.pool.Close() }
-
-// Migrate applies schema.sql. Every statement is `IF NOT EXISTS`, so this is safe on every boot —
-// which is what a single machine with no separate migration step needs.
-func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, schemaSQL); err != nil {
-		return fmt.Errorf("applying schema: %w", err)
-	}
-	var version int
-	err := s.pool.QueryRow(ctx, `SELECT coalesce(max(version), 0) FROM schema_meta`).Scan(&version)
-	if err != nil {
-		return fmt.Errorf("reading schema version: %w", err)
-	}
-	if version < SchemaVersion {
-		_, err = s.pool.Exec(ctx, `INSERT INTO schema_meta (version) VALUES ($1)`, SchemaVersion)
-		if err != nil {
-			return fmt.Errorf("recording schema version: %w", err)
-		}
-	}
-	return nil
-}
 
 // ErrNotFound is returned by every read that found nothing.
 var ErrNotFound = errors.New("not found")

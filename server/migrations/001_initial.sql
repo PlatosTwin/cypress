@@ -1,13 +1,28 @@
--- The sync service's Postgres schema.
+-- 001 — the initial schema.
+--
+-- ── How this file may and may not change ──────────────────────────────────────────────────────
+--
+-- **It may not.** Once a migration has been applied anywhere it is frozen; a change to an applied
+-- file is a change that some databases have and others do not, with nothing able to tell them
+-- apart. Every subsequent change is a new numbered file, and `internal/store/migrate.go` refuses to
+-- boot on a gap or on a version it does not recognize.
+--
+-- Statements are plain `CREATE TABLE`, not `CREATE TABLE IF NOT EXISTS`. `IF NOT EXISTS` was the
+-- entire mechanism before this file existed, and it is exactly what made the previous arrangement
+-- unsafe: it made a *new column* silently not appear on a database created at an earlier head, so
+-- the service booted and the first `POST /trees` failed on `column "land_context" does not exist`.
+-- With migrations tracked and each one applied inside a transaction, a second application cannot
+-- happen — and if it somehow did, failing loudly is the behaviour worth having.
 --
 -- ── Which version space this is, and which two it is not ──────────────────────────────────────
+--
 -- Neither. CLAUDE.md names two schema-version spaces — `AppSchema.currentVersion`, the writable
 -- SQLite database's `PRAGMA user_version`, and `SeedDatabase.newestKnownSchemaVersion`, the
--- published city file's `s<n>`. This file is in neither. It is the server's own space, it advances
--- on its own, and nothing here is a migration in either app-side counter. #158 needs exactly one
--- app-side migration and this branch is not where it is authored (R72's closing note).
+-- published city file's `s<n>`. This is in neither. It is the server's own, it advances on its own,
+-- and nothing here is a migration in either app-side counter.
 --
 -- ── What this schema is a mirror of, and where it deliberately differs ─────────────────────────
+--
 -- The client's tables are the reference: same idempotency key, same ownership rule, same tombstone.
 -- Three differences are forced by Postgres rather than chosen:
 --
@@ -23,16 +38,11 @@
 --      — is a bounding-box prefilter over a btree index plus a haversine, which is what a query run
 --      a few times a day is worth.
 
-CREATE TABLE IF NOT EXISTS schema_meta (
-    version     INTEGER NOT NULL,
-    applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 -- ── Identity ───────────────────────────────────────────────────────────────────────────────────
 
 -- The account. There is no `users` table on device (ERRATA E86) and #158 does not add one: this is
 -- where that row belongs.
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
     id                  UUID PRIMARY KEY,
 
     -- Apple's `sub`, stable per user per team. The account's identity here, rather than the email:
@@ -62,7 +72,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- The installation. D9's anonymous handle: it identifies a phone, never a person.
-CREATE TABLE IF NOT EXISTS devices (
+CREATE TABLE devices (
     id          UUID PRIMARY KEY,
     device_uuid UUID NOT NULL UNIQUE,
     -- Set by `POST /devices/claim`, and it outlives a sign-out exactly as `device.user_id` does on
@@ -73,11 +83,11 @@ CREATE TABLE IF NOT EXISTS devices (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_devices_user ON devices (user_id);
+CREATE INDEX idx_devices_user ON devices (user_id);
 
 -- A signed-in session. One row per refresh token, and rotation inserts rather than updates so the
 -- chain is auditable and a replayed old token is a row that exists and is spent, not a row missing.
-CREATE TABLE IF NOT EXISTS sessions (
+CREATE TABLE sessions (
     id                 UUID PRIMARY KEY,
     user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     -- SHA-256 of the presented secret. The secret itself is returned once and never stored, so a
@@ -91,12 +101,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     revoked_at         TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+CREATE INDEX idx_sessions_user ON sessions (user_id);
 
 -- The device credential of spec §5.8. It authorizes `POST /sync` for items carrying a deviceID and
 -- no userID, and nothing else. It is not an attestation: a reinstall mints a new one and nothing
 -- here pretends otherwise. The defense against a flood is the rate limiter.
-CREATE TABLE IF NOT EXISTS device_tokens (
+CREATE TABLE device_tokens (
     id         UUID PRIMARY KEY,
     device_id  UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     token_hash BYTEA NOT NULL UNIQUE,
@@ -105,7 +115,7 @@ CREATE TABLE IF NOT EXISTS device_tokens (
     revoked_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_device_tokens_device ON device_tokens (device_id);
+CREATE INDEX idx_device_tokens_device ON device_tokens (device_id);
 
 -- ── Contributions ──────────────────────────────────────────────────────────────────────────────
 
@@ -113,7 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_device_tokens_device ON device_tokens (device_id)
 -- mints. `client_uuid` is the PRIMARY KEY rather than a unique index beside a surrogate id, because
 -- dedupe is this table's whole job on the write path: `ON CONFLICT (client_uuid) DO NOTHING` is
 -- what makes a replay a `duplicate` — a success that changes nothing.
-CREATE TABLE IF NOT EXISTS contributions (
+CREATE TABLE contributions (
     client_uuid   UUID PRIMARY KEY,
     kind          TEXT NOT NULL CHECK (kind IN (
                       'visit', 'observation', 'measurement',
@@ -144,9 +154,9 @@ CREATE TABLE IF NOT EXISTS contributions (
     )
 );
 
-CREATE INDEX IF NOT EXISTS idx_contributions_user ON contributions (user_id, occurred_at DESC);
-CREATE INDEX IF NOT EXISTS idx_contributions_device ON contributions (device_id, occurred_at DESC);
-CREATE INDEX IF NOT EXISTS idx_contributions_tree ON contributions (tree_uuid, occurred_at DESC);
+CREATE INDEX idx_contributions_user ON contributions (user_id, occurred_at DESC);
+CREATE INDEX idx_contributions_device ON contributions (device_id, occurred_at DESC);
+CREATE INDEX idx_contributions_tree ON contributions (tree_uuid, occurred_at DESC);
 
 -- The tombstone, mirroring `AppSchema` v13 column for column.
 --
@@ -161,7 +171,7 @@ CREATE INDEX IF NOT EXISTS idx_contributions_tree ON contributions (tree_uuid, o
 -- hits a mark that was waiting for it and comes back `duplicate`.
 --
 -- Nothing is ever removed from here. "Permanently" is the ruling.
-CREATE TABLE IF NOT EXISTS anonymized_contributions (
+CREATE TABLE anonymized_contributions (
     client_uuid   UUID PRIMARY KEY,
     anonymized_at TIMESTAMPTZ NOT NULL
 );
@@ -169,7 +179,7 @@ CREATE TABLE IF NOT EXISTS anonymized_contributions (
 -- The heart on screen 03, and the one contribution that is not append-only: a toggle event with a
 -- tombstone, resolved by time. Materialized rather than derived from `contributions`, because
 -- `isFavorite` is a per-tree read (#167) that exists specifically to stop being a whole-list scan.
-CREATE TABLE IF NOT EXISTS favorites (
+CREATE TABLE favorites (
     id          UUID PRIMARY KEY,
     tree_uuid   UUID NOT NULL,
     user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -187,14 +197,14 @@ CREATE TABLE IF NOT EXISTS favorites (
 );
 
 -- The collision ERRATA E89 records, made unstorable on this side too: one row per owner per tree.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_tree
+CREATE UNIQUE INDEX idx_favorites_user_tree
     ON favorites (user_id, tree_uuid) WHERE user_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_device_tree
+CREATE UNIQUE INDEX idx_favorites_device_tree
     ON favorites (device_id, tree_uuid) WHERE device_id IS NOT NULL;
 
 -- A tree somebody added. `POST /trees`' 10 m proximity dedupe reads this and the seed inventory;
 -- only this half is writable.
-CREATE TABLE IF NOT EXISTS community_trees (
+CREATE TABLE community_trees (
     -- **The client's own tree UUID, and the idempotency key, and the id every other table means.**
     --
     -- There was briefly a server-minted `id` beside a `client_uuid`, and it gave a community tree
@@ -241,12 +251,12 @@ CREATE TABLE IF NOT EXISTS community_trees (
 
 -- The prefilter's index. A btree on the pair is enough for a bounding box a few metres across; this
 -- is the query PostGIS was declined for and it is one index and one haversine.
-CREATE INDEX IF NOT EXISTS idx_community_trees_position ON community_trees (lat, lon);
+CREATE INDEX idx_community_trees_position ON community_trees (lat, lon);
 
 -- ── Photographs ────────────────────────────────────────────────────────────────────────────────
 
 -- The record. The bytes live in the Tigris bucket; `storage_key` is where.
-CREATE TABLE IF NOT EXISTS photos (
+CREATE TABLE photos (
     id                UUID PRIMARY KEY,
     tree_uuid         UUID NOT NULL,
     visit_client_uuid UUID,
@@ -304,12 +314,12 @@ CREATE TABLE IF NOT EXISTS photos (
     CONSTRAINT photos_owner CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL))
 );
 
-CREATE INDEX IF NOT EXISTS idx_photos_tree ON photos (tree_uuid, captured_at DESC);
-CREATE INDEX IF NOT EXISTS idx_photos_user ON photos (user_id);
-CREATE INDEX IF NOT EXISTS idx_photos_device ON photos (device_id);
+CREATE INDEX idx_photos_tree ON photos (tree_uuid, captured_at DESC);
+CREATE INDEX idx_photos_user ON photos (user_id);
+CREATE INDEX idx_photos_device ON photos (device_id);
 -- The re-screen backlog, as a partial index so the cursor stays cheap once the pipeline is running
 -- through it.
-CREATE INDEX IF NOT EXISTS idx_photos_rescreen_backlog
+CREATE INDEX idx_photos_rescreen_backlog
     ON photos (created_at) WHERE blur_applied = false AND deleted_at IS NULL;
 
 -- ── The revocation Apple would not take ────────────────────────────────────────────────────────
@@ -335,7 +345,7 @@ CREATE INDEX IF NOT EXISTS idx_photos_rescreen_backlog
 -- would be an indefinite identity pointer standing on a promise of erasure.
 --
 -- Nothing is stored here beyond what the revocation call itself needs.
-CREATE TABLE IF NOT EXISTS pending_apple_revocations (
+CREATE TABLE pending_apple_revocations (
     -- The hash would be useless: revoking needs the token itself.
     refresh_token     TEXT PRIMARY KEY,
     first_failed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -344,5 +354,5 @@ CREATE TABLE IF NOT EXISTS pending_apple_revocations (
 );
 
 -- The drain's cursor: oldest first, so the row closest to its TTL is retried first.
-CREATE INDEX IF NOT EXISTS idx_pending_apple_revocations_age
+CREATE INDEX idx_pending_apple_revocations_age
     ON pending_apple_revocations (first_failed_at);

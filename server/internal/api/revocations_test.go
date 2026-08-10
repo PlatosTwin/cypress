@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -191,5 +192,60 @@ func TestTheTTLIsDefensiblyLong(t *testing.T) {
 	if AppleRevocationTTL > 90*24*time.Hour {
 		t.Errorf("TTL is %v — long enough that the bound is not really a bound, on a table that "+
 			"points at the identity of people who were told their account was erased", AppleRevocationTTL)
+	}
+}
+
+// TestTheDrainRunsOnBootAndNotOnlyOnATick is N15, in the shape N1 got.
+//
+// `RunAppleRevocationDrain`'s own comment calls the boot pass the load-bearing half — the machine
+// `auto_stop_machines = 'stop'`s when idle, so it spends most of its life stopped and a timer alone
+// would fire rarely and unpredictably. Nothing tested it: deleting the boot call left the whole
+// suite green, which is the untested half being the half that matters.
+//
+// The tick cannot rescue this test — `appleRevocationInterval` is fifteen minutes and the window
+// below is five seconds — so anything observed here came from the boot pass. That gap is asserted
+// rather than assumed, so shortening the interval cannot quietly turn this into a different test.
+func TestTheDrainRunsOnBootAndNotOnlyOnATick(t *testing.T) {
+	if appleRevocationInterval <= 10*time.Second {
+		t.Fatalf("appleRevocationInterval is %v, which is inside this test's observation window — "+
+			"a tick could satisfy it and the boot pass would go untested again", appleRevocationInterval)
+	}
+
+	h := newHarness(t)
+	parkOneRevocation(t, h)
+
+	// Apple recovers before the service starts, which is the situation the boot pass exists for.
+	h.apple.revokeErr = nil
+	h.apple.revoked = nil
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stopped := make(chan struct{})
+	go func() {
+		RunAppleRevocationDrain(ctx, h.store, h.apple, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		close(stopped)
+	}()
+
+	drained := false
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if countParked(t, h) == 0 {
+			drained = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Error("the drain did not stop when its context was cancelled")
+	}
+
+	if !drained {
+		t.Fatalf("nothing was drained within 5s of starting. The next tick is %v away, so the boot "+
+			"pass is the only thing that could have run it — and it did not.", appleRevocationInterval)
 	}
 }

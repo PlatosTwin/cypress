@@ -107,7 +107,12 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer dataStore.Close()
-	log.Info("schema applied", "server_schema_version", store.SchemaVersion)
+
+	schemaVersion, err := dataStore.SchemaVersion(ctx)
+	if err != nil {
+		return err
+	}
+	log.Info("schema up to date", "server_schema_version", schemaVersion)
 
 	verifier, err := apple.NewVerifier(ctx, appleConfig.BundleID)
 	if err != nil {

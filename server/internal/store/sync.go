@@ -166,6 +166,12 @@ type DeletionReport struct {
 	Tombstones    int
 }
 
+// UnrevokedAppleToken is a token whose revocation has not yet succeeded.
+//
+// It is passed to DeleteAccount rather than read from the row inside it, because the caller is the
+// only thing that knows whether Apple accepted the revocation, and the row is about to be gone.
+type UnrevokedAppleToken string
+
 // DeleteAccount applies the choice to everything this service holds for a user, and tombstones it.
 //
 // ── What is deleted under both doors, and why it is not a choice ───────────────────────────────
@@ -181,16 +187,6 @@ type DeletionReport struct {
 // have not arrived; they will arrive after the deletion, and the mark has to be waiting. The
 // caller passes those keys in `pendingKeys` — the client knows them, because they are its own
 // outbox — and every one is tombstoned whether or not a row exists for it.
-// UnrevokedAppleToken is a token whose revocation has not yet succeeded.
-//
-// It is passed to DeleteAccount rather than read from the row inside it, because the caller is the
-// only thing that knows whether Apple accepted the revocation, and the row is about to be gone.
-type UnrevokedAppleToken string
-
-// DeleteAccount applies the choice to everything this service holds for a user, and tombstones it.
-//
-// See the block above this type for the tombstone and pending-key reasoning, which a stray edit
-// once detached from this function.
 func (s *Store) DeleteAccount(
 	ctx context.Context,
 	userID uuid.UUID,
