@@ -303,6 +303,40 @@ reviewer red-proved that `if x.isHittable` and `descendants(matching: .scrollVie
 past them, which is the other half of the same lesson: "guarded" is a claim about an instrument, and
 an instrument has a calibration.
 
+**Five UI test classes still inherit the opening camera, and still write one.** PR #66 gave the
+tests a way to pin screen 01's opening camera (`CYPRESS_MAP_CAMERA`) and applied it to four launch
+helpers: `DeepLinkHarness.launch`, `DeepLinkOverrideReset`, `PrimaryCTAReachabilityTests
+.launchAtAX5` and `IdentifyFABReachabilityTests.launchAtAX5Denied`. `AccessibilityTreeTests`,
+`MapFilterAccessibilityTests`, `MapRecenterUITests`, `MapPanTabSwitchUITests` and
+`AlmanacGroupTapTests` were deliberately left alone, and they still open on whatever the previous
+launch left in `map.lastCamera` — and still write one on the way out, which is what the next
+unpinned class inherits.
+
+That is a gap the harness cannot close on its own: `Tools/run_tests.sh` normalizes the stored camera
+**once, before `xcodebuild` starts**, and can say nothing about what the twentieth launch inside a
+run inherits from the nineteenth.
+
+Three sightings so far, none of them reproduced, all in unpinned classes:
+
+- `AlmanacGroupTapTests.testWalkTheNineOpensAMapOfThemAll` — one CI failure on `94b1d81`, green on
+  the next run.
+- `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` — timed out waiting on
+  the recenter control through three retries on a local merged-tree run.
+- `MapPanTabSwitchUITests.testAnUntouchedCameraStillCentersOnTheReaderAfterTheRoundTrip` — a cascade
+  from the previous one, the app wedged and would not terminate.
+
+**The second and third are not attributable, and that matters more than the count.** That run took
+3,289 s against a normal ~1,580, `run_tests.sh` had already refused one launch on a competing
+`xcodebuild`, and CI then passed the byte-identical tree on the shard carrying that class. So those
+two are at least as likely to be the simulator degradation CLAUDE.md describes as anything about the
+camera. They are recorded here because the class is unpinned, not because the camera was shown to be
+the cause.
+
+The work is not "pin the other five" — `MapPanTabSwitchUITests` deliberately pans and
+`AlmanacGroupTapTests` pins its own location fix, so a pin could quietly change what either one
+asserts. It is to decide, per class, whether the camera it opens on is something the test means to
+control, and to give the ones that do the seam that already exists.
+
 *(The "structural VoiceOver is not machine-checked" entry that stood here is resolved. `CypressUITests`
 is a black-box XCUITest target (E116), and `DebugDeepLink`'s `CYPRESS_SCREEN` environment variable
 opens any screen for it (E117), so fifteen structural tests now read the accessibility tree of the map
