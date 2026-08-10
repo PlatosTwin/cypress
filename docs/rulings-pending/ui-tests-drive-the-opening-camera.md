@@ -1,4 +1,4 @@
-### A UI test drives screen 01's opening camera; it does not inherit it
+### A UI test may drive screen 01's opening camera instead of inheriting it
 
 *Pending. Cite this file as `RULINGS <this file>` until the orchestrator splices a number.*
 
@@ -38,6 +38,29 @@ So a test about a form's labels, and a test about AX5 chrome geometry, both had 
 on where a map they never mention was pointed. Two CI failure families came out of it, and the
 tests' own failure messages sent readers to E216 and to the harness — where there was nothing to
 find, because nothing was wrong with the device.
+
+#### How far it actually reaches, measured
+
+**Four launch helpers pin. The rest of the suite still inherits, and still writes.** The ruling above
+is a permission and a mechanism, not a property of `CypressUITests` — an earlier draft of this file
+was titled as though the inheritance were gone suite-wide, and PR #66's reviewer measured that it is
+not: `map.lastCamera` read off a device either side of a full UI run had *changed*, and the pinned
+coordinate was never the value written.
+
+Pinned: `DeepLinkHarness.launch`, `DeepLinkOverrideReset.run`,
+`PrimaryCTAReachabilityTests.launchAtAX5`, `IdentifyFABReachabilityTests.launchAtAX5Denied`.
+
+Not pinned, and launching screen 01 with the map in the tree: `AccessibilityTreeTests`,
+`MapFilterAccessibilityTests`, `MapRecenterUITests`, `MapPanTabSwitchUITests`,
+`AlmanacGroupTapTests`. Each opens on whatever the previous launch left and leaves one for the next.
+`AccessibilityTreeTests.testNoUnlabeledButtonsOnLaunch` is the one worth naming, because it is where
+the raise was first found: `isHittableWithoutRaising` means it no longer *fails*, but which
+annotations it audits is still device state.
+
+They were left unpinned on purpose rather than overlooked. `MapPanTabSwitchUITests` pans deliberately
+and `AlmanacGroupTapTests` pins its own location fix, so pinning either without re-deriving what it
+asserts could change the claim under it — and a pin applied to a class that never needed one is a
+launch seam with no argument behind it, which is what the section below refuses.
 
 #### What it deliberately does not do
 

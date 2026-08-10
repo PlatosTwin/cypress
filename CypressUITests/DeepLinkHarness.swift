@@ -40,10 +40,20 @@ protocol DeepLinkHarness: XCTestCase {}
 /// .testNothingIsAnnouncedTwice` on CI run 31300530216.
 ///
 /// `isHittableWithoutRaising` (`UIWait.swift`) stops the raise. This stops the *state* that produces
-/// it — the difference between a suite that survives device state and one that does not depend on
-/// it. It also removes the second, unrelated symptom of the same inheritance: a camera with no trees
-/// under it draws no species legend, which is what `IdentifyFABReachabilityTests` spent 30 s waiting
-/// for on CI runs 31291434427, 31294993494 and 31300530216.
+/// it **for the launches that call `pin`, which are four and not the suite**. It also removes the
+/// second, unrelated symptom of the same inheritance: a camera with no trees under it draws no
+/// species legend, which is what `IdentifyFABReachabilityTests` spent 30 s waiting for on CI runs
+/// 31291434427, 31294993494 and 31300530216.
+///
+/// **What is still inherited, measured rather than assumed.** PR #66's reviewer read `map.lastCamera`
+/// off a device either side of a full UI run: it changed, and the pinned coordinate was never the
+/// value written. `AccessibilityTreeTests`, `MapFilterAccessibilityTests`, `MapRecenterUITests`,
+/// `MapPanTabSwitchUITests` and `AlmanacGroupTapTests` all launch screen 01 with the map in the tree
+/// and none of them pin, so each still opens on whatever the previous launch left and still writes
+/// its own camera back. `AccessibilityTreeTests.testNoUnlabeledButtonsOnLaunch` is the one that
+/// matters: it no longer *raises*, but which annotations it audits is still device state. Pinning
+/// them was deliberately left alone — `MapPanTabSwitchUITests` pans on purpose and
+/// `AlmanacGroupTapTests` pins its own fix, so a blind pin could change what they assert.
 ///
 /// **`Tools/run_tests.sh`'s camera preflight is a different guarantee, not this one** (task #71). It
 /// normalizes the device's stored camera once, before `xcodebuild` starts; it cannot say anything
@@ -64,7 +74,8 @@ enum DebugMapCamera {
     /// right place for the app to open and the wrong place for a test that needs a pin on screen.
     static let dense = "37.78485,-122.4215"
 
-    /// Pins `app`'s opening camera. Called by every launch helper in the classes above.
+    /// Pins `app`'s opening camera. Four callers, all of them named in the header above —
+    /// **not** every launch helper in `CypressUITests`, which is what this line used to say.
     static func pin(_ app: XCUIApplication) {
         app.launchEnvironment[key] = dense
     }

@@ -102,12 +102,25 @@ build and every shard, where a gate inside the UI suite could be skipped by the 
 protects) fails the build if a *filter-position* read reappears, and is calibrated in both
 directions: six real spellings it must catch, five it must leave alone.
 
-**2. The tests stop inheriting the camera (`CYPRESS_MAP_CAMERA`).** The seam R58's `CYPRESS_LOCATION`
-is the model for, applied to the camera; the design decisions are in `docs/rulings-pending/`. A
-pinned launch opens on the named coordinate and **writes nothing back**, so a run neither inherits a
-camera nor leaves one. `DeepLinkHarness.launch`, `DeepLinkOverrideReset.performOnce`,
-`PrimaryCTAReachabilityTests.launchAtAX5` and `IdentifyFABReachabilityTests.launchAtAX5Denied` all
-pin, through one spelling (`DebugMapCamera`) rather than four copied literals.
+**2. Four launch helpers stop inheriting the camera (`CYPRESS_MAP_CAMERA`).** The seam R58's
+`CYPRESS_LOCATION` is the model for, applied to the camera; the design decisions are in
+`docs/rulings-pending/`. A pinned launch opens on the named coordinate and **writes nothing back**,
+so a pinned launch neither inherits a camera nor leaves one. `DeepLinkHarness.launch`,
+`DeepLinkOverrideReset.performOnce`, `PrimaryCTAReachabilityTests.launchAtAX5` and
+`IdentifyFABReachabilityTests.launchAtAX5Denied` pin, through one spelling (`DebugMapCamera`) rather
+than four copied literals.
+
+> **Four launch helpers, not the suite** — this paragraph said "the tests stop inheriting the
+> camera" for a round, and PR #66's reviewer measured that it does not. `map.lastCamera` was read
+> off the device either side of a full UI run and it *changed*, while the pinned coordinate was
+> never the value written: `flush()`'s early return works, and something else is still writing.
+> `AccessibilityTreeTests`, `MapFilterAccessibilityTests`, `MapRecenterUITests`,
+> `MapPanTabSwitchUITests` and `AlmanacGroupTapTests` all launch screen 01 with the map in the tree,
+> none of them pin, and so each still opens on what the previous launch left and still leaves one
+> for the next. The consequence that matters is
+> `AccessibilityTreeTests.testNoUnlabeledButtonsOnLaunch`, which is where the raise was first found:
+> it no longer raises, but *which* annotations it audits is still device state, silently. See "Not
+> done, and why" for why those five were left unpinned rather than fixed here.
 
 **3. A failure message that stopped being true.** `IdentifyFABReachabilityTests.legendDescription`
 said an absent legend is "a device-state question (E216) and not a layout one". That sentence sent
@@ -266,12 +279,39 @@ Gate Park (`37.769402,-122.486198`, `camera-trees=0`) and the preflight skipped:
 - **Assertion-position reads are untouched.** They can raise too, on an element specific enough that
   it has not happened. Changing them would change what they claim, which is a separate decision from
   this one.
-- **The gate reads one line at a time.** A filter split across two lines — the keyword on one, the
-  read on the next — passes it. Two of those existed (`DeepLinkHarness.waitForCoverToArrive`'s
-  `return`, `PrimaryCTAReachabilityTests.buttonLabels`' `.map`) and both were found by reading rather
-  than by the gate; both now call the helper. The blind spot is recorded for the same reason
-  `DragGestureGateTests` records its block-comment one: a gate whose limits are written down is a
-  gate, and one whose limits are assumed is a false green.
+- **The gate reads one line at a time, and the blind spot recorded here was the wrong one.** This
+  bullet said the hole was "a filter split across two lines" and named
+  `DeepLinkHarness.waitForCoverToArrive`'s `return` and `PrimaryCTAReachabilityTests.buttonLabels`'
+  `.map` as the two instances. Both are *single-line* reads. PR #66's reviewer red-proved the actual
+  hole with a probe and a control at one insertion point: the vocabulary had no `if`, so
+  `if x.isHittable { … }` — the most ordinary filter spelling in Swift — passed while the same line
+  written as `guard` failed, and `allSatisfy`, `map`, `reduce` and `switch` were missed too. A
+  recorded blind spot that is not the real one is worse than none: it told a reader that keeping a
+  filter on one line made it visible here, which was the opposite of true.
+
+  Fixed by widening the instrument rather than by restating it. Keywords are matched as whole words
+  in the part of a line that is code rather than prose (`delete` is not `let`, and `for` inside an
+  assertion's message is English), calls are matched as calls, and both directions are calibrated —
+  fourteen spellings it must catch, nine it must leave alone. Two holes remain and are on the gate
+  itself: a `&&` composition on a bare continuation line of a multi-line assertion, which cannot be
+  told from the assertion it is part of by a line-local instrument
+  (`PrimaryCTAReachabilityTests:301` is one), and a filter genuinely split so the keyword and the
+  read land on different lines, of which the suite has none.
+- **`ContainerSpellingGateTests` had the same shape of hole, red-proved the same way.** Its
+  instrument was the literal `.scrollViews`, so `app.descendants(matching: .scrollView)` passed it —
+  and the un-waited two-line guess the helper replaced was therefore one `XCUIElementQuery` spelling
+  away from being representable again. It now matches the element type in a *query* position, which
+  leaves `FrameFinitenessGateTests`' `[.scrollView: frame]` dictionaries alone, and it carries a
+  calibration fixture in each direction. The residual hole is written on the gate: an element type
+  bound to a `let` first, or a call broken so `scrollView` lands on a line of its own.
+- **Five classes still inherit the camera, and still write one.** Only the four launch helpers named
+  under "The repairs" pin. `AccessibilityTreeTests`, `MapFilterAccessibilityTests`,
+  `MapRecenterUITests`, `MapPanTabSwitchUITests` and `AlmanacGroupTapTests` do not, which the
+  reviewer measured directly (`map.lastCamera` differed either side of a UI run, and never held the
+  pinned coordinate). They were **deliberately** not pinned here: `MapPanTabSwitchUITests` pans on
+  purpose and `AlmanacGroupTapTests` pins its own location fix, so a blind pin could change what
+  they assert, and `AccessibilityTreeTests`' coverage question is the same underlying design defect
+  as the bullet below rather than a camera one. What was fixed is the claim.
 - **Nothing was done about the underlying design.** `assertEveryControlIsLabeled` asserting over
   elements of a screen it does not own is still the deeper defect; pinning the camera makes what it
   reads deterministic rather than making it read the right thing. Scoping the walk to the presented

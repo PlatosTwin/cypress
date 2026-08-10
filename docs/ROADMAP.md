@@ -273,7 +273,13 @@ treated a consequence:
   the last on a tree byte-identical to a passing run). Fixed at the binding for
   `testNothingIsAnnouncedTwice`: `allElementsBoundByAccessibilityElement` and one read of each
   value into a plain `(String, CGRect)`, so nothing re-resolves a proxy mid-comparison.
-  `assertEveryControlIsLabeled` still walks by index and has not been seen to lose one.
+  `assertEveryControlIsLabeled` still walks by index and has not been seen to lose one. The reason
+  is worth a clause rather than being left as luck: it makes one pass and re-resolves no ordinal
+  *between two reads that have to agree with each other*, which is exactly the property
+  `testNothingIsAnnouncedTwice`'s pair-wise comparison did not have. That is not immunity, only a
+  smaller window — it still reads `.label` after `.exists`, and PR #66 measured on a device that the
+  sibling pair `.exists` then `.frame` **raises** rather than answering when the query stops
+  resolving in between.
 
 **The scope itself is untouched, and it is the actual defect**: a labeling audit of screen 18 that
 passes or fails on the contents of screen 01 is not an audit of screen 18. The shape of the repair is
@@ -283,10 +289,19 @@ and the claim is load-bearing: the helper's own comment records that it is scope
 (a genuinely unlabeled control on the screen under test must still be caught) and an argument about
 what happens to the elements that stop being examined.
 
-Not scheduled, deliberately. The suite is green and the two symptom fixes are guarded
-(`HittabilityFilterGateTests`, `FrameFinitenessGateTests`, `DebugMapCameraOverrideTests`), so this is
-a correctness-of-claim question rather than a live failure. The full history is in the errata entry
-for the hittability round.
+Not scheduled, deliberately, and the reason is the size and shape of the work rather than the state
+of any one run. The symptoms are each guarded — `HittabilityFilterGateTests`,
+`ContainerSpellingGateTests`, `FrameFinitenessGateTests`, `DebugMapCameraOverrideTests` — so what is
+left is a question about what the helper *claims* to examine, which no failure will report. The full
+history is in the errata entry for the hittability round.
+
+*This paragraph used to open "The suite is green", and that is why it does not now.* It was false at
+the head it was written on — CI run 31347748098 had `ui (3)` red on the very repair the third bullet
+above describes — and a decision not to schedule work should not rest on a sentence that has to be
+re-checked every time the tree moves. Two of the gates named here were widened on PR #66 after a
+reviewer red-proved that `if x.isHittable` and `descendants(matching: .scrollView)` walked straight
+past them, which is the other half of the same lesson: "guarded" is a claim about an instrument, and
+an instrument has a calibration.
 
 *(The "structural VoiceOver is not machine-checked" entry that stood here is resolved. `CypressUITests`
 is a black-box XCUITest target (E116), and `DebugDeepLink`'s `CYPRESS_SCREEN` environment variable
