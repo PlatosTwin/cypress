@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "hero_photo_id": "8c1cc8a2-ded9-4bd5-ae4f-af2b0174bfb3",
+      "is_favorite": true,
+      "last_visited_at": "2026-08-09T18:41:46Z",
+      "record": {
+        "visits": 3,
+        "checkIns": 1,
+        "measurements": 2,
+        "careEvents": 0
+      },
+      "tree_uuid": "602aa4b1-1ab6-471a-89ef-c85f5e63a5e2"
+    }
+  ],
+  "total": 1
+}
