@@ -16,7 +16,7 @@ that we are not building.
 
 ---
 
-## 1. The one sanctioned deviation from BUILD-PLAN §3
+## 1. The sanctioned deviations from BUILD-PLAN §3
 
 BUILD-PLAN §3 says its stack table is "decided, not suggestions. Do not substitute without a
 written reason." This is the written reason.
@@ -25,9 +25,9 @@ written reason." This is the written reason.
 |---|---|---|
 | Expo (React Native), TypeScript, expo-router | **Native iOS: Swift, SwiftUI, iOS 17+** | The project owner commissioned a native iOS app. The handoff README itself lists SwiftUI as an appropriate target. The design leans hard on three custom type families, a 30 %-opacity camera ghost overlay, and six named animation curves — all cheaper and better native. |
 | MapLibre GL + self-built PMTiles via tippecanoe | **MapKit** with a custom-styled overlay set | The stated reason for MapLibre was "No Mapbox account, no per-seat licensing." MapKit satisfies that constraint identically, at zero infrastructure cost, and removes the tile-generation pipeline from the critical path. If the abstract basemap in the mocks becomes a hard requirement, MapLibre Native remains a drop-in behind `MapCanvas`. |
-| Fastify + Postgres/PostGIS backend | **Local-first, behind a protocol** (§4) | No backend exists yet. See §4 — the boundary is drawn so the server can arrive without touching a single view. |
+| Fastify + Postgres/PostGIS backend (what the *client* assumes) | **Local-first, behind a protocol** (§4) | The app is fully functional with no network, and the boundary is drawn so a server can arrive without touching a single view. Written when no backend existed; the service now does — see the row below — and the client's local-first posture is unchanged by it, because RULINGS **R36** keeps the city layer on the phone. |
 | Local store: expo-sqlite | **SQLite via GRDB** | Same engine, same outbox design, idiomatic Swift. |
-| Fastify + Postgres/PostGIS backend (the service itself, once it exists) | **Go + Postgres**, one machine on `cypress-sync` | The service is small JSON writes plus one OIDC verification. `coreos/go-oidc` does Apple's rotation and full claim set as well as Node's equivalent, so the auth argument that favored Fastify is a wash; what remains — two direct dependencies, no runtime to patch, a static binary, and the machine already running — favors Go for one maintainer holding the client to zero external dependencies. PostGIS is not adopted: no server-side spatial query exists under R36's local read path. Ratified as RULINGS **R72**; the argument is `docs/design-proposals/2026-08-09-task158-live-layer.md` §8. |
+| Fastify + Postgres/PostGIS backend (what the *service* is written in) | **Go + Postgres**, one machine on `cypress-sync` | The service is small JSON writes plus one OIDC verification. `coreos/go-oidc` does Apple's rotation and full claim set as well as Node's equivalent, so the auth argument that favored Fastify is a wash; what remains — two direct dependencies, no runtime to patch, a static binary, and the machine already running — favors Go for one maintainer holding the client to zero external dependencies. PostGIS is not adopted: no server-side spatial query exists under R36's local read path. Ratified as RULINGS **R72**; the argument is `docs/design-proposals/2026-08-09-task158-live-layer.md` §8. |
 
 Everything else in BUILD-PLAN — the data model in §4, the API contract in §6, the ingest spec in §7,
 the privacy spec in §10, the ambiguity resolutions in §11, and the "what a coding agent should not
@@ -60,8 +60,14 @@ Cypress/
   Resources/      Info.plist, Assets.xcassets, Fonts/, seed database, species YAML
 Fixtures/         Seed source data + generated seed DB (build inputs, not app source)
 Tools/            Python scripts that produce Fixtures/ — reproducible, checked in
+server/           The sync service — Go, not Swift, and not part of the app target (§1, R72)
 docs/             This file, plus docs/distilled/*
 ```
+
+`server/` is the one directory here that Xcode never sees. It is its own Go module with its own
+build, its own tests and its own schema, and nothing in `Cypress/` imports from it or vice versa —
+the two meet only at the wire contract of §4. Its layout and how to run its tests are in
+`server/README.md`.
 
 **Import discipline.** `Core` imports Foundation only. `Data` may import Core and GRDB. `DesignSystem`
 may import SwiftUI and Core. `Features` may import everything. Nothing imports `Features`.

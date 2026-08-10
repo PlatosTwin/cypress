@@ -58,9 +58,16 @@ that `apierr` already has.
 sign in on that phone. Removing that predicate leaves its test **green**.
 
 Chasing it rather than accepting the green found the reason, and the reason is reassuring: an
-account deletion clears `device_id` as well as `user_id`, so an anonymized row never matches
-`WHERE device_id = $3` in the first place. The predicate is defense in depth over a case the
-deletion has already made unreachable. It earns its keep only if the sweep is *also* broadened —
+account deletion clears `device_id` as well as `user_id` **on `contributions`**, so an anonymized
+contribution never matches `WHERE device_id = $3` in the first place. The predicate is defense in
+depth over a case the deletion has already made unreachable.
+
+Stated precisely, because the first draft of this entry overreached: that is true of `contributions`
+and **not** of `photos`, where the deletion sets `deleted_at`, `user_id` and `anonymized_at` and
+leaves any `device_id` standing. The conclusion survives by a different route there — a photograph
+with `deleted_at` set is invisible under both of `Photo`'s predicates whoever ends up owning it — but
+it is a different argument, and a sentence that covered both with one mechanism was wrong about one
+of them. It earns its keep only if the sweep is *also* broadened —
 drop the device scope and the predicate together and it does go red, from the
 `contributions_owner` CHECK, because setting `user_id` on a row carrying `anonymized_at` satisfies
 neither arm of it.

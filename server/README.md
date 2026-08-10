@@ -113,6 +113,24 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /photos/{id}` | The photograph a device never wrote. |
 | `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
 
+### `device_uuid` is a credential
+
+`POST /devices/register` mints a device token from `app_state.deviceUUID` alone. Spec §5.8 is
+explicit that this **is not an attestation** — a reinstall mints a new one and nothing here can tell
+the difference — and D9 requires that be cheap, because the anonymous queue is the normal case.
+
+What follows from that, and is worth saying out loud rather than leaving implicit: anyone who knows
+an installation's `device_uuid` can obtain a credential over that installation's anonymous
+contributions. Re-registering **retires the previous token**, so a takeover is visible — the real
+device's next call is a 401 and it re-registers — rather than two holders sharing one queue
+silently. The flood defense is the rate limiter, and `rate_limited` is retryable so an honest client
+that trips it keeps its queue.
+
+The rate limiter buckets on `Fly-Client-IP`, which is set by Fly's proxy. **That header is only
+trustworthy behind the proxy**: anything reaching the app directly can choose its own value and put
+itself in an empty bucket. This is correct for the deployed topology and is a reason not to expose
+the machine on a second, unproxied route.
+
 ### Three rules the code will not let you break quietly
 
 - **A 401 means the session, never the item.** `APIError.unauthorized.retryable` is `false` and
@@ -150,9 +168,14 @@ joining key `AccountDeletionChoice` refuses a sentinel id for.
 
 ## Configuration
 
-Every value comes from the environment and **none has a default**. A missing one refuses the boot,
-which is the only safe answer: a service that started without `SESSION_SIGNING_KEY` would mint
-forgeable sessions and look perfectly healthy doing it.
+Every value below comes from the environment and **none of them has a default**: a missing one
+refuses the boot, which is the only safe answer — a service that started without
+`SESSION_SIGNING_KEY` would mint forgeable sessions and look perfectly healthy doing it.
+
+Two variables that are *not* in this table do have defaults, and are listed here so the sentence
+above stays exactly true: `PORT` falls back to `8080`, and `GIT_SHA` to `"unknown"`. Neither is a
+credential and neither changes behaviour — the first is what Fly sets anyway, the second only labels
+`/health`.
 
 | Variable | Secret | Notes |
 |---|---|---|

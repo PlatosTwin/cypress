@@ -12,9 +12,13 @@
 //
 // ── Configuration ──────────────────────────────────────────────────────────────────────────────
 //
-// Every value comes from the environment and **none has a default**. A missing one is a refusal to
-// start, which is the only safe answer: a service that booted without `SESSION_SIGNING_KEY` would
-// mint forgeable sessions and look perfectly healthy doing it.
+// Every value that matters comes from the environment and **none of those has a default**. A
+// missing one is a refusal to start, which is the only safe answer: a service that booted without
+// `SESSION_SIGNING_KEY` would mint forgeable sessions and look perfectly healthy doing it.
+//
+// Two do fall back, and they are named here so the sentence above is not quietly false: `PORT` to
+// `8080` and `GIT_SHA` to `"unknown"` (see `envOr`). Neither is a credential and neither changes
+// behaviour — one is what Fly sets anyway, the other only labels `/health`.
 package main
 
 import (

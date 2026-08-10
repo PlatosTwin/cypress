@@ -1545,3 +1545,26 @@ func sha256Hex(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
+
+// TestEveryRequestCarriesADeadline is N1: the timeout was declared, commented as though it bounded
+// a handler, and referenced by nothing.
+//
+// `go vet` does not flag an unused constant, so nothing else was going to say so — and a constant
+// with a comment explaining what it protects reads exactly like a protection.
+func TestEveryRequestCarriesADeadline(t *testing.T) {
+	var deadline time.Time
+	var hadDeadline bool
+
+	handler := withTimeout(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deadline, hadDeadline = r.Context().Deadline()
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	if !hadDeadline {
+		t.Fatal("the request context carries no deadline; one shared-cpu-1x machine cannot afford " +
+			"a query holding a connection open indefinitely, which is what requestTimeout claims to stop")
+	}
+	if until := time.Until(deadline); until <= 0 || until > requestTimeout+time.Second {
+		t.Errorf("the deadline is %v away, want about %v", until, requestTimeout)
+	}
+}
