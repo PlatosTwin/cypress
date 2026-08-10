@@ -172,18 +172,38 @@ client-side conformance round (#158 step 4) owes them: Swift decode tests readin
   move backwards and `isPubliclyVisible` is evaluated at render time, so a rejected photograph stops
   being drawn on every other device at its next read.
 
-## Schema
+## Schema and migrations
 
-`server/internal/store/schema.sql`, applied on boot (every statement is `IF NOT EXISTS`).
+`server/migrations/`, numbered `NNN_name.sql`, applied in order at boot — each inside its own
+transaction, with its `schema_migrations` row written in the same transaction, so "applied" and
+"recorded" cannot come apart. The runner is `internal/store/migrate.go` and adds no dependency.
+
+**An applied migration is frozen.** Change behaviour by adding the next numbered file, never by
+editing one that has run somewhere: an edited migration is a change some databases have and others
+do not, with nothing able to tell them apart.
+
+The runner **refuses to boot** rather than guess, in three cases: a gap in the files (001 and 003),
+a gap in what is recorded, or a version applied in the database that this build does not have — the
+last being a rollback onto a newer schema, whose queries this binary is not written for.
+
+> This replaced `CREATE TABLE IF NOT EXISTS` applied on every boot, which creates a schema and
+> silently declines to change one. The round that added `community_trees.address` and `land_context`
+> made it concrete: against a database created at the previous head, boot succeeded and the first
+> `POST /trees` failed on `column "land_context" does not exist`. Nothing was deployed, so nothing
+> broke — the point is that the *next* change is the one that bites.
+
+**The first deploy must be against an empty database.** `001_initial.sql` is a plain `CREATE TABLE`
+sequence; there is no legacy database to adopt because nothing has ever been deployed, and this is
+the last moment that is true.
 
 **It is in neither of the app's two schema-version spaces.** `AppSchema.currentVersion` is the
 writable SQLite database's migration counter and `SeedDatabase.newestKnownSchemaVersion` is the
-published city file's; this is the server's own, it advances independently, and nothing here is a
-migration in either. #158 needs exactly one app-side migration and it is not authored on this
-branch.
+published city file's; this is the server's own and advances independently. #158 needs exactly one
+app-side migration and it is not authored on this branch.
 
 Tables: `users`, `devices`, `sessions`, `device_tokens`, `contributions`,
-`anonymized_contributions`, `favorites`, `community_trees`, `photos`.
+`anonymized_contributions`, `favorites`, `community_trees`, `photos`,
+`pending_apple_revocations`, `schema_migrations`.
 
 `contributions` is keyed on `client_uuid` — the PRIMARY KEY, not a unique index beside a surrogate,
 because dedupe is the table's whole job on the write path. `anonymized_contributions` mirrors
