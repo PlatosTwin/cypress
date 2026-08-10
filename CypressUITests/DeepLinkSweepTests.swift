@@ -161,8 +161,8 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// containing the smaller — comes back as two entries under both. What survives *neither*
     /// spelling is a labeled container XCUITest files as an `Other`: `app.staticTexts` does not
     /// return it, so the E104 shape is only visible here when the wrapper is itself a `StaticText`.
-    /// That is a limit on this method's reach which predates the binding, and it is recorded in
-    /// `docs/errata-pending/` rather than left implied.
+    /// That is a limit on this method's reach which predates the binding and is not repaired by it,
+    /// written here rather than left implied.
     ///
     /// **This narrows the window rather than closing it.** An element that leaves the tree between
     /// the snapshot and a later read is still gone; what changes is that a *neighbor* leaving no
