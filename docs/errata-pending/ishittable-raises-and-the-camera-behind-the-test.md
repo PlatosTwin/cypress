@@ -24,7 +24,8 @@ CI runs 31291434427, 31294993494 and 31300530216:
 > **The diagnosis of this second occurrence is wrong, and the correction is the last three sections
 > of this entry.** The legend failures were not the inherited camera. They were an un-waited read
 > that decides which *element type* the test then waits on — three lines, copied into three files.
-> One of the three run numbers above never failed this test at all. Read "Correction: the legend was
+> All three of the run numbers above failed this way, on `ScrollView`, including the one a later
+> revision of this entry briefly claimed had never failed at all. Read "Correction: the legend was
 > there, and the test was waiting for the wrong element" before taking anything between here and
 > there as a finding about the camera.
 
