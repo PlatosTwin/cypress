@@ -533,3 +533,38 @@ untouched. That helper audits every element in the app rather than the screen un
 change makes a *different* method's enumeration survive a moving tree; it does not narrow what
 either method looks at. The scope question is still owed, and deleting that entry on the strength of
 this would be trading a design defect for a green.
+
+#### What the repaired method was actually run through
+
+All on iPhone 16 Pro `EA0AD796-…` at 402 pt, in this worktree, judged only by the `VERIFY-` line.
+
+Five back-to-back runs of `DeepLinkSweepTests`, because one green run cannot disprove a race:
+
+| run | load | result |
+| --- | --- | --- |
+| 1 | none | `Executed 2 tests, with 0 failures (0 unexpected) in 191.330` |
+| 2 | none | `Executed 2 tests, with 0 failures (0 unexpected) in 191.520` |
+| 3 | six busy loops | `Executed 2 tests, with 0 failures (0 unexpected) in 187.533` |
+| 4 | six busy loops | `Executed 2 tests, with 0 failures (0 unexpected) in 185.684` |
+| 5 | six busy loops | `Executed 2 tests, with 0 failures (0 unexpected) in 188.397` |
+
+`grep -c "No matches found for Element at index"` is 0 on all five — and it is 1 on the downloaded
+`ui (3)` log of run 31340854135, which is the calibration that makes those five zeroes a measurement
+rather than a spelling mistake.
+
+**The load did nothing measurable and the table says so.** Six spinning shells on a ten-core machine
+left the run times inside four seconds of the unloaded pair, and if anything shortened them. Whatever
+paces this method, it is not CPU on this Mac. So five green runs here are five green runs here; they
+are not a reproduction of a three-core CI runner, and the run that decides this is the one on CI.
+
+Suite, both into a **fresh** DerivedData at `94c2f30`:
+
+    unit  VERIFY-OK: ✔ Test run with 1341 tests in 137 suites passed after 122.617 seconds.
+    ui    VERIFY-OK: Executed 109 tests, with 0 failures (0 unexpected) in 1582.010 seconds
+          VERIFY-NOTE: XCTest skipped=0
+    both  VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=452 files-checked=18
+
+**One thing the round got wrong on the way, worth a line.** The first pass of the doc comment ended
+with "recorded in `docs/errata-pending/`" — a code comment deferring to an erratum that has no number
+yet, which CLAUDE.md forbids and `PendingCitationGuardTests` fails the build over. It did fail the
+build, by file and line, on the first full unit run. The gate is not decoration.
