@@ -663,3 +663,64 @@ is 0 across it, so no arm was skipped in the run that found the planted defect.
 #### What this round was run through
 
 All on iPhone 16e `3A1F212D-…` at 390 pt, in this worktree, judged only by the `VERIFY-` line.
+
+Five back-to-back runs of `DeepLinkSweepTests`, because one green run cannot disprove a race:
+
+| run | result |
+| --- | --- |
+| 1 | `Executed 2 tests, with 0 failures (0 unexpected) in 164.901` |
+| 2 | `Executed 2 tests, with 0 failures (0 unexpected) in 164.667` |
+| 3 | `Executed 2 tests, with 0 failures (0 unexpected) in 165.816` |
+| 4 | `Executed 2 tests, with 0 failures (0 unexpected) in 165.660` |
+| 5 | `Executed 2 tests, with 0 failures (0 unexpected) in 164.965` |
+
+**Local green does not settle this and is not offered as if it did.** Three previous attempts failed
+to reproduce this family on a quiet Mac, the previous round's five green runs did not stop the next
+CI run going red, and the load experiment in that round moved the elapsed time by less than four
+seconds. What these five show is that the wait did not break the method, on five consecutive tries.
+What decides it is CI.
+
+Suite:
+
+    unit  VERIFY-OK: ✔ Test run with 1349 tests in 138 suites passed after 121.695 seconds.
+    ui    VERIFY-OK: Executed 109 tests, with 0 failures (0 unexpected) in 1546.615 seconds
+          VERIFY-NOTE: XCTest skipped=0
+    warn  VERIFY-WARNINGS: source=0 non-source=3 compile-tasks=453 files-checked=16
+
+The warnings line was taken from a unit run into a **fresh** DerivedData directory, and the
+instrument was calibrated before it was believed: the same command with a made-up filename answers
+`VERIFY-FAIL: cannot certify a warning count for: NoSuchFile.swift — no SwiftCompile task for those
+files in this log (E203)`, and with a real one certifies. A count that cannot refuse is not a count.
+
+CI, run 31353769578 at `580b671`: `plan` printed *"the suite runs — these are not prose:"*, so the
+green `gate` on this one is evidence about the code rather than about the diff. `unit` and all four
+`ui` shards pass; shard 3 — whose own log line says `shard 3 runs 4 class(es): DeepLinkSweepTests
+PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests` — reports `Executed 19 tests,
+with 0 failures (0 unexpected) in 483.147 seconds` on iPhone 17 Pro at 402 pt. That is the shard and
+the runner width the three ordinal failures and this one all came from.
+
+**One green CI run does not close an intermittent failure either**, and the history in this entry is
+the reason to say so out loud: the ordinal repair also had a green run behind it. What is different
+is the diagnosis — the log named the outgoing screen's own elements — not the colour of the run.
+
+#### A device failure in the middle of this, recorded because it looked exactly like a defect
+
+The first attempt at the five runs above failed **fifteen times**, both tests, every screen:
+
+    treeProfile: the app launched but 'Tree' never appeared in the accessibility tree —
+    either the screen did not open, or its title is not exposed
+
+No deep-link failure banner, no crash report, no static text of any kind in the tree for the full
+30 s on every one of the fifteen arms. Nothing had changed in the tree since a run forty minutes
+earlier on the same device that reached all six screens and found a planted duplicate on the fifth.
+
+What had changed is the device. Another worktree's `xcodebuild` had run a full suite against this
+same simulator in between — `Tools/run_tests.sh` refused the first five attempts on exactly that
+collision, which is the guard working — and the failures began on the first run after it finished.
+`xcrun simctl erase`, and the same tree went green five times in a row.
+
+This is CLAUDE.md's "a simulator can degrade silently, and its first symptom looks like a real
+defect", with the aggregate tell available immediately rather than over a day: fifteen failures at
+once, all of them the *arrival* wait rather than anything the change touches, on a device a
+neighbouring run had just finished with. It is worth a paragraph because the shape is so close to a
+genuine one — a deep-link seam that stopped resolving would print these exact sentences.
