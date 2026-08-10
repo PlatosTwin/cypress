@@ -125,6 +125,70 @@ public enum OutboxTestSupport {
         }
     }
 
+    /// A scripted **send** sink, for the half of a drain that talks to a server (RULINGS R72 §1).
+    ///
+    /// Separate from `ScriptedTransport` rather than a second instance of it, because the two sides
+    /// are not interchangeable and a test that could pass one value into both positions would not be
+    /// testing the split. It records what it was *offered*, which is the assertion that matters most
+    /// here: an item this device has not committed must never reach it.
+    public actor ScriptedSendSink: OutboxSendSink {
+        public private(set) var script: Script
+        /// Every `clientUUID` the server accepted, once each — its dedupe, modeled.
+        public private(set) var accepted: Set<UUID> = []
+        /// Every `clientUUID` offered, in order, across every call. Retries repeat entries.
+        public private(set) var offered: [UUID] = []
+        public private(set) var syncCallCount = 0
+
+        public init(script: Script = .allSucceed) {
+            self.script = script
+        }
+
+        public func setScript(_ script: Script) {
+            self.script = script
+        }
+
+        public func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
+            syncCallCount += 1
+            offered.append(contentsOf: items.map(\.clientUUID))
+
+            switch script {
+            case .connectionDropped:
+                throw URLError(.notConnectedToInternet)
+
+            case let .allFail(code):
+                return items.map { SyncResult(clientUUID: $0.clientUUID, status: .failed, error: code) }
+
+            case let .firstFail(count, code):
+                return items.enumerated().map { index, item in
+                    index < count
+                        ? SyncResult(clientUUID: item.clientUUID, status: .failed, error: code)
+                        : accept(item)
+                }
+
+            case let .theseFail(failing, code):
+                return items.map { item in
+                    failing.contains(item.clientUUID)
+                        ? SyncResult(clientUUID: item.clientUUID, status: .failed, error: code)
+                        : accept(item)
+                }
+
+            case .allSucceed, .photosFail:
+                return items.map(accept)
+            }
+        }
+
+        /// `duplicate` is a success on this side too: the server dedupes on `client_uuid` exactly as
+        /// the local unique index does, which is what keeps the chaos gate's zero-duplicates
+        /// assertion holding across a flap (spec §6.1).
+        private func accept(_ item: OutboxItem) -> SyncResult {
+            if accepted.contains(item.clientUUID) {
+                return SyncResult(clientUUID: item.clientUUID, status: .duplicate)
+            }
+            accepted.insert(item.clientUUID)
+            return SyncResult(clientUUID: item.clientUUID, status: .applied)
+        }
+    }
+
     // MARK: - Fixtures
 
     public static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-000000000001")!
