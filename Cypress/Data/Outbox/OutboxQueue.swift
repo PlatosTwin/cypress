@@ -295,7 +295,15 @@ public actor OutboxQueue {
         // The wi-fi deferral is recorded rather than acted on, because a deferred *binary* must not
         // hold up a *JSON* send: notes and numbers sync on any connection (BUILD-PLAN §4, screen
         // 17). The reschedule happens in phase D, after the send has had its turn.
-        for index in carrying.indices.reversed() {
+        //
+        // **Forward, oldest first**, like every other phase and like `drain()`'s own contract. It
+        // was written backwards at first, purely so that `remove(at:)` could not invalidate the
+        // index under the loop — a convenience that quietly inverted the order of the one phase that
+        // does something irreversible: ingesting a binary consumes the staged file. Failures are
+        // collected and removed after the loop instead, which costs one array and keeps the order
+        // honest.
+        var failedPhotoIndices: [Int] = []
+        for index in carrying.indices {
             let entry = carrying[index]
             let record = entry.record
             guard !record.item.photos.isEmpty else { continue }
@@ -326,8 +334,12 @@ public actor OutboxQueue {
             }
             if let photoFailure {
                 try await recordFailure(record, error: photoFailure, at: entry.settledAt, report: &report)
-                carrying.remove(at: index)
+                failedPhotoIndices.append(index)
             }
+        }
+        // Descending, so each removal leaves the indices still to be removed valid.
+        for index in failedPhotoIndices.reversed() {
+            carrying.remove(at: index)
         }
 
         // --- Phase C: send, batched, and only when a send sink is wired. With none, this is skipped

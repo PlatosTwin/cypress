@@ -321,6 +321,35 @@ struct OutboxApplySendSplitTests {
         #expect(await send.offered.count == 1, "the note was offered to the server twice")
     }
 
+    @Test("binaries are ingested oldest first, like every other phase of a drain")
+    func binariesAreIngestedInFIFOOrder() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let queue = OutboxQueue(queue: store.queue, apply: apply)
+
+        // Three visits, enqueued oldest first, each carrying one binary named for its position.
+        // `drain()` promises "attempts every due item, oldest first" and phases B and D keep it;
+        // the photo phase is the one doing something irreversible — ingesting consumes the staged
+        // file — so it is where the wrong order costs the most and shows the least.
+        let paths = (0..<3).map { "/tmp/cypress-split-order-\($0).jpg" }
+        for (index, path) in paths.enumerated() {
+            _ = try await queue.enqueue(
+                .visit(Visit(
+                    treeID: UUID(),
+                    attribution: Attribution.anonymous(deviceID: Self.deviceID),
+                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000 + Double(index) * 60)
+                )),
+                photos: [OutboxPhoto(path: path, shotType: .fullTree)]
+            )
+        }
+
+        _ = try await queue.drain(photoUploadsAllowed: true)
+
+        let uploaded = await apply.uploadedPhotoPaths
+        #expect(uploaded == paths, "binaries were ingested \(uploaded), expected oldest first")
+        #expect(try await queue.records().allSatisfy { $0.item.state == .done })
+    }
+
     // MARK: - The composition root itself
 
     @Test("the shipping composition root wires no send sink")
