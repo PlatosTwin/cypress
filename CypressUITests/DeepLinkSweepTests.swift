@@ -190,6 +190,12 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// is reachable" and only extends how long a genuine defect takes to report. Nothing this method
     /// asserts is weakened by the larger ceiling — a static text that never becomes hittable still
     /// fails, just not on a budget this method's own six-launches-per-run cost was never sized against.
+    ///
+    /// **It waits for the push to arrive before it enumerates anything, and that is the repair aimed
+    /// at the cause the two before it moved (ERRATA E245).** Every screen in the loop below is a
+    /// pushed one, so until the tab root leaves the tree the enumeration can be reading the screen
+    /// the app is navigating *away* from — which is what run 31347748098 recorded. See the comment
+    /// at the call site for what that log shows and for what the wait still leaves open.
     func testNothingIsAnnouncedTwice() {
         continueAfterFailure = true
         defer { continueAfterFailure = false }
@@ -200,6 +206,42 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
         ] {
             let app = launch(screen)
             guard arrive(app, screen: screen, anchor: anchor) else { continue }
+
+            // **Every screen this method visits is PUSHED, so wait for the push to finish arriving
+            // before enumerating anything** (ERRATA E245, the same wait `check()` and
+            // `testEveryPushedScreenSaysWhereItIsFirst` already take). Verified against
+            // `DebugDeepLink.open`: `treeProfile`, `site`, `species`, `growthHistory` and `activity`
+            // are `router.push`, and `outbox` selects the You tab and then pushes. The two cases
+            // that are presented *over* a tab root — `careLog` and `share` — are not in this loop,
+            // which is why `waitForCoverToArrive` is not the wait wanted here; using it would be a
+            // silent no-op on a screen that never presents a cover.
+            //
+            // Without this the enumeration below could run against the OUTGOING screen. `arrive()`
+            // waits only for the anchor text to *exist*, which a `NavigationStack` push satisfies
+            // early in the slide transition while the tab root is still in the tree. Run
+            // 31347748098's `ui (3)` attempt 1 caught it in the act on `growthHistory`: the
+            // enumeration resolved eight elements, every one of them screen 01's chrome ("What tree
+            // is this?", "N"), and every following `.exists` answered false within 80 ms because the
+            // snapshot those proxies came from was the map's, taken and discarded mid-transition.
+            // The count guard below then fired with zero — correctly, and about the wait rather than
+            // about the app.
+            //
+            // This is the third symptom of one cause and the first repair aimed at the cause. The
+            // first two moved it: `allElementsBoundByIndex` lost an ordinal mid-walk, and
+            // `allElementsBoundByAccessibilityElement` — which fixed that — instead loses the whole
+            // snapshot when the enumeration runs before the screen exists. A fourth enumeration
+            // spelling would move it again.
+            //
+            // **It narrows the window rather than closing it, and the count guard below stays the
+            // witness for what is left.** This establishes only that the tab root has gone; a
+            // pushed screen whose rows are still arriving can change under a walk that reads every
+            // static text in the app, and the tab bar's own hittability can lapse before the slide
+            // finishes rather than at the end of it, since the incoming screen covers `My Grove`'s
+            // activation point partway across.
+            guard waitForPushedScreenToArrive(app, screen: screen) else {
+                app.terminate()
+                continue
+            }
 
             // `isHittableWithoutRaising`, not the raw property (`UIWait.swift`). This filters every
             // static text in the app, and CI run 31300530216's `ui (3)` died right here: "Failed to
