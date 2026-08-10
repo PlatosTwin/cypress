@@ -36,10 +36,10 @@ type syncItem struct {
 // on `client_uuid` and changed nothing, which is precisely the answer that lets a client replay a
 // batch after a flap without creating a second visit.
 type syncResult struct {
-	ClientUUID uuid.UUID     `json:"client_uuid"`
-	Status     string        `json:"status"`
-	Error      *apierr.Code  `json:"error,omitempty"`
-	Message    string        `json:"message,omitempty"`
+	ClientUUID uuid.UUID    `json:"client_uuid"`
+	Status     string       `json:"status"`
+	Error      *apierr.Code `json:"error,omitempty"`
+	Message    string       `json:"message,omitempty"`
 }
 
 var syncKinds = map[string]bool{

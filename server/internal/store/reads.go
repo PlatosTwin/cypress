@@ -246,10 +246,10 @@ func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (Tree
 
 // NearbyTree is a dedupe candidate.
 type NearbyTree struct {
-	ID       uuid.UUID
-	Lat      float64
-	Lon      float64
-	Name     string
+	ID        uuid.UUID
+	Lat       float64
+	Lon       float64
+	Name      string
 	DistanceM float64
 }
 
