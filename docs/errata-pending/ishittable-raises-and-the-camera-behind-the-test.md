@@ -417,6 +417,13 @@ caught that one. Not reading these three caught nothing.
 
 #### The enumeration race was an ordinal, and the ordinal is gone
 
+> **The ordinal is gone and the race was not.** This section's repair is correct about the binding
+> and it moved the symptom rather than removing it: the very next CI run failed the same method on
+> the same shard, this time with the enumeration returning the *map's* elements and every later
+> `.exists` answering false. Read "The enumeration was running before the screen arrived" — the last
+> section of this entry — before taking this one as the end of the story. Two repairs in a row aimed
+> at how the enumeration is spelled, and the thing that needed fixing was **when** it runs.
+
 Three sightings, all `DeepLinkSweepTests.testNothingIsAnnouncedTwice` on shard `ui (3)` of this
 branch, all the same sentence with a different number in it:
 
@@ -569,3 +576,90 @@ Suite, both into a **fresh** DerivedData at `94c2f30`:
 with "recorded in `docs/errata-pending/`" — a code comment deferring to an erratum that has no number
 yet, which CLAUDE.md forbids and `PendingCitationGuardTests` fails the build over. It did fail the
 build, by file and line, on the first full unit run. The gate is not decoration.
+
+#### The enumeration was running before the screen arrived
+
+**The section above fixed the binding and the method failed again on the next CI run.** Run
+31347748098, shard `ui (3)`, attempt 1, head `2b98462` — the required `gate` check red on it:
+
+    DeepLinkSweepTests.swift:240: error: XCTAssertGreaterThan failed: ("0") is not greater than ("0")
+      → growthHistory: not one static text was reachable, so no pair was compared and
+        this screen was not actually examined
+
+A different sentence from the three ordinals, and it is the guard that section *added* doing exactly
+the job it was added for: an enumeration that came back empty no longer passes silently. What it
+caught is not an empty screen. Twenty lines of the log say what was actually enumerated:
+
+    t = 103.21s Get all elements bound by accessibility element for: Descendants matching type StaticText
+    t = 103.54s Checking existence of `"What tree is this?" StaticText`
+    t = 103.55s Checking existence of `StaticText (Identity Binding)`
+    …six more, all within 80 ms, no frame read at all
+
+Two things in that excerpt, and either one alone settles it. Every `.exists` answered **false**
+milliseconds after the snapshot the proxies came from was taken — so the whole snapshot was
+discarded, not one element out of it. And the labels that did resolve, `"What tree is this?"` and
+`"N"`, are **screen 01's chrome**: the identify prompt and a map annotation. The enumeration ran
+while the map was still the visible screen, and by the time the filter asked each proxy whether it
+existed, the map was gone.
+
+So `growthHistory` was never examined, and neither was any screen this method visited on that run —
+the other five arms simply got their enumeration in late enough to find something, which is luck
+rather than a check.
+
+**Three symptoms, one cause, and the first two repairs each treated a symptom.**
+`allElementsBoundByIndex` lost an ordinal mid-walk, so it became
+`allElementsBoundByAccessibilityElement`, which cannot lose an ordinal and instead loses the entire
+snapshot when the walk starts on a screen that is on its way out. Both repairs asked *how* the
+enumeration is spelled. Neither asked *when* it runs, and that is the whole of it: `arrive()` waits
+only for the anchor text to **exist**, which a `NavigationStack` push satisfies early in the slide
+transition while the outgoing screen is still in the tree — the race E245 diagnosed for this file's
+*other* sweep, in this file's other method, with the repair sitting one method away.
+
+#### The repair, which is a wait this file already owned
+
+`DeepLinkHarness.waitForPushedScreenToArrive(_:screen:)`, called after `arrive()` and before
+anything is enumerated. It is the same call `testEveryPushedScreenSaysWhereItIsFirst` makes for
+this reason and the same call `check()` makes for `pushed: true` (task #243); there is no new
+mechanism here, only a third caller for the one definition.
+
+**That it is the *pushed* wait and not the cover wait was checked rather than assumed**, because the
+two are indistinguishable at the call site and the wrong one is a silent no-op — `waitForCoverToArrive`
+on a screen that never presents a cover waits for a title that is already there and returns. Read out
+of `DebugDeepLink.open`: `treeProfile`, `site`, `species`, `growthHistory` and `activity` are
+`router.push`, and `outbox` sets `router.tab = .you` and then pushes. The two `router.present` cases
+in that enum, `careLog` and `share`, are not in this method's loop at all. All six are pushed.
+
+**What it does not do, said plainly.** It establishes that the tab root has left; it establishes
+nothing about the incoming screen's own contents. A pushed screen whose rows are still resolving can
+still change under a walk that reads every static text in the app six times a run, and the tab bar's
+hittability can lapse *before* the slide finishes rather than at the end of it — the incoming screen
+covers `My Grove`'s activation point partway across, not at the last frame. The window the log above
+shows is closed. The window is not.
+
+The count guard is what remains pointed at whatever is left, and keeping it fireable was a
+requirement of this change rather than a side effect: a repair that made it unfireable would have
+been worse than the defect, because this is the third time this method has failed and the guard is
+the only reason anyone knows what it failed at.
+
+#### The red-proofs
+
+Both watched on iPhone 16e `3A1F212D-…` at 390 pt, in this worktree, each restored afterwards.
+
+| break | observed |
+| --- | --- |
+| a real duplicate planted on screen 11 — `ZStack { Text("PROBE").font(CypressFont.treeNameHero); Text("PROBE").font(CypressFont.latinName13) }` | **red**, on the right sentence and the right arm: `growthHistory: 'PROBE' is announced by an element at (152.5, 47.0, 85.0, 37.33…) and again by one inside it at (175.33…, 56.66…, 39.33…, 17.99…), so it is heard twice` |
+| the enumeration pointed at a query that matches nothing (`app.staticTexts.matching(identifier: "RED-PROOF-NO-SUCH-ELEMENT")`) | **red**, four times, with CI's exact sentence: `("0") is not greater than ("0") - treeProfile: not one static text was reachable…`, then `site`, `species`, `growthHistory` |
+
+The first is the one that matters most, and it is the one the wait could have broken. `growthHistory`
+is the arm run 31347748098 failed on; with the wait in place the method still reaches that screen,
+still reads it, and still finds a duplicate the app genuinely announces. The second is the count
+guard, proved fireable after the change, on the same assertion and the same words CI printed.
+
+The log of the first also shows the wait doing its job six times and only six —
+`Expect predicate 'hittable == 0' for object "My Grove" Button` at t = 5.19 s, 39.21 s, 68.20 s,
+92.56 s, 104.59 s and 113.90 s, one per screen — and `grep -c "not one static text was reachable"`
+is 0 across it, so no arm was skipped in the run that found the planted defect.
+
+#### What this round was run through
+
+All on iPhone 16e `3A1F212D-…` at 390 pt, in this worktree, judged only by the `VERIFY-` line.
