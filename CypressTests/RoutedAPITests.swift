@@ -153,10 +153,20 @@ struct RoutedAPITests {
     /// Every Class L read answers against a service that refuses everything.
     ///
     /// §4.3: "**No Class L read is allowed to acquire a remote failure mode.**" This is that
-    /// sentence as a test — and the reason it is worth a test rather than a code review is that the
-    /// failure it guards is silent in the other direction: a Class L read that quietly asked the
-    /// service would still pass every other gate in this file, and would only show up as a map that
-    /// stops drawing in a park.
+    /// sentence as a test.
+    ///
+    /// ── What this gate does NOT catch, found by red-proving it ─────────────────────────────────
+    ///
+    /// Breaking `species(id:)` into `do { remote } catch { local }` left this test **green**, and
+    /// that is not a hole in the assertions — it is the invariant being narrower than its name. A
+    /// Class L read that asks the service and falls back does not acquire a remote *failure* mode;
+    /// it acquires the remote *latency* §4.1 costs at length, and there is nothing observable at
+    /// this seam to tell it from the read that never asked, because `RemoteAPI`'s Class L bodies
+    /// refuse locally without touching the wire.
+    ///
+    /// So the behavioral half is asserted here and the shape half is asserted from the source, in
+    /// `theClassLBodiesNeverNameTheService` below. Neither is sufficient alone, which is why both
+    /// exist and why this paragraph is here instead of a comment claiming one of them is.
     @Test("no Class L read acquires a remote failure mode")
     func noClassLReadAcquiresARemoteFailureMode() async throws {
         let speciesID = UUID()
@@ -183,6 +193,59 @@ struct RoutedAPITests {
         // Class D, on the same terms: the rows have not been sent, and their being unsent is what
         // the question is about.
         #expect(try await router.deviceContributions() == .none)
+    }
+
+    /// **The shape half of §4.3's invariant, read off `RoutedAPI.swift` itself.**
+    ///
+    /// The gate above cannot see a Class L read that consults the service and falls back, because
+    /// the two are indistinguishable through this seam. What *is* distinguishable is the body: a
+    /// Class L method is one `try await local.…` and names `remote` nowhere. This reads that from
+    /// the source, so the invariant is held by something other than a reviewer remembering it.
+    ///
+    /// It is the same instrument `APIConformanceGuardTests` uses and it carries the same obligation:
+    /// **a parser that finds nothing agrees with everything**, so the calibration below runs first.
+    @Test("the Class L bodies never name the service")
+    func theClassLBodiesNeverNameTheService() throws {
+        let source = try String(
+            contentsOf: AppSourceLiterals.repositoryRoot()
+                .appendingPathComponent("Cypress/Data/API/RoutedAPI.swift"),
+            encoding: .utf8
+        )
+
+        /// A method's body, from its `func` line to the line that closes it at the same indent.
+        func body(of signature: String) -> String? {
+            let lines = source.components(separatedBy: "\n")
+            guard let start = lines.firstIndex(where: { $0.contains("func \(signature)") }) else { return nil }
+            let indent = lines[start].prefix { $0 == " " }
+            guard let end = lines[(start + 1)...].firstIndex(where: { $0 == indent + "}" }) else { return nil }
+            return lines[(start + 1)..<end].joined(separator: "\n")
+        }
+
+        // Calibration, in three parts. The extractor must find a body, that body must be the right
+        // one, and — the negative control — a Class R method's body must contain what this gate
+        // forbids. Without the last of these an extractor returning the empty string would report
+        // every method clean.
+        let grove = try #require(body(of: "grove()"), "the body extractor found nothing — this gate is vacuous")
+        #expect(grove.contains("remote.groveDelta()"), "the extractor did not read grove()'s body")
+        #expect(
+            body(of: "notAMethodOnThisType()") == nil,
+            "the extractor answered for a method that does not exist"
+        )
+
+        // §3.1's Class L list, verbatim, plus Class D.
+        let classL = [
+            "mapContent(in viewport:", "treesNear(_ coordinate:", "species(id:", "searchSpecies(query:",
+            "speciesGuide(id:", "almanac(near coordinate:", "city(near coordinate:", "exportLatest(_ format:",
+            "deviceContributions()"
+        ]
+        for signature in classL {
+            let found = try #require(body(of: signature), "no body found for \(signature)")
+            #expect(found.contains("local."), "\(signature) does not read the phone at all")
+            #expect(
+                !found.contains("remote"),
+                "\(signature) is Class L and names the service — §4.3: no Class L read may acquire a remote failure mode"
+            )
+        }
     }
 
     /// Writes stay local, including `sync`.
@@ -323,6 +386,38 @@ struct RoutedAPITests {
             await log.outcome(of: .grove) == .fellBackToLocal,
             "part of the answer was lost and the read reported itself live"
         )
+    }
+
+    /// A tree the city file **has** but cannot name is dropped too, and this is a second case
+    /// rather than a restatement of the one above.
+    ///
+    /// Red-proving the previous gate found that out: replacing the name resolution with a `"Tree"`
+    /// placeholder left it **green**, because its row is unresolvable for the earlier reason — the
+    /// city file has no such tree, so the name rule is never reached. A conformance that named an
+    /// unnameable tree would have shipped past it. "Never a fabricated label"
+    /// (`LocalAPI.displayNameIfPresent`) needs a tree that exists and has no name, which is this.
+    @Test("a tree the city file cannot name is dropped rather than labeled")
+    func aTreeTheCityFileCannotNameIsDropped() async throws {
+        let treeID = UUID()
+        var local = LocalDouble()
+        // A real profile, with neither a nickname (D15) nor a species — 12,830 of the seed's rows
+        // carry `species_current IS NULL`, so this is an ordinary row and not a contrived one.
+        local.profilesByID = [treeID: TreeProfile(tree: Self.tree(treeID))]
+
+        let transport = ScriptedTransport()
+        transport.answer(
+            "GET /me/grove",
+            with: """
+            {"entries":[{"tree_uuid":"\(treeID.uuidString)","last_visited_at":null,"is_favorite":true,
+             "record":null,"hero_photo_id":null}],"total":1}
+            """
+        )
+
+        let log = RemoteReadLog()
+        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).grove()
+
+        #expect(entries.isEmpty, "a tree with no name and no species was given a fabricated label")
+        #expect(await log.outcome(of: .grove) == .fellBackToLocal)
     }
 
     /// The service being unreachable answers from the phone, and records that it did.
