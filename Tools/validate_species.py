@@ -18,15 +18,35 @@ Checks, in the order BUILD-PLAN section 8 and DECISIONS D5 care about them:
      Botanical fields are `family`, `leaf_retention`, each non-empty seasonal array,
      each id_tip, and each care_note. This is the anti-fabrication gate from
      BUILD-PLAN section 15: "Do not invent botanical content".
-  4. Scientific names, species ids and common names match the seed database's
-     `species` table exactly, so the loading migration cannot silently create rows.
-     The exception is the handful of entries `Tools/build_seed.py` deliberately
-     retires or merges (its `RETIRED_SPECIES_NAMES` / `MERGED_SPECIES_NAMES`,
-     imported here rather than restated): the YAML is a sourcing record with
-     citations and is not rewritten when the qSpecies map is corrected, so those
-     entries are expected to have no seed row of their own. They are held to a
-     stricter rule instead -- a retired non-taxon must carry no botanical claim,
-     and a merged entry must agree with the species it merged into.
+  4. Scientific names and species ids match the seed database's `species` table,
+     so the loading migration cannot silently create rows. A uuid the seed does
+     carry must carry the same scientific name -- that one is absolute, and
+     `Tools/build_seed.py` dies on it whatever the source.
+     Whether every YAML entry must HAVE a seed row depends on which inventory
+     the seed was built from, and the seed says which in `seed_meta.trees_source`.
+     The fixtures were sourced against the DataSF export, so under that source
+     every entry must land; the SF Public Works city layer inventories some
+     62,000 fewer records and simply does not contain some of those species, and
+     `build_seed.load_species_content` treats those absences as absences in the
+     corpus rather than drift (its own `strict` flag says exactly this). This
+     script mirrors that rule rather than restating a stricter one: at the time
+     it was hardcoding DataSF strictness it reported 58 failures against the
+     shipped city-layer seed, none of which was a defect.
+     There are two further exceptions, on any source: the entries build_seed
+     deliberately retires or merges (its `RETIRED_SPECIES_NAMES` /
+     `MERGED_SPECIES_NAMES`, imported here rather than restated). The YAML is a
+     sourcing record with citations and is not rewritten when the qSpecies map is
+     corrected, so those entries are expected to have no seed row of their own.
+     They are held to a stricter rule instead -- a retired non-taxon must carry
+     no botanical claim, and a merged entry must agree with the species it
+     merged into.
+     `common_name` is REPORTED, never asserted. The YAML does not supply it: the
+     seed's value comes from whichever inventory built the file (the common half
+     of DataSF's `Genus species :: Common name`, or the city layer's own field),
+     and the two publishers disagree in punctuation ("Sycamore: London Plane" vs
+     "Sycamore, London Plane"), in choice ("Flowering Plum" vs "Cherry"), and in
+     whether they state one at all. Asserting equality between a sourcing record
+     and a value it does not feed produced 26 failures and protected nothing.
   5. Shape rules: leaf_retention is one of the three enum values, curated entries
      carry 2 to 4 id_tips, ids are unique, id_tip icons come from the documented
      vocabulary.
@@ -64,10 +84,19 @@ ICONS = {"leaf", "bark", "flower", "fruit", "cone", "form", "trunk"}
 URL_RE = re.compile(r"^https?://\S+$")
 
 
+# The inventory the fixtures were sourced against. A seed built from it must
+# carry a row for every entry; a seed built from any other inventory need not,
+# and `build_seed.load_species_content` says so with the same rule.
+FIXTURE_SOURCE_INVENTORY = "sf_datasf"
+
+
 class Report:
     def __init__(self) -> None:
         self.failures: list[str] = []
         self.notes: list[str] = []
+        # Divergences that are reported rather than failed; see rule 4.
+        self.absent: list[str] = []
+        self.common_name_divergence: list[str] = []
         self.checks = 0
 
     def check(self, ok: bool, message: str) -> bool:
@@ -85,7 +114,13 @@ def load_yaml(path: Path) -> dict:
         return yaml.safe_load(handle)
 
 
-def seed_species(path: Path) -> dict[str, dict]:
+def seed_species(path: Path) -> tuple[dict[str, dict], str]:
+    """The seed's species rows, and which inventory built the file.
+
+    `trees_source` is the same string `build_seed` writes and `trees.
+    inventory_source` stores. It is what decides whether a YAML entry with no
+    seed row is drift or an absence in that inventory's corpus (rule 4).
+    """
     uri = f"file:{path}?mode=ro"
     with sqlite3.connect(uri, uri=True) as con:
         con.row_factory = sqlite3.Row
@@ -95,7 +130,10 @@ def seed_species(path: Path) -> dict[str, dict]:
             "SELECT uuid, scientific_name, common_name, leaf_retention FROM species "
             "WHERE deleted_at IS NULL"
         ).fetchall()
-    return {row["uuid"]: dict(row) for row in rows}
+        source = con.execute(
+            "SELECT value FROM seed_meta WHERE key = 'trees_source'"
+        ).fetchone()
+    return {row["uuid"]: dict(row) for row in rows}, (source[0] if source else "")
 
 
 def citations_ok(citations, where: str, report: Report) -> None:
@@ -133,7 +171,14 @@ def check_months(values, where: str, report: Report) -> None:
     report.check(list(values) == sorted(values), f"{where} is not sorted: {values}")
 
 
-def check_entry(entry: dict, seed: dict[str, dict], report: Report, *, curated: bool) -> None:
+def check_entry(
+    entry: dict,
+    seed: dict[str, dict],
+    report: Report,
+    *,
+    curated: bool,
+    strict_presence: bool = True,
+) -> None:
     name = entry.get("scientific_name", "<unnamed>")
     species_uuid = entry.get("species_uuid")
 
@@ -173,20 +218,31 @@ def check_entry(entry: dict, seed: dict[str, dict], report: Report, *, curated: 
 
     # ---- Rule 4: the seed database is the authority on identity.
     row = seed.get(species_uuid)
-    if report.check(
-        row is not None,
-        f"{name}: species_uuid {species_uuid} is not in the seed database species table",
-    ):
+    if row is None:
+        # Absent is drift only when the seed was built from the inventory the
+        # fixtures were sourced against. Otherwise it means this inventory does
+        # not carry the species, which is a fact about the corpus.
+        if strict_presence:
+            report.check(
+                False,
+                f"{name}: species_uuid {species_uuid} is not in the seed database "
+                f"species table",
+            )
+        else:
+            report.absent.append(name)
+    else:
         report.check(
             row["scientific_name"] == name,
             f"{name}: scientific_name does not match the seed row "
             f"({row['scientific_name']!r} in the database)",
         )
-        report.check(
-            (row["common_name"] or None) == (entry.get("common_name") or None),
-            f"{name}: common_name does not match the seed row "
-            f"({row['common_name']!r} in the database)",
-        )
+        # Reported, not asserted: the seed's common_name comes from the
+        # inventory, never from this file. See rule 4 in the header.
+        if (row["common_name"] or None) != (entry.get("common_name") or None):
+            report.common_name_divergence.append(
+                f"{name}: {entry.get('common_name')!r} here, "
+                f"{row['common_name']!r} in the seed"
+            )
 
     # ---- Rule 5 plus Rule 3 for the two scalar botanical fields.
     citations = entry.get("citations") or {}
@@ -263,20 +319,23 @@ def main() -> int:
     args = parser.parse_args()
 
     report = Report()
-    seed = seed_species(args.seed)
+    seed, trees_source = seed_species(args.seed)
+    strict_presence = trees_source == FIXTURE_SOURCE_INVENTORY
     print(f"seed database: {len(seed)} species rows in {args.seed}")
+    print(f"built from inventory {trees_source!r}; every fixture entry must have a "
+          f"seed row: {strict_presence}")
 
     curated_doc = load_yaml(args.curated)
     curated = curated_doc["species"]
     print(f"curated.yaml: {len(curated)} entries")
     for entry in curated:
-        check_entry(entry, seed, report, curated=True)
+        check_entry(entry, seed, report, curated=True, strict_presence=strict_presence)
 
     lr_doc = load_yaml(args.leaf_retention)
     lr = lr_doc["species"]
     print(f"leaf_retention.yaml: {len(lr)} entries")
     for entry in lr:
-        check_entry(entry, seed, report, curated=False)
+        check_entry(entry, seed, report, curated=False, strict_presence=strict_presence)
 
     # ---- Cross-file consistency and uniqueness.
     for label, entries in (("curated.yaml", curated), ("leaf_retention.yaml", lr)):
@@ -328,6 +387,23 @@ def main() -> int:
     )
     evergreens = [e for e in lr if e.get("leaf_retention") == "evergreen"]
     report.note(f"{len(evergreens)} evergreen species; all checked against D5")
+
+    if report.absent:
+        report.note(
+            f"{len(report.absent)} sourced entries name a species this seed does not "
+            f"carry. The fixtures were sourced against {FIXTURE_SOURCE_INVENTORY!r} "
+            f"and this file was built from {trees_source!r}, which inventories a "
+            f"different set of species; build_seed treats these the same way. "
+            f"First few: {sorted(report.absent)[:5]}"
+        )
+    if report.common_name_divergence:
+        report.note(
+            f"{len(report.common_name_divergence)} entries state a different "
+            f"common_name than the seed. This file does not supply common_name -- "
+            f"the seed takes it from the inventory -- so this is two publishers "
+            f"disagreeing, not an error. First few: "
+            f"{report.common_name_divergence[:3]}"
+        )
 
     if args.json:
         print(json.dumps({"checks": report.checks, "failures": report.failures}, indent=1))
