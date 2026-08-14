@@ -45,13 +45,25 @@ struct AccountSurfaceTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        return DataLayer(store: store, api: api, outbox: outbox, deviceID: deviceID)
+        // `api:` is the *local* half in both positions here on purpose. These tests are about the
+        // on-device account leg, and a router in front of it would put a network refusal between the
+        // assertion and the table it is about. What `DataLayer.boot` really wires is
+        // `CypressTests/DataLayerWiringTests`' subject, not this suite's.
+        return DataLayer(
+            store: store,
+            api: api,
+            local: api,
+            outbox: outbox,
+            deviceID: deviceID,
+            session: AppSession(deviceUUID: deviceID),
+            readLog: RemoteReadLog()
+        )
     }
 
     /// A community-added tree, so a reminder has something real to be about (`savePrivateReminder`
     /// refuses an unknown tree).
     private static func addTree(_ data: DataLayer) async throws -> Tree {
-        try await data.api.addTree(TreeDraft(
+        try await data.local.addTree(TreeDraft(
             coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
             photoLocalPath: "/tmp/cypress-e130-\(UUID().uuidString).jpg",
             attribution: .anonymous(deviceID: deviceID)
@@ -74,7 +86,7 @@ struct AccountSurfaceTests {
         // answer travels on the request; this is that sentence, checked.
         try await link(AccountLinkRequest(provider: .email, acceptsLicense: false))
 
-        let declined = try #require(await data.api.accountLink())
+        let declined = try #require(await data.local.accountLink())
         #expect(declined.provider == AccountAskProvider.email.rawValue, "the provider was discarded")
         #expect(declined.licenseVersion == nil, "a declined license was recorded as agreed to")
         #expect(declined.acceptsLicense == false)
@@ -82,7 +94,7 @@ struct AccountSurfaceTests {
         // Accepted, on a second link by the same person. The record must move, not accumulate.
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
 
-        let accepted = try #require(await data.api.accountLink())
+        let accepted = try #require(await data.local.accountLink())
         #expect(accepted.provider == AccountAskProvider.apple.rawValue)
         #expect(accepted.licenseVersion == LicenseConsent.currentVersion, "the license consent was discarded")
         #expect(accepted.acceptsLicense)
@@ -102,7 +114,7 @@ struct AccountSurfaceTests {
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: false))
 
-        let record = try #require(await data.api.accountLink())
+        let record = try #require(await data.local.accountLink())
         #expect(record.acceptsLicense == false, "the earlier consent outlived the tap that withdrew it")
         #expect(try await data.store.appState(.accountLicenseVersion) == nil)
     }
@@ -122,25 +134,25 @@ struct AccountSurfaceTests {
         let link = RootView(data: data).accountLink()
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
-        let signedInAs = try #require(await data.api.userID)
+        let signedInAs = try #require(await data.local.userID)
 
         // A reminder owned by the account, which is the record most at risk: nobody but its owner
         // can read one, so an orphaned one is invisible rather than merely wrong.
-        _ = try await data.api.savePrivateReminder(PrivateReminder(
+        _ = try await data.local.savePrivateReminder(PrivateReminder(
             owner: .user(signedInAs),
             treeID: tree.id,
             category: .uprooted
         ))
-        #expect(try await data.api.privateReminders().count == 1)
+        #expect(try await data.local.privateReminders().count == 1)
 
-        let account = AccountModel(api: data.api)
+        let account = AccountModel(api: data.local)
         await account.load()
         #expect(account.isSignedIn)
         #expect(account.reminders.count == 1)
 
         await account.signOut()
         #expect(account.isSignedIn == false)
-        #expect(await data.api.userID == nil)
+        #expect(await data.local.userID == nil)
         // The row is still there; it is the *reader* that changed, because this device is no longer
         // that account. Nothing was deleted.
         #expect(account.reminders.isEmpty, "a signed-out device read the account's private reminders")
@@ -148,7 +160,7 @@ struct AccountSurfaceTests {
 
         // Back in — and it has to be the same account, or the reminder above is stranded.
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
-        #expect(await data.api.userID == signedInAs, "signing back in minted a rival account and stranded the first")
+        #expect(await data.local.userID == signedInAs, "signing back in minted a rival account and stranded the first")
 
         await account.load()
         #expect(account.reminders.count == 1, "the account's reminder did not come back with the account")
@@ -165,14 +177,14 @@ struct AccountSurfaceTests {
         let link = RootView(data: data).accountLink()
 
         try await link(AccountLinkRequest(provider: .google, acceptsLicense: true))
-        let signedInAs = try #require(await data.api.userID)
-        _ = try await data.api.savePrivateReminder(PrivateReminder(
+        let signedInAs = try #require(await data.local.userID)
+        _ = try await data.local.savePrivateReminder(PrivateReminder(
             owner: .user(signedInAs),
             treeID: tree.id,
             category: .hangingOrBrokenLimb
         ))
 
-        let account = AccountModel(api: data.api)
+        let account = AccountModel(api: data.local)
         await account.load()
         let outcome = try #require(await account.deleteAccount(.default))
 
@@ -192,18 +204,18 @@ struct AccountSurfaceTests {
         let link = RootView(data: data).accountLink()
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
-        let deleted = try #require(await data.api.userID)
-        try await data.api.signOut()
+        let deleted = try #require(await data.local.userID)
+        try await data.local.signOut()
         // Signed out, so the id is standing by to be resumed — exactly the state deletion has to
         // clear. Signing back in to delete it is how a person would actually reach this.
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
-        #expect(await data.api.userID == deleted)
+        #expect(await data.local.userID == deleted)
 
-        _ = try await data.api.deleteAccount(.eraseEverything)
-        #expect(try await data.api.resumableUserID() == nil, "a deleted account was left resumable")
+        _ = try await data.local.deleteAccount(.eraseEverything)
+        #expect(try await data.local.resumableUserID() == nil, "a deleted account was left resumable")
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
-        #expect(await data.api.userID != deleted, "signing in after a deletion resumed the deleted account")
+        #expect(await data.local.userID != deleted, "signing in after a deletion resumed the deleted account")
     }
 
     // MARK: - 4. R3's copy, which is the defense
@@ -287,7 +299,7 @@ struct AccountSurfaceTests {
     @Test("the You tab looks different when somebody is signed in")
     func theYouTabDrawsWhoIsSignedIn() async throws {
         let data = try await Self.bootInMemory()
-        let signedOutModel = AccountModel(api: data.api)
+        let signedOutModel = AccountModel(api: data.local)
         await signedOutModel.load()
 
         let signedOut = try #require(await Self.render {
@@ -301,7 +313,7 @@ struct AccountSurfaceTests {
         try await RootView(data: data).accountLink()(
             AccountLinkRequest(provider: .apple, acceptsLicense: true)
         )
-        let signedInModel = AccountModel(api: data.api)
+        let signedInModel = AccountModel(api: data.local)
         await signedInModel.load()
 
         let signedIn = try #require(await Self.render {

@@ -695,6 +695,45 @@ struct RoutedAPITests {
             await !log.degradedReads.contains(.photoData),
             "a read that returned no value was reported as answering from this phone"
         )
+
+        // ── And it is visible in an aggregate, which round 2 of PR #78's review found it was not ──
+        //
+        // The line above is right about `degradedReads` and was, on its own, the whole of the log's
+        // account of this read: correctly labeled and invisible to any consumer that did not already
+        // know to ask for `.photoData` by name. §4.3's ruling is that "a screen that collapses the
+        // third into an empty state is telling somebody their work is gone", and a surface cannot
+        // avoid that with a set it has to guess the contents of.
+        #expect(
+            await log.unansweredReads == [.photoData],
+            "the third outcome of §4.3 is in no aggregate — it is reachable only by name"
+        )
+        #expect(
+            await log.readsNotAnsweredLive.contains(.photoData),
+            "the union a §4.3 surface reads does not contain a read that could not be answered"
+        )
+    }
+
+    /// The three aggregates say three different things, on one log holding all three outcomes.
+    ///
+    /// Written as one log rather than three, because the property under test is that the sets do not
+    /// **overlap** where they must not and do overlap where they must — which a per-outcome test
+    /// cannot see. `.live` is the control: it belongs to none of the three, and without it a
+    /// `readsNotAnsweredLive` that simply returned every recorded read would pass.
+    @Test("degraded, unanswered and not-live are three different sets")
+    func theThreeAggregatesAreDistinct() async {
+        let log = RemoteReadLog()
+        await log.record(.isFavorite, .live)
+        await log.record(.grove, .fellBackToLocal)
+        await log.record(.journal, .fellBackToLocal)
+        await log.record(.photoData, .unanswered)
+
+        #expect(await log.degradedReads == [.grove, .journal])
+        #expect(await log.unansweredReads == [.photoData])
+        #expect(await log.readsNotAnsweredLive == [.grove, .journal, .photoData])
+        #expect(
+            await !log.readsNotAnsweredLive.contains(.isFavorite),
+            "a read the service answered is in the set a surface draws a fallback sentence from"
+        )
     }
 
     /// The journal answers from the phone and **says so every time**.

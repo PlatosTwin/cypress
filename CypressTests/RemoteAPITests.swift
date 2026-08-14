@@ -633,70 +633,198 @@ struct RemoteAPITests {
         #expect(transport.calls.isEmpty, "a photograph was receipted whose bytes were never read")
     }
 
-    /// **The containment invariant, held from the source: no path through the two send-sink methods
-    /// throws a `RemoteSurface`.**
+    /// **The containment invariant, held from the source and held as an ALLOW-LIST: `RemoteSurface`
+    /// is named nowhere in `RemoteAPI.swift` except inside the bodies of the methods that refuse.**
     ///
-    /// ── Why this is a source gate and the test above is not enough ─────────────────────────────
+    /// ── Why this is a source gate, and why the behavioral test above is not enough ──────────────
     ///
-    /// The invariant is over *every* path through two bodies. A behavioral test can only assert the
-    /// paths it can reach, and reaching all of them means driving `sync` through a decode failure, an
-    /// encode failure, a transport failure and an unreadable success body, plus `uploadPhoto` through
-    /// four more — eight tests that would still say nothing about the ninth branch somebody adds next
-    /// year. The property "this body cannot throw that type" is a property of the *text*, and the
-    /// text is what a gate should read. `theClassLBodiesNeverNameTheService` in `RoutedAPITests` is
-    /// the same instrument for the same reason, and this round's review is what pointed it here.
+    /// The invariant is over *every* path through the bodies an `OutboxSendSink` can reach. A
+    /// behavioral test can only assert the paths it can reach, and reaching all of them means driving
+    /// `sync` through a decode failure, an encode failure, a transport failure and an unreadable
+    /// success body, plus `uploadPhoto` through four more — eight tests that would still say nothing
+    /// about the ninth branch somebody adds next year. The property "this body cannot throw that
+    /// type" is a property of the *text*, and the text is what a gate should read.
     ///
-    /// ── What it does not cover, stated rather than implied ─────────────────────────────────────
+    /// ── Why it is inverted, which is round 2 of PR #78's review ─────────────────────────────────
     ///
-    /// Callees. The gate reads the two methods and the two private helpers they call into
-    /// (`request`, `decode`); a `RemoteSurface` thrown by something further down — `OutboxPayload`,
-    /// `JSONValue`, the transport — would evade it. Those were read once, by hand, when this was
-    /// written: none of them can name a type declared in `RemoteWire.swift` from where they sit, and
-    /// `AuthorizedTransport` is a seam whose documented error set is `APIError` and `SessionError`.
-    /// That is a smaller claim than the gate makes, and it is the honest boundary of it.
-    @Test("no send-sink body can throw a RemoteSurface")
-    func theSendSinkBodiesCannotThrowARemoteSurface() throws {
-        let source = try String(
-            contentsOf: AppSourceLiterals.repositoryRoot()
-                .appendingPathComponent("Cypress/Data/API/RemoteAPI.swift"),
-            encoding: .utf8
-        )
+    /// The first version of this gate listed four signatures by hand — `sync`, `uploadPhoto`, and the
+    /// two private helpers they call into — and asserted those four bodies did not contain
+    /// `RemoteSurface`. The reviewer added a new branch to `sync` calling a **new private sibling
+    /// helper** that threw one, twenty lines from the gate's own list, and all 1,437 tests stayed
+    /// green. A hand-maintained deny-list of callers cannot cover a callee that does not exist yet,
+    /// and nothing makes it go stale loudly.
+    ///
+    /// So the burden is inverted, which is the same repair ERRATA **E260** made to the camera guard
+    /// for the same reason: rather than enumerating what must be clean, enumerate what is **allowed**
+    /// to name the type and refuse everything else. A helper added anywhere in this file — private,
+    /// nested, in an extension — is outside the allow-list on the day it is written, so the gate goes
+    /// red the moment it names `RemoteSurface` rather than the day somebody remembers to list it.
+    ///
+    /// ── What it still does not cover, stated rather than implied ───────────────────────────────
+    ///
+    /// **Callees in other files.** A `RemoteSurface` thrown by `OutboxPayload`, `JSONValue` or the
+    /// transport would evade this, because this reads one file. Those were read once, by hand: none
+    /// of them can name a type declared in `RemoteWire.swift` from where it sits, and
+    /// `AuthorizedTransport`'s documented error set is `APIError` and `SessionError`. That is a
+    /// smaller claim than the gate makes and it is the honest boundary of it — but it is now the
+    /// *only* gap, where before the gap included this file's own future.
+    @Test("RemoteSurface is named only inside the methods that refuse")
+    func theRemoteSurfaceIsConfinedToItsRefusals() throws {
+        let path = AppSourceLiterals.repositoryRoot()
+            .appendingPathComponent("Cypress/Data/API/RemoteAPI.swift")
+        let source = try String(contentsOf: path, encoding: .utf8)
 
-        /// A method's body, from its `func` line to the line that closes it at the same indent.
-        func body(of signature: String) -> String? {
-            let lines = source.components(separatedBy: "\n")
-            guard let start = lines.firstIndex(where: { $0.contains("func \(signature)") }) else { return nil }
-            let indent = lines[start].prefix { $0 == " " }
-            guard let end = lines[(start + 1)...].firstIndex(where: { $0 == indent + "}" }) else { return nil }
-            return lines[(start + 1)..<end].joined(separator: "\n")
-        }
+        // Calibration first, on a specimen whose answer is known — CLAUDE.md: "run it against a case
+        // whose answer you already know … the only thing that separates a measurement from a
+        // coincidence." The specimen is the reviewer's own mutation, shrunk: one method that is
+        // allowed to refuse, one send-sink method that is not, and **a private sibling helper**,
+        // which is the shape that went green against the deny-list gate.
+        let specimen = """
+            public struct Specimen {
+                public func grove() async throws -> Int {
+                    throw RemoteSurface.communityHalfOnly
+                }
 
-        // Calibration, three parts: the extractor finds a body, it is the right body, and — the
-        // negative control — a method that *does* throw a `RemoteSurface` reads as one. Without the
-        // last, an extractor returning the empty string would certify every method clean.
-        let sync = try #require(body(of: "sync(_ items:"), "the body extractor found nothing — this gate is vacuous")
-        #expect(sync.contains("POST"), "the extractor did not read sync's body")
+                public func sync(_ items: [Int]) async throws -> Int {
+                    if items.count > 1_000 { try Self.overLargeBatch() }
+                    return 0
+                }
+
+                /// A doc comment naming RemoteSurface, which is prose and must not be attributed.
+                private static func overLargeBatch() throws {
+                    throw RemoteSurface.noRouteOnThisService
+                }
+            }
+            """
+        let calibration = Self.methodsNaming("RemoteSurface", in: specimen)
         #expect(
-            body(of: "grove()")?.contains("RemoteSurface") == true,
-            "the negative control did not read as a refusal — this gate cannot tell the two apart"
+            calibration == ["grove", "overLargeBatch"],
+            """
+            the scanner attributed \(calibration.sorted()) on a specimen whose answer is \
+            ["grove", "overLargeBatch"] — it cannot measure this file
+            """
         )
-        #expect(body(of: "notAMethodOnThisType()") == nil, "the extractor answered for a method that does not exist")
+        // The two halves of that, said separately so a failure names which one broke: the helper is
+        // caught (the reviewer's mutation), and the doc comment above it is not (prose is not code).
+        #expect(calibration.contains("overLargeBatch"), "a private sibling helper evaded the scanner")
+        #expect(!calibration.contains("sync"), "a doc comment was read as a throw")
 
-        // The two an `OutboxSendSink` can call, and the two private helpers they call into.
-        //
-        // `decode<T` and not `decode(`: the helper is generic, so its `func` line reads
-        // `func decode<T: Decodable>(…`. The `#require` above is what said so rather than the gate
-        // quietly checking three methods and calling it four.
-        for signature in ["sync(_ items:", "uploadPhoto(at localPath:", "request(", "decode<T"] {
-            let found = try #require(body(of: signature), "no body found for \(signature)")
-            #expect(
-                !found.contains("RemoteSurface"),
-                """
-                \(signature) can throw a RemoteSurface. An outbox item that reached one would print \
-                "No connection." to somebody with four bars — see RemoteSurface's header.
-                """
-            )
+        // And the walker sees the whole file, not a prefix of it: a gate that stopped after the
+        // struct would certify the two extensions vacuously.
+        let declared = Self.methodNames(in: source)
+        for expected in ["mapContent", "sync", "uploadPhoto", "groveDelta", "deletePhotoRemotely", "decode"] {
+            #expect(declared.contains(expected), "the walker never reached \(expected) — this gate is partial")
         }
+
+        // ── The allow-list: every method in this file that is *allowed* to name the type ─────────
+        //
+        // Each is a refusal — a Class L body with no route, one of spec §3.4's nine, or a half the
+        // router joins. `RemoteAPITests` covers the behavior of every one of them; this list is about
+        // the *text*, and it is exhaustive by construction rather than by hand: anything not on it
+        // fails below.
+        let allowed: Set<String> = [
+            // Class L — the city layer is answered on the phone and this service has no route.
+            "mapContent", "treesNear", "species", "searchSpecies", "speciesGuide", "almanac", "city",
+            // Spec §3.4's nine unqueued mutations, plus the export D12 has not built.
+            "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
+            "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
+            "logHazardRedirect", "exportLatest",
+            // Halves: the service answers part and the whole client type needs the city file.
+            "treeProfile", "deletePhoto", "grove", "groveSpecies", "journal",
+            // The one refusal that is about a missing *provider* rather than a missing route.
+            "deleteAccount"
+        ]
+
+        let naming = Self.methodsNaming("RemoteSurface", in: source)
+        #expect(
+            !naming.isEmpty,
+            "no method in RemoteAPI.swift names RemoteSurface — the scanner matched nothing, so this gate is vacuous"
+        )
+        let trespassers = naming.subtracting(allowed)
+        #expect(
+            trespassers.isEmpty,
+            """
+            \(trespassers.sorted().joined(separator: ", ")) names RemoteSurface and is not a \
+            refusal. An outbox item that reached one would print "No connection." to somebody with \
+            four bars — see RemoteSurface's header. If this method is a new refusal, add it to the \
+            allow-list above and say why; if it is on the send sink's path, it must not throw one.
+            """
+        )
+        // The other direction, so the allow-list cannot rot into a list of names that left: every
+        // entry must still be a method of this file that still refuses.
+        let departed = allowed.subtracting(naming)
+        #expect(
+            departed.isEmpty,
+            """
+            the allow-list names \(departed.sorted().joined(separator: ", ")), which no longer \
+            names RemoteSurface. A refusal that became a call is a routing change, not a cleanup.
+            """
+        )
+    }
+
+    // MARK: - The scanner behind the allow-list gate
+
+    /// Every top-level method declared in `source`, by name.
+    ///
+    /// Shared with `methodsNaming` so that "the walker reached this method" and "this method names
+    /// the type" are answered by one traversal of one file — the calibration above asserts the first
+    /// so that the second cannot be vacuous.
+    private static func methodNames(in source: String) -> Set<String> {
+        var names: Set<String> = []
+        walk(source) { name, _ in names.insert(name) }
+        return names
+    }
+
+    /// Every method whose **body** contains `needle`. Comment lines are not body.
+    private static func methodsNaming(_ needle: String, in source: String) -> Set<String> {
+        var names: Set<String> = []
+        walk(source) { name, line in
+            if line.contains(needle) { names.insert(name) }
+        }
+        return names
+    }
+
+    /// One forward pass over the file, handing each in-body line to `visit` with its method's name.
+    ///
+    /// **One pass, no re-scanning per signature.** The gate this replaced re-split the whole file
+    /// once per signature it checked; over an allow-list of twenty-four that is a quadratic read of a
+    /// 790-line file for a question that is linear.
+    ///
+    /// A "method" here is a `func` declared at four-space indent — the depth of a member of the
+    /// `RemoteAPI` struct and of both of its extensions — and its body runs to the next line that is
+    /// exactly four spaces and a closing brace. Comment lines (`//`, `///`) are skipped before
+    /// anything is attributed, which is what stops a doc comment naming `RemoteSurface` reading as a
+    /// throw; the specimen in the gate above is what proves that rather than asserting it.
+    private static func walk(_ source: String, _ visit: (String, Substring) -> Void) {
+        let indent = "    "
+        var current: String?
+        for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.drop { $0 == " " }
+            if trimmed.hasPrefix("//") { continue }
+            if current != nil, String(line) == indent + "}" {
+                current = nil
+                continue
+            }
+            if line.hasPrefix(indent + " ") == false, let name = Self.functionName(trimmed) {
+                current = name
+                continue
+            }
+            if let current { visit(current, line) }
+        }
+    }
+
+    /// `func groveDelta() async throws -> …` → `groveDelta`. Nil for anything that is not a `func`.
+    ///
+    /// Modifiers are stripped by scanning for the `func` keyword rather than by listing them, so
+    /// `public`, `private`, `static`, `@discardableResult` on the same line and any future spelling
+    /// all resolve. The name ends at `(` or `<`, so a generic helper (`decode<T: Decodable>(`)
+    /// resolves to `decode` — the failure the previous gate's `decode(` typo produced, made
+    /// unwritable rather than caught.
+    private static func functionName(_ line: Substring) -> String? {
+        guard let range = line.range(of: "func ") else { return nil }
+        let rest = line[range.upperBound...]
+        let name = rest.prefix { $0 != "(" && $0 != "<" && $0 != " " }
+        return name.isEmpty ? nil : String(name)
     }
 
     /// `GET /photos/{id}` answers a presigned source, and the bytes come from there.

@@ -392,7 +392,7 @@ struct FavoriteToggleTests {
                 attribution: Attribution.anonymous(deviceID: Self.deviceID)
             )
         )
-        let write = ProfileFavoriteWriter(api: api, outbox: outbox)
+        let write = ProfileFavoriteWriter(api: api, local: api, outbox: outbox)
 
         await write(treeID: tree.id, isFavorite: true)
         #expect(try await api.grove().first { $0.treeID == tree.id }?.isFavorite == true)
