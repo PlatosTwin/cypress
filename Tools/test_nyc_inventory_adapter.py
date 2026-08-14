@@ -30,6 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from inventory_adapters import (  # noqa: E402
     NYC_DBH_CEILING_IN,
+    NYC_MAX_SNAP_METRES,
+    BoroughResolver,
     NYCTreePointAdapter,
 )
 from inventory_contract import (  # noqa: E402
@@ -71,8 +73,17 @@ def load():
     return payload["tree_points"], spaces
 
 
+def _resolver():
+    path = os.path.join(REPO, "Fixtures", "nyc_survey", "borough_boundaries.geojson")
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as fh:
+        return BoroughResolver(json.load(fh))
+
+
 def adapter(**kwargs):
     rows, spaces = load()
+    kwargs.setdefault("borough_resolver", _resolver())
     return NYCTreePointAdapter(rows, spaces, HORIZON, **kwargs)
 
 
@@ -83,7 +94,10 @@ def by_case(records_with_rows, case):
 def run():
     """(record, source row) pairs, so a test can name the case it is about."""
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces, HORIZON)
+    # A resolver is the ORDINARY configuration since RULING D18 -- without one
+    # the adapter refuses to finish on any row lacking a stated borough, which
+    # is the point. Tests that need the no-resolver behaviour ask for it.
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough_resolver=_resolver())
     out = []
     produced = list(a.records())
     # `records()` skips nothing in this fixture (every row has a position), so
@@ -243,7 +257,7 @@ def test_the_join_never_moves_a_trees_position():
     is the tree point's own; the planting space supplies attributes only.
     """
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces, HORIZON)
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough_resolver=_resolver())
     for record, row in zip(list(a.records()), rows):
         check(record.lat == row["lat"] and record.lon == row["lon"],
               f"record at ({record.lat}, {record.lon}) but its tree point is at "
@@ -428,6 +442,142 @@ def test_nyc_publishes_no_caretaker_so_none_is_invented():
               f"a care assistant appeared: {record.city_record.get('care_assistant')!r}")
 
 
+# ---------------------------------------------------------------------------
+# RULING D18 -- every tree gets a borough
+# ---------------------------------------------------------------------------
+
+
+def test_the_borough_resolver_places_landmarks_correctly():
+    """Calibration against five coordinates whose borough is common knowledge.
+
+    Fails if the polygons are the wrong dataset, or if lat/lon reach shapely in
+    the wrong order -- which would silently place every tree in the water.
+    """
+    resolver = _resolver()
+    check(resolver is not None, "the borough boundary fixture is missing")
+    if resolver is None:
+        return
+    check(sorted(resolver.names) ==
+          ["Bronx", "Brooklyn", "Manhattan", "Queens", "Staten Island"],
+          f"boroughs are {sorted(resolver.names)}")
+    for label, lat, lon, expected in (
+        ("Times Square", 40.7580, -73.9855, "Manhattan"),
+        ("Brooklyn Bridge Park", 40.7003, -73.9967, "Brooklyn"),
+        ("Flushing Meadows", 40.7466, -73.8447, "Queens"),
+        ("Yankee Stadium", 40.8296, -73.9262, "Bronx"),
+        ("St George, Staten Island", 40.6437, -74.0736, "Staten Island"),
+    ):
+        got = resolver.contains(lat, lon)
+        check(got == expected, f"{label} resolved to {got!r}, expected {expected!r}")
+
+
+def test_a_point_outside_the_city_is_not_in_any_borough():
+    """Fails if `contains` is really answering 'nearest' -- which would make the
+    whole point-in-polygon step vacuous and place New Jersey in Staten Island."""
+    resolver = _resolver()
+    if resolver is None:
+        return
+    check(resolver.contains(40.7357, -74.1724) is None,
+          "Newark, NJ resolved to a New York City borough")
+    nearest, metres = resolver.nearest(40.7357, -74.1724)
+    check(metres > NYC_MAX_SNAP_METRES,
+          f"Newark is {metres:.0f} m from {nearest}, inside the "
+          f"{NYC_MAX_SNAP_METRES:.0f} m snap cap; it would be assigned a borough")
+
+
+def test_a_stated_borough_wins_and_geometry_only_calibrates():
+    """RULING D18's precedence. Fails if geometry ever OVERRIDES the City's own
+    attribution -- 7 rows city-wide disagree, and they keep what NYC says."""
+    rows, spaces = load()
+    resolver = _resolver()
+    if resolver is None:
+        return
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough_resolver=resolver)
+    for record, row in zip(list(a.records()), rows):
+        space = spaces.get((row.get("plantingspaceglobalid") or "").strip())
+        stated = (space or {}).get("boroughcode")
+        if not stated:
+            continue
+        carried = json.loads(record.raw_json)
+        check(carried["boroughcode"] == stated,
+              f"a stated borough {stated!r} was overridden with "
+              f"{carried['boroughcode']!r}")
+        check(carried["boroughsource"] == "planting_space",
+              f"a stated row records its source as {carried['boroughsource']!r}")
+
+
+def test_an_orphan_gets_a_borough_from_geometry():
+    """The whole point of D18: before it, 22,995 trees had no borough and no
+    borough pack could contain them.
+
+    Fails if an orphan comes back with no borough, or claims its planting space
+    supplied one.
+    """
+    rows, spaces = load()
+    resolver = _resolver()
+    if resolver is None:
+        return
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough_resolver=resolver)
+    records = list(a.records())
+    orphans = [r for r, row in zip(records, rows) if row.get("_case") == "full/ORPHAN no ps match"]
+    check(bool(orphans), "the fixture lost its orphan rows")
+    for record in orphans:
+        carried = json.loads(record.raw_json or "{}")
+        check(carried.get("boroughcode") in resolver.names,
+              f"an orphan carries borough {carried.get('boroughcode')!r}")
+        check(carried.get("boroughsource") in ("point_in_polygon", "nearest_polygon"),
+              f"an orphan credits its borough to {carried.get('boroughsource')!r}")
+
+
+def test_every_row_is_placed_and_the_counters_sum():
+    """RULING D18 requires borough packs to sum EXACTLY to the whole city.
+
+    Fails if any row is unassigned, or if the four outcome counters do not
+    account for every row read -- which is how a silent drop hides.
+    """
+    rows, spaces = load()
+    resolver = _resolver()
+    if resolver is None:
+        return
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough_resolver=resolver)
+    records = list(a.records())
+    s = a.stats
+    check(s["borough_unassigned"] == 0,
+          f"{s['borough_unassigned']} rows were left with no borough")
+    placed = (s["borough_stated_by_planting_space"]
+              + s["borough_from_point_in_polygon"]
+              + s["borough_from_nearest_polygon"]
+              + s["borough_unassigned"])
+    check(placed == s["source_rows"],
+          f"the D18 counters total {placed} of {s['source_rows']} rows: {s}")
+    for record in records:
+        carried = json.loads(record.raw_json or "{}")
+        check(carried.get("boroughcode"),
+              f"a record shipped with no borough at all (ref {record.source_ref})")
+
+
+def test_a_row_that_cannot_be_placed_stops_the_run():
+    """Fails if an unplaceable row is emitted with no borough instead of stopping.
+
+    Driven with NO resolver, which is the only way to make the fixture's own rows
+    unplaceable without inventing a coordinate in the Atlantic.
+    """
+    rows, spaces = load()
+    orphan_rows = [r for r in rows if not spaces.get((r.get("plantingspaceglobalid") or "").strip())]
+    check(bool(orphan_rows), "the fixture holds no row lacking a stated borough")
+    a = NYCTreePointAdapter(orphan_rows, spaces, HORIZON, borough_resolver=None)
+    try:
+        list(a.records())
+    except ValueError as error:
+        check("could not be placed in any borough" in str(error),
+              f"the run stopped, but for the wrong reason: {error}")
+    else:
+        FAILURES.append(
+            "a run with unplaceable rows finished quietly; RULING D18 requires "
+            "borough packs to sum exactly to the whole city"
+        )
+
+
 def test_a_planting_date_in_the_future_is_dropped_and_counted():
     """Three of NYC's 136,730 PlantedDates are in the future -- 2030-11-02 and
     2108-11-23 twice, each a transposition whose intended year is legible from
@@ -438,7 +588,7 @@ def test_a_planting_date_in_the_future_is_dropped_and_counted():
     in 2108 and trip verify_seed.py check 14.
     """
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces, HORIZON)
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough_resolver=_resolver())
     records = list(a.records())
     # The count is asserted from the FIXTURE's own rows, before any probe call
     # touches the counter -- an assertion a direct parse_planted_date() call had
@@ -462,7 +612,7 @@ def test_the_horizon_is_the_seed_epoch_not_the_wall_clock():
     """ERRATA E13: a clock reading inside a byte-for-byte reproducible seed is a
     defect. Fails if the adapter reads the current year instead of its argument."""
     rows, spaces = load()
-    tight = NYCTreePointAdapter(rows, spaces, 2016)
+    tight = NYCTreePointAdapter(rows, spaces, 2016, borough_resolver=_resolver())
     check(tight.parse_planted_date("2020-01-01 00:00:00") is None,
           "a horizon of 2016 accepted a 2020 date; the adapter is not using its argument")
 
@@ -477,14 +627,24 @@ def test_the_borough_rides_on_every_record_that_has_one():
     joined to no planting space.
     """
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces, HORIZON)  # NOTE: with_raw defaults to False
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough_resolver=_resolver())  # NOTE: with_raw defaults to False
     for record, row in zip(list(a.records()), rows):
         space = spaces.get((row.get("plantingspaceglobalid") or "").strip())
-        expected = (space or {}).get("boroughcode") or None
+        stated = (space or {}).get("boroughcode") or None
         carried = json.loads(record.raw_json)["boroughcode"] if record.raw_json else None
-        check(carried == expected,
-              f"record carries borough {carried!r} but its planting space says "
-              f"{expected!r} (globalid={row.get('globalid')}, case={row.get('_case')!r})")
+        source = json.loads(record.raw_json)["boroughsource"] if record.raw_json else None
+        if stated:
+            # A stated borough must be carried verbatim and credited to the
+            # planting space -- RULING D18's precedence.
+            check(carried == stated and source == "planting_space",
+                  f"record carries borough {carried!r} from {source!r} but its planting "
+                  f"space states {stated!r} (globalid={row.get('globalid')})")
+        else:
+            # No stated borough: D18 requires geometry to supply one, and the
+            # record must say that is where it came from.
+            check(carried is not None and source in ("point_in_polygon", "nearest_polygon"),
+                  f"a row with no stated borough carries {carried!r} from {source!r} "
+                  f"(globalid={row.get('globalid')}, case={row.get('_case')!r})")
     check(a.stats["borough_carried"] > 0, "no record carried a borough at all")
     check(a.stats["borough_carried"] + a.stats["no_borough_to_carry"] == a.stats["source_rows"],
           f"the borough counters total "
@@ -492,19 +652,25 @@ def test_the_borough_rides_on_every_record_that_has_one():
           f"{a.stats['source_rows']} rows")
 
 
-def test_an_orphan_carries_no_borough_rather_than_a_guessed_one():
-    """An orphan has no planting space, so it has no borough. Its coordinates
-    would imply one, and inferring it from them would be a civic claim this
-    adapter has no source for (DECISIONS constraint 15).
+def test_an_orphan_borough_is_geometric_and_says_so():
+    """SUPERSEDES a pre-D18 test that asserted the opposite.
 
-    Fails if a borough is ever derived from geometry.
+    Before RULING D18 an orphan carried NO borough, precisely so that none was
+    ever inferred from coordinates. D18 reverses that -- borough packs must sum
+    to the whole city -- so geometry now ASSIGNS one. What must not be lost is
+    the distinction, so the record records WHICH source placed it.
+
+    Fails if a geometric borough is passed off as the City's own attribution.
     """
     _a, pairs = run()
-    for record in by_case(pairs, "full/ORPHAN no ps match"):
-        carried = json.loads(record.raw_json) if record.raw_json else {}
-        check("boroughcode" not in carried,
-              f"an orphan carries the borough {carried.get('boroughcode')!r}, which "
-              f"can only have come from its coordinates")
+    orphans = by_case(pairs, "full/ORPHAN no ps match")
+    check(bool(orphans), "the fixture lost its orphan rows")
+    for record in orphans:
+        carried = json.loads(record.raw_json or "{}")
+        check(carried.get("boroughsource") != "planting_space",
+              "an orphan credits its borough to a planting space it never joined")
+        check(carried.get("boroughsource") in ("point_in_polygon", "nearest_polygon"),
+              f"an orphan's borough source is {carried.get('boroughsource')!r}")
 
 
 def test_optional_passthroughs_are_gated_but_the_borough_is_not():
@@ -512,8 +678,8 @@ def test_optional_passthroughs_are_gated_but_the_borough_is_not():
     and the borough is load-bearing. Fails if they stop being gated, or if
     gating them also gates the borough."""
     rows, spaces = load()
-    plain = NYCTreePointAdapter(rows, spaces, HORIZON, with_raw=False)
-    rich = NYCTreePointAdapter(rows, spaces, HORIZON, with_raw=True)
+    plain = NYCTreePointAdapter(rows, spaces, HORIZON, with_raw=False, borough_resolver=_resolver())
+    rich = NYCTreePointAdapter(rows, spaces, HORIZON, with_raw=True, borough_resolver=_resolver())
     plain_keys, rich_keys = set(), set()
     for record in plain.records():
         if record.raw_json:
@@ -521,8 +687,9 @@ def test_optional_passthroughs_are_gated_but_the_borough_is_not():
     for record in rich.records():
         if record.raw_json:
             rich_keys |= set(json.loads(record.raw_json))
-    check(plain_keys == {"boroughcode"},
-          f"an ungated build emitted {sorted(plain_keys)}; only the borough is unconditional")
+    check(plain_keys == {"boroughcode", "boroughsource"},
+          f"an ungated build emitted {sorted(plain_keys)}; only the borough and the "
+          f"provenance of the borough are unconditional")
     check("boroughcode" in rich_keys, "the borough vanished from a --with-city-raw build")
     check(rich_keys - plain_keys, "--with-city-raw added nothing; the gate does nothing")
 
@@ -535,7 +702,7 @@ def test_the_borough_filter_drops_rather_than_reassigns():
     boroughs.discard("")
     check(bool(boroughs), "the fixture's planting spaces carry no borough at all")
     target = sorted(boroughs)[0]
-    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough=target)
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough=target, borough_resolver=_resolver())
     produced = list(a.records())
     for record in produced:
         check(record.attributes_from == "nyc_planting_spaces",
@@ -550,7 +717,7 @@ def test_the_borough_filter_drops_rather_than_reassigns():
 def test_the_structure_filter_reads_only_what_it_is_asked_for():
     """Fails if `--structures Full` silently ingests stumps too."""
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces, HORIZON, structures={"full"})
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, structures={"full"}, borough_resolver=_resolver())
     produced = list(a.records())
     check(bool(produced), "the Full filter produced nothing at all")
     for record in produced:

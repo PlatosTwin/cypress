@@ -1061,6 +1061,85 @@ NYC_STRUCTURE_IS_TREE = {"full"}
 NYC_STRUCTURE_IS_NOT_A_TREE = {"stump", "stump - uprooted", "shaft", "retired"}
 
 
+#: How far outside every borough polygon a tree may sit and still be snapped to
+#: the nearest borough rather than stopping the build. RULING D18 requires that
+#: borough packs sum exactly to the whole city, so a row cannot be left
+#: unassigned -- but "nearest" must be bounded or it is not a measurement.
+#:
+#: Measured on the 898,643 `Full` rows, 2026-08-14: 543 sit outside every
+#: polygon, and their distance to the nearest borough is min 0.03 m, median
+#: 25.4 m, MAX 310.0 m. They are trees on the shoreline side of a clipped
+#: boundary, or on the Queens/Nassau and Bronx/Westchester city lines. 500 m
+#: bounds the observed maximum with headroom and is small enough that exceeding
+#: it means something changed -- at which point the build STOPS rather than
+#: assigning a borough nobody measured.
+NYC_MAX_SNAP_METRES = 500.0
+
+
+class BoroughResolver:
+    """Point-in-polygon against the City's official borough boundaries (D18).
+
+    Deliberately a small class with no knowledge of tree points, so it can be
+    tested against coordinates whose borough is independently known.
+
+    THE PRECEDENCE, WHICH IS RULING D18's AND NOT THIS CLASS'S TO CHANGE: a tree
+    that joins a planting space keeps the borough that planting space STATES.
+    Geometry is run on those rows too, but only as calibration -- it reports
+    disagreement and never overrides. Geometry ASSIGNS only where the source
+    states nothing, which is the 22,995 orphans and the 485 joined rows whose
+    planting space carries no `boroughcode`.
+    """
+
+    #: Degrees of latitude per metre, near enough at NYC's latitude for a
+    #: distance bound. Not a projection -- it is used to decide whether 310 m is
+    #: under a 500 m cap, and nothing finer depends on it.
+    _METRES_PER_DEGREE = 111_320.0
+
+    def __init__(self, geojson: dict) -> None:
+        from shapely.geometry import shape          # imported here so the
+        from shapely.prepared import prep           # adapters module stays
+        from shapely.strtree import STRtree         # importable without shapely
+        self._names = []
+        self._polygons = []
+        for feature in geojson.get("features", []):
+            name = (feature.get("properties") or {}).get("boroname")
+            if not name:
+                raise ValueError("a borough boundary feature carries no boroname")
+            self._names.append(name)
+            self._polygons.append(shape(feature["geometry"]))
+        if len(self._names) != 5:
+            raise ValueError(f"expected 5 boroughs, got {len(self._names)}: {self._names}")
+        self._tree = STRtree(self._polygons)
+        self._prepared = [prep(p) for p in self._polygons]
+        self._point = __import__("shapely.geometry", fromlist=["Point"]).Point
+
+    @property
+    def names(self):
+        return list(self._names)
+
+    def contains(self, lat, lon):
+        """The borough whose polygon CONTAINS this point, or None."""
+        point = self._point(lon, lat)
+        for index in self._tree.query(point):
+            if self._prepared[index].contains(point):
+                return self._names[index]
+        return None
+
+    def nearest(self, lat, lon):
+        """(borough, metres) for the closest polygon. Never None.
+
+        Only consulted for a point no polygon contains, and only accepted by the
+        caller within `NYC_MAX_SNAP_METRES`.
+        """
+        point = self._point(lon, lat)
+        best, best_distance = None, None
+        for index, polygon in enumerate(self._polygons):
+            distance = polygon.distance(point)
+            if best_distance is None or distance < best_distance:
+                best, best_distance = index, distance
+        return self._names[best], best_distance * self._METRES_PER_DEGREE
+
+
 class NYCTreePointAdapter:
     """NYC Parks' `Forestry Tree Points`, joined to `Forestry Planting Spaces`.
 
@@ -1134,7 +1213,7 @@ class NYCTreePointAdapter:
 
     def __init__(self, tree_point_rows, planting_spaces: dict, horizon_year: int,
                  limit: int = 0, structures=None, borough=None,
-                 with_raw: bool = False) -> None:
+                 with_raw: bool = False, borough_resolver=None) -> None:
         """`planting_spaces` is {GlobalID -> planting space row}, already deduplicated.
 
         `structures` limits which `TPStructure` values are read at all, lowercased;
@@ -1155,6 +1234,11 @@ class NYCTreePointAdapter:
         #: Whether the OPTIONAL passthroughs join `boroughcode` in `raw_json`.
         #: The borough itself is never optional -- see `raw_json` below.
         self.with_raw = with_raw
+        #: `BoroughResolver`, or None. RULING D18 requires every row to carry a
+        #: borough, so a build with no resolver can only serve rows whose
+        #: planting space states one -- `records()` stops on any row it cannot
+        #: place rather than emitting one with no borough.
+        self.borough_resolver = borough_resolver
         self.stats = {
             "source_rows": 0,
             "dropped_no_coords": 0,
@@ -1176,6 +1260,15 @@ class NYCTreePointAdapter:
             "borough_carried": 0,
             "no_borough_to_carry": 0,
             "planted_date_beyond_horizon": 0,
+            # RULING D18's four outcomes, which must sum to source_rows.
+            "borough_stated_by_planting_space": 0,
+            "borough_from_point_in_polygon": 0,
+            "borough_from_nearest_polygon": 0,
+            "borough_unassigned": 0,
+            # Calibration: geometry run on rows that already state a borough.
+            "borough_geometry_agrees": 0,
+            "borough_geometry_disagrees": 0,
+            "borough_geometry_no_polygon": 0,
         }
 
     # ------------------------------------------------------------------ parts
@@ -1350,6 +1443,81 @@ class NYCTreePointAdapter:
         self.stats["kind_inferred_from_absent_species"] += 1
         return KIND_PLANTING_SITE, KindBasis.INFERRED_FROM_ABSENT_SPECIES, None
 
+    # ---------------------------------------------------------------- borough
+
+    def _peek_borough(self, lat, lon, space):
+        """The borough this row WOULD get, without touching any counter.
+
+        The filter runs before a row is admitted, and `_borough_for` runs after;
+        counting in both would double every D18 statistic on a borough build.
+        """
+        stated = _clean((space or {}).get("boroughcode"))
+        if stated:
+            return stated, "planting_space"
+        if self.borough_resolver is None:
+            return None, "none"
+        contained = self.borough_resolver.contains(lat, lon)
+        if contained is not None:
+            return contained, "point_in_polygon"
+        nearest, metres = self.borough_resolver.nearest(lat, lon)
+        if metres <= NYC_MAX_SNAP_METRES:
+            return nearest, "nearest_polygon"
+        return None, "none"
+
+    def _borough_for(self, lat, lon, space):
+        """(borough, how) for one tree. RULING D18. Never returns (None, ...)
+        when a resolver is present.
+
+        PRECEDENCE, WHICH IS THE RULING'S:
+
+          1. what the planting space STATES -- the City's own attribution, and
+             it wins even where geometry disagrees (7 rows do; see below);
+          2. the polygon that CONTAINS the point, for a row that states nothing;
+          3. the NEAREST polygon within `NYC_MAX_SNAP_METRES`, for a point no
+             polygon contains.
+
+        Geometry runs on stated rows too, and only to be counted. Measured over
+        898,643 `Full` rows on 2026-08-14: 875,095 agree, **7 disagree**, and 61
+        sit outside every polygon while still stating a borough. The seven are a
+        real data fact and are left exactly as the City states them --
+        overriding a source's own attribution from a shoreline-clipped polygon
+        would be this adapter deciding a civic question.
+        """
+        stated = _clean((space or {}).get("boroughcode"))
+        if self.borough_resolver is None:
+            # No resolver: only a stated borough is available. A row without one
+            # is counted as unassigned and `records()` refuses to finish.
+            if stated:
+                self.stats["borough_stated_by_planting_space"] += 1
+                return stated, "planting_space"
+            self.stats["borough_unassigned"] += 1
+            return None, "none"
+
+        contained = self.borough_resolver.contains(lat, lon)
+
+        if stated:
+            if contained is None:
+                self.stats["borough_geometry_no_polygon"] += 1
+            elif contained == stated:
+                self.stats["borough_geometry_agrees"] += 1
+            else:
+                self.stats["borough_geometry_disagrees"] += 1
+            self.stats["borough_stated_by_planting_space"] += 1
+            return stated, "planting_space"
+
+        if contained is not None:
+            self.stats["borough_from_point_in_polygon"] += 1
+            return contained, "point_in_polygon"
+
+        nearest, metres = self.borough_resolver.nearest(lat, lon)
+        if metres <= NYC_MAX_SNAP_METRES:
+            self.stats["borough_from_nearest_polygon"] += 1
+            return nearest, "nearest_polygon"
+
+        # Beyond the cap. Not assigned, not guessed -- `records()` stops.
+        self.stats["borough_unassigned"] += 1
+        return None, "none"
+
     # ----------------------------------------------------------------- records
 
     def records(self) -> Iterator[InventoryRecord]:
@@ -1364,10 +1532,17 @@ class NYCTreePointAdapter:
                 (row.get("plantingspaceglobalid") or "").strip()
             )
             if self.borough is not None:
-                # Borough is a PLANTING SPACES column, so a tree point that does
-                # not join has no borough and cannot be placed in one. It is
-                # dropped from a borough build and counted, never reassigned.
-                if space is None or (space.get("boroughcode") or "").strip() != self.borough:
+                # RULING D18: the filter reads the RESOLVED borough, not the
+                # planting space's column. That is what makes the borough packs
+                # sum to the whole city -- before D18 the 22,995 rows that join
+                # no planting space were dropped by every borough build, and the
+                # five packs were 22,995 rows short of the city.
+                lat_probe, lon_probe = row.get("lat"), row.get("lon")
+                if lat_probe is None or lon_probe is None:
+                    self.stats["dropped_wrong_borough"] += 1
+                    continue
+                resolved, _how = self._peek_borough(float(lat_probe), float(lon_probe), space)
+                if resolved != self.borough:
                     self.stats["dropped_wrong_borough"] += 1
                     continue
 
@@ -1454,15 +1629,12 @@ class NYCTreePointAdapter:
             # A real `trees.region` / borough column is the honest destination and
             # it is a SCHEMA question, so it is named here and not taken.
             raw = {}
-            borough = _clean((space or {}).get("boroughcode"))
+            borough, borough_source = self._borough_for(float(lat), float(lon), space)
             if borough:
                 raw["boroughcode"] = borough
+                raw["boroughsource"] = borough_source
                 self.stats["borough_carried"] += 1
             else:
-                # No planting space, or a space with no borough: 513 spaces
-                # publish none. The absence is counted, never guessed at from
-                # the coordinates -- that would be a civic claim this adapter
-                # has no source for.
                 self.stats["no_borough_to_carry"] += 1
             if self.with_raw:
                 # The survey's suggested passthroughs, which likewise have no
@@ -1504,4 +1676,18 @@ class NYCTreePointAdapter:
                 dbh_in=dbh_in,
                 city_record=city_record,
                 raw_json=json.dumps(raw, separators=(",", ":"), sort_keys=True) if raw else None,
+            )
+
+        # RULING D18: borough packs must sum EXACTLY to the whole city, so a run
+        # that could not place a row does not get to finish quietly. This is
+        # raised after the last yield, so a caller that consumed the generator
+        # sees it; a caller that stopped early was not making a pack.
+        if self.stats["borough_unassigned"]:
+            raise ValueError(
+                f"{self.stats['borough_unassigned']:,} NYC tree points could not be "
+                f"placed in any borough -- no planting space states one, no polygon "
+                f"contains them, and the nearest is beyond "
+                f"{NYC_MAX_SNAP_METRES:.0f} m. RULING D18 requires borough packs to "
+                f"sum exactly to the whole city, so this is a stop rather than a "
+                f"row with no borough. Re-check the boundary file and the extract."
             )

@@ -109,6 +109,20 @@ PLANTING_SPACE_FIELDS = [
     "width", "length", "parkname", "zipcode", "nta", "location",
 ]
 
+#: The City's official borough boundaries, shoreline-clipped. RULING D18 makes
+#: this the authority for a tree's borough when Planting Spaces does not supply
+#: one. `gthc-hcne` is the land-only version and is the right one for street
+#: trees; `wh2p-dxnf` includes water areas and was measured against the same
+#: 898,643 points on 2026-08-14 -- it leaves 522 outside every polygon against
+#: gthc-hcne's 543, a 21-row difference that does not justify claiming a tree
+#: stands in open water.
+#:
+#: Its `boroname` values are "Manhattan", "Bronx", "Brooklyn", "Queens" and
+#: "Staten Island" -- the SAME five strings Planting Spaces writes in
+#: `boroughcode`, so the two vocabularies need no mapping between them. That is
+#: asserted in the adapter's tests rather than assumed here.
+BOROUGH_BOUNDARIES_ID = "gthc-hcne"
+
 DATASETS = {
     "tree_points": {
         "socrata_id": "hn5i-inap",
@@ -181,6 +195,29 @@ def server_count(socrata_id: str, note: str) -> int:
     return int(payload[0]["n"])
 
 
+def dataset_rows_updated_at(socrata_id: str, note: str) -> str:
+    """The publisher's own `rowsUpdatedAt`, as an ISO date. RULING D19.
+
+    Recorded per dataset because the two are not published on the same clock and
+    the difference is load-bearing: Planting Spaces last moved 2025-03-05 and
+    Tree Points 2026-07-28, which is why 2.56% of standing trees reference a
+    planting space that does not exist yet in the published extract.
+    """
+    url = f"{DOMAIN}/api/views/{socrata_id}.json"
+    _note_request(url, f"{note}-views-metadata")
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            payload = json.load(resp)
+    except Exception as exc:  # noqa: BLE001
+        log(f"  could not read rowsUpdatedAt for {socrata_id}: {exc}")
+        return ""
+    stamp = payload.get("rowsUpdatedAt")
+    if not stamp:
+        return ""
+    return datetime.fromtimestamp(int(stamp), timezone.utc).date().isoformat()
+
+
 def query_page(socrata_id: str, fields: list, offset: int, note: str, limit: int = PAGE_SIZE) -> str:
     return request(
         socrata_id,
@@ -241,6 +278,18 @@ def check_rows(rows, where: str, id_column: str = "globalid") -> None:
             )
 
 
+def _objectid_of(row) -> float:
+    """OBJECTID as a number, for D19's tie-break. Non-numeric sorts last.
+
+    Numeric on purpose: as strings, '10843890' sorts before '9', so a string
+    comparison would pick a different twin than the documented rule.
+    """
+    try:
+        return float(str(row.get("objectid") or "").strip())
+    except ValueError:
+        return float("inf")
+
+
 def read_csv_rows(text: str) -> list:
     return list(csv.DictReader(text.splitlines()))
 
@@ -284,7 +333,9 @@ def fetch_dataset(dataset: str, cache_dir: str, delay: float, force: bool, verif
         log(f"--force: cleared the {dataset} page cache")
 
     total = server_count(socrata_id, f"{dataset}-count")
-    log(f"{spec['name']} ({socrata_id}): {total:,} rows on the server")
+    rows_updated_at = dataset_rows_updated_at(socrata_id, dataset)
+    log(f"{spec['name']} ({socrata_id}): {total:,} rows on the server, "
+        f"publisher's rowsUpdatedAt {rows_updated_at}")
 
     pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
     fetched = 0
@@ -311,38 +362,67 @@ def fetch_dataset(dataset: str, cache_dir: str, delay: float, force: bool, verif
     # ---- concatenate every cached page into one CSV -----------------------
     # Every cached page is checked, not just the ones this run fetched. A page
     # written by an earlier run is exactly as capable of holding Springfield.
-    seen_ids = {}
+    # ---- DEDUPLICATION, DETERMINISTICALLY (RULING D19) --------------------
+    #
+    # THE RULE: among rows sharing a GlobalID, KEEP THE ONE WITH THE SMALLEST
+    # OBJECTID, comparing OBJECTID numerically and not as a string.
+    #
+    # Why a rule at all, when all 6,864 duplicate pairs in the 2026-08-14
+    # extract are byte-identical and the choice cannot change the output: because
+    # "it does not matter which" is a property of today's data, not of the
+    # pipeline. Keeping whichever row arrived first made the result depend on
+    # page order, which depends on `$order=:id`, which is Socrata's own row
+    # identifier and is not promised to be stable across a republish. A rebuild
+    # that silently picked the other twin would be indistinguishable from one
+    # that did not, and the seed is declared byte-for-byte reproducible.
+    #
+    # Smallest OBJECTID is chosen because OBJECTID is a number the publisher
+    # assigns, it is present and non-null on every row of both datasets, and
+    # `min` over it is total and order-independent. It is NOT an identity claim
+    # -- this pipeline keys on GlobalID and says so at length elsewhere.
+    #
+    # A duplicate that DISAGREES in any column is a different animal: two records
+    # sharing an id, which makes the join ambiguous. Those are counted and
+    # reported, never silently collapsed, and the caller stops.
+    by_id = {}
     duplicate_rows = 0
     disagreeing_duplicates = 0
-    rows_written = 0
     no_position = 0
+    for page in range(pages):
+        path = os.path.join(pages_dir, f"page_{page:05d}.csv")
+        with open(path, "r", encoding="utf-8") as fh:
+            rows = read_csv_rows(fh.read())
+        # Every cached page is checked, not just the ones this run fetched. A
+        # page written by an earlier run is exactly as capable of holding
+        # Springfield as one written by this one.
+        check_rows(rows, f"cached {dataset} page {page}")
+        for row in rows:
+            key = str(row.get("globalid") or "").strip()
+            signature = tuple((field, row.get(field)) for field in fields)
+            previous = by_id.get(key)
+            if previous is None:
+                by_id[key] = (signature, row)
+                continue
+            duplicate_rows += 1
+            if previous[0] != signature:
+                disagreeing_duplicates += 1
+            if _objectid_of(row) < _objectid_of(previous[1]):
+                by_id[key] = (signature, row)
+
     tmp = combined_path + ".part"
+    rows_written = 0
     with open(tmp, "w", encoding="utf-8", newline="") as out:
         writer = csv.DictWriter(out, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
-        for page in range(pages):
-            path = os.path.join(pages_dir, f"page_{page:05d}.csv")
-            with open(path, "r", encoding="utf-8") as fh:
-                rows = read_csv_rows(fh.read())
-            check_rows(rows, f"cached {dataset} page {page}")
-            for row in rows:
-                key = str(row.get("globalid") or "").strip()
-                signature = tuple((field, row.get(field)) for field in fields)
-                if key in seen_ids:
-                    duplicate_rows += 1
-                    # A duplicate that AGREES is one record published twice and
-                    # is dropped. A duplicate that DISAGREES is two records
-                    # sharing an id, which makes the join ambiguous -- counted
-                    # here and reported, never silently collapsed.
-                    if seen_ids[key] != signature:
-                        disagreeing_duplicates += 1
-                    continue
-                seen_ids[key] = signature
-                lat, lon = parse_point(row.get("location"))
-                if lat is None or lon is None:
-                    no_position += 1
-                writer.writerow(row)
-                rows_written += 1
+        # Sorted by GlobalID so the concatenation itself is reproducible, the
+        # way fetch_san_jose_trees.py sorts by FACILITYID.
+        for key in sorted(by_id):
+            row = by_id[key][1]
+            lat, lon = parse_point(row.get("location"))
+            if lat is None or lon is None:
+                no_position += 1
+            writer.writerow(row)
+            rows_written += 1
     os.replace(tmp, combined_path)
     log(
         f"wrote {combined_path} ({rows_written:,} rows; {duplicate_rows:,} duplicate "
@@ -383,6 +463,44 @@ def fetch_dataset(dataset: str, cache_dir: str, delay: float, force: bool, verif
         "pages": pages,
         "page_size": PAGE_SIZE,
         "fields": fields,
+        # RULING D19: the publisher's own last-update stamp, recorded so the
+        # staleness is a fact in the receipt rather than tribal knowledge.
+        # Planting Spaces reads 2025-03-05 while Tree Points reads 2026-07-28,
+        # and that seventeen-month gap is the entire cause of the 22,995
+        # tree points that join to no planting space.
+        "rows_updated_at": rows_updated_at,
+        "dedupe_rule": "among rows sharing a GlobalID, keep the smallest numeric OBJECTID (D19)",
+    }
+
+
+def fetch_borough_boundaries(cache_dir: str) -> dict:
+    """The City's borough polygons -> <cache>/borough_boundaries.geojson.
+
+    One request, ~3.1 MB, five MultiPolygon features. Cached beside the two bulk
+    extracts and read by the adapter for RULING D18's point-in-polygon fallback.
+    """
+    path = os.path.join(cache_dir, "borough_boundaries.geojson")
+    if not os.path.exists(path):
+        url = f"{DOMAIN}/resource/{BOROUGH_BOUNDARIES_ID}.geojson"
+        _note_request(url, "borough-boundaries")
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            payload = resp.read()
+        tmp = path + ".part"
+        with open(tmp, "wb") as fh:
+            fh.write(payload)
+        os.replace(tmp, path)
+    with open(path, "r", encoding="utf-8") as fh:
+        geo = json.load(fh)
+    names = sorted(f["properties"]["boroname"] for f in geo.get("features", []))
+    if len(names) != 5:
+        die(f"borough boundaries returned {len(names)} features, expected 5: {names}")
+    log(f"borough boundaries: {len(names)} polygons, {os.path.getsize(path):,} bytes -- {names}")
+    return {
+        "socrata_id": BOROUGH_BOUNDARIES_ID,
+        "name": "Borough Boundaries (shoreline-clipped)",
+        "bytes": os.path.getsize(path),
+        "boroughs": names,
     }
 
 
@@ -403,6 +521,7 @@ def fetch(cache_dir: str, datasets: list, delay: float, force: bool, verify: boo
 
     for dataset in datasets:
         meta[dataset] = fetch_dataset(dataset, cache_dir, delay, force, verify)
+    meta["borough_boundaries"] = fetch_borough_boundaries(cache_dir)
 
     # The date this cache was taken from the city. Recorded here and nowhere
     # else, so a rebuild reports when the data was fetched rather than when the
