@@ -56,6 +56,10 @@ public struct DataLayer: Sendable {
     /// Held so the composition root can draw `RemoteAccess.complaint` — a mistyped `CYPRESS_REMOTE`
     /// must be visible rather than silently safe (`DebugLocationOverride`'s rule) — and so a test
     /// can assert what `boot` actually decided instead of inferring it from behaviour.
+    ///
+    /// `RootView.runDebugEntryPoints()` is where it is drawn, first of the three launch-gate
+    /// complaints. That sentence was a promise with nothing behind it until round-4 review pointed
+    /// out that the precedent it cited was drawn and this was not.
     public let remoteAccess: RemoteAccess
 
     /// Which Class R reads answered live and which fell back to the phone (spec §4.3).

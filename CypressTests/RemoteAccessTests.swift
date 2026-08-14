@@ -171,12 +171,44 @@ struct RemoteAccessTests {
     /// hands it this session when the gate is off. Asserted through `CityDownloader` itself rather
     /// than through the protocol class, because what matters is that the seam the app wires cannot
     /// reach anything.
-    @Test("the offline session refuses without leaving the process")
-    func theOfflineSessionRefuses() async {
+    ///
+    /// ── This test was vacuous, and the way it was vacuous is the point ─────────────────────────
+    ///
+    /// The first version asserted `throws: (any Error).self` against a `.invalid` host. Review of
+    /// round 4 replaced `OfflineSession.make()` with `URLSession.shared` — the Tigris socket wide
+    /// open — **and it still passed**, because a reserved-TLD hostname fails DNS on a live session
+    /// too. "Something threw" cannot tell an offline session from an online one when the URL is
+    /// unreachable either way, so the test asserted nothing about the thing it was named for.
+    ///
+    /// The repair is a discriminator, which is what the sibling gates in this target already do
+    /// (`aMissingStagedFileIsNeitherATaxonomyCodeNorARemoteSurface` asserts
+    /// `SessionError.malformedResponse` and not "an error"). `OfflineSession.Refuser` fails with
+    /// **`.notConnectedToInternet` (−1009)**; a live `URLSession` against this host fails with
+    /// `.cannotFindHost` (−1003), and a stub with nothing parked would give `.unsupportedURL`
+    /// (−1002). Three different codes, so the assertion now separates the three cases it has to.
+    ///
+    /// The observed code is quoted in the failure message rather than only compared, because the
+    /// number is the whole diagnosis: −1003 in that message says "this ran against a real network".
+    @Test("the offline session refuses in-process, and not merely because the host is unreachable")
+    func theOfflineSessionRefuses() async throws {
         let downloader = CityDownloader(
             baseURL: URL(string: "https://cypress-cities.invalid")!,
             session: OfflineSession.make()
         )
-        await #expect(throws: (any Error).self) { _ = try await downloader.fetchManifest() }
+        do {
+            _ = try await downloader.fetchManifest()
+            Issue.record("the manifest fetch succeeded; this session is not offline at all")
+        } catch let error as URLError {
+            #expect(
+                error.code == .notConnectedToInternet,
+                """
+                the offline session failed with \(error.code.rawValue) \(error.code), not −1009 \
+                notConnectedToInternet. −1003 cannotFindHost means the request left the process and \
+                resolved DNS, so the seam under test is a live URLSession.
+                """
+            )
+        } catch {
+            Issue.record("failed with \(type(of: error)) rather than a URLError: \(error)")
+        }
     }
 }

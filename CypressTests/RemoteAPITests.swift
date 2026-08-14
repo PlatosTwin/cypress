@@ -106,8 +106,26 @@ final class StubStorageProtocol: URLProtocol {
     nonisolated(unsafe) private static var answers: [String: Answer] = [:]
     nonisolated(unsafe) private static var received: [(method: String, url: String, body: Data?, authorization: String?)] = []
 
+    /// Parks an answer, and **refuses to park a second one over it**.
+    ///
+    /// Nothing needs clearing between tests because every parked URL carries a fresh `UUID`, which
+    /// is what let `reset()` be deleted (see `requests(to:)`). That is a property of today's call
+    /// sites and not of this type, and the failure it would produce is the quiet kind: a second test
+    /// parking a fixed URL would silently take the first one's answer away, and the first would fail
+    /// somewhere else — or pass on somebody else's bytes.
+    ///
+    /// So the assumption is checked where it is made. `Issue.record` rather than a `precondition`
+    /// because a test process should report and continue rather than take the whole run down, and
+    /// the message names the URL so the collision is obvious rather than deduced.
     static func park(_ url: URL, status: Int = 200, body: Data = Data()) {
         lock.lock(); defer { lock.unlock() }
+        if answers[url.absoluteString] != nil {
+            Issue.record("""
+                \(url.absoluteString) was already parked. Nothing clears this table between tests — \
+                every URL is expected to carry a fresh UUID — so a second park over a live one takes \
+                the first test's answer away and it fails somewhere else. Give this URL its own UUID.
+                """)
+        }
         answers[url.absoluteString] = Answer(status: status, body: body)
     }
 

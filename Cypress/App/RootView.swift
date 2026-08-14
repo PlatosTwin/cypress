@@ -216,11 +216,27 @@ struct RootView: View {
             overridesCleared = true
             return
         }
+        // A junk `CYPRESS_REMOTE` draws itself, and it is reported **first** because it is the most
+        // upstream of the three: the other two are decided here, in a view, while this one was
+        // decided at `DataLayer.boot` before any screen existed, and it changes what every Class R
+        // read on every screen can answer.
+        //
+        // Without this the gate broke its own rule. `RemoteAccess` states that a typo must not be
+        // indistinguishable from a decision — `DebugLocationOverride`'s lesson, cited in that file —
+        // and then `.misconfigured` behaved exactly like `.disabled` with nothing anywhere saying
+        // so, which is the silence the rule exists to forbid. Round-4 review found it: the doc
+        // claimed the composition root could draw the complaint, and the precedent it cited *is*
+        // drawn, twenty lines below. Now so is this.
+        if let complaint = data.remoteAccess.complaint {
+            deepLinkAttempted = true
+            deepLinkFailure = complaint
+            return
+        }
         // A junk `CYPRESS_LOCATION` draws itself, for `DebugDeepLink.Failure`'s reason: a seam that
         // quietly fell back to the real provider would leave a test asserting the denied refusal
         // path against a simulator with a perfectly good fix, and it would fail somewhere else —
-        // or, worse, pass. Reported before the deep link, because a wrong location is the more
-        // upstream fact and a reader should be told the first thing that went wrong.
+        // or, worse, pass. Reported after the remote gate for the reason given there, and before the
+        // deep link because a wrong location is the more upstream of those two.
         if let failure = DebugLocationOverride.resolve().failure {
             deepLinkAttempted = true
             deepLinkFailure = failure
