@@ -19424,3 +19424,162 @@ legend failure this entry corrects further up, and the same family main is curre
 who follows this entry's run numbers will find a red `gate` on the run that proves the repair, and
 the two facts have to sit next to each other: `testNothingIsAnnouncedTwice` passed on both CI runs;
 the gate is red for something else.
+
+### E263 — Four things building the sync service found (task #158 step 2)
+
+The Go service in `server/` replacing the R36 placeholder, under RULINGS **R72**. None of these is
+part of what the owner ruled; they are facts about the code and the deployment that outlive the
+implementation round, and three of them are defects that would have shipped.
+
+---
+
+#### 1. The placeholder image had no CA certificates, and the first symptom would have been a broken sign-in
+
+`server/Dockerfile` built `FROM scratch`. That was correct for what it held — a placeholder that
+answered `501` and made no outbound call — and it is wrong the moment the service verifies an Apple
+identity token, because `scratch` carries no trust store.
+
+The failure mode is the reason this is worth an entry rather than a commit message. It is **not** a
+boot failure: the machine starts, `/health` answers, `flyctl deploy` reports success, and the first
+`GET https://appleid.apple.com/.well-known/openid-configuration` fails with
+`x509: certificate signed by unknown authority`. So the tell arrives at the *first person who tries
+to sign in*, wearing the costume of an auth bug — and every layer is behaving exactly as written.
+
+Fixed here by copying `/etc/ssl/certs/ca-certificates.crt` out of the build stage. Recorded because
+the same trap is waiting for any future `scratch` image in this repository, and because "it deployed
+green" is not evidence about a code path nothing exercised at deploy time.
+
+#### 2. `coreos/go-oidc/v3` requires Go ≥ 1.25, so the toolchain floor moved
+
+The placeholder pinned `go 1.23` and `golang:1.23-alpine`. `coreos/go-oidc/v3` at v3.20.0 declares
+`go >= 1.25.0`, and adding it silently upgraded the `go` directive in `server/go.mod`.
+
+Nothing in R72's argument turns on this — "no runtime to patch" is about not shipping an
+interpreter, not about the compiler version — but the Dockerfile's base image and the module's `go`
+line have to move together, and a mismatch between them is a build failure with a message about
+language versions rather than about the image. Both are now `1.25`, and the Dockerfile says why.
+
+#### 3. The client has no wire encoder for `/sync`, so this service is the first definition of that contract
+
+`OutboxPayload`'s coding comment (`Cypress/Data/Outbox/OutboxPayload.swift`) states it plainly:
+keys stay the Swift property names, dates are ISO-8601, and *"the wire mapping to §6's snake_case
+belongs in `RemoteAPI`, not here."* `RemoteAPI` is the stub, so **that mapping does not exist
+anywhere in the app**.
+
+The consequence for sequencing: the request and response shapes in `server/internal/api/` are the
+first and currently only statement of what `POST /sync`, `POST /photos/begin` and the Class R reads
+look like on the wire. One piece of the contract *is* pinned on both sides —
+`APIError.Envelope`'s `{error: {code, message, retryable}}`, and
+`server/internal/apierr/apierr_test.go` reads `Cypress/Core/APIError.swift` directly so the two
+taxonomies cannot drift silently. Everything else is pinned on one side only.
+
+That is not a defect in either half; it is a gap that looks closed because both halves compile. The
+step that closes it is #158 step 4, and whoever writes `RemoteAPI`'s bodies should treat these
+handlers as the specification rather than re-deriving one — or, better, add the encoder-side guard
+that `apierr` already has.
+
+#### 4. A guard can be green because the invariant is held somewhere better, and the difference is only visible under a red-proof
+
+`ClaimDevice`'s sweep carries `AND anonymized_at IS NULL`, mirroring the client's
+`notAnonymized(table)` clause: a row a deletion unlinked must not be adoptable by the next person to
+sign in on that phone. Removing that predicate leaves its test **green**.
+
+Chasing it rather than accepting the green found the reason, and the reason is reassuring: an
+account deletion clears `device_id` as well as `user_id` **on `contributions`**, so an anonymized
+contribution never matches `WHERE device_id = $3` in the first place. The predicate is defense in
+depth over a case the deletion has already made unreachable.
+
+Stated precisely, because the first draft of this entry overreached: that is true of `contributions`
+and **not** of `photos`, where the deletion sets `deleted_at`, `user_id` and `anonymized_at` and
+leaves any `device_id` standing. The conclusion survives by a different route there — a photograph
+with `deleted_at` set is invisible under both of `Photo`'s predicates whoever ends up owning it — but
+it is a different argument, and a sentence that covered both with one mechanism was wrong about one
+of them. It earns its keep only if the sweep is *also* broadened —
+drop the device scope and the predicate together and it does go red, from the
+`contributions_owner` CHECK, because setting `user_id` on a row carrying `anonymized_at` satisfies
+neither arm of it.
+
+So the invariant is held three deep: the deletion makes it unreachable, the predicate makes it
+explicit, the CHECK makes it unstorable. **The entry is the method, not the finding.** A red-proof
+that stays green has two readings — the guard is decorative, or the guard is a backstop behind
+something stronger — and they are indistinguishable until the defect is localized by mutating one
+thing at a time. This project's standing rule is that a guard must be able to fail; the corollary
+found here is that a guard which *cannot* be made to fail is a question, not a pass. The pair of
+mutations is recorded in the test itself so the next reader inherits the answer instead of the
+question.
+
+### E264 — The photo half of the outbox has only one sink, and the reason is a file that no longer exists (task #158)
+
+Ticket #158 step 1 splits the outbox drain into an **apply** sink and a **send** sink (RULINGS R72
+§1, `docs/design-proposals/2026-08-09-task158-live-layer.md` §2.1 and §6.1). The JSON half now has
+both. The **photo binaries have only the apply sink**, and this entry is why, because the omission
+is the kind that looks like an oversight and would be quietly inherited otherwise.
+
+#### The fact
+
+`OutboxQueue.drain` hands each `OutboxPhoto` to the apply sink, which in the shipping composition
+root is `APIOutboxTransport` over `LocalAPI`. `LocalAPI.uploadPhoto` (`Cypress/Data/API/LocalAPI.swift`)
+strips the metadata out of the staged file into the app container and then **removes the source**:
+
+```swift
+try PhotoBinary.writeStrippingMetadata(from: source, to: ticket.destination)
+try manager.removeItem(at: source)
+```
+
+So by the moment a send sink could run, there is nothing at `OutboxPhoto.path` to send. And the
+obvious repair — keep the staged file until both sinks have taken it — does not work either:
+`LocalAPI.beginPhotoUpload` inserts a **new `photos` row per call**, so re-running the apply half
+after a send failure would write the photograph twice. The drain's zero-duplicates property is
+exactly what that would break.
+
+Sending binaries therefore needs three things this step does not have: a source the remote can still
+read after ingest (the container copy, keyed by `photos.id`, which the outbox row does not carry),
+per-photo completion tracking rather than the per-row flag pair `AppSchema` v15 adds, and a decision
+about whether a binary that failed to send should hold its row out of `done`. That is a design, a
+migration and a ticket of its own.
+
+#### What was done about it instead of a comment
+
+`OutboxSendSink` (`Cypress/Data/Outbox/OutboxQueue.swift`) declares `sync` and **no** photo method.
+A future author wiring a real server has to add one; they cannot inherit a silent no-op. That choice
+is the direct lesson of ERRATA **E125**, where two methods declared only in a protocol extension
+dispatched statically, every screen reached the extension's `throw`, and the whole suite was green
+while no photograph rendered anywhere in the app. A protocol requirement that does not exist is
+loud. A protocol requirement satisfied by a default that returns nothing is not.
+
+The acceptance criterion R72 restates in the owner's words — *"when I add a photo on my device, the
+photo propagates to all other users"* — is therefore **not** satisfied by step 1, and step 1 does not
+claim it is. Step 1 is the seam: the local write is now separable from the send, which is the thing
+that had to be true before anything could be pointed at a server at all.
+
+#### The mistake this reasoning did not prevent, which is why the entry is worth reading
+
+The first draft of the split put the photo-binary block **downstream of the send gate** in the
+drain. Adversarial review found it. With a send sink wired, a drain with no signal committed the
+note and skipped the photograph, and 48 h of that expired the row terminally with the binary still
+staged and nothing in the app holding a reference to it — the quiet loss #158 exists to prevent,
+moved from the JSON half to the photo half. Latent today (`send == nil`), so the suite was green.
+
+**The lesson is that "apply versus send" has three things in it, not two.** The JSON apply, the JSON
+send, and the *photograph's* apply — and the third is easy to file under the wrong heading because
+the method is called `uploadPhoto` and upload sounds like send. It is not: through `LocalAPI` it is
+an ingest into the app container. Anything named for the network but wired to `LocalAPI` is a local
+commit, whatever the verb says. That is the same reading error E261 §2 records for `sync`, made a
+second time, inside the ticket whose whole purpose was to fix it the first time.
+
+Four doc comments asserted the correct invariant while the code did the opposite — CLAUDE.md's "a
+confident comment is where bugs have survived here", exactly. The regression test
+(`OutboxApplySendSplitTests.aFailedSendDoesNotHoldBackThePhotoLocalCommit`) therefore asserts the
+consequence — the apply sink was offered the binary, and the row no longer carries it — rather than
+the shape of the drain, so it survives the phases being rearranged again.
+
+#### The related fact, worth keeping beside it
+
+`markDoneIfComplete` takes `requiringRemoteSend:` as a parameter rather than reading a column,
+because whether a send is owed is a property of the composition root and not of the row. v15's
+`done` CHECK deliberately does not name `remote_sent`: every outbox row on every installed build is
+locally applied and has never been sent anywhere, so a `done` predicate requiring a send would have
+made the migration reject the rows it was migrating, and would have stranded every queued
+contribution on every phone until a server existed. The parameter has **no default**: the unsafe
+answer is `false`, and a defaulted `false` is a hazard you get by forgetting rather than by
+choosing.
