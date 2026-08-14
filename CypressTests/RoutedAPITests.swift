@@ -646,7 +646,6 @@ struct RoutedAPITests {
     /// (`treeProfileCarriesAPhotographThisDeviceNeverWrote`), and this is the read that draws it.
     @Test("a photograph only the service holds is fetched and recorded live")
     func aPhotographOnlyTheServiceHoldsIsRecordedLive() async throws {
-        StubStorageProtocol.reset()
         let photoID = UUID()
         let source = URL(string: "https://storage.invalid/read/\(photoID.uuidString).jpg")!
         let bytes = Data([0xFF, 0xD8, 0x09, 0x09])

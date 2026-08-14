@@ -111,15 +111,28 @@ final class StubStorageProtocol: URLProtocol {
         answers[url.absoluteString] = Answer(status: status, body: body)
     }
 
-    static func reset() {
+    /// Every request this protocol was asked for **whose URL is `url`**.
+    ///
+    /// ── There used to be a `reset()` here, and it is what failed on CI ─────────────────────────
+    ///
+    /// `answers` and `received` are `static`, and Swift Testing runs *suites* in parallel:
+    /// `RemoteAPITests` is `.serialized` within itself, `RoutedAPITests` is a different suite, and
+    /// both drive this protocol. A `reset()` from one landing between the other's `park(…)` and its
+    /// fetch wiped the parked answer, and `startLoading` below then answered
+    /// `URLError(.unsupportedURL)` — **`NSURLErrorDomain` −1002**, which is exactly what CI reported
+    /// at `RoutedAPITests.swift:647` while three local machines stayed green. Nothing reached the
+    /// network; the stub said "nothing was parked for this" and the timing that produced it is
+    /// likelier on a loaded runner.
+    ///
+    /// The repair is to remove the shared wipe rather than to schedule around it. Every parked URL
+    /// already carries a fresh `UUID`, so entries cannot collide, and a query scoped to the URL a
+    /// test owns cannot see another suite's traffic. Nothing needs clearing between tests, which is
+    /// why `reset()` is gone rather than fixed: a test that clears global state is a test that can
+    /// clear somebody else's.
+    static func requests(to url: URL) -> [(method: String, url: String, body: Data?, authorization: String?)] {
         lock.lock(); defer { lock.unlock() }
-        answers = [:]
-        received = []
-    }
-
-    static var requests: [(method: String, url: String, body: Data?, authorization: String?)] {
-        lock.lock(); defer { lock.unlock() }
-        return received
+        let target = url.absoluteString
+        return received.filter { $0.url == target }
     }
 
     /// A `URLSession` that answers only through this protocol.
@@ -537,7 +550,6 @@ struct RemoteAPITests {
     /// keeps a record alive with nothing behind it (`PhotoUploadTicket.binaryGracePeriod`).
     @Test("the photo binary is PUT to storage unauthenticated, then receipted")
     func thePhotoBinaryIsPutToStorageUnauthenticated() async throws {
-        StubStorageProtocol.reset()
         let photoID = UUID()
         let destination = URL(string: "https://storage.invalid/photos/\(photoID.uuidString).jpg?sig=abc")!
         StubStorageProtocol.park(destination, status: 200)
@@ -556,7 +568,7 @@ struct RemoteAPITests {
             ticket: PhotoUploadTicket(photoID: photoID, destination: destination)
         )
 
-        let put = try #require(StubStorageProtocol.requests.first { $0.method == "PUT" })
+        let put = try #require(StubStorageProtocol.requests(to: destination).first { $0.method == "PUT" })
         #expect(put.url == destination.absoluteString)
         #expect(put.body == bytes, "the staged bytes were not the ones PUT")
         #expect(
@@ -573,7 +585,6 @@ struct RemoteAPITests {
     /// the next attempt mints a fresh one, which is what makes `serverError` the true reading.
     @Test("a refused PUT is retryable and does not receipt")
     func aRefusedPutIsRetryableAndDoesNotReceipt() async throws {
-        StubStorageProtocol.reset()
         let photoID = UUID()
         let destination = URL(string: "https://storage.invalid/photos/\(photoID.uuidString).jpg")!
         StubStorageProtocol.park(destination, status: 403, body: Data("<Error/>".utf8))
@@ -611,7 +622,6 @@ struct RemoteAPITests {
     /// the taxonomy, so the item stays alive on the backoff (ERRATA **E261** §3).
     @Test("a missing staged file is neither a taxonomy code nor a RemoteSurface")
     func aMissingStagedFileIsNeitherATaxonomyCodeNorARemoteSurface() async throws {
-        StubStorageProtocol.reset()
         let photoID = UUID()
         let destination = URL(string: "https://storage.invalid/photos/\(photoID.uuidString).jpg")!
         StubStorageProtocol.park(destination, status: 200)
@@ -627,7 +637,7 @@ struct RemoteAPITests {
             )
         }
         #expect(
-            StubStorageProtocol.requests.isEmpty,
+            StubStorageProtocol.requests(to: destination).isEmpty,
             "a PUT was attempted for bytes this device does not have"
         )
         #expect(transport.calls.isEmpty, "a photograph was receipted whose bytes were never read")
@@ -833,7 +843,6 @@ struct RemoteAPITests {
     /// read is the one way this service falls over under success.
     @Test("photoData follows the presigned source and returns the bytes")
     func photoDataFollowsThePresignedSource() async throws {
-        StubStorageProtocol.reset()
         let photoID = UUID()
         let source = URL(string: "https://storage.invalid/read/\(photoID.uuidString).jpg?sig=xyz")!
         let bytes = Data([0xFF, 0xD8, 0xFF, 0xDB, 0x01, 0x02, 0x03])
@@ -851,7 +860,7 @@ struct RemoteAPITests {
         let data = try await Self.api(transport, session: StubStorageProtocol.session()).photoData(id: photoID)
         #expect(data == bytes)
         #expect(
-            StubStorageProtocol.requests.first { $0.url == source.absoluteString }?.authorization == nil,
+            StubStorageProtocol.requests(to: source).first?.authorization == nil,
             "the presigned read carried this service's credential"
         )
     }

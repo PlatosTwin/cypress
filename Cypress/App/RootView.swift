@@ -822,6 +822,14 @@ struct RootView: View {
                     library: (try? CityLibrary.default())
                         ?? CityLibrary(rootURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("cypress-cities", isDirectory: true)),
+                    // The **second** live socket the app can open, and the one `RefusingTransport`
+                    // does not cover: this screen fetches a manifest from its own host with its own
+                    // `URLSession`. It predates #158 and is not what broke CI, but a round that
+                    // makes the app-under-test hermetic and leaves one socket open has not made it
+                    // hermetic. See `RemoteAccess`.
+                    downloader: data.remoteAccess.allowsNetwork
+                        ? CityDownloader()
+                        : CityDownloader(session: OfflineSession.make()),
                     onInventoryChange: onInventoryChange
                 ),
                 onBack: { router.pop() }

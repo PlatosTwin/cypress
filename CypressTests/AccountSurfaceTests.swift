@@ -56,6 +56,7 @@ struct AccountSurfaceTests {
             outbox: outbox,
             deviceID: deviceID,
             session: AppSession(deviceUUID: deviceID),
+            remoteAccess: .disabled,
             readLog: RemoteReadLog()
         )
     }

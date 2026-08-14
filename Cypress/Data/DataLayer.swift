@@ -46,6 +46,18 @@ public struct DataLayer: Sendable {
     /// installation, the account's when there is one (spec §5.8).
     public let session: AppSession
 
+    /// Whether the remote half is wired, and why not when it is not.
+    ///
+    /// **It is the gate's answer, or `.live` when a caller passed its own transport** — see `boot`.
+    /// A test that supplies a scripted wire reads `.live` here, which is the honest reading: the
+    /// remote half *is* wired, to the thing that caller chose. What the gate protects against is a
+    /// caller that chose nothing.
+    ///
+    /// Held so the composition root can draw `RemoteAccess.complaint` — a mistyped `CYPRESS_REMOTE`
+    /// must be visible rather than silently safe (`DebugLocationOverride`'s rule) — and so a test
+    /// can assert what `boot` actually decided instead of inferring it from behaviour.
+    public let remoteAccess: RemoteAccess
+
     /// Which Class R reads answered live and which fell back to the phone (spec §4.3).
     ///
     /// Nothing in `Features` reads it yet, on purpose — §4.3 rules that the *sentence* a screen
@@ -60,16 +72,24 @@ public struct DataLayer: Sendable {
     ///   - databaseURL: defaults to Application Support.
     ///   - seedURL: defaults to the bundled seed. A `nil` seed is survivable — see `CypressStore.open`.
     ///   - baseURL: the service. `SyncService.defaultBaseURL` is `cypress-sync`.
-    ///   - transport: the authorized wire. **Nil means the live one** — `SessionTransport` over the
-    ///     `AppSession` this call constructs. It is a parameter so a test can wire the real
-    ///     composition root against a scripted transport and assert what it wired, which is the only
-    ///     way to test this function at all: `DataLayerWiringTests` boots the same code path the app
-    ///     runs and never touches the network.
+    ///   - transport: the authorized wire. **Nil means "whatever `remoteAccess` says"** —
+    ///     `SessionTransport` when it is `.live`, `RefusingTransport` otherwise. It is a parameter so
+    ///     a test can wire the real composition root against a scripted transport and assert what it
+    ///     wired, which is the only way to test this function at all: `DataLayerWiringTests` boots
+    ///     the same code path the app runs and never touches the network. Passing one **overrides
+    ///     the gate**, because a caller holding a transport has already decided what it is.
+    ///   - remoteAccess: whether this process may reach the service at all. Defaults to
+    ///     `RemoteAccess.resolved`, which is `.live` in a release build and — in DEBUG, where the
+    ///     test targets live — `.disabled` unless `CYPRESS_REMOTE=live` says otherwise. See
+    ///     `RemoteAccess` for why the default is off rather than on; in one line, the UI suite boots
+    ///     this function and a missing environment variable must not be the thing that points it at
+    ///     production.
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
         baseURL: URL = SyncService.defaultBaseURL,
-        transport: (any AuthorizedTransport)? = nil
+        transport: (any AuthorizedTransport)? = nil,
+        remoteAccess: RemoteAccess = .resolved
     ) async throws -> DataLayer {
         let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: seedURL)
 
@@ -95,7 +115,22 @@ public struct DataLayer: Sendable {
         // credential is actually needed, so a launch that only wants to look at a map never reaches
         // the network (`AppSession.bootstrap()` says why). Nothing here calls it.
         let session = AppSession(deviceUUID: deviceID)
-        let authorized = transport ?? SessionTransport(session: session)
+
+        // ── One decision, not two ──────────────────────────────────────────────────────────────
+        //
+        // **An explicitly-passed transport overrides the gate**, and it overrides it for the *send
+        // sink* as well as for the wire. The first cut of this gate overrode only the wire, so a
+        // caller that supplied a scripted transport got it — and then had its send sink silently
+        // omitted, because the gate was still `.disabled`. `DataLayerWiringTests` went red on four
+        // tests that had nothing wrong with them, which is what a two-variable answer to a
+        // one-variable question does.
+        //
+        // A caller holding a transport has already said what the wire is; that is the decision, and
+        // `remoteAccess` records it so nothing downstream has to consult two facts to know one.
+        let access: RemoteAccess = transport == nil ? remoteAccess : .live
+        let authorized = transport ?? (access.allowsNetwork
+            ? SessionTransport(session: session)
+            : RefusingTransport())
 
         // `DELETE /me` tombstones the keys still queued at the moment of deletion, "even though this
         // service has never seen them" (`me.go`), and `RemoteAPI` holds no queue — it holds no store
@@ -133,10 +168,16 @@ public struct DataLayer: Sendable {
         // reason: a router in this position would "send" through `local` and mark the row
         // `remote_sent` with no byte having left the phone. The type signature is what refuses it —
         // see `APIOutboxSendSink`.
+        //
+        // **The send sink is omitted entirely when the gate is off**, rather than pointed at a
+        // refusing transport. A refusing send sink would still count failures, move rows onto the
+        // backoff and put reasons on screen 17 — observable behaviour a UI test would then be
+        // asserting against a network that is not there. Omitting it restores exactly the wiring
+        // every build before #158 shipped, which is the one the UI suite was green on.
         let outbox = OutboxQueue(
             queue: store.queue,
             apply: APIOutboxTransport(api: local),
-            send: APIOutboxSendSink(remote: remote)
+            send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil
         )
 
         // Anything left `uploading` belongs to a previous launch that was killed mid-drain. It is
@@ -153,6 +194,7 @@ public struct DataLayer: Sendable {
             outbox: outbox,
             deviceID: deviceID,
             session: session,
+            remoteAccess: access,
             readLog: readLog
         )
     }
