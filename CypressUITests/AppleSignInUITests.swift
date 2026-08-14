@@ -28,13 +28,14 @@ import XCTest
 ///
 /// ── How screen 15 is reached ─────────────────────────────────────────────────────────────────────
 ///
-/// It is not a `Route` and `DebugDeepLink` has no case for it (see that file). `CYPRESS_SCREEN=you`
-/// opens screen 18, whose account block draws `Sign in` and presents the ask — the door a person
-/// actually uses on a device that has not saved three visits yet.
+/// `CYPRESS_SCREEN=accountAsk`, which presents it over the tab root the same way `RootView` presents
+/// it for the You tab's `Sign in` row. **Taking that row instead was tried and rejected**: whether it
+/// is drawn depends on whether this device is signed in, and `DebugDeepLink`'s `.moderationReview`
+/// case promotes the account — so a test using that door reads whichever run went before it, which
+/// is E216's family of failure. The deep link depends on no device state and writes none.
 final class AppleSignInUITests: XCTestCase {
 
     private enum Copy {
-        static let signIn = "Sign in"
         static let apple = "Continue with Apple"
         static let decline = "Not now · keep saving to this phone only"
         /// `AccountAskCopy.noticeFailed`, matched on its distinctive opening clause rather than
@@ -49,24 +50,21 @@ final class AppleSignInUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Opens screen 18 and taps through to screen 15, returning the app.
+    /// Opens screen 15, returning the app.
+    ///
+    /// The arrival is confirmed on §7's decline control rather than on the Apple button, so that a
+    /// build which drew the sheet *without* the Apple button fails in the test that is about the
+    /// Apple button rather than in this helper.
     private func launchAccountAsk(applePinnedTo pinned: String?) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["CYPRESS_SCREEN"] = "you"
+        app.launchEnvironment["CYPRESS_SCREEN"] = "accountAsk"
         if let pinned { app.launchEnvironment["CYPRESS_APPLE_SIGN_IN"] = pinned }
         app.launch()
 
-        let signIn = app.buttons[Copy.signIn].firstMatch
-        XCTAssertTrue(
-            signIn.waitForExistence(timeout: 30),
-            "screen 18's account block drew no `Sign in`, so screen 15 has no entrance in the app"
-        )
-        signIn.tap()
-
         let decline = app.buttons[Copy.decline].firstMatch
         XCTAssertTrue(
-            decline.waitForExistence(timeout: 20),
-            "the account ask did not appear — `Sign in` presents nothing"
+            decline.waitForExistence(timeout: 30),
+            "the account ask did not appear — CYPRESS_SCREEN=accountAsk presented nothing"
         )
         return app
     }
@@ -76,7 +74,7 @@ final class AppleSignInUITests: XCTestCase {
     /// `isHittable` and not merely `exists`: a button under a scrim, off the bottom of a
     /// content-sized sheet, or behind another view exists in the tree and cannot be used, which is
     /// the failure this project has hit often enough to have a note about it.
-    func testTheAppleButtonIsReachableFromTheYouTab() {
+    func testTheAppleButtonIsDrawnAndHittable() {
         let app = launchAccountAsk(applePinnedTo: nil)
 
         let apple = app.buttons[Copy.apple].firstMatch
