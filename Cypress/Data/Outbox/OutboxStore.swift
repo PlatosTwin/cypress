@@ -20,8 +20,8 @@ public struct OutboxStore {
         /// and put `remoteSent` beside it, because the drain was doing two jobs under one name
         /// (ERRATA E261 §2, RULINGS R72 §1).
         public let locallyApplied: Bool
-        /// The mutation has been accepted by a server. Always false while no send sink is wired,
-        /// which is every build shipped so far.
+        /// The mutation has been accepted by a server. False until a drain with a send sink wired
+        /// carries it across — and `DataLayer.boot` wires one, since #158's wiring round.
         public let remoteSent: Bool
         /// Start of the 48 h cap window. Equal to `createdAt` until the user taps retry.
         public let windowStartedAt: Date

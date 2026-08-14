@@ -194,11 +194,15 @@ struct DataLayerWiringTests {
         let tree = try await Self.makeTree(data)
         let clientUUID = try await Self.enqueueVisit(data, tree: tree)
         // The service answering a real taxonomy code — a moderator declined this item.
+        // The service's own wire shape (`sync.go`'s `syncResult`): the code is a bare string beside
+        // a `message`, not a nested envelope. Copied from the Go struct rather than invented — the
+        // first draft of this fixture used the envelope shape and the item failed with
+        // `SessionError.malformedResponse`, which is a different finding wearing the same red.
         transport.answer(
             "POST /sync",
             with: """
-            {"results":[{"client_uuid":"\(clientUUID.uuidString)","status":"failed",
-             "error":{"code":"moderation_rejected","message":"A moderator declined this.","retryable":false}}]}
+            {"results":[{"client_uuid":"\(clientUUID.uuidString)","status":"failed",\
+            "error":"moderation_rejected","message":"A moderator declined this."}]}
             """
         )
 
@@ -290,9 +294,13 @@ struct DataLayerWiringTests {
         let data = try await Self.boot(transport)
         let tree = try await Self.makeTree(data)
         let queued = try await Self.enqueueVisit(data, tree: tree)
+        // `me.go`'s response, whole: `DeleteAccountResponse` requires `deleted` and `choice` as well
+        // as the three counters, and a fixture missing them decodes to
+        // `SessionError.malformedResponse` — which is how this one was first written and how the
+        // shape got checked against the Go handler instead of against memory.
         transport.answer(
             "DELETE /me",
-            with: #"{"contributions":3,"photos":1,"tombstones":1}"#
+            with: #"{"deleted":true,"choice":"leaveRecords","contributions":3,"photos":1,"tombstones":1}"#
         )
 
         let remote = try #require(Self.remote(of: data), "the composition root built no RemoteAPI")

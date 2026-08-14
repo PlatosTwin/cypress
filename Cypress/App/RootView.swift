@@ -489,8 +489,17 @@ struct RootView: View {
     /// A local account needs no server: this mints an account id and hands it to `claimDevice`, which
     /// moves this device's anonymous contributions onto it and persists it in `app_state`. The
     /// request's email address is neither read nor stored — there is nowhere local it could go, and
-    /// DECISIONS §3.9 wants it nowhere — so the account is an *identity*, not a backup, and screen
-    /// 18's "saving to this phone only" stays true after it.
+    /// DECISIONS §3.9 wants it nowhere — so the account this closure creates is an *identity*.
+    ///
+    /// **The sentence that used to end this paragraph — "and screen 18's 'saving to this phone only'
+    /// stays true after it" — is no longer true, and not because of anything in this closure.**
+    /// #158's wiring round wired the outbox's send sink to `cypress-sync`, so an *anonymous*
+    /// installation's contributions leave the phone under its device credential (D9 makes that the
+    /// normal case). Screen 18's line is therefore false before this closure is ever reached. Which
+    /// sentence replaces it is a copy question the mocks do not answer — PROTOTYPE-FLOW §1.4's three
+    /// arms key on `account ∈ none | ask | linked | dismissed` and there is no arm for
+    /// *anonymous-and-sent* — so it is written up in `docs/errata-pending/` for the owner rather than
+    /// invented here (DECISIONS constraint 21).
     ///
     /// Idempotent on identity: if this device already carries a `userID` (the ask can return once
     /// under ERRATA E34), it is reused, so a second link sweeps any freshly-anonymous rows onto the

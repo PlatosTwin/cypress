@@ -273,18 +273,26 @@ struct AccountSurfaceTests {
         #expect(!PrivateReminderCopy.failedState.contains("Nothing saved"))
     }
 
-    /// Screen 15's body copy, which promised a backup and a public timeline that a local account
-    /// gives nobody. `User.publicAttribution` cannot be turned on anywhere (ERRATA E100) and the You
-    /// tab says so on the same build, so the two screens contradicted each other.
-    @Test("screen 15 no longer promises a backup or a public timeline it cannot deliver")
-    func theAskDescribesALocalAccount() {
+    /// Screen 15 draws §2's own sentence again, and this test replaces the one that pinned the
+    /// substitute.
+    ///
+    /// ERRATA **E131** swapped the drawn body for `AccountAskCopy.bodyLocalAccount` because both of
+    /// §2's promises were false of a local account: nothing was backed up and there was no timeline
+    /// to join. #158's wiring round makes both of them the service's behavior, and makes the
+    /// *substitute* the false one — it says "nothing is uploaded, and none of the services below has
+    /// been contacted", and an installation that has never seen this screen is already sending under
+    /// its device credential. So `BetaCapability.accountsAreLocalOnly` was deleted rather than
+    /// flipped, which is what that enum's header says a capability constant is for.
+    ///
+    /// The assertion is on **the drawn string being drawn**, not on the substitute being absent: the
+    /// substitute no longer exists to name, and a test that asserted an absence would go green the
+    /// day somebody wrote a third sentence.
+    @Test("screen 15 draws SCREENS.md §2's body, now that a service stands behind both its promises")
+    func theAskDrawsTheDrawnSentence() {
         let presentation = AccountAskPresentation(contributions: .none, isConsentAccepted: true)
-        #expect(BetaCapability.accountsAreLocalOnly, "this test describes the local build")
-        #expect(presentation.body == AccountAskCopy.bodyLocalAccount)
-        #expect(!presentation.body.contains("backs them up"))
-        #expect(!presentation.body.contains("public timeline"))
-        // And it says the thing the three buttons do not: none of those services was contacted.
-        #expect(presentation.body.contains("none of the services below has been contacted"))
+        #expect(presentation.body == AccountAskCopy.body)
+        #expect(presentation.body.contains("backs them up"))
+        #expect(presentation.body.contains("public timeline"))
     }
 
     // MARK: - 5. The pictures

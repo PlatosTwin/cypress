@@ -13,10 +13,15 @@ import Foundation
 /// anonymous contributions onto that id and persists it in `app_state`. No email is sent and none is
 /// stored — the composition root's `onLink` ignores the address and claims the device — so §3.9's
 /// "no passwords, ever" and §3.11's "private by default" are kept by construction, not by a promise.
-/// The one thing this build still cannot do is *back up* to a cloud, which is why screen 18's storage
-/// line stays true when signed in ("saving to this phone only"): a local account is an identity, not
-/// a backup. When the magic-link service lands, `onLink` swaps its body for the real exchange and
-/// nothing else on the path changes.
+/// **What changed again (#158's wiring round).** There is a backend now — `cypress-sync`, RULINGS
+/// **R72** — and `DataLayer.boot` wires the outbox's send sink to it, so contributions leave the
+/// phone. That is what ended the second constant this enum used to carry: `accountsAreLocalOnly`
+/// suppressed screen 15's drawn sentence on the grounds that an account "backs them up and lets them
+/// join each tree's public timeline" and a local account did neither. Both halves are now the
+/// service's behavior — `POST /devices/claim` re-homes this device's rows onto the account, and
+/// `photos.go` auto-approves a photograph from a signed-in account where a device's stays
+/// `pending` — so the constant ended the way this header says a constant should end: **by
+/// deletion**, with the drawn copy returning in its place, not by a flip.
 ///
 /// **Not a feature-flag system.** There is no remote config, no per-user rollout and no store: these
 /// are compile-time facts about a build, and they become true by deleting the constant when the thing
@@ -32,20 +37,4 @@ public enum BetaCapability {
     /// instead of the device id, which is the move `claimDevice` was written for.
     public static let accountsAvailable = true
 
-    /// Whether an account is created on this phone and nowhere else (ERRATA **E131**).
-    ///
-    /// **Why a second constant rather than a reading of the first.** `accountsAvailable` answers
-    /// "can somebody sign in"; this answers "what did signing in do", and the two stop agreeing the
-    /// day the magic-link service lands — accounts are available then *and* they round-trip. Screen
-    /// 15's body copy is the difference: its drawn sentence promises "an account backs them up and
-    /// lets them join each tree's public timeline", and a local account does neither. It is not a
-    /// backup (this file's own header: "an identity, not a backup"), and `User.publicAttribution`
-    /// cannot be turned on anywhere in the app (ERRATA E100), so there is no public timeline to
-    /// join. A screen that says otherwise is claiming a thing the app did not do, which is what
-    /// DECISIONS constraint 3 exists to forbid.
-    ///
-    /// So `AccountAskPresentation` picks `AccountAskCopy.bodyLocalAccount` while this is true, and
-    /// the drawn sentence returns by deleting the constant — the same "true by deletion" rule the
-    /// header states for the whole enum.
-    public static let accountsAreLocalOnly = true
 }

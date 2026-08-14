@@ -76,7 +76,7 @@ public struct DrainReport: Sendable, Equatable {
 /// A drain does two things that used to look like one (ERRATA E261 §2). **Apply** commits the
 /// mutation to this device's own tables; it goes first and it is not conditional on anything, which
 /// is why a visit saved in a park is on its tree before the phone has seen a network again.
-/// **Send** forwards it to a server; it is injectable, it is `nil` on every build shipped so far,
+/// **Send** forwards it to a server; it is injectable, `DataLayer.boot` wires it to `RemoteAPI`,
 /// and it is the half the 48 h backoff exists for. An item that fails to apply is never offered to
 /// the send sink, and an item the send sink refuses keeps the local write it already has.
 ///
@@ -93,7 +93,8 @@ public actor OutboxQueue {
     private let store = OutboxStore()
     /// Commits the mutation to this device. First, unconditional, offline or not.
     private let apply: any OutboxTransport
-    /// Sends it on to a server, when there is one. `nil` on every build shipped so far.
+    /// Sends it on to a server. `DataLayer.boot` wires `APIOutboxSendSink`; `nil` is what a test
+    /// about the local half alone wires.
     private let send: (any OutboxSendSink)?
     private let now: @Sendable () -> Date
     private var observers: [UUID: @Sendable () async -> Void] = [:]
@@ -124,8 +125,9 @@ public actor OutboxQueue {
     ///     not `transport` on purpose: the one-line change that looks like the whole job is
     ///     replacing this value with a remote implementation, which would delete the local write
     ///     without any layer reporting an error (ERRATA E261 §2).
-    ///   - send: the sink that forwards it to a server, when one exists. `nil` today, and with it
-    ///     `nil` the drain behaves exactly as it did before the split.
+    ///   - send: the sink that forwards it to a server. `DataLayer.boot` wires `APIOutboxSendSink`
+    ///     over `RemoteAPI` here; `nil` leaves the drain behaving exactly as it did before the
+    ///     split, which is what a test about the local half alone wants.
     public init(
         queue: DatabaseQueue,
         apply: any OutboxTransport,
