@@ -1,4 +1,4 @@
-# City data distribution — regional packs, freshness, and the download screen that lies
+# City data distribution — regional packs, freshness, and a download screen that cannot see the bundle
 
 **2026-08-14. A design proposal, written before the NYC ingest commits to a unit. No production
 Swift, no publisher change, no migration, no schema change in any version space.**
@@ -20,7 +20,7 @@ Every number below was read out of this repository at `e36395e`, measured agains
 states what a constant is, it was read from the declaration.
 
 **Three things the owner should read before the rest.** §3 — the SF/San Jose defect has three causes,
-not one, and the deepest is that the app cannot read its own bundle. §6.2 — the recommended first move
+not one, and the deepest is that the app cannot read its own bundle. §6.1 — the recommended first move
 costs no schema change in any space and can land before the NYC ingest picks a unit. §8 — this
 proposal names **three** independently-advancing version numbers, not the two `CLAUDE.md` warns about.
 
@@ -32,8 +32,8 @@ proposal names **three** independently-advancing version numbers, not the two `C
 |---|---|---|
 | *"i can download from sf and sjc even though those ostensibly ship with the app"* | Why does the screen offer what the bundle already holds? | §3 |
 | *"add downloads by borough"* | Is a borough a legitimate published unit, and what does it cost? | §5, §6 |
-| *"on open, app detects where you are… asks if you want to download"* | What is the data-side cost of a location-triggered offer? | §4.4, §7 |
-| *"we do not want to be shipping stale dbs per build… updatable without shipping a new seed"* | What is the update path, and is a delta possible? | §6.4, §12.3 |
+| *"on open, app detects where you are… asks if you want to download"* | What is the data-side cost of a location-triggered offer? | §1.2, §7 |
+| *"we do not want to be shipping stale dbs per build… updatable without shipping a new seed"* | What is the update path, and is a delta possible? | §6.6, §12.3 |
 | *"how does google maps do this?"* | What do the majors do, and what transfers? | §4 |
 
 One of those five is already solved and the record does not say so clearly: **published city files
@@ -199,7 +199,7 @@ Two consequences, stated flatly:
   §1.1: *"Every 2 weeks"*, automated updates enabled). That is the freshness problem the owner named,
   in its most expensive form.
 
-**And the refresh is tiny, which is the whole reason §6.4 and §4.3 exist.** Measured on the live
+**And the refresh is tiny, which is the whole reason §6.6 and §4.3 exist.** Measured on the live
 layer's own `updateddate` column on 2026-08-14: **17,388 of 1,121,106 rows moved in 30 days — 1.6%**
 (49,517 in 90 days, of which 10,372 are genuinely new). A fortnightly refresh is therefore on the
 order of **8–9k rows, roughly 5 MB of row data**. Re-downloading ~495 MB to deliver ~5 MB of change
@@ -635,6 +635,7 @@ written down.
 | Bundle | 108 MB | 108 MB | 108 MB (or less, §5 C) | ~0 |
 | Largest download | ~495 MB | ~169 MB (Queens) | ~169 MB, several | none |
 | Refresh cost / reader | ~495 MB | one region | the regions they hold | none |
+| Bytes moved per byte of change (§2.2: ~5 MB / fortnight) | ~100x | ~25x (Queens) | ~25x per region held | 1x |
 | Offline | full | full, with cliffs | full | none |
 | Cluster query | ~480 ms | ~52–163 ms | ~52–163 ms | server-side |
 | `AppSchema` (15) | — | — | — | — |
@@ -656,7 +657,7 @@ can see today, it costs nothing in any version space, and — the actual argumen
 that must be right before regions exist at all**, because a screen that cannot say "you already have
 this" for two cities will not be able to say it for seven regions.
 
-### Stage 0 — the app reads its own bundle (no schema change, no publisher change)
+### 6.1 Stage 0 — the app reads its own bundle (no schema change, no publisher change)
 
 §3.3, in full: derive the bundle's cities, their content revisions and their coverage from the
 bundled file by the publisher's own rule; give R43 §3 two new row states; drop the `Download`
@@ -666,7 +667,7 @@ cost nothing, they close E209 B3 / E213 / E214's stated blocker, and Stage 2 nee
 
 **This is independent of the NYC ingest and should not wait for it.**
 
-### Stage 0b — the download path grows up, and compression lands
+### 6.2 Stage 0b — the download path grows up, and compression lands
 
 Every option in §5 makes the largest download bigger than the 81 MB `CityDownloader` was sized for,
 so this is not option-dependent work and it can run beside Stage 0. Four items, in order of how badly
@@ -677,14 +678,17 @@ they bite:
    value-per-unit-of-work item in this document and it improves every option equally.
 2. **A background-identifier `URLSession`**, foreground-initiated (§4.5), so a large download survives
    the app being backgrounded.
-3. **Resume.** R37.2's immutable versioned paths already satisfy the *"resource has not changed"*
-   precondition by construction; what has not been checked is whether the bucket's public domain
-   serves `ETag`/`Last-Modified` and honors `Range` — the publisher's own `upload.sh` does single-byte
-   range GETs to verify anonymous reads, which is suggestive and not the same test.
+3. **Resume, and the bucket already supports it — measured.** A ranged GET against the published `sf`
+   file on the public domain returns `206 Partial Content` with `Accept-Ranges: bytes`, a
+   `Content-Range`, an `ETag` and a `Last-Modified` (§12.6). Every documented precondition for
+   `URLSessionDownloadTask`'s resume data is therefore satisfiable, and R37.2's immutable versioned
+   paths make *"the resource has not changed"* true by construction. **Do not treat the `ETag` as a
+   content hash** — it ends in `-10`, i.e. it is a multipart-upload etag and not an md5 of the object;
+   the manifest's sha256 remains the only integrity claim.
 4. **A free-space precheck**, with the privacy-manifest consequence §1.3 names. A 169 MB download that
    fills the device and fails at 94% is the worst available failure for this feature.
 
-### Stage 1 — the published unit becomes a region (with the NYC schema round)
+### 6.3 Stage 1 — the published unit becomes a region (with the NYC schema round)
 
 `manifest_format` 2: an entry gains a region identity — a parent city id, a level (`city` | `borough`
 | `extent`), and the `bbox` it already carries. `Tools/publish_cities.py` splits on a region column
@@ -701,21 +705,23 @@ Publish **both** the five borough packs and a whole-NYC pack. The whole-city pac
 bucket storage, it is the honest answer for a reader with the disk and the patience, and it means
 Option A is still reachable per-reader rather than being foreclosed by the design.
 
-### Stage 2 — the location-triggered offer (§7)
+### 6.4 Stage 2 — the location-triggered offer (§7)
 
 Needs Stage 0's `bbox` decoding and Stage 1's regions. Its own ticket, because R43 §6 already sent
 auto-download and background refresh to one.
 
-### Stage 3 — multi-attach, and the species catalog moves to the bundle (Option C)
+### 6.5 Stage 3 — multi-attach, and the species catalog moves to the bundle (Option C)
 
 After NYC has shipped and the borough cliff has been felt rather than predicted. Sequenced last
 deliberately: it is the only stage that rewrites `TreeQueries`, and it is the only one whose benefit
 is speculative until real readers are crossing real borough lines.
 
-### 6.4 On freshness, and why no delta is recommended yet
+### 6.6 On freshness, and why no delta is recommended yet
 
 The owner's *"updatable without shipping a new seed"* is already true — that is R37's whole point. The
-open question is *granularity*, and there are only three honest answers:
+open question is *granularity*: the source moves ~5 MB of row data a fortnight (§2.2) and today the
+only way to deliver it is to move the whole file. There are four honest answers, and the recommended
+sequence takes the first two now and neither of the last two yet.
 
 1. **Smaller units.** Stage 1's regions are the delta strategy, and they are the only one that
    requires no new verification story. A Brooklyn reader refreshes ~126 MB raw / ~28 MB compressed.
@@ -758,6 +764,16 @@ open question is *granularity*, and there are only three honest answers:
    untouched base (§4.3). Both keep the artifact whole, hashed, immutable and read-only. The overlay
    route is the one with a shipping precedent and the one this document would bet on — and it needs
    Option C's read path, which is why it is not this round's.
+
+4. **Overlay packs — the destination, and not this round's.** §4.3: an immutable base pack plus small
+   append-only overlay files, read alongside it, rolled up periodically, with deletions carried as
+   tombstones. It is the only incremental scheme in §4 that is documented, shipping and running on
+   static files, it never patches the base, and OsmAnd's own cost figure — 2–4% of full map size per
+   month — brackets Cypress's measured 1.6%/30-day NYC churn. Against a Brooklyn pack that is roughly
+   **~3 MB a fortnight instead of ~126 MB**. Two costs, both real: the read path must resolve base
+   against overlay, which is Option C's change; and the ingest must be able to name deletions, which
+   NYC's `updateddate` column cannot do — it needs a full id-set diff (§12.4). **Recommend: design it
+   when Stage 3 lands, and until then let Stage 1's regions be the coarse delta.**
 
 ---
 
@@ -977,18 +993,27 @@ seed:
 **A 0.00% is the kind of number that is usually a broken instrument, so it got its own control:** the
 seed copied and `VACUUM`ed with **zero** logical change also reports 0.00% and grows by 84 pages. So
 `VACUUM` rewrites every page of this database regardless of what changed, and the churn result is real
-rather than an artifact of the churn. That is the finding §6.4 rests on: **the delta path is blocked
+rather than an artifact of the churn. That is the finding §6.6 rests on: **the delta path is blocked
 by the publisher's `VACUUM`, not by SQLite**, and unblocking it trades published file size against
 published update size — a measurable trade, and a future ticket.
 
-**And one instrument that read the wrong thing first, recorded because it nearly reached §6.4.**
+**And one thing the block route will have to live with, measured on the bucket rather than assumed.**
+A zsync-style client asks for many discontiguous ranges, and the natural way to do that is one
+multipart range request. **Tigris refuses it:** a `Range: bytes=0-9,100-109` against the published
+`sf` file answers **`416 Requested Range Not Satisfiable`**, while a single range on the same object
+answers `206` (§12.6). So a block-delta client would issue one GET per changed run of pages rather
+than one GET per update. That is workable — the 0.1%-churn case above is a few hundred runs — and it
+is a real constraint that should be measured against a realistic republish before anyone commits to
+it, not discovered afterwards.
+
+**And one instrument that read the wrong thing first, recorded because it nearly reached §6.6.**
 `PRAGMA compile_options` on *this Mac's* `sqlite3` reports `ENABLE_SESSION`, which says nothing at all
 about iOS. Asking the right question means asking the iOS SDK: `sqlite3session_create` and
 `sqlite3changeset_apply` appear in **neither** `sqlite3.h` nor any other header under the iPhoneOS
 SDK's `usr/include`, and there is no `sqlite3session.h` — but `usr/lib/libsqlite3.tbd` exports 34
 symbols of that family. Present in the library, absent from the published interface. The first
 measurement would have supported the sentence "changesets are available on iOS"; the second says
-something narrower and truer, and §6.4 says the narrower thing.
+something narrower and truer, and §6.6 says the narrower thing.
 
 ### 12.4 What is not from this repository
 
@@ -1007,7 +1032,7 @@ work:** SODA's `:updated_at` system column is useless for this question — all 
 timestamp because the publish rewrites the table — and a query that used it would have returned a
 confident, wrong, and entirely plausible-looking answer.
 
-### 12.4b The three iOS facts that had gone stale
+### 12.5 The three iOS facts that had gone stale
 
 - **On-Demand Resources is deprecated as of iOS 27**, and the record's understanding that ODR packs
   cannot be updated without an app build is correct for ODR and *wrong for its replacement*: Apple-
@@ -1016,11 +1041,19 @@ confident, wrong, and entirely plausible-looking answer.
 - **The 200 MB cellular threshold is an App Store setting**, not a `URLSession` behavior. It bounds
   the bundle, which is E176's use of it, and does not bound an in-app download.
 - **The "SQLite session extension is not available on iOS" consensus reads as stale** against the
-  current SDK (§6.4). The measurement that would settle it — `sqlite3_compileoption_used` on a
+  current SDK (§6.6). The measurement that would settle it — `sqlite3_compileoption_used` on a
   device — was not run, and this document does not claim the consensus is wrong, only that the
   evidence for it no longer matches what the SDK exports.
 
-### 12.5 What was not run
+### 12.6 The bucket's HTTP behavior
+
+Measured 2026-08-14 against `https://cypress-cities.t3.tigrisbucket.io` and the published `sf` object.
+A single-range `GET` returns `206 Partial Content`, `Accept-Ranges: bytes`, `Content-Range:
+bytes 100-199/80855040`, an `ETag` of `"06b655ec…-10"` and a `Last-Modified`. A two-range `GET`
+returns **`416 Requested Range Not Satisfiable`**. The `-10` suffix on the etag marks a
+multipart-upload etag, which is not the object's md5 and must not be used as an integrity claim.
+
+### 12.7 What was not run
 
 No test was run and no simulator was used: this change is prose, and CI takes the prose path — a green
 `gate` here is evidence about the diff, not about the code. `CypressTests/DocumentCitationGuardTests`
@@ -1028,7 +1061,7 @@ does apply to this file; every backticked repo-relative path in it was checked a
 with a reimplementation of that guard's own extractors, calibrated first against a document known to
 be clean and against a planted dangling citation.
 
-### 12.6 Premises checked, and four refuted
+### 12.8 Premises checked, and what was refuted
 
 - **Refuted: `CityManifest.City` "carries no center or bbox to derive one from," and fixing that is "a
   wider ticket"** (E209 B3, E213, E214). The manifest has carried both since #156 and carries them
@@ -1040,6 +1073,17 @@ be clean and against a planted dangling citation.
   import discipline is inside §2, which the brief and `docs/CONTRIBUTING.md` both have right.
 - **Refuted: there are two version spaces.** Three (§8). `manifest_format` has its own compatibility
   rule and its own advancement, and it is the one this proposal moves.
+- **Refuted: the 200 MB cellular threshold constrains a city download.** It is an App Store setting
+  about app downloads (§4.5). It kills Option A′ and does not touch Option A.
+- **Refuted: On-Demand Resources is the Apple-hosted option and it cannot be updated without a
+  build.** ODR is deprecated as of iOS 27; its replacement, Apple-hosted Background Assets, *can* be
+  updated without a build. §4.5 refuses that route for a different and current reason.
+- **Refuted, tentatively, and flagged rather than acted on: "the SQLite session extension is not
+  available on iOS."** The current SDK exports the symbols and the platform SQLite reports both
+  compile options as used (§6.6). The device-side runtime check was not run, and the design does not
+  depend on the answer.
+- **Stands: the survey's caution that a zsync client's multipart ranges may not survive S3-compatible
+  storage.** Measured on Tigris: a two-range GET returns 416 (§12.6).
 - **Stands: the owner's report about the download screen.** Reproduced from the code in §3.1, with a
   fourth consequence the report did not reach.
 - **Stands: `docs/investigations/nyc-street-trees.md`'s scale numbers.** 899,094 and 1,091,709 both
