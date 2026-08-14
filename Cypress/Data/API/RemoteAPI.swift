@@ -27,10 +27,22 @@ import Foundation
 ///    the hot path" for Class L**, and the contradiction is recorded in
 ///    this round's errata entry rather than papered over here.
 ///
-/// 2. **Eight of the nine mutations of spec §3.4 have no route either.** §3.4's conclusion is
-///    unchanged — they "stay Class L until they are queued", which needs a widened `outbox.kind`
-///    `CHECK` and therefore its own ticket and its own migration author — and the service was built
-///    to match. `addTree` and `deletePhoto` are the two that do have one, and they are implemented.
+/// 2. **Nine of the eleven mutations spec §3.4 names have no route either.** §3.4 counts "eleven
+///    mutating methods… called **directly** by feature models with no queue behind them", of which
+///    nine have a shipping caller in `Cypress/Features`. The eleven are `addTree`, `claimSpecies`,
+///    `correctSpecies`, `flagWrongSpecies`, `dismissSpeciesReview`, `flagNeverExisted`,
+///    `withdrawRecord`, `dismissRecordReview`, `setPhotoVote`, `deletePhoto` and
+///    `logHazardRedirect`. **Two of them have a route** — `addTree` (`POST /trees`) and
+///    `deletePhoto` (`DELETE /photos/{id}`) — which leaves nine with none, and that nine is exactly
+///    the set `RemoteAPITests.theUnqueuedMutationsRefuse` pins. §3.4's conclusion is unchanged
+///    either way: they "stay Class L until they are queued", which needs a widened `outbox.kind`
+///    `CHECK` and therefore its own ticket and its own migration author, and the service was built
+///    to match.
+///
+///    **Of the two that do have a route, only `addTree` returns what its signature promises.**
+///    `deletePhoto` refuses: `DELETE /photos/{id}` answers `{"deleted": true}` and none of
+///    `PhotoDeletion`'s five facts, so it is a half like the four in (3) below. The route is reached
+///    through the `deletePhotoRemotely(id:)` delta accessor instead. See both methods below.
 ///
 /// 3. **Four reads answer the community half and the whole client type needs the city file.**
 ///    `GET /me/grove` sends no display name and no coordinate; `GET /me/grove/species` sends no
@@ -631,12 +643,23 @@ public extension RemoteAPI {
     }
 
     /// A tree's community half: the photographs, and which of them are this caller's.
+    ///
+    /// **`visit_count` is on the wire and is deliberately not here.** The service sends it; nothing
+    /// this client could do with it is allowed. `TreeProfile.visits` is a `Series<Visit>` — rows
+    /// plus whether they are all of them — and a bare number cannot enter one without becoming the
+    /// exact claim `Series` exists to make unwritable (ERRATA **E38**): a count with no rows behind
+    /// it, rendered as if it had been counted. Drawing it on its own is the other forbidden
+    /// direction, and ARCHITECTURE §5.1 names this very identifier doing it: "if you find yourself
+    /// writing `visitCount` into a user-visible string, stop."
+    ///
+    /// So it stops here rather than travelling to a router that would have to drop it anyway. It is
+    /// still decoded, one layer out, so that `TreeCommunityHalfResponse` remains a complete
+    /// statement of what the service sends — see the note on that field.
     struct TreeCommunityDelta: Hashable, Sendable {
         public let treeID: UUID
         public let photos: [Photo]
         public let ownPhotoIDs: Set<UUID>
         public let deletablePhotoIDs: Set<UUID>
-        public let visitCount: Int
     }
 
     /// `GET /me/grove`.
@@ -693,8 +716,7 @@ public extension RemoteAPI {
                 )
             },
             ownPhotoIDs: Set(response.ownPhotoIDs),
-            deletablePhotoIDs: Set(response.deletablePhotoIDs),
-            visitCount: response.visitCount
+            deletablePhotoIDs: Set(response.deletablePhotoIDs)
         )
     }
 

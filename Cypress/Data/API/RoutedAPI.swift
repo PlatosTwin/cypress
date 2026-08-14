@@ -29,12 +29,31 @@ public actor RemoteReadLog {
         case grove, groveSpecies, journal, isFavorite, mapMembership, treeProfile, photoData
     }
 
+    /// ── Three cases, because spec §4.3 names three ────────────────────────────────────────────
+    ///
+    /// "Under Class R, a read has three outcomes rather than two — answered,
+    /// answered-from-the-local-fallback, and could-not-ask — and a screen that collapses the third
+    /// into an empty state is telling somebody their work is gone."
+    ///
+    /// This enum shipped with two of them, and review of PR #78 found what the missing third cost:
+    /// `photoData`'s failure path recorded `.fellBackToLocal` — "the value is what this phone knows"
+    /// — and then **threw**, so there was no value, and a test pinned that. `degradedReads` is
+    /// precisely the set a later round draws §4.3 copy from, and it would have said "showing what's
+    /// on this phone" about a read that returned nothing.
     public enum Outcome: String, Sendable, Hashable {
         /// The service answered and its half is in the value returned.
         case live
         /// The service could not be asked, or refused, and the value is what this phone knows.
         /// True for everything this device did, and missing other devices of the same account.
         case fellBackToLocal
+        /// **Neither half answered and the read threw.** There is no value: the service refused or
+        /// could not be reached, and the phone did not have it either.
+        ///
+        /// Only `photoData` can reach this today, and that is a property of the reads rather than of
+        /// this enum — every other Class R read has a complete local answer to fall back to, and
+        /// `photoData` is the one whose local half may genuinely be empty (`PhotoAccess.swift`: a
+        /// zero-byte JPEG is a corrupt photograph, so there is nothing honest to return).
+        case unanswered
     }
 
     private var outcomes: [Read: Outcome] = [:]
@@ -45,11 +64,17 @@ public actor RemoteReadLog {
         outcomes[read] = outcome
     }
 
-    /// The last outcome for a read, or nil when it has not been performed since launch.
+    /// The last outcome for a read, or nil when the service was not asked.
     ///
-    /// Nil is deliberately not `.fellBackToLocal`: "we have not asked" and "we asked and could not
+    /// Nil is deliberately not `.fellBackToLocal`: "we did not ask" and "we asked and could not
     /// reach it" are different facts, and this project has drawn an empty state over the first of
     /// them before (`AccountModel.remindersFailed`, quoted in spec §4.3).
+    ///
+    /// **Nil covers two situations and that is deliberate**: a read nobody has performed since
+    /// launch, and `photoData` answered off this disk without needing to ask. They are one fact to
+    /// every consumer this log has — the service was not consulted, and nothing about the value
+    /// returned is missing because of it — and separating them would add a case that no surface
+    /// could draw differently.
     public func outcome(of read: Read) -> Outcome? { outcomes[read] }
 
     /// Every read that is currently answering from the phone.
@@ -71,10 +96,16 @@ public actor RemoteReadLog {
 ///
 /// **Class R — remote, with a local fallback that says it fell back.** `grove`, `groveSpecies`,
 /// `isFavorite`, `mapMembership` at the R-degraded grade; `treeProfile` and `photoData` at the
-/// R-required grade. Every one of them, on any remote failure, answers from the phone and records
+/// R-required grade. On a remote failure, five of the six answer from the phone and record
 /// `.fellBackToLocal` in `log`. A read that could-not-ask must never surface as an empty state:
 /// "an empty state is a claim, and this project has already drawn one over a failed read" (R72
 /// ruling 1).
+///
+/// **`photoData` is the sixth and it is the exception**, because it is the one Class R read whose
+/// local half may genuinely be empty: bytes this device never wrote are not on this disk, and
+/// `PhotoAccess.swift` refuses to stand an empty `Data` in for them. When neither half has them it
+/// throws and records `.unanswered`; when the phone has them it records nothing, because the service
+/// was not asked. See that method for all three paths.
 ///
 /// **Class D — device-only.** `deviceContributions`. Local, always, because the rows have not been
 /// sent and their being unsent is what the question is about.
@@ -491,9 +522,23 @@ public struct RoutedAPI: CypressAPI {
     /// A failure on *both* throws, and throws the remote error: at that point neither half has the
     /// bytes, and `PhotoAccess.swift` is explicit that empty `Data` is not an acceptable stand-in
     /// because "a zero-byte JPEG is a corrupt photograph".
+    ///
+    /// ── What each of the three paths records, and the two that were wrong ──────────────────────
+    ///
+    /// Review of PR #78 found this method recording outcomes its own enum forbids, so the mapping is
+    /// written out here rather than left to be read off three one-line calls:
+    ///
+    /// - **Bytes off this disk: nothing is recorded.** It used to record `.live`, which
+    ///   `Outcome.live` defines as "the service answered" — and the service was never asked. Nil
+    ///   means the service was not consulted, which is precisely what happened and precisely what a
+    ///   §4.3 surface needs to know: nothing about these bytes is missing.
+    /// - **Bytes from the service: `.live`.** The acceptance criterion's last mile.
+    /// - **Neither half has them: `.unanswered`, and it throws.** It used to record
+    ///   `.fellBackToLocal`, whose own doc says "the value is what this phone knows" — there is no
+    ///   value, and `degradedReads` would have offered a later round the copy "showing what's on
+    ///   this phone" for a read that returned nothing.
     public func photoData(id: UUID) async throws -> Data {
         if let mine = try? await local.photoData(id: id), !mine.isEmpty {
-            await log.record(.photoData, .live)
             return mine
         }
         do {
@@ -501,7 +546,7 @@ public struct RoutedAPI: CypressAPI {
             await log.record(.photoData, .live)
             return bytes
         } catch {
-            await log.record(.photoData, .fellBackToLocal)
+            await log.record(.photoData, .unanswered)
             throw error
         }
     }

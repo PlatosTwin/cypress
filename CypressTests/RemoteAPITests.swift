@@ -596,6 +596,109 @@ struct RemoteAPITests {
         #expect(transport.calls.isEmpty, "a photograph was receipted whose bytes never landed")
     }
 
+    /// A staged file that is not there is a fact about this device, not about the service.
+    ///
+    /// **This branch had no test at all, and review of PR #78 is how that was found**: the reviewer
+    /// changed it to throw a `RemoteSurface` — the containment invariant breaking in exactly the way
+    /// `RemoteSurface`'s header names — and all 1,434 tests stayed green. Two things follow, and this
+    /// test is the first of them.
+    ///
+    /// What it must not throw is as load-bearing as what it must. A taxonomy code here would be an
+    /// answer about the service for a file this device lost, and a non-retryable one
+    /// (`validationFailed`) would fail an outbox item terminally over a local condition. A
+    /// `RemoteSurface` would print "No connection." to somebody with four bars
+    /// (`OutboxFailureReason.sentence(for:)`). `SessionError.malformedResponse` is neither: outside
+    /// the taxonomy, so the item stays alive on the backoff (ERRATA **E261** §3).
+    @Test("a missing staged file is neither a taxonomy code nor a RemoteSurface")
+    func aMissingStagedFileIsNeitherATaxonomyCodeNorARemoteSurface() async throws {
+        StubStorageProtocol.reset()
+        let photoID = UUID()
+        let destination = URL(string: "https://storage.invalid/photos/\(photoID.uuidString).jpg")!
+        StubStorageProtocol.park(destination, status: 200)
+
+        let transport = ScriptedTransport()
+        let api = Self.api(transport, session: StubStorageProtocol.session())
+        let absent = NSTemporaryDirectory() + "/cypress-absent-\(UUID().uuidString).jpg"
+
+        await #expect(throws: SessionError.malformedResponse) {
+            try await api.uploadPhoto(
+                at: absent,
+                ticket: PhotoUploadTicket(photoID: photoID, destination: destination)
+            )
+        }
+        #expect(
+            StubStorageProtocol.requests.isEmpty,
+            "a PUT was attempted for bytes this device does not have"
+        )
+        #expect(transport.calls.isEmpty, "a photograph was receipted whose bytes were never read")
+    }
+
+    /// **The containment invariant, held from the source: no path through the two send-sink methods
+    /// throws a `RemoteSurface`.**
+    ///
+    /// ── Why this is a source gate and the test above is not enough ─────────────────────────────
+    ///
+    /// The invariant is over *every* path through two bodies. A behavioral test can only assert the
+    /// paths it can reach, and reaching all of them means driving `sync` through a decode failure, an
+    /// encode failure, a transport failure and an unreadable success body, plus `uploadPhoto` through
+    /// four more — eight tests that would still say nothing about the ninth branch somebody adds next
+    /// year. The property "this body cannot throw that type" is a property of the *text*, and the
+    /// text is what a gate should read. `theClassLBodiesNeverNameTheService` in `RoutedAPITests` is
+    /// the same instrument for the same reason, and this round's review is what pointed it here.
+    ///
+    /// ── What it does not cover, stated rather than implied ─────────────────────────────────────
+    ///
+    /// Callees. The gate reads the two methods and the two private helpers they call into
+    /// (`request`, `decode`); a `RemoteSurface` thrown by something further down — `OutboxPayload`,
+    /// `JSONValue`, the transport — would evade it. Those were read once, by hand, when this was
+    /// written: none of them can name a type declared in `RemoteWire.swift` from where they sit, and
+    /// `AuthorizedTransport` is a seam whose documented error set is `APIError` and `SessionError`.
+    /// That is a smaller claim than the gate makes, and it is the honest boundary of it.
+    @Test("no send-sink body can throw a RemoteSurface")
+    func theSendSinkBodiesCannotThrowARemoteSurface() throws {
+        let source = try String(
+            contentsOf: AppSourceLiterals.repositoryRoot()
+                .appendingPathComponent("Cypress/Data/API/RemoteAPI.swift"),
+            encoding: .utf8
+        )
+
+        /// A method's body, from its `func` line to the line that closes it at the same indent.
+        func body(of signature: String) -> String? {
+            let lines = source.components(separatedBy: "\n")
+            guard let start = lines.firstIndex(where: { $0.contains("func \(signature)") }) else { return nil }
+            let indent = lines[start].prefix { $0 == " " }
+            guard let end = lines[(start + 1)...].firstIndex(where: { $0 == indent + "}" }) else { return nil }
+            return lines[(start + 1)..<end].joined(separator: "\n")
+        }
+
+        // Calibration, three parts: the extractor finds a body, it is the right body, and — the
+        // negative control — a method that *does* throw a `RemoteSurface` reads as one. Without the
+        // last, an extractor returning the empty string would certify every method clean.
+        let sync = try #require(body(of: "sync(_ items:"), "the body extractor found nothing — this gate is vacuous")
+        #expect(sync.contains("POST"), "the extractor did not read sync's body")
+        #expect(
+            body(of: "grove()")?.contains("RemoteSurface") == true,
+            "the negative control did not read as a refusal — this gate cannot tell the two apart"
+        )
+        #expect(body(of: "notAMethodOnThisType()") == nil, "the extractor answered for a method that does not exist")
+
+        // The two an `OutboxSendSink` can call, and the two private helpers they call into.
+        //
+        // `decode<T` and not `decode(`: the helper is generic, so its `func` line reads
+        // `func decode<T: Decodable>(…`. The `#require` above is what said so rather than the gate
+        // quietly checking three methods and calling it four.
+        for signature in ["sync(_ items:", "uploadPhoto(at localPath:", "request(", "decode<T"] {
+            let found = try #require(body(of: signature), "no body found for \(signature)")
+            #expect(
+                !found.contains("RemoteSurface"),
+                """
+                \(signature) can throw a RemoteSurface. An outbox item that reached one would print \
+                "No connection." to somebody with four bars — see RemoteSurface's header.
+                """
+            )
+        }
+    }
+
     /// `GET /photos/{id}` answers a presigned source, and the bytes come from there.
     ///
     /// Two round trips on purpose: a 256 MB machine that streamed every photograph on every profile
@@ -830,8 +933,13 @@ struct RemoteAPITests {
             """
         )
 
+        // The response carries `visit_count: 9` and the delta deliberately has no field for it —
+        // `Series` forbids a count with no rows behind it (ERRATA E38) and ARCHITECTURE §5.1 names
+        // this identifier as the thing not to write into a user-visible string. The wire fact is
+        // asserted where the wire is described (`TreeCommunityHalfResponse`), not here, and there is
+        // deliberately no assertion on it in this test: a value nothing depends on, pinned, is a
+        // test that only makes the field harder to remove.
         let half = try await Self.api(transport).treeCommunityHalf(id: treeID)
-        #expect(half.visitCount == 9)
         #expect(half.photos.count == 2)
         #expect(half.ownPhotoIDs == [mine])
         #expect(half.deletablePhotoIDs == [mine])

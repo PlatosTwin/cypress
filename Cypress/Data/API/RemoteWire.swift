@@ -142,6 +142,14 @@ enum JSONValue: Codable, Hashable, Sendable {
 /// That is a property of those two bodies and not of the wiring, so it is the thing the round that
 /// wires a send sink has to keep true. A `RemoteSurface` reaching an outbox item would print "No
 /// connection." to somebody with four bars.
+///
+/// **This paragraph was a comment with nothing behind it, and review of PR #78 broke it without
+/// turning anything red** — `uploadPhoto`'s staged-file `catch` was changed to throw
+/// `RemoteSurface.noRouteOnThisService` and all 1,434 tests passed. It is now guarded, by the pair
+/// in `CypressTests/RemoteAPITests`: `theSendSinkBodiesCannotThrowARemoteSurface` reads the bodies
+/// off this target's source, and `aMissingStagedFileIsNeitherATaxonomyCodeNorARemoteSurface` covers
+/// the one branch that had no test at all. Their doc comments argue why it takes both. CLAUDE.md:
+/// "Never assert an invariant in a comment you have not verified; a comment is not a test."
 public enum RemoteSurface: Error, Equatable, CustomStringConvertible {
 
     /// The city layer is answered on the phone and never reaches this service.
@@ -154,10 +162,13 @@ public enum RemoteSurface: Error, Equatable, CustomStringConvertible {
 
     /// The service exposes no route for this act yet.
     ///
-    /// The nine mutations of spec §3.4 that have no queue behind them, the two review dismissals,
-    /// and the nightly open export of D12. §3.4 is explicit that these "stay Class L until they are
-    /// queued", which needs a widened `outbox.kind` `CHECK` and therefore its own ticket and its own
-    /// migration author — not #158.
+    /// **Nine of the eleven mutations spec §3.4 names** — the eleven minus `addTree` and
+    /// `deletePhoto`, which are the two this service does expose a route for — and the nightly open
+    /// export of D12. The nine include both review dismissals; `RemoteAPI`'s header enumerates all
+    /// eleven and `RemoteAPITests.theUnqueuedMutationsRefuse` pins the nine.
+    ///
+    /// §3.4 is explicit that these "stay Class L until they are queued", which needs a widened
+    /// `outbox.kind` `CHECK` and therefore its own ticket and its own migration author — not #158.
     case noRouteOnThisService
 
     /// The service answers the **community half** of this read and the whole client type needs the
@@ -439,7 +450,22 @@ struct TreeCommunityHalfResponse: Decodable {
     let treeUUID: UUID
     let photos: [PhotoRow]
     let photoCount: Int
+
+    /// **Decoded, and deliberately carried no further** — `RemoteAPI.TreeCommunityDelta` does not
+    /// have this field and `RoutedAPI.treeProfile` never sees it.
+    ///
+    /// Two rules forbid every use a client could make of it. `TreeProfile.visits` is a
+    /// `Series<Visit>` — rows, plus whether they are all the rows — so a bare number cannot enter
+    /// one without becoming a count with nothing behind it presented as a counted total, which is
+    /// the claim `Series` exists to make unwritable (ERRATA **E38**). And drawing it on its own is
+    /// what ARCHITECTURE §5.1 forbids **by this identifier's own name**: "if you find yourself
+    /// writing `visitCount` into a user-visible string, stop."
+    ///
+    /// It stays decoded here rather than being dropped from the struct because this type's job is
+    /// to be a complete, checkable statement of what `GET /trees/{id}` sends. A field the service
+    /// emits and this client refuses is a fact worth having written down; silence about it is not.
     let visitCount: Int
+
     let ownPhotoIDs: [UUID]
     let deletablePhotoIDs: [UUID]
 

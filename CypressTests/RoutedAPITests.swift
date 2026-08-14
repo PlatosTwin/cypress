@@ -615,7 +615,12 @@ struct RoutedAPITests {
     }
 
     /// The phone is asked for bytes first, and the service only for what it never wrote.
-    @Test("photoData prefers the bytes already on this disk")
+    ///
+    /// **The log must say nothing here**, and review of PR #78 is why that is asserted rather than
+    /// assumed: this recorded `.live` — "the service answered" — for bytes read off local disk with
+    /// the service never asked, and the test that covered the path never constructed a log at all,
+    /// so flipping the label left everything green.
+    @Test("photoData prefers the bytes already on this disk, and records nothing")
     func photoDataPrefersTheBytesOnThisDisk() async throws {
         let ownID = UUID()
         let ownBytes = Data([0xFF, 0xD8, 0x01])
@@ -623,21 +628,73 @@ struct RoutedAPITests {
         local.photoBytes = [ownID: ownBytes]
 
         let transport = ScriptedTransport()
-        let router = RoutedAPI(local: local, remote: Self.remote(transport))
+        let log = RemoteReadLog()
+        let router = RoutedAPI(local: local, remote: Self.remote(transport), log: log)
 
         #expect(try await router.photoData(id: ownID) == ownBytes)
         #expect(transport.calls.isEmpty, "a photograph already on this disk was fetched over the network")
+        #expect(
+            await log.outcome(of: .photoData) == nil,
+            "the log claims something about a service that was never asked"
+        )
+        #expect(await log.degradedReads.isEmpty, "a complete answer off this disk was reported degraded")
+    }
+
+    /// Bytes this device never wrote arrive from the service, and **that** is `.live`.
+    ///
+    /// The acceptance criterion's last mile at the byte level: the profile carries the photograph
+    /// (`treeProfileCarriesAPhotographThisDeviceNeverWrote`), and this is the read that draws it.
+    @Test("a photograph only the service holds is fetched and recorded live")
+    func aPhotographOnlyTheServiceHoldsIsRecordedLive() async throws {
+        StubStorageProtocol.reset()
+        let photoID = UUID()
+        let source = URL(string: "https://storage.invalid/read/\(photoID.uuidString).jpg")!
+        let bytes = Data([0xFF, 0xD8, 0x09, 0x09])
+        StubStorageProtocol.park(source, status: 200, body: bytes)
+
+        let transport = ScriptedTransport()
+        transport.answer(
+            "GET /photos/\(photoID.uuidString)",
+            with: """
+            {"photo_id":"\(photoID.uuidString)","url":"\(source.absoluteString)","expires_in":1800,
+             "shot_type":"full_tree","captured_at":"2026-08-09T18:41:46Z"}
+            """
+        )
+
+        let log = RemoteReadLog()
+        let router = RoutedAPI(
+            local: LocalDouble(),
+            remote: RemoteAPI(
+                baseURL: URL(string: "https://service.invalid/api/v1")!,
+                transport: transport,
+                session: StubStorageProtocol.session()
+            ),
+            log: log
+        )
+
+        #expect(try await router.photoData(id: photoID) == bytes)
+        #expect(await log.outcome(of: .photoData) == .live)
     }
 
     /// Neither half has the bytes, so it throws — `PhotoAccess.swift` is explicit that empty `Data`
     /// is not an acceptable stand-in, because "a zero-byte JPEG is a corrupt photograph".
-    @Test("a photograph neither half holds throws rather than returning nothing")
+    ///
+    /// **The outcome is `.unanswered`, not `.fellBackToLocal`,** and the difference is the whole of
+    /// review's second finding: `fellBackToLocal` is documented as "the value is what this phone
+    /// knows", and there is no value — this call threw. `degradedReads` is the set a later round
+    /// draws §4.3 copy from, so the old label would have offered "showing what's on this phone" for
+    /// a read that returned nothing.
+    @Test("a photograph neither half holds throws, and is recorded unanswered")
     func aPhotographNeitherHalfHoldsThrows() async throws {
         let log = RemoteReadLog()
         let router = RoutedAPI(local: LocalDouble(), remote: Self.unreachable(), log: log)
 
         await #expect(throws: (any Error).self) { _ = try await router.photoData(id: UUID()) }
-        #expect(await log.outcome(of: .photoData) == .fellBackToLocal)
+        #expect(await log.outcome(of: .photoData) == .unanswered)
+        #expect(
+            await !log.degradedReads.contains(.photoData),
+            "a read that returned no value was reported as answering from this phone"
+        )
     }
 
     /// The journal answers from the phone and **says so every time**.
