@@ -38,11 +38,32 @@ import Foundation
 public struct RemoteAPI: CypressAPI {
     /// `/api/v1`.
     public let baseURL: URL
-    /// Injected so the eventual implementation is testable without a live host.
+
+    /// **The session-owning type, injected** — spec §3.2: the `/auth/*` routes stay off `CypressAPI`
+    /// and belong "to the type that owns the session, injected into `RemoteAPI`".
+    ///
+    /// Every authenticated call will go through this rather than through `session` below, and the
+    /// difference is spec §5.8: it attaches the credential, refreshes once and replays on a 401, and
+    /// never lets a session failure reach a caller as `APIError.unauthorized` — which would move an
+    /// outbox item to `.failed` immediately and print "Sign in to send this" to somebody who is
+    /// signed in (ERRATA **E261** §3).
+    public let transport: any AuthorizedTransport
+
+    /// The unauthenticated half of the wire.
+    ///
+    /// Kept beside `transport` for the one call that must **not** carry a bearer: the photo binary
+    /// goes straight to storage at the presigned URL `POST /photos/begin` returns (spec §1.1), and
+    /// presenting this service's credential to a storage host sends it somewhere it has no business
+    /// being.
     public let session: URLSession
 
-    public init(baseURL: URL, session: URLSession = .shared) {
+    public init(
+        baseURL: URL = SyncService.defaultBaseURL,
+        transport: any AuthorizedTransport,
+        session: URLSession = .shared
+    ) {
         self.baseURL = baseURL
+        self.transport = transport
         self.session = session
     }
 
