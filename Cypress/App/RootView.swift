@@ -48,8 +48,8 @@ struct RootView: View {
         self.data = data
         self.onInventoryChange = onInventoryChange
         _outbox = State(wrappedValue: data.makeOutboxViewState())
-        _moderation = State(wrappedValue: ModerationModel(api: data.api))
-        _account = State(wrappedValue: AccountModel(api: data.api))
+        _moderation = State(wrappedValue: ModerationModel(api: data.local))
+        _account = State(wrappedValue: AccountModel(api: data.local))
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
     }
 
@@ -212,7 +212,7 @@ struct RootView: View {
         // Overrides` is a single `DELETE` with nothing conditional in it to fail on in practice.
         if ProcessInfo.processInfo.environment[DebugDeepLink.clearStatusOverridesEnvironmentKey] != nil {
             deepLinkAttempted = true
-            try? await data.api.debugClearStatusOverrides()
+            try? await data.local.debugClearStatusOverrides()
             overridesCleared = true
             return
         }
@@ -242,7 +242,7 @@ struct RootView: View {
         case let .success(screen):
             let failure = await DebugDeepLink.open(
                 screen,
-                api: data.api,
+                api: data.local,
                 router: router,
                 present: { debugStandalone = $0 }
             )
@@ -481,7 +481,7 @@ struct RootView: View {
 
     /// Screen 03's heart, as this app performs it (RULINGS R2, ERRATA E112).
     private var favoriteWriter: ProfileFavoriteWriter {
-        ProfileFavoriteWriter(api: data.api, outbox: data.outbox)
+        ProfileFavoriteWriter(api: data.api, local: data.local, outbox: data.outbox)
     }
 
     /// Screen 15's sign-in, performed locally (ERRATA E124).
@@ -515,7 +515,10 @@ struct RootView: View {
     /// account's reminders, favorites and votes owned by an id no query asks for and no deletion
     /// can reach — see `LocalAPI.signOut()`.
     nonisolated func accountLink() -> AccountAskLink {
-        let api = data.api
+        // `local`: every call in this closure — `userID`, `resumableUserID`, `linkAccount` — is
+        // about this installation's own account row in `app_state` (ERRATA E86), and none of the
+        // three is a `CypressAPI` requirement.
+        let api = data.local
         let deviceID = data.deviceID
         return { request in
             // The account already on this device, else the one it signed out of, else a new one.
@@ -607,7 +610,7 @@ struct RootView: View {
                 onSaveReminder: { draft in
                     try await ReminderOutboxWriter.save(
                         draft,
-                        attribution: await data.api.attribution,
+                        attribution: await data.local.attribution,
                         outbox: data.outbox
                     )
                 }
@@ -853,7 +856,13 @@ struct RootView: View {
 /// the store afterwards, so a write that did not land shows up as the heart going back to where it
 /// was — which is the state R2 says the screen now has and E101 said it did not.
 struct ProfileFavoriteWriter: Sendable {
-    let api: LocalAPI
+    /// **The router**, because the re-read is Class R (spec §3.1) and #167's whole point is that a
+    /// favorite set on one phone shows as set on another. `RoutedAPI.isFavorite` asks the service
+    /// and falls back to the phone, saying which it did.
+    let api: any CypressAPI
+    /// **The phone**, for `attribution` alone: who this device is writing as is a fact about this
+    /// installation's `app_state` (D9, ERRATA E86) and is not on `CypressAPI`.
+    let local: LocalAPI
     let outbox: OutboxQueue
 
     /// - Parameter isFavorite: the resulting state, not a verb. A favorite syncs as a toggle event
@@ -867,7 +876,7 @@ struct ProfileFavoriteWriter: Sendable {
             isFavorite: isFavorite,
             // D9: the signed-in user when there is one, this device otherwise. Resolved here
             // because identity is not a view's question to answer.
-            attribution: await api.attribution,
+            attribution: await local.attribution,
             outbox: outbox
         )
     }
