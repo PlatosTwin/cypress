@@ -50,6 +50,7 @@ from __future__ import annotations
 import csv
 import datetime as _datetime
 import json
+import re
 from typing import Iterator, Optional
 
 from inventory_contract import (
@@ -979,3 +980,453 @@ class SanJoseStreetTreeAdapter:
                 raw_json=None,
             )
 
+
+# ---------------------------------------------------------------------------
+# New York City
+# ---------------------------------------------------------------------------
+
+# NYC Parks' ForMS 2.0 publishes the inventory as TWO Socrata datasets, and the
+# adapter joins them. `Forestry Tree Points` (hn5i-inap) has 20 columns and not
+# one of them is an address, a borough or a site type; all of those live on
+# `Forestry Planting Spaces` (82zj-84is) and arrive through
+# `PlantingSpaceGlobalID` -> `GlobalID`. See docs/investigations/nyc-street-trees.md.
+#
+# `attributes_from` is what the contract already has for exactly this, and San
+# Francisco already exercises it. What is new is that the JOIN happens here
+# rather than in the builder: `build_seed.py` chooses between two already-adapted
+# streams for San Francisco, whereas NYC is one stream whose attribute half is
+# looked up per record.
+
+#: The separator inside `GenusSpecies`. TWO CHARACTERS QUALIFY AND THE SECOND IS
+#: THE ONE THAT MATTERS. 619 of the 620 distinct values on `TPStructure='Full'`
+#: use an ASCII hyphen-minus surrounded by spaces; exactly one --
+#: `Asimina triloba – Pawpaw`, 28 rows -- uses an EN DASH (U+2013), and it is the
+#: only non-ASCII character anywhere in the vocabulary. Measured against the full
+#: 1,121,106-row extract, 2026-08-14.
+#:
+#: A `str.split(" - ")` would hand that row back whole, mint a scientific name
+#: reading `Asimina triloba – Pawpaw`, and stub a species that shadows the real
+#: `Asimina triloba`. That is #103's mechanism exactly, and it is why this is a
+#: regex over both dash characters rather than a string split.
+#:
+#: The spaces around the dash are load-bearing in the other direction:
+#: `Crataegus crus-galli var. inermis` and `Acer x freemanii 'Autumn Blaze'`
+#: carry internal hyphens, and no distinct value contains more than one SPACED
+#: dash, so a single split on the first spaced dash is unambiguous.
+NYC_SPECIES_SEPARATOR = re.compile(r"\s[-–]\s")
+
+#: `GenusSpecies` strings whose scientific half names no taxon. `Unknown` is a
+#: TREE the surveyor could not identify -- R18's answer and San Jose's `Unknown`
+#: precedent: a tree of unknown species is a tree, not an empty hole. It yields
+#: KIND_TREE with no species, and `species_text` keeps NYC's own word.
+#: 5,238 rows on `Full`, measured 2026-08-14.
+NYC_NON_TAXON_SCIENTIFIC = {"unknown"}
+
+#: Trunk diameters above this are rejected as data entry rather than measurement.
+#:
+#: THE BOUND IS 400 IN BECAUSE THE OTHER TWO ADAPTERS USE 400 IN, AND THAT IS THE
+#: ARGUMENT. `SJ_DBH_CEILING_IN` and `parse_dbh_inches` both cut at 400, so a
+#: reader of the seed can say what a present `dbh_in` means without first asking
+#: which city the row came from. A per-city ceiling would make the column's
+#: meaning a property of its source, which is the shape this whole file exists to
+#: prevent.
+#:
+#: What the NYC data actually looks like, measured on the 898,643 `Full` rows,
+#: 2026-08-14, so the next round can tighten this from numbers rather than taste:
+#:
+#:      0 in (the "not recorded" sentinel)   650 rows -> None, see below
+#:      1-60 in                          897,647 rows
+#:      60-100 in                            208 rows
+#:      100-400 in                            26 rows
+#:      over 400 in                            5 rows  -> rejected here
+#:                                            (2,427 / 1,310 / 999 / 830 / 410)
+#:
+#: So this ceiling rejects 5 rows and passes 26 that are almost certainly also
+#: wrong -- a 200-inch street tree is a 17-foot trunk. Tightening it is a real
+#: improvement and it is NOT made here, because the defensible number is an
+#: arboricultural fact this adapter has no source for, and DECISIONS constraint 15
+#: forbids inventing one. It belongs in ONE place for all three cities.
+NYC_DBH_CEILING_IN = 400.0
+
+#: `DBH` of 0 on a `Full` tree point is "not recorded", not a zero-inch trunk --
+#: 650 rows, the same convention San Francisco and San Jose use and the same
+#: resolution. A tree point whose structure is `Full` has a trunk by definition.
+NYC_DBH_ZERO_MEANS_UNRECORDED = True
+
+# WHICH `TPStructure` DESCRIBES A TREE. **PROVISIONAL -- see the block comment on
+# `NYCTreePointAdapter.classify`.** NYC splits what the contract's `kind` wants in
+# one field across two vocabularies, and this mapping is the half that is settled:
+# it is about the STRUCTURE at the site, not about whether it is alive.
+NYC_STRUCTURE_IS_TREE = {"full"}
+NYC_STRUCTURE_IS_NOT_A_TREE = {"stump", "stump - uprooted", "shaft", "retired"}
+
+
+class NYCTreePointAdapter:
+    """NYC Parks' `Forestry Tree Points`, joined to `Forestry Planting Spaces`.
+
+    1,121,106 tree points as of 2026-08-14, of which 898,643 are `TPStructure =
+    'Full'`. Redistribution is permitted; an application built on this data must
+    notify the City and carry the Data Mine disclaimer verbatim
+    (docs/investigations/nyc-street-trees.md §2). **Neither obligation is
+    discharged by this file.**
+
+    THE JOIN IS THE FIRST THING TO UNDERSTAND ABOUT THIS SOURCE, AND IT DOES NOT
+    COVER EVERYTHING. Every one of the 1,121,106 tree points carries a
+    `PlantingSpaceGlobalID` -- zero nulls -- but 22,995 of the 898,643 `Full`
+    points (2.56%) name a planting space that is not in the Planting Spaces
+    extract at all. Those rows are not corrupt and they are not dropped: they get
+    a tree with a position, a species and a DBH, and `None` for address, borough
+    and site type, which is the contract working rather than a gap to paper over.
+
+    THE ORPHANS ARE A PUBLICATION-CADENCE ARTIFACT, NOT A DATA DEFECT, and the
+    measurement says so: 99.9% of the 22,995 were `CreatedDate` 2025 or later,
+    against 2.8% of the 875,648 that do join. Tree Points is refreshed every two
+    weeks (`rowsUpdatedAt` 2026-07-28); Planting Spaces was last refreshed
+    2025-03-05. So the unmatched rows are trees ForMS recorded after the Planting
+    Spaces extract was last published, and the gap GROWS between refreshes of the
+    second dataset. **A borough-partitioned build cannot place those 22,995 rows
+    in a borough**, because borough is a Planting Spaces column -- which is a
+    fact the distribution design round needs and is reported rather than patched.
+
+    ONE PLANTING SPACE, ONE TREE, ALMOST. 898,633 planting spaces hold exactly one
+    `Full` tree point and 5 hold two, so the join does not meaningfully fan out.
+    The Planting Spaces extract itself ships 6,864 WHOLE-ROW duplicates (1,091,709
+    rows, 1,084,845 distinct `GlobalID`); `fetch_nyc_trees.py` drops them and
+    verifies that every dropped pair agreed in every column before doing so.
+
+    WHAT NYC DOES NOT PUBLISH, rendered NULL rather than as a plausible stand-in:
+
+      * a caretaker or care-assistant of any kind -- there is no such field on
+        either dataset, so both are always None;
+      * a planting date on 774,918 of 898,643 `Full` rows. `PlantedDate` is
+        populated on 123,725 (13.77%). `CreatedDate` is the date the RECORD was
+        made, not the date the tree was planted, and is NOT read into
+        `planted_on` -- the same distinction San Jose's `ORIGINALINVENTORYDATE`
+        forced.
+    """
+
+    inventory_id = "nyc_tree_points"
+
+    #: Planting Spaces and Tree Points columns carried into `city_record` under
+    #: SEED column names, so no NYC column name survives past this class.
+    #:
+    #: `plant_type` <- TPStructure and `permit_notes` <- TPCondition are the two
+    #: that matter, and they are here so that NO INFORMATION IS LOST while the
+    #: kind/status mapping below is still provisional. San Jose already set the
+    #: precedent for the second (`permit_notes` <- `CONDITION`).
+    #:
+    #: `caretaker` and `care_assistant` are absent from this list because NYC
+    #: publishes neither, and an absent key is NULL by the contract.
+    #:
+    #: `RiskRating`/`RiskRatingDate` have NO seed column to land in -- `city_record`
+    #: is keyed by seed column name and the seed has no risk column -- so they go
+    #: to `raw_json` under `--with-city-raw` and nowhere else. That is a real
+    #: passthrough limit and it is stated here rather than discovered later.
+    CITY_RECORD_COLUMNS = [
+        ("plant_type", "tpstructure"),      # Full | Retired | Stump | Shaft | Stump - Uprooted
+        ("permit_notes", "tpcondition"),    # Excellent | Good | Fair | Poor | Critical | Dead | Unknown
+    ]
+
+    #: Planting Spaces columns carried into `city_record`, same rules.
+    PS_CITY_RECORD_COLUMNS = [
+        ("legal_status", "jurisdiction"),   # DPR | Green Thumb | Private | ... | NULL on 84%
+    ]
+
+    def __init__(self, tree_point_rows, planting_spaces: dict, limit: int = 0,
+                 structures=None, borough=None) -> None:
+        """`planting_spaces` is {GlobalID -> planting space row}, already deduplicated.
+
+        `structures` limits which `TPStructure` values are read at all, lowercased;
+        `None` means every row. `borough` limits to one `Forestry Planting Spaces`
+        `boroughcode`, which is how a per-borough build is expressed -- it is a
+        FETCH-TIME/BUILD-TIME parameter and nothing about it is baked into the
+        adapter's decisions.
+        """
+        self.rows = tree_point_rows
+        self.planting_spaces = planting_spaces
+        self.limit = limit
+        self.structures = {s.lower() for s in structures} if structures else None
+        self.borough = borough
+        self.stats = {
+            "source_rows": 0,
+            "dropped_no_coords": 0,
+            # The join, whose shape is the whole story of this source.
+            "joined_to_planting_space": 0,
+            "no_planting_space_match": 0,
+            "dropped_wrong_structure": 0,
+            "dropped_wrong_borough": 0,
+            # Every branch of the kind decision, so its shape is a number.
+            "kind_from_structure_tree": 0,
+            "kind_from_structure_not_a_tree": 0,
+            "kind_inferred_from_absent_species": 0,
+            # The provisional half, counted so the schema round has its size.
+            "standing_dead_mapped_to_alive": 0,
+            # The source's own noise.
+            "dbh_zero_sentinel": 0,
+            "dbh_over_ceiling": 0,
+            "species_unknown_taxon": 0,
+        }
+
+    # ------------------------------------------------------------------ parts
+
+    @staticmethod
+    def split_genus_species(raw):
+        """`GenusSpecies` -> (scientific_name, common_name), either may be None.
+
+        NYC packs both names into one column the way DataSF does, with a spaced
+        dash instead of `::`. Unlike `SFCityLayerAdapter.species_of` this does NOT
+        round-trip through DataSF's `::` convention -- it is a clean split into the
+        contract's two fields, which is what that method's docstring promised the
+        third source would be able to do.
+
+        Shapes present in the 620-value vocabulary, all measured 2026-08-14:
+
+            'Quercus palustris - pin oak'                 clean binomial,      258 values
+            "Zelkova serrata 'Green Vase' - ..."          quoted cultivar,     321 values
+            'Platanus x acerifolia - London planetree'    hybrid,               12 values
+            'Gleditsia triacanthos var. inermis - ...'    variety,               8 values
+            'Morus - mulberry'                            genus only,           17 values
+            'Asimina triloba – Pawpaw'                    EN DASH,               1 value
+        """
+        text = " ".join((raw or "").strip().split())
+        if not text:
+            return None, None
+        parts = NYC_SPECIES_SEPARATOR.split(text, 1)
+        scientific = parts[0].strip() or None
+        common = (parts[1].strip() if len(parts) > 1 else "") or None
+        return scientific, common
+
+    @staticmethod
+    def confidence_for(scientific_name):
+        """How far to trust the scientific half, on the SF and San Jose scale.
+
+        The scale is shared on purpose: a species catalogue built from three
+        sources must not have three meanings for the same number.
+        """
+        if scientific_name is None:
+            return None
+        tokens = scientific_name.split()
+        genus = tokens[0]
+        if not genus[:1].isupper() or not genus.replace("-", "").isalpha():
+            return 0.2
+        if len(tokens) == 1:
+            return 0.7
+        if tokens[1].lower() in {"sp.", "spp.", "sp", "spp", "x", "hybrid", "x."}:
+            return 0.75
+        if tokens[1][:1].islower() and tokens[1].replace("-", "").isalpha():
+            return 1.0 if len(tokens) == 2 else 0.9
+        return 0.6
+
+    def parse_dbh(self, raw):
+        """`DBH` -> inches measured, or None. See `NYC_DBH_CEILING_IN`."""
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        if not text:
+            return None
+        try:
+            inches = float(text)
+        except ValueError:
+            return None
+        if inches != inches:  # NaN
+            return None
+        if inches == 0:
+            self.stats["dbh_zero_sentinel"] += 1
+            return None
+        if inches < 0:
+            return None
+        if inches > NYC_DBH_CEILING_IN:
+            self.stats["dbh_over_ceiling"] += 1
+            return None
+        return inches
+
+    @staticmethod
+    def parse_planted_date(raw):
+        """`PlantedDate` -> a date, or None. Ships `2015-08-25 10:46:44`.
+
+        No sentinel list and no horizon clamp, because neither is warranted by
+        anything measured in this source -- inventing a sentinel for a source that
+        does not use one is the same mistake as failing to resolve one that does.
+        """
+        text = (raw or "").strip()
+        if not text:
+            return None
+        head = text.split(" ")[0].split("T")[0]
+        try:
+            return _datetime.datetime.strptime(head, "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    # ----------------------------------------------------------------- kinds
+
+    def classify(self, structure, scientific_name):
+        """One row's `(kind, kind_basis, scientific_name)`, and why.
+
+        ================== THE PROVISIONAL PART, READ THIS ======================
+        NYC states a record's structure (`TPStructure`) and its physical condition
+        (`TPCondition`) in TWO fields, and the contract's `kind` is one field. This
+        method uses ONLY `TPStructure`, and that is the whole of the compromise:
+
+            TPStructure='Full' + TPCondition='Dead'   10,635 rows, 2026-08-14
+
+        is a STANDING DEAD TREE. It has a trunk, a species and a location, so it is
+        `KIND_TREE` by every reasonable reading -- and `build_seed.STATUS_FOR_KIND`
+        turns every `KIND_TREE` into `status='alive'`, which says something about
+        those 10,635 trees that NYC Parks did not say.
+
+        **THE SEED SCHEMA IS NOT THE THING IN THE WAY, AND THE SURVEY WAS WRONG
+        ABOUT THIS.** `trees.status` already permits `dead_reported`, whose own
+        documentation (Cypress/DesignSystem/Components/StatusBadge.swift, RULINGS
+        R19) defines it as a tree that "is still standing over a pavement" and is
+        "not a second way of saying `removed`" -- precisely this case, already
+        drawn, already badged, already reachable in the app.
+
+        What is actually missing is one field on `InventoryRecord` and one lookup:
+        `build_seed.STATUS_FOR_KIND` is keyed on `kind` ALONE, so no adapter can
+        cause a row to ship as anything but `alive`, `vacant_site` or `alive`.
+        That is a change to this contract in Python, NOT a database migration, and
+        it is not made here because it moves San Francisco's and San Jose's rows
+        too and this round is forbidden to touch either.
+
+        Until it is made, NOTHING IS LOST: `TPStructure` and `TPCondition` are
+        carried verbatim into `city_record` (`plant_type` and `permit_notes`), so
+        every one of the 10,635 is recoverable from the seed by a later pass, and
+        `stats['standing_dead_mapped_to_alive']` reports the size of the claim in
+        the build receipt rather than leaving it to be rediscovered.
+        ========================================================================
+        """
+        key = (structure or "").strip().lower()
+
+        if key in NYC_STRUCTURE_IS_TREE:
+            self.stats["kind_from_structure_tree"] += 1
+            return KIND_TREE, KindBasis.STATED_CATEGORY, scientific_name
+
+        if key in NYC_STRUCTURE_IS_NOT_A_TREE:
+            # A stump, an uprooted stump, a snapped shaft, or a record NYC Parks
+            # has retired. Something was there and it is not a tree now. San
+            # Jose's `Stump` rows reached the same place by the same reasoning.
+            self.stats["kind_from_structure_not_a_tree"] += 1
+            return KIND_NOT_A_TREE, KindBasis.STATED_AS_NON_TAXON, None
+
+        # `TPStructure` is null on 11 rows of 1,121,106. The category field is
+        # silent, so the species field is all there is.
+        if scientific_name:
+            return KIND_TREE, KindBasis.STATED, scientific_name
+
+        # No structure AND no species. The source said nothing, and this is the
+        # one branch where the KIND IS OURS. Spelled with the badly named basis on
+        # purpose so the build receipt carries its size.
+        self.stats["kind_inferred_from_absent_species"] += 1
+        return KIND_PLANTING_SITE, KindBasis.INFERRED_FROM_ABSENT_SPECIES, None
+
+    # ----------------------------------------------------------------- records
+
+    def records(self) -> Iterator[InventoryRecord]:
+        """`rows` are dicts of the columns `fetch_nyc_trees.py` caches."""
+        for row in self.rows:
+            structure_key = (row.get("tpstructure") or "").strip().lower()
+            if self.structures is not None and structure_key not in self.structures:
+                self.stats["dropped_wrong_structure"] += 1
+                continue
+
+            space = self.planting_spaces.get(
+                (row.get("plantingspaceglobalid") or "").strip()
+            )
+            if self.borough is not None:
+                # Borough is a PLANTING SPACES column, so a tree point that does
+                # not join has no borough and cannot be placed in one. It is
+                # dropped from a borough build and counted, never reassigned.
+                if space is None or (space.get("boroughcode") or "").strip() != self.borough:
+                    self.stats["dropped_wrong_borough"] += 1
+                    continue
+
+            self.stats["source_rows"] += 1
+            if self.limit and self.stats["source_rows"] > self.limit:
+                self.stats["source_rows"] -= 1
+                break
+
+            lat, lon = row.get("lat"), row.get("lon")
+            if lat is None or lon is None or lat != lat or lon != lon:
+                self.stats["dropped_no_coords"] += 1
+                continue
+
+            if space is None:
+                self.stats["no_planting_space_match"] += 1
+            else:
+                self.stats["joined_to_planting_space"] += 1
+
+            scientific, common = self.split_genus_species(row.get("genusspecies"))
+            if scientific and scientific.strip().lower() in NYC_NON_TAXON_SCIENTIFIC:
+                # `Unknown - Unknown`: a TREE nobody identified. R18 and San
+                # Jose's `Unknown` both say a tree of unknown species is a tree.
+                # Minting a species called `Unknown` is #103 exactly.
+                self.stats["species_unknown_taxon"] += 1
+                scientific, common = None, None
+
+            kind, basis, scientific = self.classify(row.get("tpstructure"), scientific)
+
+            if (structure_key == "full"
+                    and (row.get("tpcondition") or "").strip().lower() == "dead"):
+                self.stats["standing_dead_mapped_to_alive"] += 1
+
+            dbh_in = self.parse_dbh(row.get("dbh"))
+            if dbh_in is not None and kind != KIND_TREE:
+                # A measured trunk on something that is not a tree is two
+                # unreconciled records, not a fact. San Jose's rule, same reason.
+                dbh_in = None
+
+            if kind != KIND_TREE:
+                common = None
+
+            city_record = {
+                seed_column: _clean(row.get(source_column))
+                for seed_column, source_column in self.CITY_RECORD_COLUMNS
+            }
+            city_record.update({
+                seed_column: _clean((space or {}).get(source_column))
+                for seed_column, source_column in self.PS_CITY_RECORD_COLUMNS
+            })
+            if space is not None:
+                width = _clean(space.get("width"))
+                length = _clean(space.get("length"))
+                if width and length:
+                    city_record["plot_size"] = f"{width} x {length}"
+
+            address = None
+            if space is not None:
+                address = " ".join(
+                    part for part in (
+                        _clean(space.get("buildingnumber")) or "",
+                        _clean(space.get("streetname")) or "",
+                    ) if part
+                ).strip() or None
+
+            yield InventoryRecord(
+                inventory=self.inventory_id,
+                kind=kind,
+                kind_basis=basis,
+                lat=float(lat),
+                lon=float(lon),
+                # `GlobalID`, a ForMS asset UUID -- never `OBJECTID`, which is the
+                # feature service's row number and moves on republish. Measured
+                # unique across all 1,121,106 rows, 2026-08-14.
+                source_ref=_clean(row.get("globalid")),
+                # One packed field into the contract's two. No `::` anywhere.
+                scientific_name=scientific,
+                common_name=common,
+                species_confidence=self.confidence_for(scientific),
+                species_text=_clean(row.get("genusspecies")),
+                # Every name here is one NYC wrote in its own species column; the
+                # builder resolves it against the corpus and decides stubbing.
+                species_is_stub=False,
+                # The address, borough and site type came from the OTHER dataset.
+                # `None` here means this tree point matched no planting space, so
+                # those facts are genuinely absent rather than joined.
+                attributes_from="nyc_planting_spaces" if space is not None else None,
+                address=address,
+                site_type=_clean((space or {}).get("pssite")),
+                planted_on=self.parse_planted_date(row.get("planteddate")),
+                dbh_in=dbh_in,
+                city_record=city_record,
+                raw_json=None,
+            )
