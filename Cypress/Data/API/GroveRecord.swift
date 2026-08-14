@@ -51,7 +51,14 @@ import Foundation
 /// a claim — "you have done nothing to this tree" — that an unproven read is not entitled to make,
 /// which is E38 pointed at the emptiest possible answer, the same place `JournalPresentation`
 /// gates its empty state on the cursor rather than on `rows.isEmpty`.
-public struct GroveRecord: Hashable, Sendable {
+///
+/// ── `Decodable` since #158 step 4 ─────────────────────────────────────────────────────────────
+/// `GET /me/grove` sends this nested inside an otherwise snake_case object, in **this type's own
+/// synthesized keys** — `checkIns`, not `check_ins` — because a payload that reconstructs a client
+/// type speaks that type's names (`server/internal/api/wire.go`). The conformance is what lets a
+/// plain `JSONDecoder` with no key strategy read it, and `CypressTests/GoldenWireFixtureTests`
+/// proves it against `server/testdata/grove.json` rather than against a transcription of it.
+public struct GroveRecord: Hashable, Sendable, Decodable {
 
     /// Ten-second visits (screen 04).
     public let visits: Int
