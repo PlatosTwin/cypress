@@ -437,6 +437,7 @@ from inventory_adapters import (  # noqa: E402
     RETIRED_SPECIES_NAMES,
     SFCityLayerAdapter,
     SFDataSFAdapter,
+    BoroughResolver,
     NYCTreePointAdapter,
     SanJoseStreetTreeAdapter,
     normalise_species_key,
@@ -1547,9 +1548,20 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         enrichment = load_datasf_attributes(csv_path)
         log(f"enrichment index: {len(enrichment):,} DataSF rows by TreeID")
 
-    nyc_rows, nyc_spaces, nyc_meta = None, {}, {}
+    nyc_rows, nyc_spaces, nyc_meta, nyc_boroughs = None, {}, {}, None
     if nyc_cache:
         nyc_rows, nyc_spaces, nyc_meta = load_nyc_layers(nyc_cache)
+        # RULING D18: every NYC row carries a borough, so the boundary file is
+        # not optional -- a build without it stops on the first orphan.
+        boundaries = os.path.join(nyc_cache, "borough_boundaries.geojson")
+        if not os.path.exists(boundaries):
+            die(
+                f"{boundaries} is absent. RULING D18 requires every NYC tree to carry a "
+                f"borough and 22,995 of them join no planting space, so the City's "
+                f"borough polygons are required. Re-run Tools/fetch_nyc_trees.py."
+            )
+        with open(boundaries, "r", encoding="utf-8") as fh:
+            nyc_boroughs = BoroughResolver(json.load(fh))
         log(f"nyc: {len(nyc_rows):,} tree points, {len(nyc_spaces):,} planting spaces, "
             f"extracted {nyc_meta.get('extracted_on')}")
 
@@ -2066,7 +2078,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         nyc = NYCTreePointAdapter(
             nyc_rows, nyc_spaces, horizon_year, limit=limit,
             structures=structures, borough=nyc_borough or None,
-            with_raw=with_city_raw,
+            with_raw=with_city_raw, borough_resolver=nyc_boroughs,
         )
         for record in nyc.records():
             if not accepts(record):
@@ -2442,6 +2454,23 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # The distribution design makes a borough the published unit.
             "nyc_borough_carried": str(stats.get("nyc_borough_carried", 0)),
             "nyc_no_borough_to_carry": str(stats.get("nyc_no_borough_to_carry", 0)),
+            # RULING D18's four outcomes, so a pack's completeness is a fact in
+            # the file rather than something to recompute.
+            "nyc_borough_stated": str(stats.get("nyc_borough_stated_by_planting_space", 0)),
+            "nyc_borough_point_in_polygon": str(stats.get("nyc_borough_from_point_in_polygon", 0)),
+            "nyc_borough_nearest_polygon": str(stats.get("nyc_borough_from_nearest_polygon", 0)),
+            "nyc_borough_unassigned": str(stats.get("nyc_borough_unassigned", 0)),
+            "nyc_borough_geometry_agrees": str(stats.get("nyc_borough_geometry_agrees", 0)),
+            "nyc_borough_geometry_disagrees": str(stats.get("nyc_borough_geometry_disagrees", 0)),
+            # RULING D19: the publisher's own staleness, recorded.
+            "nyc_tree_points_rows_updated_at":
+                str((nyc_meta.get("tree_points") or {}).get("rows_updated_at", "")),
+            "nyc_planting_spaces_rows_updated_at":
+                str((nyc_meta.get("planting_spaces") or {}).get("rows_updated_at", "")),
+            "nyc_planting_spaces_duplicates_dropped":
+                str((nyc_meta.get("planting_spaces") or {}).get("duplicate_globalids_dropped", "")),
+            "nyc_dedupe_rule":
+                str((nyc_meta.get("planting_spaces") or {}).get("dedupe_rule", "")),
             "nyc_planted_date_beyond_horizon":
                 str(stats.get("nyc_planted_date_beyond_horizon", 0)),
         }

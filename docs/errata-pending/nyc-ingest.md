@@ -196,3 +196,49 @@ committing it would corrupt San Francisco's map with a build flag's side effect.
 
 Worth considering for the round that owns `build_seed.py`: write the map only under an explicit
 flag, or write it beside the seed rather than into `Fixtures/`.
+
+---
+
+### E??? — an ITIS client that decodes as UTF-8 reports valid names as network errors
+
+The species work for RULING D20 checked 268 names against ITIS
+(`https://www.itis.gov/ITISWebService/jsonservice/`). Ten came back as errors that looked exactly
+like transient network failures and survived a retry:
+
+    Crataegus            'utf-8' codec can't decode byte 0xfc in position 20781
+    Amelanchier          'utf-8' codec can't decode byte 0xe9 in position 18583
+    Tsuga canadensis     'utf-8' codec can't decode byte 0xe8 in position 105
+
+They are not network errors and they are not bad names. **ITIS serves ISO-8859-1**, and its taxonomic
+author strings are full of accented characters (`Michx.`, `Muhl. ex Willd.`, `Dum.Cours.`). A client
+doing `json.load(response)` — which assumes UTF-8 — raises on exactly those records and on no others.
+
+The tell was that a retry did not clear them and that they clustered on genera with long author
+lists. Decoding UTF-8 first and falling back to ISO-8859-1 resolved all ten, and the answers changed
+the round's numbers: the residual went from "141 accepted / 10 error" to **150 accepted**.
+
+Recorded because the failure mode is generic to this project's habit of querying public taxonomic
+APIs, and because it is indistinguishable from a flaky network at the call site. It is also a clean
+instance of the calibration rule: the instrument was wrong, and the wrongness was reported as data.
+
+---
+
+### E??? — RULING D20's 90% species gate is not reachable for NYC by mapping
+
+Recorded as a standing fact rather than a defect, because the next round will meet it again.
+
+D20 requires mapped-species coverage ≥ 90% of rows before a first NYC publish. The measured ceiling
+is **85.99%** (772,785 of 898,643), reached with a five-rule cited cascade. The remaining 35,993 rows
+cannot be mapped without asserting a synonymy no authority supports:
+
+  * 150 values / 106,956 rows are **accepted** names in ITIS that the corpus does not carry;
+  * 11 values / 470 rows are synonyms — of taxa the corpus **also** lacks;
+  * 107 values / 14,888 rows are cultivars, which the ICNCP governs and ITIS does not index.
+
+The cause is structural, not sloppy: the corpus was built from San Francisco and San Jose, and NYC's
+street trees are an Eastern-seaboard flora. Green ash is not white ash.
+
+The gap closes by ADDING species to the corpus, not by mapping — which is what the build already does
+for an unmapped string. So the gate as written measures "how much of NYC overlaps California", and a
+number that can only be moved by curating ~270 new species is a curation-round dependency, not an
+ingest-round one.

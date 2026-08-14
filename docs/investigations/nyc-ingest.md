@@ -36,7 +36,7 @@ returned 621 locally against the server's 620, because the CSV renders NULL as `
 `GenusSpecies`; the server confirms the same 21. Empty is normalized to NULL and every other
 aggregate then matched exactly.
 
-## 2. Planting Spaces ships 6,864 duplicate rows
+## 2. Planting Spaces ships 6,864 duplicate rows, and how they are dropped (D19)
 
 `count(*)` is 1,091,709 and `count(distinct globalid)` is 1,084,845. The extra 6,864 are **whole-row
 duplicates** — identical in every column, `OBJECTID` included — so they are one planting space
@@ -46,6 +46,20 @@ reports `disagreeing_duplicates`, which is **0**.
 
 This matters because `GlobalID` is the join key. Had any pair disagreed, the join would be
 ambiguous and this would be a stop rather than a dedup.
+
+**RULING D19's rule: among rows sharing a `GlobalID`, keep the one with the smallest NUMERIC
+`OBJECTID`.** It is recorded in the receipt as `seed_meta.nyc_dedupe_rule`.
+
+A rule is needed even though every duplicate pair here is byte-identical and the choice cannot change
+the output, because "it does not matter which" is a property of *today's data*, not of the pipeline.
+Keeping whichever row arrived first made the survivor depend on page order, which depends on
+`$order=:id` — Socrata's own row identifier, not promised stable across a republish. The comparison
+is numeric on purpose: as strings, `'10843890'` sorts before `'9'`, so a textual comparison would
+pick a different twin as soon as the id range crossed a digit boundary.
+
+**The staleness is now recorded rather than remembered.** Both datasets' `rowsUpdatedAt` are read
+live at fetch time and stamped into the seed: `nyc_planting_spaces_rows_updated_at` = **2025-03-05**,
+`nyc_tree_points_rows_updated_at` = **2026-08-12**.
 
 Note the calibration trap here, because it nearly produced a wrong finding: `count(distinct
 objectid)` also returns 1,084,845 — the *same* number — which looks like a hallmark of an
@@ -98,20 +112,43 @@ regex over both dash characters, and the mutation test that proves this matters 
 direction: `Crataegus crus-galli var. inermis` carries an internal hyphen, and no value contains
 more than one *spaced* dash.
 
-**`Fixtures/nyc_species_map.csv` maps 147 of the 620 values** (532,483 of 898,643 rows) to a species
-already in the seed corpus. Matching is **exact** on a case-folded scientific name — no fuzzy
-matching, no edit distance, no synonymy. The 472 misses break down as:
+### Coverage against RULING D20's 90% gate: **85.99%**, and that is the ceiling
 
-| why it missed | values | rows | example |
+`Fixtures/nyc_species_map.csv` resolves **772,785 of 898,643 rows (85.99%)** to a species already in
+the corpus, through a five-rule cascade with one cited line per string in
+`Fixtures/nyc_species_map_citations.csv`:
+
+| rule | what it claims | authority | values | rows |
+|---|---|---|---:|---:|
+| R0 exact | nothing | — | 147 | 532,483 |
+| R1 hybrid sign | `Platanus x acerifolia` ≡ `Platanus acerifolia` — the × is notation, not epithet | ICN (Shenzhen) Art. H.3A.1, 23.1 | 3 | 99,515 |
+| R2/R3 rank within species | a variety/form/cultivar is a member of its species | ICN Art. 4; ICNCP 9th ed. Art. 2.1 | 199 | 139,039 |
+| R1+R2/R3 | both of the above | as above | 2 | 33 |
+| R4 spelling | one misspelling this dataset itself disproves | the extract's own spelling frequency | 1 | 1,715 |
+| non-taxon | `Unknown - Unknown` is a tree, not a species | RULINGS R18 | 1 | 5,238 |
+| **unmapped** | | | **267** | **120,599** |
+
+R0 runs before R1–R3 on purpose: a cultivar the corpus already carries by name keeps its own
+identity, so NYC's `Platanus x acerifolia 'Bloodgood'` reaches the corpus's own
+`Platanus acerifolia 'Bloodgood'` and is never collapsed to the bare species.
+
+**It is 35,993 rows short of the 90% gate, and the gap cannot be closed honestly.** Every one of the
+268 residual values was checked against ITIS on 2026-08-14, and **not one is a synonym of a name in
+the corpus**:
+
+| ITIS status | values | rows | what they are |
 |---|---:|---:|---|
-| base binomial IS in the corpus | 204 | 238,587 | `Platanus x acerifolia` vs the corpus's `Platanus acerifolia` |
-| new species, genus already known | 205 | 98,616 | `Fraxinus pennsylvanica` (15,608 rows) |
-| new genus entirely | 63 | 23,698 | `Gymnocladus dioicus` (7,482 rows) |
+| accepted | 150 | 106,956 | valid taxa the corpus simply lacks |
+| synonym | 11 | 470 | synonyms of taxa the corpus **also** lacks |
+| not indexed | 107 | 14,888 | cultivars, governed by the ICNCP rather than the ICN |
 
-The first row is the interesting one: **238,587 rows whose taxon the corpus almost certainly already
-holds under a different spelling.** Every one of those is a synonymy ruling, so none is written into
-the map — they go to an unmapped report for a human. That is DECISIONS constraint 15 doing its job,
-and it is also why the map is 147 lines of mapping rather than the "383 or more" the brief expected.
+The corpus is California-derived and NYC's flora is the Eastern seaboard. `Fraxinus pennsylvanica`
+(green ash, 15,608 rows) is not the corpus's `Fraxinus americana` (white ash); `Quercus bicolor`
+(swamp white oak, 14,949) is not `Quercus suber` (cork oak); `Taxodium distichum` (bald cypress) is
+not `Taxodium mucronatum`; and `Gymnocladus`, `Eucommia`, `Amelanchier` and `Cladrastis` are absent
+from the corpus at genus level. Mapping any of them would be a synonymy ruling no authority supports
+— exactly what D20 and DECISIONS constraint 15 forbid — so they stay unmapped and the number stays
+honest. **This is a stop-and-ask: see the round's report.**
 
 One upstream misspelling worth noting: `Platanus x acerfolia 'Exclamation'` (1,715 rows) — NYC's own
 typo for `acerifolia`. Not corrected here.
@@ -250,7 +287,63 @@ no `TPCondition`, which is the same 11.
 The adapter's current, **provisional** mapping uses `TPStructure` only: `Full` → `tree`, and
 `Retired`/`Stump`/`Shaft`/`Stump - Uprooted` → `not_a_tree`. Condition decides nothing yet.
 
-## 11. Where borough lives on the record
+## 11. Borough, after RULING D18
+
+**Every NYC tree now carries a borough, and the five packs sum exactly to the whole city.**
+
+The authority is the City's own `Borough Boundaries` (Socrata `gthc-hcne`, shoreline-clipped, 3.1 MB,
+five MultiPolygons), cached beside the two extracts and checked in at
+`Fixtures/nyc_survey/borough_boundaries.geojson` so the tests are real. Its `boroname` values are the
+same five strings Planting Spaces writes in `boroughcode`, so no code mapping is needed — asserted in
+the tests rather than assumed. The water-included variant (`wh2p-dxnf`) was measured on the same
+898,643 points and leaves 522 outside every polygon against `gthc-hcne`'s 543, a 21-row difference
+that does not justify claiming a tree stands in open water.
+
+**The precedence is the ruling's, and geometry never overrides the City.**
+
+| outcome | rows |
+|---|---:|
+| borough STATED by the planting space | 875,163 |
+| assigned by point-in-polygon | 22,998 |
+| assigned by nearest polygon, within 500 m | 482 |
+| **unassigned** | **0** |
+
+The 500 m cap is measured, not chosen: the 543 points outside every polygon sit min 0.03 m, median
+25.4 m, **max 310.0 m** from the nearest borough — trees on the shoreline side of a clipped boundary,
+or on the Queens/Nassau and Bronx/Westchester city lines. Beyond the cap the build **stops**;
+`records()` raises rather than emitting a row with no borough.
+
+**Calibration, which the ruling asked for.** Geometry was run on the 875,163 rows that already state
+a borough, purely to compare:
+
+| | rows |
+|---|---:|
+| geometry agrees with the City | 875,095 |
+| geometry **disagrees** | **7** |
+| outside every polygon (keeps its stated borough) | 61 |
+
+The seven are: Staten Island→Queens (3), Manhattan→Brooklyn (2), Brooklyn→Queens (1),
+Queens→Brooklyn (1). **They keep what NYC says.** Overriding a city's own attribution from a
+shoreline-clipped polygon would be this pipeline deciding a civic question it has no standing to
+decide, and seven rows in 898,643 is not evidence that the City is wrong.
+
+### The borough packs
+
+| pack | NYC rows | seed size | NYC delta | dated |
+|---|---:|---:|---:|---:|
+| Manhattan | 98,929 | 173.1 MB | 64.7 MB | 12.45% |
+| Bronx | 137,858 | 197.2 MB | 88.8 MB | 17.22% |
+| Brooklyn | 237,596 | 263.8 MB | 155.4 MB | 16.18% |
+| Queens | 298,839 | 302.4 MB | 194.0 MB | 13.15% |
+| Staten Island | 125,421 | 190.2 MB | 81.9 MB | 7.93% |
+| **sum of packs** | **898,643** | | | |
+| **whole city** | **898,643** | 693.8 MB | 585.4 MB | 13.77% |
+
+Sizes are ~42 MB larger than the pre-D18 measurement because `boroughcode` and `boroughsource` now
+ride on every row in `trees.city_raw` (~47 bytes/row). That is the interim cost of carrying the
+borough at all, and it goes away when `trees.region` lands in s17.
+
+## 12. Where borough lives on the record
 
 The distribution design makes a borough-level region the published unit, and `boroughcode` exists
 only on Planting Spaces — so it travels **on the record**, in `raw_json` → `trees.city_raw`,
@@ -265,7 +358,7 @@ Queens tree reading "Cared for by Queens" is a visible falsehood shipped to a us
 than the problem it solves. **A real `trees.region` column is the honest destination and it is a
 schema question, so it is named here and not taken.**
 
-## 12. Terms
+## 13. Terms
 
 Unchanged from the survey §2 and now recorded in the seed: both datasets publish `license: null`, so
 the operative grant is the NYC.gov Data Mine terms. Redistribution is permitted; an application built

@@ -1,19 +1,19 @@
 qSpecies_string,species_id,confidence
-Platanus x acerifolia - London planetree,8c5e07b9-e2c8-55f2-b44a-a3073cbe3f72,0.75
-Gleditsia triacanthos var. inermis - Thornless honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,0.90
+Platanus x acerifolia - London planetree,5a327f8b-7a05-5bb3-b971-ed0eb9b55bc8,0.75
+Gleditsia triacanthos var. inermis - Thornless honeylocust,c524e80e-b73b-5ff2-b32b-19515bf5c0a6,0.90
 Quercus palustris - pin oak,1f46b39b-30b0-51a9-8f88-3916a1ef6af5,1.00
 Pyrus calleryana - Callery pear,fc55d55a-8706-593e-9ca8-c2d0b6cba3e7,1.00
 Zelkova serrata - Japanese zelkova,3614781d-c947-5e25-b21b-b87b6bb2267a,1.00
 Tilia cordata - littleleaf linden,d4c85034-f65a-58ba-b069-b2b837e634b7,1.00
 Acer platanoides - Norway maple,2597f641-0924-5655-a365-c01d1ba4c620,1.00
-Prunus serrulata 'Green leaf' - 'Green leaf' Japanese flowering cherry,9596b71d-aa14-5032-88d9-b9c5b5feee99,0.90
+Prunus serrulata 'Green leaf' - 'Green leaf' Japanese flowering cherry,99b618f5-9a46-561f-830e-92f73390fe35,0.90
 Ginkgo biloba - maidenhair tree,f5df51ba-bfd4-5f80-b241-85f8d6763671,1.00
 Acer rubrum - red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,1.00
 Styphnolobium japonicum - Japanese pagoda tree,a274dcbb-80fb-5d23-8250-dc3650ae29af,1.00
 Liquidambar styraciflua - sweetgum,16934db9-16c4-5fb9-86e3-45177c3737ae,1.00
 Quercus rubra - northern red oak,81e6db1f-a2e3-57bf-a230-c48b23d81b7e,1.00
-Fraxinus pennsylvanica - Green ash,,1.00
-Quercus bicolor - swamp white oak,,1.00
+Fraxinus pennsylvanica - Green ash,03f4308b-d185-5702-9355-d51310576c36,1.00
+Quercus bicolor - swamp white oak,f6f9d59c-62ae-55a3-b1a9-c20652e1c907,1.00
 Tilia americana - American basswood,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,1.00
 Ulmus americana - American elm,79cca032-a54f-5ab0-94c3-1f4b36de2745,1.00
 Acer saccharinum - silver maple,a4084acb-f39b-5e0b-9a5e-cce5a367f282,1.00
@@ -21,16 +21,16 @@ Celtis occidentalis - common hackberry,870cf55e-0c5b-5642-ace4-fce540523f06,1.00
 Cercis canadensis - eastern redbud,f768334a-6811-5485-8b5f-f4d14c698ece,1.00
 Tilia tomentosa - silver linden,1a46577c-59c4-5f35-8297-1de9f2402ca4,1.00
 Morus - mulberry,273fd810-ac7f-5345-add1-45aafef90c6e,0.70
-Gymnocladus dioicus - Kentucky coffeetree,,1.00
+Gymnocladus dioicus - Kentucky coffeetree,2602811e-24d1-5583-a14b-3181359c1b2f,1.00
 Malus - apple,739c7107-6028-5eea-81a6-a09abb7d1406,0.70
 Prunus - Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.70
 Prunus cerasifera - cherry plum,6393a177-ef67-568b-85a1-34e11cc3c720,1.00
-Prunus serotina - black cherry,,1.00
+Prunus serotina - black cherry,4db01dc0-9cdf-5c16-ba0b-1b479a4903d8,1.00
 Koelreuteria paniculata - goldenrain tree,74a57c4a-235f-59c0-b636-6f4178b18506,1.00
 Syringa reticulata - Japanese tree lilac,4d22c9a2-3c83-50eb-a47e-f06e339b9546,1.00
-Quercus phellos - willow oak,,1.00
+Quercus phellos - willow oak,846ca270-8ea5-5c41-91f3-27c605ec452c,1.00
 Robinia pseudoacacia - black locust,e6d5c938-c52c-5152-8aa6-406118c692b2,1.00
-Crataegus - Hawthorn,,0.70
+Crataegus - Hawthorn,8511318e-2f44-5099-bf6e-c4adc7bd56a0,0.70
 Carpinus betulus - European hornbeam,938eae33-7294-56b6-bf84-1b8d00151b63,1.00
 Metasequoia glyptostroboides - dawn redwood,1096258a-3fba-5dae-8d70-f7cbe5a022c5,1.00
 Unknown - Unknown,,0.00
@@ -38,584 +38,585 @@ Acer - maple,2c3e1e43-b884-5a1f-a3ed-defa50dd309b,0.70
 Maackia amurensis - Amur maackia,44b4daa3-4b37-5393-9461-430dba6ff301,1.00
 Ulmus parvifolia - Chinese elm,b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1,1.00
 Zelkova serrata 'Green Vase' - 'Green Vase' Zelkova,9d2cdfdb-88fa-5e31-9033-3f66c4151851,0.90
-Acer platanoides 'Not Green Leaf' - 'Not Green Leaf' Norway maple,2597f641-0924-5655-a365-c01d1ba4c620,0.90
-Quercus acutissima - sawtooth oak,,1.00
-Gleditsia triacanthos var. inermis 'Skyline' - 'Skyline' Thornless honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,0.90
+Acer platanoides 'Not Green Leaf' - 'Not Green Leaf' Norway maple,05fdc128-91b2-5bf5-a31d-04dde82c6fd3,0.90
+Quercus acutissima - sawtooth oak,afdbdfed-8465-56ad-ac00-98b4995137c6,1.00
+Gleditsia triacanthos var. inermis 'Skyline' - 'Skyline' Thornless honeylocust,2656a63f-aae3-5131-8694-f7ebd4a9c79b,0.90
 Pinus strobus - eastern white pine,574f58de-5361-5488-9aed-cd1c486cc9d2,1.00
 Ulmus pumila - Siberian elm,6438a6d0-c3c5-53c8-a0c1-c669528ae05f,1.00
-Prunus serrulata 'Not Green leaf' - 'Not Green leaf' Japanese flowering cherry,9596b71d-aa14-5032-88d9-b9c5b5feee99,0.90
+Prunus serrulata 'Not Green leaf' - 'Not Green leaf' Japanese flowering cherry,b59d3f20-41d3-5c9c-a294-5cc128615bd7,0.90
 Quercus alba - white oak,c39785dd-406a-596a-8947-85a546e18786,1.00
-Juniperus virginiana - eastern redcedar,,1.00
+Juniperus virginiana - eastern redcedar,6283702e-40b5-5a23-9ba5-47d1cc64231f,1.00
 Acer campestre - hedge maple,4113058e-62f3-56fe-a34c-d728254892b3,1.00
 Quercus - Oak,fff6ccff-666b-519f-9d8a-bd6d4a9fe49b,0.70
-Carpinus caroliniana - American hornbeam,,1.00
+Carpinus caroliniana - American hornbeam,e8b1e468-a8d9-52ae-b8f5-4cd7092f6820,1.00
 Quercus coccinea - scarlet oak,75ec88fe-97e7-55e3-aa0d-5517c87be880,1.00
-Quercus imbricaria - shingle oak,,1.00
+Quercus imbricaria - shingle oak,006c9599-3909-547c-bc42-5bc64132dde9,1.00
 Ailanthus altissima - tree of heaven,35faf581-4855-569b-8698-d28ff7df11f8,1.00
-Ulmus americana 'Princeton' - 'Princeton' American elm,79cca032-a54f-5ab0-94c3-1f4b36de2745,0.90
-Eucommia ulmoides - Hardy Rubber Tree,,1.00
+Ulmus americana 'Princeton' - 'Princeton' American elm,289b8597-121b-5569-9774-24f00c549a03,0.90
+Eucommia ulmoides - Hardy Rubber Tree,251576c6-236b-5fa6-ae8d-208d5ae76cd8,1.00
 Prunus serrulata 'Kwanzan' - 'Kwanzan' Flowering cherry,967ed14a-54ac-5a8d-a8b6-eeebcd89226b,0.90
-Taxodium distichum - bald cypress,,1.00
+Taxodium distichum - bald cypress,b36c0ca5-f642-549d-a681-585a585189e5,1.00
 Acer pseudoplatanus - sycamore maple,37ea58a2-321d-5d66-b4be-190c9735879c,1.00
-Amelanchier - serviceberry,,0.70
+Amelanchier - serviceberry,df9a4a8b-8af1-5fbd-a8b6-88e8236aa5b3,0.70
 Quercus macrocarpa - bur oak,a9594485-e325-5e3f-beae-f73c05dc9da5,1.00
 Cornus florida - flowering dogwood,68cf86fe-1217-550b-b651-04a870463229,1.00
 Fraxinus americana - white ash,87fa82a7-ea95-583a-9917-dd34005895b4,1.00
-Tilia tomentosa 'Sterling' - 'Sterling' Silver linden,1a46577c-59c4-5f35-8297-1de9f2402ca4,0.90
+Tilia tomentosa 'Sterling' - 'Sterling' Silver linden,92a79c3d-2ac4-5219-a1dc-ed47200a72a1,0.90
 Liriodendron tulipifera - tuliptree,22570857-6689-52dd-856c-630e8306c299,1.00
 Tilia americana 'Redmond' - 'Redmond' American linden,529f9424-9976-5868-858f-22febcc2d7eb,0.90
 Acer saccharum - sugar maple,d903b3ee-075f-5d06-bed5-e70b04461ffc,1.00
 Quercus shumardii - Shumard's oak,d7d4976d-3879-59a8-8c07-d51b12ce7ab8,1.00
-Cladrastis kentukea - Kentucky yellowwood,,1.00
+Cladrastis kentukea - Kentucky yellowwood,2a91a69d-4ccb-509b-ae94-4ee6866c5855,1.00
 Fraxinus - Ash,129b938a-c137-54e0-834b-93613674af2e,0.70
-Platanus x acerifolia 'Bloodgood' - 'Bloodgood' London planetree,b9a547f2-c7f5-5fbb-ade5-131918bb6f26,0.75
+Platanus x acerifolia 'Bloodgood' - 'Bloodgood' London planetree,a66a2861-7670-559c-939a-5bdb212c96a3,0.75
 Betula nigra - river birch,dfaa8415-82d4-58eb-84d6-6d96d9aee807,1.00
 Quercus robur - English oak,5c33d272-9bd0-51ca-9544-d019635ddac2,1.00
 Pinus - pine,11bf2253-8f59-51a6-b053-913e2afc4ba0,0.70
-Quercus ellipsoidalis - northern pin oak,,1.00
-Quercus velutina - black oak,,1.00
+Quercus ellipsoidalis - northern pin oak,0b7f6c98-0777-54d4-ab46-c80f4eea2c3d,1.00
+Quercus velutina - black oak,7c025376-9730-5d0f-8a5d-76a96caebcf8,1.00
 Acer ginnala - Amur maple,2c4f47c0-1634-5531-99d0-5c3da1e8c8a3,1.00
-Gymnocladus dioicus 'Espresso' - 'Espresso' Kentucky coffee tree,,0.90
-Platanus x acerfolia 'Exclamation' - 'Exclamation' London planetree,8c5e07b9-e2c8-55f2-b44a-a3073cbe3f72,0.75
-Ostrya virginiana - hophornbeam,,1.00
-Syringa reticulata 'Ivory Silk' - 'Ivory Silk' Japanese tree lilac,4d22c9a2-3c83-50eb-a47e-f06e339b9546,0.90
-Betula nigra 'Heritage' - 'Heritage' River birch,dfaa8415-82d4-58eb-84d6-6d96d9aee807,0.90
+Gymnocladus dioicus 'Espresso' - 'Espresso' Kentucky coffee tree,0121c875-6c19-5c6d-ad50-b2a9b08278d0,0.90
+Platanus x acerfolia 'Exclamation' - 'Exclamation' London planetree,63ed1ad7-976c-5cb2-add3-e9764769ff25,0.75
+Ostrya virginiana - hophornbeam,7883c4ba-29af-52a5-9094-8d54a0a5f3c4,1.00
+Syringa reticulata 'Ivory Silk' - 'Ivory Silk' Japanese tree lilac,eeba61a4-a0b8-5ab1-8164-91d437dc9d23,0.90
+Betula nigra 'Heritage' - 'Heritage' River birch,66230ef6-16e6-5c2f-91ad-a2496c4d36aa,0.90
 Acer palmatum - Japanese maple,fc3456c8-9312-5bc8-851e-e50242e170f6,1.00
 Platanus occidentalis - American sycamore,d9b77210-1b3f-5d0c-ac22-649f0360c6dc,1.00
 Tilia cordata 'Greenspire' - 'Greenspire' Littleleaf linden,ba9b1516-7e48-5669-b87c-d218fa4bcadd,0.90
-Cornus mas - Cornelian cherry,,1.00
-Tilia x. europaea - Common linden,,0.75
+Cornus mas - Cornelian cherry,8bd0992d-090a-5a96-8eed-52f15f940304,1.00
+Tilia x. europaea - Common linden,2be0f0b7-7972-5558-aa39-56c074f08a37,0.75
 Populus deltoides - eastern cottonwood,3065f22e-055f-52f2-be09-80cd3c23088f,1.00
 Prunus x yedoensis - Yoshino cherry,6249ead3-4bd6-5e00-9390-feea11c998ea,0.75
 Magnolia - magnolia,d5ebf801-2699-5398-90bb-d7be7e6c18cd,0.70
-Pinus resinosa - red pine,,1.00
+Pinus resinosa - red pine,33e93871-53b1-54c3-adce-572df2c62bde,1.00
 Aesculus hippocastanum - horse chestnut,d444c8e3-5244-514f-8bea-643628fa4519,1.00
-Cornus kousa - kousa dogwood,,1.00
+Cornus kousa - kousa dogwood,428b06b8-6727-5a51-80ce-4fdebed40e63,1.00
 Nyssa sylvatica - blackgum,383fddb5-3cee-5381-b40b-42dc05918558,1.00
-Thuja occidentalis - arborvitae,,1.00
+Thuja occidentalis - arborvitae,758a8fdd-182b-585f-a6d6-8879ec6d1583,1.00
 Zelkova serrata 'Village Green' - 'Village Green' Zelkova,607fcaca-3d71-53d6-8645-87c16b66dcb0,0.90
-Quercus muehlenbergii - chinkapin oak,,1.00
-Liquidambar styraciflua 'Moraine' - 'Moraine' Sweetgum,16934db9-16c4-5fb9-86e3-45177c3737ae,0.90
+Quercus muehlenbergii - chinkapin oak,7045aba9-fddf-5118-8ef9-aece40b1ba0a,1.00
+Liquidambar styraciflua 'Moraine' - 'Moraine' Sweetgum,b60a55e5-587b-5cdc-84e1-954b998dee2c,0.90
 Prunus serrulata - Japanese flowering cherry,9596b71d-aa14-5032-88d9-b9c5b5feee99,1.00
 Gleditsia triacanthos - Honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,1.00
 Acer x freemanii 'Autumn Blaze' - 'Autumn Blaze' Freeman maple,4bdd1d98-1f70-5689-a551-4fbfd7307c04,0.75
 Cercidiphyllum japonicum - katsura tree,3328f338-92cc-5a5f-a50b-12b7b6a4f60c,1.00
-Lagerstroemia - lagerstroemia,,0.70
-Acer rubrum 'Redpointe' - 'Redpointe' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Fagus grandifolia - American beech,,1.00
+Lagerstroemia - lagerstroemia,44bff46b-08bd-5410-a8e0-3d10d0f538a9,0.70
+Acer rubrum 'Redpointe' - 'Redpointe' Red maple,8fcd4cd1-4293-54eb-9c46-9d8120133fd9,0.90
+Fagus grandifolia - American beech,0d70fd5f-d543-562c-8ce6-c9d61a969e7f,1.00
 Prunus subhirtella 'Autumnalis' - 'Autumnalis' Higan cherry,a75aeb3f-3b81-5bf3-9a4b-5e7160c64a56,0.90
 Acer rubrum 'October Glory' - 'October Glory' Red maple,a7b4dd43-4ccc-5bd6-8510-10ab3c6159db,0.90
-Amelanchier 'Autumn Brilliance' - 'Autumn Brilliance' Serviceberry,,0.60
+Amelanchier 'Autumn Brilliance' - 'Autumn Brilliance' Serviceberry,0fb20ece-37a9-5e87-873b-b3a8aedb3d8e,0.60
 Parrotia persica - Persian ironwood,7dc2fb47-49fc-54fe-9eff-76abe521e912,1.00
-Zelkova serrata 'Mushashino' - 'Mushashino' Zelkova,3614781d-c947-5e25-b21b-b87b6bb2267a,0.90
-Acer rubrum 'Red Sunset' - 'Red Sunset' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
+Zelkova serrata 'Mushashino' - 'Mushashino' Zelkova,842f5ef8-cba8-5f81-bf46-0b5c7b99c62a,0.90
+Acer rubrum 'Red Sunset' - 'Red Sunset' Red maple,15fc75d2-c6e3-56f4-aaba-718a7a011416,0.90
 Ilex - holly,0094f86e-66cf-56bc-9bf7-bcec3c8b83e5,0.70
 Carpinus betulus 'Fastigiata' - 'Fastigiata' European hornbeam,3d4962bc-5fba-5eee-8200-4aa09466f95e,0.90
-Ginkgo biloba 'Magyar' - 'Magyar' Ginkgo,f5df51ba-bfd4-5f80-b241-85f8d6763671,0.90
-Styphnolobium japonicum 'Millstone' - 'Millstone' Japanese pagodatree,a274dcbb-80fb-5d23-8250-dc3650ae29af,0.90
+Ginkgo biloba 'Magyar' - 'Magyar' Ginkgo,4e4eaa99-275c-5311-b4d2-c354282e6a2d,0.90
+Styphnolobium japonicum 'Millstone' - 'Millstone' Japanese pagodatree,1bdbd6cd-87b4-5396-84de-ef7696f8ac2e,0.90
 Platanus x acerifolia 'Columbia' - 'Columbia' London planetree,b5bba3a0-c3e4-5d45-960f-261ecc40cef8,0.75
-Tilia americana 'Boulevard' - 'Boulevard' American linden,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,0.90
-Catalpa - catalpa,,0.70
-Syringa pekinensis 'Summer Charm' - 'Summer Charm' Peking lilac,,0.90
-Acer griseum - paperbark maple,,1.00
-Tilia mongolica 'Harvest Gold' - 'Harvest Gold' Mongolian linden,,0.90
-Syringa pekinensis - Peking tree lilac,,1.00
-Taxodium distichum 'Shawnee Brave' - 'Shawnee Brave' Bald cypress,,0.90
+Tilia americana 'Boulevard' - 'Boulevard' American linden,a3e511bf-e908-5a68-b339-c3096d9b3a21,0.90
+Catalpa - catalpa,b820c0e7-deaf-543a-af7e-863eade53aa4,0.70
+Syringa pekinensis 'Summer Charm' - 'Summer Charm' Peking lilac,cdd3d06c-8984-5d20-97e9-ed9a9b54ca72,0.90
+Acer griseum - paperbark maple,37dc4139-eda6-5a65-95a5-efe8f5c75286,1.00
+Tilia mongolica 'Harvest Gold' - 'Harvest Gold' Mongolian linden,1463d369-8ac9-551d-900c-90ac56318a4b,0.90
+Syringa pekinensis - Peking tree lilac,4c2413ec-4eff-539b-b991-200f80219be1,1.00
+Taxodium distichum 'Shawnee Brave' - 'Shawnee Brave' Bald cypress,9e0b82ee-aef8-5a63-b1e8-6c6f0ace9b23,0.90
 Picea - spruce,00f1207e-ce76-50f2-9cdb-279c2064700c,0.70
 Acer negundo - boxelder,d348f8b4-f4f2-5ae6-945d-0b29372307f9,1.00
-Tilia americana 'McSentry' - 'McSentry' American linden,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,0.90
-Gleditsia triacanthos var. inermis 'Imperial' - 'Imperial' Thornless honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,0.90
-Crataegus crus-galli var. inermis - Cockspur hawthorn,,0.90
-Prunus 'Snow Goose' - 'Snow Goose' Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
+Tilia americana 'McSentry' - 'McSentry' American linden,5950543f-38fc-5c78-a5ac-8d9aef811672,0.90
+Gleditsia triacanthos var. inermis 'Imperial' - 'Imperial' Thornless honeylocust,4fc1a3a0-812d-5f1c-9873-ba0a2981f21f,0.90
+Crataegus crus-galli var. inermis - Cockspur hawthorn,b300afd5-47a6-5127-b431-db22974afaf7,0.90
+Prunus 'Snow Goose' - 'Snow Goose' Cherry,e92722fd-49c3-5b42-a2b1-0583f692a4bf,0.60
 Ulmus 'Frontier' - 'Frontier' Elm,41a04727-984c-5c4d-9516-e88a42a29111,0.60
-Acer miyabei 'State Street' -  'State Street' Miyabe maple,,0.90
-Sassafras albidum - sassafras,,1.00
-Chamaecyparis thyoides - Atlantic white cedar,,1.00
+Acer miyabei 'State Street' -  'State Street' Miyabe maple,525d608b-68fb-5ae8-a066-e5c96cdbaa31,0.90
+Sassafras albidum - sassafras,92568136-8603-5983-b29b-a87b5bbce2b3,1.00
+Chamaecyparis thyoides - Atlantic white cedar,677f89d3-cac3-5dfb-a7c8-4d10695f7455,1.00
 Acer x freemanii - Freeman maple,10abcc98-d512-5a8d-b1a5-18324788bb40,0.75
-Zelkova serrata 'Wireless' - 'Wireless' Zelkova,3614781d-c947-5e25-b21b-b87b6bb2267a,0.90
-Amelanchier canadensis - Canadian serviceberry,,1.00
+Zelkova serrata 'Wireless' - 'Wireless' Zelkova,c78d5d03-3bed-5d19-af10-ddc21d46c37c,0.90
+Amelanchier canadensis - Canadian serviceberry,b7117e87-cc95-5420-a487-478ff909b08e,1.00
 Prunus x yedoensis 'Akebono' - 'Akebono' Yoshino cherry,8cc51207-a51f-502d-9c32-86d395163370,0.75
-Zelkova serrata 'City Sprite' - 'City Sprite' Zelkova,3614781d-c947-5e25-b21b-b87b6bb2267a,0.90
+Zelkova serrata 'City Sprite' - 'City Sprite' Zelkova,2485bcfe-0bed-5c26-9cf5-4982f95be636,0.90
 Chionanthus retusus - Chinese fringetree,235bfca9-b40a-5491-b5dd-f25ece4649f0,1.00
-Prunus virginiana 'Canada Red' - 'Canada Red' Chokecherry,,0.90
+Prunus virginiana 'Canada Red' - 'Canada Red' Chokecherry,9d766d6c-9ed0-5758-b102-1d6b4a5b60e7,0.90
 Acer platanoides 'Crimson King' - 'Crimson King' Norway maple,9152bf7a-d4bc-5b11-bbe5-7acda4238be6,0.90
 Fagus sylvatica - European beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,1.00
-Carpinus betulus 'Emerald Avenue' - 'Emerald Avenue' European hornbeam,938eae33-7294-56b6-bf84-1b8d00151b63,0.90
+Carpinus betulus 'Emerald Avenue' - 'Emerald Avenue' European hornbeam,a6b1c900-311d-54f1-8f63-93f4e5ba9b60,0.90
 Juglans nigra - black walnut,cf57bc73-73be-53c4-87f8-f3fe9a9bd7c6,1.00
-Picea abies - Norway spruce,,1.00
+Picea abies - Norway spruce,dfecce62-fab9-5fb3-b3cb-8e7684d8f982,1.00
 Ginkgo biloba 'Autumn Gold' - 'Autumn Gold' Ginkgo,20f335f8-ffe4-511e-97e6-2772e9264be4,0.90
 Juniperus chinensis - Chinese juniper,1e223e2c-3110-5564-a7e0-42b46eb15e8e,1.00
 Catalpa speciosa - northern catalpa,1dfe11ee-f42c-5bea-969e-83b6b1dd472e,1.00
-Malus 'Royal Raindrops' - 'Royal Raindrops' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Malus 'Spring Snow' - 'Spring Snow' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Prunus virginiana - chokecherry,,1.00
+Malus 'Royal Raindrops' - 'Royal Raindrops' Crabapple,9b88e3a1-b4d1-5462-b41b-94726eeefc46,0.60
+Malus 'Spring Snow' - 'Spring Snow' Crabapple,63d8e74b-0d38-565c-836b-68ad2830c327,0.60
+Prunus virginiana - chokecherry,9165bf2d-8c78-5470-ab81-a952c82bade6,1.00
 Styrax japonicus - Japanese snowbell,b64d2848-20e9-57d6-b947-24d4dafb49b1,1.00
-Amelanchier laevis - Allegheny serviceberry,,1.00
+Amelanchier laevis - Allegheny serviceberry,f08cb7ea-bcfa-5924-bb34-42ccfa00593c,1.00
 Prunus sargentii - Sargent cherry,0d13f855-ba81-5d3c-b59c-15093d7b48b7,1.00
-Ulmus parvifolia 'Allee' - 'Allee' Chinese elm,b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1,0.90
-Ulmus 'Patriot' - 'Patriot' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
+Ulmus parvifolia 'Allee' - 'Allee' Chinese elm,d9f28b1f-31bb-552c-9724-4d9f9f1a10a1,0.90
+Ulmus 'Patriot' - 'Patriot' Elm,27b7e29c-77ad-5ab1-823b-3e603e279f7d,0.60
 Betula papyrifera - paper birch,f9cbf460-3719-5e4a-a598-1849c2f282c1,1.00
 Corylus colurna - Turkish hazelnut,1ac4d91a-0d17-5b7d-87f9-243c8ede71c7,1.00
 Picea pungens - blue spruce,8c3b7e45-2314-592e-9605-23b43228b2b7,1.00
-Gleditsia triacanthos var. inermis 'Streetkeeper' - 'Streetkeeper' Thornless honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,0.90
-Carya glabra - pignut hickory,,1.00
-Quercus x macdanielii 'Clemons' - Heritage Oak,,0.75
-Styphnolobium japonicum 'Regent' - 'Regent' Japanese pagodatree,a274dcbb-80fb-5d23-8250-dc3650ae29af,0.90
-Ulmus 'Homestead' - 'Homestead' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
-Prunus 'Mt Fuji' - 'Mt Fuji' Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
+Gleditsia triacanthos var. inermis 'Streetkeeper' - 'Streetkeeper' Thornless honeylocust,769bfc1a-1a15-5aa0-8e89-bd57a85e56ae,0.90
+Carya glabra - pignut hickory,884b761d-2021-5639-89ce-2502ec9cefda,1.00
+Quercus x macdanielii 'Clemons' - Heritage Oak,4d9b63d7-7c37-5886-a539-5dd257c2d19a,0.75
+Styphnolobium japonicum 'Regent' - 'Regent' Japanese pagodatree,a450c9ad-3bc3-54d5-8244-b1e309f4859e,0.90
+Ulmus 'Homestead' - 'Homestead' Elm,1872e396-a18f-5dc0-aaff-b8a2e70270d5,0.60
+Prunus 'Mt Fuji' - 'Mt Fuji' Cherry,46f05006-29bf-5e6c-90f8-58bccd225e10,0.60
 Cedrus atlantica - Atlas cedar,7aadb1f5-3422-5338-b99e-68ef3daa3ba8,1.00
-Phellodendron amurense - Amur corktree,,1.00
-Tilia x. euchlora - Caucasian linden,,0.75
+Phellodendron amurense - Amur corktree,0ee10c60-5ca6-5e87-82ae-d8ef6f0a6e74,1.00
+Tilia x. euchlora - Caucasian linden,8a3512f5-4678-5966-b404-4a8739c38633,0.75
 Salix babylonica - Weeping willow,1fd5fc2f-f539-5c9a-a02c-19b6c0459199,1.00
-Prunus 'Okame' - 'Okame' Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
-Fraxinus profunda - Pumpkin ash,,1.00
+Prunus 'Okame' - 'Okame' Cherry,2ded6e66-48f6-532e-9262-8b4eb871b033,0.60
+Acer rubrum 'Frank Jr.' -  'Frank Jr.' red maple,8fd07f5a-d13b-59b3-97d5-25527bc521a5,0.90
+Fraxinus profunda - Pumpkin ash,f35d3e72-f474-5066-8836-4701a31d365e,1.00
 Ilex opaca - American holly,24d4d93b-351c-57df-9402-a0e3e3573685,1.00
-Acer rubrum 'Frank Jr.' -  'Frank Jr.' red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Ulmus 'Triumph' - 'Triumph' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
-Acer ginnala 'Flame' - 'Flame' Amur maple,2c4f47c0-1634-5531-99d0-5c3da1e8c8a3,0.90
+Ulmus 'Triumph' - 'Triumph' Elm,35ce7799-afb6-5f01-a24e-61ff602ead83,0.60
+Acer ginnala 'Flame' - 'Flame' Amur maple,cfa5bd28-807a-5962-9199-ec2d73e63082,0.90
 Malus floribunda - Japanese flowering crabapple,acdd30d8-7680-5a54-a719-a414482d9392,1.00
 Taxus baccata - English yew,33abfd07-4205-56c7-91d4-9f0686fb6703,1.00
-Quercus lyrata - overcup oak,,1.00
-Parrotia persica 'Ruby Vase' - 'Ruby Vase' Persian ironwood,7dc2fb47-49fc-54fe-9eff-76abe521e912,0.90
+Quercus lyrata - overcup oak,fe04c404-9b6d-5a4e-bf78-5d02a153a848,1.00
+Parrotia persica 'Ruby Vase' - 'Ruby Vase' Persian ironwood,e77be6c9-2128-5693-a75e-f70a900ceaab,0.90
 Cryptomeria japonica - Japanese cedar,6e2f27b0-c4d6-5471-a15d-a76a06905fbd,1.00
-Prunus padus 'Merlot' - 'Merlot' European bird cherry,,0.90
-Styrax japonicus 'Snowcone' - 'Snowcone' Japanese snowbell,b64d2848-20e9-57d6-b947-24d4dafb49b1,0.90
-Crataegus viridis 'Winter King' - 'Winter King' Green hawthorn,,0.90
+Prunus padus 'Merlot' - 'Merlot' European bird cherry,c8ef8e2e-9c55-5484-b3d1-c43179c3d3e0,0.90
+Styrax japonicus 'Snowcone' - 'Snowcone' Japanese snowbell,8e43decf-6fd2-50da-b4a5-d6db47b765fd,0.90
+Crataegus viridis 'Winter King' - 'Winter King' Green hawthorn,8ee4cae2-768c-5f52-93f4-30a084c6112d,0.90
 Ulmus propinqua 'Emerald Sunshine' - 'Emerald Sunshine' Elm,cb0dae10-c6d1-5dfc-982d-3ab87978d19c,0.90
-Acer tataricum 'Hot Wings' - 'Hot Wings' Tatarian maple,,0.90
-Carya cordiformis - bitternut hickory,,1.00
+Acer tataricum 'Hot Wings' - 'Hot Wings' Tatarian maple,bab24056-7d2b-53dd-8fdc-1b37e1602ce4,0.90
+Carya cordiformis - bitternut hickory,58ce0000-4fff-5f90-8624-46ae6b917bfe,1.00
 Aesculus x carnea - red horse-chestnut,af1edbf1-d5a9-5b2e-b265-689dcd00fdd4,0.75
 Pseudotsuga menziesii - Douglas-fir,3ee32509-22e6-55dc-9f06-a4745247108c,1.00
-Pinus nigra - Austrian pine,,1.00
-Syringa pekinensis 'Bejing Gold' - 'Bejing Gold' Peking lilac,,0.90
-Nyssa sylvatica 'Wildfire' - 'Wildfire' Black gum,383fddb5-3cee-5381-b40b-42dc05918558,0.90
-Malus 'Velvet Pillar' - 'Velvet Pillar' flowering crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Malus 'Sugartyme' - 'Sugartyme' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Tsuga canadensis - eastern hemlock,,1.00
+Pinus nigra - Austrian pine,076670f3-495e-5aa6-a56b-f7150060bf9c,1.00
+Syringa pekinensis 'Bejing Gold' - 'Bejing Gold' Peking lilac,d94494dd-a9be-5801-b1db-4ec0e4a0bd90,0.90
+Nyssa sylvatica 'Wildfire' - 'Wildfire' Black gum,601415f6-67ff-5908-b0dd-773311839930,0.90
+Malus 'Velvet Pillar' - 'Velvet Pillar' flowering crabapple,5800dfaf-a111-5a62-90d7-83c084672359,0.60
+Malus 'Sugartyme' - 'Sugartyme' Crabapple,305316c3-2a05-53b5-af66-bcdc6f25c9af,0.60
+Tsuga canadensis - eastern hemlock,ed980b1b-b98c-5578-8083-8da20bcd8358,1.00
 Paulownia tomentosa - princesstree,3141c682-e63c-5ca8-8d78-fbf173daa91e,1.00
-Acer truncatum - Shantung maple,,1.00
+Acer truncatum - Shantung maple,7b49ef8b-b1e8-5cd5-aea4-22a5cfd0d667,1.00
 Lagerstroemia indica - Crape Myrtle,86820f2a-dd18-5630-91b5-335a0c7131c2,1.00
-Hamamelis virginiana - American witchhazel,,1.00
 Acer buergerianum - trident maple,5eb0e735-b6f6-598d-89eb-de2f38172ca8,1.00
+Hamamelis virginiana - American witchhazel,3ba0f222-a10a-5287-b3c9-a5123ddf5cde,1.00
 Populus - Poplar,3c35b0de-7ecb-52d9-b433-f726a208dcf6,0.70
-Malus 'Red Jewel' - 'Red Jewel' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Carpinus japonica - Japanese hornbeam,,1.00
-Gleditsia triacanthos var. inermis 'Halka' - 'Halka' Thornless honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,0.90
-Tilia x flavescens 'Glenleven' - Glenleven Linden,,0.75
+Carpinus japonica - Japanese hornbeam,0b516b6e-7eba-5c82-b32e-ce695492eaba,1.00
+Malus 'Red Jewel' - 'Red Jewel' Crabapple,fa48ee84-169b-5c5d-830d-6d00c5d154e5,0.60
+Gleditsia triacanthos var. inermis 'Halka' - 'Halka' Thornless honeylocust,8c0c92da-0b06-560f-9493-b0b3fa38b175,0.90
+Tilia x flavescens 'Glenleven' - Glenleven Linden,1715e27a-a061-549d-9f82-93204e1acb7d,0.75
 Populus tremuloides - quaking aspen,3b6ab7a3-9476-52cf-8ac7-1f07f1824413,1.00
-Salix spp. - Willow,,0.75
-Acer rubrum 'Brandywine' - 'Brandywine' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Quercus 'Regal Prince' - 'Regal Prince' Oak,fff6ccff-666b-519f-9d8a-bd6d4a9fe49b,0.60
-Cornus alternifolia - alternateleaf dogwood,,1.00
-Koelreuteria paniculata 'Gold Candle' - 'Gold Candle' Goldenraintree,74a57c4a-235f-59c0-b636-6f4178b18506,0.90
+Salix spp. - Willow,1b0ed79b-20a6-506b-8596-196f0259e3ee,0.75
+Acer rubrum 'Brandywine' - 'Brandywine' Red maple,d95043f4-15d3-5678-9e56-3a0ae036be82,0.90
+Quercus 'Regal Prince' - 'Regal Prince' Oak,cf837b1a-b03f-5e0a-9e29-7b179d610d81,0.60
+Cornus alternifolia - alternateleaf dogwood,956ffeb2-86ac-546b-919b-c1e97d07565f,1.00
+Koelreuteria paniculata 'Gold Candle' - 'Gold Candle' Goldenraintree,1dca078f-66b4-58fe-9643-0de3b44fbb80,0.90
 Magnolia grandiflora - southern magnolia,9633ad82-e024-5fdf-ac1c-fc877b82dbc2,1.00
 Betula pendula - European white birch,042da646-e57d-5253-bf49-2b77052bc40d,1.00
-Acer truncatum 'Urban Sunset' - 'Urban Sunset' Shantung maple,,0.90
-Halesia carolina - Carolina silverbell,,1.00
-Cercis reniformis - Oklahoma redbud,,1.00
-Styrax japonicus 'Emerald Pagoda' - 'Emerald Pagoda' Japanese snowbell,b64d2848-20e9-57d6-b947-24d4dafb49b1,0.90
-Amelanchier arborea - common serviceberry,,1.00
-Juniperus chinensis 'Hetzii' - 'Hetzii' Chinese juniper,1e223e2c-3110-5564-a7e0-42b46eb15e8e,0.90
-Metasequoia glyptostroboides 'Gold Rush' - 'Gold Rush' Dawn redwood,1096258a-3fba-5dae-8d70-f7cbe5a022c5,0.90
-Malus hupehensis - Chinese crabapple,,1.00
-Taxodium ascendens - pond cypress,,1.00
-Acer rubrum 'Autumn Blaze' - 'Autumn Blaze' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Liquidambar styraciflua 'Happidaze' - 'Happidaze' Sweetgum,16934db9-16c4-5fb9-86e3-45177c3737ae,0.90
-Ulmus 'New Horizon' - 'New Horizon' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
-Syringa pekinensis 'China Snow' - 'China Snow' Peking lilac,,0.90
+Acer truncatum 'Urban Sunset' - 'Urban Sunset' Shantung maple,015c3c9d-bae6-5c00-839c-10c332c5080b,0.90
+Cercis reniformis - Oklahoma redbud,d79a7b31-87b3-5df4-8376-0c2e4983e699,1.00
+Halesia carolina - Carolina silverbell,954347d9-fb2d-51f0-b40d-74947aebbf8e,1.00
+Styrax japonicus 'Emerald Pagoda' - 'Emerald Pagoda' Japanese snowbell,8bf1d5f3-9791-56b8-bc3c-36472b4d7a09,0.90
+Amelanchier arborea - common serviceberry,1fa32ef0-555d-5fff-93ce-a7ee272dedeb,1.00
+Juniperus chinensis 'Hetzii' - 'Hetzii' Chinese juniper,c421e371-02ff-579f-aff4-4b899f074a72,0.90
+Malus hupehensis - Chinese crabapple,b8fb77ac-0e30-540a-95f0-00b4f503079a,1.00
+Metasequoia glyptostroboides 'Gold Rush' - 'Gold Rush' Dawn redwood,9b767a75-7ecc-517f-abb8-c80c2376c25e,0.90
+Taxodium ascendens - pond cypress,296f77cb-9925-5f52-bff1-b20003d4150c,1.00
+Acer rubrum 'Autumn Blaze' - 'Autumn Blaze' Red maple,55e2923a-d30c-5ff9-9e6d-6e78e0c6661d,0.90
+Liquidambar styraciflua 'Happidaze' - 'Happidaze' Sweetgum,aedacc6c-d43e-5d4c-9c68-1d2c2a1a9d27,0.90
+Ulmus 'New Horizon' - 'New Horizon' Elm,53a3fab9-7630-5384-ae87-7bda4d850774,0.60
+Syringa pekinensis 'China Snow' - 'China Snow' Peking lilac,406368ce-a243-502c-aa59-dcb08d5ad68e,0.90
 Acer rubrum 'Armstrong' - 'Armstrong' Red maple,3267250d-5dea-516b-9383-82009f11b7a9,0.90
-Amelanchier x grandiflora 'Robin Hill' - 'Robin Hill' Serviceberry,,0.75
-Cotinus coggygria - European smoketree,20415474-6eca-52d3-b5a0-21c14740411e,1.00
-Pinus rigida - pitch pine,,1.00
+Amelanchier x grandiflora 'Robin Hill' - 'Robin Hill' Serviceberry,6f263fe8-5113-55b1-9af8-474edf432c9f,0.75
 Cedrus deodara - Deodar cedar,c8746368-65ad-528c-92b2-4a8503dfe5ef,1.00
-Maclura pomifera - osage orange,,1.00
-Tilia platyphyllos - largeleaf linden,,1.00
-Chamaecyparis pisifera - sawara-cypress,,1.00
-Aesculus x carnea 'Fort Mcnair' - 'Fort Mcnair' Ruby red horsechestnut,af1edbf1-d5a9-5b2e-b265-689dcd00fdd4,0.75
-Betula populifolia - gray birch,,1.00
+Cotinus coggygria - European smoketree,20415474-6eca-52d3-b5a0-21c14740411e,1.00
+Pinus rigida - pitch pine,005673a5-267a-5f1e-8c3e-d5738e5841e9,1.00
+Maclura pomifera - osage orange,85c34771-31c5-54d3-993f-52b01cccee35,1.00
+Tilia platyphyllos - largeleaf linden,ac951503-3c03-55b2-8442-269121971b92,1.00
+Chamaecyparis pisifera - sawara-cypress,bf133a7d-fc32-5aa1-bd16-9b781c98735b,1.00
+Aesculus x carnea 'Fort Mcnair' - 'Fort Mcnair' Ruby red horsechestnut,a2a3f4a6-9f31-5293-9e03-2b4b15906c26,0.75
+Betula populifolia - gray birch,703851bd-537d-5f1f-9a7c-761943052280,1.00
 Ulmus 'Accolade' - 'Accolade' Elm,0c8edecd-57ba-52dc-b852-9f9b1da1a1e3,0.60
-Celtis occidentalis 'Praire Sentinal' - 'Praire Sentinal' Hackberry,870cf55e-0c5b-5642-ace4-fce540523f06,0.90
-Acer tataricum - tatarian maple,,1.00
+Acer tataricum - tatarian maple,588f69da-3233-50fb-b2df-69859b1e3267,1.00
+Celtis occidentalis 'Praire Sentinal' - 'Praire Sentinal' Hackberry,2a65a446-3b31-594c-8d52-dad1dc0507ab,0.90
 Cercis canadensis 'Forest Pansy' - 'Forest Pansy' Eastern redbud,105c3731-7d28-5bf2-951d-043fdd4b1b52,0.90
 Ginkgo biloba 'Princeton Sentry' - 'Princeton Sentry' Ginkgo,6006b15a-fb2c-5726-a543-3a3d58dcd60f,0.90
-Quercus robur var. fastigiata - Upright english oak,5c33d272-9bd0-51ca-9544-d019635ddac2,0.90
-Ginkgo biloba 'Windover Gold' - 'Windover Gold' Ginkgo,f5df51ba-bfd4-5f80-b241-85f8d6763671,0.90
-Quercus palustris 'Green Pillar' - 'Green Pillar' Pin oak,1f46b39b-30b0-51a9-8f88-3916a1ef6af5,0.90
-Betula nigra 'Duraheat' - 'Duraheat' River birch,dfaa8415-82d4-58eb-84d6-6d96d9aee807,0.90
-Picea glauca - white spruce,,1.00
-Tilia cordata 'Glenlevyn' - 'Glenlevyn' Littleleaf linden,d4c85034-f65a-58ba-b069-b2b837e634b7,0.90
-Prunus cerasifera 'Newport' - 'Newport' Cherry plum,6393a177-ef67-568b-85a1-34e11cc3c720,0.90
-Liquidambar styraciflua 'Worplesdon' - 'Worplesdon' Sweetgum,16934db9-16c4-5fb9-86e3-45177c3737ae,0.90
-Ulmus 'Morton Glossy' - 'Morton Glossy' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
-Tilia tomentosa 'Silver Lining' - 'Silver Lining' Silver linden,1a46577c-59c4-5f35-8297-1de9f2402ca4,0.90
-Cercis canadensis 'Appalachian Red' - 'Appalachian Red' Eastern redbud,f768334a-6811-5485-8b5f-f4d14c698ece,0.90
-Magnolia acuminata - cucumber tree,,1.00
-Malus 'Prariefire' - 'Prariefire' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Carya ovata - shagbark hickory,,1.00
-Quercus falcata - southern red oak,,1.00
-Salix alba - white willow,,1.00
-Aesculus glabra - Ohio buckeye,,1.00
-Malus 'Cardinal' - 'Cardinal' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Malus 'Adams' - 'Adams' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Liquidambar styraciflua 'Slender Silhouette' - 'Slender Silhouette' Sweetgum,16934db9-16c4-5fb9-86e3-45177c3737ae,0.90
-Betula lenta - sweet birch,,1.00
-Halesia diptera - Two-wing silverbell,,1.00
-Stewartia pseudocamellia - Japanese stewartia,,1.00
-Malus 'Harvest Gold' - 'Harvest Gold' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Aesculus sp. - Horsechestnut,,0.75
-Prunus serrulata 'Accolade' - 'Accolade' Flowering cherry,9596b71d-aa14-5032-88d9-b9c5b5feee99,0.90
+Ginkgo biloba 'Windover Gold' - 'Windover Gold' Ginkgo,cc7064e8-c7a6-5cb0-8de0-6a9ee3da0f08,0.90
+Quercus robur var. fastigiata - Upright english oak,31026c5e-036d-5abb-91c8-488a1de2b0c0,0.90
+Quercus palustris 'Green Pillar' - 'Green Pillar' Pin oak,b81162d4-265e-5c3a-acf6-9ee19aaa7e29,0.90
+Betula nigra 'Duraheat' - 'Duraheat' River birch,9bd5dd15-47e5-535e-867b-3883e0ece620,0.90
+Picea glauca - white spruce,134d8951-bf9c-5f5b-bf7d-944bcbf26a07,1.00
+Tilia cordata 'Glenlevyn' - 'Glenlevyn' Littleleaf linden,bd522506-6fa1-5f2e-9d6b-e5cbfe8ced2a,0.90
+Liquidambar styraciflua 'Worplesdon' - 'Worplesdon' Sweetgum,4e6468ed-24a4-5127-bc08-1561dbf41f50,0.90
+Prunus cerasifera 'Newport' - 'Newport' Cherry plum,897b5a51-79a3-5b95-beaa-adc7abe3e91d,0.90
+Ulmus 'Morton Glossy' - 'Morton Glossy' Elm,758062ee-6544-5e02-acea-196da7d81dc8,0.60
+Tilia tomentosa 'Silver Lining' - 'Silver Lining' Silver linden,876b94fc-7c9c-5d88-9a36-6111290d295a,0.90
+Cercis canadensis 'Appalachian Red' - 'Appalachian Red' Eastern redbud,963133d5-ef3f-50a9-b7ee-4e09894380c4,0.90
+Magnolia acuminata - cucumber tree,b91a273c-ad1d-534d-9f00-18312f901f40,1.00
+Malus 'Prariefire' - 'Prariefire' Crabapple,9366efd1-6e42-5ef5-94bd-ef03a50458cd,0.60
+Carya ovata - shagbark hickory,261c67e8-38b0-5c3f-a2fa-36ea36cf4ab7,1.00
+Quercus falcata - southern red oak,5b34b858-4d22-54fa-b863-aeb3b76236ab,1.00
+Salix alba - white willow,18a244c2-ccde-5240-8969-522edd9724bd,1.00
+Aesculus glabra - Ohio buckeye,cb30fd8e-a1ce-51ca-a2a7-63483440c375,1.00
+Malus 'Adams' - 'Adams' Crabapple,77630179-a430-54da-9e3d-01c0badbe1e3,0.60
+Malus 'Cardinal' - 'Cardinal' Crabapple,81cbe7e5-2540-5fbd-a70f-001f5aedf4db,0.60
+Liquidambar styraciflua 'Slender Silhouette' - 'Slender Silhouette' Sweetgum,bc84dd0b-542b-5875-8a0e-3bf52b11984d,0.90
+Betula lenta - sweet birch,c8231a41-2c64-576c-b479-8d7a10ed262c,1.00
+Halesia diptera - Two-wing silverbell,06e8005c-c9bf-5c71-ad52-35b3533a9283,1.00
+Stewartia pseudocamellia - Japanese stewartia,48390e00-9650-5dc0-9cfd-d31b5ce05578,1.00
+Malus 'Harvest Gold' - 'Harvest Gold' Crabapple,67096bfd-94ec-5c88-9e57-3b367455a08e,0.60
+Aesculus sp. - Horsechestnut,32d27e19-46e9-57f2-ba9b-7bdd510efbc5,0.75
+Prunus serrulata 'Accolade' - 'Accolade' Flowering cherry,f6960dab-0606-5b5e-afcf-5fb21a4fab3e,0.90
 Prunus sargentii 'Columnaris' - 'Columnaris' Sargent cherry,15470af7-4152-5cf1-8549-7b2c2c2f35d7,0.90
 Albizia julibrissin - silktree,248ed22b-1dbf-5648-9ced-7dc11917a3d7,1.00
-Celtis occidentalis 'Magnifica' - 'Magnifica' Hackberry,870cf55e-0c5b-5642-ace4-fce540523f06,0.90
-Picea pungens 'Glauca' - 'Glauca' blue spruce,8c3b7e45-2314-592e-9605-23b43228b2b7,0.90
-Malus sargentii - Sargent's apple,,1.00
-Diospyros virginiana - common persimmon,,1.00
-Ulmus 'Athena' - 'Athena' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
-Alnus glutinosa - European alder,,1.00
+Celtis occidentalis 'Magnifica' - 'Magnifica' Hackberry,4a76d6d7-810f-59f0-9176-415a6bc78a6d,0.90
+Malus sargentii - Sargent's apple,06d886fb-111d-5a06-85fd-d0e6f85f04dc,1.00
+Picea pungens 'Glauca' - 'Glauca' blue spruce,31a4378a-9e1b-5f37-92e7-f8e6123c0bb5,0.90
+Diospyros virginiana - common persimmon,a4ed8fe8-acad-55b2-950b-c8ef2c81c9da,1.00
+Ulmus 'Athena' - 'Athena' Elm,a42c6afc-7fb1-5f08-8491-6266a3907fdf,0.60
+Alnus glutinosa - European alder,c729d848-8abb-5e16-9021-4d9e87de4248,1.00
 Cedrus libani - Cedar of lebanon,b34e57cf-5fd9-5e53-bbf1-5727b87e24dc,1.00
-Magnolia virginiana - sweetbay,,1.00
-Malus x zumi var. calocarpa - Zumi crabapple,,0.75
-Malus 'Perfect Purple' - 'Perfect Purple' flowering crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Cercis canadensis 'Royal White' - 'Royal White' Eastern redbud,f768334a-6811-5485-8b5f-f4d14c698ece,0.90
-Castanea mollissima - Chinese chestnut,,1.00
+Magnolia virginiana - sweetbay,7bf90b97-d84d-54c7-b1d3-72e3798ffeda,1.00
+Malus x zumi var. calocarpa - Zumi crabapple,c7530f6d-a5cd-5ac4-9186-d488158ac737,0.75
+Malus 'Perfect Purple' - 'Perfect Purple' flowering crabapple,3da87ac6-62f6-5106-87b2-5f5395fe369e,0.60
+Castanea mollissima - Chinese chestnut,dad0a475-736c-596c-afa3-9b1791a21f2c,1.00
+Cercis canadensis 'Royal White' - 'Royal White' Eastern redbud,e668a6d6-d490-52da-8431-685b32bb6a62,0.90
 Celtis australis - European hackberry,419930ce-7120-53ec-bcb7-e4485fdd812a,1.00
 Pistacia chinensis - Chinese pistache,eb5835fd-0ae8-5378-9a10-9f0c0b40d5bf,1.00
-Cornus kousa var. chinensis - Kousa dogwood,,0.90
+Cornus kousa var. chinensis - Kousa dogwood,2b8c036d-c71d-5482-8066-f271b873981f,0.90
 Prunus persica - Peach,30b4e651-6d3f-589d-9d51-8dff94cdbc64,1.00
-Acer miyabei 'Rugged Ridge' - 'Rugged Ridge' Miyabe maple,,0.90
-Robinia hispida - bristly locust,,1.00
-Malus 'Donald Wyman' - 'Donald Wyman' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Cornus mas 'Golden Glory' - 'Golden Glory' Cornelian cherry dogwood,,0.90
-Juniperus virginiana 'Glauca' - 'Glauca' Eastern red cedar,,0.90
-Prunus americana - American plum,,1.00
-Liquidambar styraciflua 'Cherokee' - 'Cherokee' Sweetgum,16934db9-16c4-5fb9-86e3-45177c3737ae,0.90
-Chamaecyparis obtusa 'Crippsii' - 'Crippsii' Golden hinoki cypress,b2ffee94-6989-57bd-b2c3-cd2fb68b7a5f,0.90
-Taxodium ascendens 'Morris Debonair' - 'Morris Debonair' Bald cypress,,0.90
+Acer miyabei 'Rugged Ridge' - 'Rugged Ridge' Miyabe maple,6ebe24df-9337-53e8-9602-bf5742c65c4a,0.90
+Malus 'Donald Wyman' - 'Donald Wyman' Crabapple,277df4ea-066b-5efd-8860-fa5579a94662,0.60
+Robinia hispida - bristly locust,0af1d547-dd6e-5b52-b69c-24fe4c88370c,1.00
+Cornus mas 'Golden Glory' - 'Golden Glory' Cornelian cherry dogwood,da2e8f5f-549f-5ef4-90e0-e258b1e3bdc2,0.90
+Juniperus virginiana 'Glauca' - 'Glauca' Eastern red cedar,f08a74b2-827e-5104-a35e-e4a9c847af5c,0.90
+Liquidambar styraciflua 'Cherokee' - 'Cherokee' Sweetgum,73975d33-35d5-5b91-af43-938fb207e622,0.90
+Prunus americana - American plum,e726f319-507b-5b7e-9917-d9dde24c3076,1.00
+Chamaecyparis obtusa 'Crippsii' - 'Crippsii' Golden hinoki cypress,e70c59cf-68c7-5913-b34b-0c5e1494d249,0.90
+Taxodium ascendens 'Morris Debonair' - 'Morris Debonair' Bald cypress,b8c19e40-d858-5228-9184-6052b4df2c03,0.90
 Pyrus calleryana 'Chanticleer' - 'Chanticleer' Callery pear,baeb3a71-b3aa-559f-8d72-498e6e9a7966,0.90
-Quercus montana - Chestnut oak,,1.00
-Cornus controversa 'June Snow' - 'June Snow' dogwood,,0.90
-Abies balsamea - balsam fir,,1.00
-Ulmus 'Jefferson' - 'Jefferson' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
+Quercus montana - Chestnut oak,170c41cd-6995-5ba8-bca4-d76eabb0c59e,1.00
+Cornus controversa 'June Snow' - 'June Snow' dogwood,7c19d934-4de6-5f5f-a068-1a892f88e988,0.90
+Abies balsamea - balsam fir,099e279f-55f0-5bd6-b02b-6183c60e0a56,1.00
 Pinus sylvestris - Scots pine,816297be-6e1a-56b2-ba39-e3d7d50d8b0b,1.00
-Celtis occidentalis 'Chicagoland' - 'Chicagoland' Hackberry,870cf55e-0c5b-5642-ace4-fce540523f06,0.90
-Syringa reticulata 'Snowcap' - 'Snowcap' Japanese tree lilac,4d22c9a2-3c83-50eb-a47e-f06e339b9546,0.90
-Styrax japonicus 'Snow Charm' - 'Snow Charm' Japanese snowbell,b64d2848-20e9-57d6-b947-24d4dafb49b1,0.90
-Tilia americana 'Legend' - 'Legend' American linden,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,0.90
-Quercus palustris 'Pacific Brilliance' - 'Pacific Brilliance' Pin oak,1f46b39b-30b0-51a9-8f88-3916a1ef6af5,0.90
+Ulmus 'Jefferson' - 'Jefferson' Elm,312b07e8-c1b7-5fd8-827b-90a1d2549ad2,0.60
+Celtis occidentalis 'Chicagoland' - 'Chicagoland' Hackberry,962d932f-5863-599d-8aad-4ab51538a354,0.90
+Styrax japonicus 'Snow Charm' - 'Snow Charm' Japanese snowbell,deda2efa-4664-54a8-b0b0-09710871eb16,0.90
+Syringa reticulata 'Snowcap' - 'Snowcap' Japanese tree lilac,2460a2bf-9e6b-51be-997c-90c76a1ee425,0.90
+Tilia americana 'Legend' - 'Legend' American linden,2ef39e99-fc5a-5efe-80ad-81c496580b21,0.90
 Cedrus atlantica 'Glauca' - Blue Atlas cedar,f6a655c6-5c45-5b25-8f77-be6aa1f6675a,0.90
-Carya - Hickory,,0.70
-Larix laricina - tamarack,,1.00
-Populus grandidentata - bigtooth aspen,,1.00
-Gleditsia triacanthos var. inermis 'Northern Acclaim' - 'Northern Acclaim' Thornless honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,0.90
-Thuja 'Green Giant' - 'Green Giant' Arborvitae,,0.60
-Koelreuteria paniculata 'Rose Lanterns' - 'Rose Lanterns' Goldenraintree,74a57c4a-235f-59c0-b636-6f4178b18506,0.90
-Ginkgo biloba 'Columnar' - 'Columnar' Ginkgo,f5df51ba-bfd4-5f80-b241-85f8d6763671,0.90
-Nyssa sylvatica 'Red Rage' - 'Red Rage' Black gum,383fddb5-3cee-5381-b40b-42dc05918558,0.90
-Ulmus x - Hybrid Elm,,0.75
-Acer truncatum 'Crimson Sunset' - 'Crimson Sunset' Shangtung maple,,0.90
-Zelkova serrata 'Halka' - 'Halka' Zelkova,3614781d-c947-5e25-b21b-b87b6bb2267a,0.90
+Quercus palustris 'Pacific Brilliance' - 'Pacific Brilliance' Pin oak,f8b3ca27-5c43-5aa9-8760-45a212bcf068,0.90
+Carya - Hickory,e366e311-8492-564a-86b5-69cdc086e775,0.70
+Larix laricina - tamarack,6a5b5242-4e41-560d-8b6e-8ca3bcda1c0f,1.00
+Populus grandidentata - bigtooth aspen,cc7fe4c6-6fe4-5ce7-a50a-8a6578b12b5a,1.00
+Gleditsia triacanthos var. inermis 'Northern Acclaim' - 'Northern Acclaim' Thornless honeylocust,24cb7626-f62c-5f96-9d48-4d166be06ab2,0.90
+Ginkgo biloba 'Columnar' - 'Columnar' Ginkgo,96b60f92-d1ce-5727-8b16-4fb944e61b71,0.90
+Koelreuteria paniculata 'Rose Lanterns' - 'Rose Lanterns' Goldenraintree,11425589-c670-5074-9c0a-9b160dc1aba3,0.90
+Thuja 'Green Giant' - 'Green Giant' Arborvitae,7ce53603-a3ed-5ef8-a8ee-bda6db83276f,0.60
+Acer truncatum 'Crimson Sunset' - 'Crimson Sunset' Shangtung maple,5f4c31d3-6504-5df2-b58c-b0880a9e0f35,0.90
+Nyssa sylvatica 'Red Rage' - 'Red Rage' Black gum,d53e70bf-4fce-5605-a054-1a1243b38fbb,0.90
+Ulmus x - Hybrid Elm,ccdd31f4-6d0e-53ba-84bb-4e47dc6e0d0f,0.75
+Zelkova serrata 'Halka' - 'Halka' Zelkova,6969352b-be5e-5eb3-bef3-6cb0f3efff1e,0.90
 Ficus carica - Common Fig,9f52120a-0194-5559-91bc-a5616f04a0fb,1.00
-Robinia pseudoacacia 'Frisia' - 'Frisia' Black locust,e6d5c938-c52c-5152-8aa6-406118c692b2,0.90
-Cornus florida 'Cherokee Brave' - 'Cherokee Brave' Flowering dogwood,68cf86fe-1217-550b-b651-04a870463229,0.90
-Celtis occidentalis 'Ultrazam' - 'Ultrazam' Hackberry,870cf55e-0c5b-5642-ace4-fce540523f06,0.90
+Cornus florida 'Cherokee Brave' - 'Cherokee Brave' Flowering dogwood,2819c763-9c76-5286-a940-102b001b5797,0.90
+Robinia pseudoacacia 'Frisia' - 'Frisia' Black locust,7baee918-d1fc-5d3b-a8fa-be0e5e928e20,0.90
+Celtis occidentalis 'Ultrazam' - 'Ultrazam' Hackberry,a3681add-13ae-5887-a252-530eb897eadf,0.90
 Prunus cerasifera 'Thundercloud' - 'Thundercloud' Cherry plum,6aed8b6d-7309-5707-a0dc-bc74fa5d24d0,0.90
-Acer x freemanii 'Bailston' - Matador maple,10abcc98-d512-5a8d-b1a5-18324788bb40,0.75
-Magnolia 'Galaxy' - 'Galaxy' Magnolia,d5ebf801-2699-5398-90bb-d7be7e6c18cd,0.60
-Cercis canadensis var. Alba - White redbud,f768334a-6811-5485-8b5f-f4d14c698ece,0.90
-Cornus 'Venus' - 'Venus' Dogwood,,0.60
+Acer x freemanii 'Bailston' - Matador maple,0e5cb5be-7e4c-56e1-851d-4826b1e38779,0.75
+Cercis canadensis var. Alba - White redbud,556c05a0-6112-5088-be54-42035b1eb8b8,0.90
+Cornus 'Venus' - 'Venus' Dogwood,581fded2-4764-5286-ad63-38087bd05feb,0.60
+Magnolia 'Galaxy' - 'Galaxy' Magnolia,948722e3-7aad-503d-8cf8-0563cd85d658,0.60
 Acer japonicum - Amur maple,dd0a2f98-0c4b-5e50-9194-27ac00bcc6ce,1.00
+Acer truncatum 'Pacific Sunset' - 'Pacific Sunset' Shangtung maple,11aa692e-f062-58c9-b943-62597e4dad60,0.90
+Koelreuteria paniculata 'Fastigiata' - 'Fastigiata' Goldenraintree,d9e28435-2c13-5ed4-91d2-0090d4e78168,0.90
 Lagerstroemia indica 'Muskogee' - 'Muskogee' Crapemyrtle,3c18412b-8749-5a50-a534-b45e39cb9b2f,0.90
-Malus 'Centurion' - 'Centurion' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Koelreuteria paniculata 'Fastigiata' - 'Fastigiata' Goldenraintree,74a57c4a-235f-59c0-b636-6f4178b18506,0.90
-Acer truncatum 'Pacific Sunset' - 'Pacific Sunset' Shangtung maple,,0.90
-Cryptomeria japonica 'Yoshino' - 'Yoshino' Japanese cedar,6e2f27b0-c4d6-5471-a15d-a76a06905fbd,0.90
-Abies concolor - white fir,,1.00
-Acer nigrum - black maple,,1.00
-Chionanthus virginicus - Fringetree,,1.00
-Lagerstroemia 'Natchez' - 'Natchez' Crapemyrtle,,0.60
-Prunus serrulata 'Shirofugen' - 'Shirofugen' Japanese flowering cherry,9596b71d-aa14-5032-88d9-b9c5b5feee99,0.90
-Malus ioensis - prairie crabapple,,1.00
-Amelanchier canadensis 'Robin Hill' - 'Robin Hill' Canadian serviceberry,,0.90
-Ginkgo biloba 'Shangri La' - 'Shangri La' Ginkgo,f5df51ba-bfd4-5f80-b241-85f8d6763671,0.90
-Gymnocladus dioicus 'Prairie Titan' - 'Prairie Titan' Kentucky coffee tree,,0.90
+Malus 'Centurion' - 'Centurion' Crabapple,5cf78d90-719d-58b9-acfd-abe3901cd8e0,0.60
+Abies concolor - white fir,427b6294-4929-5b92-8b66-d7b95397eaf3,1.00
+Acer nigrum - black maple,7f82b638-4e45-5fae-9a28-08e13a93cefb,1.00
+Cryptomeria japonica 'Yoshino' - 'Yoshino' Japanese cedar,c9b92dc7-0029-5df1-890a-45fde9e51717,0.90
+Chionanthus virginicus - Fringetree,60c34e6c-2dbb-556c-8ce5-48b43999e42b,1.00
+Lagerstroemia 'Natchez' - 'Natchez' Crapemyrtle,7b73bd8e-9f35-53c8-b499-cc062cb5d874,0.60
+Malus ioensis - prairie crabapple,5a1ce472-9853-5eea-b90f-da38d0cf8d2f,1.00
+Prunus serrulata 'Shirofugen' - 'Shirofugen' Japanese flowering cherry,75aeb78c-4c25-5aee-8173-3d9425842512,0.90
 Aesculus x carnea 'Briotii' - 'Briotii' Ruby red horsechestnut,1e71f7bf-8811-53aa-a712-ab2bbb4264ed,0.75
+Amelanchier canadensis 'Robin Hill' - 'Robin Hill' Canadian serviceberry,6d77d8f8-23e5-5566-9363-bdb2edc925a3,0.90
+Ginkgo biloba 'Shangri La' - 'Shangri La' Ginkgo,6163e602-2efc-5661-bce1-3eaeba5c0098,0.90
+Gymnocladus dioicus 'Prairie Titan' - 'Prairie Titan' Kentucky coffee tree,5d10b8f9-acd3-5e41-801b-8aed720c0dca,0.90
+Hamamelis vernalis - Ozark witchhazel,2ae51ece-c5a0-56e6-8a82-61858f93ebe7,1.00
 Magnolia x soulangiana - Chinese magnolia,256a4200-676a-50da-b251-e976cf1587db,0.75
-Hamamelis vernalis - Ozark witchhazel,,1.00
 Quercus virginiana - live oak,f25c7b11-8e79-5548-9dbf-0a6ff324c45c,1.00
+Maclura pomifera 'Wichita' - 'Wichita' Osage orange,9eb06dd1-7b5b-54ef-b5fd-89b4d9e4e82a,0.90
 Pinus thunbergii - Japanese black pine,63f459e6-1343-5967-b3d1-a0f2d7e2e2c0,1.00
-Maclura pomifera 'Wichita' - 'Wichita' Osage orange,,0.90
 Pyrus calleryana 'Aristocrat' - 'Aristocrat' Callery pear,67b5f54b-b2b3-5914-aa1a-cab243de56e9,0.90
-Pinus flexilis - limber pine,,1.00
-Fraxinus pennsylvanica 'Leprechaun' - 'Leprechaun' Green ash,,0.90
-Prunus x hillieri 'Spires' - 'Spires' Flowering cherry,,0.75
-Nyssa sylvatica 'Tupelo Tower' - 'Tupelo Tower' Black gum,383fddb5-3cee-5381-b40b-42dc05918558,0.90
-Quercus nuttallii - Nuttall oak,,1.00
-Maclura pomifera 'White Shield' - 'White Shield' Osage orange,,0.90
-Cornus 'Constellation' - 'Constellation' Dogwood,,0.60
-Magnolia stellata - star magnolia,,1.00
-Prunus padus - European birdcherry,,1.00
-Aesculus hippocastanum 'Baumanni' - 'Baumanni' Horsechestnut,d444c8e3-5244-514f-8bea-643628fa4519,0.90
-Populus tremuloides 'Prairie Gold' - 'Prairie Gold' Quaking aspen,3b6ab7a3-9476-52cf-8ac7-1f07f1824413,0.90
-Acer campestre 'Metro Gold' - 'Metro Gold' Hedge maple,4113058e-62f3-56fe-a34c-d728254892b3,0.90
-Juniperus scopulorum 'Blue Haven' - 'Blue Haven' Juniper,,0.90
-Crataegus ambigua - Russian hawthorn,,1.00
-Ulmus wilsoniana 'Prospector' - 'Prospector' Elm,0efa216d-faa2-50f1-9a1c-ccf76e62fa8d,0.90
-Prunus 'JFS-KW14' - 'First Blush' Flowering cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
+Fraxinus pennsylvanica 'Leprechaun' - 'Leprechaun' Green ash,8edb5284-996c-56ad-a356-3edd6f407821,0.90
+Nyssa sylvatica 'Tupelo Tower' - 'Tupelo Tower' Black gum,3c8b738c-c71f-5599-be07-ff7790f74503,0.90
+Pinus flexilis - limber pine,f1c035c0-8a90-5e74-b01a-4304addffb76,1.00
+Prunus x hillieri 'Spires' - 'Spires' Flowering cherry,4c57e5b0-5940-5402-babf-63e0e9ab9e61,0.75
+Quercus nuttallii - Nuttall oak,3f464932-67b0-50ab-978b-7ddf3395e997,1.00
+Cornus 'Constellation' - 'Constellation' Dogwood,2904bf19-964a-55ae-8df5-7f4d947debd9,0.60
+Maclura pomifera 'White Shield' - 'White Shield' Osage orange,ee338364-d62c-523c-8922-1cbe52a99f6c,0.90
+Magnolia stellata - star magnolia,c45b993f-23bd-5b67-bc20-861ff72202cc,1.00
+Aesculus hippocastanum 'Baumanni' - 'Baumanni' Horsechestnut,99646b47-4e70-5130-9529-377940eefbae,0.90
+Prunus padus - European birdcherry,007b6484-4556-56fe-863f-54e0cf2ea9e8,1.00
+Acer campestre 'Metro Gold' - 'Metro Gold' Hedge maple,a96c0200-b466-59d9-bec4-104977fa16fb,0.90
+Juniperus scopulorum 'Blue Haven' - 'Blue Haven' Juniper,e220bff4-bc2c-59d5-ac76-3b5423811c6e,0.90
+Populus tremuloides 'Prairie Gold' - 'Prairie Gold' Quaking aspen,59061c79-1f26-52bb-88ee-09c789b7d07f,0.90
 Chamaecyparis lawsoniana - Port Orford cedar,4c79fecf-2283-54de-a3cb-5e3821ad11ad,1.00
-Juniperus virginiana 'Canaertii' - 'Canaertii' Eastern red cedar,,0.90
-Acer ginnala 'Ruby Slippers' - 'Ruby Slippers' Amur maple,2c4f47c0-1634-5531-99d0-5c3da1e8c8a3,0.90
-Pinus strobiformis - southwestern white pine,,1.00
-Tilia americana 'Continental Appeal' - 'Continental Appeal' American linden,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,0.90
-Pinus virginiana - Virginia pine,,1.00
-Ulmus rubra - Slippery elm,,1.00
-Quercus stellata - post oak,,1.00
+Crataegus ambigua - Russian hawthorn,90c55a59-f5ac-5279-9d8f-fff29a079d87,1.00
+Juniperus virginiana 'Canaertii' - 'Canaertii' Eastern red cedar,0251c8d2-9a95-58c2-a1c0-fdc9c8f32164,0.90
+Prunus 'JFS-KW14' - 'First Blush' Flowering cherry,656a46f8-ac4f-5ed4-8214-96255687281f,0.60
+Ulmus wilsoniana 'Prospector' - 'Prospector' Elm,0efa216d-faa2-50f1-9a1c-ccf76e62fa8d,0.90
+Acer ginnala 'Ruby Slippers' - 'Ruby Slippers' Amur maple,aba8a467-553a-5fa2-bc83-1c2392ab097a,0.90
+Pinus strobiformis - southwestern white pine,112aef98-4fd6-5b87-a4ce-def5bb94e3ea,1.00
+Pinus virginiana - Virginia pine,303ca6e4-3738-5adf-9394-a2ed10623dc2,1.00
+Tilia americana 'Continental Appeal' - 'Continental Appeal' American linden,54e9e88a-c3f1-53ee-ab1d-613acbcdd000,0.90
+Quercus stellata - post oak,0cf4b379-43b3-558c-b7ce-2ffec88571f4,1.00
+Ulmus rubra - Slippery elm,4d1991a1-2160-583a-9c74-b3270aea6fbb,1.00
 Carya illinoinensis - pecan,582d3915-6818-51c5-a073-5993644bfafb,1.00
-Betula alleghaniensis - yellow birch,,1.00
-Malus 'Robinson' - 'Robinson' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Halesia tetraptera - Common silverbell,,1.00
-Prunus cerasifera 'Crimson Point' - 'Crimson Point' Cherry plum,6393a177-ef67-568b-85a1-34e11cc3c720,0.90
-Picea orientalis - Oriental spruce,,1.00
-Acer rubrum 'Franksred' - 'Franksred' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
+Betula alleghaniensis - yellow birch,ba6350ba-56d0-5caa-88a1-8472e58df456,1.00
+Malus 'Robinson' - 'Robinson' Crabapple,17c76653-3fa6-5579-b3d0-00301980f2ef,0.60
+Acer rubrum 'Franksred' - 'Franksred' Red maple,a1c4ef96-106c-5a48-8284-1facbbafca6b,0.90
+Halesia tetraptera - Common silverbell,45c2339b-07f3-5cb3-ba6f-716371fc211b,1.00
+Picea orientalis - Oriental spruce,78e4c66c-abf4-54ae-9153-23a37b07503b,1.00
+Prunus cerasifera 'Crimson Point' - 'Crimson Point' Cherry plum,cc373cc4-a3c7-59ea-91b4-13457c047e7b,0.90
+Asimina triloba – Pawpaw,4f26dbb1-c440-516a-88a4-d0b2d271127b,1.00
 Prunus serrulata 'Royal Burgundy' - 'Royal Burgundy' Flowering cherry,35a441ed-e828-5049-92df-0c8db1cb14e6,0.90
-Asimina triloba – Pawpaw,,1.00
-Tilia tomentosa 'Green Mountain' - 'Green Mountain' Silver linden,1a46577c-59c4-5f35-8297-1de9f2402ca4,0.90
-Ulmus minor 'Atinia' - English elm,,0.90
+Tilia tomentosa 'Green Mountain' - 'Green Mountain' Silver linden,1b2a0d7a-7420-53ce-8d63-7981445a6bdc,0.90
+Ulmus minor 'Atinia' - English elm,777a3d3f-1c3f-595b-a208-d5be177b34d9,0.90
 Thuja plicata - western redcedar,9d8efcba-4efd-5ec3-8467-64db7524321c,1.00
-Tilia cordata 'Corinthian' - 'Corinthian' Littleleaf linden,d4c85034-f65a-58ba-b069-b2b837e634b7,0.90
-Ulmus americana 'Valley Forge' - 'Valley Forge' American Elm,79cca032-a54f-5ab0-94c3-1f4b36de2745,0.90
-Acer rubrum 'Sun valley' - 'Sun valley' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Fagus sylvatica 'Tricolor' - 'Tricolor' European beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,0.90
-Prunus sargentii 'Pink Flair' - 'Pink Flair' Sargent cherry,0d13f855-ba81-5d3c-b59c-15093d7b48b7,0.90
-Juniperus virginiana 'Cupressifolia' - 'Cupressifolia' Eastern red cedar,,0.90
-Aesculus pavia - red buckeye,,1.00
-Cornus kousa 'Starlight' - 'Starlight' Kousa dogwood,,0.90
-Fagus sylvatica 'Riversii' - 'Riversii' European beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,0.90
-Acer rubrum 'Karpick' - 'Karpick' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Quercus bicolor 'Beacon' - 'Beacon' Swamp white oak,,0.90
-Acer x freemanii 'Sienna' - Sienna Glen maple,10abcc98-d512-5a8d-b1a5-18324788bb40,0.75
+Tilia cordata 'Corinthian' - 'Corinthian' Littleleaf linden,ce329e4e-7c86-5011-92cb-e28d84dd85b0,0.90
+Ulmus americana 'Valley Forge' - 'Valley Forge' American Elm,04ebd23c-695f-5c6b-be82-07cce54865aa,0.90
+Acer rubrum 'Sun valley' - 'Sun valley' Red maple,0ea48378-d38b-5304-98c9-fdfb01e22feb,0.90
+Aesculus pavia - red buckeye,7fbf4bf1-a8a2-5054-875e-0d0b6d449566,1.00
+Fagus sylvatica 'Tricolor' - 'Tricolor' European beech,1c144d54-ecea-5ff3-bd3e-8a238d7cdcf8,0.90
+Juniperus virginiana 'Cupressifolia' - 'Cupressifolia' Eastern red cedar,b3efb2d0-0c77-576b-902b-a938b09a04ba,0.90
+Prunus sargentii 'Pink Flair' - 'Pink Flair' Sargent cherry,69d2763a-b4d2-59c9-8bce-5eb932c1da3a,0.90
+Acer rubrum 'Karpick' - 'Karpick' Red maple,5f925d7e-ceb9-53a9-8841-167bb1dba4bb,0.90
+Acer x freemanii 'Sienna' - Sienna Glen maple,cd3d1264-1a45-5f37-9ea3-c3e8ebd2393b,0.75
+Cornus kousa 'Starlight' - 'Starlight' Kousa dogwood,b92bbcd4-06a4-5013-bd78-e10a9e5a4f12,0.90
+Fagus sylvatica 'Riversii' - 'Riversii' European beech,42b13096-dbe4-50dc-b70a-adc36b3dea6e,0.90
+Quercus bicolor 'Beacon' - 'Beacon' Swamp white oak,9eaf15c0-c655-50af-afe9-d5c2f8ad9fff,0.90
 Castanea dentata - American chestnut,ef58c998-a7b8-511f-a2a3-9ead4b880ca4,1.00
-Cladrastis kentukea 'Perkins Pink' - 'Perkins Pink' American yellowwood,,0.90
-Magnolia loebneri 'Dr. Merril' - 'Dr. Merril' Loebner magnolia,,0.90
-Ulmus parvifolia 'Everclear' - 'Everclear' Chinese elm,b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1,0.90
-Liriodendron tulipifera 'Emerald City' - 'Emerald City' Tulip poplar,22570857-6689-52dd-856c-630e8306c299,0.90
-Fraxinus nigra - Black Ash,,1.00
-Pinus pungens - Table Mountain pine,,1.00
-Acer saccharum 'Flashfire' - 'Flashfire' Sugar maple,d903b3ee-075f-5d06-bed5-e70b04461ffc,0.90
+Cladrastis kentukea 'Perkins Pink' - 'Perkins Pink' American yellowwood,b119f8b0-c1a4-51b9-8233-01290b37979d,0.90
+Liriodendron tulipifera 'Emerald City' - 'Emerald City' Tulip poplar,d7671d3b-d05a-57b0-ae6b-f82602f83c3b,0.90
+Magnolia loebneri 'Dr. Merril' - 'Dr. Merril' Loebner magnolia,8b0d33bb-538a-5d68-99e0-888b078823b9,0.90
+Ulmus parvifolia 'Everclear' - 'Everclear' Chinese elm,fa9a1034-5776-5d78-9ab9-bf20f6066df7,0.90
+Acer saccharum 'Flashfire' - 'Flashfire' Sugar maple,db35e7a9-6feb-583e-94a6-130e279662fb,0.90
+Fraxinus nigra - Black Ash,7c69e1b1-8f64-5813-9ef1-f18db43602e9,1.00
+Pinus pungens - Table Mountain pine,b18e4e87-b3b5-55f4-8f2f-3fff26004a4c,1.00
 Elaeagnus angustifolia - Russian olive,d0d24967-1f33-5aed-82d9-f259bbb464c4,1.00
-Juniperus chinensis 'Hollywood' - 'Hollywood' Chinese juniper,1e223e2c-3110-5564-a7e0-42b46eb15e8e,0.90
-Quercus bicolor 'American Dream' - 'American Dream' Swamp white oak,,0.90
+Juniperus chinensis 'Hollywood' - 'Hollywood' Chinese juniper,cb5ba54f-015f-56eb-95db-414e92e9fd51,0.90
+Quercus bicolor 'American Dream' - 'American Dream' Swamp white oak,66c91e47-b3cc-5ea2-82d6-e5f70f4d23c2,0.90
+,,0.00
+Acer saccharum 'Commemoration' - 'Commemoration' Sugar maple,db65a873-9ec1-5a8d-85c7-343e6a5f746e,0.90
+Cercis reniformis 'Oklahoma' - 'Oklahoma' Oklahoma redbud,06001c10-d822-5bae-9822-3096bf26c71b,0.90
+Hydrangea paniculata - Panicle hydrangea,a4842446-0938-594e-92cf-d3cd1c7c7ce5,1.00
 Ilex aquifolium - English holly,c21e3bcb-29e9-5cab-9989-df4e9225f63e,1.00
-Hydrangea paniculata - Panicle hydrangea,,1.00
-Acer saccharum 'Commemoration' - 'Commemoration' Sugar maple,d903b3ee-075f-5d06-bed5-e70b04461ffc,0.90
-Styrax americanus - American snowbell,,1.00
-Cercis reniformis 'Oklahoma' - 'Oklahoma' Oklahoma redbud,,0.90
+Styrax americanus - American snowbell,08c46e1f-c5b9-51b7-9353-29a209de5335,1.00
+Abies alba - silver fir,df9153ee-4651-5a97-b3df-850d95b7ba79,1.00
+Cornus nuttallii - Pacific dogwood,add7029b-d022-5ba8-bcb2-b5ed24654694,1.00
+Crataegus phaenopyrum 'Washington' - 'Washington' Hawthorn,ffb9f435-686f-5ff1-9a17-d31767a4011d,0.90
+Quercus phellos 'Hightower' - 'Hightower' Willow oak,db185ade-7ee0-5261-94ee-096de6b9c61c,0.90
 Rhus typhina - Staghorn sumac,a961753a-b6cf-5856-b73b-b52db885c509,1.00
-Styrax obassia - Fragrant snowbell,,1.00
-Abies alba - silver fir,,1.00
-Quercus phellos 'Hightower' - 'Hightower' Willow oak,,0.90
-Cornus nuttallii - Pacific dogwood,,1.00
-Crataegus phaenopyrum 'Washington' - 'Washington' Hawthorn,abeacb77-f5ea-598b-b815-af18f3353a04,0.90
-Cotinus 'Royal Purple' - 'Royal Purple' Smoketree,,0.60
-Ilex x 'Nellie R. Stevens' - 'Nellie R. Stevens' Holly,0094f86e-66cf-56bc-9bf7-bcec3c8b83e5,0.75
-x Chitalpa tashkentensis - Chitalpa,552029fb-02ad-5648-9044-01e01fc1f19c,0.20
-Quercus laurifolia - laurel oak,,1.00
-Corylus americana - American hazelnut,,1.00
+Styrax obassia - Fragrant snowbell,8c46ce21-ed6f-5766-a503-d54cfe698053,1.00
+Corylus americana - American hazelnut,f504c97e-bf8d-50a4-9d52-a24e0a2b0d38,1.00
+Cotinus 'Royal Purple' - 'Royal Purple' Smoketree,a132d3f0-6512-5a8d-98c0-c48dff4644e9,0.60
+Ilex x 'Nellie R. Stevens' - 'Nellie R. Stevens' Holly,3ed14363-9017-54ab-bec0-d3577debfa84,0.75
+Quercus laurifolia - laurel oak,22b59c8b-4081-56ef-91ed-5928096a962d,1.00
+x Chitalpa tashkentensis - Chitalpa,a6af8a35-d913-5de8-9327-39a6f4599786,0.20
 Acer campestre 'Evelyn' - 'Evelyn' Hedge maple,75665098-c773-5de5-b3a5-7dbb548b76f3,0.90
-Oxydendrum arboreum - sourwood,,1.00
-Acer saccharum 'Green Mountain' - 'Green Mountain' Sugar maple,d903b3ee-075f-5d06-bed5-e70b04461ffc,0.90
-Gleditsia triacanthos var. inermis 'Shademaster' - 'Shademaster' Thornless honeylocust,579354bc-9c0f-594d-b73e-9b0bf6a3bf01,0.90
+Acer saccharum 'Green Mountain' - 'Green Mountain' Sugar maple,e6271b0d-0f52-537a-8b30-ce0b591005bd,0.90
+Gleditsia triacanthos var. inermis 'Shademaster' - 'Shademaster' Thornless honeylocust,71db7bba-f635-5df6-93ec-15e0a570fffc,0.90
+Oxydendrum arboreum - sourwood,2a798b58-8448-5577-9982-aab5c032fa8c,1.00
 Prunus cerasifera 'Krauter Vesuvius' - 'Krauter Vesuvius' Cherry plum,a7cda9d4-473e-521f-92af-5ffed38e6e68,0.90
-Quercus cerris - European turkey oak,,1.00
-Quercus robur x bicolor 'Kindred Spirit' - 'Kindred Spirit' Oak,,0.90
-Rhus glabra - Smooth Sumac,,1.00
-Pyrus communis - European/Common Pear,54a75a71-5f77-561f-b6cb-49214132cdfa,1.00
-Nyssa sylvatica 'Gum drop' - 'Gum Drop' Black gum,383fddb5-3cee-5381-b40b-42dc05918558,0.90
+Quercus cerris - European turkey oak,ce4813b0-ffc3-556b-b4b4-568b8e15fe58,1.00
+Quercus robur x bicolor 'Kindred Spirit' - 'Kindred Spirit' Oak,3ac1d7b1-18ac-567f-a6a4-357362614456,0.90
+Catalpa bignonioides - southern catalpa,678eb2ee-226b-5f68-ab3c-1e3ef7994707,1.00
 Ginkgo biloba 'Fairmont' - 'Fairmont' Ginkgo,62909940-6798-5043-b86a-9aef1d70cc2c,0.90
-Catalpa bignonioides - southern catalpa,,1.00
-Fraxinus quadrangulata - Blue ash,,1.00
-Malus sargentii 'Tina' - 'Tina' Sargent's crabapple,,0.90
-Ulmus americana 'Lewis & Clark' - Prairie Expedition American elm,79cca032-a54f-5ab0-94c3-1f4b36de2745,0.90
-Cornus canadensis - bunchberry dogwood,,1.00
-Larix decidua - European larch,,1.00
-Aesculus flava - yellow buckeye,,1.00
-Prunus 'Amanowagawa' - 'Amanowagawa' Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
-Ulmus 'New Harmony' - 'New Harmony' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
-Acer saccharum 'Oregon Trail' - 'Oregon Trail' sugar maple,d903b3ee-075f-5d06-bed5-e70b04461ffc,0.90
-Betula platyphylla - Asian white birch,,1.00
-Prunus sargentii 'Columnaris Rancho' - 'Columnaris Rancho' Sargent cherry,0d13f855-ba81-5d3c-b59c-15093d7b48b7,0.90
-Juglans ailantifolia - Japanese walnut,,1.00
-Magnolia kobus - Kobus magnolia,,1.00
-Juniperus chinensis 'Blue Point' - 'Blue Point' Chinese juniper,1e223e2c-3110-5564-a7e0-42b46eb15e8e,0.90
-Pyrus calleryana 'Jack Pear' - 'Jack Pear' Callery pear,fc55d55a-8706-593e-9ca8-c2d0b6cba3e7,0.90
-Magnolia x. soulangiana 'Rustica Rubra' - 'Rustica Rubra' Saucer magnolia,8e318195-d262-5ba1-bb3e-b53aab11b1f7,0.75
+Nyssa sylvatica 'Gum drop' - 'Gum Drop' Black gum,c8c69202-d96e-5a0a-bb79-591677db83d6,0.90
+Pyrus communis - European/Common Pear,54a75a71-5f77-561f-b6cb-49214132cdfa,1.00
+Rhus glabra - Smooth Sumac,b35fb915-5fc5-54bf-a182-380fc446db80,1.00
+Acer saccharum 'Oregon Trail' - 'Oregon Trail' sugar maple,de0a25ab-30ac-5e5a-be78-62cce9b45ea0,0.90
+Aesculus flava - yellow buckeye,34545fd1-aca1-51b2-a91a-32586d8e5362,1.00
+Betula platyphylla - Asian white birch,d81e6ac2-8a2a-5c0b-b75b-258929e9ed20,1.00
+Cornus canadensis - bunchberry dogwood,81d213ab-ec0e-502a-a6be-b0089dfea8ca,1.00
+Fraxinus quadrangulata - Blue ash,fe64c54e-89ff-52c6-aeab-cc7c7764e416,1.00
+Larix decidua - European larch,d75a4945-03e8-50a4-a63f-1faf4c957cb1,1.00
+Malus sargentii 'Tina' - 'Tina' Sargent's crabapple,55bfe43a-f9f1-5b75-b3b9-dd9ad81f3c50,0.90
+Prunus 'Amanowagawa' - 'Amanowagawa' Cherry,1b3a00bc-a0a5-584a-bb66-fca06450d800,0.60
+Ulmus 'New Harmony' - 'New Harmony' Elm,1e39af90-2678-5805-a875-8fb681161a56,0.60
+Ulmus americana 'Lewis & Clark' - Prairie Expedition American elm,35ac5ca5-24a9-56c5-af67-9f35e5a7db97,0.90
+Juglans ailantifolia - Japanese walnut,93ee5f01-0df0-5a85-b778-69789e52351a,1.00
+Juniperus chinensis 'Blue Point' - 'Blue Point' Chinese juniper,6f40b32c-1c16-5f5d-b78d-2bdcf15bd316,0.90
+Magnolia kobus - Kobus magnolia,849c5a21-4cf9-5871-b917-8efbc9433ca6,1.00
+Magnolia x. soulangiana 'Rustica Rubra' - 'Rustica Rubra' Saucer magnolia,889c2273-b2af-5202-913a-3987746770a2,0.75
 Prunus armeniaca - Apricot,d7d1c47f-e27f-501e-aad4-dc61f1e8db5b,1.00
-Prunus subhirtella 'Pendula' - 'Pendula' Higan cherry,58369dcc-db0b-5c80-8626-b348b78e6414,0.90
-Ulmus parvifolia 'Dynasty' - 'Dynasty' Chinese elm,b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1,0.90
+Prunus sargentii 'Columnaris Rancho' - 'Columnaris Rancho' Sargent cherry,4e656a04-05cb-5433-bc42-0bfd712210a9,0.90
 Prunus serrulata 'Shirotae' - 'Shirotae' Flowering cherry,b20a1924-4120-5353-a6a0-227e33482c67,0.90
-Picea omorika - Serbian spruce,,1.00
-Cornus mas 'Spring Sun' - 'Spring Sun' Cornelian cherry dogwood,,0.90
-Heptacodium miconioides - seven-son flower,,1.00
-Fagus sylvatica 'Asplenifolia' - 'Asplenifolia' European beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,0.90
-Acer rubrum 'Bowhall' - 'Bowhall' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Quercus x sargentii - Sargent oak,,0.75
-Vitex agnus-castus - lilac chastetree,,1.00
-Pyrus fauriei 'Korean Sun' - 'Korean Sun' Pear,,0.90
-Acer saccharum 'Fall Fiesta' - 'Fall Fiesta' Sugar maple,d903b3ee-075f-5d06-bed5-e70b04461ffc,0.90
-Aesculus octandra - Yellow buckeye,,1.00
-Amelanchier x intermedia - serviceberry,,0.75
-Ginkgo biloba 'Presidential Gold' - 'Presidential Gold' Ginkgo,f5df51ba-bfd4-5f80-b241-85f8d6763671,0.90
-Magnolia 'Butterflies' - 'Butterflies' Magnolia,d5ebf801-2699-5398-90bb-d7be7e6c18cd,0.60
-Pinus heldreichii - Bosnian Pine,,1.00
-Robinia pseudoacacia 'Purple Robe' - 'Purple Robe' Black locust,e6d5c938-c52c-5152-8aa6-406118c692b2,0.90
-Abies fraseri - Fraser fir,,1.00
-Taxodium distichum 'Skyward' - 'Skyward' Bald cypress,,0.90
-Aralia spinosa - devil's walkingstick,,1.00
-Tilia tomentosa 'Satin Shadow' - 'Satin Shadow' Silver linden,1a46577c-59c4-5f35-8297-1de9f2402ca4,0.90
-Prunus cerasifera 'Mount St. Helens' - 'Mount St. Helens' Cherry plum,6393a177-ef67-568b-85a1-34e11cc3c720,0.90
-Prunus cistena 'Schmidt's' - 'Schmidt's' Purple-leaf sand cherry,,0.90
-Carpinus caroliniana 'Native Flame' - 'Native Flame' American hornbeam,,0.90
-Magnolia 'Jane' - 'Jane' Magnolia,d5ebf801-2699-5398-90bb-d7be7e6c18cd,0.60
-Quercus laevis - turkey oak,,1.00
-Aesculus parviflora - bottlebrush buckeye,,1.00
-Lagerstroemia indica 'Tuskogee' - 'Tuskogee' Crapemyrtle,86820f2a-dd18-5630-91b5-335a0c7131c2,0.90
-Magnolia tripetala - umbrella-tree,,1.00
-Quercus marilandica - blackjack oak,,1.00
+Prunus subhirtella 'Pendula' - 'Pendula' Higan cherry,58369dcc-db0b-5c80-8626-b348b78e6414,0.90
+Pyrus calleryana 'Jack Pear' - 'Jack Pear' Callery pear,0c007e63-4632-5b6b-af41-cea3e43273d5,0.90
+Ulmus parvifolia 'Dynasty' - 'Dynasty' Chinese elm,44abdb53-bfeb-5782-b79b-97f12f6d88c3,0.90
+Picea omorika - Serbian spruce,fc0bc59a-8c9c-595f-96b0-3ce46abcc913,1.00
+Acer rubrum 'Bowhall' - 'Bowhall' Red maple,63386d2e-5299-55b0-a4b0-8f62571cb506,0.90
+Cornus mas 'Spring Sun' - 'Spring Sun' Cornelian cherry dogwood,32957323-2354-54d7-b60f-22d8d2f0d79d,0.90
+Fagus sylvatica 'Asplenifolia' - 'Asplenifolia' European beech,8b855325-b0eb-5ad8-affb-f10ce716aa58,0.90
+Heptacodium miconioides - seven-son flower,aefada4a-8034-5b6f-9d45-cdf52c24ff31,1.00
+Pyrus fauriei 'Korean Sun' - 'Korean Sun' Pear,44871863-44a3-570b-a303-782bcc3a20d2,0.90
+Quercus x sargentii - Sargent oak,5941ab3c-60f8-55b6-89dd-1ea230ccfc5b,0.75
+Vitex agnus-castus - lilac chastetree,46b6c74b-74ee-5d6f-8c27-4d627b45b0f6,1.00
+Acer saccharum 'Fall Fiesta' - 'Fall Fiesta' Sugar maple,119857a3-01db-5d95-96ef-d5e594aa04a6,0.90
+Aesculus octandra - Yellow buckeye,b03725cd-98ac-540b-be03-e6f600caffe7,1.00
+Amelanchier x intermedia - serviceberry,b55fe9e7-6a33-5b82-8ccd-ca03215dfd32,0.75
+Ginkgo biloba 'Presidential Gold' - 'Presidential Gold' Ginkgo,d6e26d88-10d8-531f-ad7b-a8f29f137838,0.90
+Magnolia 'Butterflies' - 'Butterflies' Magnolia,48040010-e0f7-51df-936d-eb44f2930018,0.60
+Abies fraseri - Fraser fir,ef1f26a6-3a95-57b5-b6ca-b399a9e41ae6,1.00
+Aesculus parviflora - bottlebrush buckeye,60abc3d1-6151-5f5b-b763-c2c019799241,1.00
+Aralia spinosa - devil's walkingstick,cf43312e-c258-5f34-8dc6-707d6c49c997,1.00
+Carpinus caroliniana 'Native Flame' - 'Native Flame' American hornbeam,e70766d7-9c83-56c5-9e87-f413129f7d52,0.90
+Lagerstroemia indica 'Tuskogee' - 'Tuskogee' Crapemyrtle,2259065b-3fff-5a93-aec9-d56827bc8e1a,0.90
+Magnolia 'Jane' - 'Jane' Magnolia,505e6975-be27-5b6b-ad74-e56da377b22c,0.60
+Pinus heldreichii - Bosnian Pine,2bf6b115-9ab6-57cc-98cd-59ca4fe65015,1.00
+Prunus cerasifera 'Mount St. Helens' - 'Mount St. Helens' Cherry plum,8e7aa74b-464a-5f26-8468-94eb75d1a4fe,0.90
+Prunus cistena 'Schmidt's' - 'Schmidt's' Purple-leaf sand cherry,422f6029-d59c-5ff4-befd-1a526fd1327f,0.90
+Quercus laevis - turkey oak,7bf024d9-67ee-57fb-aba5-087f31557096,1.00
+Robinia pseudoacacia 'Purple Robe' - 'Purple Robe' Black locust,57db3ff1-3fa8-597e-9853-2737c9b2fe9c,0.90
+Taxodium distichum 'Skyward' - 'Skyward' Bald cypress,bf7407c1-f0f5-59ee-8265-10008b2dabe3,0.90
+Tilia tomentosa 'Satin Shadow' - 'Satin Shadow' Silver linden,dfb32602-6d84-521a-a388-3d8a63d0a783,0.90
+Aesculus x hybrida - buckeye,28f7b346-9788-577c-9ac5-54e72ff90fbd,0.75
+Juniperus chinensis 'Keteleeri' - 'Keteleeri' Chinese juniper,a6ef9d05-b4df-56ab-b17d-8116372d5669,0.90
+Magnolia tripetala - umbrella-tree,508cdb52-f799-53d0-97d4-566351bdfc8f,1.00
+Malus domestica - Common Apple,c410d935-2503-5fb9-b49e-4c77f2ef8911,1.00
+Nyssa sylvatica 'Forum' - 'Forum' Balck gum,82dd6b95-2323-5d0f-b6a7-86348abf98db,0.90
+Pinus wallichiana - Bhutan pine,a8627884-4dfb-5671-ae40-8c17562f7a6b,1.00
 Quercus ilex - holly oak,0446ccf7-5f5c-509f-bb98-56d42c5fad23,1.00
-Juniperus chinensis 'Keteleeri' - 'Keteleeri' Chinese juniper,1e223e2c-3110-5564-a7e0-42b46eb15e8e,0.90
-Aesculus x hybrida - buckeye,,0.75
-Nyssa sylvatica 'Forum' - 'Forum' Balck gum,383fddb5-3cee-5381-b40b-42dc05918558,0.90
-Pinus wallichiana - Bhutan pine,,1.00
-Malus domestica - Common Apple,,1.00
-Acer tataricum 'Pattern Perfect' - 'Pattern Perfect' Tatarian maple,,0.90
-Hamamalis 'Helene' - 'Helene' Witch hazel,,0.60
-Acer x freemanii 'Scarsen' - 'Scarsen' Freeman maple,10abcc98-d512-5a8d-b1a5-18324788bb40,0.75
+Quercus marilandica - blackjack oak,b590a5e1-df81-5c3b-9c1e-90035e0130bf,1.00
+Acer tataricum 'Pattern Perfect' - 'Pattern Perfect' Tatarian maple,b8588017-daed-5e85-bbc9-e23d0e0752b0,0.90
+Acer x freemanii 'Scarsen' - 'Scarsen' Freeman maple,8bd7b38b-79a2-5ecf-aad3-114b31ff6bf6,0.75
+Fraxinus pennsylvanica 'Patmore' - 'Patmore' Green ash,ba952edb-63fb-5df9-84f0-920ec8227e59,0.90
+Ginkgo biloba 'Golden Collonade' - 'Golden Collonade' Ginkgo,2e616e7a-2226-5e38-8512-05db25815544,0.90
+Hamamalis 'Helene' - 'Helene' Witch hazel,06375e32-7f47-5ae6-8837-5c523ee568ad,0.60
+Laburnum x watereri - golden chain tree,d47712e2-a357-5d09-a4af-f9d8263e27ff,0.75
+Maackia amurensis 'MaacNificent' - 'MaacNificent' Amur Maackia,d53b31a0-7c77-521e-adab-ca8758a95795,0.90
+Magnolia macrophylla - bigleaf magnolia,c75eec37-a62a-5c72-a169-f3bb05f0d510,1.00
+Picea pungens 'Fat Albert' - 'Fat Albert' Colorado blue spruce,b3337f66-7b9a-5693-a919-c54c4b232978,0.90
 Prunus avium - Sweet Cherry,a480eb75-a6e2-5b9a-be86-84fc3256b0f1,1.00
-Tilia x euchlora 'Laurelhurst' - 'Laurelhurst' Crimean linden,,0.75
-Fraxinus pennsylvanica 'Patmore' - 'Patmore' Green ash,,0.90
-Laburnum x watereri - golden chain tree,,0.75
-Zelkova serrata 'Variegata' - 'Variegata' Zelkova,3614781d-c947-5e25-b21b-b87b6bb2267a,0.90
-Taxodium ascedens 'Nutans' - 'Nutans' Bald cypress,,0.90
-Ginkgo biloba 'Golden Collonade' - 'Golden Collonade' Ginkgo,f5df51ba-bfd4-5f80-b241-85f8d6763671,0.90
-Tilia americana 'Frontyard' - 'Frontyard' American linden,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,0.90
-Maackia amurensis 'MaacNificent' - 'MaacNificent' Amur Maackia,44b4daa3-4b37-5393-9461-430dba6ff301,0.90
-Picea pungens 'Fat Albert' - 'Fat Albert' Colorado blue spruce,8c3b7e45-2314-592e-9605-23b43228b2b7,0.90
-Magnolia macrophylla - bigleaf magnolia,,1.00
-Prunus fruticosa 'Globosa' - 'Globosa' European dwarf cherry,,0.90
-Amelanchier alnifolia - Saskatoon serviceberry,,1.00
-Fagus sylvatica 'Purple Fountain' - 'Purple Fountain' European beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,0.90
-Tilia x europaea 'Pallida' - 'Pallida' Common linden,,0.75
-Amelanchier lamarkii - Serviceberry,,1.00
-Tilia cordata 'Shamrock' - 'Shamrock' Littleleaf linden,d4c85034-f65a-58ba-b069-b2b837e634b7,0.90
-Cladrastis kentukea 'Sweetshade' - 'Sweetshade' American yellowwood,,0.90
-Acer pseudoplatanus 'Atropurpureum' - 'Atropurpureum' Sycamore maple,37ea58a2-321d-5d66-b4be-190c9735879c,0.90
-Syringa pekinensis 'Great Wall' - 'Great Wall' Peking lilac,,0.90
-Carya laciniosa - shellbark hickory,,1.00
-Pinus ponderosa - ponderosa pine,,1.00
-Acer pensylvanicum - striped maple,,1.00
-Maackia amurensis 'Starburst' - 'Starburst' Amur Maackia,44b4daa3-4b37-5393-9461-430dba6ff301,0.90
-Liriodendron tulipifera 'Arnold' - 'Arnold' Tulip poplar,22570857-6689-52dd-856c-630e8306c299,0.90
-Ulmus 'Pioneer' - 'Pioneer' Elm,a40af43e-f1a8-5b93-ae6f-77bf177ce510,0.60
-Cornus mas 'Redstone' - 'Redstone' Cornelian cherry,,0.90
-Celtis laevigata - sugarberry,,1.00
-Prunus serrula - Tibetan cherry,,1.00
-Betula nigra 'Cully' - 'Cully' river birch,dfaa8415-82d4-58eb-84d6-6d96d9aee807,0.90
-Acer truncatum 'Norwegian Sunset' - 'Norwegian Sunset' Shangtung maple,,0.90
-Tilia tomentosa 'Szeleste' - 'Szeleste' Silver linden,1a46577c-59c4-5f35-8297-1de9f2402ca4,0.90
-Quercus macrocarpa 'Urban Pinnacle' - 'Urban Pinnacle' bur oak,a9594485-e325-5e3f-beae-f73c05dc9da5,0.90
-Quercus phellos 'Upperton' - 'Upperton' Willow oak,,0.90
-Cornus x rutban 'Aurora' - 'Aurora' Dogwood,,0.75
-Sorbus alnifolia - Korean mountain ash,,1.00
-Cryptomeria japonica 'Angelica' - 'Angelica' Japanese cedar,6e2f27b0-c4d6-5471-a15d-a76a06905fbd,0.90
-Ulmus parvifolia 'Bosque' - 'Bosque' Chinese elm,b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1,0.90
-Acer rubrum 'New World' - 'New World' Red maple,aeddf3cd-6091-5b26-bf15-70dd35c56c54,0.90
-Hamamelis x intermedia 'Diane' - 'Diane' Witch hazel,,0.75
-Pyrus calleryana 'Holmford' - 'Holmford' Callery pear,fc55d55a-8706-593e-9ca8-c2d0b6cba3e7,0.90
-Thuja occidentalis 'George Peabody' - 'George Peabody' Arborvitae,,0.90
-Eucommia ulmoides 'Emerald Pointe' - 'Emerald Pointe' Hardy rubber tree,,0.90
-Cornus x rutgan 'Stellar Pink' - 'Stellar Pink' Dogwood,,0.75
-Cornus kousa 'Radiant Rose' - 'Radiant Rose' Dogwood,,0.90
-Prunus x yedoensis 'Cascade Snow' - 'Cascade Snow' Yoshino cherry,6249ead3-4bd6-5e00-9390-feea11c998ea,0.75
-Fagus sylvatica 'Dawyckii Purple' - 'Dawyckii Purple' European beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,0.90
-Pinus flexilis 'Vanderwolf' - 'Vanderwolf' Limber pine,,0.90
-Corylus avellana - common filbert,,1.00
+Taxodium ascedens 'Nutans' - 'Nutans' Bald cypress,233a97be-af78-5b83-b890-027f714ceada,0.90
+Tilia americana 'Frontyard' - 'Frontyard' American linden,af149fee-4ca9-57b4-a6f2-4ae8732e59c6,0.90
+Tilia x euchlora 'Laurelhurst' - 'Laurelhurst' Crimean linden,8168c171-a842-5718-8969-3eb5863564ed,0.75
+Zelkova serrata 'Variegata' - 'Variegata' Zelkova,88b76179-a526-5d18-bb98-d5555b8dc180,0.90
+Acer pensylvanicum - striped maple,11da47e0-df0f-5eac-be8d-4b94ef13eac4,1.00
+Acer pseudoplatanus 'Atropurpureum' - 'Atropurpureum' Sycamore maple,73d6b03d-f539-5815-941e-3c74e69c7038,0.90
+Amelanchier alnifolia - Saskatoon serviceberry,141cdf8b-8c30-5567-8609-8b05df9d7a5b,1.00
+Amelanchier lamarkii - Serviceberry,31cbfac0-bf60-5d52-a340-4a1f8923fee0,1.00
+Carya laciniosa - shellbark hickory,ba3c930b-020c-594b-85e6-78f8dfdf64a2,1.00
+Cladrastis kentukea 'Sweetshade' - 'Sweetshade' American yellowwood,7f7c0852-090f-5f31-8c2e-b07fc3d789f0,0.90
+Cornus mas 'Redstone' - 'Redstone' Cornelian cherry,08401f42-adfe-5e2e-bf7f-a702fdcba103,0.90
+Fagus sylvatica 'Purple Fountain' - 'Purple Fountain' European beech,57a48fcc-5de8-5f1f-9fd1-151f121ede42,0.90
+Liriodendron tulipifera 'Arnold' - 'Arnold' Tulip poplar,2ebfbee4-4d05-5ef3-97e0-ceff8076dca7,0.90
+Maackia amurensis 'Starburst' - 'Starburst' Amur Maackia,3752042f-afd4-51c4-8cfd-ded79d56324f,0.90
+Pinus ponderosa - ponderosa pine,49920b30-52ff-5662-971f-4c056c70b38b,1.00
+Prunus fruticosa 'Globosa' - 'Globosa' European dwarf cherry,b1ab374b-e0b7-56ef-9911-849cc4e91865,0.90
+Syringa pekinensis 'Great Wall' - 'Great Wall' Peking lilac,5321dbe8-935c-591c-96ff-a4ecd130535c,0.90
+Tilia cordata 'Shamrock' - 'Shamrock' Littleleaf linden,7a9fd89d-7d21-5a64-a283-40a798bea98b,0.90
+Tilia x europaea 'Pallida' - 'Pallida' Common linden,810024b2-6458-5926-9d50-4bee29e441dd,0.75
+Ulmus 'Pioneer' - 'Pioneer' Elm,2b6a2ea8-1807-51e2-8f5b-06aa1d64647c,0.60
+Acer rubrum 'New World' - 'New World' Red maple,4c28bcd8-e8ce-5fd5-990e-5cc3d4342d74,0.90
+Acer truncatum 'Norwegian Sunset' - 'Norwegian Sunset' Shangtung maple,dd967a8a-57ec-5e7b-913f-7137da97c547,0.90
+Betula nigra 'Cully' - 'Cully' river birch,001dc47e-8bb7-57ee-93cf-ca5f1e1ed7bf,0.90
+Celtis laevigata - sugarberry,cecc69f6-68d3-57a4-bb1a-e1b79e090704,1.00
+Cornus x rutban 'Aurora' - 'Aurora' Dogwood,bee20baa-87fd-5699-8111-9b2dc890a9e8,0.75
+Cornus x rutgan 'Stellar Pink' - 'Stellar Pink' Dogwood,4dac86f9-37b6-5ddb-8ecb-22e41c0099cb,0.75
+Cryptomeria japonica 'Angelica' - 'Angelica' Japanese cedar,71d586f3-58c3-5240-b44f-882ab74d39eb,0.90
+Eucommia ulmoides 'Emerald Pointe' - 'Emerald Pointe' Hardy rubber tree,a46d0c01-d3cc-5151-afa4-43b6ac90b6dc,0.90
+Hamamelis x intermedia 'Diane' - 'Diane' Witch hazel,50068db5-01ab-5c11-9533-39dc9783ed21,0.75
+Prunus serrula - Tibetan cherry,e6fe5f4c-f75b-540b-bebc-d9fa7fd977c3,1.00
+Pyrus calleryana 'Holmford' - 'Holmford' Callery pear,76848d9a-3991-5231-ac69-6177eb207c66,0.90
+Quercus macrocarpa 'Urban Pinnacle' - 'Urban Pinnacle' bur oak,685d3700-3e1d-5070-91cf-4b082675efb7,0.90
+Quercus phellos 'Upperton' - 'Upperton' Willow oak,c7d53451-58b1-5085-81a3-e0176ca6b688,0.90
+Sorbus alnifolia - Korean mountain ash,a7b546ca-93e1-5f07-b8b3-c60f0b9ca533,1.00
+Thuja occidentalis 'George Peabody' - 'George Peabody' Arborvitae,7343eb21-d284-5f5a-bd61-246f5cadc471,0.90
+Tilia tomentosa 'Szeleste' - 'Szeleste' Silver linden,0e5f3412-a475-5e87-9883-80174f096dec,0.90
+Ulmus parvifolia 'Bosque' - 'Bosque' Chinese elm,a0750e26-0491-5c32-bd31-efcef61d24e9,0.90
+Camellia sinensis - tea,1767d46f-92a0-5793-977b-110453b8b681,1.00
+Cornus kousa 'Radiant Rose' - 'Radiant Rose' Dogwood,37438a0f-d3c2-5eb4-9030-05a1f96a79b0,0.90
+Corylus avellana - common filbert,78b0d5ab-2fe4-59f5-9289-90f2b8bd64b1,1.00
+Cotinus 'Grace' - 'Grace' Smoketree,e581ac5d-aac6-5f1d-8d9e-f501db74058e,0.60
+Fagus sylvatica 'Dawyckii Purple' - 'Dawyckii Purple' European beech,3c271d1d-b53b-587a-8985-6a56f6e5ecc1,0.90
+Malus x zumi var. calocarpa - Redbud crabapple,c7530f6d-a5cd-5ac4-9186-d488158ac737,0.75
+Pinus flexilis 'Vanderwolf' - 'Vanderwolf' Limber pine,691954ef-3a9a-55da-950a-83d0c8f4fb99,0.90
+Prunus 'Dreamcatcher' - 'Dreamcatcher' Cherry,086fb555-4221-5ec2-b29d-792b333cc1a8,0.60
 Prunus domestica - Domestic Plum,f4d8a33c-6493-582f-b42d-bbab0d8c9a42,1.00
-Pyrus pyrifolia - Asian Pear,,1.00
-Cotinus 'Grace' - 'Grace' Smoketree,,0.60
-Malus x zumi var. calocarpa - Redbud crabapple,,0.75
-Prunus 'Dreamcatcher' - 'Dreamcatcher' Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
-Camellia sinensis - tea,,1.00
-Salix x pendulina - Wisconsin Weeping Willow,,0.75
-Acer tataricum 'Rugged Charm' - 'Rugged Charm' Tatarian maple,,0.90
-Acer glabrum - Rocky Mountain maple,,1.00
-Tilia cordata 'Prestige' - 'Prestige' Littleleaf linden,d4c85034-f65a-58ba-b069-b2b837e634b7,0.90
-Koelreuteria paniculata 'Summerburst' - 'Summerburst'Goldenraintree,74a57c4a-235f-59c0-b636-6f4178b18506,0.90
-Quercus nigra - water oak,,1.00
-Pinus mugo - Mountain Pine,,1.00
-Crataegus 'Lavellus' - 'Lavellus' Hawthorn,,0.60
-Ginkgo biloba 'Fastigiate' - 'Fastigiate' Ginkgo,f5df51ba-bfd4-5f80-b241-85f8d6763671,0.90
-Sorbus aucuparia - European mountain ash,,1.00
-Corylus cornuta - beaked hazelnut,,1.00
+Prunus x yedoensis 'Cascade Snow' - 'Cascade Snow' Yoshino cherry,01fda864-5282-52c2-a1a9-34edae5f7c20,0.75
+Pyrus pyrifolia - Asian Pear,2d35d8d8-344f-5ab0-8b8e-77820b872feb,1.00
+Acer glabrum - Rocky Mountain maple,9ce5fc64-cb1e-5a0f-a862-348e2cde4f54,1.00
+Acer tataricum 'Rugged Charm' - 'Rugged Charm' Tatarian maple,dd004ff1-b47e-5d7a-b804-56744815efa6,0.90
+Cercis canadensis 'Columbus' - 'Columbus' Eastern redbud,aa447643-9196-5e02-b281-f57f92c3bd7a,0.90
+Corylus cornuta - beaked hazelnut,fc944654-011c-5b3e-87ef-fa16ff6daa38,1.00
+Crataegus 'Crimson Cloud' - 'Crimson Cloud' Hawthorn,105dc0e9-216c-53d1-bcd9-be00ddffca01,0.60
+Crataegus 'Lavellus' - 'Lavellus' Hawthorn,8df68358-1652-5880-a277-b4600d8b9b23,0.60
+Ginkgo biloba 'Fastigiate' - 'Fastigiate' Ginkgo,d9ccfebd-bc5f-51ef-95d0-e41ed6f964fa,0.90
 Juglans regia - English walnut,9ed1fe2e-6690-5c55-a100-a8e3029a62c3,1.00
-Zelkova serrata 'Kiwi Sunset' - 'Kiwi Sunset' Zelkova,3614781d-c947-5e25-b21b-b87b6bb2267a,0.90
-Cercis canadensis 'Columbus' - 'Columbus' Eastern redbud,f768334a-6811-5485-8b5f-f4d14c698ece,0.90
-Crataegus 'Crimson Cloud' - 'Crimson Cloud' Hawthorn,,0.60
-Cornus florida 'Cherokee Princess' - 'Cherokee Princess' Flowering dogwood,68cf86fe-1217-550b-b651-04a870463229,0.90
-Liquidambar styraciflua 'Grandmaster' - 'Grandmaster' Sweetgum,16934db9-16c4-5fb9-86e3-45177c3737ae,0.90
-Pyrus calleryana 'Cleveland Select' - 'Cleveland Select' Callery pear,fc55d55a-8706-593e-9ca8-c2d0b6cba3e7,0.90
-Sorbus americana - American mountain ash,,1.00
-Lagerstroemia indica 'Sarah's Favorite' - 'Sarah's Favorite' Crapemyrtle,,0.90
-Prunus 'Snow Goose x Copper Graft' - 'Snow Goose x Copper Graft' Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
-Syringa meyeri 'Palibin' - 'Palibin' Korean lilac,,0.90
+Koelreuteria paniculata 'Summerburst' - 'Summerburst'Goldenraintree,70237171-7470-509a-bc39-bc3d82eedf67,0.90
+Pinus mugo - Mountain Pine,660361a0-a4bb-5d00-ab67-4e9ab2a5c88b,1.00
+Quercus nigra - water oak,4fdb040c-b46f-533d-a6b2-ed98272af83c,1.00
+Salix x pendulina - Wisconsin Weeping Willow,1afeda29-06a4-5af7-bd09-8cf1e65adb19,0.75
+Sorbus aucuparia - European mountain ash,cbc8bb56-bb8d-5191-bdda-b2ad2fb3bcf4,1.00
+Tilia cordata 'Prestige' - 'Prestige' Littleleaf linden,16645f03-c4a8-5227-ad65-af456799dcd0,0.90
+Zelkova serrata 'Kiwi Sunset' - 'Kiwi Sunset' Zelkova,aecd3422-4066-5ab2-9427-8614cbaf6347,0.90
 Cedrus deodora - Himalayan cedar,6b257081-6baf-5218-aaba-e1a6db2d7c6d,1.00
-Fagus sylvatica 'Dawyck' - 'Dawyck' European beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,0.90
-Sorbus hybrida - oakleaf mountain ash,,1.00
-Ilex x meserveae 'Blue Maid' - 'Blue Maid' Meserve holly,,0.75
-Chamaecyparis nootkanensis - Nootka falsecypress,,1.00
-Prunus 'Holly Jolivette' - 'Holly Jolivette' Cherry,a20a008e-c1fe-5078-aeaa-5a265579dec7,0.60
-Pinus strobus 'Fastigiata' - 'Fastigiata' Eastern white pine,574f58de-5361-5488-9aed-cd1c486cc9d2,0.90
-Carpinus betulus 'Lucas' - 'Lucas' European hornbeam,938eae33-7294-56b6-bf84-1b8d00151b63,0.90
-Halesia carolina 'Arnold Pink' - 'Arnold Pink' Carolina silverbell tree,,0.90
-Phellodendron amurense 'Eye Stopper' - 'Eye Stopper' Amur cork tree,,0.90
-Ilex x meserveae 'Blue Princess' - 'Blue Princess' Meserve holly,,0.75
-Carpinus betulus 'Franz Fontaine' - 'Franz Fontaine' European hornbeam,938eae33-7294-56b6-bf84-1b8d00151b63,0.90
-Pyrus calleryana 'Stone Hill' - 'Stone Hill' Callery pear,fc55d55a-8706-593e-9ca8-c2d0b6cba3e7,0.90
-Cercis canadensis 'Crosswicks Red' - 'Crosswicks Red' Eastern redbud,f768334a-6811-5485-8b5f-f4d14c698ece,0.90
-Acer tataricum 'Flame' - 'Flame' Tatarian maple,,0.90
-Acer saccharum 'Autumn Splendor' - 'Autumn Splendor' Sugar maple,d903b3ee-075f-5d06-bed5-e70b04461ffc,0.90
-Pseudolarix amabilis - Golden Larch,,1.00
-Edgeworthia chrysantha - Oriental paperbush,,1.00
-Amelanchier laevis 'Spring Flurry' - 'Spring Flurry' Allegheny serviceberry,,0.90
-Camellia japonica - camellia,,1.00
-Prunus cerasus - Sour Cherry,,1.00
-Larix kaempferi - Japanese larch,,1.00
-Tamarix chinensis - five-stamen tamarisk,,1.00
-Quercus garryana - Oregon white oak,,1.00
-Pinus cembra - Swiss stone pine,,1.00
-Catalpa ovata - Chinese catalpa,,1.00
-Malus 'Lolipop' - 'Lolipop' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Prunus padus 'Summer Glow' - 'Summer Glow' European bird cherry,,0.90
-Tilia cordata 'Unizam' - 'Unizam' Littleleaf linden,d4c85034-f65a-58ba-b069-b2b837e634b7,0.90
-Quercus robur 'Skyrocket' - 'Skyrocket' English oak,5c33d272-9bd0-51ca-9544-d019635ddac2,0.90
-Malus 'Profusion' - 'Profusion' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Halesia tetraptera var. monticola - Mountain silverbell,,0.90
-Thuja occidentalis 'Hetz Wintergreen' - 'Hetz Wintergreen' Arborvitae,,0.90
-Pyrus calleryana 'Silver Ball' - 'Silver Ball' Callery pear,fc55d55a-8706-593e-9ca8-c2d0b6cba3e7,0.90
-Malus 'Lancelot' - 'Lancelot' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Malus 'Pink Spire' - 'Pink Spire' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Cornus florida 'Cherokee Sunset' - 'Cherokee Sunset' Flowering dogwood,68cf86fe-1217-550b-b651-04a870463229,0.90
-Cornus florida 'Appalachian Spring' - 'Appalachian Spring' Flowering dogwood,68cf86fe-1217-550b-b651-04a870463229,0.90
-Cornus kousa 'Summer Stars' - 'Summer Stars' Dogwood,,0.90
-Pinus taeda - loblolly pine,,1.00
-Magnolia 'Elizabeth' - 'Elizabeth' Magnolia,d5ebf801-2699-5398-90bb-d7be7e6c18cd,0.60
-Halesia carolina 'Jersey Belle' - 'Jersey Belle' Carolina silverbell tree,,0.90
-Sorbus aucuparia 'Cardinal Royal' - 'Cardinal Royal' Mountain ash,,0.90
-Fagus sylvatica f. purpurea - Copper beech,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,0.90
-Malus 'Dolgo' - 'Dolgo' Crabapple,739c7107-6028-5eea-81a6-a09abb7d1406,0.60
-Quercus x comptoniae - Compton oak,,0.75
-Chaenomeles speciosa - Flowering quince,,1.00
-Cercis canadensis 'Hearts of Gold' - 'Hearts of Gold' Eastern redbud,f768334a-6811-5485-8b5f-f4d14c698ece,0.90
-Myrica pensylvanica - Northern bayberry,,1.00
-Aesculus pavia - Red buckeye,,1.00
-Parrotia persica 'Vanessa' - 'Vanessa' Persian ironwood,7dc2fb47-49fc-54fe-9eff-76abe521e912,0.90
-Salix alba 'Niobe' - 'Niobe' White willow,,0.90
-Quercus dentata - Korean oak,,1.00
+Chamaecyparis nootkanensis - Nootka falsecypress,482fc92d-cf32-5128-b7bd-5d5d288eb82d,1.00
+Cornus florida 'Cherokee Princess' - 'Cherokee Princess' Flowering dogwood,eacc8e1a-4c77-51db-8e7f-e5be39a6aae1,0.90
+Fagus sylvatica 'Dawyck' - 'Dawyck' European beech,6ade8845-b726-54f3-bd12-284dd5da613e,0.90
+Ilex x meserveae 'Blue Maid' - 'Blue Maid' Meserve holly,80a2f991-fe74-5485-b0b2-f62fba628315,0.75
+Lagerstroemia indica 'Sarah's Favorite' - 'Sarah's Favorite' Crapemyrtle,dabbb918-d7a8-5c73-8540-a979abd64dc7,0.90
+Liquidambar styraciflua 'Grandmaster' - 'Grandmaster' Sweetgum,ab337177-3192-50aa-99b4-b5b3fa888e91,0.90
+Prunus 'Snow Goose x Copper Graft' - 'Snow Goose x Copper Graft' Cherry,95a8e27a-db8a-5c52-883f-dfc270b2f909,0.60
+Pyrus calleryana 'Cleveland Select' - 'Cleveland Select' Callery pear,12aee14f-a931-5127-87a1-f885828d2b21,0.90
+Sorbus americana - American mountain ash,bb95c1df-85ad-55cc-9e0b-275b1fe80187,1.00
+Sorbus hybrida - oakleaf mountain ash,7d057402-f4c7-5ae2-9901-addc96c25f2e,1.00
+Syringa meyeri 'Palibin' - 'Palibin' Korean lilac,679f4082-24fd-5303-986a-e4b611e4feff,0.90
+Acer saccharum 'Autumn Splendor' - 'Autumn Splendor' Sugar maple,17c61c69-b536-5762-afc5-63e173d48d0d,0.90
+Acer tataricum 'Flame' - 'Flame' Tatarian maple,91b37d8f-5d66-5977-923d-141959a3a2cb,0.90
+Amelanchier laevis 'Spring Flurry' - 'Spring Flurry' Allegheny serviceberry,be1b65f0-f659-591f-814f-daea9ab38995,0.90
+Camellia japonica - camellia,9a996b70-8d8b-5be8-9c9c-b116f223403a,1.00
+Carpinus betulus 'Franz Fontaine' - 'Franz Fontaine' European hornbeam,ce4368d7-a27a-577c-be22-f1b5cda2f550,0.90
+Carpinus betulus 'Lucas' - 'Lucas' European hornbeam,5ab9fea3-130d-57e5-8fda-4de100be9f05,0.90
+Catalpa ovata - Chinese catalpa,560f838e-ef3b-530a-bf46-85cdb6bd5c4c,1.00
+Cercis canadensis 'Crosswicks Red' - 'Crosswicks Red' Eastern redbud,13eea56b-e4ca-5255-8b5e-c76051d12d4c,0.90
+Edgeworthia chrysantha - Oriental paperbush,a458ed9a-c257-5dfe-94e2-a5c0b3f9add9,1.00
+Halesia carolina 'Arnold Pink' - 'Arnold Pink' Carolina silverbell tree,29e5f0c8-0c18-5844-bbe8-98faf15bc525,0.90
+Ilex x meserveae 'Blue Princess' - 'Blue Princess' Meserve holly,de2a201f-d256-5e3e-98e0-f77bf95c4f42,0.75
+Larix kaempferi - Japanese larch,f99d932a-3c36-59db-865c-1cab9091e130,1.00
+Malus 'Lolipop' - 'Lolipop' Crabapple,1bbe2767-8e39-51bb-b9f5-22539d336bcc,0.60
+Malus 'Profusion' - 'Profusion' Crabapple,ee6f0a18-33bd-54f3-be61-283b454c2801,0.60
+Phellodendron amurense 'Eye Stopper' - 'Eye Stopper' Amur cork tree,2d27a7dc-8be1-56d8-a720-b527770d41e2,0.90
+Pinus cembra - Swiss stone pine,7c8b78e2-f0bb-5f22-a32c-ef88e5686219,1.00
+Pinus strobus 'Fastigiata' - 'Fastigiata' Eastern white pine,f44033f0-a61f-54b2-8303-69ef8c05254e,0.90
+Prunus 'Holly Jolivette' - 'Holly Jolivette' Cherry,72765502-155b-52ff-a1a6-e53ccd280fca,0.60
+Prunus cerasus - Sour Cherry,a1c24d40-47c5-56b5-8d15-9fb94492a9c7,1.00
+Prunus padus 'Summer Glow' - 'Summer Glow' European bird cherry,85412a2b-1438-5765-aba9-3d0c17a95f6e,0.90
+Pseudolarix amabilis - Golden Larch,2141df3c-6efc-5fee-854f-9d7d667926ec,1.00
+Pyrus calleryana 'Stone Hill' - 'Stone Hill' Callery pear,1e5e465b-82ad-5b8d-9ff9-2954ac0e1103,0.90
+Quercus garryana - Oregon white oak,2f468fc9-0480-58c4-ac74-34f3acd0ebb7,1.00
+Quercus robur 'Skyrocket' - 'Skyrocket' English oak,d3c32bf7-b941-5d56-963b-b173b48c788a,0.90
+Tamarix chinensis - five-stamen tamarisk,7869cc26-74b2-54e6-b2ee-e0885e316196,1.00
+Tilia cordata 'Unizam' - 'Unizam' Littleleaf linden,45ccf9e9-a245-5eff-87c5-e1113734a103,0.90
+Aesculus pavia - Red buckeye,7fbf4bf1-a8a2-5054-875e-0d0b6d449566,1.00
+Cercis canadensis 'Hearts of Gold' - 'Hearts of Gold' Eastern redbud,907f4499-7b45-5ed0-8294-cf1cd275efe9,0.90
+Chaenomeles speciosa - Flowering quince,fe6ae6d8-5e8a-50d9-884d-9a41b5058641,1.00
+Cornus florida 'Appalachian Spring' - 'Appalachian Spring' Flowering dogwood,50db83a0-9708-5de2-a73d-b381210f4276,0.90
+Cornus florida 'Cherokee Sunset' - 'Cherokee Sunset' Flowering dogwood,8732d0c2-fcca-5c9b-9b9e-170ece7d6bcc,0.90
+Cornus kousa 'Summer Stars' - 'Summer Stars' Dogwood,51982d63-5246-5bf8-98a3-a3164dfb959a,0.90
+Fagus sylvatica f. purpurea - Copper beech,eaec1c0e-3b06-5457-87ed-3be0dc41c922,0.90
+Halesia carolina 'Jersey Belle' - 'Jersey Belle' Carolina silverbell tree,d6728f52-9b56-50ac-a4ec-8a06f690f879,0.90
+Halesia tetraptera var. monticola - Mountain silverbell,30ae1d45-f0a1-5f00-8e1b-54799c1c1020,0.90
+Magnolia 'Elizabeth' - 'Elizabeth' Magnolia,97296423-ba65-5cf4-9470-1bdf62bd749b,0.60
+Malus 'Dolgo' - 'Dolgo' Crabapple,f7967496-3825-56a2-bd4c-5a4777d343c2,0.60
+Malus 'Lancelot' - 'Lancelot' Crabapple,655889b7-c462-516e-bb2a-aae79c1ad9f5,0.60
+Malus 'Pink Spire' - 'Pink Spire' Crabapple,46ee1cb3-3e76-561c-ae4e-d2a37f02672d,0.60
+Myrica pensylvanica - Northern bayberry,75fe0876-2e02-59b0-8cdb-bba3b11b76e9,1.00
+Parrotia persica 'Vanessa' - 'Vanessa' Persian ironwood,3c809835-16a5-5ed0-a651-35b7eb1618a8,0.90
+Pinus taeda - loblolly pine,051fef9a-85ab-56d5-9377-1fdf722138ca,1.00
+Pyrus calleryana 'Silver Ball' - 'Silver Ball' Callery pear,98b7446a-08fa-5a9c-be5b-00e9e25cd414,0.90
+Quercus dentata - Korean oak,3bd8e382-5f3c-5bac-ad49-47337a609e1f,1.00
+Quercus x comptoniae - Compton oak,b4c71114-58f0-5acf-8ec2-161d72c950b1,0.75
+Salix alba 'Niobe' - 'Niobe' White willow,07cb6c07-c431-59b5-84ea-383f13f925ae,0.90
+Sorbus aucuparia 'Cardinal Royal' - 'Cardinal Royal' Mountain ash,cab4daf3-1e69-5c2d-bb86-6df7c48a87af,0.90
+Thuja occidentalis 'Hetz Wintergreen' - 'Hetz Wintergreen' Arborvitae,ada41663-6580-539e-a935-9b9a31898eb1,0.90
