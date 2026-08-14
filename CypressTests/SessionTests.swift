@@ -30,8 +30,21 @@ import Testing
 private actor ScriptedHTTP: AuthHTTP {
     private var captured: [URLRequest] = []
     private let handler: @Sendable (URLRequest, Int) -> (Int, Data)
+    /// A path suffix whose answer is held for `slowBy`, and the reason it exists:
+    /// **a concurrency test with nothing slow in it does not overlap.** The single-flight gate below
+    /// passed with the single-flight slot deleted until this was added — two `async let`s finished
+    /// one after the other, and the second read the first's stored result. That is a guard green
+    /// while its defect is present, which is this project's dominant failure mode.
+    private let slowPath: String?
+    private let slowBy: Duration
 
-    init(handler: @escaping @Sendable (URLRequest, Int) -> (Int, Data)) {
+    init(
+        slowPath: String? = nil,
+        slowBy: Duration = .milliseconds(120),
+        handler: @escaping @Sendable (URLRequest, Int) -> (Int, Data)
+    ) {
+        self.slowPath = slowPath
+        self.slowBy = slowBy
         self.handler = handler
     }
 
@@ -46,6 +59,11 @@ private actor ScriptedHTTP: AuthHTTP {
         let index = captured.count
         captured.append(request)
 
+        if let slowPath, request.url?.path.hasSuffix(slowPath) == true {
+            // The actor is released here, which is the point: the second caller gets in while this
+            // one is still waiting for its answer.
+            try await Task.sleep(for: slowBy)
+        }
         let (status, body) = handler(request, index)
         let response = HTTPURLResponse(
             url: request.url ?? URL(string: "https://example.invalid")!,
@@ -389,7 +407,7 @@ struct SessionTests {
             Wire.session(access: "stale", refresh: "refresh-1", now: now),
             forKey: CredentialKey.session
         )
-        let http = ScriptedHTTP { request, _ in
+        let http = ScriptedHTTP(slowPath: "/auth/refresh") { request, _ in
             if request.url?.path.hasSuffix("/auth/refresh") == true {
                 return (200, Wire.session(access: "fresh", refresh: "refresh-2", now: now))
             }
