@@ -18,6 +18,29 @@ import Observation
 /// when there is one, and until then a tap claims nothing.
 typealias AccountAskLink = @Sendable (AccountLinkRequest) async throws -> Void
 
+/// The two ways a tap ends without an account and **without anything having gone wrong**.
+///
+/// Both existed only as ideas while the sign-in was local and could not be refused or cancelled: the
+/// action either returned or threw, and `link` turned every throw into "that did not go through".
+/// With a real provider behind the Apple button that sentence became false in two directions at
+/// once, so the two cases are named here — in `Features`, carrying no `AuthenticationServices`
+/// import, so the composition root translates Apple's vocabulary into this one rather than this
+/// screen learning Apple's.
+///
+/// A separate type rather than two more `Notice` cases because the *notice* is the consequence and
+/// not the fact: `.cancelled` draws nothing at all.
+enum AccountLinkRefusal: Error, Equatable {
+    /// Somebody opened the provider's own sheet and dismissed it. **Nothing happened, so nothing is
+    /// said** — see `AccountAskModel.link` for why silence is the only answer here that invents no
+    /// copy.
+    case cancelled
+    /// This build has no route for that provider. Spec §5.3 and RULINGS **R72** ruling 2: Apple
+    /// ships first, the email magic link is deferred to its own ticket, and Google is the same
+    /// server route through a system framework that #158 does not build. Until then screen 15 offers
+    /// "one working route and two honest 'not yet' buttons", which is this case.
+    case unavailable
+}
+
 @MainActor
 @Observable
 final class AccountAskModel {
@@ -73,8 +96,16 @@ final class AccountAskModel {
     /// The answer is returned rather than stored, so this model holds no "signed in" flag: whether
     /// an account exists is the injected action's answer and the store's, and a screen that kept its
     /// own copy of it would be a second, quieter source of truth for the one fact this whole feature
-    /// is about. Every path either returns `true` — and the caller closes the sheet — or leaves a
-    /// `notice` and returns `false`.
+    /// is about.
+    ///
+    /// **"Every path either returns `true` or leaves a `notice`" was the rule and it now has one
+    /// exception, which is the point of `AccountLinkRefusal.cancelled`.** With a real Apple sheet in
+    /// front of the tap, somebody can dismiss it, and the three answers available were: print
+    /// `noticeFailed` — *"That did not go through"* — which is a claim that something went wrong
+    /// when nothing did; invent a fourth sentence, which DECISIONS constraint 21 forbids and this
+    /// round has no drawn state for; or draw the screen the mock draws, unchanged, which is what a
+    /// dismissed system sheet leaves behind on every other iOS app. The third invents nothing and
+    /// says nothing false, so it is what happens. Recorded unnumbered in `docs/errata-pending/`.
     @discardableResult
     func link(_ provider: AccountAskProvider) async -> Bool {
         guard !isLinking else { return false }
@@ -91,6 +122,13 @@ final class AccountAskModel {
         do {
             try await onLink(request)
             return true
+        } catch AccountLinkRefusal.cancelled {
+            // Silence. The sheet stays exactly as it was drawn, which is the state SCREENS.md 15
+            // draws and the only one here that claims nothing.
+            return false
+        } catch AccountLinkRefusal.unavailable {
+            notice = .unavailable
+            return false
         } catch {
             notice = .failed
             return false
