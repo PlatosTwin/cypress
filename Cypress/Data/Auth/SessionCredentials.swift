@@ -66,22 +66,75 @@ public struct SessionCredentials: Codable, Sendable, Hashable {
     }
 }
 
-/// `POST /devices/register`'s answer — the anonymous queue's credential (§5.8, D9).
+/// `POST /devices/register`'s answer, exactly — and **only** that.
 ///
-/// It is **not an attestation**: a reinstall mints a new one and the server cannot tell the
-/// difference. Named here because a type called `DeviceCredential` invites being read as one.
+/// Split from `DeviceCredential` below, which is what gets *stored*. The two were one type, and the
+/// conflation is what made the reinstall defect unwritable-about: a value that is both the wire
+/// shape and the storage shape cannot carry a field the wire does not send, and the missing field
+/// was the whole bug.
+struct DeviceRegistration: Decodable {
+    let deviceToken: String
+    let expiresAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case deviceToken = "device_token"
+        case expiresAt = "expires_at"
+    }
+}
+
+/// The anonymous queue's credential as this installation stores it (§5.8, D9).
+///
+/// ── Why it carries the `device_uuid` it was minted for ────────────────────────────────────────
+///
+/// This type's header used to say: *"It is **not an attestation**: a reinstall mints a new one and
+/// the server cannot tell the difference."* The second half is true and the first half was false,
+/// and the gap between them is a blocker that reached the merged client.
+///
+/// **On iOS the Keychain survives app deletion; `app_state.device_uuid` does not.** It lives in
+/// SQLite inside the app container, so deleting the app takes the database and `DataLayer.boot`
+/// mints a fresh installation id on the next launch — while `KeychainCredentialStore` hands back the
+/// credential minted for the *previous* one. From then on the phone authenticates as the old
+/// `devices` row and names the new installation on every item, so `applyOne` refuses all of them:
+/// *"That item belongs to a different device."*
+///
+/// **And it is permanent, which is what makes it a blocker rather than a bug.** The refusal is a
+/// per-item verdict inside a `200 OK` batch, so `SessionTransport`'s refresh-and-replay never fires
+/// — it rotates on a 401 and there is no 401. The credential is live, well-formed and accepted by
+/// the service; only its *pairing* is wrong, and nothing recorded the pairing. There is no in-app
+/// recovery, and the act that causes it is deleting the app — the first thing anybody tries.
+///
+/// So the pairing is stored. `AppSession.storedDeviceCredential` reads a credential minted for
+/// another installation as **no credential at all**, which routes it into the ordinary lazy
+/// registration path and mints a fresh one through the single-flight door. The stale item is not
+/// deleted explicitly: `register()` writes to the same key, so it is overwritten by the repair
+/// itself, and a getter with a side effect would be the harder thing to reason about.
+///
+/// **No data migration.** The field is non-optional, so a credential written by a build that
+/// predates it fails to decode, `storedDeviceCredential`'s `try?` reads that as absent, and the
+/// installation re-registers — which is exactly the desired outcome. Nothing in the field needs
+/// migrating in any case: the app is unreleased.
 public struct DeviceCredential: Codable, Sendable, Hashable {
     public let deviceToken: String
     public let expiresAt: Date
+    /// The `app_state.device_uuid` this token was minted for. See the header.
+    public let deviceUUID: UUID
 
-    public init(deviceToken: String, expiresAt: Date) {
+    public init(deviceToken: String, expiresAt: Date, deviceUUID: UUID) {
         self.deviceToken = deviceToken
         self.expiresAt = expiresAt
+        self.deviceUUID = deviceUUID
+    }
+
+    init(_ registration: DeviceRegistration, deviceUUID: UUID) {
+        self.deviceToken = registration.deviceToken
+        self.expiresAt = registration.expiresAt
+        self.deviceUUID = deviceUUID
     }
 
     enum CodingKeys: String, CodingKey {
         case deviceToken = "device_token"
         case expiresAt = "expires_at"
+        case deviceUUID = "device_uuid"
     }
 
     public func isLive(at now: Date, skew: TimeInterval = 30) -> Bool {

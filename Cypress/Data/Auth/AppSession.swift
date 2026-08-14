@@ -104,9 +104,31 @@ public actor AppSession {
         return try? AuthCoding.decoder.decode(SessionCredentials.self, from: data)
     }
 
+    /// The stored device credential — **or nil when it was minted for a different installation.**
+    ///
+    /// ── The reinstall blocker, and why the check is here rather than at the call sites ─────────
+    ///
+    /// The Keychain survives app deletion on iOS; `app_state.device_uuid` does not, because it lives
+    /// in the SQLite database inside the app container. So a reinstall pairs a *surviving* credential
+    /// with a *fresh* installation id, the phone authenticates as the old `devices` row, and
+    /// `applyOne` refuses every item it sends — permanently, because the refusal is a per-item
+    /// verdict inside a `200 OK` and `SessionTransport` rotates only on a 401. `DeviceCredential`'s
+    /// header has the full account.
+    ///
+    /// Both readers of this property — `authorization()` and `stored(_:otherThan:)` — must agree
+    /// about what "this installation has a credential" means, and a rule stated twice is a rule that
+    /// can disagree with itself (`server.go` says the same thing about its own fall-through). So it
+    /// is stated once, here, at the only door to the stored value.
+    ///
+    /// Returning nil rather than deleting: `register()` writes to the same key, so the repair
+    /// overwrites the stale item on its way past, and a getter with a side effect is the harder
+    /// thing to reason about.
     public var storedDeviceCredential: DeviceCredential? {
-        guard let data = try? credentials.data(forKey: CredentialKey.device) else { return nil }
-        return try? AuthCoding.decoder.decode(DeviceCredential.self, from: data)
+        guard let data = try? credentials.data(forKey: CredentialKey.device),
+              let stored = try? AuthCoding.decoder.decode(DeviceCredential.self, from: data),
+              stored.deviceUUID == deviceUUID
+        else { return nil }
+        return stored
     }
 
     /// The account this device is signed in as, for callers that need the id and not the token.

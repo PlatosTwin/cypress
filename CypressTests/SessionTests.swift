@@ -109,10 +109,38 @@ private enum Wire {
         """.utf8)
     }
 
+    /// What `POST /devices/register` **answers**: a token and an expiry, and no installation id —
+    /// the service is told which installation it is registering and does not echo it back.
     static func device(token: String, now: Date, lifetime: TimeInterval = 365 * 24 * 60 * 60) -> Data {
         Data("""
         {"device_token":"\(token)","expires_at":"\(stamp(now.addingTimeInterval(lifetime)))"}
         """.utf8)
+    }
+
+    /// What a credential looks like **stored**, which is a different shape and now a different type.
+    ///
+    /// Four tests here used to seed the Keychain with `device(token:now:)` — the *wire* payload — and
+    /// that worked only because one type was both shapes. That conflation is what made the reinstall
+    /// blocker unwritable-about, so the split is deliberate and these fixtures follow it: a stored
+    /// credential names the installation it belongs to, and a test that seeds one has to say which.
+    ///
+    /// Worth noting what the old fixtures were: two of them went red under the split and two stayed
+    /// green while no longer seeding anything readable — the rotation tests, which then measured a
+    /// path that began with an empty store. A fixture that decodes to nothing is a test that has
+    /// quietly changed subject.
+    static func storedDevice(
+        token: String,
+        now: Date,
+        deviceUUID: UUID,
+        lifetime: TimeInterval = 365 * 24 * 60 * 60
+    ) throws -> Data {
+        try AuthCoding.encoder.encode(
+            DeviceCredential(
+                deviceToken: token,
+                expiresAt: now.addingTimeInterval(lifetime),
+                deviceUUID: deviceUUID
+            )
+        )
     }
 }
 
@@ -289,6 +317,156 @@ struct SessionTests {
         )
     }
 
+    // MARK: The reinstall
+
+    /// **A credential the Keychain kept across an app deletion must not be used, and this is the
+    /// blocker that reached the merged client.**
+    ///
+    /// ── The scenario, exactly ──────────────────────────────────────────────────────────────────
+    ///
+    /// Delete the app and reinstall it. The Keychain survives on iOS; the SQLite database does not,
+    /// so `DataLayer.boot` mints a fresh `app_state.device_uuid`. The stored credential was minted
+    /// for the **old** one, so the phone authenticates as the old `devices` row while naming the new
+    /// installation on every item, and `applyOne` answers *"That item belongs to a different
+    /// device."* on all of them.
+    ///
+    /// ── Why it does not heal, which is what makes it a blocker ─────────────────────────────────
+    ///
+    /// The refusal is a **per-item verdict inside a `200 OK` batch**, so `SessionTransport`'s
+    /// refresh-and-replay never runs — it rotates on a 401 and there is no 401 anywhere on this
+    /// path. The credential is live, well-formed and accepted; only its pairing is wrong. And
+    /// `forbidden` is not retryable, so `OutboxRetryPolicy` moves each item to `.failed` on the
+    /// first drain. There is no in-app recovery and the act that causes it is deleting the app.
+    ///
+    /// ── What is asserted, and why not the token ────────────────────────────────────────────────
+    ///
+    /// That a **registration happened**. Asserting only that the returned token is the fresh one
+    /// would pass against an implementation that sent the stale token and got lucky about ordering;
+    /// the question is whether this installation asked the service for a credential of its own.
+    /// The token is asserted too, because the two together are the whole repair.
+    @Test("a credential minted for a previous install is not this install's, and is re-registered")
+    func aCredentialFromABeforeInstallIsNotUsed() async throws {
+        let now = now
+        let credentials = InMemoryCredentialStore()
+        // The survivor: minted for an installation this database has never heard of.
+        let previousInstall = UUID(uuidString: "24D1629F-0000-4000-8000-00000000BEEF")!
+        #expect(previousInstall != deviceUUID, "the fixture must be a different installation")
+        try credentials.setData(
+            try AuthCoding.encoder.encode(
+                DeviceCredential(
+                    deviceToken: "token-from-the-deleted-install",
+                    expiresAt: now.addingTimeInterval(365 * 24 * 60 * 60),
+                    deviceUUID: previousInstall
+                )
+            ),
+            forKey: CredentialKey.device
+        )
+
+        let http = ScriptedHTTP { _, _ in (200, Wire.device(token: "device-after-reinstall", now: now)) }
+        let session = session(http: http, credentials: credentials)
+
+        let authorization = try await session.authorization()
+
+        let registrations = await http.requests(to: "/devices/register").count
+        #expect(
+            registrations == 1,
+            """
+            \(registrations) registrations. A credential minted for another installation was used as \
+            this one's, so every item this phone sends names a device the token does not own and \
+            `applyOne` refuses all of them — permanently, because the refusal arrives inside a 200 \
+            and nothing rotates on it.
+            """
+        )
+        #expect(
+            authorization == .device("device-after-reinstall"),
+            "the stale token was presented: \(authorization)"
+        )
+    }
+
+    /// The control, and the half that makes the test above a measurement.
+    ///
+    /// A credential minted for **this** installation is used, and no registration happens. Without
+    /// this, a repair that simply re-registered on every launch would pass the reinstall test — and
+    /// would be its own defect, because `POST /devices/register` retires the previous token on every
+    /// call (`server/README.md`), so a phone that re-registered per launch would sign its own queue
+    /// out. Same discipline as `registersOnceAndReuses`, against a *stored* credential rather than
+    /// an empty store.
+    @Test("a credential minted for this install is reused, and nothing re-registers")
+    func aMatchingCredentialIsReusedWithoutRegistering() async throws {
+        let now = now
+        let credentials = InMemoryCredentialStore()
+        try credentials.setData(
+            try AuthCoding.encoder.encode(
+                DeviceCredential(
+                    deviceToken: "token-for-this-install",
+                    expiresAt: now.addingTimeInterval(365 * 24 * 60 * 60),
+                    deviceUUID: deviceUUID
+                )
+            ),
+            forKey: CredentialKey.device
+        )
+
+        let http = ScriptedHTTP { _, _ in (200, Wire.device(token: "should-not-be-minted", now: now)) }
+        let session = session(http: http, credentials: credentials)
+
+        let authorization = try await session.authorization()
+
+        #expect(authorization == .device("token-for-this-install"))
+        let registrations = await http.requests(to: "/devices/register").count
+        #expect(
+            registrations == 0,
+            """
+            \(registrations) registrations for a credential that was already this installation's. \
+            Re-registering RETIRES the previous token server-side, so a launch that re-registered \
+            would sign out the queue it was trying to drain.
+            """
+        )
+    }
+
+    /// The pairing survives the round trip it exists for.
+    ///
+    /// The credential is written by `register()` and read back on a later launch, so a `deviceUUID`
+    /// that did not survive encoding would restore the defect while every test above still passed —
+    /// they hold one process. Asserted against `AuthCoding`, which is the coder the store really
+    /// uses, and not against a fresh `JSONEncoder`.
+    @Test("the installation a credential was minted for survives being stored and read back")
+    func thePairingSurvivesStorage() throws {
+        let minted = DeviceCredential(
+            deviceToken: "device-1",
+            expiresAt: now.addingTimeInterval(3600),
+            deviceUUID: deviceUUID
+        )
+        let restored = try AuthCoding.decoder.decode(
+            DeviceCredential.self,
+            from: try AuthCoding.encoder.encode(minted)
+        )
+        #expect(restored == minted, "a stored credential came back as a different value")
+        #expect(restored.deviceUUID == deviceUUID)
+    }
+
+    /// A credential written by a build that predates the pairing reads as absent, so the
+    /// installation re-registers.
+    ///
+    /// This is the whole of the migration story and it is why there is no migration: the field is
+    /// non-optional, an old payload fails to decode, `storedDeviceCredential`'s `try?` reads that as
+    /// nothing stored, and the next call mints a fresh credential through the ordinary door. The
+    /// app is unreleased, so no such payload exists in the field — but the shape is asserted rather
+    /// than assumed, because "there are no old installs" is a fact about today.
+    @Test("a credential stored before the pairing existed reads as absent")
+    func aPrePairingCredentialReadsAsAbsent() async throws {
+        let now = now
+        let credentials = InMemoryCredentialStore()
+        try credentials.setData(
+            Data(#"{"device_token":"older-build","expires_at":"2027-08-14T14:03:38Z"}"#.utf8),
+            forKey: CredentialKey.device
+        )
+        let http = ScriptedHTTP { _, _ in (200, Wire.device(token: "device-after-upgrade", now: now)) }
+        let session = session(http: http, credentials: credentials)
+
+        #expect(try await session.authorization() == .device("device-after-upgrade"))
+        #expect(await http.requests(to: "/devices/register").count == 1)
+    }
+
     /// **Blocker 1 from review of PR #77, and it was measured there before it was fixed here.**
     ///
     /// Two concurrent first requests on a fresh install both find no device credential and both
@@ -348,7 +526,10 @@ struct SessionTests {
     func aReplacedDeviceTokenIsNotReRegistered() async throws {
         let now = now
         let credentials = InMemoryCredentialStore()
-        try credentials.setData(Wire.device(token: "device-1", now: now), forKey: CredentialKey.device)
+        try credentials.setData(
+            try Wire.storedDevice(token: "device-1", now: now, deviceUUID: deviceUUID),
+            forKey: CredentialKey.device
+        )
         let http = ScriptedHTTP { _, index in (200, Wire.device(token: "device-\(index + 2)", now: now)) }
         let live = session(http: http, credentials: credentials)
 
@@ -415,7 +596,10 @@ struct SessionTests {
             Wire.session(access: "stale", refresh: "refresh-1", now: now),
             forKey: CredentialKey.session
         )
-        try credentials.setData(Wire.device(token: "device-1", now: now), forKey: CredentialKey.device)
+        try credentials.setData(
+            try Wire.storedDevice(token: "device-1", now: now, deviceUUID: deviceUUID),
+            forKey: CredentialKey.device
+        )
         // Both routes are slow ("" matches every path), so the two rotations really are in flight
         // together — without that they run one after the other and nothing overlaps (see `f1a8c1b`).
         let http = ScriptedHTTP(slowPath: "") { request, _ in
@@ -632,7 +816,7 @@ struct SessionTests {
         let now = now
         let credentials = InMemoryCredentialStore()
         try credentials.setData(
-            Wire.device(token: "device-1", now: now),
+            try Wire.storedDevice(token: "device-1", now: now, deviceUUID: deviceUUID),
             forKey: CredentialKey.device
         )
         let http = ScriptedHTTP { request, _ in
@@ -829,7 +1013,10 @@ struct SessionTests {
         let now = now
         let credentials = InMemoryCredentialStore()
         try credentials.setData(Wire.session(access: "a", refresh: "r", now: now), forKey: CredentialKey.session)
-        try credentials.setData(Wire.device(token: "device-1", now: now), forKey: CredentialKey.device)
+        try credentials.setData(
+            try Wire.storedDevice(token: "device-1", now: now, deviceUUID: deviceUUID),
+            forKey: CredentialKey.device
+        )
         let http = ScriptedHTTP { _, _ in (500, Data()) }
         let live = session(http: http, credentials: credentials)
 
