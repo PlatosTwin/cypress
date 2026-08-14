@@ -131,11 +131,13 @@ final class VisitSaveLedger {
     /// PROTOTYPE-FLOW §1.4 gives three arms and they key on `account`: `linked` →
     /// "Backed up to your account · joins the public timeline when signal returns.", `dismissed` →
     /// this string, otherwise → the other one. The `linked` arm needs a signed-in account, and Sign
-    /// in with Apple is blocked on an entitlement this repository cannot add (see
-    /// `docs/errata-pending/158-the-session-lands-and-the-sign-in-sheet-cannot.md`), so it is
-    /// unreachable. The state this build is actually in — **anonymous, and sent** — is not one of the
-    /// four the mocks enumerate, and writing a fourth sentence for it is inventing copy (DECISIONS
-    /// constraint 21). The finding is in `docs/errata-pending/` for the owner.
+    /// in with Apple is blocked on an Xcode entitlement this repository cannot add, so it is
+    /// unreachable on any build produced from this tree. The state this build is actually in —
+    /// **anonymous, and sent** — is not one of the four the mocks enumerate, and writing a fifth
+    /// sentence for it is inventing copy (DECISIONS constraint 21).
+    ///
+    /// So this is a stop-and-ask, raised in #158's wiring round and unnumbered as this is written.
+    /// Cite the erratum it becomes, by number, rather than this paragraph.
     var storageLine: String {
         isAskResolved
             ? "Saving to this phone only. You can add an account any time."

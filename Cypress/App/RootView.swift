@@ -498,8 +498,9 @@ struct RootView: View {
     /// normal case). Screen 18's line is therefore false before this closure is ever reached. Which
     /// sentence replaces it is a copy question the mocks do not answer — PROTOTYPE-FLOW §1.4's three
     /// arms key on `account ∈ none | ask | linked | dismissed` and there is no arm for
-    /// *anonymous-and-sent* — so it is written up in `docs/errata-pending/` for the owner rather than
-    /// invented here (DECISIONS constraint 21).
+    /// *anonymous-and-sent* — so it is a stop-and-ask for the owner rather than something invented
+    /// here (DECISIONS constraint 21). It is raised in #158's wiring round, unnumbered as this is
+    /// written; the erratum it becomes is the one to cite once it has a number.
     ///
     /// Idempotent on identity: if this device already carries a `userID` (the ask can return once
     /// under ERRATA E34), it is reused, so a second link sweeps any freshly-anonymous rows onto the

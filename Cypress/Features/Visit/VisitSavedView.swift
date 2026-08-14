@@ -98,7 +98,8 @@ struct VisitSavedView: View {
         // add — that `storageLine` keeps saying "this phone only" after it, "which stays true" — is
         // no longer true**: #158's wiring round sends an anonymous installation's queue to
         // `cypress-sync` under its device credential, so that line is false before this sheet opens.
-        // See `RootView.accountLink()` and `docs/errata-pending/` for why it is not simply rewritten.
+        // See `RootView.accountLink()` and `VisitSaveLedger.storageLine` for why it is not simply
+        // rewritten.
         // When `onLink` is nil (a build with neither a server nor the local seam) 15 renders its
         // "not ready yet" notice instead, unchanged.
         // ══════════════════════════════════════════════════════════════════════════════════════
