@@ -115,6 +115,13 @@ public actor AppSession {
     /// verdict inside a `200 OK` and `SessionTransport` rotates only on a 401. `DeviceCredential`'s
     /// header has the full account.
     ///
+    /// **This closes the anonymous arm and only that arm.** `authorization()` below returns
+    /// `.user(…)` from `storedSession` before it ever reads this property, so a reinstall on a phone
+    /// holding a live account session never arrives here. That case has its own divergence — the
+    /// session outlives `app_state.currentUserID` and nothing re-hydrates it — and it is open, not
+    /// closed; `DeviceCredential`'s header states it in full. Do not read this property's guard as
+    /// "reinstall is handled".
+    ///
     /// Both readers of this property — `authorization()` and `stored(_:otherThan:)` — must agree
     /// about what "this installation has a credential" means, and a rule stated twice is a rule that
     /// can disagree with itself (`server.go` says the same thing about its own fall-through). So it
@@ -149,6 +156,10 @@ public actor AppSession {
     }
 
     /// The credential to send with: the account's if there is a live one, else the device's.
+    ///
+    /// **The order matters to more than performance.** A live account session short-circuits here,
+    /// before `storedDeviceCredential`'s installation check runs at all — which is why that check
+    /// closes the anonymous reinstall and leaves the signed-in one open. See `DeviceCredential`.
     ///
     /// An access token that has expired is refreshed here rather than being sent and coming back
     /// 401 — the round trip saved is not the point, the 401 avoided is.

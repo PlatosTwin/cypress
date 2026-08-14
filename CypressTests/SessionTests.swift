@@ -381,6 +381,19 @@ struct SessionTests {
             authorization == .device("device-after-reinstall"),
             "the stale token was presented: \(authorization)"
         )
+
+        // **And the repair persisted**, which is a claim the prose makes and nothing else checked:
+        // the stale item is deliberately not deleted, on the grounds that `register()` writes the
+        // same key and overwrites it on the way past. If that were wrong the survivor would still be
+        // in the Keychain, this launch would look fine, and the *next* one would re-register again —
+        // every launch retiring the token the last one minted, which is the impostor fix's defect
+        // arriving by a different road.
+        let stored = try #require(await session.storedDeviceCredential)
+        #expect(stored.deviceToken == "device-after-reinstall", "the stale credential is still stored")
+        #expect(
+            stored.deviceUUID == deviceUUID,
+            "the replacement is not paired with this installation, so the next launch discards it too"
+        )
     }
 
     /// The control, and the half that makes the test above a measurement.
@@ -456,10 +469,22 @@ struct SessionTests {
     func aPrePairingCredentialReadsAsAbsent() async throws {
         let now = now
         let credentials = InMemoryCredentialStore()
-        try credentials.setData(
-            Data(#"{"device_token":"older-build","expires_at":"2027-08-14T14:03:38Z"}"#.utf8),
-            forKey: CredentialKey.device
+        let prePairing = Data(#"{"device_token":"older-build","expires_at":"2027-08-14T14:03:38Z"}"#.utf8)
+        try credentials.setData(prePairing, forKey: CredentialKey.device)
+
+        // **Why it failed to decode, and not merely that it did.** "Something was unreadable" would
+        // pass against a payload that was malformed for any reason — a typo in the fixture, a broken
+        // date, a truncated string — and would then be asserting the coder's unhappiness rather than
+        // the compatibility rule. This payload is *well-formed and complete as a wire answer*: it
+        // decodes cleanly as `DeviceRegistration`. The only thing wrong with it is the one thing
+        // under test, which is that it names no installation.
+        let asWire = try AuthCoding.decoder.decode(DeviceRegistration.self, from: prePairing)
+        #expect(asWire.deviceToken == "older-build", "the fixture is not a valid wire payload")
+        #expect(
+            (try? AuthCoding.decoder.decode(DeviceCredential.self, from: prePairing)) == nil,
+            "the pre-pairing payload decoded as a stored credential, so it names an installation"
         )
+
         let http = ScriptedHTTP { _, _ in (200, Wire.device(token: "device-after-upgrade", now: now)) }
         let session = session(http: http, credentials: credentials)
 

@@ -2,16 +2,51 @@
 //  SessionCredentials.swift
 //  Cypress — Data/Auth
 //
-//  The two credentials this app holds, in the shapes the service actually sends them.
+//  The credentials this app holds — and **they are not all one kind of shape**, which is the first
+//  thing to know before editing anything here.
 //
-//  Keys are **snake_case**, which is `server/README.md`'s rule and not a preference: a payload that
-//  reconstructs a client-owned Swift type speaks that type's synthesized property names, and
+//  ── Two kinds of shape, and the difference is load-bearing ─────────────────────────────────────
+//
+//  *Wire shapes* are what the service sends: `SessionCredentials` and `DeviceRegistration`. Their
+//  `CodingKeys` are a contract with `server/internal/api`, and changing one is a protocol change.
+//
+//  *Storage shapes* are what this installation keeps in the Keychain: `DeviceCredential`. Its
+//  `CodingKeys` are a **persistence format**, owned entirely by this app, and changing one is a
+//  compatibility question about credentials already on somebody's phone — a different question with
+//  a different failure mode.
+//
+//  They were one type. `DeviceCredential` was decoded straight off `POST /devices/register` *and*
+//  encoded into the Keychain, so it could not carry a field the wire does not send — and the field
+//  it could not carry was the installation the token belonged to. That is the whole of the reinstall
+//  defect this file's `DeviceCredential` header describes. The split exists so the two questions can
+//  be asked separately; do not merge them back.
+//
+//  ── The wire rule ─────────────────────────────────────────────────────────────────────────────
+//
+//  Wire keys are **snake_case**, which is `server/README.md`'s rule and not a preference: a payload
+//  that reconstructs a client-owned Swift type speaks that type's synthesized property names, and
 //  everything else — the error envelope, sync results, request bodies, and these — is snake_case.
-//  Nothing here is a reconstructed `Core` model, so nothing here is camelCase.
+//  Nothing here is a reconstructed `Core` model, so nothing here is camelCase. The storage shape
+//  follows the same spelling, but for a weaker reason: consistency with its neighbours, not a
+//  contract with anybody.
 //
-//  Timestamps are RFC3339 at second precision in UTC, decoded with `.iso8601`
-//  (`.withInternetDateTime`), which **rejects fractional seconds**. The server truncates for
-//  exactly this reason; `AuthCoding` is the one place that pairing is stated.
+//  ── The storage rule, which has no equivalent on the wire ─────────────────────────────────────
+//
+//  **Adding a non-optional key to a storage shape discards every credential already stored.** The
+//  decode fails, `AppSession`'s `try?` reads the failure as "nothing stored", and the installation
+//  re-registers. Adding an *optional* key does not: old payloads decode with nil.
+//
+//  Neither is automatically right. Discarding is correct when the missing fact makes the stored
+//  value untrustworthy — which is exactly why `deviceUUID` is non-optional — and wrong when it would
+//  throw away a credential that is still perfectly usable, because a re-register **retires the
+//  previous token server-side** (`server/README.md`) and a needless one signs out a queue that was
+//  draining. Decide which you are doing, and say so at the field.
+//
+//  ── Timestamps ────────────────────────────────────────────────────────────────────────────────
+//
+//  RFC3339 at second precision in UTC, decoded with `.iso8601` (`.withInternetDateTime`), which
+//  **rejects fractional seconds**. The server truncates for exactly this reason; `AuthCoding` is the
+//  one place that pairing is stated.
 //
 
 import Foundation
@@ -109,10 +144,26 @@ struct DeviceRegistration: Decodable {
 /// deleted explicitly: `register()` writes to the same key, so it is overwritten by the repair
 /// itself, and a getter with a side effect would be the harder thing to reason about.
 ///
-/// **No data migration.** The field is non-optional, so a credential written by a build that
-/// predates it fails to decode, `storedDeviceCredential`'s `try?` reads that as absent, and the
-/// installation re-registers — which is exactly the desired outcome. Nothing in the field needs
-/// migrating in any case: the app is unreleased.
+/// ── What this closes, and what it does not ────────────────────────────────────────────────────
+///
+/// **The device arm only.** `AppSession.authorization()` consults `storedSession` first and returns
+/// `.user(…)` before it ever reaches the device credential, so a reinstall on a phone whose Keychain
+/// still holds a live *account* session takes a different branch entirely and none of the above
+/// applies to it.
+///
+/// That branch has its own divergence and it is **open**: the session survives while
+/// `app_state.currentUserID` does not, nothing re-hydrates it (`DataLayer.boot` reads `app_state`
+/// and never consults this type), so the app shows a signed-out installation while the bearer is the
+/// account's and the service attributes the work to it. It is not this defect — no refusal, no loss,
+/// and an account is *supposed* to be portable — but it is not fixed here, and whether a reinstall
+/// should restore the account or discard the session is a product question rather than an
+/// engineering one.
+///
+/// **No data migration**, and the rule it rests on is this file's header: a non-optional key
+/// discards what is already stored, which is the right answer when the missing fact makes the stored
+/// value untrustworthy. A credential with no recorded installation is exactly that. The app is
+/// unreleased, so no such payload exists in the field; the shape is asserted anyway, in
+/// `SessionTests.aPrePairingCredentialReadsAsAbsent`.
 public struct DeviceCredential: Codable, Sendable, Hashable {
     public let deviceToken: String
     public let expiresAt: Date
