@@ -322,12 +322,26 @@ func TestAnItemThatIsNotYoursIsForbiddenNotUnauthorized(t *testing.T) {
 // item that named itself, and `forbidden` is not retryable: the client's whole queue moved to
 // `failed` on its first drain and screen 17 printed "This account is not allowed to send that."
 //
-// Nothing here caught it, and the reason is the shape worth remembering. Every sync test that
-// expects success **omits** `device_id` (see `TestSyncAppliesAndDedupes`, `TestPerItemVerdicts`),
-// and the one test that sends one — `TestPerItemVerdicts`' fifth item — sends `uuid.New()`, a
-// stranger's, and asserts the refusal. So the suite covered "no device id" and "somebody else's
-// device id" and never "my own", which is the only one a real client sends. A guard green with its
-// defect present, because the case that would fail it was never written.
+// Nothing here caught it, and the reason is the shape worth remembering — stated from the file
+// rather than from memory, because the first draft of this paragraph cited two tests that have
+// never existed in this repository.
+//
+// Four tests sync successfully under a device credential — `TestGroveAndMembershipAnswerTheCallers
+// OwnRows`, `TestAnUnknownFieldFailsOnlyItsOwnItem`, `TestAnUnknownEnvelopeKeyDoesNotFailTheBatch`,
+// `TestSyncDedupesAndTombstonesBothAnswerDuplicate` — and **every one of them omits `device_id`**.
+// The whole suite contained exactly one item that carried one: the fifth of five in
+// `TestNoHandlerAnswersUnauthorizedPerItem`, which sends `uuid.New()`, a stranger's. And that test
+// asserts only that the code is **not `unauthorized`** — which is true with the defect and true
+// without it, so it could not discriminate even about the case it did send.
+//
+// `TestAnItemThatIsNotYoursIsForbiddenNotUnauthorized` is the nearest neighbour by name and is not
+// this case either: it sends somebody else's **`user_id`** under a device credential, exercising the
+// user arm of the same switch.
+//
+// So the suite covered "no device id", never covered "my own device id" — the only one a real client
+// sends — and covered "somebody else's" only in a form that could not tell the two implementations
+// apart. A guard green with its defect present, because the case that would fail it was never
+// written.
 //
 // It was found by pointing the shipping client at the deployed service (#158's wiring round) and
 // isolating it with three probes on one credential: own `device_uuid` → forbidden, a stranger's →
