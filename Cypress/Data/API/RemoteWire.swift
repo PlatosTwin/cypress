@@ -129,6 +129,19 @@ enum JSONValue: Codable, Hashable, Sendable {
 /// (ERRATA **E261** §3): `OutboxFailureReason.apiError(from:)` returns nil for an error it does not
 /// recognize, so an outbox item that somehow reached one of these stays alive on the backoff rather
 /// than being failed terminally with a sentence about the person's account.
+///
+/// ── The copy that would be wrong, and why it is not reachable ──────────────────────────────────
+///
+/// `OutboxFailureReason.sentence(for:)` answers **"No connection."** for any error outside the
+/// taxonomy, which would be a false sentence about any of these three. It is not reachable, and the
+/// reason is narrower than "nothing is wired": the only methods an `OutboxSendSink` can call are
+/// `sync(_:)` and — were the send side ever given a photo method — `uploadPhoto(at:ticket:)`, and
+/// **neither of those bodies can throw a `RemoteSurface`.** Both are real calls; their failures are
+/// `APIError`, `SessionError`, or a coding error over this device's own queued bytes.
+///
+/// That is a property of those two bodies and not of the wiring, so it is the thing the round that
+/// wires a send sink has to keep true. A `RemoteSurface` reaching an outbox item would print "No
+/// connection." to somebody with four bars.
 public enum RemoteSurface: Error, Equatable, CustomStringConvertible {
 
     /// The city layer is answered on the phone and never reaches this service.
