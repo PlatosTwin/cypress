@@ -1133,7 +1133,7 @@ class NYCTreePointAdapter:
     ]
 
     def __init__(self, tree_point_rows, planting_spaces: dict, limit: int = 0,
-                 structures=None, borough=None) -> None:
+                 structures=None, borough=None, with_raw: bool = False) -> None:
         """`planting_spaces` is {GlobalID -> planting space row}, already deduplicated.
 
         `structures` limits which `TPStructure` values are read at all, lowercased;
@@ -1147,6 +1147,9 @@ class NYCTreePointAdapter:
         self.limit = limit
         self.structures = {s.lower() for s in structures} if structures else None
         self.borough = borough
+        #: Whether the OPTIONAL passthroughs join `boroughcode` in `raw_json`.
+        #: The borough itself is never optional -- see `raw_json` below.
+        self.with_raw = with_raw
         self.stats = {
             "source_rows": 0,
             "dropped_no_coords": 0,
@@ -1165,6 +1168,8 @@ class NYCTreePointAdapter:
             "dbh_zero_sentinel": 0,
             "dbh_over_ceiling": 0,
             "species_unknown_taxon": 0,
+            "borough_carried": 0,
+            "no_borough_to_carry": 0,
         }
 
     # ------------------------------------------------------------------ parts
@@ -1401,6 +1406,50 @@ class NYCTreePointAdapter:
                     ) if part
                 ).strip() or None
 
+            # ---- BOROUGH: carried onto the RECORD, not merely filtered on.
+            #
+            # The city-data distribution design (docs/design-proposals/
+            # 2026-08-14-city-data-distribution.md) makes the published unit a
+            # borough-level region, and `boroughcode` exists ONLY on Forestry
+            # Planting Spaces. If it does not ride along on the record here,
+            # recovering it later means re-fetching 1.09 million rows.
+            #
+            # IT GOES IN `raw_json` AND NOT IN `city_record`, and that is a
+            # deliberate refusal rather than an oversight. `city_record` is keyed
+            # by SEED COLUMN NAME and the seed has no region column; the only two
+            # unused columns are `caretaker` and `care_assistant`, and
+            # `CityRecordPresentation` renders `caretaker` on the tree profile
+            # under the label "Cared for by". A Queens tree reading "Cared for by
+            # Queens" is a visible falsehood shipped to a user, which is a worse
+            # outcome than the one this avoids. `raw_json` is the contract's OWN
+            # designated home for "columns nothing maps", it reaches
+            # `trees.city_raw` unconditionally, and it costs ~30 bytes a row.
+            #
+            # A real `trees.region` / borough column is the honest destination and
+            # it is a SCHEMA question, so it is named here and not taken.
+            raw = {}
+            borough = _clean((space or {}).get("boroughcode"))
+            if borough:
+                raw["boroughcode"] = borough
+                self.stats["borough_carried"] += 1
+            else:
+                # No planting space, or a space with no borough: 513 spaces
+                # publish none. The absence is counted, never guessed at from
+                # the coordinates -- that would be a civic claim this adapter
+                # has no source for.
+                self.stats["no_borough_to_carry"] += 1
+            if self.with_raw:
+                # The survey's suggested passthroughs, which likewise have no
+                # seed column: a risk assessment with no equivalent anywhere in
+                # the corpus, and the planting space's own status.
+                for key, value in (
+                    ("psstatus", _clean((space or {}).get("psstatus"))),
+                    ("riskrating", _clean(row.get("riskrating"))),
+                    ("riskratingdate", _clean(row.get("riskratingdate"))),
+                ):
+                    if value:
+                        raw[key] = value
+
             yield InventoryRecord(
                 inventory=self.inventory_id,
                 kind=kind,
@@ -1428,5 +1477,5 @@ class NYCTreePointAdapter:
                 planted_on=self.parse_planted_date(row.get("planteddate")),
                 dbh_in=dbh_in,
                 city_record=city_record,
-                raw_json=None,
+                raw_json=json.dumps(raw, separators=(",", ":"), sort_keys=True) if raw else None,
             )

@@ -424,6 +424,66 @@ def test_nyc_publishes_no_caretaker_so_none_is_invented():
               f"a care assistant appeared: {record.city_record.get('care_assistant')!r}")
 
 
+def test_the_borough_rides_on_every_record_that_has_one():
+    """The distribution design makes a borough-level region the published unit,
+    and `boroughcode` exists only on Planting Spaces. If it does not ride on the
+    record, recovering it later means re-fetching 1.09 million rows.
+
+    Fails if the borough stops reaching `raw_json`, or is emitted only under
+    `--with-city-raw` (it must be unconditional), or is invented for a row that
+    joined to no planting space.
+    """
+    rows, spaces = load()
+    a = NYCTreePointAdapter(rows, spaces)  # NOTE: with_raw defaults to False
+    for record, row in zip(list(a.records()), rows):
+        space = spaces.get((row.get("plantingspaceglobalid") or "").strip())
+        expected = (space or {}).get("boroughcode") or None
+        carried = json.loads(record.raw_json)["boroughcode"] if record.raw_json else None
+        check(carried == expected,
+              f"record carries borough {carried!r} but its planting space says "
+              f"{expected!r} (globalid={row.get('globalid')}, case={row.get('_case')!r})")
+    check(a.stats["borough_carried"] > 0, "no record carried a borough at all")
+    check(a.stats["borough_carried"] + a.stats["no_borough_to_carry"] == a.stats["source_rows"],
+          f"the borough counters total "
+          f"{a.stats['borough_carried'] + a.stats['no_borough_to_carry']} of "
+          f"{a.stats['source_rows']} rows")
+
+
+def test_an_orphan_carries_no_borough_rather_than_a_guessed_one():
+    """An orphan has no planting space, so it has no borough. Its coordinates
+    would imply one, and inferring it from them would be a civic claim this
+    adapter has no source for (DECISIONS constraint 15).
+
+    Fails if a borough is ever derived from geometry.
+    """
+    _a, pairs = run()
+    for record in by_case(pairs, "full/ORPHAN no ps match"):
+        carried = json.loads(record.raw_json) if record.raw_json else {}
+        check("boroughcode" not in carried,
+              f"an orphan carries the borough {carried.get('boroughcode')!r}, which "
+              f"can only have come from its coordinates")
+
+
+def test_optional_passthroughs_are_gated_but_the_borough_is_not():
+    """`RiskRating` and `psstatus` have no seed column either, but they are bulk
+    and the borough is load-bearing. Fails if they stop being gated, or if
+    gating them also gates the borough."""
+    rows, spaces = load()
+    plain = NYCTreePointAdapter(rows, spaces, with_raw=False)
+    rich = NYCTreePointAdapter(rows, spaces, with_raw=True)
+    plain_keys, rich_keys = set(), set()
+    for record in plain.records():
+        if record.raw_json:
+            plain_keys |= set(json.loads(record.raw_json))
+    for record in rich.records():
+        if record.raw_json:
+            rich_keys |= set(json.loads(record.raw_json))
+    check(plain_keys == {"boroughcode"},
+          f"an ungated build emitted {sorted(plain_keys)}; only the borough is unconditional")
+    check("boroughcode" in rich_keys, "the borough vanished from a --with-city-raw build")
+    check(rich_keys - plain_keys, "--with-city-raw added nothing; the gate does nothing")
+
+
 def test_the_borough_filter_drops_rather_than_reassigns():
     """A borough build is one flag. Fails if a filtered build keeps a row from
     another borough, or silently places an orphan (which has no borough at all)."""
