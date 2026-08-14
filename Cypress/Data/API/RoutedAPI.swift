@@ -40,7 +40,12 @@ public actor RemoteReadLog {
     /// — and then **threw**, so there was no value, and a test pinned that. `degradedReads` is
     /// precisely the set a later round draws §4.3 copy from, and it would have said "showing what's
     /// on this phone" about a read that returned nothing.
-    public enum Outcome: String, Sendable, Hashable {
+    /// `CaseIterable` so `readsNotAnsweredLive` can be *asserted* as a complement rather than
+    /// merely claimed to be one. Review of PR #79 swapped the complement for the hand-written union
+    /// of the two named sets and the suite stayed green — which it would, because today the union
+    /// and the complement are the same set. `theNotLiveAggregateIsAComplementAndNotAList` iterates
+    /// these cases, so the day a fourth is added the two stop agreeing and the test says so.
+    public enum Outcome: String, Sendable, Hashable, CaseIterable {
         /// The service answered and its half is in the value returned.
         case live
         /// The service could not be asked, or refused, and the value is what this phone knows.
@@ -107,9 +112,15 @@ public actor RemoteReadLog {
     /// Every read whose answer is **not** the service's — degraded or unanswered, in one set.
     ///
     /// The aggregate a §4.3 surface should reach for, and the reason the two sets above can stay
-    /// narrow without the third case going missing. Computed as the complement of `.live` rather
-    /// than as `degradedReads ∪ unansweredReads`, so a fourth `Outcome` case added later is in this
-    /// set the day it is added rather than the day somebody remembers to union it in.
+    /// narrow without the third case going missing.
+    ///
+    /// **Computed as the complement of `.live`, not as `degradedReads ∪ unansweredReads`**, so a
+    /// fourth `Outcome` case is in this set the day it is added rather than the day somebody
+    /// remembers to union it in. Those two expressions agree on every input this enum can currently
+    /// produce, which is exactly why the difference needed pinning rather than stating: review of
+    /// PR #79 substituted the union here and the whole suite stayed green.
+    /// `RoutedAPITests.theNotLiveAggregateIsAComplementAndNotAList` iterates `Outcome.allCases`, so
+    /// it is the arrival of the fourth case that makes them disagree and the test that notices.
     public var readsNotAnsweredLive: Set<Read> {
         Set(outcomes.filter { $0.value != .live }.keys)
     }

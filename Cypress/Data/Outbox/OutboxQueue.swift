@@ -580,16 +580,37 @@ public actor OutboxQueue {
     }
 }
 
-/// Adapts a `CypressAPI` onto `OutboxTransport`, the **apply** sink.
+/// Adapts `LocalAPI` onto `OutboxTransport`, the **apply** sink.
 ///
-/// In the shipping composition root the API behind it is `LocalAPI`, and that is what makes this
-/// the local commit rather than a network call. It deliberately does not conform to
-/// `OutboxSendSink`: a type that satisfied both would let one value be wired into both positions,
-/// which is the confusion the split exists to end.
+/// It deliberately does not conform to `OutboxSendSink`: a type that satisfied both would let one
+/// value be wired into both positions, which is the confusion the split exists to end.
+///
+/// ── It names `LocalAPI` and not `any CypressAPI`, and that is the point of the type ────────────
+///
+/// This position took any conformance until review of PR #79 asked why, and the honest answer was
+/// that nothing had needed it to be narrower yet. But **apply is the position whose mistake is
+/// silent**: `send` refusing costs a round trip and leaves the row alive, while a remote
+/// implementation *here* "does not add a network to a local write, it removes the local write"
+/// (ERRATA **E261** §2) — the contribution never reaches its tree and every layer carries on
+/// behaving exactly as written. `RemoteAPI` conforms to `CypressAPI`, so
+/// `APIOutboxTransport(api: remote)` compiled, and `DataLayerWiringTests
+/// .aRefusedSendKeepsTheLocalWrite` is a test that exists because it compiled.
+///
+/// So the dangerous position is now the *narrow* one and the safe position stays concrete too
+/// (`APIOutboxSendSink` takes `RemoteAPI`): both sinks name the one type that belongs in them, and
+/// the compiler refuses the swap that the E261 §2 test could only catch after the fact. That test
+/// stays — a type can stop the swap being written, and only a behavioral test can say what the swap
+/// would have cost.
+///
+/// **Every call site already passed a `LocalAPI`** — the composition root, three `VisitGates`
+/// probes, and thirty-odd test helpers — so nothing was contorted to satisfy this; the parameter
+/// simply now says what every caller was already doing. A test that wants a *scripted* apply sink
+/// conforms to `OutboxTransport` directly, which is what `OutboxTestSupport.ScriptedTransport` does
+/// and what keeps the drain's own gates independent of this adapter.
 public struct APIOutboxTransport: OutboxTransport {
-    private let api: any CypressAPI
+    private let api: LocalAPI
 
-    public init(api: any CypressAPI) {
+    public init(api: LocalAPI) {
         self.api = api
     }
 

@@ -201,9 +201,16 @@ is recorded here in the shape it actually took, which is the shape this entry pr
 3. `applyOne` compares against it:
    `if item.DeviceID != nil && (who.DeviceUUID == nil || *item.DeviceID != *who.DeviceUUID)`.
 
-Once per credential rather than once per item — `applyOne` runs per item over a batch of up to 100,
-so resolving `item.DeviceID → devices.id` at the comparison site would have added a query per item to
-fix a comparison. **No migration**: the join reads columns that already exist.
+Once per credential rather than once per item — `applyOne` runs per item over a batch of up to
+**500** (`maxSyncBatch`, `internal/api/sync.go`), so resolving `item.DeviceID → devices.id` at the
+comparison site would have added up to 500 queries per request to fix a comparison. **No migration**:
+the join reads columns that already exist.
+
+The first draft of this paragraph said "up to 100", which is the *client's* number and not this
+one — §6's page cap, quoted in `OutboxQueue.batchSize`'s comment, where the shipping value is 25.
+Two caps exist and they are on opposite sides of the wire; the argument here is about what the server
+will accept in one request, and the real figure makes it five times stronger than the one I reached
+for.
 
 The `tokens.SubjectDevice` JWT branch is left with a nil `DeviceUUID` and the reason written beside
 it. Nothing mints a signed device token, so there is no fact there saying which vocabulary its `id`
@@ -221,8 +228,17 @@ analogous bug: the client's user id **is** `users.id`, minted by the service and
 `/auth/oidc`.
 
 *`go test ./...` answers `ok` for every package while the half that matters skips.* Without
-`CYPRESS_TEST_DATABASE_URL`, 43 of `internal/api`'s 55 tests skip — including every test that could
-see this defect — and the package still prints `ok`. That is this project's signature failure mode
+`CYPRESS_TEST_DATABASE_URL`, `internal/api` skips the SQL half and still prints `ok`. **Two counts,
+because they are two different measurements and only one of them is about the shipped tree:**
+
+| tree | skipped | passed |
+| --- | --- | --- |
+| before the fix — the shape I calibrated the instrument against | 43 | 12 |
+| the shipped tree | 44 | 12 |
+
+The difference is the new test, which skips without a database exactly like the 43 it joins — so the
+guard written to catch this defect is itself invisible under the command most people will run. That
+is the finding, not a footnote to it. That is this project's signature failure mode
 living in the server's harness, and it is why the fix was verified against a real Postgres (0
 skipped, 121 passing) rather than against those `ok` lines. **`ok` from `go test` is not evidence
 about the SQL half.** `server/README.md` says the suite skips loudly; the per-test skips are loud and
