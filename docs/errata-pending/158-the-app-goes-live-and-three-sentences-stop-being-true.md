@@ -4,7 +4,7 @@ Staged unnumbered per CLAUDE.md's "Numbering and shared files"; the orchestrator
 the real next number at merge. Written on `feat/158-wiring`, the round in which `DataLayer.boot`
 stopped constructing a `LocalAPI` and started constructing a router with a server behind it.
 
-Five findings. The first three are copy questions the owner has to answer and this branch
+Six findings. The first three are copy questions the owner has to answer and this branch
 deliberately did not; the fourth is a defect in the service that only becomes reachable now; **the
 fifth is blocking and is why this round does not work in production** — read it first.
 
@@ -224,3 +224,25 @@ With `device_id` omitted (probe C) the whole path works end to end against the d
 `POST /devices/register` → `POST /sync` → `200 applied` → `GET /me/grove` returns the row with its
 `record` counts and `last_visited_at`. The routes, the wire shapes, the taxonomy and the session are
 all correct. One comparison stands between this round's client and a working live path.
+
+## 6. Four more comments that stopped being true, corrected in the same branch
+
+Swept for on the way out, because "a confident comment is where bugs have survived here" and this
+round falsifies a whole family of them at once. Each said, in its own words, *there is no server*:
+
+- `RootView.accountLink()` — "screen 18's 'saving to this phone only' stays true after it".
+- `VisitSavedView` — the same claim, about the same line, in the sheet that presents screen 15.
+- `AccountDeletionChoice.eraseEverything` — "there is no server and nothing has been uploaded … so
+  on this app as it stands it is a complete erasure and the copy is allowed to say so plainly".
+  **This one is load-bearing**: it is the justification for what the erasing door promises. The
+  erasure is still complete over everything the app can reach, because `DELETE /me` erases the
+  service's rows too — but "nobody has already seen them" is no longer true by construction, and
+  whether the drawn copy wants a word about that belongs with the copy questions above.
+- `LocalAPI.uploadPhoto` — "§3.10 says server-side, and there is no server" as the reason EXIF is
+  stripped on the phone. The behavior is right and the reason has changed: stripping at the boundary
+  beats stripping at the far end, and now that binaries can travel it is the only version that works.
+
+`AppSchema` v15's `remote_sent` comment ("Never 1 on any database this migration has ever met,
+because there is no server yet") was narrowed rather than corrected — the claim is about rows the
+*migration* rewrites, which is still true, and the sentence now says which rows it means and why the
+`done` CHECK still does not name the column.

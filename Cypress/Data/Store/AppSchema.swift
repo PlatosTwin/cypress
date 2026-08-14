@@ -1507,8 +1507,11 @@ public enum AppSchema {
                 -- The mutation is committed to this device's own tables. This is what
                 -- `json_synced` always meant; the name said the other thing.
                 local_applied     INTEGER NOT NULL DEFAULT 0 CHECK (local_applied IN (0,1)),
-                -- The mutation has been accepted by a server. Never 1 on any database
-                -- this migration has ever met, because there is no server yet.
+                -- The mutation has been accepted by a server. Never 1 on any database this
+                -- migration has ever met: every row it rewrites was written by a build with no
+                -- send sink wired. #158's wiring round wires one, so rows written after it can
+                -- carry a 1 — which is why the `done` CHECK below still does not name this column.
+                -- See its comment.
                 remote_sent       INTEGER NOT NULL DEFAULT 0 CHECK (remote_sent IN (0,1)),
                 window_started_at TEXT NOT NULL,
                 next_attempt_at   TEXT,

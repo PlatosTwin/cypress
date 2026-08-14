@@ -1503,8 +1503,11 @@ public actor LocalAPI: CypressAPI {
         }
 
         // Ingest, in DECISIONS §3.10's sense: "strip all EXIF ... on ingest". §3.10 says
-        // server-side, and there is no server — this method is where a captured file stops being
-        // the camera's and becomes the app's record, so it is the ingest path (ERRATA E40).
+        // server-side; this is the phone's half and it happens first, which is the order that
+        // matters — a captured file stops being the camera's and becomes the app's record here, so
+        // this is the ingest path, and nothing with a metadata sidecar on it ever leaves (ERRATA
+        // E40). It read "and there is no server" until #158's wiring round, which is no longer the
+        // reason: the reason is that stripping at the boundary beats stripping at the far end.
         // Nothing else in the app ever did it: `AVCapturePhoto.fileDataRepresentation()` carries
         // the full metadata sidecar, and the photo-library fallback carries whatever the original
         // file had, which is the one that can hold GPS.
