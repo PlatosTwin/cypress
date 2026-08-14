@@ -8,7 +8,7 @@ class; every check is reported either way so one run tells you everything.
     python3 Tools/verify_seed.py [--db PATH]
 
 Checks (BUILD-PLAN.md section 7 row rules + the on-device index contract):
-  1. row count within the expected range
+  1. the file contains what it says it contains, per inventory
   2. zero trees outside the declared SF bounding box
   3. zero trees with NULL lat/lon
   4. stub-path share below 2%
@@ -45,12 +45,65 @@ from build_seed import species_trigrams as _trigrams  # noqa: E402
 NS_TREE = uuid.UUID("6f2a1d8e-0f3d-5d3e-9a1a-7c1f0b9a0001")
 NS_SPECIES = uuid.UUID("6f2a1d8e-0f3d-5d3e-9a1a-7c1f0b9a0002")
 
-EXPECTED_MIN_ROWS = 150_000
-EXPECTED_MAX_ROWS = 260_000
 STUB_CEILING_PCT = 2.0
 
 # Test viewport: a ~1.1 km box over the Panhandle / Haight.
 BBOX_TEST = (37.7680, 37.7780, -122.4560, -122.4400)
+
+
+def inventory_row_counts(conn) -> tuple[dict, dict, list]:
+    """What the file holds per inventory, and what it claims to hold.
+
+    Check 1 used to be a hardcoded 150,000..260,000 row range, which is San
+    Francisco's size and nothing else: every non-SF seed failed it by
+    construction, and an SF seed that lost 40,000 rows passed it. The file
+    already states its own contents -- `inventories` names each source and
+    `seed_meta.rows_from_<inventory>` records how many of its records were kept
+    -- so the check that means something in any city is that those two agree.
+
+    Returns (actual, claimed, declared) where `actual` and `claimed` are
+    inventory id -> row count and `declared` is the inventories table's ids.
+    """
+    actual = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT inventory_source, COUNT(*) FROM trees GROUP BY inventory_source"
+        )
+    }
+    meta = dict(conn.execute("SELECT key, value FROM seed_meta"))
+    declared = [row[0] for row in conn.execute("SELECT id FROM inventories ORDER BY id")]
+    claimed = {}
+    for inventory in declared:
+        stated = meta.get(f"rows_from_{inventory}")
+        if stated is not None:
+            claimed[inventory] = int(stated)
+    return actual, claimed, declared
+
+
+def duplicate_external_refs(conn) -> tuple[int, int]:
+    """Check 12, keyed on the pair the schema actually declares unique.
+
+    `trees` carries `UNIQUE (id_space, external_ref)` and its own comment says
+    "Unique over the pair, never over the ref alone". Keying this check on the
+    bare ref asserted something the schema never promised: SF `TreeID`s and San
+    Jose `FACILITYID`s are both small integers from different cities, so they
+    collide by the tens of thousands, and that collision is precisely what the
+    id-space prefix exists to make safe. A cross-space collision is therefore
+    reported, never failed.
+
+    Returns (within_space_duplicates, cross_space_collisions).
+    """
+    within = conn.execute(
+        "SELECT COUNT(*) FROM (SELECT id_space, external_ref FROM trees "
+        "WHERE external_ref IS NOT NULL GROUP BY id_space, external_ref "
+        "HAVING COUNT(*) > 1)"
+    ).fetchone()[0]
+    across = conn.execute(
+        "SELECT COUNT(*) FROM (SELECT external_ref FROM trees "
+        "WHERE external_ref IS NOT NULL GROUP BY external_ref "
+        "HAVING COUNT(DISTINCT id_space) > 1)"
+    ).fetchone()[0]
+    return within, across
 
 
 class Checker:
@@ -116,10 +169,35 @@ def main() -> int:
           f"neighborhoods={hoods}")
     print("-" * 70)
 
+    actual_rows, claimed_rows, declared_inv = inventory_row_counts(conn)
     c.check(
-        "1. row count in expected range",
-        EXPECTED_MIN_ROWS <= trees <= EXPECTED_MAX_ROWS,
-        f"{trees:,} trees (expected {EXPECTED_MIN_ROWS:,}..{EXPECTED_MAX_ROWS:,})",
+        "1a. the file carries trees, from inventories it declares",
+        trees > 0 and bool(actual_rows) and not (set(actual_rows) - set(declared_inv)),
+        f"{trees:,} trees from {sorted(actual_rows)}; "
+        f"inventories table declares {declared_inv}"
+        + (f"; UNDECLARED: {sorted(set(actual_rows) - set(declared_inv))}"
+           if set(actual_rows) - set(declared_inv) else ""),
+    )
+    unclaimed = sorted(set(actual_rows) - set(claimed_rows))
+    disagree = {
+        inv: (actual_rows.get(inv, 0), claimed_rows[inv])
+        for inv in claimed_rows
+        if actual_rows.get(inv, 0) != claimed_rows[inv]
+    }
+    c.check(
+        "1b. per-inventory row counts match what seed_meta claims",
+        not unclaimed and not disagree,
+        "; ".join(
+            [f"{inv}: {a:,} rows, seed_meta says {b:,}" for inv, (a, b) in disagree.items()]
+            + ([f"no rows_from_* claim for {unclaimed}"] if unclaimed else [])
+        )
+        or ", ".join(f"{inv}={n:,}" for inv, n in sorted(actual_rows.items())),
+    )
+    kept = meta.get("rows_kept")
+    c.check(
+        "1c. seed_meta.rows_kept is the file's own total",
+        kept is not None and int(kept) == trees,
+        f"rows_kept={kept} vs {trees:,} rows in trees",
     )
 
     # ----------------------------------------------------------------- 2 bbox
@@ -325,11 +403,14 @@ def main() -> int:
         f"{bad_dbh} offending rows",
     )
 
-    bad_ref = q(
-        "SELECT COUNT(*) FROM (SELECT external_ref FROM trees WHERE external_ref "
-        "IS NOT NULL GROUP BY external_ref HAVING COUNT(*) > 1)"
-    )[0]
-    c.check("12. external_ref is unique", bad_ref == 0, f"{bad_ref} duplicated refs")
+    within_dupes, cross_space = duplicate_external_refs(conn)
+    c.check(
+        "12. external_ref is unique within its id space",
+        within_dupes == 0,
+        f"{within_dupes:,} duplicated (id_space, external_ref) pairs; "
+        f"{cross_space:,} refs are reused across id spaces, which the "
+        f"id-space prefix exists to make safe",
+    )
 
     no_hood = q("SELECT COUNT(*) FROM trees WHERE neighborhood_id IS NULL")[0]
     hood_pct = 100.0 * no_hood / trees if trees else 0.0
