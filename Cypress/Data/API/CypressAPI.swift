@@ -7,12 +7,17 @@ import Foundation
 /// today is to prove that nothing in the protocol assumes a local database.
 ///
 /// **Deliberate omissions, with reasons.**
-/// - `POST /auth/*`, `POST /auth/refresh`, `POST /auth/logout`, `DELETE /me` — there is no auth
-///   server and no local equivalent of a token exchange. Adding throwing stubs would suggest a
-///   sign-in flow exists. Screens 15 and 19 gate on a local account record, which `LocalAPI`
-///   provides through `claimDevice`. `DELETE /me`'s *local* half is not a stub and is not omitted:
-///   the rows it deletes and anonymizes are on this device, and `LocalAPI.deleteAccount()`
-///   implements RULINGS R3 over them.
+/// - `POST /auth/oidc`, `POST /auth/refresh`, `POST /devices/register` — a token exchange is not a
+///   read or a write the UI performs; it is how the transport earns the right to perform any of
+///   them (spec §3.2). They belong to the type that owns the session (`Cypress/Data/Auth/`),
+///   injected into `RemoteAPI`, with screen 15 continuing to reach it through the `AccountAskLink`
+///   closure it has taken since it was built. Adding them as requirements would oblige fourteen
+///   preview doubles and eighteen test doubles to answer questions about tokens — the tax the note
+///   at the bottom of this file records paying once already.
+/// - `DELETE /me` is **no longer omitted**: it is a requirement below, per spec §3.2. Its *local*
+///   half never was a stub — the rows it deletes and anonymizes are on this device, and
+///   `LocalAPI.deleteAccount()` implements RULINGS R3 over them — and under R72's full-surface
+///   ruling the remote half exists too.
 /// - `GET /tiles/{z}/{x}/{y}` — replaced by MapKit plus `mapContent(in:)` (ARCHITECTURE §1). PMTiles
 ///   range reads have no meaning in a native build with a vector basemap already on device.
 /// - `Admin: /admin/*` — moderator and admin surfaces are a web deliverable, out of scope for the
@@ -232,6 +237,28 @@ public protocol CypressAPI: Sendable {
 
     /// `POST /devices/claim` — attach an anonymous device's contributions to the signed-in user (D9).
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws
+
+    /// `DELETE /me` — deletion, in the two-part sense RULINGS **R3** settles (see `AccountDeletion`).
+    ///
+    /// **A requirement since #158** (spec §3.2). It was `LocalAPI`-only, and the header above still
+    /// records why: there was no auth server, so the *remote* half of `DELETE /me` had nothing to
+    /// call. Under R72's full-surface ruling the remote half exists — `server/README.md` lists the
+    /// route, and it is the call that applies the client-sent choice, writes the tombstones and
+    /// revokes at Apple — so the method belongs on the boundary rather than on one implementation of
+    /// it.
+    ///
+    /// **A requirement, not a protocol-extension member with a default.** There is no honest default
+    /// here: an implementation that quietly returned an empty `Outcome` would report a successful
+    /// deletion having deleted nothing, which is the worst thing this method can do. See ERRATA
+    /// **E125** and §3.3 — an extension member has no witness-table entry and dispatches
+    /// statically, so every screen holding `any CypressAPI` would reach the default and never the
+    /// conformance.
+    ///
+    /// - Throws: `.unauthorized` when there is no account to delete. Deleting "the current account"
+    ///   when there is none would be a no-op reporting success, and a device's own rows are not an
+    ///   account's.
+    @discardableResult
+    func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome
 
     /// What this device is holding that `claimDevice` would carry onto an account (D9).
     ///

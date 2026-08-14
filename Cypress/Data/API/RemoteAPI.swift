@@ -34,15 +34,38 @@ import Foundation
 /// So the rule is the one `docs/design-proposals/2026-08-09-task158-live-layer.md` §3.3 states:
 /// every method this type is declared to implement, it implements — a refusal is an implementation,
 /// an inherited default is not. `CypressTests/APIConformanceGuardTests` is what keeps that true for
-/// the thirty-second requirement as well as these thirty-one.
+/// the thirty-third requirement as well as these thirty-two. `deleteAccount` was the thirty-second,
+/// added by #158 §3.2, and the guard is what made adding it a compile-and-fix pass across
+/// thirty-four conformances rather than an audit.
 public struct RemoteAPI: CypressAPI {
     /// `/api/v1`.
     public let baseURL: URL
-    /// Injected so the eventual implementation is testable without a live host.
+
+    /// **The session-owning type, injected** — spec §3.2: the `/auth/*` routes stay off `CypressAPI`
+    /// and belong "to the type that owns the session, injected into `RemoteAPI`".
+    ///
+    /// Every authenticated call will go through this rather than through `session` below, and the
+    /// difference is spec §5.8: it attaches the credential, refreshes once and replays on a 401, and
+    /// never lets a session failure reach a caller as `APIError.unauthorized` — which would move an
+    /// outbox item to `.failed` immediately and print "Sign in to send this" to somebody who is
+    /// signed in (ERRATA **E261** §3).
+    public let transport: any AuthorizedTransport
+
+    /// The unauthenticated half of the wire.
+    ///
+    /// Kept beside `transport` for the one call that must **not** carry a bearer: the photo binary
+    /// goes straight to storage at the presigned URL `POST /photos/begin` returns (spec §1.1), and
+    /// presenting this service's credential to a storage host sends it somewhere it has no business
+    /// being.
     public let session: URLSession
 
-    public init(baseURL: URL, session: URLSession = .shared) {
+    public init(
+        baseURL: URL = SyncService.defaultBaseURL,
+        transport: any AuthorizedTransport,
+        session: URLSession = .shared
+    ) {
         self.baseURL = baseURL
+        self.transport = transport
         self.session = session
     }
 
@@ -236,6 +259,18 @@ public struct RemoteAPI: CypressAPI {
 
     /// Will call `POST /devices/claim`.
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
+        throw unimplemented
+    }
+
+    /// Will call `DELETE /me`, carrying the `AccountDeletionChoice` and the client's still-queued
+    /// `client_uuid`s so the server can tombstone work that has not arrived yet.
+    ///
+    /// **A refusal and not an empty `Outcome`**, which is the whole reason this is a requirement
+    /// rather than a defaulted extension member (§3.2, §3.3): an implementation that returned
+    /// `AccountDeletion.Outcome()` would report a deletion it did not perform, and every counter on
+    /// the confirmation would read zero for a reason the screen cannot tell from "there was nothing
+    /// to delete".
+    public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
         throw unimplemented
     }
 

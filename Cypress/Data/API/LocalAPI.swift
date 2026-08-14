@@ -2483,14 +2483,13 @@ public actor LocalAPI: CypressAPI {
 
     /// `DELETE /me` — deletion, in the two-part sense RULINGS R3 settles (see `AccountDeletion`).
     ///
-    /// **Not on `CypressAPI`, and that is deliberate.** The protocol's header lists `DELETE /me`
-    /// among its omissions because there is no auth server; that reasoning still holds for the
-    /// server half — telling a backend to forget an account — and adding a throwing stub to
-    /// `RemoteAPI` would suggest a sign-in flow exists. What *is* implementable today is the local
-    /// half, which is not a stub: the rows are on this device and this is the only code that can
-    /// reach them. When the service lands, `DELETE /me` joins the protocol and this method becomes
-    /// the local half of it, unchanged. It sits beside `privateReminders` and `curatedSpecies`,
-    /// which are `LocalAPI`'s for the same kind of reason.
+    /// **On `CypressAPI` since #158** (spec §3.2), and the sentence that used to stand here — "not
+    /// on `CypressAPI`, and that is deliberate" — was true of a build with no auth server. The
+    /// method itself is unchanged: it is the local half, exactly as it was written, and it is now
+    /// the local half *of a protocol requirement* rather than a method on one concrete type. That
+    /// was the plan recorded here at the time ("when the service lands, `DELETE /me` joins the
+    /// protocol and this method becomes the local half of it, unchanged"), and this is that
+    /// landing.
     ///
     /// Requires a signed-in account: deleting "the current account" when there is none would be a
     /// no-op that reports success, and there is nothing else it could honestly mean — a device's own

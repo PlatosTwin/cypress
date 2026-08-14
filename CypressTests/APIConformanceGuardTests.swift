@@ -2,7 +2,9 @@
 //  APIConformanceGuardTests.swift
 //  CypressTests
 //
-//  **Task #76.** `CypressAPI` carries 31 requirements. `RemoteAPI` declared 17 of them and
+//  **Task #76.** `CypressAPI` carries 32 requirements — 31 when this file was written, and #158 §3.2
+//  added `deleteAccount` as the thirty-second, which the cross-checks below turned from an audit
+//  into a compile-and-fix pass. `RemoteAPI` declared 17 of them and
 //  inherited the other 14 from protocol extensions, and the build was green — because that is what
 //  a protocol-extension default is *for*. Ten of those defaults threw `.notFound`, which is
 //  survivable. Four returned a value, and a value is not survivable: a species guide with no
@@ -176,7 +178,7 @@ enum CypressAPISurface {
 
     // MARK: The protocol body
 
-    /// Every method requirement of `CypressAPI`, parsed from its declaration. 31 today.
+    /// Every method requirement of `CypressAPI`, parsed from its declaration. 32 today.
     ///
     /// The protocol body is read whole, `#if` and all: a requirement declared behind `#if DEBUG`
     /// would be one every shipping conformance still has to answer in a debug build, and there are
@@ -251,7 +253,7 @@ enum CypressAPISurface {
     ///
     /// **A conformance is one type, not one declaration.** Its witnesses may be spread over its own
     /// body and any number of `extension <TypeName>` blocks — which is what #158 will do to
-    /// `RemoteAPI` the moment 31 real bodies need `// MARK:` sections — so every declaration of the
+    /// `RemoteAPI` the moment 32 real bodies need `// MARK:` sections — so every declaration of the
     /// name contributes, and the union is what gate 3 measures.
     ///
     /// **What is subtracted is anything a shipped build does not compile.** A witness written inside
@@ -785,6 +787,9 @@ private struct ProbeAPI: CypressAPI {
     func groveSpecies() async throws -> GroveSpecies { throw log.reached("groveSpecies") }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { throw log.reached("journal") }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws { throw log.reached("claimDevice") }
+    func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        throw log.reached("deleteAccount")
+    }
     func deviceContributions() async throws -> DeviceContributions { throw log.reached("deviceContributions") }
     func mapMembership(_ kind: MapMembership) async throws -> Set<UUID> { throw log.reached("mapMembership") }
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws { throw log.reached("logHazardRedirect") }
@@ -1031,11 +1036,11 @@ struct APIConformanceGuardTests {
     }
 
     /// **The live half.** Erases a complete conformance to `any CypressAPI` — what every screen
-    /// holds — and checks that each of the 31 calls lands on the conformance rather than on a
+    /// holds — and checks that each of the 32 calls lands on the conformance rather than on a
     /// default.
     ///
     /// The call list below is hand-written, because Swift cannot generate calls from a protocol.
-    /// It is therefore checked against the *parsed* requirement set: a thirty-second requirement
+    /// It is therefore checked against the *parsed* requirement set: a thirty-third requirement
     /// with no probe here fails this test rather than shrinking it, which is the only thing that
     /// keeps a hand-written list from becoming the drift it was written to prevent.
     @Test("the existential reaches the conformance, not the defaults")
@@ -1102,6 +1107,7 @@ struct APIConformanceGuardTests {
         await check("groveSpecies") { _ = try await api.groveSpecies() }
         await check("journal") { _ = try await api.journal(cursor: nil, limit: 1) }
         await check("claimDevice") { try await api.claimDevice(deviceUUID: id, userID: id) }
+        await check("deleteAccount") { _ = try await api.deleteAccount(.leaveRecords) }
         await check("deviceContributions") { _ = try await api.deviceContributions() }
         await check("mapMembership") { _ = try await api.mapMembership(.favorites) }
         await check("logHazardRedirect") {

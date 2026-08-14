@@ -71,6 +71,9 @@ struct GrovePreviewAPI: CypressAPI {
     }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
+    func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        throw APIError.unauthorized
+    }
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
     func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
 }
