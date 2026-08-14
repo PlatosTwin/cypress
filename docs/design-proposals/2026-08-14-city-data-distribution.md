@@ -106,7 +106,8 @@ discovering later:
   contract).
 - **No background transfer.** `URLSession.shared` is not a background-identifier configuration, so
   the transfer is bound to the foreground app. `Cypress/Data/RemoteAccess.swift` is the only place in
-  the app that constructs a configuration at all, and it constructs `.ephemeral`.
+  the app that constructs a configuration at all, and it constructs `.ephemeral`. §4.5 has what the
+  fix costs and the one sharp edge it carries.
 - **No free-space check.** Nothing under `Cypress/` calls a disk-space API, and
   `Cypress/Resources/PrivacyInfo.xcprivacy` says so in a comment that is itself a small design
   constraint: adding one means declaring `NSPrivacyAccessedAPICategoryDiskSpace`, and that file's own
@@ -190,11 +191,20 @@ Two consequences, stated flatly:
 
 - **Whole NYC in the bundle is dead.** 108 MB + ~495 MB is a ~600 MB `.app`. E176 already rejected
   265 MB as *"past Apple's cellular-download ceiling and absurd for a local beta,"* and that was
-  before the NYC survey existed.
+  before the NYC survey existed. §4.5 sharpens why that ceiling binds here and nowhere else: it is an
+  App Store setting about **app** downloads, so it bounds the bundle and does not reach an in-app
+  download at all.
 - **Whole NYC as one downloadable file is a ~495 MB download that must be re-taken in full every
   time it is refreshed.** The source updates every two weeks (`docs/investigations/nyc-street-trees.md`
   §1.1: *"Every 2 weeks"*, automated updates enabled). That is the freshness problem the owner named,
   in its most expensive form.
+
+**And the refresh is tiny, which is the whole reason §6.4 and §4.3 exist.** Measured on the live
+layer's own `updateddate` column on 2026-08-14: **17,388 of 1,121,106 rows moved in 30 days — 1.6%**
+(49,517 in 90 days, of which 10,372 are genuinely new). A fortnightly refresh is therefore on the
+order of **8–9k rows, roughly 5 MB of row data**. Re-downloading ~495 MB to deliver ~5 MB of change
+is the ratio the design has to answer for, and every option below is graded on how close it gets to
+it.
 
 ### 2.3 What this data compresses to — measured
 
@@ -352,9 +362,166 @@ phone says `San Jose`. Small, and it belongs to the same fix.
 ## 4. What the majors do
 
 *(§4 is the one section whose evidence is not in this repository; see §12.4 for when it was fetched
-and the standing instruction to re-fetch rather than quote.)*
+and the standing instruction to re-fetch rather than quote. Where a claim could not be verified from
+a primary source it is marked, because for this question the undocumented parts are where the
+interesting mechanisms live.)*
 
-**PLACEHOLDER — filled in below.**
+### 4.1 Google Maps and Apple Maps — the interaction is documented, the transport is not
+
+**Google Maps offline areas** are a user-adjusted rectangle: pick a place, "Download offline map," or
+"Select your own map" and drag. Google documents an auto-update behavior — *"When your offline maps
+expire in 15 days or less and you're connected to Wi-Fi, Google Maps tries to update the area
+automatically"* — and a settings toggle for it. **Google does not document the total validity period,
+and does not document whether an update is a delta or a re-download.** The widely-quoted numbers (30
+days, one year, 120,000 km² per area) are third-party and unverified. Google's patents describe
+per-tile versioning and incremental compilation, but a patent is not evidence about a shipping build.
+The on-device format is proprietary and, under the Maps Platform terms, caching or offline use of
+tiles is prohibited anyway — so there is nothing here to copy even if it were legible.
+
+**Apple Maps offline maps** (iOS 17+) are the same interaction: drop a pin, download, resize; **the
+size is shown before the download and per saved map**; automatic updates are on by default with a
+Wi-Fi-only toggle; there is no documented expiry, only an opt-in "Optimize Storage" that removes
+unused maps after an unstated period. Apple states the *effect* of an update — *"kept up to date if
+things like a business or street name change"* — and never the transport. A business-name change
+propagating implies something finer-grained than area re-download, and it is unverifiable.
+
+**What transfers:** the interaction, not the mechanism. Both show the size before the commitment,
+which R43 §3 already does (`81 MB` on the not-installed row). Both make updating automatic and
+Wi-Fi-conditioned, which R43 §6 deliberately deferred to its own ticket. Neither is evidence for or
+against any delta design.
+
+### 4.2 Organic Maps — the manifest shape Cypress is about to need
+
+Open source, so the mechanism is readable rather than inferred.
+
+- **The manifest is a recursive tree.** `countries.json`, ~284 KB, one root node with children; each
+  node carries `id` (which doubles as the filename), `s` (exact byte size), `h` (an integrity hash),
+  and `g[]` (children). 1,323 nodes, 1,166 downloadable leaves, maximum depth 3. **This is exactly the
+  shape §6's Stage 1 needs** — a city with regions under it is a two-level version of the same tree,
+  and Organic Maps has been running the three-level version for years.
+- **Granularity is ad hoc and driven by size, not by administrative tidiness.** Whole small countries
+  (`Luxembourg`, 44.9 MB), whole US states (`US_Vermont`, 59.1 MB), sub-state metros
+  (`US_Texas_Dallas`, 208.5 MB), and invented splits where geography demanded them
+  (`Algeria_Coast`). Median leaf: 65.6 MB. **A New York borough at 54–169 MB sits inside that
+  distribution, and Queens at ~169 MB is smaller than Organic Maps' Dallas leaf.** That is the
+  strongest external evidence available for open question 1.
+- **Versioning is a date-stamped path**: `maps/<YYMMDD>/<name>.mwm`, with the manifest served per
+  version at the same prefix — the same immutable-path discipline as R37.2, arrived at independently.
+- **Updates are whole-file re-downloads**, and this is the cautionary data point of the whole survey:
+  the bsdiff/courgette machinery is *in the tree*, with a `diffs/<ver>/<diffver>/<name>.mwmdiff` URL
+  scheme wired up — **and it ships disabled**, the diff URL defined as an empty string and the
+  diff-scheme loader commented out. A serious project built the byte-diff answer to precisely this
+  problem and then turned it off.
+- **Location → pack is a separate 5.9 MB polygon file**, and the algorithm is bbox-reject followed by
+  a real point-in-polygon test. §7's second constraint is not a Cypress quirk; it is what everyone who
+  has built this feature discovered.
+
+### 4.3 OsmAnd — the only shipping incremental scheme, and it never patches anything
+
+- **Manifest**: `indexes.xml`, ~2.5 MB, per entry a name, a date, a timestamp, a zipped and an
+  unzipped size, and a `<deleted_map>` element as the retire-this-file channel. **No per-file hash —
+  freshness is by timestamp alone.** Cypress's manifest is strictly stricter (sha256 per file,
+  verified before a byte is kept) and should stay that way.
+- **Updates, documented**: full maps monthly; "live updates" generated every 15 minutes server-side
+  and downloadable hourly, daily or weekly, costing *"about 2–4% of the full map size per month"* and
+  — the sentence that matters — *"applied on top of the downloaded map and do not replace the full map
+  file."*
+- **Mechanically these are additional whole files, not patches.** An overlay is another `.obf`,
+  gzipped, 3–5 MB against a ~122 MB base, landing in a `live/` directory and read as an *extra index*
+  alongside the base. A monthly rollup file supersedes that month's dailies. **Deletions travel as a
+  tombstone**, `osmand_change=delete`, because an append-only overlay cannot remove a row from a file
+  it does not touch.
+- **The one thing the survey could not verify** is how OsmAnd's *read* path resolves a base object
+  against an overlay's tombstone. That is exactly the part Cypress would have to design rather than
+  copy.
+
+**This is the most transferable design in the survey**, and it maps onto Cypress with unusual
+directness: an overlay is another SQLite file, the base stays immutable and read-only and
+sha256-verified, no `VACUUM` problem exists because the base is never rewritten, and the whole thing
+runs on a dumb bucket. Its cost is precisely Option C's cost — the query layer must read across more
+than one attached file — which is why §6 puts them in the same neighborhood of the sequence.
+
+**And Cypress now has the churn number to size it.** The NYC layer's own `updateddate` column shows
+**17,388 of 1,121,106 rows moved in 30 days — 1.6%** (49,517 in 90 days; 10,372 genuinely new). A
+fortnightly refresh is therefore on the order of **8–9k rows, ~5 MB raw at 550 bytes/row**, against a
+~495 MB city or a ~126 MB borough. **An overlay scheme is worth roughly 20x over a borough
+re-download and 100x over a whole-city one.** Two cautions carried from the survey: Socrata's
+`:updated_at` is useless here (every row shares one timestamp because the publish rewrites the table
+— use the dataset's own `updateddate`), and **deletions are not visible through either column**, so
+a tombstone channel would need a full id-set diff at ingest. That is a real cost and it is the same
+cost OsmAnd pays.
+
+### 4.4 PMTiles, and querying a file you have not downloaded
+
+**PMTiles** is the cloud-optimized single-file tile archive: a 127-byte header, a root directory that
+must fit in the first 16 KB, and columnar delta-encoded directories, so *"nearly any map tile can be
+retrieved in at most two additional requests"* against **plain object storage with `Range` GETs and
+no compute** — and Tigris is a named supported backend. It is directly relevant to how Cypress hosts,
+and directly *irrelevant* to what Cypress stores: PMTiles has no key space other than z/x/y, and a
+tree inventory is row-oriented. Its own docs are blunt about updates: *"It is not possible to update
+an archive in-place without re-writing the entire file, similar to CSV, JSON and Parquet."* The
+planet build is republished daily as a fresh complete file. Its `makesync`/`sync` subcommands are
+rsync-style *pull* — a client refreshing a local copy over range requests, not a patch anyone uploads.
+
+**The genuinely interesting adjacent idea: SQLite itself is range-request-friendly.** A VFS that
+serves pages over HTTP `Range` lets an indexed query walk only the B-tree pages it needs; the best
+known demonstration reports ~1 KB transferred against a 670 MB database on static hosting. Against
+Cypress's shape that would mean **querying a city file without downloading it** — a genuine fifth
+architecture sitting between Option B and Option D. It is not recommended here, for three reasons
+worth recording rather than re-deriving: it requires a custom SQLite VFS (a real piece of systems
+code, against a zero-dependency line); it makes every map pan a network round trip, which is R36's
+shape-B objection arriving through a side door; and offline stops working, which is the property this
+app's whole base layer exists to protect. **It would, however, be an excellent way to let a reader
+*preview* a city they have not downloaded** — which is a Stage 2 idea, not a Stage 1 one.
+
+### 4.5 The iOS constraints, corrected
+
+Three things the record here gets subtly wrong or has not caught up with.
+
+- **The 200 MB threshold is an App Store setting about app downloads, not a `URLSession` limit.** It
+  lives in Settings → App Store → Cellular Data → App Downloads. E176 invoked it correctly against a
+  265 MB *bundle*. It is the reason Option A′ is dead and **it is not a constraint on Option A's
+  495 MB in-app download at all.** Stated carefully, because the evidence is negative: there is no
+  size threshold anywhere in `URLSession`'s API — the cellular controls are all boolean — but Apple
+  nowhere states that the App Store limit does not reach in-app downloads. Strongly-supported
+  inference, not a citable Apple sentence.
+- **On-Demand Resources is deprecated as of iOS 27**, superseded by **Apple-hosted Background
+  Assets**, and the replacement changes the answer to a question this project had settled. ODR asset
+  packs *"cannot be updated independently of a new app version"*; Background Assets packs **can** be
+  uploaded to App Store Connect separately from a build, at up to 200 GB and 200 packs per app
+  record, and devices download them separately. **That is a real alternative host for city files and
+  it should be refused for a stated reason rather than by omission:** an asset-pack upload still goes
+  through App Store Connect, so a fortnightly data refresh would be gated on Apple's review queue —
+  which is exactly the coupling between *shipping* and *updating* that the owner's paragraph is trying
+  to break. Tigris keeps that coupling severed. Worth revisiting only if bucket egress ever becomes a
+  cost worth trading a review gate for.
+- **Background `URLSession` is the fix for §1.3's second bullet, with one sharp edge**: transfers
+  continue while the app is suspended or terminated, **but the system cancels them if the user swipes
+  the app away from the multitasking screen**, and a transfer *started* while the app is in the
+  background is always discretionary regardless of `isDiscretionary`. So the download must be
+  foreground-initiated on a background-identifier configuration. Resume data — §1.3's first bullet —
+  has documented preconditions Cypress already half-satisfies: HTTP(S) `GET`, an unchanged resource,
+  an `ETag` or `Last-Modified`, **byte-range support on the server**, and a temp file the system has
+  not purged. R37.2's immutable versioned paths make "unchanged resource" true by construction, which
+  is a nice consequence of a rule adopted for a different reason.
+
+### 4.6 What actually transfers
+
+1. **Nobody bundles the data in the app.** Organic Maps and OsmAnd ship an app with no maps at all.
+   Cypress's 108 MB bundle is the outlier, R36 already called it a bootstrap, and §3 is what it costs
+   to have a bootstrap the app cannot see.
+2. **Everyone's unit is a named region with a stated size, discovered through a versioned manifest.**
+   Cypress has all three today. Stage 1 is not a new idea; it is the second level of a tree everyone
+   else already has.
+3. **Region size, not administrative tidiness, decides the split.** A borough is a legitimate unit
+   because it lands in the same size band as everyone else's leaves.
+4. **The only shipping incremental scheme adds files rather than patching them**, at a cost per month
+   that matches Cypress's measured NYC churn to within a factor of two.
+5. **The byte-diff route has a negative result attached to it from a project that built it.** Combined
+   with §12.3's `VACUUM` measurement and bsdiff's ~200 MB client-side memory requirement for a file
+   this size, that is enough evidence to stop proposing it.
+6. **Cypress is already stricter than both open-source comparables on integrity and on refusing an
+   incompatible generation.** Nothing in this proposal should relax either.
 
 ---
 
@@ -419,7 +586,10 @@ them. R43 §1 names this as future work.
 
 **What it actually costs, because it is more than it looks and less than it sounds.**
 
-- **SQLite's limit is not the problem.** `SQLITE_MAX_ATTACHED` defaults to 10; five boroughs fit.
+- **SQLite's limit is not the problem.** `SQLITE_MAX_ATTACHED` is 10 by default, and the SQLite on
+  this machine reports `MAX_ATTACHED=10` in `PRAGMA compile_options` and refuses the eleventh attach.
+  The iOS build's own value was not measured and should be before this is relied on; five boroughs
+  fit under either reading.
 - **The query layer is the problem.** Every statement in `Cypress/Data/Store/TreeQueries.swift`
   becomes a `UNION ALL` across N schemas. Two specifics: `markerCellsSQL` selects `MIN(t.rowid)`, and
   **`rowid` is per-database**, so that path breaks outright rather than degrading; and the clustered
@@ -496,6 +666,24 @@ cost nothing, they close E209 B3 / E213 / E214's stated blocker, and Stage 2 nee
 
 **This is independent of the NYC ingest and should not wait for it.**
 
+### Stage 0b — the download path grows up, and compression lands
+
+Every option in §5 makes the largest download bigger than the 81 MB `CityDownloader` was sized for,
+so this is not option-dependent work and it can run beside Stage 0. Four items, in order of how badly
+they bite:
+
+1. **Brotli on the wire** (§2.3, open question 3). 4.56x on the real published artifact, inside
+   `manifest_format` 1 exactly as R37.4 reserved, no third-party dependency. It is the highest
+   value-per-unit-of-work item in this document and it improves every option equally.
+2. **A background-identifier `URLSession`**, foreground-initiated (§4.5), so a large download survives
+   the app being backgrounded.
+3. **Resume.** R37.2's immutable versioned paths already satisfy the *"resource has not changed"*
+   precondition by construction; what has not been checked is whether the bucket's public domain
+   serves `ETag`/`Last-Modified` and honors `Range` — the publisher's own `upload.sh` does single-byte
+   range GETs to verify anonymous reads, which is suggestive and not the same test.
+4. **A free-space precheck**, with the privacy-manifest consequence §1.3 names. A 169 MB download that
+   fills the device and fails at 94% is the worst available failure for this feature.
+
 ### Stage 1 — the published unit becomes a region (with the NYC schema round)
 
 `manifest_format` 2: an entry gains a region identity — a parent city id, a level (`city` | `borough`
@@ -544,12 +732,32 @@ open question is *granularity*, and there are only three honest answers:
    publisher, and the trade is file size against update size.** That is a real future ticket with a
    measurable answer, and it is not this round's.
 
-   Two delta mechanisms that *sound* right and are not, recorded so nobody re-derives them: SQLite's
-   **session-extension changesets** need `SQLITE_ENABLE_SESSION`, which iOS's system SQLite is not
-   built with, so they cost a vendored SQLite against the zero-dependency line; and **`sqldiff` SQL
-   patches** need a writable target, which would end R37.2's byte-verified immutable artifact — you
-   cannot sha256 a patched database against a published hash, because SQLite does not promise
-   byte-identical results from equivalent operations.
+   **Row-level changesets: the blocker everybody cites appears to be stale, and the real one is
+   elsewhere.** The standing third-party consensus — GRDB's issue tracker, the Swift forums — is that
+   Apple's SQLite is not built with `SQLITE_ENABLE_SESSION` and `SQLITE_ENABLE_PREUPDATE_HOOK`, which
+   is why projects that want changesets vendor the amalgamation. **Measured against the current SDK,
+   that reads as out of date.** The iPhoneOS 26.5 SDK's `libsqlite3.tbd` exports **34 session and
+   changeset symbols** — `sqlite3session_diff`, `sqlite3changeset_apply`, the whole `changegroup`
+   family — plus all six `sqlite3_preupdate_*` symbols; and Apple's platform SQLite 3.51.0 on this
+   machine answers `sqlite3_compileoption_used("ENABLE_SESSION")` and `("ENABLE_PREUPDATE_HOOK")`
+   with 1. **What is missing is the interface, not the implementation:** the SDK ships no
+   `sqlite3session.h`, and `sqlite3.h` mentions `sqlite3_preupdate_hook()` exactly once, in a doc
+   comment for a different function. Using any of it means hand-declaring prototypes against an
+   exported-but-unpublished C API — a review-risk judgment, not an engineering impossibility. **The
+   deciding runtime check on an actual device has not been run** (§12.3), and it should be before
+   anyone builds on this.
+
+   **None of which matters, because the real blocker is one level up.** `sqlite3changeset_apply`
+   needs a **writable** database, and R43 §1 attaches city files read-only with `immutable=1`. Making
+   a city file writable in order to patch it ends R37.2's byte-verified immutable artifact — the same
+   objection that sinks **`sqldiff` SQL patches**, which need a writable target too. You cannot
+   sha256 a patched database against a published hash, because SQLite does not promise byte-identical
+   files from equivalent operations. **So the two live delta paths are the block one and the overlay
+   one, and neither patches anything:** stop `VACUUM`ing after the first publish of a generation and
+   range-fetch the changed pages (§12.3), or publish small append-only overlay files beside an
+   untouched base (§4.3). Both keep the artifact whole, hashed, immutable and read-only. The overlay
+   route is the one with a shipping precedent and the one this document would bet on — and it needs
+   Option C's read path, which is why it is not this round's.
 
 ---
 
@@ -773,11 +981,44 @@ rather than an artifact of the churn. That is the finding §6.4 rests on: **the 
 by the publisher's `VACUUM`, not by SQLite**, and unblocking it trades published file size against
 published update size — a measurable trade, and a future ticket.
 
+**And one instrument that read the wrong thing first, recorded because it nearly reached §6.4.**
+`PRAGMA compile_options` on *this Mac's* `sqlite3` reports `ENABLE_SESSION`, which says nothing at all
+about iOS. Asking the right question means asking the iOS SDK: `sqlite3session_create` and
+`sqlite3changeset_apply` appear in **neither** `sqlite3.h` nor any other header under the iPhoneOS
+SDK's `usr/include`, and there is no `sqlite3session.h` — but `usr/lib/libsqlite3.tbd` exports 34
+symbols of that family. Present in the library, absent from the published interface. The first
+measurement would have supported the sentence "changesets are available on iOS"; the second says
+something narrower and truer, and §6.4 says the narrower thing.
+
 ### 12.4 What is not from this repository
 
-§4's survey of Google, Apple and the OSM-based apps was fetched on 2026-08-14 from the sources cited
-inline. Product behavior has a half-life; **re-fetch before relying on it in a later round** rather
-than quoting these figures, the same rule this project applies to seed counts and for the same reason.
+§4 was fetched on **2026-08-14** from Google's and Apple's own support documentation, the Organic Maps
+and OsmAnd source trees and user documentation, the PMTiles v3 specification and its maintainers'
+own discussion threads, and Apple's developer documentation and App Store Connect reference. Product
+behavior and library maintenance both have a half-life; **re-fetch before relying on any of it in a
+later round** rather than quoting these figures, the same rule this project applies to seed counts
+and for the same reason. Claims that could not be reached from a primary source are marked inline as
+unverified — Google's expiry period and update granularity, Apple's update transport, and OsmAnd's
+read-time resolution of a tombstone are the four that matter most, and all four are undocumented.
+
+The NYC churn figures in §2.2 and §4.3 come from aggregate queries against the live Socrata dataset
+on 2026-08-14, using the dataset's own `updateddate` column. **Calibration note carried from that
+work:** SODA's `:updated_at` system column is useless for this question — all 1.12M rows share one
+timestamp because the publish rewrites the table — and a query that used it would have returned a
+confident, wrong, and entirely plausible-looking answer.
+
+### 12.4b The three iOS facts that had gone stale
+
+- **On-Demand Resources is deprecated as of iOS 27**, and the record's understanding that ODR packs
+  cannot be updated without an app build is correct for ODR and *wrong for its replacement*: Apple-
+  hosted Background Assets packs upload to App Store Connect separately from a build. §4.5 refuses
+  that route on a stated ground rather than an obsolete one.
+- **The 200 MB cellular threshold is an App Store setting**, not a `URLSession` behavior. It bounds
+  the bundle, which is E176's use of it, and does not bound an in-app download.
+- **The "SQLite session extension is not available on iOS" consensus reads as stale** against the
+  current SDK (§6.4). The measurement that would settle it — `sqlite3_compileoption_used` on a
+  device — was not run, and this document does not claim the consensus is wrong, only that the
+  evidence for it no longer matches what the SDK exports.
 
 ### 12.5 What was not run
 
