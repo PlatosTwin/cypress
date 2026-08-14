@@ -40,7 +40,12 @@ public actor RemoteReadLog {
     /// — and then **threw**, so there was no value, and a test pinned that. `degradedReads` is
     /// precisely the set a later round draws §4.3 copy from, and it would have said "showing what's
     /// on this phone" about a read that returned nothing.
-    public enum Outcome: String, Sendable, Hashable {
+    /// `CaseIterable` so `readsNotAnsweredLive` can be *asserted* as a complement rather than
+    /// merely claimed to be one. Review of PR #79 swapped the complement for the hand-written union
+    /// of the two named sets and the suite stayed green — which it would, because today the union
+    /// and the complement are the same set. `theNotLiveAggregateIsAComplementAndNotAList` iterates
+    /// these cases, so the day a fourth is added the two stop agreeing and the test says so.
+    public enum Outcome: String, Sendable, Hashable, CaseIterable {
         /// The service answered and its half is in the value returned.
         case live
         /// The service could not be asked, or refused, and the value is what this phone knows.
@@ -77,9 +82,47 @@ public actor RemoteReadLog {
     /// could draw differently.
     public func outcome(of read: Read) -> Outcome? { outcomes[read] }
 
-    /// Every read that is currently answering from the phone.
+    /// Every read that is currently answering **from the phone**: `.fellBackToLocal`, and only that.
+    ///
+    /// **It deliberately does not contain `.unanswered`, and on its own that was a defect** — round 2
+    /// of PR #78's review found it. The name is right: a read that threw is not "answering from the
+    /// phone", and folding it in here would offer a §4.3 copy round the sentence *"showing what's on
+    /// this phone"* for a read that returned nothing, which is the exact mislabeling `.unanswered`
+    /// was added to end. But this was the *only* aggregate the log had, so the third case §4.3 names
+    /// went from mislabeled-and-visible to correctly-labeled-and-invisible: reachable only by asking
+    /// `outcome(of:)` for a read by name, which no surface iterating degraded reads would do.
+    ///
+    /// `unansweredReads` is the companion, and `readsNotAnsweredLive` is the union — **that** is the
+    /// one an aggregate consumer should reach for. This property stays narrow so the two sets keep
+    /// meaning different things.
     public var degradedReads: Set<Read> {
         Set(outcomes.filter { $0.value == .fellBackToLocal }.keys)
+    }
+
+    /// Every read that **could not be answered at all**: §4.3's third outcome, "could-not-ask".
+    ///
+    /// Neither half had it and the read threw, so there is no value — see `Outcome.unanswered`.
+    /// §4.3's ruling is that "a screen that collapses the third into an empty state is telling
+    /// somebody their work is gone", and this is the set that has to exist for a screen to be able
+    /// to avoid doing that.
+    public var unansweredReads: Set<Read> {
+        Set(outcomes.filter { $0.value == .unanswered }.keys)
+    }
+
+    /// Every read whose answer is **not** the service's — degraded or unanswered, in one set.
+    ///
+    /// The aggregate a §4.3 surface should reach for, and the reason the two sets above can stay
+    /// narrow without the third case going missing.
+    ///
+    /// **Computed as the complement of `.live`, not as `degradedReads ∪ unansweredReads`**, so a
+    /// fourth `Outcome` case is in this set the day it is added rather than the day somebody
+    /// remembers to union it in. Those two expressions agree on every input this enum can currently
+    /// produce, which is exactly why the difference needed pinning rather than stating: review of
+    /// PR #79 substituted the union here and the whole suite stayed green.
+    /// `RoutedAPITests.theNotLiveAggregateIsAComplementAndNotAList` iterates `Outcome.allCases`, so
+    /// it is the arrival of the fourth case that makes them disagree and the test that notices.
+    public var readsNotAnsweredLive: Set<Read> {
+        Set(outcomes.filter { $0.value != .live }.keys)
     }
 }
 
@@ -114,22 +157,25 @@ public actor RemoteReadLog {
 ///
 /// §3.1's last line is "**Writes** are their own path: outbox first, both sinks (§2.1, §6)." A write
 /// does not choose between two answers; it is applied locally and *also* sent, and the sending half
-/// is `OutboxSendSink`, which `DataLayer` deliberately leaves unwired (ERRATA **E261** §2 — moving
-/// `LocalAPI` across "does not add a network to a local write, it removes the local write"). So
-/// every mutating method here goes to `local`, including `sync` and the photo pair, and the send
-/// sink stays 2c's conscious act. `CypressTests/OutboxApplySendSplitTests.dataLayerWiresNoSendSink`
-/// is the test that keeps that honest, and this file does not change it.
+/// is `OutboxSendSink` — which `DataLayer` now wires to `RemoteAPI`, one layer above this one. So
+/// every mutating method here goes to `local`, including `sync` and the photo pair, and that is not
+/// a gap: the router is the *read* path's answer, and a write's second half is the queue's, where
+/// the retry schedule and the ordering live. A `sync` that reached `remote` from here would send
+/// without the outbox having committed anything, which is the ordering RULINGS R72 §1 forbids and
+/// `AppSchema` v15's second CHECK refuses to store.
+/// `CypressTests/DataLayerWiringTests` is where the wiring is held honest.
 ///
 /// The nine mutations of spec §3.4 are local for a second, independent reason: they have no queue
 /// behind them at all, and "making them remote-routed without a queue is what stops community
 /// add-a-tree working in a park."
 ///
-/// ── Nothing constructs this yet ────────────────────────────────────────────────────────────────
+/// ── What constructs this ───────────────────────────────────────────────────────────────────────
 ///
-/// `DataLayer.api` is still a `LocalAPI` and this round does not change it. Wiring the router is a
-/// composition-root act with a session behind it (spec §10 step 5), and doing it here would put a
-/// half-built account path in front of every screen. The type, its routing table and its fallback
-/// behavior are what step 4 owes; `CypressTests/RoutedAPITests` is where they are exercised.
+/// `DataLayer.boot`, since #158's wiring round: `DataLayer.api` **is** this type, and every screen
+/// holds it. The session behind `remote` is an `AppSession` over the device credential (D9 makes
+/// anonymous the normal case, not the exception), so the reads below work on an installation that
+/// has never seen the account sheet. `CypressTests/RoutedAPITests` exercises the routing table and
+/// the fallbacks; `CypressTests/DataLayerWiringTests` exercises the wiring.
 public struct RoutedAPI: CypressAPI {
 
     /// The phone: the installed city file plus this device's own rows.

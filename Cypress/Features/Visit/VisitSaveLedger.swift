@@ -119,9 +119,25 @@ final class VisitSaveLedger {
 
     /// The storage line under the success block on 18, from PROTOTYPE-FLOW §1.4 `storageLine`.
     ///
-    /// Only the anonymous case exists today, because there is no auth server (`CypressAPI` says so
-    /// in as many words) and therefore no linked state to be in. The other two strings are the
-    /// seam's other half and land with screen 15.
+    /// ── **Both of these sentences are now false, and this is a stop-and-ask rather than a fix** ──
+    ///
+    /// #158's wiring round wired the outbox's send sink to `cypress-sync`, and D9 makes an anonymous
+    /// device credential the normal case rather than the exception — "a queue that could not drain
+    /// without an account is a queue that fills up" (`AppSession.authorization()`). So an
+    /// installation that has never seen screen 15 **is** sending its visits to a service, and
+    /// "Saving to this phone only" is the one word in it that is wrong.
+    ///
+    /// It is left standing rather than rewritten because there is nothing honest to rewrite it *to*.
+    /// PROTOTYPE-FLOW §1.4 gives three arms and they key on `account`: `linked` →
+    /// "Backed up to your account · joins the public timeline when signal returns.", `dismissed` →
+    /// this string, otherwise → the other one. The `linked` arm needs a signed-in account, and Sign
+    /// in with Apple is blocked on an Xcode entitlement this repository cannot add, so it is
+    /// unreachable on any build produced from this tree. The state this build is actually in —
+    /// **anonymous, and sent** — is not one of the four the mocks enumerate, and writing a fifth
+    /// sentence for it is inventing copy (DECISIONS constraint 21).
+    ///
+    /// So this is a stop-and-ask, raised in #158's wiring round and unnumbered as this is written.
+    /// Cite the erratum it becomes, by number, rather than this paragraph.
     var storageLine: String {
         isAskResolved
             ? "Saving to this phone only. You can add an account any time."

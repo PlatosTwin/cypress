@@ -646,7 +646,6 @@ struct RoutedAPITests {
     /// (`treeProfileCarriesAPhotographThisDeviceNeverWrote`), and this is the read that draws it.
     @Test("a photograph only the service holds is fetched and recorded live")
     func aPhotographOnlyTheServiceHoldsIsRecordedLive() async throws {
-        StubStorageProtocol.reset()
         let photoID = UUID()
         let source = URL(string: "https://storage.invalid/read/\(photoID.uuidString).jpg")!
         let bytes = Data([0xFF, 0xD8, 0x09, 0x09])
@@ -694,6 +693,101 @@ struct RoutedAPITests {
         #expect(
             await !log.degradedReads.contains(.photoData),
             "a read that returned no value was reported as answering from this phone"
+        )
+
+        // ── And it is visible in an aggregate, which round 2 of PR #78's review found it was not ──
+        //
+        // The line above is right about `degradedReads` and was, on its own, the whole of the log's
+        // account of this read: correctly labeled and invisible to any consumer that did not already
+        // know to ask for `.photoData` by name. §4.3's ruling is that "a screen that collapses the
+        // third into an empty state is telling somebody their work is gone", and a surface cannot
+        // avoid that with a set it has to guess the contents of.
+        #expect(
+            await log.unansweredReads == [.photoData],
+            "the third outcome of §4.3 is in no aggregate — it is reachable only by name"
+        )
+        #expect(
+            await log.readsNotAnsweredLive.contains(.photoData),
+            "the union a §4.3 surface reads does not contain a read that could not be answered"
+        )
+    }
+
+    /// The three aggregates say three different things, on one log holding all three outcomes.
+    ///
+    /// Written as one log rather than three, because the property under test is that the sets do not
+    /// **overlap** where they must not and do overlap where they must — which a per-outcome test
+    /// cannot see. `.live` is the control: it belongs to none of the three, and without it a
+    /// `readsNotAnsweredLive` that simply returned every recorded read would pass.
+    @Test("degraded, unanswered and not-live are three different sets")
+    func theThreeAggregatesAreDistinct() async {
+        let log = RemoteReadLog()
+        await log.record(.isFavorite, .live)
+        await log.record(.grove, .fellBackToLocal)
+        await log.record(.journal, .fellBackToLocal)
+        await log.record(.photoData, .unanswered)
+
+        #expect(await log.degradedReads == [.grove, .journal])
+        #expect(await log.unansweredReads == [.photoData])
+        #expect(await log.readsNotAnsweredLive == [.grove, .journal, .photoData])
+        #expect(
+            await !log.readsNotAnsweredLive.contains(.isFavorite),
+            "a read the service answered is in the set a surface draws a fallback sentence from"
+        )
+    }
+
+    /// **`readsNotAnsweredLive` is a complement, and this is what makes that a property rather than
+    /// a claim.**
+    ///
+    /// ── Why the obvious test would have been worthless ─────────────────────────────────────────
+    ///
+    /// `theThreeAggregatesAreDistinct` above exercises all three outcomes and passes just as happily
+    /// against `degradedReads.union(unansweredReads)` — review of PR #79 made exactly that
+    /// substitution and the whole suite stayed green. It has to: with three cases, "everything that
+    /// is not `.live`" and "the two named sets" are the *same set*. No test written against today's
+    /// enum can separate them, so a test that enumerated the three cases by hand would be pinning
+    /// the coincidence and not the property.
+    ///
+    /// So this one enumerates **`Outcome.allCases`** and derives what it expects from the same list.
+    /// It is still green today — the two implementations agree — and it is the arrival of a fourth
+    /// case that makes them disagree, at which point this test fails and the hand-written union does
+    /// not silently drop the new outcome out of the one aggregate a §4.3 surface reads. That is the
+    /// whole of what it is for: it is written to fail in a future that has not happened yet, and it
+    /// was red-proved by making that future happen (a fourth case added, the union restored) and
+    /// watching it fail while the complement passed.
+    ///
+    /// The `#require` on the arity is not decoration. Each outcome needs its own `Read` to be
+    /// recorded against — the log stores one outcome per read — so if the enum ever outgrows the
+    /// read list this test would quietly stop covering the excess, which is the failure mode it
+    /// exists to prevent, one level up.
+    @Test("readsNotAnsweredLive covers every outcome that is not live, including ones not yet written")
+    func theNotLiveAggregateIsAComplementAndNotAList() async throws {
+        let reads = RemoteReadLog.Read.allCases
+        let outcomes = RemoteReadLog.Outcome.allCases
+        try #require(
+            outcomes.count <= reads.count,
+            """
+            \(outcomes.count) outcomes and only \(reads.count) reads to record them against — this \
+            test can no longer cover every case, which is the thing it exists to notice
+            """
+        )
+        try #require(outcomes.contains(.live), "the control case is gone; a complement of nothing is everything")
+
+        let log = RemoteReadLog()
+        var expected: Set<RemoteReadLog.Read> = []
+        for (read, outcome) in zip(reads, outcomes) {
+            await log.record(read, outcome)
+            if outcome != .live { expected.insert(read) }
+        }
+        #expect(!expected.isEmpty, "nothing was recorded — this gate is vacuous")
+
+        #expect(
+            await log.readsNotAnsweredLive == expected,
+            """
+            readsNotAnsweredLive is not the complement of .live over Outcome.allCases. A case this \
+            aggregate does not know about is a §4.3 outcome no surface can see: `degradedReads` and \
+            `unansweredReads` are deliberately narrow, and this is the set that is supposed to need \
+            no maintenance when a fourth outcome lands.
+            """
         )
     }
 

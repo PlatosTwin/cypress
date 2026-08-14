@@ -62,7 +62,7 @@ struct FavoriteRoundTripTests {
     /// re-read both through `ProfileFavoriteWriter`, because the re-read that only saw applied
     /// rows is the whole of #167.
     private static func model(api: LocalAPI, outbox: OutboxQueue, treeID: UUID) -> TreeProfileModel {
-        let write = ProfileFavoriteWriter(api: api, outbox: outbox)
+        let write = ProfileFavoriteWriter(api: api, local: api, outbox: outbox)
         return TreeProfileModel(
             treeID: treeID,
             api: api,
@@ -177,7 +177,7 @@ struct FavoriteRoundTripTests {
     func aFailedToggleDoesNotHoldTheHeartOn() async throws {
         let (api, outbox, _) = try await Self.openSeeded()
         let ghost = UUID()
-        let writer = ProfileFavoriteWriter(api: api, outbox: outbox)
+        let writer = ProfileFavoriteWriter(api: api, local: api, outbox: outbox)
 
         await writer(treeID: ghost, isFavorite: true)
 
@@ -238,7 +238,7 @@ struct FavoriteRoundTripTests {
 
         // And sign-out's own promise holds in the other direction too: signing back in must not
         // find the favorite already the account's, because the account never made it.
-        let word = await ProfileFavoriteWriter(api: api, outbox: outbox).storedState(treeID: treeID)
+        let word = await ProfileFavoriteWriter(api: api, local: api, outbox: outbox).storedState(treeID: treeID)
         #expect(word, "storedState — the composition root's read — lost the favorite")
     }
 

@@ -94,10 +94,14 @@ struct VisitSavedView: View {
         //
         // The sign-in action is `onLink`, from the composition root (ERRATA E124). It completes
         // on-device — mint a `userID`, `claimDevice` this device's contributions onto it — rather
-        // than round-tripping a magic link this build has no server for. The account is an identity,
-        // not a backup: `storageLine` keeps saying "this phone only" after it, which stays true. When
-        // `onLink` is nil (a build with neither a server nor the local seam) 15 renders its "not ready
-        // yet" notice instead, unchanged.
+        // than round-tripping a magic link this build has no server for. **What this comment used to
+        // add — that `storageLine` keeps saying "this phone only" after it, "which stays true" — is
+        // no longer true**: #158's wiring round sends an anonymous installation's queue to
+        // `cypress-sync` under its device credential, so that line is false before this sheet opens.
+        // See `RootView.accountLink()` and `VisitSaveLedger.storageLine` for why it is not simply
+        // rewritten.
+        // When `onLink` is nil (a build with neither a server nor the local seam) 15 renders its
+        // "not ready yet" notice instead, unchanged.
         // ══════════════════════════════════════════════════════════════════════════════════════
         .fullScreenCover(isPresented: model.accountAskPresentation) {
             AccountAskView(api: api, onLink: onLink, onFinish: { model.resolveAccountAsk() })

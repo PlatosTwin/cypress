@@ -352,49 +352,18 @@ struct OutboxApplySendSplitTests {
 
     // MARK: - The composition root itself
 
-    @Test("the shipping composition root wires no send sink")
-    func dataLayerWiresNoSendSink() async throws {
-        // Not a double: `DataLayer.boot` is the wiring `CypressApp` runs, and one line of it
-        // omitting `send:` is the whole of today's safety (ERRATA E261 §2). A test that builds its
-        // own `OutboxQueue` proves the queue and not the wiring, so this one reads the real thing.
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("cypress-datalayer-sink-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        // Deliberately not removed on the way out. `DataLayer` holds the SQLite connection past this
-        // function's scope, and unlinking the file under an open handle is what prints
-        // `BUG IN CLIENT OF libsqlite3.dylib: … vnode unlinked while in use` — the same family as
-        // the `SQLITE_IOERR_VNODE` noise this project has already chased once. The directory is a
-        // per-run UUID under `NSTemporaryDirectory()`; the simulator sweeps it.
-
-        let data = try await DataLayer.boot(
-            databaseURL: directory.appendingPathComponent("cypress.sqlite"),
-            seedURL: nil
-        )
-        let tree = try await data.api.addTree(
-            TreeDraft(
-                coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
-                photoLocalPath: "/tmp/cypress-datalayer-sink.jpg",
-                attribution: Attribution.anonymous(deviceID: data.deviceID)
-            )
-        )
-        _ = try await data.outbox.enqueue(
-            .visit(Visit(
-                treeID: tree.id,
-                attribution: Attribution.anonymous(deviceID: data.deviceID),
-                capturedAt: Date()
-            ))
-        )
-        let report = try await data.outbox.drain()
-
-        #expect(
-            report.sent == 0,
-            "DataLayer wired a send sink: \(report.sent) items reached a server that does not exist yet"
-        )
-        let record = try #require(try await data.outbox.records().first)
-        #expect(record.locallyApplied, "the shipping wiring did not commit the contribution locally")
-        #expect(!record.remoteSent)
-        #expect(record.item.state == .done, "the shipping wiring did not settle an item")
-    }
+    // `dataLayerWiresNoSendSink` used to be here. It read the real `DataLayer.boot` and pinned that
+    // no send sink was wired — deliberately, so that wiring one would turn it red and the flip would
+    // have to be a conscious act rather than a diff nobody noticed (ERRATA **E261** §2). #158's
+    // wiring round is that conscious act, so the test is gone and **`CypressTests/
+    // DataLayerWiringTests` is what replaces it**, pinning the opposite truth on the same terms:
+    // it reads the real `boot`, against a scripted transport, and asserts a send sink is wired, that
+    // the batch reaches the service, that a refusal does not take the local write with it, and that
+    // `pendingOutboxKeys` reports the queue as it really is.
+    //
+    // It is recorded here rather than silently deleted because the *reason* it existed outlives it:
+    // this suite is about the split, and the split's most dangerous edit is still one argument in
+    // one function.
 
     // MARK: - 4. The migration
 

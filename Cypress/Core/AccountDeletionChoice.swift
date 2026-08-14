@@ -65,9 +65,14 @@ public enum AccountDeletionChoice: String, Sendable, CaseIterable, Codable {
 
     /// Contributions are deleted outright — rows and, for photographs, the bytes on disk.
     ///
-    /// The one thing this cannot promise is that nobody has already seen them; there is no server and
-    /// nothing has been uploaded (`BetaCapability`, ERRATA E124), so on this app as it stands it is a
-    /// complete erasure and the copy is allowed to say so plainly.
+    /// The one thing this cannot promise is that nobody has already seen them, and **that sentence
+    /// used to be cheap and is not any more**. It read "there is no server and nothing has been
+    /// uploaded, so on this app as it stands it is a complete erasure"; #158's wiring round gives the
+    /// outbox a send sink, so contributions do reach `cypress-sync` and `DELETE /me` is what erases
+    /// them there. The erasure is still complete over everything the app can reach — the local rows,
+    /// the service's rows, the stored photo bytes — which is what the copy claims. What is no longer
+    /// true by construction is that nobody could have read them first, and whether the drawn copy
+    /// wants a word about that is the owner's, with the other copy questions this round raised.
     case eraseEverything
 
     /// What a surface starts on when nobody has chosen yet.

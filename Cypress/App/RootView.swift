@@ -48,8 +48,8 @@ struct RootView: View {
         self.data = data
         self.onInventoryChange = onInventoryChange
         _outbox = State(wrappedValue: data.makeOutboxViewState())
-        _moderation = State(wrappedValue: ModerationModel(api: data.api))
-        _account = State(wrappedValue: AccountModel(api: data.api))
+        _moderation = State(wrappedValue: ModerationModel(api: data.local))
+        _account = State(wrappedValue: AccountModel(api: data.local))
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
     }
 
@@ -212,15 +212,31 @@ struct RootView: View {
         // Overrides` is a single `DELETE` with nothing conditional in it to fail on in practice.
         if ProcessInfo.processInfo.environment[DebugDeepLink.clearStatusOverridesEnvironmentKey] != nil {
             deepLinkAttempted = true
-            try? await data.api.debugClearStatusOverrides()
+            try? await data.local.debugClearStatusOverrides()
             overridesCleared = true
+            return
+        }
+        // A junk `CYPRESS_REMOTE` draws itself, and it is reported **first** because it is the most
+        // upstream of the three: the other two are decided here, in a view, while this one was
+        // decided at `DataLayer.boot` before any screen existed, and it changes what every Class R
+        // read on every screen can answer.
+        //
+        // Without this the gate broke its own rule. `RemoteAccess` states that a typo must not be
+        // indistinguishable from a decision — `DebugLocationOverride`'s lesson, cited in that file —
+        // and then `.misconfigured` behaved exactly like `.disabled` with nothing anywhere saying
+        // so, which is the silence the rule exists to forbid. Round-4 review found it: the doc
+        // claimed the composition root could draw the complaint, and the precedent it cited *is*
+        // drawn, twenty lines below. Now so is this.
+        if let complaint = data.remoteAccess.complaint {
+            deepLinkAttempted = true
+            deepLinkFailure = complaint
             return
         }
         // A junk `CYPRESS_LOCATION` draws itself, for `DebugDeepLink.Failure`'s reason: a seam that
         // quietly fell back to the real provider would leave a test asserting the denied refusal
         // path against a simulator with a perfectly good fix, and it would fail somewhere else —
-        // or, worse, pass. Reported before the deep link, because a wrong location is the more
-        // upstream fact and a reader should be told the first thing that went wrong.
+        // or, worse, pass. Reported after the remote gate for the reason given there, and before the
+        // deep link because a wrong location is the more upstream of those two.
         if let failure = DebugLocationOverride.resolve().failure {
             deepLinkAttempted = true
             deepLinkFailure = failure
@@ -242,7 +258,7 @@ struct RootView: View {
         case let .success(screen):
             let failure = await DebugDeepLink.open(
                 screen,
-                api: data.api,
+                api: data.local,
                 router: router,
                 present: { debugStandalone = $0 }
             )
@@ -481,7 +497,7 @@ struct RootView: View {
 
     /// Screen 03's heart, as this app performs it (RULINGS R2, ERRATA E112).
     private var favoriteWriter: ProfileFavoriteWriter {
-        ProfileFavoriteWriter(api: data.api, outbox: data.outbox)
+        ProfileFavoriteWriter(api: data.api, local: data.local, outbox: data.outbox)
     }
 
     /// Screen 15's sign-in, performed locally (ERRATA E124).
@@ -489,8 +505,18 @@ struct RootView: View {
     /// A local account needs no server: this mints an account id and hands it to `claimDevice`, which
     /// moves this device's anonymous contributions onto it and persists it in `app_state`. The
     /// request's email address is neither read nor stored — there is nowhere local it could go, and
-    /// DECISIONS §3.9 wants it nowhere — so the account is an *identity*, not a backup, and screen
-    /// 18's "saving to this phone only" stays true after it.
+    /// DECISIONS §3.9 wants it nowhere — so the account this closure creates is an *identity*.
+    ///
+    /// **The sentence that used to end this paragraph — "and screen 18's 'saving to this phone only'
+    /// stays true after it" — is no longer true, and not because of anything in this closure.**
+    /// #158's wiring round wired the outbox's send sink to `cypress-sync`, so an *anonymous*
+    /// installation's contributions leave the phone under its device credential (D9 makes that the
+    /// normal case). Screen 18's line is therefore false before this closure is ever reached. Which
+    /// sentence replaces it is a copy question the mocks do not answer — PROTOTYPE-FLOW §1.4's three
+    /// arms key on `account ∈ none | ask | linked | dismissed` and there is no arm for
+    /// *anonymous-and-sent* — so it is a stop-and-ask for the owner rather than something invented
+    /// here (DECISIONS constraint 21). It is raised in #158's wiring round, unnumbered as this is
+    /// written; the erratum it becomes is the one to cite once it has a number.
     ///
     /// Idempotent on identity: if this device already carries a `userID` (the ask can return once
     /// under ERRATA E34), it is reused, so a second link sweeps any freshly-anonymous rows onto the
@@ -515,7 +541,10 @@ struct RootView: View {
     /// account's reminders, favorites and votes owned by an id no query asks for and no deletion
     /// can reach — see `LocalAPI.signOut()`.
     nonisolated func accountLink() -> AccountAskLink {
-        let api = data.api
+        // `local`: every call in this closure — `userID`, `resumableUserID`, `linkAccount` — is
+        // about this installation's own account row in `app_state` (ERRATA E86), and none of the
+        // three is a `CypressAPI` requirement.
+        let api = data.local
         let deviceID = data.deviceID
         return { request in
             // The account already on this device, else the one it signed out of, else a new one.
@@ -607,7 +636,7 @@ struct RootView: View {
                 onSaveReminder: { draft in
                     try await ReminderOutboxWriter.save(
                         draft,
-                        attribution: await data.api.attribution,
+                        attribution: await data.local.attribution,
                         outbox: data.outbox
                     )
                 }
@@ -809,6 +838,14 @@ struct RootView: View {
                     library: (try? CityLibrary.default())
                         ?? CityLibrary(rootURL: URL(fileURLWithPath: NSTemporaryDirectory())
                             .appendingPathComponent("cypress-cities", isDirectory: true)),
+                    // The **second** live socket the app can open, and the one `RefusingTransport`
+                    // does not cover: this screen fetches a manifest from its own host with its own
+                    // `URLSession`. It predates #158 and is not what broke CI, but a round that
+                    // makes the app-under-test hermetic and leaves one socket open has not made it
+                    // hermetic. See `RemoteAccess`.
+                    downloader: data.remoteAccess.allowsNetwork
+                        ? CityDownloader()
+                        : CityDownloader(session: OfflineSession.make()),
                     onInventoryChange: onInventoryChange
                 ),
                 onBack: { router.pop() }
@@ -853,7 +890,13 @@ struct RootView: View {
 /// the store afterwards, so a write that did not land shows up as the heart going back to where it
 /// was — which is the state R2 says the screen now has and E101 said it did not.
 struct ProfileFavoriteWriter: Sendable {
-    let api: LocalAPI
+    /// **The router**, because the re-read is Class R (spec §3.1) and #167's whole point is that a
+    /// favorite set on one phone shows as set on another. `RoutedAPI.isFavorite` asks the service
+    /// and falls back to the phone, saying which it did.
+    let api: any CypressAPI
+    /// **The phone**, for `attribution` alone: who this device is writing as is a fact about this
+    /// installation's `app_state` (D9, ERRATA E86) and is not on `CypressAPI`.
+    let local: LocalAPI
     let outbox: OutboxQueue
 
     /// - Parameter isFavorite: the resulting state, not a verb. A favorite syncs as a toggle event
@@ -867,7 +910,7 @@ struct ProfileFavoriteWriter: Sendable {
             isFavorite: isFavorite,
             // D9: the signed-in user when there is one, this device otherwise. Resolved here
             // because identity is not a view's question to answer.
-            attribution: await api.attribution,
+            attribution: await local.attribution,
             outbox: outbox
         )
     }

@@ -25,9 +25,10 @@ public protocol OutboxTransport: Sendable {
 /// The **send** sink: the retryable half of a drain, and the half `OutboxRetryPolicy` was written
 /// for (RULINGS R72 §1, spec §6.1).
 ///
-/// Injected, and `nil` on every build shipped so far — there is no server yet, and with none wired
-/// the queue's observable behavior is exactly what it was before the split. Nothing in this PR
-/// wires `RemoteAPI` into this position.
+/// Injected, and **wired** since #158's wiring round: `DataLayer.boot` puts `APIOutboxSendSink` over
+/// `RemoteAPI` here. It stays injectable and stays optional because `nil` is what a test that is
+/// about the local half wires, and because with it `nil` the queue's observable behavior is exactly
+/// what it was before the split.
 ///
 /// **It carries `sync` and deliberately not `uploadPhoto`, which is a scope statement and not an
 /// omission.** The apply sink's photo upload is a *move*: `LocalAPI.uploadPhoto` strips the
@@ -58,7 +59,8 @@ public struct DrainReport: Sendable, Equatable {
     /// Items whose JSON went but whose photos are waiting for wi-fi.
     public var awaitingWifi = 0
     /// Items a send sink accepted on this pass. Zero whenever no send sink is wired, which is what
-    /// makes "the local write still happened" separable from "it went somewhere" in a test.
+    /// makes "the local write still happened" separable from "it went somewhere" in a test — and
+    /// which is no longer the shipping wiring's answer (`DataLayer.boot`).
     public var sent = 0
 }
 
@@ -74,7 +76,7 @@ public struct DrainReport: Sendable, Equatable {
 /// A drain does two things that used to look like one (ERRATA E261 §2). **Apply** commits the
 /// mutation to this device's own tables; it goes first and it is not conditional on anything, which
 /// is why a visit saved in a park is on its tree before the phone has seen a network again.
-/// **Send** forwards it to a server; it is injectable, it is `nil` on every build shipped so far,
+/// **Send** forwards it to a server; it is injectable, `DataLayer.boot` wires it to `RemoteAPI`,
 /// and it is the half the 48 h backoff exists for. An item that fails to apply is never offered to
 /// the send sink, and an item the send sink refuses keeps the local write it already has.
 ///
@@ -91,7 +93,8 @@ public actor OutboxQueue {
     private let store = OutboxStore()
     /// Commits the mutation to this device. First, unconditional, offline or not.
     private let apply: any OutboxTransport
-    /// Sends it on to a server, when there is one. `nil` on every build shipped so far.
+    /// Sends it on to a server. `DataLayer.boot` wires `APIOutboxSendSink`; `nil` is what a test
+    /// about the local half alone wires.
     private let send: (any OutboxSendSink)?
     private let now: @Sendable () -> Date
     private var observers: [UUID: @Sendable () async -> Void] = [:]
@@ -122,8 +125,9 @@ public actor OutboxQueue {
     ///     not `transport` on purpose: the one-line change that looks like the whole job is
     ///     replacing this value with a remote implementation, which would delete the local write
     ///     without any layer reporting an error (ERRATA E261 §2).
-    ///   - send: the sink that forwards it to a server, when one exists. `nil` today, and with it
-    ///     `nil` the drain behaves exactly as it did before the split.
+    ///   - send: the sink that forwards it to a server. `DataLayer.boot` wires `APIOutboxSendSink`
+    ///     over `RemoteAPI` here; `nil` leaves the drain behaving exactly as it did before the
+    ///     split, which is what a test about the local half alone wants.
     public init(
         queue: DatabaseQueue,
         apply: any OutboxTransport,
@@ -576,16 +580,37 @@ public actor OutboxQueue {
     }
 }
 
-/// Adapts a `CypressAPI` onto `OutboxTransport`, the **apply** sink.
+/// Adapts `LocalAPI` onto `OutboxTransport`, the **apply** sink.
 ///
-/// In the shipping composition root the API behind it is `LocalAPI`, and that is what makes this
-/// the local commit rather than a network call. It deliberately does not conform to
-/// `OutboxSendSink`: a type that satisfied both would let one value be wired into both positions,
-/// which is the confusion the split exists to end.
+/// It deliberately does not conform to `OutboxSendSink`: a type that satisfied both would let one
+/// value be wired into both positions, which is the confusion the split exists to end.
+///
+/// ── It names `LocalAPI` and not `any CypressAPI`, and that is the point of the type ────────────
+///
+/// This position took any conformance until review of PR #79 asked why, and the honest answer was
+/// that nothing had needed it to be narrower yet. But **apply is the position whose mistake is
+/// silent**: `send` refusing costs a round trip and leaves the row alive, while a remote
+/// implementation *here* "does not add a network to a local write, it removes the local write"
+/// (ERRATA **E261** §2) — the contribution never reaches its tree and every layer carries on
+/// behaving exactly as written. `RemoteAPI` conforms to `CypressAPI`, so
+/// `APIOutboxTransport(api: remote)` compiled, and `DataLayerWiringTests
+/// .aRefusedSendKeepsTheLocalWrite` is a test that exists because it compiled.
+///
+/// So the dangerous position is now the *narrow* one and the safe position stays concrete too
+/// (`APIOutboxSendSink` takes `RemoteAPI`): both sinks name the one type that belongs in them, and
+/// the compiler refuses the swap that the E261 §2 test could only catch after the fact. That test
+/// stays — a type can stop the swap being written, and only a behavioral test can say what the swap
+/// would have cost.
+///
+/// **Every call site already passed a `LocalAPI`** — the composition root, three `VisitGates`
+/// probes, and thirty-odd test helpers — so nothing was contorted to satisfy this; the parameter
+/// simply now says what every caller was already doing. A test that wants a *scripted* apply sink
+/// conforms to `OutboxTransport` directly, which is what `OutboxTestSupport.ScriptedTransport` does
+/// and what keeps the drain's own gates independent of this adapter.
 public struct APIOutboxTransport: OutboxTransport {
-    private let api: any CypressAPI
+    private let api: LocalAPI
 
-    public init(api: any CypressAPI) {
+    public init(api: LocalAPI) {
         self.api = api
     }
 
@@ -630,5 +655,36 @@ public struct APIOutboxTransport: OutboxTransport {
             )
         )
         try await api.uploadPhoto(at: photo.path, ticket: ticket)
+    }
+}
+
+/// Adapts `RemoteAPI` onto `OutboxSendSink`, the **send** sink.
+///
+/// The counterpart of `APIOutboxTransport`, and a separate type from it for the reason that type's
+/// header gives: one value that satisfied both protocols could be wired into both positions, and
+/// swapping a remote implementation into the apply position "does not add a network to a local
+/// write, it removes the local write" (ERRATA **E261** §2).
+///
+/// ── It takes `RemoteAPI` and not `any CypressAPI`, and that is the containment invariant ───────
+///
+/// `RemoteSurface` is this client's word for "the service has no route for that", and
+/// `OutboxFailureReason.sentence(for:)` has no sentence for it — an outbox item that took one would
+/// print "No connection." to somebody with four bars. `RemoteSurface`'s own header states the
+/// invariant that keeps it away from a queue: **no path through `RemoteAPI.sync` can throw one.**
+/// That is a property of that one body, so this type names that one type rather than accepting any
+/// conformance — a `LocalAPI` here would delete the local write, and a `RoutedAPI` here would send
+/// through `local` and mark the row `remote_sent` without a byte leaving the phone.
+///
+/// `CypressTests/RemoteAPITests.theRemoteSurfaceIsConfinedToItsRefusals` is the source gate that
+/// holds the invariant; `DataLayerWiringTests` is what holds this wiring.
+public struct APIOutboxSendSink: OutboxSendSink {
+    private let remote: RemoteAPI
+
+    public init(remote: RemoteAPI) {
+        self.remote = remote
+    }
+
+    public func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
+        try await remote.sync(items)
     }
 }

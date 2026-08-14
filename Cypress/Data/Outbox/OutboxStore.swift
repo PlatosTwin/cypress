@@ -20,8 +20,8 @@ public struct OutboxStore {
         /// and put `remoteSent` beside it, because the drain was doing two jobs under one name
         /// (ERRATA E261 §2, RULINGS R72 §1).
         public let locallyApplied: Bool
-        /// The mutation has been accepted by a server. Always false while no send sink is wired,
-        /// which is every build shipped so far.
+        /// The mutation has been accepted by a server. False until a drain with a send sink wired
+        /// carries it across — and `DataLayer.boot` wires one, since #158's wiring round.
         public let remoteSent: Bool
         /// Start of the 48 h cap window. Equal to `createdAt` until the user taps retry.
         public let windowStartedAt: Date
@@ -171,6 +171,32 @@ public struct OutboxStore {
         let changed = connection.changes
         _ = try statement.reset()
         return changed
+    }
+
+    /// The `client_uuid`s this device is still holding for a server, for `DELETE /me`.
+    ///
+    /// `me.go` tombstones these "even though this service has never seen them", so that an item
+    /// queued on Tuesday against an account deleted on Wednesday cannot resurrect it on Thursday.
+    /// `RemoteAPI.pendingOutboxKeys` is the seam that asks for them and it **refuses** rather than
+    /// sending `[]`, because an empty array is the claim that nothing is queued and RULINGS R3's
+    /// stated failure mode is deleting differently from what was asked. This is the statement that
+    /// answers it honestly.
+    ///
+    /// ── Which rows count as still queued, which is not "every row" ─────────────────────────────
+    ///
+    /// `remote_sent = 0` — a row a server has accepted needs no tombstone, it needs the ordinary
+    /// deletion — **and** `state <> 'done'`. The second predicate is the one worth reading twice: a
+    /// `done` row with `remote_sent = 0` is every outbox row on every build shipped so far, and it
+    /// will never be attempted again (`dueItems` only returns `pending`), so it cannot arrive after
+    /// the deletion and does not need a mark to stop it. `failed` rows *are* included: the retry
+    /// button restarts them, so they can still arrive.
+    public func unsentClientUUIDs(connection: SQLiteConnection) throws -> [UUID] {
+        let statement = try connection.cachedStatement("""
+            SELECT client_uuid FROM outbox
+             WHERE remote_sent = 0 AND state <> 'done'
+             ORDER BY seq
+            """)
+        return try statement.fetchAll { try $0.uuid("client_uuid") }
     }
 
     /// Settles an item whose sinks and photos have all taken it.
