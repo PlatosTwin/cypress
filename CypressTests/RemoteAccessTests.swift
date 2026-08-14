@@ -211,4 +211,168 @@ struct RemoteAccessTests {
             Issue.record("failed with \(type(of: error)) rather than a URLError: \(error)")
         }
     }
+
+}
+
+/// The sign-in path's own gate proofs, in a suite of their own and **serialized**.
+///
+/// `RecordingProtocol` is registered globally — it has to be, because the subject is
+/// `URLSession.shared` — so it is one recorder shared by every test that installs it. Swift Testing
+/// runs tests in parallel by default, and the first cut of these two ran concurrently and each saw
+/// the other's control request. `.serialized` is what makes each reading its own.
+///
+/// The assertions are also written to survive unrelated traffic: the calibration asks whether its
+/// own control was *seen*, and the measurement asks whether anything reached the **service**, rather
+/// than either one requiring the recording to be empty of everything.
+@Suite("RemoteAccess — the sign-in path", .serialized)
+struct RemoteAccessSignInTests {
+
+    private static func databaseURL() throws -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-remote-signin-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("cypress.sqlite")
+    }
+
+    /// Every URL recorded that names the service. The one question these tests ask.
+    private static func serviceCalls() -> [String] {
+        RecordingProtocol.observed().filter {
+            $0.contains("cypress-sync") || $0.contains("/auth/") || $0.contains("/devices/")
+        }
+    }
+
+    /// **`DataLayer.boot()` as the app calls it opens no socket for a sign-in either** (review of
+    /// PR #84, F1).
+    ///
+    /// The gate covered `RemoteAPI`'s wire and nothing else. `boot` built its `AppSession` as
+    /// `AppSession(deviceUUID:)` — the default `AuthClient()`, which is `SyncService.defaultBaseURL`
+    /// over `URLSession.shared` — and `boot`'s own `baseURL:` never reached it. `signInWithApple`
+    /// goes through neither `SessionTransport` nor `RefusingTransport`, so with the gate `.disabled`
+    /// a tap on screen 15 still dialled `https://cypress-sync.fly.dev/api/v1/auth/oidc`. The
+    /// reviewer measured exactly that, and this is their probe kept as a test.
+    ///
+    /// **`theAppsOwnBootIsOffline` above could never have caught it**: that test observes the
+    /// *outbox*, and the new socket is not the outbox's. This one observes the process.
+    ///
+    /// ── Calibration, which is the half that makes it a measurement ─────────────────────────────
+    ///
+    /// A recorder that intercepts nothing reports an empty list, and an empty list is what "no
+    /// socket was opened" looks like — the two are indistinguishable without a control. So the
+    /// control runs **first**: a deliberate request to a `.invalid` host must be *recorded*, proving
+    /// the protocol is in front of `URLSession.shared`, before the measured call is believed. That
+    /// is CLAUDE.md's "calibrate the instrument before you trust the reading", and the reviewer used
+    /// the same order.
+    ///
+    /// Nothing leaves the machine either way: `URLProtocol.startLoading` fails every request
+    /// in-process, and the control's host does not resolve.
+    @Test("the app's own boot cannot reach the service for a sign-in either")
+    func theAppsOwnBootDoesNotDialTheSignIn() async throws {
+        URLProtocol.registerClass(RecordingProtocol.self)
+        defer { URLProtocol.unregisterClass(RecordingProtocol.self) }
+        RecordingProtocol.reset()
+
+        // ── Control: prove the recorder sees a request through `URLSession.shared` at all. ──────
+        let control = URL(string: "https://cypress-remote-access-control.invalid/probe")!
+        _ = try? await URLSession.shared.data(from: control)
+        let calibration = RecordingProtocol.observed()
+        #expect(
+            calibration.contains(control.absoluteString),
+            """
+            the recorder saw \(calibration) and not the control request it was pointed at, so it is \
+            not in front of URLSession.shared and the measurement below would report "no socket" no \
+            matter what the app did. Nothing is proved until this line passes.
+            """
+        )
+        RecordingProtocol.reset()
+
+        // ── The measurement. `boot` exactly as `AppModel` calls it. ────────────────────────────
+        let data = try await DataLayer.boot(databaseURL: try Self.databaseURL(), seedURL: nil)
+        #expect(data.remoteAccess == .disabled, "the app's own boot resolved \(data.remoteAccess)")
+
+        _ = try? await data.session.signInWithApple(
+            AppleIdentityCredential(
+                identityToken: "not-a-token",
+                authorizationCode: "not-a-code",
+                rawNonce: "not-a-nonce"
+            ),
+            licenseVersion: .declined
+        )
+
+        let reached = Self.serviceCalls()
+        #expect(
+            reached.isEmpty,
+            """
+            with RemoteAccess == .disabled a sign-in opened \(reached). The gate covers RemoteAPI's \
+            wire and this path goes through neither transport, so a DEBUG build — which is every UI \
+            test on every runner — posts a real credential at production the moment somebody taps \
+            screen 15's Apple button.
+            """
+        )
+    }
+
+    /// The other half of the same gate, at the type rather than through `boot`: a device
+    /// registration is the *first* thing `AppSession` does on a fresh install, and it must not dial
+    /// either.
+    @Test("a device registration under the gate refuses in-process rather than over a socket")
+    func theGateStopsDeviceRegistrationToo() async throws {
+        URLProtocol.registerClass(RecordingProtocol.self)
+        defer { URLProtocol.unregisterClass(RecordingProtocol.self) }
+        RecordingProtocol.reset()
+
+        let control = URL(string: "https://cypress-remote-access-control2.invalid/probe")!
+        _ = try? await URLSession.shared.data(from: control)
+        #expect(
+            RecordingProtocol.observed().contains(control.absoluteString),
+            "the recorder is not in front of URLSession.shared; nothing below is a measurement"
+        )
+        RecordingProtocol.reset()
+
+        let data = try await DataLayer.boot(databaseURL: try Self.databaseURL(), seedURL: nil)
+        _ = try? await data.session.authorization()
+
+        #expect(
+            Self.serviceCalls().isEmpty,
+            "a device registration under the gate opened \(Self.serviceCalls())"
+        )
+    }
+}
+
+/// Records every URL a request is made for, and fails all of them in-process.
+///
+/// Registered globally rather than on one `URLSessionConfiguration`, because the subject is
+/// `URLSession.shared` — the session `AuthClient()` uses by default, and the one the defect ran on.
+/// A scoped protocol could not see it.
+///
+/// It never lets a request leave: `startLoading` immediately reports `notConnectedToInternet`, the
+/// same failure `OfflineSession.Refuser` reports, so a code path that reaches it takes the offline
+/// branch rather than hanging on a real timeout.
+final class RecordingProtocol: URLProtocol {
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var urls: [String] = []
+
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        urls = []
+    }
+
+    static func observed() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return urls
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        lock.lock()
+        urls.append(request.url?.absoluteString ?? "<no url>")
+        lock.unlock()
+        return true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+    }
+
+    override func stopLoading() {}
 }

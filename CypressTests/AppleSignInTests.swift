@@ -38,7 +38,7 @@ struct AppleSignInRecipeTests {
     @Test("the request Apple is given carries the hash, never the raw nonce")
     func requestCarriesTheHash() {
         let request = ASAuthorizationAppleIDProvider().createRequest()
-        AppleSignInRecipe.prepare(request, nonce: nonce)
+        AppleAuthorizationAttempt(nonce: nonce).prepare(request)
 
         #expect(
             request.nonce == nonce.hashedForApple,
@@ -64,7 +64,7 @@ struct AppleSignInRecipeTests {
     @Test("the request asks for an address and never for a name")
     func requestScopes() {
         let request = ASAuthorizationAppleIDProvider().createRequest()
-        AppleSignInRecipe.prepare(request, nonce: nonce)
+        AppleAuthorizationAttempt(nonce: nonce).prepare(request)
 
         let scopes = request.requestedScopes ?? []
         #expect(scopes == [.email])
@@ -78,10 +78,9 @@ struct AppleSignInRecipeTests {
 
     @Test("the credential built from the callback carries the RAW nonce, not the hash")
     func credentialCarriesTheRawNonce() throws {
-        let credential = try AppleSignInRecipe.credential(
+        let credential = try AppleAuthorizationAttempt(nonce: nonce).credential(
             identityToken: Data("identity.jwt".utf8),
-            authorizationCode: Data("code-1".utf8),
-            nonce: nonce
+            authorizationCode: Data("code-1".utf8)
         )
 
         #expect(credential.identityToken == "identity.jwt")
@@ -111,9 +110,73 @@ struct AppleSignInRecipeTests {
 
         for (missing, token, code) in cases {
             #expect(throws: AppleSignInRecipe.Incomplete(missing: missing)) {
-                try AppleSignInRecipe.credential(identityToken: token, authorizationCode: code, nonce: nonce)
+                try AppleAuthorizationAttempt(nonce: nonce).credential(
+                    identityToken: token, authorizationCode: code
+                )
             }
         }
+    }
+
+    // MARK: - The two ends, connected
+
+    /// **The seam a reviewer proved unobserved (PR #84, F2).**
+    ///
+    /// The two tests above prove the two *ends*: Apple gets the hash, the server gets the raw value.
+    /// Nothing proved they were the same nonce. `AppleSignInController` used to pass one to `prepare`
+    /// and another to `credential` by convention, and replacing the second with `AuthNonce.random()`
+    /// left the entire suite green — `Test run with 1474 tests in 149 suites passed`, all three UI
+    /// tests included — while every real sign-in would have failed `nonceMatches` on the server.
+    ///
+    /// Asserted across a **real `AppleSignInController`**, driving the two calls its delegate makes,
+    /// because that object is where the pairing lives. `authorize()` is never called, so nothing is
+    /// presented and no Apple Account is involved.
+    ///
+    /// The assertion is the server's own comparison run locally: hash what the credential carries and
+    /// require it to equal what Apple was handed. That is `nonceMatches`
+    /// (`server/internal/api/auth.go`) with the two sides swapped into one process.
+    @MainActor
+    @Test("the nonce Apple is given is the hash of the nonce the server is given")
+    func theTwoEndsCarryOneNonce() throws {
+        let controller = AppleSignInController(attempt: AppleAuthorizationAttempt())
+
+        let request = controller.preparedRequest()
+        let credential = try controller.credential(
+            identityToken: Data("identity.jwt".utf8),
+            authorizationCode: Data("code-1".utf8)
+        )
+
+        #expect(
+            AuthNonce(raw: credential.rawNonce).hashedForApple == request.nonce,
+            """
+            the nonce sent to the server hashes to \(AuthNonce(raw: credential.rawNonce).hashedForApple), \
+            and Apple was given \(request.nonce ?? "nothing"). These are the two halves of one replay \
+            defense and they are not the same value, so the service's `nonceMatches` would refuse \
+            every sign-in this build made — with nothing on either side able to say why.
+            """
+        )
+        // And the pairing is not accidentally satisfied by both being empty.
+        #expect(credential.rawNonce.isEmpty == false)
+        #expect(request.nonce?.isEmpty == false)
+    }
+
+    /// One nonce per authorization. A reused nonce no longer proves that *this* exchange is fresh,
+    /// which is the whole reason the value exists.
+    ///
+    /// `AppleSignIn.freshAttempt` is what `system` calls, and it is a named function precisely so a
+    /// test can call it twice — `system`'s own closure cannot be called here, because calling it
+    /// presents a sheet. Hoisting the attempt to a shared `static let` is the mutation this refuses.
+    @Test("every authorization mints its own nonce")
+    func eachAuthorizationGetsAFreshNonce() {
+        let nonces = (0..<8).map { _ in AppleSignIn.freshAttempt().nonce.raw }
+
+        #expect(
+            Set(nonces).count == nonces.count,
+            """
+            \(nonces.count - Set(nonces).count) of \(nonces.count) authorizations reused a nonce. A \
+            nonce shared between two sign-ins proves nothing about either of them being fresh.
+            """
+        )
+        #expect(nonces.allSatisfy { $0.count == 64 }, "a nonce was not 32 hex-encoded random bytes")
     }
 
     // MARK: - Apple's errors, in this app's vocabulary
@@ -172,11 +235,14 @@ struct DebugAppleSignInOverrideTests {
         #expect(DebugAppleSignInOverride.resolve([:]) == nil)
     }
 
-    /// **The boundary this seam exists to keep**: it can refuse and it cannot succeed. A pinned
-    /// success would have to hand `AppSession.signInWithApple` a forged credential, which is a
-    /// mutated build talking to `cypress-sync`. Asserted rather than merely written down, because
-    /// "there is no success case" is exactly the kind of sentence a later edit makes false.
-    @Test("no value pins a success, so no mutated build can reach the service")
+    /// **The boundary this seam keeps**: every value it understands refuses, and none mints a
+    /// credential.
+    ///
+    /// The claim used to be wider — "no mutated build can reach the service" — and review of PR #84
+    /// (F1) showed that was a sentence about the wrong object. This file never kept the process off
+    /// the network; the `CYPRESS_REMOTE` gate does, and until that review `DataLayer`'s session sat
+    /// outside it. What is asserted here is what this seam can actually promise.
+    @Test("no value this seam understands mints a credential")
     func nothingPinsASuccess() async throws {
         for raw in ["cancel", "fail", "success", "ok", "true", ""] {
             guard let pinned = DebugAppleSignInOverride.resolve(
@@ -200,5 +266,40 @@ struct DebugAppleSignInOverrideTests {
             DebugAppleSignInOverride.resolve([DebugAppleSignInOverride.environmentKey: "fail"])
         )
         await #expect(throws: DebugAppleSignInOverride.PinnedFailure()) { _ = try await fail() }
+    }
+
+    /// **A typo must never restore the real Apple sheet** (review of PR #84, F1).
+    ///
+    /// `resolve` used to answer `nil` for an unrecognized value, which is the same answer as an
+    /// absent variable — so a misspelled key or value in either of the two UI tests that tap the
+    /// button put a live system sheet on a CI runner whose simulator may have an Apple Account
+    /// signed in. `DebugLocationOverride`'s rule, broken in this file: a typo must not be
+    /// indistinguishable from a decision.
+    ///
+    /// Both halves are asserted, and the second is the one that makes the first a measurement: a
+    /// mistyped value refuses **and** an absent one still leaves the real button alone, or no
+    /// ordinary launch could sign in at all.
+    @Test("a mistyped pin refuses and complains, while an absent one leaves the real button alone")
+    func aTypoRefusesRatherThanRestoringTheSheet() async throws {
+        let mistyped = try #require(
+            DebugAppleSignInOverride.resolve([DebugAppleSignInOverride.environmentKey: "cancle"]),
+            """
+            a mistyped CYPRESS_APPLE_SIGN_IN resolved to nil, which is the answer an ABSENT variable \
+            gets — so the build presents the real Apple sheet, and a UI test taps it on a runner.
+            """
+        )
+        await #expect(throws: DebugAppleSignInOverride.Misconfigured(raw: "cancle")) {
+            _ = try await mistyped()
+        }
+
+        let complaint = try #require(
+            DebugAppleSignInOverride.complaint([DebugAppleSignInOverride.environmentKey: "cancle"]),
+            "a mistyped pin refused silently, so a test waits out its timeout on a state nothing draws"
+        )
+        #expect(complaint.contains("cancle"), "the complaint did not quote what was actually set")
+
+        // The control: nothing set is not a mistake.
+        #expect(DebugAppleSignInOverride.resolve([:]) == nil)
+        #expect(DebugAppleSignInOverride.complaint([:]) == nil)
     }
 }

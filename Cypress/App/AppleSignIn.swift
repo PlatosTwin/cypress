@@ -27,12 +27,21 @@
 //  Nobody may sign a real Apple Account into a simulator to prove this, and no test in this
 //  repository does. The split below is drawn on exactly that line:
 //
-//  - `AppleSignInRecipe` is pure and is tested (`CypressTests/AppleSignInTests.swift`). It owns the
-//    two things that are wrong far more often than they are right — which value Apple is handed and
-//    which value the server is handed — and the mapping from `ASAuthorizationError` to this app's
-//    own vocabulary.
-//  - `AppleSignInController` is the sheet. It is not tested, it holds no logic beyond delegate
-//    plumbing, and every decision it could get wrong has been moved into the enum above it.
+//  - `AppleAuthorizationAttempt` and `AppleSignInRecipe` are pure and are tested
+//    (`CypressTests/AppleSignInTests.swift`). Between them they own the three things that are wrong
+//    far more often than they are right — which value Apple is handed, which value the server is
+//    handed, and that those two are the **same** nonce — plus the mapping from
+//    `ASAuthorizationError` to this app's own vocabulary.
+//  - `AppleSignInController` is the sheet. Only `authorize()` presents; everything it decides is on
+//    `preparedRequest()` and `credential(identityToken:authorizationCode:)`, and a test drives both
+//    on a real instance without presenting anything.
+//
+//  **This paragraph used to say the controller "holds no logic beyond delegate plumbing, and every
+//  decision it could get wrong has been moved into the enum above it", and that was false** (review
+//  of PR #84, F2). It held exactly one: that the nonce given to `prepare` was the nonce given to
+//  `credential`. Replacing the second with `AuthNonce.random()` left the whole suite green while
+//  every real sign-in would have failed the server's `nonceMatches`. The sentence is true now
+//  because the type changed, not because the sentence was reworded.
 //
 
 import AuthenticationServices
@@ -70,50 +79,25 @@ enum AppleSignInRecipe {
     /// feeds private by default, `User.publicAttribution` is false until somebody turns it on, and
     /// screen 15 collects no name. Asking for a real name in order to discard it is collection
     /// without a use, which is the thing DECISIONS §3 is a charter against.
+    ///
+    /// ── The half that is cheap in code and not cheap in population (review of PR #84, F5) ──────
+    ///
+    /// Apple returns `fullName` **only on the first authorization** for a given Apple ID and app.
+    /// Every later sign-in carries nil there until the person revokes the app under Settings → Apple
+    /// ID → Sign in with Apple. So adding `.fullName` in a later ticket collects names from **new
+    /// users only, permanently** — everybody who signed in before that ticket is past their one
+    /// chance. Nothing stored bakes the decision in and reversing the line is a one-word edit, but
+    /// the population it can still reach shrinks with every sign-in, which is a fact the owner
+    /// should have before ship rather than after.
+    ///
+    /// **The same one-shot rule is what makes the email half robust, pointing the other way.**
+    /// `ASAuthorizationAppleIDCredential.email` is first-authorization-only too — so a client that
+    /// read the address off the *credential* would have it once and never again. This app does not
+    /// read it at all: the address travels inside the identity token, whose `email` claim is not
+    /// first-authorization-only, and the server takes it from the **verified** token
+    /// (`server/internal/apple/apple.go`). That is why `AppleIdentityCredential` has no email field
+    /// and why nothing here looks for one.
     static let requestedScopes: [ASAuthorization.Scope] = [.email]
-
-    /// Fills in an authorization request. **The nonce Apple is given is the hash, never the raw
-    /// value** — see `AuthNonce`, which is where the whole recipe is written down.
-    ///
-    /// Separated from the controller so that this one line can be asserted by a test that presents
-    /// nothing: `ASAuthorizationAppleIDProvider().createRequest()` is object construction and needs
-    /// no Apple Account, so a unit test can build a request, hand it to this function, and read the
-    /// property back.
-    static func prepare(_ request: ASAuthorizationAppleIDRequest, nonce: AuthNonce) {
-        request.requestedScopes = requestedScopes
-        request.nonce = nonce.hashedForApple
-    }
-
-    /// The three strings `/auth/oidc` needs, out of what the callback carried.
-    ///
-    /// Takes the two `Data?` values rather than the `ASAuthorizationAppleIDCredential` itself,
-    /// because that type has no public initializer and a function taking it could not be called by
-    /// any test. The delegate below passes `credential.identityToken` and
-    /// `credential.authorizationCode` straight in.
-    ///
-    /// **`rawNonce` is `nonce.raw`.** Handing `nonce.hashedForApple` here compiles, round-trips and
-    /// defends nothing, because it is the value anybody holding the captured identity token already
-    /// has. `server/internal/api/auth.go` refuses a sign-in with no nonce on either side so that the
-    /// check cannot be opted out of; this is the line that has to be right for it to mean anything.
-    static func credential(
-        identityToken: Data?,
-        authorizationCode: Data?,
-        nonce: AuthNonce
-    ) throws -> AppleIdentityCredential {
-        guard let identityToken, let token = String(data: identityToken, encoding: .utf8),
-              !token.isEmpty else {
-            throw Incomplete(missing: "identity token")
-        }
-        guard let authorizationCode, let code = String(data: authorizationCode, encoding: .utf8),
-              !code.isEmpty else {
-            // Not a soft failure. Without the code the service never exchanges at Apple's
-            // `/auth/token`, so it stores no refresh token, so `DELETE /me` cannot call the
-            // revocation endpoint Apple requires of an app offering this button (R72 ruling 2,
-            // RULINGS R3). `AppleIdentityCredential` makes it non-optional for the same reason.
-            throw Incomplete(missing: "authorization code")
-        }
-        return AppleIdentityCredential(identityToken: token, authorizationCode: code, rawNonce: nonce.raw)
-    }
 
     /// Apple's error vocabulary, translated into screen 15's.
     ///
@@ -130,6 +114,80 @@ enum AppleSignInRecipe {
     static func refusal(for error: any Error) -> any Error {
         guard let authorization = error as? ASAuthorizationError else { return error }
         return authorization.code == .canceled ? AccountLinkRefusal.cancelled : error
+    }
+}
+
+// MARK: - One authorization, and the nonce that has to be the same at both ends
+
+/// A single Sign in with Apple authorization, holding the one value that must not differ between its
+/// two ends.
+///
+/// ── Why this type exists, which is a defect a reviewer proved rather than a tidy-up ─────────────
+///
+/// `prepare` and `credential` used to be free functions each taking a `nonce:` argument, and
+/// `AppleSignInController` passed one to each. Nothing observed that it passed the **same** one.
+/// Review of PR #84 (F2) replaced the second call's argument with `AuthNonce.random()` — a nonce
+/// Apple never saw — and the entire suite stayed green: `Test run with 1474 tests in 149 suites
+/// passed`, plus all three UI tests. Every real sign-in would have failed `nonceMatches` on the
+/// server, and nothing anywhere would have said why.
+///
+/// That pairing *is* the replay defense (`AuthNonce`, `server/internal/api/auth.go`), so it is now a
+/// property of a value rather than a convention between two call sites: there is no `nonce:`
+/// parameter left to disagree with, and `AppleSignInRecipeTests` asserts
+/// `SHA256(credential.rawNonce) == request.nonce` across a real controller instance.
+///
+/// **One per authorization.** The nonce is minted in `init` and never stored anywhere else. A nonce
+/// reused across two sign-ins is a nonce that no longer proves this exchange is fresh, which is why
+/// `AppleSignIn.freshAttempt` is a function and is tested as one.
+struct AppleAuthorizationAttempt: Sendable {
+
+    /// This authorization's nonce. Raw; `hashedForApple` is what Apple is handed.
+    let nonce: AuthNonce
+
+    init(nonce: AuthNonce = .random()) {
+        self.nonce = nonce
+    }
+
+    /// Fills in the request Apple is given. **The nonce it carries is the hash, never the raw
+    /// value** — see `AuthNonce`, where the whole recipe is written down.
+    ///
+    /// Testable without presenting anything: `ASAuthorizationAppleIDProvider().createRequest()` is
+    /// object construction and needs no Apple Account, so a unit test builds a request, hands it
+    /// here, and reads the property back.
+    func prepare(_ request: ASAuthorizationAppleIDRequest) {
+        request.requestedScopes = AppleSignInRecipe.requestedScopes
+        request.nonce = nonce.hashedForApple
+    }
+
+    /// The three strings `/auth/oidc` needs, out of what the callback carried.
+    ///
+    /// Takes the two `Data?` values rather than the `ASAuthorizationAppleIDCredential` itself,
+    /// because that type has no public initializer and a function taking it could not be called by
+    /// any test. The delegate passes `credential.identityToken` and `credential.authorizationCode`
+    /// straight in.
+    ///
+    /// **`rawNonce` is this attempt's raw nonce.** Handing `nonce.hashedForApple` here compiles,
+    /// round-trips and defends nothing, because it is the value anybody holding the captured
+    /// identity token already has. `server/internal/api/auth.go` refuses a sign-in with no nonce on
+    /// either side so the check cannot be opted out of; this is the line that has to be right for it
+    /// to mean anything.
+    func credential(
+        identityToken: Data?,
+        authorizationCode: Data?
+    ) throws -> AppleIdentityCredential {
+        guard let identityToken, let token = String(data: identityToken, encoding: .utf8),
+              !token.isEmpty else {
+            throw AppleSignInRecipe.Incomplete(missing: "identity token")
+        }
+        guard let authorizationCode, let code = String(data: authorizationCode, encoding: .utf8),
+              !code.isEmpty else {
+            // Not a soft failure. Without the code the service never exchanges at Apple's
+            // `/auth/token`, so it stores no refresh token, so `DELETE /me` cannot call the
+            // revocation endpoint Apple requires of an app offering this button (R72 ruling 2,
+            // RULINGS R3). `AppleIdentityCredential` makes it non-optional for the same reason.
+            throw AppleSignInRecipe.Incomplete(missing: "authorization code")
+        }
+        return AppleIdentityCredential(identityToken: token, authorizationCode: code, rawNonce: nonce.raw)
     }
 }
 
@@ -157,13 +215,17 @@ struct AppleSignIn: Sendable {
         try await authorize()
     }
 
-    /// The real one: `ASAuthorizationController`, over the app's own window.
+    /// A fresh authorization, with a fresh nonce.
     ///
-    /// The nonce is minted **here**, one per authorization, and never stored. A nonce reused across
-    /// two sign-ins is a nonce that no longer proves this exchange is fresh.
+    /// A named function rather than an expression inside `system`'s closure, so that "one nonce per
+    /// authorization" is a property of a value a test can call twice — the closure below cannot be
+    /// called by a test at all, because calling it presents a sheet. Hoisting this to a `static let`
+    /// would reuse one nonce across every sign-in in the process, and that mutation now goes red.
+    static let freshAttempt: @Sendable () -> AppleAuthorizationAttempt = { AppleAuthorizationAttempt() }
+
+    /// The real one: `ASAuthorizationController`, over the app's own window.
     static let system = AppleSignIn {
-        let nonce = AuthNonce.random()
-        return try await AppleSignInController.authorize(nonce: nonce)
+        try await AppleSignInController(attempt: freshAttempt()).authorize()
     }
 
     /// What `RootView` uses when nobody supplied one.
@@ -193,32 +255,47 @@ struct AppleSignIn: Sendable {
 @MainActor
 final class AppleSignInController: NSObject {
 
+    /// The authorization this controller is running. **Both ends read it**, which is the whole of
+    /// F2's repair — see `AppleAuthorizationAttempt`.
+    let attempt: AppleAuthorizationAttempt
+
+    private var continuation: CheckedContinuation<AppleIdentityCredential, any Error>?
+    private var retained: ASAuthorizationController?
+
+    /// Internal rather than private, and that is the point: a test constructs one of these and
+    /// drives `preparedRequest()` and `credential(identityToken:authorizationCode:)` — the two calls
+    /// the delegate makes — without ever calling `authorize()`, which is the only method that
+    /// presents anything.
+    init(attempt: AppleAuthorizationAttempt) {
+        self.attempt = attempt
+    }
+
+    /// The request Apple is given, prepared by this controller's own attempt.
+    func preparedRequest() -> ASAuthorizationAppleIDRequest {
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        attempt.prepare(request)
+        return request
+    }
+
+    /// What the callback becomes, built by this controller's own attempt.
+    func credential(identityToken: Data?, authorizationCode: Data?) throws -> AppleIdentityCredential {
+        try attempt.credential(identityToken: identityToken, authorizationCode: authorizationCode)
+    }
+
     /// One authorization. The controller and this delegate are held by the continuation's closure
     /// for the duration and released when it resumes — an `ASAuthorizationController` whose delegate
     /// has been deallocated calls nobody back, and a sign-in that never calls back is a spinner that
     /// never stops.
-    static func authorize(nonce: AuthNonce) async throws -> AppleIdentityCredential {
-        let delegate = AppleSignInController(nonce: nonce)
-        let request = ASAuthorizationAppleIDProvider().createRequest()
-        AppleSignInRecipe.prepare(request, nonce: nonce)
-
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        controller.delegate = delegate
-        controller.presentationContextProvider = delegate
+    func authorize() async throws -> AppleIdentityCredential {
+        let controller = ASAuthorizationController(authorizationRequests: [preparedRequest()])
+        controller.delegate = self
+        controller.presentationContextProvider = self
 
         return try await withCheckedThrowingContinuation { continuation in
-            delegate.continuation = continuation
-            delegate.retained = controller
+            self.continuation = continuation
+            self.retained = controller
             controller.performRequests()
         }
-    }
-
-    private let nonce: AuthNonce
-    private var continuation: CheckedContinuation<AppleIdentityCredential, any Error>?
-    private var retained: ASAuthorizationController?
-
-    private init(nonce: AuthNonce) {
-        self.nonce = nonce
     }
 
     /// Resumes once and only once. `ASAuthorizationController` is not documented to call exactly one
@@ -246,11 +323,13 @@ extension AppleSignInController: ASAuthorizationControllerDelegate {
             finish(.failure(AppleSignInRecipe.Incomplete(missing: "an Apple ID credential")))
             return
         }
+        // Straight into the tested pair. There is deliberately nothing to decide in this method:
+        // which nonce the credential carries is `attempt`'s, and `AppleSignInRecipeTests` asserts
+        // that it is the same one `preparedRequest()` hashed for Apple.
         finish(Result {
-            try AppleSignInRecipe.credential(
+            try credential(
                 identityToken: apple.identityToken,
-                authorizationCode: apple.authorizationCode,
-                nonce: nonce
+                authorizationCode: apple.authorizationCode
             )
         })
     }
@@ -276,8 +355,15 @@ extension AppleSignInController: ASAuthorizationControllerPresentationContextPro
             ?? scenes.compactMap(\.keyWindow).first
             ?? scenes.first?.windows.first
         // `ASPresentationAnchor` is non-optional and there is no honest fallback: an app with no
-        // window has no screen to present over. An empty anchor makes `AuthenticationServices`
-        // report its own error, which reaches the notice line, rather than trapping here.
+        // window has no screen to present over, so a bare one is returned rather than trapping here.
+        //
+        // **What happens next is deliberately not asserted** (review of PR #84, F6). This comment
+        // used to claim that "an empty anchor makes `AuthenticationServices` report its own error,
+        // which reaches the notice line" — an invariant nobody verified, and not one this repository
+        // can verify without presenting a real sheet. What is known and worth writing down is the
+        // narrow half: returning a window is required by the signature, `?? ASPresentationAnchor()`
+        // is what a process with no window scene gets, and the branch is unreachable while the app
+        // has one. Whether Apple then errors or does something else is Apple's, and untested here.
         return window ?? ASPresentationAnchor()
     }
 }

@@ -245,6 +245,18 @@ struct RootView: View {
             deepLinkFailure = complaint
             return
         }
+        // A junk `CYPRESS_APPLE_SIGN_IN`, on the same terms and for a sharper reason (review of PR
+        // #84, F1). That seam used to fall through to the **real Apple sheet** on an unrecognized
+        // value, so a typo in either the key or the value put a live system sheet in front of the
+        // two UI tests that tap the button — on a runner whose simulator may have an Apple Account
+        // signed in. It refuses now, and this is the half that stops the refusal being silent:
+        // without it a test would wait out its timeout for a state the build was never going to
+        // draw.
+        if let complaint = DebugAppleSignInOverride.complaint() {
+            deepLinkAttempted = true
+            deepLinkFailure = complaint
+            return
+        }
         // A junk `CYPRESS_LOCATION` draws itself, for `DebugDeepLink.Failure`'s reason: a seam that
         // quietly fell back to the real provider would leave a test asserting the denied refusal
         // path against a simulator with a perfectly good fix, and it would fail somewhere else —
@@ -536,11 +548,32 @@ struct RootView: View {
     /// (`server/internal/store/identity.go`), so resumption is the service's answer now rather than
     /// a value this device has to remember.
     ///
-    /// **The device is claimed in the same round trip.** `/auth/oidc` registers and claims when the
-    /// body carries `device_uuid` (`server/internal/api/auth.go`), so D9's "keep your three visits"
-    /// is true on the far side before the sheet closes. `linkAccount` then performs the *local* half
-    /// — the same `claimDevice` as before, plus the consent record — so the phone's own rows move
-    /// too. Two claims, one on each side of the wire, and neither stands in for the other.
+    /// **The device is claimed in the same round trip, and the claim can be refused.** `/auth/oidc`
+    /// registers and claims when the body carries `device_uuid` (`server/internal/api/auth.go`), and
+    /// `linkAccount` then performs the *local* half — the same `claimDevice` as before, plus the
+    /// consent record. Two claims, one on each side of the wire.
+    ///
+    /// **Two sentences that used to stand here were false, and review of PR #84 (F3) proved both.**
+    /// They read: *"so D9's 'keep your three visits' is true on the far side before the sheet
+    /// closes"* and *"neither stands in for the other"*. The service used to swallow
+    /// `ErrClaimedByAnotherAccount` and answer `200` anyway, so a reachable sequence — A signs in on
+    /// this phone and signs out, B signs in — kept every contribution on A on the service while this
+    /// closure moved the phone's rows to B unconditionally. Screen 15 drew success over a
+    /// disagreement neither side could see, which is the exact opposite of what those two sentences
+    /// claimed.
+    ///
+    /// The service refuses now, with `conflict` and the sentence `POST /devices/claim` already
+    /// answers with. It refuses **before minting a session**, so `exchangeApple` throws, nothing is
+    /// persisted, `linkAccount` is never reached, and screen 15 draws
+    /// `AccountAskCopy.noticeFailed` — *"That did not go through."* Honest, because it did not: this
+    /// phone is not this account's to take.
+    ///
+    /// **What that leaves open is a stop-and-ask, not a gap this round fills.** Nothing on the
+    /// service ever clears `devices.user_id` (a sign-out is not a request it receives), so the second
+    /// account cannot sign in on this phone *at all* — and "That did not go through" does not say
+    /// why, or that trying again will not help. A surface that says "this phone's contributions
+    /// belong to another account" is copy no mock draws, and inventing it here is what DECISIONS
+    /// constraint 21 forbids. Raised for the errata, unnumbered as this is written.
     ///
     /// **The license answer travels (ERRATA E131).** §6's checkbox becomes `license_version` on the
     /// exchange, and spec §5.6 makes the two answers two different bodies: a version string when it
@@ -590,12 +623,39 @@ struct RootView: View {
             )
 
             // The local half, against the id the service just minted.
-            try await api.linkAccount(
-                deviceUUID: deviceID,
-                userID: userID,
-                provider: request.provider.rawValue,
-                acceptsLicense: request.acceptsLicense
-            )
+            //
+            // ── Why this is wrapped, and what the bare call left behind (review of PR #84, F4) ──
+            //
+            // `signInWithApple` has **already persisted `SessionCredentials` to the Keychain** by the
+            // time this line runs. If `linkAccount` throws, the bare version left the phone holding a
+            // live account session while `app_state.currentUserID` stayed unset — and
+            // `AppSession.authorization()` reads `storedSession` *before* it looks at the device
+            // credential, so every later request would go out with an account bearer while every
+            // contribution stayed attributed `.anonymous(deviceID:)`. Screen 15 draws "That did not
+            // go through" over all of it, so the person is told nothing happened while the phone is
+            // half signed in.
+            //
+            // `signOut()` is exactly the rollback wanted and nothing more: it forgets the *session*
+            // and deliberately keeps the *device* credential, so the anonymous queue this
+            // installation was draining before the tap goes on draining after it (D9). The original
+            // error is rethrown — the failure to report is the one that happened, not the tidy-up.
+            //
+            // **What this does not close, stated rather than implied.** If `persist(session)` itself
+            // throws inside `signInWithApple`, the service already holds a user, a claimed device and
+            // a refresh-token family this client just dropped. That is one layer down, inside
+            // `AppSession`, and it is the divergence class that type's own header calls open. This
+            // closes the arm reachable from screen 15.
+            do {
+                try await api.linkAccount(
+                    deviceUUID: deviceID,
+                    userID: userID,
+                    provider: request.provider.rawValue,
+                    acceptsLicense: request.acceptsLicense
+                )
+            } catch {
+                try? await session.signOut()
+                throw error
+            }
         }
     }
 

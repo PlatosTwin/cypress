@@ -105,10 +105,17 @@ enum AppleSignInFixture {
     /// assertion that the local rows carry it cannot pass by coincidence.
     static let serverUserID = UUID(uuidString: "5E12E12E-0000-4000-8000-00000000AA01")!
 
-    static let credential = AppleIdentityCredential(
-        identityToken: "identity.jwt",
-        authorizationCode: "code-1",
-        rawNonce: "raw-nonce"
+    /// The authorization this suite's stub answers with.
+    ///
+    /// **Built through the real construction, not written as a literal**, and review of PR #84 is
+    /// why: with a literal `rawNonce`, `exchangeBodyCarriesEverything`'s nonce assertion stayed green
+    /// under the hash-for-raw inversion, because the fixture was not the product. It runs through
+    /// `AppleAuthorizationAttempt` now, so the wire test observes the same code path the app does.
+    static let attempt = AppleAuthorizationAttempt(nonce: AuthNonce(raw: "raw-nonce"))
+
+    static let credential = try! attempt.credential(
+        identityToken: Data("identity.jwt".utf8),
+        authorizationCode: Data("code-1".utf8)
     )
 }
 
@@ -261,7 +268,7 @@ struct AccountLinkTests {
             """
         )
         #expect(
-            body["nonce"] as? String == "raw-nonce",
+            body["nonce"] as? String == AppleSignInFixture.attempt.nonce.raw,
             """
             the exchange sent \(body["nonce"] as? String ?? "nothing"). It must be the RAW nonce: the \
             server hashes it and compares against Apple's claim, and a client sending the hash \
@@ -353,10 +360,9 @@ struct AccountLinkTests {
         let data = try await Self.bootInMemory(http: http)
 
         let link = Self.link(data) {
-            try AppleSignInRecipe.credential(
+            try AppleAuthorizationAttempt(nonce: AuthNonce(raw: "raw-nonce")).credential(
                 identityToken: Data("identity.jwt".utf8),
-                authorizationCode: nil,
-                nonce: AuthNonce(raw: "raw-nonce")
+                authorizationCode: nil
             )
         }
         await #expect(throws: AppleSignInRecipe.Incomplete(missing: "authorization code")) {
@@ -396,6 +402,102 @@ struct AccountLinkTests {
             )
             #expect(await http.requests.isEmpty)
         }
+    }
+
+    /// **The service refusing the device** (review of PR #84, F3).
+    ///
+    /// `/auth/oidc` performs the claim inline, and it used to swallow the #174 guard and answer 200
+    /// anyway: A signs in on this phone and signs out, B signs in, the service keeps every
+    /// contribution on A and this closure moved the local rows to B regardless. It answers `conflict`
+    /// now — the same code and sentence `POST /devices/claim` already uses — and it answers it
+    /// **before minting a session**, so the whole tap unwinds.
+    ///
+    /// Screen 15 draws `AccountAskCopy.noticeFailed` for it, through the general `catch`, and that is
+    /// deliberate rather than a gap: the sign-in genuinely did not go through. What it does not say
+    /// is *why*, which is a copy question no mock answers and is recorded as a stop-and-ask.
+    @Test("a service that refuses this device leaves the phone exactly as it was")
+    func aRefusedDeviceClaimUnwindsTheWholeTap() async throws {
+        let http = ScriptedAuthHTTP { _ in
+            (409, ScriptedAuthHTTP.refusal("conflict", "This device is already linked to another account."))
+        }
+        let data = try await Self.bootInMemory(http: http)
+
+        let link = Self.link(data) { AppleSignInFixture.credential }
+        await #expect(throws: APIError.conflict) {
+            try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
+        }
+
+        #expect(await data.local.userID == nil, "a refused claim signed somebody in locally anyway")
+        #expect(
+            await data.session.storedSession == nil,
+            "a refused claim left a session behind, so the phone is half signed in"
+        )
+        let record = try await data.local.accountLink()
+        #expect(record == nil, "a refused claim recorded a consent for an account this phone cannot have")
+    }
+
+    /// **The local half failing after the remote half succeeded** (review of PR #84, F4).
+    ///
+    /// `signInWithApple` persists to the Keychain before `linkAccount` runs. Without a rollback the
+    /// phone is left holding a live account session while `app_state.currentUserID` is unset — and
+    /// `AppSession.authorization()` reads `storedSession` **before** the device credential, so every
+    /// later request would go out with an account bearer while every contribution stayed anonymous.
+    /// Screen 15 draws "That did not go through" over all of it.
+    ///
+    /// ── How the local half is made to fail, and why it is calibrated first ──────────────────────
+    ///
+    /// There is no seam to inject a throwing `LocalAPI` — `RootView.accountLink()` reads the concrete
+    /// actor off `DataLayer` — so the writer connection is put into `PRAGMA query_only`, and SQLite
+    /// refuses every write on it from then on. That is a real refusal from the real database rather
+    /// than a mock of one, and it lands where the finding is: after `exchangeApple` has returned and
+    /// the Keychain has been written.
+    ///
+    /// **Making the file read-only was tried first and does not work**: POSIX permissions are checked
+    /// at `open(2)`, and the store already holds a writable descriptor, so every write still
+    /// succeeded and the calibration below caught it — which is exactly what it is for.
+    @Test("a local half that fails rolls the session back rather than leaving the phone half signed in")
+    func aFailedLocalLinkRollsTheSessionBack() async throws {
+        let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
+        let data = try await Self.bootInMemory(http: http)
+
+        try await data.store.queue.write { connection in
+            try connection.execute("PRAGMA query_only = 1")
+        }
+
+        // ── Calibration. Without this, "the session was rolled back" could be reported by a run in
+        //    which nothing failed and nothing needed rolling back. ────────────────────────────────
+        var storeRefusesWrites = false
+        do {
+            try await data.store.setAppState(.accountProvider, to: "probe")
+        } catch {
+            storeRefusesWrites = true
+        }
+        guard storeRefusesWrites else {
+            Issue.record("""
+                the store still accepts writes, so `linkAccount` below would succeed and this test \
+                would assert a rollback nothing needed. Nothing is proved by what follows.
+                """)
+            return
+        }
+
+        let link = Self.link(data) { AppleSignInFixture.credential }
+        await #expect(throws: (any Error).self, "a failed local link reported success") {
+            try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
+        }
+
+        #expect(
+            await data.session.storedSession == nil,
+            """
+            the Keychain kept a live account session after the local link failed. \
+            `AppSession.authorization()` returns `.user(…)` from it before it looks at the device \
+            credential, so every later request goes out as an account whose contributions are all \
+            still anonymous — and screen 15 has just said nothing happened.
+            """
+        )
+        #expect(
+            await data.local.userID == nil,
+            "the local half half-succeeded, which is a different finding from the one under test"
+        )
     }
 
     // MARK: - 4. Signing in twice

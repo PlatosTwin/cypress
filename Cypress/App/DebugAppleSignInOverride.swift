@@ -8,13 +8,29 @@
 //
 //  ── The one thing this seam deliberately cannot do ──────────────────────────────────────────────
 //
-//  **There is no `success`.** Every value below refuses, and none of them reaches the network. That
-//  is the boundary, written as code rather than as a rule somebody has to remember: a pinned success
-//  would have to hand `AppSession.signInWithApple` a credential, which would `POST /auth/oidc` at
-//  `cypress-sync` with a forged token — a mutated build talking to production, which is the thing
-//  #158's briefs forbid outright. The success path is proven where it can be proven honestly:
-//  `CypressTests/AccountLinkTests.swift` drives it end to end with a scripted transport and a stub
-//  authorization, from the callback to the stored session.
+//  **There is no `success`.** Every value below refuses, and none of them mints a credential. A
+//  pinned success would have to hand `AppSession.signInWithApple` one, and the success path is
+//  proven where it can be proven honestly instead: `CypressTests/AccountLinkTests.swift` drives it
+//  end to end with a scripted transport and a stub authorization, from the callback to the stored
+//  session.
+//
+//  **What that sentence used to claim, and why it was narrowed** (review of PR #84, F1). It read
+//  "none of them reaches the network… a mutated build talking to production". That is a statement
+//  about *this file*, and this file was never what kept the process off the network — `DataLayer`'s
+//  session was built outside the `CYPRESS_REMOTE` gate entirely, so the **unpinned** path dialled
+//  production with nothing in the way. The gate is the guarantee (`RemoteAccess`, and `DataLayer
+//  .boot`'s `authHTTP`); this file is a convenience on top of it. Both are true now; only one of
+//  them ever was.
+//
+//  ── A mistyped pin is a refusal, never the real sheet ───────────────────────────────────────────
+//
+//  `resolve` used to answer `nil` for an unrecognized value, which restores the **real Apple sheet**.
+//  On a runner whose simulator has an Apple Account signed in, a typo in either the key or the value
+//  therefore put a live system sheet in front of the two UI tests that tap the button. That is
+//  `DebugLocationOverride`'s rule broken in this file — a typo must not be indistinguishable from a
+//  decision — and it is the deny-list shape `RemoteAccess`'s header refuses. An unrecognized value
+//  now refuses like every other value here **and** complains out loud, the way a mistyped
+//  `CYPRESS_REMOTE` does.
 //
 //  So what a UI test gets from this file is exactly the pair of states that are about *drawing*:
 //  a cancelled sheet must leave screen 15 as SCREENS.md draws it, and a failed authorization must
@@ -55,6 +71,27 @@ enum DebugAppleSignInOverride {
     /// failure vocabulary is reachable only through a test seam.
     struct PinnedFailure: Error, Equatable {}
 
+    /// What a **mistyped** pin throws. Never the real sheet — see `resolve`.
+    struct Misconfigured: Error, Equatable {
+        let raw: String
+    }
+
+    /// A sentence for the composition root to draw when somebody mistyped the pin, or nil when
+    /// nothing is wrong.
+    ///
+    /// Mirrors `RemoteAccess.complaint` rather than inventing a second idiom, and is drawn by the
+    /// same `RootView` overlay for the same reason: a seam that refuses quietly leaves a test
+    /// asserting the cancelled state against a build doing something else entirely.
+    static func complaint(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        guard case let .invalid(raw) = requested(environment) else { return nil }
+        return """
+            \(environmentKey)=\(raw) is not a value this build understands, so the Apple button \
+            refuses. Use `cancel`, or `fail`.
+            """
+    }
+
     static func requested(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Request? {
@@ -74,19 +111,23 @@ enum DebugAppleSignInOverride {
 
     /// The pinned action, or nil when this launch asked for nothing.
     ///
-    /// An `invalid` value resolves to `nil`, which restores the real button — the same choice as a
-    /// missing variable, and deliberately not a crash, because this is a DEBUG seam and a typo in a
-    /// launch environment should not take the app down. What makes the typo visible is
-    /// `DebugAppleSignInOverrideTests`, which asserts the grammar directly, plus the UI test's own
-    /// assertion failing on the state it expected.
+    /// **`.invalid` refuses; it does not fall through to the real button.** It used to answer `nil`,
+    /// which is the same answer as a missing variable and therefore restores the system sheet — see
+    /// this file's header for why that is the one answer it must not give. Refusing rather than
+    /// trapping, because a DEBUG seam should not take the app down over a typo; the noise comes from
+    /// `complaint`, drawn over the whole app by `RootView`, which is `RemoteAccess.misconfigured`'s
+    /// arrangement exactly.
+    ///
+    /// **Nil still means nil.** An absent variable is not a mistake and must leave the real button
+    /// alone, or no ordinary launch could sign in at all.
     static func resolve(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> AppleSignIn? {
         switch requested(environment) {
-        case .cancel:  return AppleSignIn { throw AccountLinkRefusal.cancelled }
-        case .fail:    return AppleSignIn { throw PinnedFailure() }
-        case .invalid: return nil
-        case nil:      return nil
+        case .cancel:            return AppleSignIn { throw AccountLinkRefusal.cancelled }
+        case .fail:              return AppleSignIn { throw PinnedFailure() }
+        case let .invalid(raw):  return AppleSignIn { throw Misconfigured(raw: raw) }
+        case nil:                return nil
         }
     }
 }
