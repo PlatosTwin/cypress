@@ -16,10 +16,15 @@
 //  reminder could be written and never read again by anybody, including the person who wrote it.
 //
 //  ── Why it owns `LocalAPI` and not `any CypressAPI` ────────────────────────────────────────
-//  For `ModerationModel`'s reason, which is `CypressAPI`'s own: the protocol carries no `/auth/*`
-//  and no `DELETE /me` because there is no auth server, and `privateReminders` is a `LocalAPI`
-//  method beside `curatedSpecies` for the same kind of reason. Everything this model calls is the
-//  local half of an endpoint that does not exist yet, and none of it is a stub.
+//  For `ModerationModel`'s reason, which is `CypressAPI`'s own: the protocol carries no `/auth/*`,
+//  and `privateReminders` is a `LocalAPI` method beside `curatedSpecies` because D4's reminder is
+//  one owner's row that no screen holding the existential has ever asked for. Everything this model
+//  calls is the local half of an endpoint, and none of it is a stub.
+//
+//  **`DELETE /me` is no longer one of the reasons.** #158 §3.2 made `deleteAccount` a `CypressAPI`
+//  requirement, so a model holding `any CypressAPI` could reach it now. This one still holds
+//  `LocalAPI`, for the narrower reason above — recorded as narrower rather than left standing at its
+//  old width.
 //
 
 import Foundation

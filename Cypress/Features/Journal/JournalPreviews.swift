@@ -85,6 +85,9 @@ struct JournalPreviewAPI: CypressAPI {
     func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
     func grove() async throws -> [GroveEntry] { [] }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
+    func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        throw APIError.unauthorized
+    }
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
 }
 

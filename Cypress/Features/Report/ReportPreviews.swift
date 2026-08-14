@@ -37,6 +37,9 @@ struct ReportPreviewAPI: CypressAPI {
     func grove() async throws -> [GroveEntry] { [] }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
+    func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        throw APIError.unauthorized
+    }
     func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
 }
 

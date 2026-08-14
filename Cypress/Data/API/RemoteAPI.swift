@@ -34,7 +34,9 @@ import Foundation
 /// So the rule is the one `docs/design-proposals/2026-08-09-task158-live-layer.md` §3.3 states:
 /// every method this type is declared to implement, it implements — a refusal is an implementation,
 /// an inherited default is not. `CypressTests/APIConformanceGuardTests` is what keeps that true for
-/// the thirty-second requirement as well as these thirty-one.
+/// the thirty-third requirement as well as these thirty-two. `deleteAccount` was the thirty-second,
+/// added by #158 §3.2, and the guard is what made adding it a compile-and-fix pass across
+/// thirty-four conformances rather than an audit.
 public struct RemoteAPI: CypressAPI {
     /// `/api/v1`.
     public let baseURL: URL
@@ -257,6 +259,18 @@ public struct RemoteAPI: CypressAPI {
 
     /// Will call `POST /devices/claim`.
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
+        throw unimplemented
+    }
+
+    /// Will call `DELETE /me`, carrying the `AccountDeletionChoice` and the client's still-queued
+    /// `client_uuid`s so the server can tombstone work that has not arrived yet.
+    ///
+    /// **A refusal and not an empty `Outcome`**, which is the whole reason this is a requirement
+    /// rather than a defaulted extension member (§3.2, §3.3): an implementation that returned
+    /// `AccountDeletion.Outcome()` would report a deletion it did not perform, and every counter on
+    /// the confirmation would read zero for a reason the screen cannot tell from "there was nothing
+    /// to delete".
+    public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
         throw unimplemented
     }
 
