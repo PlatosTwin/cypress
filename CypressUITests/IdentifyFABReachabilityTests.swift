@@ -71,12 +71,17 @@ final class IdentifyFABReachabilityTests: XCTestCase {
 
     /// What an absent legend means, said in the failure rather than left for the next agent to work
     /// out. `MapSpeciesLegend` "draws nothing when it has colored none", so the only way it is
-    /// missing is that screen 01's opening camera is showing no trees — E216's geometry, which
-    /// `Tools/run_tests.sh`'s camera preflight heals and stamps in the `CYPRESS-RUN` header. It is
-    /// the same standing assumption `AlmanacGroupTapTests` makes when it waits for tree pins.
+    /// missing is that screen 01's camera is showing no trees.
+    ///
+    /// **That used to be a device-state question and is no longer one.** `launchAtAX5Denied` pins
+    /// the opening camera at `DebugMapCamera.dense`, so a legend that is absent now means the map
+    /// did not draw the trees that are demonstrably under it — a defect in the app or in the seed
+    /// this build carries, not a camera the last run left behind. The previous wording sent three
+    /// CI failures (runs 31291434427, 31294993494, 31300530216) to E216 and the harness, where
+    /// there was nothing to find.
     private static let legendDescription =
-        "the species legend (“\(legendLabel)”) — absent only when the opening camera is showing no "
-            + "trees at all, which is a device-state question (E216) and not a layout one"
+        "the species legend (“\(legendLabel)”) — absent only when the map has colored no species, "
+            + "and the opening camera is pinned somewhere the seed has 780 trees"
 
     /// AX5 with location denied. Denied is the state that puts the *longest* of the three standing
     /// sentences (`MapLocationCopy.message`) into the notice slot, which is what drives the shared
@@ -84,21 +89,17 @@ final class IdentifyFABReachabilityTests: XCTestCase {
     private func launchAtAX5Denied() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment[Self.locationKey] = "denied"
+        // **The legend is only in the tree when the camera has trees under it**, and until this line
+        // which camera that was came from whatever the previous launch left in `map.lastCamera`. CI
+        // runs 31291434427, 31294993494 and 31300530216 all failed the third test in this class after
+        // the first two had passed on the same install minutes earlier — the same tree, the same
+        // device, a different camera. `DebugMapCamera` carries the whole argument and the coordinate.
+        DebugMapCamera.pin(app)
         app.launchArguments += [
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
         return app
-    }
-
-    /// A named SwiftUI container, under either of the two element types XCUITest files one under.
-    ///
-    /// The chip row's container rides on a `ScrollView` since the row became one (#166) and the
-    /// legend's does not, and which spelling XCUITest picks for a labeled SwiftUI group is not a
-    /// contract worth pinning (`MapFilterAccessibilityTests.rowContainer`).
-    private func container(_ app: XCUIApplication, _ label: String) -> XCUIElement {
-        let other = app.otherElements[label]
-        return other.exists ? other : app.scrollViews[label]
     }
 
     /// **The control is in the tree and a finger can land on it.**
@@ -153,7 +154,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
         )
 
         let legendFrame = settledFrame(
-            container(app, Self.legendLabel),
+            resolvedContainer(app, labeled: Self.legendLabel, Self.legendDescription),
             Self.legendDescription,
             requireHittable: false
         )
@@ -203,7 +204,7 @@ final class IdentifyFABReachabilityTests: XCTestCase {
         let app = launchAtAX5Denied()
 
         let legendFrame = settledFrame(
-            container(app, Self.legendLabel),
+            resolvedContainer(app, labeled: Self.legendLabel, Self.legendDescription),
             Self.legendDescription,
             requireHittable: false
         )

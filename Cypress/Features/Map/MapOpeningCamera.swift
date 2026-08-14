@@ -70,7 +70,19 @@ final class MapCameraMemory {
         var longitudeSpan: Double
     }
 
-    static let shared = MapCameraMemory()
+    /// **The one instance screen 01 reads, and the only place the DEBUG camera pin is applied.**
+    ///
+    /// A computed-once closure rather than a plain `MapCameraMemory()` so the `#if DEBUG` lives at
+    /// the construction site instead of inside the type: everything below this line behaves the same
+    /// way in both configurations, and a Release build has no branch to take. See
+    /// `DebugMapCameraOverride`.
+    static let shared: MapCameraMemory = {
+        #if DEBUG
+        return MapCameraMemory(pinned: DebugMapCameraOverride.resolve().snapshot)
+        #else
+        return MapCameraMemory()
+        #endif
+    }()
 
     /// Four doubles: latitude, longitude, latitude span, longitude span. An array rather than four
     /// keys so a half-written camera is not representable — either all four are there or none are.
@@ -82,9 +94,32 @@ final class MapCameraMemory {
     /// gesture they made on the way somewhere; reopening the app on it would be worse than the park.
     /// Ten degrees is about 1,100 km — far wider than any useful view of one city, and narrow enough
     /// that a stored value beyond it is a bug rather than a preference.
-    static let maximumSpanDegrees: Double = 10
+    ///
+    /// `nonisolated` because it is a number, and because `DebugMapCameraOverride.parse` — a string
+    /// parser with no actor of its own — has to be able to refuse a camera this type would refuse.
+    /// A second copy of the threshold living in the parser is the shape this project files errata
+    /// about.
+    nonisolated static let maximumSpanDegrees: Double = 10
 
     private let defaults: UserDefaults
+
+    /// A camera the launching process named, which this instance opens on and never writes over.
+    ///
+    /// `nil` on every ordinary launch and in every Release build. When it is not `nil` two things
+    /// change and nothing else does:
+    ///
+    /// - `remembered` is this camera rather than whatever is on disk, so the map opens here;
+    /// - `flush()` writes nothing, so the run neither inherits a camera from the last one nor leaves
+    ///   one for the next — **which is the half that fixes the flake**. The harness's own preflight
+    ///   (task #71) normalizes the camera once, before `xcodebuild` starts; it cannot say anything
+    ///   about the camera the twentieth app launch inside a UI run inherits from the nineteenth, and
+    ///   `IdentifyFABReachabilityTests` failed on exactly that gap — its first test passing at 7.8 s
+    ///   and its third waiting 30 s for a legend the camera by then had no trees for.
+    ///
+    /// `sessionSnapshot` is deliberately untouched: pinning is about where the map *opens*, and a
+    /// pan the test itself performs must still survive a tab switch (task #128) or this seam would
+    /// quietly change what `MapPanTabSwitchUITests` is testing.
+    private let pinned: Snapshot?
 
     private var hasLoaded = false
     /// What was on disk when this process started, and never anything else. The *opening* camera and
@@ -95,8 +130,9 @@ final class MapCameraMemory {
     private var current: Snapshot?
     private var isDirty = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, pinned: Snapshot? = nil) {
         self.defaults = defaults
+        self.pinned = pinned
     }
 
     /// The camera this install was left on last time, if there is one and it is usable.
@@ -109,7 +145,23 @@ final class MapCameraMemory {
     ///
     /// The screen says different things in the two cases, so this is asked rather than inferred from
     /// `remembered != nil` at some later moment when it would no longer be the same question.
-    var hasRememberedCamera: Bool { openingSnapshot != nil }
+    ///
+    /// **A pinned camera answers `false`, and that is not a detail.** `MapOpeningCopy.showing`
+    /// turns this into one of two sentences the location notice ends with — "The map is where you
+    /// last left it." or the five-characters-longer "The map is over the middle of the city." — and
+    /// at AX5 the notice's height is what pushes the bottom chrome up against the top chrome, which
+    /// is precisely what `IdentifyFABReachabilityTests` measures.
+    ///
+    /// A pinned launch is not a reader returning to a camera they chose; it is the state CI is
+    /// actually in — a fresh install with no history — with the camera aimed. Answering `false`
+    /// keeps that class measuring the longer sentence, deterministically, instead of measuring
+    /// whichever one the previous launch in the same job happened to produce. Its first test used
+    /// to get the fallback sentence and its third the remembered one, on the same install, minutes
+    /// apart.
+    var hasRememberedCamera: Bool {
+        guard pinned == nil else { return false }
+        return openingSnapshot != nil
+    }
 
     /// The camera the reader left screen 01 on **during this process** — written by `note(_:)`,
     /// which `MapHomeView.rememberCamera` calls on the two edges where they stop looking at it.
@@ -158,6 +210,11 @@ final class MapCameraMemory {
     /// Write it down. Called when the app leaves the foreground and when the screen goes away, which
     /// between them cover every way a reader stops looking at the map.
     func flush() {
+        // A pinned camera is the launching process's, not this install's. Writing it out would put
+        // the pin into `map.lastCamera`, where the *next* run — which pinned nothing — would read it
+        // back as a remembered camera. A test seam that changes the state of the device it ran on is
+        // the shape E216 and task #71 are both about.
+        guard pinned == nil else { return }
         guard isDirty, let current else { return }
         isDirty = false
         defaults.set(Self.encode(current), forKey: Self.defaultsKey)
@@ -179,7 +236,9 @@ final class MapCameraMemory {
     private func loadIfNeeded() {
         guard !hasLoaded else { return }
         hasLoaded = true
-        launchSnapshot = Self.decode(defaults.array(forKey: Self.defaultsKey) as? [Double])
+        // The pin is applied here rather than in `remembered` so that `forget()` — which resets
+        // `hasLoaded` — cannot leave a pinned instance reading the disk on its next question.
+        launchSnapshot = pinned ?? Self.decode(defaults.array(forKey: Self.defaultsKey) as? [Double])
         current = launchSnapshot
     }
 
@@ -192,7 +251,10 @@ final class MapCameraMemory {
     /// same case), and a center at MapKit's own default is what a map that was never aimed reads back
     /// as — 37.3346, which E168 is the story of. A camera that fails this is not written and not
     /// restored; the reader gets the park, which is at least a real place.
-    static func isWorthRemembering(_ snapshot: Snapshot) -> Bool {
+    ///
+    /// `nonisolated` for `maximumSpanDegrees`' reason: it is a pure function of its argument, and
+    /// the admission test has to be askable from the DEBUG camera seam, which has no actor.
+    nonisolated static func isWorthRemembering(_ snapshot: Snapshot) -> Bool {
         guard snapshot.latitudeSpan > 0, snapshot.longitudeSpan > 0 else { return false }
         guard snapshot.latitudeSpan <= maximumSpanDegrees,
               snapshot.longitudeSpan <= maximumSpanDegrees else { return false }
