@@ -1,0 +1,77 @@
+# Unnumbered — three more `verify_seed.py` checks are San Francisco-only, and fail on the shipped seed
+
+Staged unnumbered per CLAUDE.md's "Numbering and shared files"; the orchestrator splices it under
+the real next number at merge. Written on `fix/seed-tooling`, the branch that repaired checks 1 and
+12 of the same script.
+
+`Tools/verify_seed.py` on `origin/main` reports `34/38 checks passed` against
+`Fixtures/seed/cypress-seed.sqlite` — the seed the app actually bundles, unmodified. Two of the four
+failures were the checks that branch was scoped to fix. **The other three are still failing after
+it, and they are one defect wearing three hats:** the script was written when a seed meant San
+Francisco, and the shipped seed has carried two id spaces since #129.
+
+Measured 2026-08-14 against a seed whose `seed_meta` reads
+`id_spaces_in_file = sf,us-ca-sj`, `rows_from_sj_street_tree = 52788`, `sj_ship_extent = downtown`.
+
+## 1. Check 2 — "zero trees outside the SF bbox" — 52,788 offending rows
+
+```
+  [FAIL] 2. zero trees outside the SF bbox
+         52788 offending rows
+```
+
+That is exactly `rows_from_sj_street_tree`. The check reads one bounding box, `seed_meta.sf_bbox`,
+and holds every tree in the file to it. San Jose's 52,788 shipped rows are 60 km outside it and are
+supposed to be. `build_seed.BBOX_BY_ID_SPACE` already carries a box per id space, so the fact the
+check needs is in the build; the check is asking a question with only one city's answer in it.
+
+The honest form is per id space: every tree must sit inside the box declared for **its own** space.
+That is strictly stronger than what check 2 asks today, because it would also catch a San Jose tree
+that had landed in San Francisco's coordinates.
+
+## 2. Check 13 — "neighborhood stamping covers >= 99% of trees" — 26.578%
+
+```
+  [FAIL] 13. neighborhood stamping covers >= 99% of trees
+         52,790 trees (26.578%) have no neighborhood
+```
+
+Same 52,788 rows, plus two SF trees that genuinely missed a polygon. The `neighborhoods` table holds
+41 rows and all of them are the DataSF SF analysis neighborhoods (`j2bu-swwd`); no San Jose
+neighborhood geometry has ever been ingested, so no San Jose tree can be stamped. The check reads as
+a coverage regression and is really a statement that a second city arrived without its polygons.
+
+Note this one is **not** purely a verifier defect — there is a product question inside it. A San Jose
+tree with no neighborhood is a tree whose profile cannot render a neighborhood line, and whether that
+is acceptable for the shipped downtown window is the owner's call, not the verifier's. What the
+verifier should do meanwhile is measure coverage per id space and report the San Jose figure rather
+than averaging it into San Francisco's and failing.
+
+## 3. Check 16b — "every tree uuid == uuidv5(NS_TREE, TreeID)" — 52,788 of 198,625 rows disagree
+
+```
+  [FAIL] 16b. every tree uuid == uuidv5(NS_TREE, TreeID)
+         52788 of 198,625 rows disagree
+```
+
+This is the most misleading of the three, because it reads as a failure of the identity guarantee and
+is the opposite: it is the identity guarantee working. The check recomputes
+`uuid5(NS_TREE, str(external_ref))` — the bare ref. Identity is minted from
+`record.identity_seed(ID_SPACES[space])`, which prefixes the space: `sf` is frozen empty (so SF rows
+match by coincidence of the prefix being `""`), and `us-ca-sj` declares `us-ca-sj:`. Every San Jose
+row therefore "disagrees" with a recomputation that dropped the prefix.
+
+It is the same root cause as check 12 (fixed on this branch): a check keyed on `external_ref` alone
+where the schema and the contract are keyed on `(id_space, external_ref)`. The fix is to recompute
+through `inventory_contract`'s own `identity_seed` rather than restating the derivation — the same
+argument the file already makes for importing `species_trigrams` instead of copying it, so that a
+change to the scheme cannot leave the verifier agreeing with a stale copy of itself.
+
+## Why this was not fixed on that branch
+
+Scope. The branch was chartered on four named defects and these are three more; folding them in would
+have put five untested check rewrites in one review. They are recorded here rather than fixed because
+**the failure they produce is the dangerous kind**: a verifier that has been red for a while trains
+its readers to skim the failures, and the two real defects on this branch sat in that noise. Whoever
+takes this should also decide whether `verify_seed.py` should refuse to run at all on a file whose id
+spaces it has no per-space rule for, rather than reporting a confident wrong number.
