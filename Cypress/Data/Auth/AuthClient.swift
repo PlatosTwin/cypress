@@ -96,7 +96,11 @@ public struct AuthClient: Sendable {
         let (data, response) = try await http.send(
             try post("devices/register", body: RegisterDeviceRequest(deviceUUID: deviceUUID))
         )
-        return try AuthResponse.decode(DeviceCredential.self, data: data, response: response)
+        // The wire answers a token and an expiry; **this call is the only place that knows which
+        // installation it was minted for**, so it is where the two are paired. See
+        // `DeviceCredential`'s header for what happens when nothing pairs them.
+        let registration = try AuthResponse.decode(DeviceRegistration.self, data: data, response: response)
+        return DeviceCredential(registration, deviceUUID: deviceUUID)
     }
 
     // MARK: - Bodies
