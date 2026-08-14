@@ -522,9 +522,9 @@ struct RootView: View {
     /// drawn promise — an account that "backs them up and lets them join each tree's public
     /// timeline" is a row on `cypress-sync`, not a locally minted identifier. E124's closing
     /// sentence, *"nothing on the call path changes"*, was flagged by spec §10 step 5 as a claim to
-    /// check rather than assume; checked, it does not hold, and
-    /// `docs/errata-pending/158-the-session-lands-and-the-sign-in-sheet-cannot.md` §1 has the three
-    /// reasons. This is the second of the two forks it named: nothing about the sheet is captured
+    /// check rather than assume; checked, it does not hold, for three reasons the #158 session round
+    /// wrote up (unnumbered as this is written, so there is no E to cite yet). This is the second of
+    /// the two forks it named: nothing about the sheet is captured
     /// here, an `AppleSignIn` value is threaded in instead, and the closure stays `nonisolated`.
     ///
     /// **The id is the service's, not this device's.** `signInWithApple` returns the account id
@@ -555,9 +555,9 @@ struct RootView: View {
     /// with. `AccountLinkRefusal.unavailable` is the honest answer, drawn through the notice line
     /// E111 already designed. **The copy on that line is now imprecise and is a stop-and-ask:**
     /// `AccountAskCopy.noticeUnavailable` opens *"Accounts are not ready yet"*, which was true when
-    /// no route worked and is not true beside a working Apple button. Raised unnumbered in
-    /// `docs/errata-pending/`; not rewritten here, because inventing a sentence is what DECISIONS
-    /// constraint 21 forbids.
+    /// no route worked and is not true beside a working Apple button. Raised for the errata and
+    /// unnumbered as this is written; not rewritten here, because inventing a sentence is what
+    /// DECISIONS constraint 21 forbids.
     ///
     /// `nonisolated` so the `@Sendable` closure is formed off `RootView`'s `@MainActor` isolation. It
     /// captures four `Sendable` values — an actor, an actor, a `UUID` and a struct holding one

@@ -9,7 +9,14 @@ import Testing
 /// Its own double rather than `SessionTests`' `ScriptedHTTP`, which is `private` to that file. Kept
 /// deliberately small: this suite is about the composition root, and the transport's own behavior —
 /// refresh, replay, single flight — is `SessionTests`' subject and is not re-proved here.
-private actor ScriptedAuth: AuthHTTP {
+///
+/// **Internal rather than `private`, and the reason is a hazard rather than convenience.**
+/// `AccountSurfaceTests` also drives `RootView.accountLink()`, and its `AppSession` was built with
+/// `AuthClient()`'s defaults — which is `SyncService.defaultBaseURL`, the live `cypress-sync`. That
+/// was harmless while the closure never called the network and stopped being harmless the moment it
+/// did. One double, used by both suites, is what makes "no test in this target can reach production"
+/// a property of the code rather than of everybody remembering.
+actor ScriptedAuthHTTP: AuthHTTP {
 
     static let baseURL = URL(string: "https://example.invalid/api/v1")!
 
@@ -36,6 +43,28 @@ private actor ScriptedAuth: AuthHTTP {
             url: request.url ?? Self.baseURL, statusCode: status, httpVersion: nil, headerFields: nil
         )!
         return (body, response)
+    }
+
+    /// Answers `/auth/oidc` with the ids in order, holding the last one once they run out.
+    ///
+    /// A sequence rather than one id, because one suite needs the service to answer a **different**
+    /// account after a deletion — which is what a real `/auth/oidc` does once the `users` row the
+    /// Apple subject resolved to is gone. See `AccountSurfaceTests.deletionIsNotResumable`.
+    static func minting(_ ids: [UUID]) -> ScriptedAuthHTTP {
+        let counter = Counter()
+        return ScriptedAuthHTTP { _ in (200, session(userID: ids[min(counter.next(), ids.count - 1)])) }
+    }
+
+    /// A call counter for `minting`. A class with a lock rather than an actor, because the handler
+    /// `ScriptedAuthHTTP` takes is synchronous and `@Sendable`.
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = -1
+        func next() -> Int {
+            lock.lock(); defer { lock.unlock() }
+            value += 1
+            return value
+        }
     }
 
     /// A 200 minting a session for `userID`. RFC3339 at second precision in UTC, which is what the
@@ -68,7 +97,7 @@ private actor ScriptedAuth: AuthHTTP {
 /// `@MainActor`, so its statics are too, and reading one from inside the `@Sendable` authorization
 /// closure is a concurrency warning today and an error under the Swift 6 language mode. These are
 /// immutable `Sendable` values that belong to no actor.
-private enum Fixture {
+enum AppleSignInFixture {
 
     static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000C1")!
 
@@ -114,19 +143,19 @@ struct AccountLinkTests {
     /// `api:` is the *local* half in both positions on purpose. These tests are about the sign-in
     /// leg; a router in front of it would put a network refusal between the assertion and the table
     /// it is about. What `DataLayer.boot` really wires is `DataLayerWiringTests`' subject.
-    private static func bootInMemory(http: ScriptedAuth) async throws -> DataLayer {
+    private static func bootInMemory(http: ScriptedAuthHTTP) async throws -> DataLayer {
         let store = try await CypressStore.inMemory()
-        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let api = LocalAPI(store: store, deviceID: AppleSignInFixture.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         return DataLayer(
             store: store,
             api: api,
             local: api,
             outbox: outbox,
-            deviceID: Fixture.deviceID,
+            deviceID: AppleSignInFixture.deviceID,
             session: AppSession(
-                deviceUUID: Fixture.deviceID,
-                client: AuthClient(baseURL: ScriptedAuth.baseURL, http: http),
+                deviceUUID: AppleSignInFixture.deviceID,
+                client: AuthClient(baseURL: ScriptedAuthHTTP.baseURL, http: http),
                 credentials: InMemoryCredentialStore()
             ),
             remoteAccess: .disabled,
@@ -152,17 +181,17 @@ struct AccountLinkTests {
     /// promise.
     @Test("a tap exchanges at the service, stores the session, and brings this device's work across")
     func appleSignInCompletesEndToEnd() async throws {
-        let http = ScriptedAuth { _ in (200, ScriptedAuth.session(userID: Fixture.serverUserID)) }
+        let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
         let data = try await Self.bootInMemory(http: http)
 
         let tree = try await data.local.addTree(TreeDraft(
             coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
             photoLocalPath: "/tmp/cypress-link-test.jpg",
-            attribution: .anonymous(deviceID: Fixture.deviceID)
+            attribution: .anonymous(deviceID: AppleSignInFixture.deviceID)
         ))
         _ = try await data.outbox.enqueue(.visit(Visit(
             treeID: tree.id,
-            attribution: .anonymous(deviceID: Fixture.deviceID),
+            attribution: .anonymous(deviceID: AppleSignInFixture.deviceID),
             note: "before sign-in",
             capturedAt: Date(timeIntervalSince1970: 1_780_000_000)
         )))
@@ -170,13 +199,13 @@ struct AccountLinkTests {
 
         #expect(await data.local.userID == nil, "nobody is signed in before the tap")
 
-        let link = Self.link(data) { Fixture.credential }
+        let link = Self.link(data) { AppleSignInFixture.credential }
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
 
         // 1 · the id is the service's, not one this device invented.
         let signedInAs = await data.local.userID
         #expect(
-            signedInAs == Fixture.serverUserID,
+            signedInAs == AppleSignInFixture.serverUserID,
             """
             the device signed in as \(signedInAs?.uuidString ?? "nobody") rather than as the account \
             POST /auth/oidc minted. A locally minted id beside a server-minted one is two answers to \
@@ -186,11 +215,11 @@ struct AccountLinkTests {
 
         // 2 · persisted, so `DataLayer.boot` reads it back and a relaunch stays signed in.
         let persisted = try await data.store.appState(.currentUserID)
-        #expect(persisted == Fixture.serverUserID.uuidString, "sign-in did not survive to app_state")
+        #expect(persisted == AppleSignInFixture.serverUserID.uuidString, "sign-in did not survive to app_state")
 
         // 3 · the session is in the credential store, which is what every later request sends with.
         let stored = await data.session.storedSession
-        #expect(stored?.userID == Fixture.serverUserID)
+        #expect(stored?.userID == AppleSignInFixture.serverUserID)
         #expect(stored?.accessToken == "access-1")
 
         // 4 · the work came with them — `claimDevice`, from the composition root.
@@ -199,7 +228,7 @@ struct AccountLinkTests {
             defer { statement.finalize() }
             return try statement.fetchAll { try $0.stringIfPresent("user_id") }.first ?? nil
         }
-        #expect(owner == Fixture.serverUserID.uuidString, "the visit stayed the device's after sign-in")
+        #expect(owner == AppleSignInFixture.serverUserID.uuidString, "the visit stayed the device's after sign-in")
 
         // 5 · the consent answer landed locally too, which is what the You tab reads back (E131).
         let record = try await data.local.accountLink()
@@ -214,10 +243,10 @@ struct AccountLinkTests {
     /// round trip), and the license answer.
     @Test("the exchange carries the raw nonce, the authorization code, the device id and the consent")
     func exchangeBodyCarriesEverything() async throws {
-        let http = ScriptedAuth { _ in (200, ScriptedAuth.session(userID: Fixture.serverUserID)) }
+        let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
         let data = try await Self.bootInMemory(http: http)
 
-        try await Self.link(data, authorize: { Fixture.credential })(
+        try await Self.link(data, authorize: { AppleSignInFixture.credential })(
             AccountLinkRequest(provider: .apple, acceptsLicense: true)
         )
 
@@ -240,7 +269,7 @@ struct AccountLinkTests {
             """
         )
         #expect(
-            body["device_uuid"] as? String == Fixture.deviceID.uuidString,
+            body["device_uuid"] as? String == AppleSignInFixture.deviceID.uuidString,
             """
             the exchange omitted the device id, so /auth/oidc registered and claimed nothing and the \
             three visits screen 15's headline promised are still the device's on the service.
@@ -253,10 +282,10 @@ struct AccountLinkTests {
     /// only ever produces two of them — it always asked, so the request is always about consent.
     @Test("an unchecked license row travels as an explicit null, never as an omitted key")
     func declinedConsentTravelsAsNull() async throws {
-        let http = ScriptedAuth { _ in (200, ScriptedAuth.session(userID: Fixture.serverUserID)) }
+        let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
         let data = try await Self.bootInMemory(http: http)
 
-        try await Self.link(data, authorize: { Fixture.credential })(
+        try await Self.link(data, authorize: { AppleSignInFixture.credential })(
             AccountLinkRequest(provider: .apple, acceptsLicense: false)
         )
 
@@ -278,7 +307,7 @@ struct AccountLinkTests {
     /// the part that matters more — **nothing is written**: no session, no account, no claim.
     @Test("a cancelled sheet signs nobody in and leaves the device exactly as it was")
     func cancellationWritesNothing() async throws {
-        let http = ScriptedAuth { _ in (200, ScriptedAuth.session(userID: Fixture.serverUserID)) }
+        let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
         let data = try await Self.bootInMemory(http: http)
 
         let link = Self.link(data) { throw AccountLinkRefusal.cancelled }
@@ -301,12 +330,12 @@ struct AccountLinkTests {
     /// the service actually said (`AppSession`'s header).
     @Test("a service that refuses the credential leaves nothing signed in, as the taxonomy")
     func serviceRefusalReachesTheScreen() async throws {
-        let http = ScriptedAuth { _ in
-            (401, ScriptedAuth.refusal("unauthorized", "That sign-in could not be verified."))
+        let http = ScriptedAuthHTTP { _ in
+            (401, ScriptedAuthHTTP.refusal("unauthorized", "That sign-in could not be verified."))
         }
         let data = try await Self.bootInMemory(http: http)
 
-        let link = Self.link(data) { Fixture.credential }
+        let link = Self.link(data) { AppleSignInFixture.credential }
         await #expect(throws: APIError.unauthorized) {
             try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         }
@@ -320,7 +349,7 @@ struct AccountLinkTests {
     /// be told what is already known (`AppleSignInRecipe.Incomplete`).
     @Test("an authorization missing its code never reaches the service")
     func incompleteAuthorizationStopsBeforeTheWire() async throws {
-        let http = ScriptedAuth { _ in (200, ScriptedAuth.session(userID: Fixture.serverUserID)) }
+        let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
         let data = try await Self.bootInMemory(http: http)
 
         let link = Self.link(data) {
@@ -346,12 +375,12 @@ struct AccountLinkTests {
     @Test("Google and email refuse rather than minting an account nothing is behind")
     func deferredProvidersRefuse() async throws {
         for provider in [AccountAskProvider.google, .email] {
-            let http = ScriptedAuth { _ in (200, ScriptedAuth.session(userID: Fixture.serverUserID)) }
+            let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
             let data = try await Self.bootInMemory(http: http)
 
             let link = Self.link(data) {
                 Issue.record("\(provider) opened Apple's sheet")
-                return Fixture.credential
+                return AppleSignInFixture.credential
             }
             await #expect(throws: AccountLinkRefusal.unavailable) {
                 try await link(AccountLinkRequest(provider: provider, acceptsLicense: true))
@@ -377,9 +406,9 @@ struct AccountLinkTests {
     /// remembered on the device at all.
     @Test("signing in again resumes the same account rather than minting a rival")
     func signingInTwiceKeepsOneAccount() async throws {
-        let http = ScriptedAuth { _ in (200, ScriptedAuth.session(userID: Fixture.serverUserID)) }
+        let http = ScriptedAuthHTTP { _ in (200, ScriptedAuthHTTP.session(userID: AppleSignInFixture.serverUserID)) }
         let data = try await Self.bootInMemory(http: http)
-        let link = Self.link(data) { Fixture.credential }
+        let link = Self.link(data) { AppleSignInFixture.credential }
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         let first = await data.local.userID
@@ -390,7 +419,7 @@ struct AccountLinkTests {
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         let second = await data.local.userID
 
-        #expect(first == Fixture.serverUserID)
+        #expect(first == AppleSignInFixture.serverUserID)
         #expect(
             first == second,
             "signing back in minted a rival id and orphaned the first account's rows (RULINGS R3)"

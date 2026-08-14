@@ -14,9 +14,10 @@
 //  `AuthClient.exchangeApple` is the wire. So the window-shaped part lives here, in the composition
 //  root, for the reason identity questions already live here — `RootView.accountLink()`'s header.
 //
-//  `docs/errata-pending/158-the-session-lands-and-the-sign-in-sheet-cannot.md` §1 predicted this and
-//  put it as a fork: either `accountLink()` stops being `nonisolated`, or something new is threaded
-//  to it. It is the second. `AppleSignIn` is a `Sendable` value holding one closure, so the
+//  The #158 session round predicted this and put it as a fork: either `accountLink()` stops being
+//  `nonisolated`, or something new is threaded to it. It is the second. (That finding is written up
+//  for the errata and carries no number yet, so there is nothing here to cite — see #158's own
+//  history for it.) `AppleSignIn` is a `Sendable` value holding one closure, so the
 //  `@Sendable` closure the composition root forms can capture it and still carry nothing of the
 //  view; the hop to `@MainActor` happens inside `AppleSignInController`, at the point the window is
 //  actually needed.

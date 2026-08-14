@@ -234,8 +234,9 @@ enum AccountAskCopy {
     /// when no route worked — "the app has no auth server at all and `CypressAPI` says so in as many
     /// words" — and it is now drawn beside a `Continue with Apple` that signs people in. *Accounts*
     /// are ready; the route that was tapped is not. Rewriting it means writing a sentence no mock
-    /// draws, which is the owner's under DECISIONS constraint 21, so it is recorded unnumbered in
-    /// `docs/errata-pending/` and left standing. The alternative considered and rejected was leaving
+    /// draws, which is the owner's under DECISIONS constraint 21, so it is written up for the errata
+    /// — unnumbered as this is written — and left standing. The alternative considered and rejected
+    /// was leaving
     /// Google and email minting local accounts, which told somebody their work was backed up when
     /// nothing had been sent.
     static let noticeUnavailable = "Accounts are not ready yet. Everything you have saved stays on this phone."

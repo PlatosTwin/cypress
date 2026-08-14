@@ -23,9 +23,9 @@
 //
 //  It is left standing on purpose. Which sentence replaces it is a **screen 18 copy question**, the
 //  owner's under DECISIONS constraint 21, and it is the same open question PROTOTYPE-FLOW §1.4's
-//  storage line already has — recorded unnumbered in `docs/errata-pending/`. Correcting the comment
-//  without inventing the sentence is the only move available here, and a comment nobody corrected is
-//  how a false promise survives a review.
+//  storage line already has, and it is written up for the errata with no number yet. Correcting the
+//  comment without inventing the sentence is the only move available here, and a comment nobody
+//  corrected is how a false promise survives a review.
 //
 //  Nothing here counts anything (ARCHITECTURE §5.1). No "member since", no contribution tally.
 //
