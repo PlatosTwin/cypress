@@ -24,6 +24,39 @@ not one, and the deepest is that the app cannot read its own bundle. §6.1 — t
 costs no schema change in any space and can land before the NYC ingest picks a unit. §8 — this
 proposal names **three** independently-advancing version numbers, not the two `CLAUDE.md` warns about.
 
+**Ratified.** The owner worked through every open question in this document on 2026-08-14, choice by
+choice. The rulings are in **Decisions, 2026-08-14** below and inline in §11; one question was
+deferred rather than decided (the freshness destination, §11 Q11), and every other answer follows the
+recommendation. Implementation rounds cut from the Decisions section; the body below is the evidence
+and is unchanged.
+
+---
+
+## Decisions, 2026-08-14
+
+Each ruled by the owner on 2026-08-14, presented as explicit choices with the trade-offs stated. A
+rulings-pending entry from this round (under `docs/rulings-pending/`, unnumbered until the
+orchestrator splices it) carries the ones with lasting consequence.
+
+| # | Decision | Ruling |
+|---|---|---|
+| D1 | NYC published unit | **Borough.** Five packs, 54–169 MB raw. Revisit only if `feat/nyc-ingest`'s real Queens number lands materially above ~200 MB. |
+| D2 | SF / San Jose shape | **One-region cities under format 2.** One shape everywhere; no NYC-only concept, no permanent `if` in the publisher or the screen. |
+| D3 | Whole-NYC pack | **Publish it beside the boroughs.** Costs bucket storage only; keeps Option A reachable per-reader. |
+| D4 | Seed schema 17 scope | **One generation, one author**: the region column/dimension and the standing-dead `kind`/`status` change land together as 16 → 17. The NYC ingest targets a single settled schema. |
+| D5 | Stage 0 | **Approved as scoped in §6.1, starts now**, before the ingest picks a unit. The two new row states are a ruling amendment to R43 §3. |
+| D6 | Compression | **Now, brotli, inside `manifest_format` 1** — as R37.4 reserved. Not gated on the unit decision. |
+| D7 | Stage 0b remainder | **All three approved**: background-identifier `URLSession` (foreground-initiated), resume via ranged GETs, and a free-space precheck **including** the `NSPrivacyAccessedAPICategoryDiskSpace` declaration it requires. |
+| D8 | Format-2 cutover | **Dual-publish for one release cycle.** The format-1 manifest lists whole-city packs only; no self-inflicted outage on unupdated installs. |
+| D9 | Freshness destination | **Deferred — deliberately not decided.** Neither overlays nor shape B is committed to; decide after Stage 1's real download sizes are in hand. Both stay named (§6.6 item 4, §5 Option D). Consequence accepted: Stage 3's design starts without a fixed freshness target, and Stage 1's regions are the only delta mechanism in the meantime. |
+| D10 | Fused seed | **Keeps publishing; NYC stays out of it.** Worktree and CI costs do not move (§2.5). The bundle stays SF + San Jose. |
+| D11 | Auto-refresh ticket | **Not yet.** Re-ask after Stage 1 ships, against real pack sizes (R43 §6's deferral stands). |
+| D12 | NYC notify-the-City + disclaimer | **Settled before the first NYC publish** — including any trial or beta pack; first bytes out of the bucket bind the obligation. The ingest branch is not blocked. |
+| D13 | Stage 2 trigger | **Cities screen, plus at most a one-time prompt after the map is panned out of coverage.** Not on launch — the owner's original "on open" is superseded by this ruling. Prompt copy remains a constraint-21 stop-and-ask at mock time (§9). |
+| D14 | Bundle row comparison | **`content_rev` alone.** The row claims record-date parity and nothing more; no launch-time hashing of 108 MB. |
+| D15 | Bundle's long-term role | **Stays R36's bootstrap; revisit deliberately later** — at the next natural break, not by drift. Screen 01's "full on day one" promise holds. |
+| D16 | Third version space | **`CLAUDE.md`'s version-spaces bullet gains `manifest_format`**, same treatment as the other two: named, numbers struck, read from the code. Lands with this round's docs. |
+
 ---
 
 ## 0. The five questions inside that paragraph
@@ -765,7 +798,10 @@ sequence takes the first two now and neither of the last two yet.
    route is the one with a shipping precedent and the one this document would bet on — and it needs
    Option C's read path, which is why it is not this round's.
 
-4. **Overlay packs — the destination, and not this round's.** §4.3: an immutable base pack plus small
+4. **Overlay packs — the strongest candidate, and not this round's.** *(D9 overrides this item's
+   original framing: the owner deferred the freshness destination entirely rather than naming
+   overlays as it. What follows stands as the evidence for one end of a choice that is now
+   explicitly open until Stage 1's real download sizes are in hand.)* §4.3: an immutable base pack plus small
    append-only overlay files, read alongside it, rolled up periodically, with deletions carried as
    tombstones. It is the only incremental scheme in §4 that is documented, shipping and running on
    static files, it never patches the base, and OsmAnd's own cost figure — 2–4% of full map size per
@@ -805,7 +841,8 @@ is no new network call, no new server, no reverse geocoder.
 3. **It is a new screen state and there is no mock.** SCREENS.md has no Cities screen, no download
    state and no location prompt anywhere. Constraint 21 makes this a stop-and-ask. §9.
 
-**A recommendation on the trigger, because "on open" is the expensive reading.** Do not put this on
+**A recommendation on the trigger, because "on open" is the expensive reading — ruled, D13: the
+owner adopted this placement, superseding the original "on open" phrasing.** Do not put this on
 launch. Launch-time location plus a launch-time manifest fetch is a background-task design, which is
 exactly what R43 §6 refused, and it spends the location permission for a feature the reader has not
 asked for. Put it on the Cities screen — which is already fetching the manifest and already has the
@@ -910,40 +947,49 @@ invent. **This document names them and draws none of them.**
 
 ---
 
-## 11. Open questions, each with a recommended answer
+## 11. Open questions — each resolved by the owner, 2026-08-14
 
 1. **Is a borough the right unit, or is it too big?** Queens at ~169 MB is larger than the entire
    current bundle. *Recommend: borough, and publish the whole-city pack beside it.* Sub-borough units
    (community districts, ZIP) multiply the manifest and the cliff count for a benefit that only Queens
    and Brooklyn would feel. Revisit if `feat/nyc-ingest`'s real Queens number lands materially above
    ~200 MB.
+   **Decided: borough** (D1).
 2. **Does San Francisco become a region too?** *Recommend: yes, as a city with exactly one region.*
    One shape, not two. The alternative — regions as a special NYC-only concept — puts an `if` in the
    publisher and in the screen forever.
+   **Decided: yes, one shape** (D2).
 3. **Compression: do it now or with Stage 1?** *Recommend: now, inside `manifest_format` 1, as R37.4
    reserved.* 4.56x measured on the real artifact, no dependency, no format bump, and it improves
    Option A as much as Option B — which means it is the one thing worth doing before the unit question
    is settled.
+   **Decided: now, in format 1** (D6).
 4. **When format 2 publishes, do old builds go dark for a cycle?** *Recommend: no — publish format 1
    and format 2 side by side for one release cycle*, with the format-1 manifest listing whole-city
    packs only. Kilobytes, and it avoids a self-inflicted outage on the Cities screen.
+   **Decided: dual-publish for one release cycle** (D8).
 5. **Does the fused seed keep being published once NYC exists?** It is a CI and worktree input
    (`Tools/fetch_seed.sh`), not a user-facing one. *Recommend: yes, and NYC stays out of it.* That is
    what keeps §2.5 true — the per-worktree and per-CI-job cost does not move.
+   **Decided: yes, and NYC stays out** (D10).
 6. **Whole-NYC pack: publish it, or refuse it?** *Recommend: publish it.* It costs bucket storage,
    nothing else, and refusing it would make the app's coverage strictly worse than Option A for a
    reader who wants everything.
+   **Decided: publish it** (D3).
 7. **`build_id` in the bundle comparison (§3.3).** The bundle cannot compute its own without hashing
    108 MB. *Recommend: compare on `content_rev` alone for the bundle row and say only what that
    proves* — the row claims record-date parity, not byte parity, and should not imply otherwise.
+   **Decided: `content_rev` alone** (D14).
 8. **The NYC "notify the City" and verbatim-disclaimer obligation** (`docs/investigations/nyc-street-trees.md`
    §2, and R36's binding consequence (b)) is a distribution question the moment NYC data is served
    from the bucket, not only when it is drawn. *Recommend: settle it before the first NYC publish, not
    before the first NYC ingest.* It is the owner's call and it is unrelated to which unit wins.
+   **Decided: before the first NYC publish, trial and beta packs included** (D12).
 9. **Does the background-refresh ticket R43 §6 deferred get written now?** *Recommend: not yet.* Under
    Stage 1 the update the reader most wants is a small one, and a manual `Update` on a 28 MB
    compressed pack is a materially different product from a manual `Update` on a 495 MB one. Re-ask
    after Stage 1 ships.
+   **Decided: not yet; re-ask after Stage 1** (D11).
 
 10. **The deepest question in the owner's paragraph: does the bundle eventually stop carrying city
     data at all?** Nobody else does it — Organic Maps and OsmAnd ship an app with no maps (§4.6) — and
@@ -954,12 +1000,18 @@ invent. **This document names them and draws none of them.**
     Stage 0 make the app aware of what is in it, and revisit the size at the next natural break — the
     day San Jose's downtown window or San Francisco itself would rather be a download than a
     passenger. That is a product decision and it should be taken deliberately, not by drift.
+    **Decided: keep the bundle as the bootstrap; revisit deliberately, not by drift** (D15).
 11. **Is the overlay scheme (§6.6 item 4) the freshness destination, or is shape B?** They are the two
     ends the record already contains — R36's own fallback, and the only shipping incremental design in
     §4. *Recommend: overlays, and keep shape B named.* Overlays preserve offline, which is the base
     layer's whole reason to exist; shape B is the answer if and only if R36's stated trigger fires.
     Nothing has to be decided now, and this document would rather the choice be made after Stage 1's
     real download sizes are in hand than from the estimates in §2.2.
+    **Decided: deferred — the one departure from a recommendation** (D9). The owner chose to commit to
+    neither end. Both stay named; the choice is made after Stage 1's real download sizes are in hand,
+    which is the condition this document itself preferred. Until then Stage 1's regions are the only
+    delta mechanism, and Stage 3's design must begin by closing this question rather than assuming
+    overlays.
 
 ---
 
