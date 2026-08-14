@@ -149,10 +149,12 @@ final class MapRecenterUITests: XCTestCase {
         let app = launchAtAX5(location: "denied")
 
         // The row's named container rides on the `ScrollView` since the row became one (#166), and
-        // which element type XCUITest files a labeled SwiftUI scroller under is not a contract worth
-        // pinning (`MapFilterAccessibilityTests.rowContainer`) — both spellings are accepted.
-        let other = app.otherElements[Self.chipRowLabel]
-        let chipRow = other.exists ? other : app.scrollViews[Self.chipRowLabel]
+        // which element type a labeled SwiftUI container is filed under is decided by the app rather
+        // than pinned here — `resolvedContainer` waits for it to settle instead of taking one
+        // un-waited read of a still-loading screen, which is what used to stand here.
+        let chipRow = resolvedContainer(
+            app, labeled: Self.chipRowLabel, "the filter chip row (“\(Self.chipRowLabel)”)"
+        )
         let chipRowFrame = settledFrame(chipRow, "the filter chip row (“\(Self.chipRowLabel)”)")
 
         let control = recenterControl(app)

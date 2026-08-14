@@ -137,20 +137,37 @@ final class MapFilterAccessibilityTests: XCTestCase {
         return element
     }
 
-    /// The row's named container. It rides on the `ScrollView` since the row became one (#166),
-    /// and which element type XCUITest files a labeled SwiftUI scroller under is its business,
-    /// not a contract worth pinning — both spellings are accepted.
+    /// The row's named container, resolved to whichever element type it has settled into.
+    ///
+    /// It rides on the `ScrollView` since the row became one (#166) — `MapChrome` puts the label on
+    /// the scroller, and its own comment records that the outer `VStack`'s group vanished from the
+    /// tree when the chips moved inside. That is the app's decision and not a fact about XCUITest,
+    /// which is exactly why this waits for it rather than reading it once: see
+    /// `ContainerSpellingResolution` (`UIWait.swift`), where the same pattern's un-waited read
+    /// intermittently bound the *species legend* to a spelling that was about to disappear.
+    ///
+    /// **The default ceiling, not the 25 s the line it replaced used.** The old spelling gave the
+    /// container 25 s to *exist*; this one needs it to exist and then hold one spelling still for
+    /// `ContainerSpellingResolution.settlingWindow` within the same budget, so 25 s here would have
+    /// been a real four-second cut to a row that has never been measured arriving late.
     private func rowContainer(_ app: XCUIApplication) -> XCUIElement {
-        let other = app.otherElements[Self.rowLabel]
-        return other.exists ? other : app.scrollViews[Self.rowLabel]
+        resolvedContainer(
+            app,
+            labeled: Self.rowLabel,
+            "the filter row's named container (“\(Self.rowLabel)”) — without it the row's chips "
+                + "arrive unannounced between the search field and the map"
+        )
     }
 
     /// Drags the row one screen's worth, anchored on whichever chip is currently on the glass —
     /// a drag that starts on a chip scrolls the row, which is #166's own interaction.
     private func swipeRow(_ app: XCUIApplication, left: Bool) {
         let anchors = [Self.alwaysOnToggle] + Self.conditionChips + [Self.moreChip, Self.clear]
+        // `app.frame` is a query; read once rather than once per anchor, and this helper is called
+        // from inside `revealedChip`'s swipe loops. See `isHittableWithoutRaising(onScreen:)`.
+        let appFrame = app.frame
         guard let anchor = anchors.map({ app.buttons[$0] })
-            .first(where: { $0.exists && $0.isHittable }) else { return }
+            .first(where: { $0.exists && $0.isHittableWithoutRaising(onScreen: appFrame) }) else { return }
         left ? anchor.swipeLeft() : anchor.swipeRight()
     }
 
@@ -174,9 +191,10 @@ final class MapFilterAccessibilityTests: XCTestCase {
     @discardableResult
     private func revealedChip(_ label: String, _ app: XCUIApplication) -> XCUIElement {
         let element = chip(label, app)
-        for _ in 0..<6 where !element.isHittable { swipeRow(app, left: true) }
-        for _ in 0..<6 where !element.isHittable { swipeRow(app, left: false) }
-        if element.isHittable {
+        let appFrame = app.frame
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: appFrame) { swipeRow(app, left: true) }
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: appFrame) { swipeRow(app, left: false) }
+        if element.isHittableWithoutRaising(onScreen: appFrame) {
             _ = settledFrame(element, "the “\(label)” chip", timeout: 5)
         }
         return element
@@ -227,11 +245,15 @@ final class MapFilterAccessibilityTests: XCTestCase {
         let app = launch()
         _ = requireField(app)
 
-        XCTAssertTrue(
-            wait(timeout: 25) { self.rowContainer(app).exists },
-            "the filter row is not a named container in the accessibility tree, so its chips arrive "
-                + "unannounced between the search field and the map"
-        )
+        // `rowContainer` waits, and fails with its own sentence — naming both spellings it watched
+        // and which of them it actually saw — if the row never settles into a named container.
+        // Nothing is asserted on what it returns afterwards on purpose: on timeout the helper has
+        // already failed and returns a fallback so that *something* can be returned, so an
+        // `XCTAssertTrue(….exists)` here produced a SECOND failure for the one cause, carrying the
+        // older sentence ("the filter row is not a named container") as though it were the only
+        // explanation — and it was invisible only because this class sets `continueAfterFailure`
+        // to false, which is a setting about something else.
+        _ = rowContainer(app)
 
         let yours = chip(Self.alwaysOnToggle, app)
         assertReachable(yours, "the “\(Self.alwaysOnToggle)” chip")

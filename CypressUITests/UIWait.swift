@@ -168,6 +168,365 @@ func frameHasSettled(previous: CGRect, current: CGRect) -> Bool {
     current.equalTo(previous) && isFiniteFrame(current)
 }
 
+/// Whether a rectangle is one `XCUIElement.isHittable` can be *asked about* without raising.
+///
+/// Three conditions, and **each one was measured rather than reasoned about** — the first draft of
+/// this function had only the first two, and the raise it was written to stop went straight through
+/// it on a watched run:
+///
+/// - **Finite.** `{{inf, inf}, {0.0, 0.0}}` is the frame CI run 31300530216 printed when
+///   `DeepLinkSweepTests.testNothingIsAnnouncedTwice` died.
+/// - **With an interior.** An activation point cannot be computed inside a rectangle with no
+///   inside, and `{{10, 10}, {0, 0}}` is finite.
+/// - **Somewhere on the screen.** `(-31.0, 850.0, 30.0, 30.0)` — finite, 30 × 30, a real rectangle
+///   in every respect, and every point of it off the left edge of a 402 pt device. That is the
+///   frame of the `"City tree, Southern Magnolia"` annotation that raised in
+///   `DeepLinkVoiceOverTests.testPinAdjust`, read out of the element immediately before the read
+///   that raised. XCUITest's fallback is to sample points *inside the frame*; when none of them is
+///   on the screen there is nothing to sample, and the message says so — "no suggested hit points
+///   based on element frame".
+///
+/// The third condition existed in `AccessibilityTreeTests` and this function was first written
+/// without it, on the argument that a control scrolled off the glass has a perfectly good answer to
+/// `isHittable`. **That argument is wrong for a map annotation**: a scrolled-away control is inside
+/// its scroll view's window, while a MapKit annotation is placed in absolute screen coordinates and
+/// can sit entirely outside them.
+///
+/// Pure `CGRect` arithmetic, so `FrameFinitenessGateTests` proves it against both measured
+/// rectangles with no live element and no simulator, the same way `frameHasSettled` is proved.
+/// Finiteness is tested first and `&&` short-circuits, so `intersects` is never handed an infinity.
+func frameCanAnswerHittability(_ rect: CGRect, onScreen screen: CGRect) -> Bool {
+    isFiniteFrame(rect) && rect.width > 0 && rect.height > 0 && rect.intersects(screen)
+}
+
+/// The two element types XCUITest can file a labeled SwiftUI container under.
+///
+/// Not a matter of taste, and **not** a fact about XCUITest's filing habits — which is what this
+/// suite believed until PR #66 read `MapSpeciesLegend.body`. See `ContainerSpellingResolution`.
+enum ContainerSpelling: CaseIterable {
+    case other
+    case scrollView
+
+    /// How the query is spelled at a call site, for failure messages that can be searched for.
+    var query: String {
+        switch self {
+        case .other: return "otherElements"
+        case .scrollView: return "scrollViews"
+        }
+    }
+}
+
+/// **Which element type a labeled SwiftUI container is filed under is decided by the app, and the
+/// app can change its mind mid-launch.**
+///
+/// ── The measurement this exists because of ───────────────────────────────────────────────────
+/// Three files carried the same three lines:
+///
+///     let other = app.otherElements[label]
+///     return other.exists ? other : app.scrollViews[label]
+///
+/// One un-waited read, deciding which element every later wait would be spent on. It failed
+/// `IdentifyFABReachabilityTests
+/// .testTheTopChromeStaysClearOfTheBottomChromeAtAX5WithLocationDenied` intermittently in CI —
+/// pass, pass, fail across three runs of PR #66 — with *"the species legend … never appeared in the
+/// accessibility tree at all within 30s"*. The legend was there. The read had bound to the other
+/// spelling. From the failing shard log, against the passing test in the same class:
+///
+///     passing:  t=6.92s  Checking existence of `"Species shown …" Other`
+///               t=8.29s  Expect `exists == 1` for "…" ScrollView   → satisfied
+///     failing:  t=4.23s  Checking existence of `"Species shown …" Other`
+///               t=6.63s → 35.9s  Expect `exists == 1` for "…" Other → never satisfied
+///
+/// ── Why the transient exists, which is the part that decides the rule ────────────────────────
+/// `MapSpeciesLegend.body` has **two branches**, and picks between them on
+/// `MapLayout.legendMaxHeight`:
+///
+/// - ceiling does not bind → `chips.accessibilityElement(children: .contain)` — an **`Other`**;
+/// - ceiling binds → `ScrollView { chips }.accessibilityElement(children: .contain)` — a
+///   **`ScrollView`** (task #258 moved the label onto the scroller deliberately, so the measured
+///   rectangle is the one the reader can see rather than the `FlowRow` overflowing it).
+///
+/// `legendMaxHeight` takes `namedSpecies count`, and that count **arrives asynchronously** — the
+/// palette fills as the map's query comes back and the species names resolve. So early in a launch
+/// the legend is genuinely an `Other`, and it becomes a `ScrollView` when the count grows past what
+/// the screen has room for. The transient is the app rendering honestly at a partial palette, not
+/// XCUITest being capricious.
+///
+/// ── What was measured on the device, and what each measurement rules out ────────────────────
+/// Probed on iPhone 16 Pro `EA0AD796-…` at 402 pt, polling both spellings of the legend at full
+/// query rate. Four launches at AX5 with the camera pinned, plus one run that drives the palette
+/// deliberately by tapping a legend entry (which narrows the map to one species, so the palette
+/// drops to one named entry and the ceiling stops binding):
+///
+///     default content size, 10 s   other=true  scroll=false  (16.0, 159.67, 285.0, 117.33)
+///     AX5, full palette,    10 s   other=false scroll=true   (16.0, 230.0,  370.0, 181.0)
+///     AX5, narrowed to one, 15 s   other=true  scroll=false  (16.0, 230.0,  416.33, 59.67)
+///     AX5, filter cleared,  15 s   other=false scroll=true   (16.0, 230.0,  370.0, 181.0)
+///
+/// Three things that decide the rule, none of them deducible from the CI log alone:
+///
+/// - **`scrollViews` is not the safe default either**, so "prefer the scroller" would be guessing
+///   the other way. At the default content size the legend is an `Other` for the whole run.
+/// - **The `Other` is a fully laid-out element with an ordinary frame** — on the glass, finite, with
+///   an interior — so `frameCanAnswerHittability` accepts it. A guard built out of that predicate
+///   alone, which was the other candidate for this rule, would bind the transient every time.
+/// - **It is stable while it lasts.** 117 consecutive samples of one unchanging rectangle in the
+///   narrowed state, so "two consecutive reads agree" does not reject it either. Both spellings
+///   flipped inside a single sample (< 0.65 s) when the palette changed.
+///
+/// So the only thing that separates the transient from the answer is **how long it lasts**, and the
+/// rule has to be a duration. What the frame check still buys is the *incremental* case: a palette
+/// that fills one species at a time grows the legend on every arrival, and a container whose
+/// rectangle is still changing resolves to nothing.
+///
+/// ── The rule ────────────────────────────────────────────────────────────────────────────────
+/// A spelling resolves when it has existed **with an unchanging, usable frame** for
+/// `settlingWindow` seconds of continuous observation, and both spellings are re-read every round,
+/// so one that leaves the tree loses whatever credit it had built up.
+///
+/// **This narrows the window; it does not close it.** A partial palette that held still for longer
+/// than `settlingWindow` and only then completed would still be believed. That is a bound on how
+/// long the app may go on rebuilding, not a proof that it has stopped, and it is written here
+/// rather than left for the next reader to discover.
+///
+/// Pure arithmetic over samples with an explicit clock, deliberately: `FrameFinitenessGateTests`
+/// drives it with synthetic rounds — no live element, no simulator — the same way `frameHasSettled`
+/// and `frameCanAnswerHittability` are proved.
+struct ContainerSpellingResolution {
+
+    /// **How long a spelling must hold still before it is believed.**
+    ///
+    /// Sized from the CI log this was written for rather than picked: on that runner the failing
+    /// test's read at t = 4.23 s found an `Other`, and the passing test's read at t = 6.92 s found
+    /// none — so the flip fell inside a ~2.7 s band, and four seconds of holding still clears it
+    /// with margin. It is also longer than `MapOpening.patience` (`MapOpeningCamera.swift`,
+    /// `.seconds(3)`), the app's own budget for state that is still arriving after a launch.
+    ///
+    /// Locally it buys nothing and costs its own length: on a quiet Mac the palette is already
+    /// complete before the first sample `XCUIApplication.launch()` allows. Four call sites, so about
+    /// sixteen seconds across the UI suite — the price of the wait is the whole point of it.
+    static let settlingWindow: TimeInterval = 4
+
+    let window: TimeInterval
+
+    /// Per spelling: when its current, unchanged frame was first observed, and what that frame is.
+    private var holding: [ContainerSpelling: (since: TimeInterval, frame: CGRect)] = [:]
+
+    /// Every spelling that has been observed at all, so a failure can tell "never in the tree" from
+    /// "in the tree and never still" — the first is a genuine absence and must keep saying so.
+    private(set) var everSeen: Set<ContainerSpelling> = []
+
+    init(window: TimeInterval = ContainerSpellingResolution.settlingWindow) {
+        self.window = window
+    }
+
+    /// Feeds one round of observations — the frame of each spelling that currently exists — and
+    /// answers with the spelling that has resolved, if any.
+    ///
+    /// When more than one has resolved in the same round the **longest-held** wins, with
+    /// `allCases` order as a deterministic tie-break. The app cannot currently produce that state
+    /// (a view renders one branch or the other, and a `ScrollView` is not filed under
+    /// `otherElements`), so this is a rule for a case that has not been observed rather than one
+    /// measured — said plainly here rather than asserted confidently.
+    mutating func observe(
+        _ round: [ContainerSpelling: CGRect],
+        at time: TimeInterval,
+        onScreen screen: CGRect
+    ) -> ContainerSpelling? {
+        for spelling in ContainerSpelling.allCases {
+            guard let frame = round[spelling] else {
+                holding[spelling] = nil
+                continue
+            }
+            // Recorded on existence rather than on usability, so a container that is in the tree
+            // with a frame nobody can measure reports as present-and-unsettled rather than absent.
+            everSeen.insert(spelling)
+            guard frameCanAnswerHittability(frame, onScreen: screen) else {
+                holding[spelling] = nil
+                continue
+            }
+            if let held = holding[spelling], frameHasSettled(previous: held.frame, current: frame) {
+                continue
+            }
+            holding[spelling] = (since: time, frame: frame)
+        }
+        return ContainerSpelling.allCases
+            .compactMap { spelling -> (ContainerSpelling, TimeInterval)? in
+                guard let held = holding[spelling], time - held.since >= window else { return nil }
+                return (spelling, held.since)
+            }
+            .min { $0.1 < $1.1 }?.0
+    }
+}
+
+extension XCTestCase {
+
+    /// **A labeled SwiftUI container, resolved to whichever element type it has settled into.**
+    ///
+    /// Replaces the three hand-copied `other.exists ? other : app.scrollViews[label]` helpers in
+    /// `IdentifyFABReachabilityTests`, `MapFilterAccessibilityTests` and `MapRecenterUITests` —
+    /// one fix copied by hand, which is the shape `DragGestureGateTests` and
+    /// `HittabilityFilterGateTests` already record. `ContainerSpellingGateTests` (unit suite) fails
+    /// the build if a fourth copy appears.
+    ///
+    /// `ContainerSpellingResolution` carries the whole argument for the rule. What this adds is the
+    /// live half: both spellings are re-read every round, so a spelling that stops existing loses
+    /// whatever credit it had built up, and nothing is decided by one read of a screen that is still
+    /// loading.
+    ///
+    /// **A genuine absence still says so.** A camera showing no trees draws no legend under either
+    /// spelling, and that is a real state this must not turn into a silent skip — the failure keeps
+    /// `assertReachable`'s sentence for it, and names both queries it watched.
+    ///
+    /// **`exists` then `frame` is two snapshots, and the second one RAISES.** An earlier version of
+    /// this comment claimed that a frame read of something which had just left the tree "reads as
+    /// unusable and simply costs that spelling its round". That was reasoned, not measured, and it
+    /// is false. Measured on 16 Plus `24D1629F-…` (PR #66, probe deleted after the run): a `.frame`
+    /// read through a query resolving to nothing retries for about two seconds and then fails the
+    /// test outright —
+    ///
+    ///     Failed to get matching snapshot: No matches found for
+    ///     Elements matching predicate '"…" IN identifiers'
+    ///
+    /// — with none of the sentences below, which is exactly the raise this helper exists to stop.
+    /// So the rectangle is taken through `XCUIElement.snapshot()`, which **throws a Swift error**
+    /// instead of raising (same run: `snapshot=threw` where `.frame` failed the test), and a
+    /// spelling that leaves the tree mid-round now really does just lose its round.
+    ///
+    /// `exists` stays in front of it because it is cheap on an absent element where `snapshot()`
+    /// spends its retry budget first — so the common case, one spelling present and one not, costs
+    /// what it always did.
+    ///
+    /// **The ceiling buys `timeout − settlingWindow`.** A container has to appear early enough to
+    /// then hold still for `settlingWindow` inside the same budget, so a caller sizing `timeout`
+    /// against an observed arrival time must add the window to it.
+    func resolvedContainer(
+        _ app: XCUIApplication,
+        labeled label: String,
+        _ description: String,
+        timeout: TimeInterval = 30,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        // `app.frame` is a query, not a stored property — read once, above the loop. See
+        // `isHittableWithoutRaising(onScreen:)`, and the CI failure that taught it.
+        let screen = app.frame
+        let elements: [ContainerSpelling: XCUIElement] = [
+            .other: app.otherElements[label],
+            .scrollView: app.scrollViews[label]
+        ]
+        var resolution = ContainerSpellingResolution()
+        let start = Date()
+        while Date().timeIntervalSince(start) < timeout {
+            var round: [ContainerSpelling: CGRect] = [:]
+            for spelling in ContainerSpelling.allCases {
+                guard let element = elements[spelling], element.exists else { continue }
+                // `try?`, never `element.frame` — see the header. The raise this would otherwise
+                // produce is the one the whole round was spent removing.
+                guard let frame = try? element.snapshot().frame else { continue }
+                round[spelling] = frame
+            }
+            let now = Date().timeIntervalSince(start)
+            if let resolved = resolution.observe(round, at: now, onScreen: screen),
+               let element = elements[resolved] {
+                return element
+            }
+            usleep(150_000)
+        }
+
+        let watched = ContainerSpelling.allCases
+            .map { "`\($0.query)[\"\(label)\"]`" }
+            .joined(separator: " or ")
+        XCTFail(
+            resolution.everSeen.isEmpty
+                ? "\(description) never appeared in the accessibility tree at all within "
+                    + "\(Int(timeout))s — neither as \(watched)"
+                : "\(description) is in the accessibility tree as "
+                    + "\(resolution.everSeen.map(\.query).sorted().joined(separator: " and "))"
+                    + ", and never held one element type with an unchanging frame for "
+                    + "\(Int(ContainerSpellingResolution.settlingWindow))s within \(Int(timeout))s. "
+                    + "Either the container is still being rebuilt — `MapSpeciesLegend` swaps "
+                    + "between a plain group and a `ScrollView` as its species palette fills — or "
+                    + "its frame never stops changing, and any rectangle taken from it is stale",
+            file: file, line: line
+        )
+        // Something has to be returned. The caller's own assertion is what a reader wants to see
+        // next, and with `continueAfterFailure = false` — which every class calling this sets —
+        // nothing runs after the failure above anyway.
+        return elements[.scrollView] ?? app.otherElements[label]
+    }
+}
+
+extension XCUIElement {
+
+    /// `isHittable`, asked only when the element's frame can answer — `false` where the raw property
+    /// would **raise**.
+    ///
+    /// **`isHittable` does not return `false` for an element XCUITest cannot compute an activation
+    /// point for. It raises**, and the raise is the test failure:
+    ///
+    ///     Failed to determine hittability of StaticText at {{inf, inf}, {0.0, 0.0}}:
+    ///     Activation point invalid and no suggested hit points based on element frame
+    ///
+    /// which is not a defect report about anything. That is CI run 31300530216's `ui (3)`, failing
+    /// `DeepLinkSweepTests.testNothingIsAnnouncedTwice` — and the same sentence, on a Button rather
+    /// than a StaticText, is what `DeepLinkVoiceOverTests.testPinAdjust` failed with on the run task
+    /// #71 was written from.
+    ///
+    /// **Where it comes from.** Screen 01 is a full-bleed `Map` whose pins are SwiftUI annotations
+    /// MapKit hosts and places itself, and a screen presented *over* the map tab root leaves those
+    /// annotations in the accessibility tree behind it. An annotation the camera happens to place at
+    /// or beyond the edge of the basemap can be in the tree with a frame XCUITest can resolve no
+    /// activation point inside — and which annotations land in that state is a fact about where the
+    /// camera is pointed, which is device state. So this failed on a device left pointed at one
+    /// block and not on one left pointed at another.
+    ///
+    /// **The app frame is a parameter and not a convenience.** The two raises this suite has
+    /// actually seen have *different* frames — `{{inf, inf}, {0.0, 0.0}}` and
+    /// `(-31.0, 850.0, 30.0, 30.0)`, the second a perfectly ordinary 30 × 30 rectangle sitting off
+    /// the left edge of the screen — and only the first is decidable from the element alone. A
+    /// version of this without the screen was written, and watched to go through it unchanged on the
+    /// run that produced the second.
+    ///
+    /// **Nothing is weakened, because it is the same judgment.** An element with no interior, one
+    /// XCUITest could not resolve a position for, or one drawn entirely off the glass is not
+    /// reachable by an assistive technology either — skipping it is exactly the answer `isHittable`
+    /// was being asked for, expressed in a way that cannot raise. A test that means to *assert*
+    /// reachability still says so: this is for the filter positions, where the property decides
+    /// whether an element is examined at all, and `assertReachable` is for the claims.
+    ///
+    /// **This does not close the window, it narrows it.** `frame` and `isHittable` are two separate
+    /// snapshots, so an element can still move between them on a contended runner. The pinned
+    /// opening camera (`CYPRESS_MAP_CAMERA`, `DebugMapCamera`) is what stops the annotations getting
+    /// into that state in the first place; this is the guard for everything that is not the map.
+    /// **Take the screen as a rectangle when filtering more than one element, and this is not a
+    /// micro-optimization — it is a correctness requirement, found in CI.**
+    ///
+    /// `app.frame` is a *query*, not a stored property: every read is a round trip that refreshes
+    /// the accessibility snapshot. The convenience overload below reads it, so calling that one
+    /// inside a `filter` over every static text in the app interleaves an application query between
+    /// every pair of element queries — visible in the log as `Find the Target Application` on
+    /// alternating lines — which both doubles the enumeration's elapsed time and doubles the number
+    /// of moments at which the tree can change under it. `DeepLinkSweepTests
+    /// .testNothingIsAnnouncedTwice` then failed on PR #66's first CI run with
+    ///
+    ///     Failed to get matching snapshot: No matches found for Element at index 25
+    ///
+    /// which is not the raise this file exists to prevent — it is `allElementsBoundByIndex` handing
+    /// out an index that stopped resolving while the loop walked it. Hoist `app.frame` above any
+    /// loop and pass it here.
+    func isHittableWithoutRaising(onScreen screen: CGRect) -> Bool {
+        guard frameCanAnswerHittability(frame, onScreen: screen) else { return false }
+        return isHittable
+    }
+
+    /// The one-element spelling. Reads `app.frame` itself, which is one extra query — fine for a
+    /// single named control, wrong inside a loop. See the overload above.
+    func isHittableWithoutRaising(in app: XCUIApplication) -> Bool {
+        isHittableWithoutRaising(onScreen: app.frame)
+    }
+}
+
 extension XCTestCase {
 
     /// A drag a thumb would actually produce, rather than the instantaneous sweep XCUITest defaults
