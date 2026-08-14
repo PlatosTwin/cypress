@@ -525,9 +525,9 @@ Three things the record here gets subtly wrong or has not caught up with.
 
 ---
 
-## 5. Four options
+## 5. The options
 
-Each is stated as: what ships in the bundle, what downloads, how an update reaches a reader, what
+Four that could be built, and one refused on sight. Each is stated as: what ships in the bundle, what downloads, how an update reaches a reader, what
 happens offline, what it does to each version space, what it costs the server and the toolchain.
 
 ### Option A — status quo, and NYC is one more city file
@@ -944,6 +944,22 @@ invent. **This document names them and draws none of them.**
    Stage 1 the update the reader most wants is a small one, and a manual `Update` on a 28 MB
    compressed pack is a materially different product from a manual `Update` on a 495 MB one. Re-ask
    after Stage 1 ships.
+
+10. **The deepest question in the owner's paragraph: does the bundle eventually stop carrying city
+    data at all?** Nobody else does it — Organic Maps and OsmAnd ship an app with no maps (§4.6) — and
+    *"we do not want to be shipping stale dbs per build"* points straight at it. *Recommend: not yet,
+    and for a reason from the mocks rather than from architecture.* Screen 01's caption promises
+    *"the map is full on day one"*, and there is no way to keep that promise on a first launch with an
+    empty bundle and no network. The honest sequence is: keep the bundle as R36's bootstrap, let
+    Stage 0 make the app aware of what is in it, and revisit the size at the next natural break — the
+    day San Jose's downtown window or San Francisco itself would rather be a download than a
+    passenger. That is a product decision and it should be taken deliberately, not by drift.
+11. **Is the overlay scheme (§6.6 item 4) the freshness destination, or is shape B?** They are the two
+    ends the record already contains — R36's own fallback, and the only shipping incremental design in
+    §4. *Recommend: overlays, and keep shape B named.* Overlays preserve offline, which is the base
+    layer's whole reason to exist; shape B is the answer if and only if R36's stated trigger fires.
+    Nothing has to be decided now, and this document would rather the choice be made after Stage 1's
+    real download sizes are in hand than from the estimates in §2.2.
 
 ---
 
