@@ -49,3 +49,31 @@ before the first NYC publish — trial and beta packs included — not before th
 **`CLAUDE.md`'s version-spaces bullet gains the third space, `manifest_format`**, under the same
 discipline as the other two: named, its number struck from the prose, read from the code
 (`Cypress/Data/Cities/CityManifest.swift` and `Tools/publish_cities.py`).
+
+## Addendum — four rulings taken later the same day, on the ingest's measured numbers
+
+The `feat/nyc-ingest` extract completed after the rulings above and its measurements superseded the
+proposal's estimates (Queens 175.7 MB measured — under the ~200 MB revisit line, so the borough unit
+stands). Four further rulings, same day, same method:
+
+**The s17 ruling stands with its premise corrected.** The owner chose schema-first for standing-dead
+believing a new schema slot was needed; `trees.status` already carries `dead_reported` (R19), so
+that work is an ingest-contract change on the Python side that may need no migration — and it still
+rides the s17 round with the same author. What makes 16 → 17 a real generation is the region shape:
+borough cannot ride `city_raw`, whose column family renders as `Cared for by …`, so it is a genuine
+`trees.region` column plus region dimension. One round, one author, as originally intended.
+
+**Orphan trees are assigned a borough by geometry at ingest.** The 22,995 standing trees (2.56%,
+overwhelmingly the newest plantings) that join to no planting space get their borough by
+point-in-polygon against the City's official borough boundaries, so the borough packs sum to the
+whole city. Derived from official geometry, not invented; constraint 15 holds.
+
+**The stale address source is used, deduped, and documented.** Forestry Planting Spaces (17 months
+staler than Tree Points; 6,864 whole-row duplicates) is deduped deterministically and its own date
+recorded in provenance, so the record never claims an address fresher than its source. Refresh when
+the City republishes.
+
+**The first NYC publish is gated on species coverage at 90% of rows.** Exact mappings cover 59% of
+rows today; the publish — trial and beta packs included — waits until synonymy rulings take mapped
+coverage to at least 90%, and the long tail lands through content-rev refreshes. The synonymy review
+round is sized by this number.

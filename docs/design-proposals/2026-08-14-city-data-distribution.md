@@ -57,6 +57,38 @@ orchestrator splices it) carries the ones with lasting consequence.
 | D15 | Bundle's long-term role | **Stays R36's bootstrap; revisit deliberately later** — at the next natural break, not by drift. Screen 01's "full on day one" promise holds. |
 | D16 | Third version space | **`CLAUDE.md`'s version-spaces bullet gains `manifest_format`**, same treatment as the other two: named, numbers struck, read from the code. Lands with this round's docs. |
 
+### Addendum, later on 2026-08-14 — the ingest's measured numbers, and four more rulings
+
+After D1–D16 were taken, the `feat/nyc-ingest` data round completed its extract and its numbers
+reached this document through the orchestrator. **Provenance: these are the ingest round's reported
+measurements, relayed rather than re-derived here; that round's own record is authoritative for
+them.** What they replace in §2.2's estimate columns:
+
+| region | rows (measured) | pack, raw (measured) |
+|---|---:|---:|
+| Queens | 290,364 | 175.7 MB |
+| Brooklyn | 231,514 | 140.5 MB |
+| Bronx | 134,225 | 81.1 MB |
+| Staten Island | 121,956 | 75.0 MB |
+| Manhattan | 97,104 | 58.9 MB |
+| *(no planting space — the orphans, D18)* | 22,995 | 12.2 MB |
+| **whole city** | **~898,158** | **543.3 MB, ~605 bytes/row** |
+
+§2.2's ~550 bytes/row estimate ran ~10% light and its ~495 MB whole-city figure is measured at
+543.3 MB; the shape of every argument survives, and **D1's revisit clause did not trigger** — Queens
+measured 175.7 MB, under the ~200 MB line, so the borough unit stands. The ingest also corrected two
+figures in the survey (`docs/investigations/nyc-street-trees.md`): the species corpus is 731, not
+738, and the merged undated share is 85.24%, not ≈86.6%. Neither number is quoted by this proposal.
+
+Four further rulings, taken the same way as D1–D16:
+
+| # | Decision | Ruling |
+|---|---|---|
+| D17 | s17 contents, premise corrected | **D4's ruling stands with its premise fixed.** `trees.status` already carries `dead_reported` (verified in `AppSchema`'s CHECK constraint; R19 exists), so the standing-dead work is an ingest-contract change on the Python side — an `InventoryRecord` condition field, `STATUS_FOR_KIND` no longer keying on kind alone — that may need **no** migration, though it also moves SF/SJ rows at their next publish. It still rides the s17 round with the same author. What makes 16 → 17 real is the region shape: borough cannot ride `city_raw`, whose column family renders in the UI as `Cared for by …` — *Cared for by Queens* would be a shipped falsehood — so it is a genuine `trees.region` column plus region dimension. One round, one author, exactly as D4 intended. |
+| D18 | Orphan trees | 22,995 standing trees (2.56%, 99.9% created 2025+) join to no planting space and so have no borough. **Assigned by geometry at ingest**: point-in-polygon against the City's official borough boundaries, so the borough packs sum to the whole city and the newest plantings are not systematically missing. The assignment is derived from official geometry, not invented — constraint 15 holds. |
+| D19 | Stale address source | Forestry Planting Spaces is 17 months staler than Tree Points (rowsUpdatedAt 2025-03-05 vs 2026-07-28) and ships 6,864 whole-row duplicates. **Proceed: dedupe deterministically and document** — the source's own date is recorded in provenance so the record never claims an address fresher than its source; refresh when the City republishes. It is the only address source. |
+| D20 | Species gate | 147 of 620 packed species values map exactly (59% of rows); 472 values (~40% of rows) await synonymy rulings, never guessed. **Threshold gate at 90% of rows**: the first NYC publish — trial and beta included — waits until mapped values cover ≥ 90% of NYC tree rows; the long tail lands through content-rev refreshes. The synonymy review round is sized by this number. |
+
 ---
 
 ## 0. The five questions inside that paragraph
@@ -218,7 +250,9 @@ measured brotli ratio. **A borough's populated planting spaces and its standing 
 the same set** — the survey says so, and reconciling them is an ingest question. The parallel
 `feat/nyc-ingest` measurement will replace the three estimate columns with real ones; the design
 below does not turn on which of them is right, only on their order of magnitude and their **spread**,
-which is 5.7:1 between Queens and Manhattan.
+which is 5.7:1 between Queens and Manhattan. *(That measurement has since landed, later the same
+day — the real numbers, and the orphan population this table could not see, are in the Decisions
+addendum above. The estimates below stand as written so the method stays auditable.)*
 
 Two consequences, stated flatly:
 
