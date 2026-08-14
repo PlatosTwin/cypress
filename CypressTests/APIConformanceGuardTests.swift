@@ -804,7 +804,12 @@ struct APIConformanceGuardTests {
     /// The conformances that a shipped build can reach, and which this file therefore holds to the
     /// full surface. Cross-checked against the source walk by
     /// `theShippingConformancesAreTheOnesThisFileNames`, so it cannot go stale silently.
-    static let shipping = ["LocalAPI", "RemoteAPI"]
+    /// `RoutedAPI` is the third since #158 step 4: spec §3.1's router, which decides per method
+    /// whether the phone's answer or the service's is authoritative. It is held to the full surface
+    /// for the same reason the other two are — it is a `CypressAPI` a shipped build can reach, and a
+    /// requirement it inherited rather than routed would be a method silently answering from
+    /// whichever side the protocol's default happened to prefer.
+    static let shipping = ["LocalAPI", "RemoteAPI", "RoutedAPI"]
 
     // MARK: Calibration
 

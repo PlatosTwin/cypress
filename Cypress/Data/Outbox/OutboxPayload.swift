@@ -95,6 +95,71 @@ public enum OutboxPayload: Sendable, Hashable {
         }
     }
 
+    /// When the mutation happened, as the person did it.
+    ///
+    /// **The contribution's own capture time, never the queue row's `createdAt`.** They are usually
+    /// within milliseconds of each other and they are not the same fact: a visit staged offline and
+    /// enqueued on a later launch has a capture time from yesterday and a row written today, and
+    /// `POST /sync`'s `occurred_at` is the first of those — the service falls back to *its* clock
+    /// only when the field is absent (`server/internal/api/sync.go`), which would date a day-old
+    /// visit to the moment the network came back. `PrivateReminder` has no capture time of its own:
+    /// a reminder is written the moment it is made, so `createdAt` there is not a substitute for the
+    /// fact but is the fact.
+    public var occurredAt: Date {
+        switch self {
+        case let .visit(value): return value.capturedAt
+        case let .observation(value): return value.capturedAt
+        case let .measurement(value): return value.capturedAt
+        case let .careEvent(value): return value.capturedAt
+        case let .favoriteToggle(value): return value.occurredAt
+        case let .privateReminder(value): return value.createdAt
+        }
+    }
+
+    /// The account the mutation says it belongs to, or nil when it belongs to a device (D9).
+    ///
+    /// Read by `RemoteAPI.sync` to fill `POST /sync`'s `user_id`, which the service checks against
+    /// the authenticated caller and never trusts. Resolved here rather than at the call site so the
+    /// six kinds cannot answer it differently.
+    ///
+    /// **Two properties rather than an `Attribution`**, because `Attribution.deviceID` is
+    /// non-optional and `FavoriteOwner`/`ReminderOwner` are an either: an account-owned favorite
+    /// carries no device id at all, and inventing one to satisfy a type is how a row ends up
+    /// claiming a device that never touched it.
+    public var ownerUserID: UUID? {
+        switch self {
+        case let .visit(value): return value.attribution.userID
+        case let .observation(value): return value.attribution.userID
+        case let .measurement(value): return value.attribution.userID
+        case let .careEvent(value): return value.attribution.userID
+        case let .favoriteToggle(value): return value.owner.userID
+        case let .privateReminder(value): return value.owner.userID
+        }
+    }
+
+    /// The device the mutation says it belongs to, or nil when it belongs to an account. See
+    /// `ownerUserID`.
+    public var ownerDeviceID: UUID? {
+        switch self {
+        case let .visit(value): return value.attribution.deviceID
+        case let .observation(value): return value.attribution.deviceID
+        case let .measurement(value): return value.attribution.deviceID
+        case let .careEvent(value): return value.attribution.deviceID
+        case let .favoriteToggle(value): return value.owner.deviceID
+        case let .privateReminder(value): return value.owner.deviceID
+        }
+    }
+
+    /// The resulting favorite state, for the one kind that has one.
+    ///
+    /// Nil for the other five, and that is not the same as `false`: `POST /sync` reads a present
+    /// `is_favorite` as a **decision** and its own comment records what a defaulted `false` did —
+    /// "the heart went off, the client was told it worked, and nothing anywhere errored".
+    public var isFavorite: Bool? {
+        guard case let .favoriteToggle(value) = self else { return nil }
+        return value.isFavorite
+    }
+
     // MARK: - Coding
 
     /// Dates as ISO-8601, matching every other timestamp in the store; keys stay the Swift property
