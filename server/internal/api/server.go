@@ -101,8 +101,19 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 type caller struct {
 	// UserID is set for a signed-in account.
 	UserID *uuid.UUID
-	// DeviceID is set for the anonymous device credential.
+	// DeviceID is set for the anonymous device credential. **This is `devices.id`** — the row key
+	// this database minted, which is what goes into `contributions.device_id` and `photos.device_id`
+	// and therefore what `ownsPhoto` compares against. It is this database's vocabulary.
 	DeviceID *uuid.UUID
+	// DeviceUUID is the same installation in the **client's** vocabulary: `devices.device_uuid`, the
+	// value the phone keeps in `app_state.device_uuid` and sends as an item's `device_id`.
+	//
+	// It exists because `applyOne` had to answer "is this item this caller's?" about a value in that
+	// vocabulary and had only the row key to answer with, so it compared the two and refused every
+	// anonymous item — permanently, since `forbidden` is not retryable. `RegisterDevice` and
+	// `ClaimDevice` do this translation with `WHERE device_uuid = $1`; this field is the same
+	// translation, done once per request on the credential rather than once per item.
+	DeviceUUID *uuid.UUID
 }
 
 func (c caller) owner() store.Owner {
@@ -216,6 +227,13 @@ func (s *Server) resolveCaller(r *http.Request) (caller, error) {
 			}
 			return caller{UserID: &id}, nil
 		case tokens.SubjectDevice:
+			// **No `DeviceUUID`, and that is deliberate rather than an omission.** Nothing mints a
+			// signed device token — `registerDevice` issues an opaque one and this branch is
+			// unreachable today — so there is no fact here to say which vocabulary `id` is in, and
+			// guessing would put the same mismatch back one level down. Left nil, `applyOne`
+			// refuses an item that names a device, which is the safe direction: whoever makes this
+			// branch reachable has to decide what `id` means and set the field, and until then no
+			// item is authorized by a claim nothing can check.
 			return caller{DeviceID: &id}, nil
 		default:
 			// Fails closed. `Verify` already rejects an unknown subject, so this is unreachable —
@@ -231,9 +249,9 @@ func (s *Server) resolveCaller(r *http.Request) (caller, error) {
 
 	// A device token is opaque and checked against its row. D9 makes the anonymous queue the normal
 	// case, so this path is not an exception — it is how a phone drains before there is an account.
-	deviceID, lookupErr := s.Store.DeviceTokenOwner(r.Context(), tokens.HashOpaque(presented))
+	deviceID, deviceUUID, lookupErr := s.Store.DeviceTokenOwner(r.Context(), tokens.HashOpaque(presented))
 	if lookupErr == nil {
-		return caller{DeviceID: &deviceID}, nil
+		return caller{DeviceID: &deviceID, DeviceUUID: &deviceUUID}, nil
 	}
 	if !errors.Is(lookupErr, store.ErrNotFound) {
 		return caller{}, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", lookupErr)

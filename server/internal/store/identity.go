@@ -202,16 +202,26 @@ func (s *Store) SessionIsLive(ctx context.Context, sessionID uuid.UUID) (bool, e
 }
 
 // DeviceTokenOwner resolves a presented device token hash to its device.
-func (s *Store) DeviceTokenOwner(ctx context.Context, hash []byte) (uuid.UUID, error) {
-	var deviceID uuid.UUID
+//
+// **It returns both identifiers, and the pair is the point.** `devices.id` is this database's row
+// key, minted here by RegisterDevice. `devices.device_uuid` is the *client's* installation id (D9) —
+// the value the phone keeps in `app_state.device_uuid`, registers with, sends to `/devices/claim` as
+// `device_uuid`, and sends on every sync item as `device_id`. They are two identifiers for one
+// installation in two vocabularies, and anything that compares one against the other refuses
+// everything. `applyOne` in sync.go did exactly that, and returning only the row key is what left it
+// no honest way not to.
+func (s *Store) DeviceTokenOwner(ctx context.Context, hash []byte) (uuid.UUID, uuid.UUID, error) {
+	var deviceID, deviceUUID uuid.UUID
 	err := s.pool.QueryRow(ctx, `
-		SELECT device_id FROM device_tokens
-		 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2
-	`, hash, s.now()).Scan(&deviceID)
+		SELECT t.device_id, d.device_uuid
+		  FROM device_tokens t
+		  JOIN devices d ON d.id = t.device_id
+		 WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > $2
+	`, hash, s.now()).Scan(&deviceID, &deviceUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, ErrNotFound
+		return uuid.Nil, uuid.Nil, ErrNotFound
 	}
-	return deviceID, err
+	return deviceID, deviceUUID, err
 }
 
 // CreateDeviceToken stores a device token hash.
