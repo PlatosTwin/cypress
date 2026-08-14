@@ -4,8 +4,9 @@ Staged unnumbered per CLAUDE.md's "Numbering and shared files"; the orchestrator
 the real next number at merge. Written on `feat/158-wiring`, the round in which `DataLayer.boot`
 stopped constructing a `LocalAPI` and started constructing a router with a server behind it.
 
-Four findings. The first three are copy questions the owner has to answer and this branch
-deliberately did not; the fourth is a defect in the service that only becomes reachable now.
+Five findings. The first three are copy questions the owner has to answer and this branch
+deliberately did not; the fourth is a defect in the service that only becomes reachable now; **the
+fifth is blocking and is why this round does not work in production** — read it first.
 
 ---
 
@@ -126,3 +127,100 @@ send must call `POST /photos/begin` again — the route mints a fresh id per cal
 idempotency key — so every retry leaves an abandoned row behind, and with no sweeper each one is a
 phantom photograph rather than a row that quietly expires. The design ERRATA **E264** assigns to its
 own ticket therefore has a server prerequisite that E264 did not know about.
+
+## 5. **BLOCKING** — `POST /sync` refuses every anonymous item, because two different identifiers are both called "device id"
+
+Found by running the wiring round's own client code against the deployed service. It is the reason
+this round's deliverable does not work in production, and it is a server defect.
+
+### What happens
+
+Every item an anonymous installation sends comes back:
+
+```
+{"results":[{"client_uuid":"…","status":"failed","error":"forbidden",
+             "message":"That item belongs to a different device."}]}
+```
+
+`APIError.forbidden.retryable` is `false`, so `OutboxRetryPolicy.nextState` moves the row straight to
+`.failed` — not after 48 h, on the **first drain** — and screen 17 prints *"This account is not
+allowed to send that."* to a phone doing exactly what D9 asks of it. Measured through the real
+composition root: `DrainReport(attempted: 2, … failedTerminally: 2, sent: 0)`, both rows
+`applied=true sent=false`.
+
+### The mechanism, isolated with a control
+
+Three probes against `https://cypress-sync.fly.dev`, one device token, same item shape:
+
+| probe | `device_id` sent | answer |
+| --- | --- | --- |
+| A | the caller's own registered `device_uuid` | `forbidden` — "That item belongs to a different device." |
+| B | some other UUID | `forbidden` — same message |
+| C | **omitted** | `applied`, and `GET /me/grove` returns the row |
+
+A and B answering identically is the finding. The comparison in `applyOne`
+(`server/internal/api/sync.go`) is
+
+```go
+if item.DeviceID != nil && *item.DeviceID != *who.DeviceID {
+    return failed(apierr.Forbidden, "That item belongs to a different device.")
+}
+```
+
+and the two sides are in different vocabularies:
+
+- `item.DeviceID` is the **client's** installation id — `app_state.device_uuid` (D9), the value the
+  phone registers with and sends to `POST /devices/claim` as `device_uuid`.
+- `who.DeviceID` is `devices.id`, a **server-minted row key**:
+  `store.RegisterDevice` inserts `devices (id, device_uuid) VALUES (uuid.New(), $deviceUUID)` and
+  `DeviceTokenOwner` returns `device_tokens.device_id`, which is that row key.
+
+They can never be equal, so the predicate is `true` for every item that carries a `device_id` at
+all. `claimDevice` gets this right — it resolves `device_uuid` through `RegisterDevice` before using
+it — so the translation exists in the codebase; `applyOne` is the one place that skipped it.
+
+### Why nothing caught it
+
+`server/internal/api/api_test.go` has no test that sends the caller's own `device_uuid` and expects
+success. Every green sync test **omits** `device_id` (probe C's shape), and the single test that
+sends one sends `uuid.New()` — a stranger's — and asserts the refusal. So the happy path of the
+anonymous client is the one path the server's own suite does not cover, and the defect is invisible
+from inside it. This is the project's dominant failure family again: a guard green with its defect
+present, because the case that would fail it was never written.
+
+### The fix, written out but **not applied — it is unverified and must not be taken on trust**
+
+There is no Go toolchain on this machine and no container runtime running, and `server/` has no CI
+(the workflows build the app only; `server/README.md` says the suite is run by hand against a
+Postgres). So this was written, found to be uncompilable here, and **reverted** rather than landed:
+this repository does not accept a change nobody watched build.
+
+Three edits:
+
+1. `store.DeviceTokenOwner` returns both identifiers, joining `devices` on `device_tokens.device_id`
+   and selecting `d.device_uuid` beside `t.device_id`.
+2. `api.caller` gains `DeviceUUID *uuid.UUID` — the same installation in the client's vocabulary —
+   set on the opaque-token path beside `DeviceID`. (The `tokens.SubjectDevice` JWT branch needs the
+   same treatment if it is ever reached; nothing mints such a token today.)
+3. `applyOne` compares against it:
+   `if item.DeviceID != nil && (who.DeviceUUID == nil || *item.DeviceID != *who.DeviceUUID)`.
+
+And a Go test that goes red on the current code: register a device, sync one item carrying **that
+device's own `device_uuid`**, assert `applied`. Probe A above is that test, already written in
+`curl`.
+
+### What must not happen before it lands
+
+**This client change must not reach TestFlight while the service is unfixed.** Before the wiring
+round, an anonymous queue drained locally and settled `done`; after it, and against the service as
+deployed today, every item settles `failed` with a sentence that is both wrong and non-retryable.
+The client is correct in what it sends — `device_id` is exactly what `syncItem` declares and what
+the server's own comment says a device credential authorizes — so the repair belongs on the server,
+followed by a deploy.
+
+### One thing the same probes prove, and it is the round's good news
+
+With `device_id` omitted (probe C) the whole path works end to end against the deployed service:
+`POST /devices/register` → `POST /sync` → `200 applied` → `GET /me/grove` returns the row with its
+`record` counts and `last_visited_at`. The routes, the wire shapes, the taxonomy and the session are
+all correct. One comparison stands between this round's client and a working live path.
