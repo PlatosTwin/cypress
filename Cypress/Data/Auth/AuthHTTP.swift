@@ -31,12 +31,14 @@ extension URLSession: AuthHTTP {
 
 /// What goes wrong with a *session* rather than with a request.
 ///
-/// **None of these is an `APIError`, and that is the whole point.** `OutboxViewState.apiError(from:)`
-/// returns nil for an error it does not recognize, `OutboxRetryPolicy.nextState` reads nil as "no
-/// taxonomy opinion", and the item stays `.pending` on the backoff. An `APIError.unauthorized`
-/// reaching an outbox item moves it to `.failed` immediately and prints "Sign in to send this" to
-/// somebody who is signed in — spec §5.8 and ERRATA **E261** §3, and it is the defect this whole
-/// folder is written to design out.
+/// **None of these is an `APIError`, and that is the whole point.**
+/// `OutboxFailureReason.apiError(from:)` — the type is `OutboxFailureReason`, declared inside
+/// `Cypress/Data/Outbox/OutboxViewState.swift`, which is a file and not the type — returns nil for
+/// an error it does not recognize, `OutboxRetryPolicy.nextState` reads nil as "no taxonomy opinion",
+/// and the item stays `.pending` on the backoff. An `APIError.unauthorized` reaching an outbox item
+/// moves it to `.failed` immediately and prints "Sign in to send this" to somebody who is signed in
+/// — spec §5.8 and ERRATA **E261** §3, and it is the defect this whole folder is written to design
+/// out.
 public enum SessionError: Error, Equatable, CustomStringConvertible {
     /// The refresh could not be performed, or the service refused it. There is no session to send
     /// with; the batch is a transport failure and every item stays alive.
@@ -45,7 +47,10 @@ public enum SessionError: Error, Equatable, CustomStringConvertible {
     /// item — an item that genuinely is not this identity's to send is answered `forbidden`
     /// (`server/README.md`, "Three rules the code will not let you break quietly").
     case sessionRejected
-    /// There is no credential at all: not signed in, and no device credential registered.
+    /// A credential could not be obtained at all — the service refused the registration that would
+    /// have minted one. Thrown by `SessionTransport.credential(replacing:)`, which is where a
+    /// taxonomy code stops being about the item; `AppSession` itself reports what the service said,
+    /// because a caller that asked it directly wants that answer.
     case noCredential
     /// Something answered that was not an HTTP response, or a 2xx body that would not decode.
     case malformedResponse

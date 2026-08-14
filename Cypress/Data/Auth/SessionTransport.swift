@@ -42,7 +42,7 @@ public struct SessionTransport: AuthorizedTransport {
     }
 
     public func send(_ request: URLRequest) async throws -> Data {
-        let credential = try await session.authorization()
+        let credential = try await credential(replacing: nil)
         let (data, response) = try await http.send(authorized(request, with: credential))
 
         guard response.statusCode == 401 else {
@@ -56,7 +56,7 @@ public struct SessionTransport: AuthorizedTransport {
         //
         // A failure here is `SessionError.refreshFailed`, which is not an `APIError`, so an outbox
         // item that was riding on this request keeps its place in the queue.
-        let replacement = try await session.reauthorize(after: credential)
+        let replacement = try await self.credential(replacing: credential)
         let (replayData, replayResponse) = try await http.send(authorized(request, with: replacement))
 
         guard replayResponse.statusCode != 401 else {
@@ -67,6 +67,30 @@ public struct SessionTransport: AuthorizedTransport {
             throw SessionError.sessionRejected
         }
         return try body(replayData, replayResponse)
+    }
+
+    /// A credential to send with — or a `SessionError`, **never a taxonomy code**.
+    ///
+    /// This is the boundary the whole folder's claim is scoped to. `AppSession` reports what the
+    /// service said, which is right for a caller that asked it directly: `bootstrap()` on a fresh
+    /// install answering `validation_failed` is a real answer about a real request. But an
+    /// `APIError` escaping *here* is a credential problem arriving at an outbox item as a code —
+    /// `validation_failed` from `POST /devices/register` is non-retryable, so it would fail the
+    /// whole batch terminally over something that is not about any item in it.
+    ///
+    /// So the conversion happens once, at the one call site where it matters, rather than being
+    /// scattered through `AppSession`'s arms. Review of PR #77 named the asymmetry; this is where it
+    /// resolves.
+    ///
+    /// - Parameter replacing: nil to take whatever credential is current, or the one that just came
+    ///   back 401 to rotate past it.
+    private func credential(replacing stale: Authorization?) async throws -> Authorization {
+        do {
+            guard let stale else { return try await session.authorization() }
+            return try await session.reauthorize(after: stale)
+        } catch is APIError {
+            throw SessionError.noCredential
+        }
     }
 
     private func authorized(_ request: URLRequest, with credential: Authorization) -> URLRequest {

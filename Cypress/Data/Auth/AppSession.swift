@@ -15,9 +15,17 @@
 //  signed in to sign in (spec §5.8, ERRATA **E261** §3).
 //
 //  Both files are correct alone. The fix is here and at `SessionTransport`: a 401 is a fact about
-//  the session, never about the item. Nothing in this folder throws `APIError.unauthorized` at a
-//  caller; it throws `SessionError`, which carries no taxonomy code, which keeps every queued item
-//  alive on the backoff.
+//  the session, never about the item.
+//
+//  **The claim, narrowed to what is measured** (review of PR #77, and CLAUDE.md's "never assert an
+//  invariant in a comment you have not verified"). This file used to say "nothing in this folder
+//  throws `APIError.unauthorized` at a caller", and `signInWithApple` does: `/auth/oidc` answers
+//  `unauthorized` for a failed verify, a nonce mismatch and a failed code exchange, and screen 15
+//  wants exactly that answer. The true statement, and the one ERRATA E261 §3 needs, is
+//  transport-scoped: **nothing reaches an outbox item through `SessionTransport` as a taxonomy
+//  code because of a credential.** `SessionTransport.credential(replacing:)` is where that is
+//  enforced, and it is enforced there rather than here on purpose — a caller that asked this type
+//  directly (`bootstrap()` on a fresh install) should be told what the service actually said.
 //
 
 import Foundation
@@ -40,11 +48,20 @@ public enum Authorization: Sendable, Hashable {
 
 /// Holds this installation's credentials, mints them when they are missing, and rotates them.
 ///
-/// An `actor` because two drains and a screen can ask for a credential at once, and because the
-/// refresh has to be **single-flight**: the service revokes a session family when a refresh token is
-/// presented twice (`store.ErrSessionReused`), so two concurrent refreshes of the same token would
-/// not merely waste a round trip — the second would sign the person out. `refreshInFlight` is what
-/// stops that, and `reauthorize(after:)` is the only door to it.
+/// An `actor` because two drains and a screen can ask for a credential at once, and because minting
+/// has to be **single-flight**. Both credentials retire their predecessor on the far side, so a
+/// duplicate mint is not a wasted round trip — it is the other caller's credential being taken away:
+///
+/// - a refresh token presented twice revokes the whole session family (`store.ErrSessionReused`),
+///   which signs the person out;
+/// - `POST /devices/register` calls `RevokeDeviceTokens` on **every** call
+///   (`server/README.md`: "Re-registering retires the previous token"), so a second registration
+///   kills the token the first one just handed out.
+///
+/// Review of PR #77 found the second half unguarded: the refresh path had a slot and lazy device
+/// registration did not, and two concurrent first requests on a fresh install really did register
+/// twice. `mint(_:replacing:)` is now the only door to either, and `theFirstRequestsOnAFreshInstall…`
+/// in `CypressTests/SessionTests.swift` is what keeps it that way.
 public actor AppSession {
 
     private let client: AuthClient
@@ -52,9 +69,19 @@ public actor AppSession {
     private let deviceUUID: UUID
     private let now: @Sendable () -> Date
 
-    /// The single-flight slot. A second caller arriving while a rotation is in flight awaits the
-    /// same task rather than starting a rival one.
-    private var reauthorizationInFlight: Task<Authorization, Error>?
+    /// Which credential a mint produces. The slot below is keyed on this and **not shared between
+    /// the two**, which review of PR #77 also caught: one slot for both families handed a caller
+    /// that asked to rotate its *account* token back a *device* token, and `SessionTransport` then
+    /// replayed the request with a device bearer — so a write the account should have owned was
+    /// attributed to the installation, or took `forbidden` on a user-only route.
+    private enum CredentialFamily: Hashable {
+        case user
+        case device
+    }
+
+    /// The single-flight slots, one per family. A second caller arriving while a mint of the same
+    /// family is in flight awaits that task rather than starting a rival one.
+    private var mintingInFlight: [CredentialFamily: Task<Authorization, Error>] = [:]
 
     public init(
         deviceUUID: UUID,
@@ -119,10 +146,14 @@ public actor AppSession {
         if let device = storedDeviceCredential, device.isLive(at: now()) {
             return .device(device.deviceToken)
         }
-        return .device(try await register().deviceToken)
+        // **Through `mint`, not straight to `register()`.** Two concurrent first requests on a fresh
+        // install both reach this line, and `POST /devices/register` retires the previous token on
+        // every call — so an unguarded pair here mints two credentials and leaves the first caller
+        // holding a dead one. Review of PR #77 measured that; `mint` is the fix.
+        return try await mint(.device, replacing: nil)
     }
 
-    // MARK: - Rotation
+    // MARK: - Minting and rotation
 
     /// Replaces a credential that just came back 401, once.
     ///
@@ -130,35 +161,56 @@ public actor AppSession {
     ///   else, another caller rotated it first and that answer is returned unchanged — which is the
     ///   difference between two concurrent 401s costing one rotation and costing a sign-out.
     public func reauthorize(after stale: Authorization) async throws -> Authorization {
-        if let fresher = fresherThan(stale) { return fresher }
-        if let inFlight = reauthorizationInFlight { return try await inFlight.value }
+        switch stale {
+        case let .user(token): return try await mint(.user, replacing: token)
+        case let .device(token): return try await mint(.device, replacing: token)
+        }
+    }
+
+    /// Produce a live credential of `family`, sharing one attempt across every caller that wants it.
+    ///
+    /// - Parameter replacing: the token the caller was holding, or nil when it held none (a fresh
+    ///   install). Anything stored that is not that token was minted by somebody else while this
+    ///   caller was waiting, and is returned as-is.
+    private func mint(_ family: CredentialFamily, replacing stale: String?) async throws -> Authorization {
+        if let fresher = stored(family, otherThan: stale) { return fresher }
+        if let inFlight = mintingInFlight[family] { return try await inFlight.value }
 
         // `self` is captured strongly and the task is transient: it is awaited on the next line and
         // the slot is cleared on the way out, so there is no cycle to outlive this call. A weak
         // capture would have to invent an error for a `nil` that cannot happen, and that error would
         // read as a refused refresh.
-        let task = Task<Authorization, Error> { try await self.performReauthorization(after: stale) }
-        reauthorizationInFlight = task
-        defer { reauthorizationInFlight = nil }
+        let task = Task<Authorization, Error> { try await self.performMint(family) }
+        mintingInFlight[family] = task
+        defer { mintingInFlight[family] = nil }
         return try await task.value
     }
 
-    /// A stored credential that is not the one the caller sent — i.e. somebody already rotated.
-    private func fresherThan(_ stale: Authorization) -> Authorization? {
-        switch stale {
-        case let .user(token):
-            guard let session = storedSession, session.accessToken != token,
+    /// A stored, live credential of `family` that is not `stale` — i.e. somebody already minted one.
+    ///
+    /// **This is the branch that stops a duplicate mint after the in-flight slot has emptied**, which
+    /// is the common case rather than the rare one: two requests 401 a few milliseconds apart, the
+    /// first rotates and finishes, and the second arrives holding the token it sent. Without this it
+    /// mints again — and for `.device` that second registration retires the credential the first
+    /// caller is now using. Pinned by `aCallerHoldingAReplacedCredential…` in `SessionTests`, which
+    /// review of PR #77 found missing: deleting this line left the whole suite green.
+    private func stored(_ family: CredentialFamily, otherThan stale: String?) -> Authorization? {
+        switch family {
+        case .user:
+            guard let session = storedSession, session.accessToken != stale,
                   session.accessTokenIsLive(at: now()) else { return nil }
             return .user(session.accessToken)
-        case let .device(token):
-            guard let device = storedDeviceCredential, device.deviceToken != token,
+        case .device:
+            guard let device = storedDeviceCredential, device.deviceToken != stale,
                   device.isLive(at: now()) else { return nil }
             return .device(device.deviceToken)
         }
     }
 
-    private func performReauthorization(after stale: Authorization) async throws -> Authorization {
-        switch stale {
+    /// The round trip itself. Takes no `stale`: the refresh token to present is whatever is stored,
+    /// and a registration presents the installation's id — neither is the caller's expired token.
+    private func performMint(_ family: CredentialFamily) async throws -> Authorization {
+        switch family {
         case .user:
             guard let session = storedSession, session.refreshTokenIsLive(at: now()) else {
                 throw SessionError.refreshFailed
@@ -185,6 +237,16 @@ public actor AppSession {
             // retires the previous token, "so a takeover is visible — the real device's next call is
             // a 401 and it re-registers — rather than two holders sharing one queue silently". This
             // is that re-registration, and it is the whole of the client's half of that sentence.
+            //
+            // **No `catch`, unlike the `.user` arm above, and that asymmetry is deliberate** (review
+            // of PR #77 asked). The `.user` arm catches because it has a *side effect* to decide —
+            // whether the stored session is now worthless — and only the taxonomy answers that.
+            // There is no equivalent decision here, and swallowing the code would take the honest
+            // answer away from a caller that asked this type directly:
+            // `registrationRefusal` pins that `bootstrap()` on a bad device id reports
+            // `validation_failed` as itself. The place a taxonomy code must stop being about the
+            // item is one layer out, at `SessionTransport.credential(replacing:)`, which is the only
+            // caller for which that matters — and it is tested there.
             return .device(try await register().deviceToken)
         }
     }

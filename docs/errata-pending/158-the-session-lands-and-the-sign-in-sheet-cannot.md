@@ -17,7 +17,7 @@ to check rather than assume; checked, it does not hold.
   `UIWindow`, which is `@MainActor` state the composition root has to reach. Either the closure stops
   being `nonisolated` or something new is threaded to it. Either is a change on the call path.
 - **`AccountLinkRequest` cannot carry what the exchange needs.** It has two fields — provider and
-  license consent — and `CypressTests/AccountAskTests.swift` pins that shape *by reflection*, on
+  license consent — and `CypressTests/AccountAskSheetTests.swift` pins that shape *by reflection*, on
   purpose: it is DECISIONS §3.9's no-passwords rule made structural. The identity token, the
   authorization code and the raw nonce therefore cannot travel on it, so the closure must acquire
   them itself, from a dependency the composition root constructs and does not construct today.

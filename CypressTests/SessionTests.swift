@@ -7,8 +7,9 @@
 //      **a 401 must never reach an outbox item.**
 //
 //  `APIError.unauthorized.retryable` is `false`; `OutboxRetryPolicy.nextState` reads exactly that
-//  and moves a non-retryable item to `.failed` immediately; `OutboxViewState` then prints "Sign in
-//  to send this" — to somebody who is signed in. So the assertions below do not stop at "the right
+//  and moves a non-retryable item to `.failed` immediately; `OutboxFailureReason.sentence(for:)`
+//  then prints "Sign in to send this" — to somebody who is signed in. (The type is
+//  `OutboxFailureReason`; `Cypress/Data/Outbox/OutboxViewState.swift` is the file it lives in.) So the assertions below do not stop at "the right
 //  error type was thrown": several of them hand the thrown error to `OutboxRetryPolicy` and check
 //  the state the queue would really take, because that is the sentence the spec makes and the type
 //  name is only a proxy for it.
@@ -30,7 +31,8 @@ import Testing
 private actor ScriptedHTTP: AuthHTTP {
     private var captured: [URLRequest] = []
     private let handler: @Sendable (URLRequest, Int) -> (Int, Data)
-    /// A path suffix whose answer is held for `slowBy`, and the reason it exists:
+    /// A path suffix whose answer is held for `slowBy` — **`""` holds every route** — and the reason
+    /// it exists:
     /// **a concurrency test with nothing slow in it does not overlap.** The single-flight gate below
     /// passed with the single-flight slot deleted until this was added — two `async let`s finished
     /// one after the other, and the second read the first's stored result. That is a guard green
@@ -59,7 +61,7 @@ private actor ScriptedHTTP: AuthHTTP {
         let index = captured.count
         captured.append(request)
 
-        if let slowPath, request.url?.path.hasSuffix(slowPath) == true {
+        if let slowPath, slowPath.isEmpty || request.url?.path.hasSuffix(slowPath) == true {
             // The actor is released here, which is the point: the second caller gets in while this
             // one is still waiting for its answer.
             try await Task.sleep(for: slowBy)
@@ -164,30 +166,37 @@ struct SessionKeychainTests {
         try keychain.removeData(forKey: CredentialKey.session)
     }
 
+    /// The `kSecAttrAccessible` of the item as it is actually stored, read back off the keychain.
+    private func storedAccessibility(
+        _ keychain: KeychainCredentialStore,
+        forKey key: String
+    ) throws -> String? {
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychain.service,
+            kSecAttrAccount as String: key,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ] as CFDictionary, &item)
+        #expect(status == errSecSuccess, "the keychain returned OSStatus \(status) reading back the stored item")
+        let attributes = try #require(item as? [String: Any], "no attributes came back for the stored item")
+        return attributes[kSecAttrAccessible as String] as? String
+    }
+
     /// **The accessibility class, read back off the stored item rather than off the source.**
     ///
     /// Spec §5.8 names `kSecAttrAccessibleAfterFirstUnlock` and gives the reason: "a background
     /// drain runs on a locked phone". `WhenUnlocked` would pass every other test in this file and
     /// silently stop the queue draining while the screen is off — a defect with no symptom anybody
     /// could see in a test that did not ask this question.
-    @Test("tokens are stored accessible after first unlock, not only while unlocked")
-    func accessibility() throws {
+    @Test("a first write stores the credential accessible after first unlock")
+    func accessibilityOnAdd() throws {
         let keychain = store()
         defer { try? keychain.removeData(forKey: CredentialKey.device) }
         try keychain.setData(Data("token".utf8), forKey: CredentialKey.device)
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching([
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychain.service,
-            kSecAttrAccount as String: CredentialKey.device,
-            kSecReturnAttributes as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ] as CFDictionary, &item)
-        #expect(status == errSecSuccess, "the keychain returned OSStatus \(status) reading back the item it just stored")
-
-        let attributes = try #require(item as? [String: Any], "no attributes came back for the stored item")
-        let accessible = attributes[kSecAttrAccessible as String] as? String
+        let accessible = try storedAccessibility(keychain, forKey: CredentialKey.device)
         #expect(
             accessible == (kSecAttrAccessibleAfterFirstUnlock as String),
             """
@@ -195,6 +204,40 @@ struct SessionKeychainTests {
             kSecAttrAccessibleAfterFirstUnlock. Spec §5.8 requires it because the outbox drains in \
             the background on a locked phone: any stricter class stops the queue while the screen is \
             off, and nothing on any screen would ever say why.
+            """
+        )
+    }
+
+    /// **The same question of the `SecItemUpdate` arm, which is the one the app actually uses.**
+    ///
+    /// Review of PR #77 found this gap by mutation: downgrading *only* the update dictionary to
+    /// `WhenUnlocked` — leaving the add path correct — left the whole 1379-test suite green. That is
+    /// the worse half to lose. The add arm runs once per install; the update arm runs on **every**
+    /// rotation, which after the first sign-in is the steady state, so a build with that downgrade
+    /// would drain normally until the first refresh and then stop draining in the background
+    /// forever, with nothing on any screen able to say why.
+    @Test("a rotation keeps the credential accessible after first unlock, not only while unlocked")
+    func accessibilityOnUpdate() throws {
+        let keychain = store()
+        defer { try? keychain.removeData(forKey: CredentialKey.session) }
+
+        try keychain.setData(Data("first".utf8), forKey: CredentialKey.session)
+        // The second write takes the `errSecDuplicateItem` → `SecItemUpdate` arm. Asserted, so this
+        // test cannot quietly become a second copy of `accessibilityOnAdd`.
+        try keychain.setData(Data("rotated".utf8), forKey: CredentialKey.session)
+        #expect(
+            try keychain.data(forKey: CredentialKey.session) == Data("rotated".utf8),
+            "the second write did not take effect, so the update arm was not exercised"
+        )
+
+        let accessible = try storedAccessibility(keychain, forKey: CredentialKey.session)
+        #expect(
+            accessible == (kSecAttrAccessibleAfterFirstUnlock as String),
+            """
+            after a rotation the credential's kSecAttrAccessible is \(accessible ?? "nil"), not \
+            kSecAttrAccessibleAfterFirstUnlock. Every refresh after the first sign-in goes through \
+            SecItemUpdate, so a downgrade there stops the background drain in the steady state while \
+            a fresh install looks perfectly healthy.
             """
         )
     }
@@ -242,6 +285,157 @@ struct SessionTests {
             \(registrations) registrations for two calls. Re-registering RETIRES the previous token \
             server-side (server/README.md), so a second registration would sign the first call's \
             credential out.
+            """
+        )
+    }
+
+    /// **Blocker 1 from review of PR #77, and it was measured there before it was fixed here.**
+    ///
+    /// Two concurrent first requests on a fresh install both find no device credential and both
+    /// register. `POST /devices/register` calls `RevokeDeviceTokens` on **every** call
+    /// (`server/README.md`: "Re-registering retires the previous token"), so the second registration
+    /// kills the token the first one just handed out — and because `register()` stores
+    /// unconditionally, the slower of the two also writes the retired credential over the newer one.
+    /// The refresh path was given a single-flight slot for exactly this argument; this is the same
+    /// argument on the other credential.
+    ///
+    /// **The double must actually suspend or this test is worthless.** `f1a8c1b` on this branch is
+    /// the lesson: the refresh version of this test passed with single-flight deleted, because two
+    /// `async let`s over a double that never awaits simply run one after the other and the second
+    /// reads the first's stored result. `slowPath` is what makes the two callers overlap.
+    @Test("two first requests at once register once, not twice")
+    func registrationIsSingleFlight() async throws {
+        let now = now
+        let http = ScriptedHTTP(slowPath: "/devices/register") { _, index in
+            (200, Wire.device(token: "device-\(index + 1)", now: now))
+        }
+        let live = session(http: http)
+
+        async let first = live.authorization()
+        async let second = live.authorization()
+        let both = try await [first, second]
+
+        let registrations = await http.requests(to: "/devices/register").count
+        #expect(
+            registrations == 1,
+            """
+            \(registrations) registrations for two concurrent first requests. The server retires the \
+            previous device token on every register, so the second call does not waste a round trip \
+            — it takes the first caller's credential away, and `register()` then stores the retired \
+            one over the newer.
+            """
+        )
+        #expect(
+            both == [.device("device-1"), .device("device-1")],
+            "the two callers were handed different credentials: \(both)"
+        )
+        let stored = await live.storedDeviceCredential?.deviceToken
+        #expect(stored == "device-1", "the stored credential is \(stored ?? "nil"), not the one both callers hold")
+    }
+
+    /// **Blocker 2 from review of PR #77: `stored(_:otherThan:)` was untested, and deleting it left
+    /// every test green.**
+    ///
+    /// This is the branch that catches a duplicate mint *after* the in-flight slot has emptied,
+    /// which is the ordinary case rather than the rare one — two requests 401 a few milliseconds
+    /// apart, the first rotates and finishes, and the second arrives still holding the token it sent.
+    /// Sequential on purpose: the slot cannot be what saves it here, so this measures the branch and
+    /// nothing else.
+    ///
+    /// For `.device` the cost of losing it is immediate and is the one the whole folder is about: the
+    /// second registration retires the credential the first caller is now using.
+    @Test("a caller holding a device token another has already replaced is handed the replacement")
+    func aReplacedDeviceTokenIsNotReRegistered() async throws {
+        let now = now
+        let credentials = InMemoryCredentialStore()
+        try credentials.setData(Wire.device(token: "device-1", now: now), forKey: CredentialKey.device)
+        let http = ScriptedHTTP { _, index in (200, Wire.device(token: "device-\(index + 2)", now: now)) }
+        let live = session(http: http, credentials: credentials)
+
+        // The first caller's token is refused, so it re-registers and gets device-2.
+        let rotated = try await live.reauthorize(after: .device("device-1"))
+        #expect(rotated == .device("device-2"))
+
+        // A second caller arrives holding the same retired token, after the first has finished.
+        let handed = try await live.reauthorize(after: .device("device-1"))
+
+        #expect(
+            handed == .device("device-2"),
+            """
+            the second caller was handed \(handed) rather than the credential already minted. A \
+            second registration retires device-2 server-side, which is the token the first caller is \
+            using — so this is not a wasted round trip, it is taking somebody's credential away.
+            """
+        )
+        let registrations = await http.requests(to: "/devices/register").count
+        #expect(registrations == 1, "\(registrations) registrations; the second caller minted a rival credential")
+    }
+
+    /// The same branch on the account credential. Losing it here costs a redundant rotation rather
+    /// than a sign-out — the second caller would refresh with the *current* token, not the spent one
+    /// — but it spends a refresh nobody asked for and leaves the first caller's answer stale, and it
+    /// is the branch review found unpinned.
+    @Test("a caller holding an access token another has already rotated is handed the new one")
+    func aRotatedAccessTokenIsNotRefreshedAgain() async throws {
+        let now = now
+        let credentials = InMemoryCredentialStore()
+        try credentials.setData(
+            Wire.session(access: "stale", refresh: "refresh-1", now: now),
+            forKey: CredentialKey.session
+        )
+        let http = ScriptedHTTP { _, index in
+            (200, Wire.session(access: "fresh-\(index + 1)", refresh: "refresh-\(index + 2)", now: now))
+        }
+        let live = session(http: http, credentials: credentials)
+
+        let rotated = try await live.reauthorize(after: .user("stale"))
+        #expect(rotated == .user("fresh-1"))
+
+        let handed = try await live.reauthorize(after: .user("stale"))
+        #expect(
+            handed == .user("fresh-1"),
+            "the second caller was handed \(handed) — it rotated again over a session somebody had already rotated"
+        )
+        let refreshes = await http.requests(to: "/auth/refresh").count
+        #expect(refreshes == 1, "\(refreshes) refreshes; the second caller spent a rotation nobody asked for")
+    }
+
+    /// The two slots are not one slot.
+    ///
+    /// Review of PR #77: a single slot handed a caller that asked to rotate its **account** token
+    /// back a **device** token, and `SessionTransport` then replayed the request with a device
+    /// bearer — so a write the account should have owned was attributed to the installation, or took
+    /// `forbidden` on a user-only route (`server/internal/api/auth.go` refuses a device caller on
+    /// `POST /devices/claim`).
+    @Test("a user rotation in flight does not hand a device token to an account caller")
+    func theSlotsAreKeyedOnTheCredentialFamily() async throws {
+        let now = now
+        let credentials = InMemoryCredentialStore()
+        try credentials.setData(
+            Wire.session(access: "stale", refresh: "refresh-1", now: now),
+            forKey: CredentialKey.session
+        )
+        try credentials.setData(Wire.device(token: "device-1", now: now), forKey: CredentialKey.device)
+        // Both routes are slow ("" matches every path), so the two rotations really are in flight
+        // together — without that they run one after the other and nothing overlaps (see `f1a8c1b`).
+        let http = ScriptedHTTP(slowPath: "") { request, _ in
+            request.url?.path.hasSuffix("/auth/refresh") == true
+                ? (200, Wire.session(access: "fresh", refresh: "refresh-2", now: now))
+                : (200, Wire.device(token: "device-2", now: now))
+        }
+        let live = session(http: http, credentials: credentials)
+
+        async let device = live.reauthorize(after: .device("device-1"))
+        async let user = live.reauthorize(after: .user("stale"))
+        let (deviceAnswer, userAnswer) = try await (device, user)
+
+        #expect(deviceAnswer == .device("device-2"), "the device caller got \(deviceAnswer)")
+        #expect(
+            userAnswer == .user("fresh"),
+            """
+            the account caller was handed \(userAnswer) while a device registration was in flight. \
+            SessionTransport would replay the request with that bearer, so a write the account owns \
+            is attributed to the installation — or takes `forbidden` on a user-only route.
             """
         )
     }
@@ -458,6 +652,37 @@ struct SessionTests {
         #expect(refreshes.isEmpty, "a device token has nothing to refresh")
         let bearers = await http.requests(to: "/sync").map { $0.value(forHTTPHeaderField: "Authorization") }
         #expect(bearers == ["Bearer device-1", "Bearer device-2"])
+    }
+
+    /// The boundary the folder's narrowed claim is scoped to.
+    ///
+    /// `AppSession` reports what the service said — `registrationRefusal` above pins that
+    /// `bootstrap()` surfaces `validation_failed` as itself, which is the right answer for a caller
+    /// that asked it directly. Through the transport it must not be: a taxonomy code arriving here
+    /// is a *credential* problem reaching an outbox item, and `validation_failed` is non-retryable,
+    /// so it would fail the whole batch terminally over something that is about no item in it.
+    @Test("a refused registration reaches the transport's caller as a session failure, not a code")
+    func aRefusedRegistrationIsNotTheItemsProblem() async throws {
+        let http = ScriptedHTTP { _, _ in (400, LiveEnvelopes.missingDeviceIdentifier) }
+        let transport = SessionTransport(session: session(http: http), http: http)
+
+        var thrown: Error?
+        do {
+            _ = try await transport.send(URLRequest(url: Wire.baseURL.appendingPathComponent("sync")))
+        } catch {
+            thrown = error
+        }
+        let error = try #require(thrown, "the transport returned a body without a credential")
+        #expect(error as? SessionError == .noCredential, "the transport threw \(error)")
+        #expect(
+            OutboxFailureReason.apiError(from: error) == nil,
+            """
+            a refused registration carried a taxonomy code (\
+            \(String(describing: OutboxFailureReason.apiError(from: error)))) to the transport's \
+            caller. `validation_failed` is non-retryable, so every item in the batch would be given \
+            up over a credential the queue has no opinion about.
+            """
+        )
     }
 
     // MARK: Lifetimes
