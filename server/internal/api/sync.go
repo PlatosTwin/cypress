@@ -166,7 +166,20 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		if item.UserID != nil {
 			return failed(apierr.Forbidden, "Sign in to send this.")
 		}
-		if item.DeviceID != nil && *item.DeviceID != *who.DeviceID {
+		// **Against `DeviceUUID`, not `DeviceID`.** An item's `device_id` is the phone's own
+		// installation id — `app_state.device_uuid`, the same value it registered with and the same
+		// one it sends to `/devices/claim`. `who.DeviceID` is this database's row key for that
+		// installation. The two are never equal, so comparing them refused **every** anonymous item
+		// that named itself: `forbidden` is not retryable, `OutboxRetryPolicy` moved each one
+		// straight to `failed`, and screen 17 printed "This account is not allowed to send that" to a
+		// phone doing exactly what D9 asks of it. Measured against the deployed service, not
+		// theorised: the identical item with `device_id` omitted applied and read straight back.
+		//
+		// A nil `DeviceUUID` refuses rather than waving the item through. It cannot happen on this
+		// path — the opaque-token branch sets both fields or neither — and the unreachable arm is
+		// still written closed, because the alternative reading of a missing credential fact is
+		// "authorize it", which is the wrong direction to fail in.
+		if item.DeviceID != nil && (who.DeviceUUID == nil || *item.DeviceID != *who.DeviceUUID) {
 			return failed(apierr.Forbidden, "That item belongs to a different device.")
 		}
 	}

@@ -312,6 +312,92 @@ func TestAnItemThatIsNotYoursIsForbiddenNotUnauthorized(t *testing.T) {
 	}
 }
 
+// TestADeviceMaySendItemsThatNameItself is the case every green test in this file omitted.
+//
+// ── Why it did not exist, and what that cost ───────────────────────────────────────────────────
+//
+// `syncItem.device_id` is the phone's own installation id — `app_state.device_uuid`, the value it
+// registered with. `caller.DeviceID` was `devices.id`, the row key this database mints in
+// `RegisterDevice`. `applyOne` compared the two, so the predicate was true for **every** anonymous
+// item that named itself, and `forbidden` is not retryable: the client's whole queue moved to
+// `failed` on its first drain and screen 17 printed "This account is not allowed to send that."
+//
+// Nothing here caught it, and the reason is the shape worth remembering. Every sync test that
+// expects success **omits** `device_id` (see `TestSyncAppliesAndDedupes`, `TestPerItemVerdicts`),
+// and the one test that sends one — `TestPerItemVerdicts`' fifth item — sends `uuid.New()`, a
+// stranger's, and asserts the refusal. So the suite covered "no device id" and "somebody else's
+// device id" and never "my own", which is the only one a real client sends. A guard green with its
+// defect present, because the case that would fail it was never written.
+//
+// It was found by pointing the shipping client at the deployed service (#158's wiring round) and
+// isolating it with three probes on one credential: own `device_uuid` → forbidden, a stranger's →
+// forbidden *identically*, omitted → applied. Two different inputs answering the same way is what
+// said the comparison could not be about ownership at all.
+//
+// All three probes are asserted here, together, because the middle one is what makes the first a
+// measurement: a fix that simply stopped checking `device_id` would pass the own-id case and fail
+// the stranger's.
+func TestADeviceMaySendItemsThatNameItself(t *testing.T) {
+	h := newHarness(t)
+	deviceUUID := uuid.New()
+	deviceToken := h.registerDeviceToken(t, deviceUUID)
+
+	mine, stranger, silent := uuid.New(), uuid.New(), uuid.New()
+	items := []map[string]any{
+		// The real client's shape: this device, naming itself.
+		{"client_uuid": mine, "kind": "visit", "tree_uuid": uuid.New(),
+			"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+			"device_id": deviceUUID},
+		// Somebody else's installation. Still refused, and refused for a reason that is about
+		// ownership rather than about vocabulary.
+		{"client_uuid": stranger, "kind": "visit", "tree_uuid": uuid.New(),
+			"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+			"device_id": uuid.New()},
+		// No claim at all — the shape the rest of this file uses, unchanged by the repair.
+		{"client_uuid": silent, "kind": "visit", "tree_uuid": uuid.New(),
+			"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`)},
+	}
+
+	recorder := h.do(t, http.MethodPost, Prefix+"/sync", deviceToken, map[string]any{"items": items})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct{ Results []syncResult }
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Results) != len(items) {
+		t.Fatalf("got %d results for %d items", len(response.Results), len(items))
+	}
+	byKey := map[uuid.UUID]syncResult{}
+	for _, result := range response.Results {
+		byKey[result.ClientUUID] = result
+	}
+
+	own := byKey[mine]
+	if own.Status != "applied" {
+		reason := "no error"
+		if own.Error != nil {
+			reason = string(*own.Error) + ": " + own.Message
+		}
+		t.Fatalf("an item naming its own device was %q (%s), want applied — a phone that names "+
+			"itself is doing exactly what D9 asks, and `forbidden` here fails its whole queue "+
+			"terminally on the first drain", own.Status, reason)
+	}
+
+	other := byKey[stranger]
+	if other.Status != "failed" || other.Error == nil || *other.Error != apierr.Forbidden {
+		t.Fatalf("an item naming somebody else's device was %q, want failed/forbidden — the "+
+			"ownership check must still refuse, or this repair removed it rather than fixing it",
+			other.Status)
+	}
+
+	quiet := byKey[silent]
+	if quiet.Status != "applied" {
+		t.Fatalf("an item claiming no device was %q, want applied", quiet.Status)
+	}
+}
+
 // TestNoHandlerAnswersUnauthorizedPerItem is the standing version of the rule.
 //
 // The two tests above cover the cases that exist today. This one asserts the invariant over a
