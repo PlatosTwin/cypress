@@ -170,7 +170,10 @@ struct AppleSignIn: Sendable {
     /// In a Release build this is `system` and the expression is one dictionary lookup that finds
     /// nothing. In DEBUG a launching test may pin a **refusal** — see `DebugAppleSignInOverride`,
     /// and read its header for why there is no way to pin a *success*.
-    @MainActor
+    ///
+    /// `nonisolated`, because it is `RootView.init`'s default argument and a default argument is
+    /// evaluated outside the initializer's isolation. It reads the environment and builds a value;
+    /// the `@MainActor` hop is inside `AppleSignInController`, where the window is.
     static func launchDefault() -> AppleSignIn {
         #if DEBUG
         if let pinned = DebugAppleSignInOverride.resolve() { return pinned }

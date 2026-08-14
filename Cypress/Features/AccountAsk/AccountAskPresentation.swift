@@ -99,11 +99,19 @@ struct AccountAskPresentation: Equatable {
     /// is not silence, and both sentences end on the screen's own words ("keep saving to this phone
     /// only", §7). Recorded in ERRATA.
     enum Notice: Equatable {
-        /// No sign-in service is wired, which is every build today: `CypressAPI` has no `/auth/*`
-        /// because there is no auth server, and adding a stub that minted a local account would
-        /// claim a backup that does not exist.
+        /// No route is wired for the button that was tapped.
+        ///
+        /// It used to mean "no build has one": `CypressAPI` has no `/auth/*`, and a stub that minted
+        /// a local account would have claimed a backup that did not exist. Since #158 step 5 it
+        /// means **that** button — Apple works, and `Continue with Google` and `Use email` are the
+        /// two "not yet" routes R72 ruling 2 deferred (`AccountLinkRefusal.unavailable`).
+        ///
+        /// **`noticeUnavailable`'s first sentence is therefore imprecise and is a stop-and-ask.**
+        /// See its own doc comment; it is not rewritten here, because a replacement would be a
+        /// sentence nobody drew (DECISIONS constraint 21).
         case unavailable
-        /// The service was there and the attempt did not go through.
+        /// The provider or the service was there and the attempt did not go through. **Not** what a
+        /// dismissed sheet produces — see `AccountLinkRefusal.cancelled`, which draws nothing.
         case failed
 
         var text: String {
@@ -219,9 +227,17 @@ enum AccountAskCopy {
 
     /// **NOT SPECIFIED** — see `AccountAskPresentation.Notice`.
     ///
-    /// "Not ready yet" rather than "failed": nothing failed, the app has no auth server at all and
-    /// `CypressAPI` says so in as many words. The second sentence is §7's own promise, which is the
-    /// one thing about this screen that is true on every build.
+    /// "Not ready yet" rather than "failed": nothing failed. The second sentence is §7's own
+    /// promise, which is the one thing about this screen that is true on every build.
+    ///
+    /// **STOP-AND-ASK, raised by #158 step 5 and not answered here.** The first sentence was written
+    /// when no route worked — "the app has no auth server at all and `CypressAPI` says so in as many
+    /// words" — and it is now drawn beside a `Continue with Apple` that signs people in. *Accounts*
+    /// are ready; the route that was tapped is not. Rewriting it means writing a sentence no mock
+    /// draws, which is the owner's under DECISIONS constraint 21, so it is recorded unnumbered in
+    /// `docs/errata-pending/` and left standing. The alternative considered and rejected was leaving
+    /// Google and email minting local accounts, which told somebody their work was backed up when
+    /// nothing had been sent.
     static let noticeUnavailable = "Accounts are not ready yet. Everything you have saved stays on this phone."
 
     /// **NOT SPECIFIED** — the other half. Deliberately does not say why: the taxonomy behind it is

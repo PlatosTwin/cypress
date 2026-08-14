@@ -76,8 +76,14 @@ enum DebugDeepLink {
     ///
     /// Screen 15 (the account ask) is absent because it is not a `Route`: it is presented from inside
     /// the visit-save flow on the third save (`VisitSavedView`), the same reason screen 18 is not
-    /// here. The harness drives `AppRouter`, which has no case that opens it. It signs in locally now
-    /// (ERRATA E124), but through that flow, not a deep link.
+    /// here. The harness drives `AppRouter`, which has no case that opens it.
+    ///
+    /// **It is reachable from a UI test anyway, and without a new case here.** `CYPRESS_SCREEN=you`
+    /// opens screen 18, whose account block draws `Sign in` and calls `router.present(.accountAsk)`
+    /// (`YouTabView`). That is the door `AppleSignInUITests` uses. What the Apple button does on the
+    /// far side is a real `POST /auth/oidc` since #158 step 5 (ERRATA E124's local sign-in is gone),
+    /// so a UI test that wants a *refusal* pins one with `CYPRESS_APPLE_SIGN_IN` — see
+    /// `DebugAppleSignInOverride`, and its header for why there is no way to pin a success.
     enum Screen: String, CaseIterable {
         // Pushed destinations.
         case treeProfile        // 03

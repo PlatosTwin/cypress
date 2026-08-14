@@ -7,12 +7,25 @@
 //  `async` — so every state photographs and previews with static data, the split
 //  `ModerationReviewList` and `AccountAskScreen` use.
 //
-//  ── The one rule this block is most likely to break ────────────────────────────────────────
+//  ── The one rule this block is most likely to break, and it is broken right now ────────────
 //  ARCHITECTURE §5.4 and DECISIONS constraint 3: the app never says it did a thing it did not do.
-//  An account here is **local**. It is an identity, not a backup (`BetaCapability`, ERRATA E124):
-//  nothing is uploaded, nothing is recoverable from another device, and the words on this block say
-//  so rather than borrowing the reassurance of a cloud that does not exist. Screen 18's storage line
-//  makes the same promise on the other side of the sign-in and stays true after it.
+//  This header used to read: "An account here is **local**. It is an identity, not a backup
+//  (`BetaCapability`, ERRATA E124): nothing is uploaded, nothing is recoverable from another device,
+//  and the words on this block say so rather than borrowing the reassurance of a cloud that does not
+//  exist. Screen 18's storage line makes the same promise on the other side of the sign-in and stays
+//  true after it."
+//
+//  **Every clause of that is now false, and the copy it describes is still drawn.** #158's wiring
+//  round gave `DataLayer.boot` a send sink over `RemoteAPI`, so an anonymous installation's
+//  contributions already leave the phone; #158 step 5 made `Continue with Apple` a real exchange
+//  against `cypress-sync`, so a signed-in account is a row on a service rather than a name on a
+//  handset. `AccountCopy.signedInBody` still says "Nothing is uploaded".
+//
+//  It is left standing on purpose. Which sentence replaces it is a **screen 18 copy question**, the
+//  owner's under DECISIONS constraint 21, and it is the same open question PROTOTYPE-FLOW §1.4's
+//  storage line already has — recorded unnumbered in `docs/errata-pending/`. Correcting the comment
+//  without inventing the sentence is the only move available here, and a comment nobody corrected is
+//  how a false promise survives a review.
 //
 //  Nothing here counts anything (ARCHITECTURE §5.1). No "member since", no contribution tally.
 //
@@ -187,10 +200,21 @@ enum AccountCopy {
 
     static let signedInTitle = "Signed in on this phone"
 
-    /// The sentence ERRATA E124 makes true and screen 15's own body copy does not: a local account
-    /// is an identity, not a backup. Every clause is checkable — `LocalAPI` writes to this device,
-    /// `claimDevice` is the whole of what signing in does, and `User.publicAttribution` cannot be
-    /// turned on anywhere in the app (ERRATA E100, `YouCopy.privacyBody`).
+    /// **KNOWN FALSE, drawn anyway, and a stop-and-ask — see this file's header.**
+    ///
+    /// It was written as the sentence ERRATA E124 made true and screen 15's own body copy did not:
+    /// a local account is an identity, not a backup, and every clause was checkable because
+    /// `claimDevice` was the whole of what signing in did. #158's wiring round and step 5 between
+    /// them ended that. "Nothing is uploaded" is false for an anonymous installation (the send sink
+    /// reaches `cypress-sync`) and false again for a signed-in one (`POST /auth/oidc` minted the
+    /// account and a signed-in account's photograph is auto-approved on the service).
+    ///
+    /// The third clause still holds: `User.publicAttribution` cannot be turned on anywhere in the
+    /// app (ERRATA E100, `YouCopy.privacyBody`), so "nothing about you is public" is true.
+    ///
+    /// Not rewritten here. Screen 18's copy is the owner's under DECISIONS constraint 21 and the
+    /// brief for this round names it as a stop-and-ask by name; the alternative — inventing a
+    /// replacement sentence in a sync-API round — is how a governance guarantee erodes.
     static let signedInBody =
         "This account gathers what you save here under one name on this device. Nothing is uploaded, "
         + "and nothing about you is public."

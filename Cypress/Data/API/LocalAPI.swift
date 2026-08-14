@@ -1980,6 +1980,14 @@ public actor LocalAPI: CypressAPI {
     ///
     /// Nil while signed in — the question only means anything when there is no current account — so
     /// a caller cannot accidentally resume an id while another one is live.
+    ///
+    /// **It has no shipping caller since #158 step 5, and that is the design rather than a
+    /// regression.** `RootView.accountLink()` used to read it to avoid minting a rival id when
+    /// somebody signed back in. The id is the service's now: the same Apple account resolves to the
+    /// same `users` row through `apple_subject` (`server/internal/store/identity.go`), so resumption
+    /// is answered on the far side and a value this device remembered could only disagree with it.
+    /// What still reads it is the assertion that a *deletion* leaves nothing resumable
+    /// (`AccountDeletionTests`, `AccountSurfaceTests`), which is RULINGS R3's promise and unaffected.
     public func resumableUserID() async throws -> UUID? {
         guard userID == nil else { return nil }
         return (try await store.appState(.signedOutUserID)).flatMap(UUID.init(uuidString:))
@@ -1992,11 +2000,15 @@ public actor LocalAPI: CypressAPI {
     /// installation stops presenting itself as that account, so `attribution` goes back to the
     /// device and the reads that ask for "my" reminders and favorites stop returning the account's.
     ///
-    /// The id is remembered under `AppStateKey.signedOutUserID` so signing in again resumes it. A
-    /// local account has no credential to sign back in *with* — `accountLink` mints a `UUID` when it
-    /// finds none — so forgetting the id would leave every account-owned row unreadable by any query
-    /// and unremovable by any deletion, which is the litter RULINGS R3 spent its length refusing to
-    /// create. Sign-out is not a quiet, unlabeled deletion.
+    /// The id is remembered under `AppStateKey.signedOutUserID`. It was written when a local account
+    /// had no credential to sign back in *with* — `accountLink` minted a `UUID` when it found none —
+    /// so forgetting the id would have left every account-owned row unreadable by any query and
+    /// unremovable by any deletion, which is the litter RULINGS R3 spent its length refusing to
+    /// create. Since #158 step 5 the credential exists and the far side answers the same question
+    /// better (`resumableUserID`), so what this line now guarantees is narrower and still worth
+    /// having: **the id survives a sign-out on the device**, which is what `deleteAccount` has to
+    /// clear and what `AccountDeletionTests` reads to prove it did. Sign-out is not a quiet,
+    /// unlabeled deletion either way.
     ///
     /// The role goes with it for `deleteAccount`'s reason: a lead's authority is the account's, and
     /// a device with nobody signed in is not a lead. The consent record stays put — it is the
