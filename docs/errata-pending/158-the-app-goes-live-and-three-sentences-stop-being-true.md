@@ -188,30 +188,59 @@ anonymous client is the one path the server's own suite does not cover, and the 
 from inside it. This is the project's dominant failure family again: a guard green with its defect
 present, because the case that would fail it was never written.
 
-### The fix, written out but **not applied — it is unverified and must not be taken on trust**
+### The fix, applied — in PR #80, not here
 
-There is no Go toolchain on this machine and no container runtime running, and `server/` has no CI
-(the workflows build the app only; `server/README.md` says the suite is run by hand against a
-Postgres). So this was written, found to be uncompilable here, and **reverted** rather than landed:
-this repository does not accept a change nobody watched build.
+Written out in this entry first and *reverted*, because at the time there was no Go toolchain on the
+machine, no container runtime running, and `server/` has no CI: this repository does not accept a
+change nobody watched build. A toolchain arrived, and the fix shipped as its own server-only PR. It
+is recorded here in the shape it actually took, which is the shape this entry predicted:
 
-Three edits:
-
-1. `store.DeviceTokenOwner` returns both identifiers, joining `devices` on `device_tokens.device_id`
-   and selecting `d.device_uuid` beside `t.device_id`.
-2. `api.caller` gains `DeviceUUID *uuid.UUID` — the same installation in the client's vocabulary —
-   set on the opaque-token path beside `DeviceID`. (The `tokens.SubjectDevice` JWT branch needs the
-   same treatment if it is ever reached; nothing mints such a token today.)
+1. `store.DeviceTokenOwner` returns **both** identifiers, joining `devices` on
+   `device_tokens.device_id` and selecting `d.device_uuid` beside `t.device_id`.
+2. `api.caller` gains `DeviceUUID *uuid.UUID`, set on the opaque-token path beside `DeviceID`.
 3. `applyOne` compares against it:
    `if item.DeviceID != nil && (who.DeviceUUID == nil || *item.DeviceID != *who.DeviceUUID)`.
 
-And a Go test that goes red on the current code: register a device, sync one item carrying **that
-device's own `device_uuid`**, assert `applied`. Probe A above is that test, already written in
-`curl`.
+Once per credential rather than once per item — `applyOne` runs per item over a batch of up to 100,
+so resolving `item.DeviceID → devices.id` at the comparison site would have added a query per item to
+fix a comparison. **No migration**: the join reads columns that already exist.
+
+The `tokens.SubjectDevice` JWT branch is left with a nil `DeviceUUID` and the reason written beside
+it. Nothing mints a signed device token, so there is no fact there saying which vocabulary its `id`
+is in; nil makes `applyOne` refuse, which is the safe direction.
+
+**Two things the round turned up that this entry had not predicted.**
+
+*There is exactly one instance of the mismatch, and the check for a second is worth keeping.* The
+only other device-identifier comparison in non-test server code is `ownsPhoto`
+(`internal/api/photos.go`), and it is correct for a reason worth stating: `photo.DeviceID` is read
+out of the `photos` table where it was written from `who.DeviceID`, so both sides are `devices.id`
+and nothing client-supplied enters. Of the four client-supplied device fields on the wire, three go
+straight into `RegisterDevice`/`ClaimDevice`, which translate. And the *user* arm is not an
+analogous bug: the client's user id **is** `users.id`, minted by the service and handed back by
+`/auth/oidc`.
+
+*`go test ./...` answers `ok` for every package while the half that matters skips.* Without
+`CYPRESS_TEST_DATABASE_URL`, 43 of `internal/api`'s 55 tests skip — including every test that could
+see this defect — and the package still prints `ok`. That is this project's signature failure mode
+living in the server's harness, and it is why the fix was verified against a real Postgres (0
+skipped, 121 passing) rather than against those `ok` lines. **`ok` from `go test` is not evidence
+about the SQL half.** `server/README.md` says the suite skips loudly; the per-test skips are loud and
+the per-package verdict is not, and the per-package verdict is what a reader sees.
+
+### The red-proof, both directions
+
+Reverting the fix fails the new test with the deployed service's own refusal — *an item naming its
+own device was "failed" (forbidden: That item belongs to a different device.)* — so it goes red for
+the production reason rather than merely red. The negative control matters as much: deleting the
+ownership predicate entirely (the lazy repair) fails the *stranger's-device* arm of the same test,
+which is what makes the first assertion a measurement instead of a coincidence.
 
 ### What must not happen before it lands
 
-**This client change must not reach TestFlight while the service is unfixed.** Before the wiring
+**This client change must not reach TestFlight until PR #80 has merged *and* `cypress-sync` has
+been deployed.** Merging the fix is not the same as shipping it, and the deployed service is what the
+client meets. Before the wiring
 round, an anonymous queue drained locally and settled `done`; after it, and against the service as
 deployed today, every item settles `failed` with a sentence that is both wrong and non-retryable.
 The client is correct in what it sends — `device_id` is exactly what `syncItem` declares and what
