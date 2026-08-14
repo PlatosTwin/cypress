@@ -231,16 +231,13 @@ struct CityDownloadRow: Equatable, Identifiable {
                 [.download]
             )
         }
-        // The single rule, checked where both halves are in hand: no branch above may draw a
-        // fetching affordance the state does not permit, and none may withhold one it does.
-        // `CityDownloadsModel.download` refuses on the same property, so the button and the
-        // transfer cannot disagree. `CityDownloadTests.everyStateAgreesWithAllowsDownload` is the
-        // guard that runs in release too.
-        assert(
-            (row.affordances.contains(.download) || row.affordances.contains(.update))
-                == state.allowsDownload,
-            "row affordances \(row.affordances) disagree with \(state).allowsDownload"
-        )
+        // No branch above may draw a fetching affordance `CityInstallState.allowsDownload` does not
+        // permit, and none may withhold one it does. `CityDownloadsModel.download` refuses on that
+        // same property, so the button and the transfer cannot disagree — which is what makes a
+        // second copy of a city the device already holds structurally impossible rather than merely
+        // unreachable. The invariant is asserted exhaustively over the enum in
+        // `BundledCityTests.everyStateAgreesWithAllowsDownload`, not by a debug `assert` here: a
+        // crash in a release-mode-invisible check is a worse guard than a test that always runs.
         return CityDownloadRow(
             id: city.id, title: city.displayName, coverageNote: coverageIfPartial(city),
             stateLine: row.stateLine, detailLine: row.detail,
