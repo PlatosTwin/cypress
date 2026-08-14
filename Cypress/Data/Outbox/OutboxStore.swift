@@ -13,8 +13,16 @@ public struct OutboxStore {
         public var id: UUID { item.id }
         public let sequence: Int64
         public let item: OutboxItem
-        /// The JSON half has been accepted. The row is not `done` until the photos have gone too.
-        public let jsonSynced: Bool
+        /// The mutation is committed to this device's own tables. The row is not `done` until the
+        /// photos have gone too.
+        ///
+        /// This is what the column called `json_synced` always meant — `AppSchema` v15 renamed it
+        /// and put `remoteSent` beside it, because the drain was doing two jobs under one name
+        /// (ERRATA E261 §2, RULINGS R72 §1).
+        public let locallyApplied: Bool
+        /// The mutation has been accepted by a server. Always false while no send sink is wired,
+        /// which is every build shipped so far.
+        public let remoteSent: Bool
         /// Start of the 48 h cap window. Equal to `createdAt` until the user taps retry.
         public let windowStartedAt: Date
         public let nextAttemptAt: Date?
@@ -33,11 +41,11 @@ public struct OutboxStore {
         let statement = try connection.cachedStatement("""
             INSERT INTO outbox
                 (id, kind, client_uuid, payload, photo_paths, state, fail_count,
-                 last_error, last_error_code, json_synced, window_started_at,
+                 last_error, last_error_code, local_applied, remote_sent, window_started_at,
                  next_attempt_at, created_at, updated_at)
             VALUES
                 (:id, :kind, :client, :payload, :photos, :state, :failCount,
-                 :lastError, :lastErrorCode, 0, :created,
+                 :lastError, :lastErrorCode, 0, 0, :created,
                  NULL, :created, :updated)
             ON CONFLICT(client_uuid) DO NOTHING
             """)
@@ -74,12 +82,32 @@ public struct OutboxStore {
         _ = try statement.reset()
     }
 
-    /// Records that the JSON half was accepted (`applied` or `duplicate` — both are successes).
-    public func markJSONSynced(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+    /// Records that the apply sink committed the mutation to this device (`applied` or `duplicate`
+    /// — both are successes).
+    public func markLocallyApplied(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
-               SET json_synced = 1, last_error = NULL, last_error_code = NULL, updated_at = :now
+               SET local_applied = 1, last_error = NULL, last_error_code = NULL, updated_at = :now
              WHERE id = :id
+            """)
+        _ = try statement.bind([":now": date, ":id": id])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
+    /// Records that a server accepted the mutation (`applied` or `duplicate` — the server dedupes on
+    /// `client_uuid` exactly as the local unique index does, so both are successes on this side too).
+    ///
+    /// The `WHERE` carries `local_applied = 1` rather than trusting the caller, which is the same
+    /// defense `markDoneIfComplete` takes: the table's own CHECK would reject the write, and an
+    /// `UPDATE` that matches nothing is a better failure than a transaction that aborts a whole
+    /// drain. Apply is first and unconditional (RULINGS R72 §1); nothing may be sent that this
+    /// device has not already committed.
+    public func markRemotelySent(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox
+               SET remote_sent = 1, last_error = NULL, last_error_code = NULL, updated_at = :now
+             WHERE id = :id AND local_applied = 1
             """)
         _ = try statement.bind([":now": date, ":id": id])
         try statement.run()
@@ -145,19 +173,44 @@ public struct OutboxStore {
         return changed
     }
 
-    /// Settles an item whose JSON and photos have both gone.
+    /// Settles an item whose sinks and photos have all taken it.
     ///
     /// The `WHERE` mirrors the table's own CHECK, so a bug that called this early would fail the
-    /// update rather than write a `done` row that had not actually been sent.
-    public func markDoneIfComplete(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+    /// update rather than write a `done` row that had not actually been applied.
+    ///
+    /// - Parameter requiringRemoteSend: whether a send sink is wired. It is a parameter and not a
+    ///   column predicate because whether a send is owed is a fact about the composition root, not
+    ///   about the row: `AppSchema` v15's `done` CHECK deliberately does not name `remote_sent`,
+    ///   since every row on every shipped build is locally applied and has never been sent anywhere.
+    ///   With no sink wired this is `false` and the statement is the one that shipped, with v15's
+    ///   rename applied to the column it reads.
+    ///
+    ///   **It has no default, deliberately.** The unsafe answer is `false`, and this parameter is
+    ///   the entire guard against a row that was never sent settling `done` — after which it is
+    ///   never due again, so it is never sent. A defaulted `false` would let a future caller forget
+    ///   it and compile; requiring it makes forgetting it a compile error. Same argument as
+    ///   `OutboxSendSink` carrying no `uploadPhoto`, and ERRATA E125 is what both are paying for.
+    ///
+    /// - Returns: whether the row actually settled. The `UPDATE` is conditional, so a caller that
+    ///   counts settlements has to count what it matched rather than the fact that it ran.
+    @discardableResult
+    public func markDoneIfComplete(
+        _ id: UUID,
+        requiringRemoteSend: Bool,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let sent = requiringRemoteSend ? " AND remote_sent = 1" : ""
         let statement = try connection.cachedStatement("""
             UPDATE outbox
                SET state = 'done', next_attempt_at = NULL, updated_at = :now
-             WHERE id = :id AND json_synced = 1 AND json_array_length(photo_paths) = 0
+             WHERE id = :id AND local_applied = 1 AND json_array_length(photo_paths) = 0\(sent)
             """)
         _ = try statement.bind([":now": date, ":id": id])
         try statement.run()
+        let settled = connection.changes > 0
         _ = try statement.reset()
+        return settled
     }
 
     /// Records a failed attempt: the new state, the incremented count, the reason, and when to try
@@ -457,7 +510,8 @@ public struct OutboxStore {
         return Record(
             sequence: try row.int64("seq"),
             item: item,
-            jsonSynced: try row.bool("json_synced"),
+            locallyApplied: try row.bool("local_applied"),
+            remoteSent: try row.bool("remote_sent"),
             windowStartedAt: try row.date("window_started_at"),
             nextAttemptAt: try row.dateIfPresent("next_attempt_at")
         )

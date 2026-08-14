@@ -56,7 +56,7 @@ struct OutboxChaosTests {
     func enqueueIsIdempotent() async throws {
         let store = try await CypressStore.inMemory()
         let transport = OutboxTestSupport.ScriptedTransport()
-        let queue = OutboxQueue(queue: store.queue, transport: transport)
+        let queue = OutboxQueue(queue: store.queue, apply: transport)
 
         let visit = Visit(treeID: UUID(), attribution: OutboxTestSupport.attribution, capturedAt: Date())
         let first = try await queue.enqueue(.visit(visit))
@@ -77,7 +77,7 @@ struct OutboxChaosTests {
     func wifiOnlyGatesBinariesOnly() async throws {
         let store = try await CypressStore.inMemory()
         let transport = OutboxTestSupport.ScriptedTransport()
-        let queue = OutboxQueue(queue: store.queue, transport: transport)
+        let queue = OutboxQueue(queue: store.queue, apply: transport)
 
         let visit = Visit(treeID: UUID(), attribution: OutboxTestSupport.attribution, capturedAt: Date())
         _ = try await queue.enqueue(.visit(visit), photos: [
@@ -87,7 +87,7 @@ struct OutboxChaosTests {
 
         _ = try await queue.drain(photoUploadsAllowed: false)
         var record = try #require(try await queue.records().first)
-        #expect(record.jsonSynced)
+        #expect(record.locallyApplied)
         #expect(record.item.state == .pending)
         #expect(record.item.photos.count == 2)
         #expect(await transport.uploadedPhotoPaths.isEmpty)
@@ -106,7 +106,7 @@ struct OutboxChaosTests {
         let clock = OutboxTestSupport.Clock()
         let store = try await CypressStore.inMemory()
         let transport = OutboxTestSupport.ScriptedTransport(script: .allFail(.validationFailed))
-        let queue = OutboxQueue(queue: store.queue, transport: transport, now: clock.closure)
+        let queue = OutboxQueue(queue: store.queue, apply: transport, now: clock.closure)
 
         let treeID = UUID()
         _ = try await queue.enqueue(

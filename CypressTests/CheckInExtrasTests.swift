@@ -22,7 +22,7 @@ struct CheckInExtrasTests {
         let store = try await CypressStore.inMemory()
         // A transport that accepts nothing: the enqueue is the whole subject, and the row must be
         // durable *before* any drain is attempted (ARCHITECTURE §4).
-        let queue = OutboxQueue(queue: store.queue, transport: OutboxTestSupport.ScriptedTransport())
+        let queue = OutboxQueue(queue: store.queue, apply: OutboxTestSupport.ScriptedTransport())
 
         var draft = CheckInDraft()
         draft.vitality = .fair
@@ -79,7 +79,7 @@ struct CheckInExtrasTests {
             .appendingPathComponent("cypress-t169-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: photoDirectory) }
         let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.addTree(api: api)
 
         let model = CheckInModel(
@@ -121,7 +121,7 @@ struct CheckInExtrasTests {
     @MainActor
     func photosAccumulateAndRemoveIndividually() async throws {
         let store = try await CypressStore.inMemory()
-        let queue = OutboxQueue(queue: store.queue, transport: OutboxTestSupport.ScriptedTransport())
+        let queue = OutboxQueue(queue: store.queue, apply: OutboxTestSupport.ScriptedTransport())
         let model = CheckInModel(
             treeID: Self.treeID,
             api: VisitPreviewAPI(),

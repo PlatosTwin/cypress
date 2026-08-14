@@ -210,7 +210,7 @@ public enum DataGates {
                 """)
             // An outbox row cannot claim `done` while a photo binary is still on device.
             await rejects("outbox row marked done with photos pending", """
-                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, json_synced,
+                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, local_applied,
                     window_started_at, created_at, updated_at)
                 VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}',
                     '[{"path":"/tmp/a.jpg","shotType":"trunk"}]','done',1,
@@ -404,7 +404,7 @@ public enum DataGates {
         let clock = OutboxTestSupport.Clock()
         let store = try await CypressStore.inMemory()
         let transport = OutboxTestSupport.ScriptedTransport(script: .connectionDropped)
-        let queue = OutboxQueue(queue: store.queue, transport: transport, now: clock.closure)
+        let queue = OutboxQueue(queue: store.queue, apply: transport, now: clock.closure)
         let outboxStore = OutboxStore()
 
         // Ten trees, so contributions spread across them the way a morning's work does.
@@ -611,7 +611,7 @@ public enum DataGates {
             let clock = OutboxTestSupport.Clock()
             let store = try await CypressStore.inMemory()
             let transport = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
-            let queue = OutboxQueue(queue: store.queue, transport: transport, now: clock.closure)
+            let queue = OutboxQueue(queue: store.queue, apply: transport, now: clock.closure)
 
             let treeID = UUID()
             let visit = Visit(
@@ -629,7 +629,7 @@ public enum DataGates {
             // Metered connection: the JSON goes, the binary waits.
             _ = try await queue.drain(photoUploadsAllowed: false)
             var record = try await queue.records().first
-            expect(record?.jsonSynced == true, "wifi-only: the JSON item did not sync on a metered connection", into: &failures)
+            expect(record?.locallyApplied == true, "wifi-only: the JSON item did not sync on a metered connection", into: &failures)
             expect(record?.item.state == .pending, "wifi-only: item is \(String(describing: record?.item.state))", into: &failures)
             expect(record?.item.photos.count == 1, "wifi-only: the photo was uploaded anyway", into: &failures)
             expect(record?.item.failCount == 0, "wifi-only: waiting for wi-fi counted as a failure", into: &failures)
@@ -657,7 +657,7 @@ public enum DataGates {
             let clock = OutboxTestSupport.Clock()
             let store = try await CypressStore.inMemory()
             let transport = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
-            let queue = OutboxQueue(queue: store.queue, transport: transport, now: clock.closure)
+            let queue = OutboxQueue(queue: store.queue, apply: transport, now: clock.closure)
             let item = try await queue.enqueue(
                 .visit(Visit(treeID: UUID(), attribution: OutboxTestSupport.attribution, capturedAt: clock.now))
             )
@@ -713,7 +713,7 @@ public enum DataGates {
                 let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: nil)
                 let queue = OutboxQueue(
                     queue: store.queue,
-                    transport: OutboxTestSupport.ScriptedTransport()
+                    apply: OutboxTestSupport.ScriptedTransport()
                 )
                 _ = try await queue.enqueue(.visit(visit), photos: [photo])
                 // Idempotency is keyed on clientUUID and must not have moved with the payload shape.
@@ -725,7 +725,7 @@ public enum DataGates {
             // Session two: a different process would see exactly this.
             let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: nil)
             let transport = OutboxTestSupport.ScriptedTransport()
-            let queue = OutboxQueue(queue: store.queue, transport: transport)
+            let queue = OutboxQueue(queue: store.queue, apply: transport)
 
             guard let reopened = try await queue.records().first else {
                 failures.append("shot type: the queued row did not survive a reopen")
@@ -763,7 +763,7 @@ public enum DataGates {
         do {
             let store = try await CypressStore.inMemory()
             let transport = OutboxTestSupport.ScriptedTransport()
-            let queue = OutboxQueue(queue: store.queue, transport: transport)
+            let queue = OutboxQueue(queue: store.queue, apply: transport)
             let trunk = OutboxPhoto(path: "/tmp/cypress-trunk.jpg", shotType: .trunk)
             let leaf = OutboxPhoto(path: "/tmp/cypress-leaf.jpg", shotType: .leaf)
             let item = try await queue.enqueue(
@@ -836,7 +836,7 @@ public enum DataGates {
             // And a bare-path row that somehow reaches a migrated database still decodes rather than
             // dropping a contributor's pending visit.
             try connection.execute("""
-                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, json_synced,
+                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, local_applied,
                     window_started_at, created_at, updated_at)
                 VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}',
                     '["/tmp/stray.jpg"]','pending',0,'\(now)','\(now)','\(now)')

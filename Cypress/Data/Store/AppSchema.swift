@@ -25,7 +25,8 @@ import Foundation
 ///   `BEFORE DELETE` trigger that raises everywhere except the two cases it exists to protect: the
 ///   adoption merge at sign-in (v5) and the erasure of the deleting account's own rows (v6, R3);
 /// - one active name per tree (D15) — a partial unique index;
-/// - an outbox row can only be `done` once its JSON *and* its photos have gone.
+/// - an outbox row can only be `done` once its JSON *and* its photos have gone;
+/// - and nothing can have been *sent* that was not *applied* first (v15).
 public enum AppSchema {
     /// Every migration, in order. Checked in, never edited after shipping — a new step gets a new
     /// version number.
@@ -43,7 +44,8 @@ public enum AppSchema {
         Migration(version: 11, name: "a new tree says what ground it stands on", migrate: applyV11),
         Migration(version: 12, name: "a photograph says whose it is", migrate: applyV12),
         Migration(version: 13, name: "anonymized means anonymous, permanently", sql: v13),
-        Migration(version: 14, name: "a species claim can be corrected, and the correction keeps it", migrate: applyV14)
+        Migration(version: 14, name: "a species claim can be corrected, and the correction keeps it", migrate: applyV14),
+        Migration(version: 15, name: "applying a mutation locally and sending it are two facts", migrate: applyV15)
     ]
 
     /// The version a freshly migrated database reports.
@@ -54,7 +56,7 @@ public enum AppSchema {
     // Historical, and not edited: this is the schema as it shipped, comments included. Where a later
     // step changed it, that step says so — `private_reminders`' owner rule below, the `outbox`
     // `kind` vocabulary, and `favorites`' owner and uniqueness rules were all superseded (v3, v4
-    // and v5).
+    // and v5), and `outbox.json_synced` became `local_applied` beside a `remote_sent` (v15).
     private static let v1 = """
     -- ------------------------------------------------------------------ device --
     -- BUILD-PLAN §4 `devices`. One row. Anonymous contributions attach here and
@@ -1433,6 +1435,107 @@ public enum AppSchema {
 
     CREATE INDEX IF NOT EXISTS idx_review_flags_tree ON review_flags(tree_uuid, status);
     """
+
+    // MARK: - v15
+
+    /// The outbox learns that *applying* a mutation and *sending* it are two different facts.
+    ///
+    /// **What was wrong, and it was never a bug in the shipping build.** `DataLayer` wires the
+    /// queue's only transport to `LocalAPI`, so the drain *is* the local commit: a visit reaches its
+    /// tree because a drain called `LocalAPI.sync` → `apply(_:)` → `contributions.insert`, and there
+    /// is no other path (ERRATA E261 §2). The table recorded that with one flag, `json_synced`,
+    /// whose name says "sent" and whose meaning is "committed here". Repointing the transport at a
+    /// server would therefore not add a network to an existing local write — it would *remove* the
+    /// local write, with no layer reporting an error, because every layer would behave as written.
+    ///
+    /// **The shape.** `json_synced` becomes `local_applied`, which is what it has always held, and
+    /// `remote_sent` appears beside it. RULINGS R72 §1 orders the two: local apply is first and
+    /// unconditional — a contribution is on its tree the moment the drain runs, offline or not —
+    /// and the remote send is the retryable half, which is what `OutboxRetryPolicy` was written for
+    /// and has never had a real reason to run. That ordering is a table-level CHECK rather than a
+    /// convention:
+    ///
+    /// ```sql
+    /// CHECK (remote_sent = 0 OR local_applied = 1)
+    /// ```
+    ///
+    /// **`done` deliberately does not require `remote_sent`, and that is not an oversight.** Every
+    /// row already on a phone is locally applied and has never been sent anywhere — there is nowhere
+    /// to send it — so a `done` predicate naming `remote_sent` would make this migration reject the
+    /// very rows it is migrating, and would strand every queued contribution on every installed
+    /// build until a server exists. Whether a send is owed is a property of the *composition root*,
+    /// not of the row: `OutboxQueue` passes `requiringRemoteSend:` to `markDoneIfComplete` and the
+    /// answer is "is a send sink wired". With none wired the observable behavior is exactly what it
+    /// was before this migration.
+    ///
+    /// SQLite cannot rename a column *and* rewrite a table-level CHECK in place, so this is the
+    /// twelve-step rebuild v4 already performs on this table, for the reason v4 gives: the copy is
+    /// column for column and carries `seq`, so FIFO order, retry counts, error text, the 48 h window
+    /// and the photo lists all come across untouched. A contributor with a queued visit sees the
+    /// same queue in the same order afterwards.
+    ///
+    /// **What copying `seq` does and does not buy.** It preserves the FIFO order of the rows that
+    /// exist, and it carries `sqlite_sequence` forward *when there are rows*. On an outbox that is
+    /// **empty** at upgrade time — the ordinary state of a phone that has drained everything and let
+    /// `pruneCompleted` sweep the receipts — the `INSERT … SELECT` writes nothing, `DROP TABLE` takes
+    /// the counter with it, and the new table starts from 1 again. Measured, not assumed
+    /// (`OutboxApplySendSplitTests`). It is harmless: `seq` only orders rows that are live at the
+    /// same time, and a row's identity is `id` and `client_uuid`, both uniquely indexed and both
+    /// copied verbatim. The stronger claim — "so no id is ever reused" — is what v4's comment says
+    /// at the same spot, and it is wrong there in the same way; that is shipped history and is not
+    /// edited from this migration.
+    ///
+    /// Idempotent by guard, for the reason v3 gives.
+    private static func applyV15(_ connection: SQLiteConnection) throws {
+        let existing = try outboxDefinition(connection: connection)
+        guard !existing.contains("remote_sent") else { return }
+        try connection.execute("""
+            CREATE TABLE outbox_two_sinks (
+                seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                TEXT NOT NULL UNIQUE,
+                kind              TEXT NOT NULL CHECK (kind IN (
+                                      'visit','observation','measurement','care_event',
+                                      'favorite_toggle','private_reminder')),
+                client_uuid       TEXT NOT NULL UNIQUE,
+                payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                photo_paths       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(photo_paths)),
+                state             TEXT NOT NULL DEFAULT 'pending'
+                                  CHECK (state IN ('pending','uploading','failed','done')),
+                fail_count        INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error        TEXT,
+                last_error_code   TEXT,
+                -- The mutation is committed to this device's own tables. This is what
+                -- `json_synced` always meant; the name said the other thing.
+                local_applied     INTEGER NOT NULL DEFAULT 0 CHECK (local_applied IN (0,1)),
+                -- The mutation has been accepted by a server. Never 1 on any database
+                -- this migration has ever met, because there is no server yet.
+                remote_sent       INTEGER NOT NULL DEFAULT 0 CHECK (remote_sent IN (0,1)),
+                window_started_at TEXT NOT NULL,
+                next_attempt_at   TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                CHECK (state <> 'done' OR (local_applied = 1 AND json_array_length(photo_paths) = 0)),
+                -- Apply is first and unconditional (RULINGS R72 §1). A row that claims to
+                -- have been sent without having been applied is a lost contribution.
+                CHECK (remote_sent = 0 OR local_applied = 1)
+            );
+
+            INSERT INTO outbox_two_sinks
+                (seq, id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                 last_error, last_error_code, local_applied, remote_sent, window_started_at,
+                 next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                   last_error, last_error_code, json_synced, 0, window_started_at,
+                   next_attempt_at, created_at, updated_at
+              FROM outbox;
+
+            DROP TABLE outbox;
+            ALTER TABLE outbox_two_sinks RENAME TO outbox;
+
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
+            CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+            """)
+    }
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.

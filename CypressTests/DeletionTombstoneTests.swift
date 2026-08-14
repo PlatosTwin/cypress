@@ -253,7 +253,7 @@ struct DeletionTombstoneTests {
     @Test("a contribution queued before the deletion and drained after it is not adopted either")
     func aQueuedContributionCannotSmuggleItselfOntoTheNextAccount() async throws {
         let (store, api) = try await Self.signedIn()
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         let queued = Visit(

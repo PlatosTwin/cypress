@@ -93,7 +93,7 @@ struct CareLogTests {
     @Test("a saved care log is a care event carrying exactly what was toggled")
     func enqueueWritesACareEvent() async throws {
         let store = try await CypressStore.inMemory()
-        let queue = OutboxQueue(queue: store.queue, transport: OutboxTestSupport.ScriptedTransport())
+        let queue = OutboxQueue(queue: store.queue, apply: OutboxTestSupport.ScriptedTransport())
         let captured = Date(timeIntervalSince1970: 1_800_000_000)
 
         let (event, item) = try await CareLogOutboxWriter.enqueue(
@@ -126,7 +126,7 @@ struct CareLogTests {
     @Test("a blank note is stored as NULL rather than as whitespace")
     func blankNoteIsNull() async throws {
         let store = try await CypressStore.inMemory()
-        let queue = OutboxQueue(queue: store.queue, transport: OutboxTestSupport.ScriptedTransport())
+        let queue = OutboxQueue(queue: store.queue, apply: OutboxTestSupport.ScriptedTransport())
 
         var draft = CareLogDraft(actions: [.mulched])
         draft.note = "   \n "
@@ -153,7 +153,7 @@ struct CareLogTests {
             .appendingPathComponent("cypress-t147-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: photoDirectory) }
         let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.addTree(api: api)
 
         let model = CareLogModel(
@@ -181,7 +181,7 @@ struct CareLogTests {
             .appendingPathComponent("cypress-t147-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: photoDirectory) }
         let api = LocalAPI(store: store, deviceID: Self.deviceID, photoDirectory: photoDirectory)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.addTree(api: api)
 
         let model = CareLogModel(
@@ -220,7 +220,7 @@ struct CareLogTests {
     @MainActor
     func photosAccumulateAndRemoveIndividually() async throws {
         let store = try await CypressStore.inMemory()
-        let queue = OutboxQueue(queue: store.queue, transport: OutboxTestSupport.ScriptedTransport())
+        let queue = OutboxQueue(queue: store.queue, apply: OutboxTestSupport.ScriptedTransport())
         let model = CareLogModel(
             treeID: Self.treeID,
             api: VisitPreviewAPI(),

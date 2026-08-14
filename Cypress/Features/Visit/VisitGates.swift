@@ -59,7 +59,7 @@ public enum VisitGates {
             deviceID: deviceID,
             photoDirectory: databaseURL.deletingLastPathComponent().appendingPathComponent("Photos")
         )
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
 
         guard let treeID = try await anyAliveTreeID(in: store) else {
             failures.append("no alive tree in the seed to attach a visit to")
@@ -129,7 +129,7 @@ public enum VisitGates {
             deviceID: UUID(),
             photoDirectory: databaseURL.deletingLastPathComponent().appendingPathComponent("Photos")
         )
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
 
         // --- It survived.
         let queued = try await outbox.records()
@@ -249,7 +249,7 @@ public enum VisitGates {
         expect(after.count == 1, "a replay created a second row: \(after.count)", into: &failures)
 
         // The outbox row settled rather than lingering.
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let states = try await outbox.records()
             .filter { $0.item.clientUUID == manifest.clientUUID }
             .map(\.item.state)

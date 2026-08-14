@@ -104,7 +104,7 @@ struct FavoriteTests {
     func savesWithoutAnAccount() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         let attribution = await api.attribution
@@ -147,7 +147,7 @@ struct FavoriteTests {
     func doubleTapIsOneFavorite() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         // One key, two taps — which is what `RootView` does by keeping the client uuid it minted for
@@ -278,7 +278,7 @@ struct FavoriteTests {
     func claimDeviceAdoptsIdempotently() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let first = try await Self.makeTree(api: api)
         let second = try await Self.makeTree(api: api, at: -122.40)
         let strangers = try await Self.makeTree(api: api, at: -122.36)
@@ -509,7 +509,7 @@ struct FavoriteTests {
     func aMemorialMayBeFavorited() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         // Favorited while it was standing.

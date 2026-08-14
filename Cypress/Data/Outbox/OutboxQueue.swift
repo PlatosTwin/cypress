@@ -5,12 +5,48 @@ import Foundation
 /// Narrower than `CypressAPI` on purpose: the drain's correctness — zero loss, zero duplicates,
 /// the exact backoff schedule — is testable against scripted failures without standing up a store,
 /// a seed, or a photo directory. `APIOutboxTransport` adapts the real API onto it.
+///
+/// **This is the *apply* sink** (RULINGS R72 §1). It is what commits a mutation to this device's
+/// own tables, it runs first, and it runs whether or not there is a network — a contribution is on
+/// its tree the moment the drain runs. **Both of its methods are apply-side**: `uploadPhoto` is the
+/// local commit of the photograph, so it runs beside `sync` and never behind a send.
+/// The send sink is `OutboxSendSink` below, and the two are
+/// separate types rather than one type used twice because they are not interchangeable: swapping a
+/// remote implementation into this position does not add a network to a local write, it removes the
+/// local write (ERRATA E261 §2).
 public protocol OutboxTransport: Sendable {
     /// `POST /sync`. One result per item, matched on `clientUUID`.
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult]
     /// Uploads one photo binary, with the shot type it was framed as. Gated by the wifi-only
     /// toggle; the JSON above never is.
     func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws
+}
+
+/// The **send** sink: the retryable half of a drain, and the half `OutboxRetryPolicy` was written
+/// for (RULINGS R72 §1, spec §6.1).
+///
+/// Injected, and `nil` on every build shipped so far — there is no server yet, and with none wired
+/// the queue's observable behavior is exactly what it was before the split. Nothing in this PR
+/// wires `RemoteAPI` into this position.
+///
+/// **It carries `sync` and deliberately not `uploadPhoto`, which is a scope statement and not an
+/// omission.** The apply sink's photo upload is a *move*: `LocalAPI.uploadPhoto` strips the
+/// metadata into the app container and then removes the staged file, so by the time a send sink
+/// could run there is nothing at `OutboxPhoto.path` left to send, and `beginPhotoUpload` mints a
+/// fresh `photos` row per call, so re-running the local half to keep the bytes around would
+/// duplicate the record. Sending binaries needs per-photo completion tracking and a source the
+/// remote can still read — its own design, its own migration and its own ticket. The protocol has
+/// no photo method so that a future author has to add one rather than inherit a silent no-op, which
+/// is the failure ERRATA E125 records paying for once already.
+///
+/// **This argument is about the send side only.** It is not a licence to gate the *apply* sink's
+/// `uploadPhoto` on a send — the first draft of this split did exactly that, and an offline drain
+/// then committed the note and never the photograph. See the `OutboxQueue` type doc.
+public protocol OutboxSendSink: Sendable {
+    /// `POST /sync` against a real server. One result per item, matched on `clientUUID`.
+    /// `duplicate` is a success here for the same reason it is on the apply side: the server dedupes
+    /// on `client_uuid` exactly as the local unique index does.
+    func sync(_ items: [OutboxItem]) async throws -> [SyncResult]
 }
 
 /// What one drain pass did. Returned for tests and for the outbox screen's summary line.
@@ -21,6 +57,9 @@ public struct DrainReport: Sendable, Equatable {
     public var failedTerminally = 0
     /// Items whose JSON went but whose photos are waiting for wi-fi.
     public var awaitingWifi = 0
+    /// Items a send sink accepted on this pass. Zero whenever no send sink is wired, which is what
+    /// makes "the local write still happened" separable from "it went somewhere" in a test.
+    public var sent = 0
 }
 
 /// The local-first mutation queue.
@@ -29,13 +68,46 @@ public struct DrainReport: Sendable, Equatable {
 /// written here first and only then attempted, which is true even though `LocalAPI` is on the other
 /// side today. Nothing here disappears silently — an item that cannot sync says so, says why, and
 /// waits (screen 17).
+///
+/// # Two sinks, in order
+///
+/// A drain does two things that used to look like one (ERRATA E261 §2). **Apply** commits the
+/// mutation to this device's own tables; it goes first and it is not conditional on anything, which
+/// is why a visit saved in a park is on its tree before the phone has seen a network again.
+/// **Send** forwards it to a server; it is injectable, it is `nil` on every build shipped so far,
+/// and it is the half the 48 h backoff exists for. An item that fails to apply is never offered to
+/// the send sink, and an item the send sink refuses keeps the local write it already has.
+///
+/// **Both halves of a mutation are apply-side, and that includes the photograph.** The binaries go
+/// to the apply sink in phase B2, *before* any send is attempted, because `LocalAPI.uploadPhoto` is
+/// the local commit of the photograph exactly as `sync` is the local commit of the note. Only the
+/// decision to *defer* a binary for wi-fi is carried past the send, so that a photograph waiting for
+/// an unmetered connection never holds up a note that syncs on any connection (BUILD-PLAN §4).
+///
+/// With no send sink wired every observable behavior of this type is what it was before the split:
+/// the same states, the same counts, the same screen 17.
 public actor OutboxQueue {
     private let queue: DatabaseQueue
     private let store = OutboxStore()
-    private let transport: OutboxTransport
+    /// Commits the mutation to this device. First, unconditional, offline or not.
+    private let apply: any OutboxTransport
+    /// Sends it on to a server, when there is one. `nil` on every build shipped so far.
+    private let send: (any OutboxSendSink)?
     private let now: @Sendable () -> Date
     private var observers: [UUID: @Sendable () async -> Void] = [:]
     private var isDraining = false
+
+    /// One row's progress through a single drain.
+    ///
+    /// It exists to carry two things across the phases: the row's own `settledAt`, so a row still
+    /// takes one clock reading per drain rather than one per phase, and whether its binaries were
+    /// held back for wi-fi — a decision made in the apply half and acted on after the send half, so
+    /// that a waiting photograph never delays a note (BUILD-PLAN §4).
+    private struct InFlight {
+        let record: OutboxStore.Record
+        let settledAt: Date
+        var photosAwaitingWifi = false
+    }
 
     /// How many items one `POST /sync` carries. §6 caps a page at 100; a field batch is smaller and
     /// a smaller batch loses less work to a single flap.
@@ -45,9 +117,22 @@ public actor OutboxQueue {
     /// today", so a day is the shortest span that keeps that section honest.
     public static let completedRetention: TimeInterval = 24 * 60 * 60
 
-    public init(queue: DatabaseQueue, transport: OutboxTransport, now: @escaping @Sendable () -> Date = { Date() }) {
+    /// - Parameters:
+    ///   - apply: the sink that commits a mutation to this device's own tables. Named `apply` and
+    ///     not `transport` on purpose: the one-line change that looks like the whole job is
+    ///     replacing this value with a remote implementation, which would delete the local write
+    ///     without any layer reporting an error (ERRATA E261 §2).
+    ///   - send: the sink that forwards it to a server, when one exists. `nil` today, and with it
+    ///     `nil` the drain behaves exactly as it did before the split.
+    public init(
+        queue: DatabaseQueue,
+        apply: any OutboxTransport,
+        send: (any OutboxSendSink)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.queue = queue
-        self.transport = transport
+        self.apply = apply
+        self.send = send
         self.now = now
     }
 
@@ -142,33 +227,149 @@ public actor OutboxQueue {
             return report
         }
 
-        // --- Phase A: the JSON items. Batched, because §6's /sync is a batch endpoint, and
-        // unconditional, because the wifi toggle does not apply to them.
-        let needingJSON = live.filter { !$0.jsonSynced }
-        var resultsByClientUUID: [UUID: SyncResult] = [:]
-        var transportFailure: Error?
+        // --- Phase A: apply, batched, because §6's /sync is a batch endpoint, and unconditional,
+        // because neither the wifi toggle nor the absence of a network applies to it. This is the
+        // local commit: after it, the contribution is on its tree (RULINGS R72 §1).
+        let needingApply = live.filter { !$0.locallyApplied }
+        var applyResults: [UUID: SyncResult] = [:]
+        var applyFailure: Error?
 
-        if !needingJSON.isEmpty {
+        if !needingApply.isEmpty {
             do {
-                let results = try await transport.sync(needingJSON.map(\.item))
-                for result in results { resultsByClientUUID[result.clientUUID] = result }
+                let results = try await apply.sync(needingApply.map(\.item))
+                for result in results { applyResults[result.clientUUID] = result }
             } catch {
-                transportFailure = error
+                applyFailure = error
             }
         }
 
-        // --- Phase B: apply, per item, in FIFO order.
+        // --- Phase B: settle the apply half, per item, in FIFO order. An item that could not be
+        // applied drops out here and is not offered to the send sink: nothing may be sent that this
+        // device has not committed, which is also `AppSchema` v15's second CHECK.
+        //
+        // `settledAt` is read once per record and carried through every later phase, so a row still
+        // takes exactly one clock reading per drain, as it did before the split.
+        var carrying: [InFlight] = []
         for record in live {
             let settledAt = now()
+            guard !record.locallyApplied else {
+                carrying.append(InFlight(record: record, settledAt: settledAt))
+                continue
+            }
 
-            if !record.jsonSynced {
-                if let transportFailure {
-                    try await recordFailure(record, error: transportFailure, at: settledAt, report: &report)
+            if let applyFailure {
+                try await recordFailure(record, error: applyFailure, at: settledAt, report: &report)
+                continue
+            }
+            guard let result = applyResults[record.item.clientUUID] else {
+                // A batch that came back without an entry for an item we sent is a protocol
+                // break, not a success. Treating it as a failure keeps the item alive.
+                try await recordFailure(record, error: APIError.serverError, at: settledAt, report: &report)
+                continue
+            }
+            guard result.isSuccess else {
+                try await recordFailure(
+                    record,
+                    error: result.error ?? APIError.serverError,
+                    at: settledAt,
+                    report: &report
+                )
+                continue
+            }
+            try await queue.write { connection in
+                try store.markLocallyApplied(record.id, at: settledAt, connection: connection)
+            }
+            carrying.append(InFlight(record: record, settledAt: settledAt))
+        }
+
+        // --- Phase B2: the photo binaries, and they belong to the **apply** half.
+        //
+        // `apply.uploadPhoto` is the local commit of the photograph — `LocalAPI` ingests the file
+        // into the app container and writes the `photos` row — so it runs here, beside the JSON
+        // apply, and not behind the send gate below. It sat behind that gate in the first draft of
+        // this split: a drain with a send sink and no signal committed the note, skipped the
+        // photograph, and after 48 h of that the row expired terminally with the binary never
+        // ingested and nothing left holding a reference to it. That is the quiet loss this ticket
+        // exists to prevent, moved from one half to the other.
+        //
+        // The wi-fi deferral is recorded rather than acted on, because a deferred *binary* must not
+        // hold up a *JSON* send: notes and numbers sync on any connection (BUILD-PLAN §4, screen
+        // 17). The reschedule happens in phase D, after the send has had its turn.
+        //
+        // **Forward, oldest first**, like every other phase and like `drain()`'s own contract. It
+        // was written backwards at first, purely so that `remove(at:)` could not invalidate the
+        // index under the loop — a convenience that quietly inverted the order of the one phase that
+        // does something irreversible: ingesting a binary consumes the staged file. Failures are
+        // collected and removed after the loop instead, which costs one array and keeps the order
+        // honest.
+        var failedPhotoIndices: [Int] = []
+        for index in carrying.indices {
+            let entry = carrying[index]
+            let record = entry.record
+            guard !record.item.photos.isEmpty else { continue }
+
+            guard photoUploadsAllowed else {
+                carrying[index].photosAwaitingWifi = true
+                continue
+            }
+
+            var photoFailure: Error?
+            for photo in record.item.photos {
+                do {
+                    // The apply sink only. `OutboxSendSink` carries no photo method and says why:
+                    // the staged file is consumed by this call.
+                    try await apply.uploadPhoto(photo, for: record.item)
+                    try await queue.write { connection in
+                        try store.removePhoto(
+                            atPath: photo.path,
+                            from: record.id,
+                            at: entry.settledAt,
+                            connection: connection
+                        )
+                    }
+                } catch {
+                    photoFailure = error
+                    break
+                }
+            }
+            if let photoFailure {
+                try await recordFailure(record, error: photoFailure, at: entry.settledAt, report: &report)
+                failedPhotoIndices.append(index)
+            }
+        }
+        // Descending, so each removal leaves the indices still to be removed valid.
+        for index in failedPhotoIndices.reversed() {
+            carrying.remove(at: index)
+        }
+
+        // --- Phase C: send, batched, and only when a send sink is wired. With none, this is skipped
+        // entirely and every row below settles on the apply result alone, which is the behavior that
+        // shipped.
+        var sendResults: [UUID: SyncResult] = [:]
+        var sendFailure: Error?
+        if let send {
+            let needingSend = carrying.filter { !$0.record.remoteSent }
+            if !needingSend.isEmpty {
+                do {
+                    let results = try await send.sync(needingSend.map(\.record.item))
+                    for result in results { sendResults[result.clientUUID] = result }
+                } catch {
+                    sendFailure = error
+                }
+            }
+        }
+
+        // --- Phase D: settle the send half, then the row, per item, in FIFO order.
+        for entry in carrying {
+            let record = entry.record
+            let settledAt = entry.settledAt
+
+            if send != nil, !record.remoteSent {
+                if let sendFailure {
+                    try await recordFailure(record, error: sendFailure, at: settledAt, report: &report)
                     continue
                 }
-                guard let result = resultsByClientUUID[record.item.clientUUID] else {
-                    // A batch that came back without an entry for an item we sent is a protocol
-                    // break, not a success. Treating it as a failure keeps the item alive.
+                guard let result = sendResults[record.item.clientUUID] else {
                     try await recordFailure(record, error: APIError.serverError, at: settledAt, report: &report)
                     continue
                 }
@@ -182,47 +383,37 @@ public actor OutboxQueue {
                     continue
                 }
                 try await queue.write { connection in
-                    try store.markJSONSynced(record.id, at: settledAt, connection: connection)
+                    try store.markRemotelySent(record.id, at: settledAt, connection: connection)
                 }
+                report.sent += 1
             }
 
-            // --- Photo binaries.
-            if !record.item.photos.isEmpty {
-                guard photoUploadsAllowed else {
-                    try await queue.write { connection in
-                        try store.reschedule(
-                            record.id,
-                            reason: OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count),
-                            at: settledAt,
-                            connection: connection
-                        )
-                    }
-                    report.awaitingWifi += 1
-                    continue
+            // The binaries phase B2 held back for wi-fi. The note is saved and, with a sink, sent;
+            // what is waiting is the photograph.
+            if entry.photosAwaitingWifi {
+                try await queue.write { connection in
+                    try store.reschedule(
+                        record.id,
+                        reason: OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count),
+                        at: settledAt,
+                        connection: connection
+                    )
                 }
-
-                var photoFailure: Error?
-                for photo in record.item.photos {
-                    do {
-                        try await transport.uploadPhoto(photo, for: record.item)
-                        try await queue.write { connection in
-                            try store.removePhoto(atPath: photo.path, from: record.id, at: settledAt, connection: connection)
-                        }
-                    } catch {
-                        photoFailure = error
-                        break
-                    }
-                }
-                if let photoFailure {
-                    try await recordFailure(record, error: photoFailure, at: settledAt, report: &report)
-                    continue
-                }
+                report.awaitingWifi += 1
+                continue
             }
 
-            try await queue.write { connection in
-                try store.markDoneIfComplete(record.id, at: settledAt, connection: connection)
+            // `markDoneIfComplete` is a conditional `UPDATE`, so the count follows what it actually
+            // matched rather than the fact that it ran.
+            let settled = try await queue.write { connection in
+                try store.markDoneIfComplete(
+                    record.id,
+                    requiringRemoteSend: send != nil,
+                    at: settledAt,
+                    connection: connection
+                )
             }
-            report.synced += 1
+            if settled { report.synced += 1 }
         }
 
         await notifyObservers()
@@ -385,7 +576,12 @@ public actor OutboxQueue {
     }
 }
 
-/// Adapts a `CypressAPI` onto `OutboxTransport`.
+/// Adapts a `CypressAPI` onto `OutboxTransport`, the **apply** sink.
+///
+/// In the shipping composition root the API behind it is `LocalAPI`, and that is what makes this
+/// the local commit rather than a network call. It deliberately does not conform to
+/// `OutboxSendSink`: a type that satisfied both would let one value be wired into both positions,
+/// which is the confusion the split exists to end.
 public struct APIOutboxTransport: OutboxTransport {
     private let api: any CypressAPI
 

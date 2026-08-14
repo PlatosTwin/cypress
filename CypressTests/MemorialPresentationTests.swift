@@ -129,7 +129,7 @@ struct MemorialPresentationTests {
     func removalNeverMutatesStatus() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
 
         let tree = try await api.addTree(
             TreeDraft(

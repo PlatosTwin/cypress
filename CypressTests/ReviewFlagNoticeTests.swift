@@ -22,7 +22,7 @@ struct ReviewFlagNoticeTests {
         return CheckInModel(
             treeID: treeID,
             api: api,
-            outbox: OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api)),
+            outbox: OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api)),
             attribution: .anonymous(deviceID: deviceID)
         )
     }

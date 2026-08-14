@@ -101,7 +101,7 @@ struct DeviceClaimTests {
     func claimMovesEveryKind() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
         try await Self.contributeEverything(api: api, outbox: outbox, treeID: tree.id)
 
@@ -152,7 +152,7 @@ struct DeviceClaimTests {
     func deviceContributionsMatchTheClaim() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         #expect(try await api.deviceContributions() == .none)
@@ -187,7 +187,7 @@ struct DeviceClaimTests {
     func queuedBeforeSignInAppliedAfter() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         // Tuesday: written, not sent.
@@ -220,7 +220,7 @@ struct DeviceClaimTests {
     func queuedReminderIsAdoptedAfterTheClaim() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
 
         _ = try await outbox.enqueue(
@@ -245,7 +245,7 @@ struct DeviceClaimTests {
     func claimingIsIdempotentAndDoesNotSteal() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let outbox = OutboxQueue(queue: store.queue, transport: APIOutboxTransport(api: api))
+        let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         let tree = try await Self.makeTree(api: api)
         try await Self.contributeEverything(api: api, outbox: outbox, treeID: tree.id)
 
