@@ -55,6 +55,22 @@ enum CityDownloadsCopy {
     static func updateLine(installedVersion: String) -> String {
         "Update available · \(installedVersion) installed"
     }
+
+    /// The two lines R43 §3's enumeration did not have, added by the owner's ruling of 2026-08-14
+    /// (`docs/design-proposals/2026-08-14-city-data-distribution.md`, decision D5 — a ruling
+    /// amendment, written in the same idiom as the six states above).
+    ///
+    /// The claim is deliberately narrow: **record-date parity, and nothing more.** Not "identical
+    /// to the published file", which would need 108 MB hashed at launch (R60), and not a version
+    /// string, which the bundle cannot compute.
+    static func bundledLine(contentRev: String) -> String {
+        "Included in the app · record as of \(contentRev)"
+    }
+
+    /// Mirrors `updateLine`'s shape — what is newer, and what you are holding.
+    static func bundledOutdatedLine(bundledContentRev: String) -> String {
+        "Newer record available · included copy is \(bundledContentRev)"
+    }
 }
 
 /// One card on the Cities screen, fully decided — the view draws rows, it does not reason.
@@ -139,15 +155,40 @@ struct CityDownloadRow: Equatable, Identifiable {
     ) -> CityDownloadRow {
         CityDownloadRow(
             id: installed.id,
-            // The manifest carries the display name and it is unreachable; the id is the one
-            // name the disk actually knows, and inventing a prettier one is constraint 15's line.
-            title: installed.id,
+            // This row used to be titled with the raw id — `us-ca-sj` — because "the manifest
+            // carries the display name and it is unreachable". That reasoning was correct when it
+            // was written and stopped being correct at s16: `dim_city.display_name` is inside every
+            // published city file, narrowed to that city's single row by `publish_cities.py`, so
+            // the disk does know the name now (`SeedCities`). The id survives as the fallback for a
+            // file too old to carry one — still never a prettier name this layer made up
+            // (DECISIONS constraint 15).
+            title: installed.displayName ?? installed.id,
             coverageNote: nil,
             stateLine: CityDownloadsCopy.installedLine(version: installed.version),
             detailLine: nil,
             isFailure: false,
             progress: nil,
             affordances: isActive ? [.inUseLabel, .remove] : [.use, .remove]
+        )
+    }
+
+    /// A city the app bundle holds and the catalog could not be reached to describe — or does not
+    /// list at all. Disk facts alone, and the only honest thing to say is that you have it.
+    ///
+    /// No affordance: `Use` for the bundle belongs to the built-in card, which attaches the whole
+    /// fused file rather than one of the cities inside it (R43 §1 — exactly one inventory is
+    /// attached, always).
+    static func bundled(_ city: SeedCities.City) -> CityDownloadRow {
+        CityDownloadRow(
+            id: city.id,
+            title: city.displayName ?? city.id,
+            coverageNote: nil,
+            stateLine: city.contentRev.map(CityDownloadsCopy.bundledLine(contentRev:))
+                ?? CityDownloadsCopy.builtInSubtitle,
+            detailLine: nil,
+            isFailure: false,
+            progress: nil,
+            affordances: []
         )
     }
 
@@ -179,7 +220,27 @@ struct CityDownloadRow: Equatable, Identifiable {
                 // No affordance at all: a button that cannot keep its promise is not drawn.
                 row = (CityDownloadsCopy.needsNewerApp, CityDownloadsCopy.needsNewerAppDetail, [])
             }
+        case let .bundled(contentRev):
+            // The same principle as the branch above, applied to the opposite problem: the button
+            // is not refused because it cannot work, it is refused because it would buy nothing.
+            row = (CityDownloadsCopy.bundledLine(contentRev: contentRev), nil, [])
+        case let .bundledOutdated(bundledContentRev):
+            row = (
+                CityDownloadsCopy.bundledOutdatedLine(bundledContentRev: bundledContentRev),
+                nil,
+                [.download]
+            )
         }
+        // The single rule, checked where both halves are in hand: no branch above may draw a
+        // fetching affordance the state does not permit, and none may withhold one it does.
+        // `CityDownloadsModel.download` refuses on the same property, so the button and the
+        // transfer cannot disagree. `CityDownloadTests.everyStateAgreesWithAllowsDownload` is the
+        // guard that runs in release too.
+        assert(
+            (row.affordances.contains(.download) || row.affordances.contains(.update))
+                == state.allowsDownload,
+            "row affordances \(row.affordances) disagree with \(state).allowsDownload"
+        )
         return CityDownloadRow(
             id: city.id, title: city.displayName, coverageNote: coverageIfPartial(city),
             stateLine: row.stateLine, detailLine: row.detail,

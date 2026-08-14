@@ -27,6 +27,9 @@ final class CityDownloadsModel {
 
     private let library: CityLibrary
     private let downloader: CityDownloader
+    /// What the app's own bundle holds, read from the bundled seed once (`SeedCities`). Constant
+    /// for the life of the process — the bundle is swapped by a build, not by anything on screen.
+    private let bundledCities: [SeedCities.City]
     /// The composition root's re-boot: tears down `DataLayer` and attaches the (new) choice.
     private let onInventoryChange: () -> Void
     private var downloadTask: Task<Void, Never>?
@@ -34,36 +37,80 @@ final class CityDownloadsModel {
     init(
         library: CityLibrary,
         downloader: CityDownloader = CityDownloader(),
+        bundledCities: [SeedCities.City] = SeedCities.inBundle(),
         onInventoryChange: @escaping () -> Void
     ) {
         self.library = library
         self.downloader = downloader
+        self.bundledCities = bundledCities
         self.onInventoryChange = onInventoryChange
     }
 
     // MARK: - The screen's rows
 
+    /// **One row per city, by construction.** Three sources can name the same city — the catalog,
+    /// the download library, and the app bundle — and before this round the bundle was invisible to
+    /// all of them, which is how the screen came to offer 81 MB of a city it was already drawing.
+    /// The ids are folded to a unique, ordered sequence *before* any row is made, so no path
+    /// through this model can emit two rows for one city and no reader is left choosing between two
+    /// indistinguishable copies of San Francisco.
     var rows: [CityDownloadRow] {
         var rows: [CityDownloadRow] = [.builtIn(isActive: activeCityID == nil)]
         switch catalog {
         case .loaded(let manifest):
-            rows += manifest.cities.map { city in
-                .published(
-                    city: city,
-                    state: CityInstallState(
-                        published: city,
-                        installedVersion: installed.first { $0.id == city.id }?.version
-                    ),
-                    isActive: activeCityID == city.id,
-                    downloadingFraction: downloading?.id == city.id ? downloading?.fraction : nil,
-                    lastAttemptFailed: failedCityID == city.id
-                )
-            }
+            let published = Dictionary(
+                manifest.cities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+            )
+            rows += orderedUniqueIDs(manifest.cities.map(\.id) + bundledCities.map(\.id))
+                .compactMap { id in
+                    guard let city = published[id] else {
+                        // Bundled and unpublished: reachable the moment the bundle is built with a
+                        // city the catalog has not caught up to.
+                        return bundledCities.first { $0.id == id }.map(CityDownloadRow.bundled)
+                    }
+                    return .published(
+                        city: city,
+                        state: installState(for: city),
+                        isActive: activeCityID == id,
+                        downloadingFraction: downloading?.id == id ? downloading?.fraction : nil,
+                        lastAttemptFailed: failedCityID == id
+                    )
+                }
         case .checking, .unavailable:
-            // Disk facts alone — every installed city keeps its no-network affordances.
-            rows += installed.map { .installedOffline($0, isActive: activeCityID == $0.id) }
+            // Disk facts alone — every installed city keeps its no-network affordances, and the
+            // bundle's own cities are disk facts too, which is the whole point of this round: what
+            // the app holds does not depend on reaching a bucket.
+            let onDisk = Dictionary(
+                installed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+            )
+            rows += orderedUniqueIDs(installed.map(\.id) + bundledCities.map(\.id))
+                .compactMap { id in
+                    if let city = onDisk[id] {
+                        // A downloaded copy shadows the bundled one (the `active-city` marker
+                        // points at it), so it is the copy the row describes.
+                        return .installedOffline(city, isActive: activeCityID == id)
+                    }
+                    return bundledCities.first { $0.id == id }.map(CityDownloadRow.bundled)
+                }
         }
         return rows
+    }
+
+    /// The one place a city's state is decided, so the row and the `Download` action can never be
+    /// looking at different facts.
+    private func installState(for city: CityManifest.City) -> CityInstallState {
+        CityInstallState(
+            published: city,
+            installedVersion: installed.first { $0.id == city.id }?.version,
+            bundledContentRev: bundledCities.first { $0.id == city.id }?.contentRev
+        )
+    }
+
+    /// `ids` in first-seen order with duplicates dropped, and `built-in` seeded as already taken so
+    /// a city whose id collides with the built-in card's cannot produce a second row either.
+    private func orderedUniqueIDs(_ ids: [String]) -> [String] {
+        var seen: Set<String> = [CityDownloadRow.builtInID]
+        return ids.filter { seen.insert($0).inserted }
     }
 
     /// The line under the header: the fetch in flight, or its failure. Nil once loaded.
@@ -91,6 +138,11 @@ final class CityDownloadsModel {
 
     func download(_ city: CityManifest.City) {
         guard downloading == nil else { return }
+        // The same property the row draws its button from (`CityInstallState.allowsDownload`).
+        // Refusing here as well as declining to draw the button is what makes a second copy of a
+        // city the device already holds structurally impossible rather than merely unreachable:
+        // there is no caller — a stale view, a future affordance, a test — that can start one.
+        guard installState(for: city).allowsDownload else { return }
         failedCityID = nil
         downloading = (city.id, 0)
         downloadTask = Task {

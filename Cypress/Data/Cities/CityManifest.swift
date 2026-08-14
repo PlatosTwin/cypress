@@ -38,11 +38,81 @@ public struct CityManifest: Equatable, Sendable {
         /// That is what made R60's grammar change safe on this side, and it is the property to
         /// preserve: the day something splits this on `-`, a publisher change becomes a client bug.
         public let version: String
+        /// The record date this city's data was snapshotted at — the `r` segment of `version`,
+        /// carried as its own key so nothing has to parse the version string to get it.
+        ///
+        /// **This key is not new; decoding it is.** `Tools/publish_cities.py` has emitted
+        /// `content_rev` for every city since #156, and it is in the live manifest right now. It is
+        /// the one comparison a bundled city can make about itself (R60's `build_id` is a hash of
+        /// the whole 108 MB source seed, so the bundle cannot compute a version string) — see
+        /// `CityInstallState.bundled`.
+        ///
+        /// Optional because a reader that refuses to decode a manifest missing an additive key
+        /// would take the whole Cities screen offline over it; R37.4's tolerance cuts both ways.
+        public let contentRev: String?
+        /// The city file's extent, as the publisher measured it. Decoded but not yet drawn:
+        /// Stage 2's location-triggered offer is what needs it.
+        ///
+        /// **ERRATA E209 shape B3, E213 and E214 each record that this manifest "carries no center
+        /// or bbox to derive one from" and call the fix a wider ticket. That premise was false of
+        /// the artifact and true only of this type** — `publish_cities.py` has emitted `bbox` and
+        /// `centroid` since #156. The blocker was two `Decodable` properties.
+        public let bbox: BoundingBox?
+        /// The city file's centroid, as the publisher measured it. See `bbox`.
+        public let centroid: Coordinate?
         /// Relative to the app's configured base URL, never to `base_url_hint`.
         public let path: String
         public let bytes: Int64
         /// Lowercase hex sha256 of the file at `path`; verified before a byte of it is kept.
         public let sha256: String
+
+        /// Spelled out rather than synthesized so the additive keys can carry defaults: a call site
+        /// that does not care about `bbox` should not have to say so.
+        public init(
+            id: String,
+            displayName: String,
+            coverage: String,
+            treeCount: Int,
+            schemaVersion: Int,
+            version: String,
+            contentRev: String? = nil,
+            bbox: BoundingBox? = nil,
+            centroid: Coordinate? = nil,
+            path: String,
+            bytes: Int64,
+            sha256: String
+        ) {
+            self.id = id
+            self.displayName = displayName
+            self.coverage = coverage
+            self.treeCount = treeCount
+            self.schemaVersion = schemaVersion
+            self.version = version
+            self.contentRev = contentRev
+            self.bbox = bbox
+            self.centroid = centroid
+            self.path = path
+            self.bytes = bytes
+            self.sha256 = sha256
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(
+                id: try container.decode(String.self, forKey: .id),
+                displayName: try container.decode(String.self, forKey: .displayName),
+                coverage: try container.decode(String.self, forKey: .coverage),
+                treeCount: try container.decode(Int.self, forKey: .treeCount),
+                schemaVersion: try container.decode(Int.self, forKey: .schemaVersion),
+                version: try container.decode(String.self, forKey: .version),
+                contentRev: try container.decodeIfPresent(String.self, forKey: .contentRev),
+                bbox: try container.decodeIfPresent(BoundingBoxJSON.self, forKey: .bbox)?.value,
+                centroid: try container.decodeIfPresent(CentroidJSON.self, forKey: .centroid)?.value,
+                path: try container.decode(String.self, forKey: .path),
+                bytes: try container.decode(Int64.self, forKey: .bytes),
+                sha256: try container.decode(String.self, forKey: .sha256)
+            )
+        }
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -51,9 +121,43 @@ public struct CityManifest: Equatable, Sendable {
             case treeCount = "tree_count"
             case schemaVersion = "schema_version"
             case version
+            case contentRev = "content_rev"
+            case bbox
+            case centroid
             case path
             case bytes
             case sha256
+        }
+
+        /// `{"min_lat": …, "max_lat": …, "min_lon": …, "max_lon": …}` — the publisher's spelling,
+        /// mapped onto the `BoundingBox` the rest of the app already speaks.
+        private struct BoundingBoxJSON: Decodable {
+            let minLat: Double
+            let maxLat: Double
+            let minLon: Double
+            let maxLon: Double
+
+            enum CodingKeys: String, CodingKey {
+                case minLat = "min_lat"
+                case maxLat = "max_lat"
+                case minLon = "min_lon"
+                case maxLon = "max_lon"
+            }
+
+            var value: BoundingBox {
+                BoundingBox(
+                    minLatitude: minLat, maxLatitude: maxLat,
+                    minLongitude: minLon, maxLongitude: maxLon
+                )
+            }
+        }
+
+        /// `{"lat": …, "lon": …}` — the publisher's spelling for a point.
+        private struct CentroidJSON: Decodable {
+            let lat: Double
+            let lon: Double
+
+            var value: Coordinate { Coordinate(latitude: lat, longitude: lon) }
         }
     }
 
