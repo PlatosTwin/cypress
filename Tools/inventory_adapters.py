@@ -1132,8 +1132,9 @@ class NYCTreePointAdapter:
         ("legal_status", "jurisdiction"),   # DPR | Green Thumb | Private | ... | NULL on 84%
     ]
 
-    def __init__(self, tree_point_rows, planting_spaces: dict, limit: int = 0,
-                 structures=None, borough=None, with_raw: bool = False) -> None:
+    def __init__(self, tree_point_rows, planting_spaces: dict, horizon_year: int,
+                 limit: int = 0, structures=None, borough=None,
+                 with_raw: bool = False) -> None:
         """`planting_spaces` is {GlobalID -> planting space row}, already deduplicated.
 
         `structures` limits which `TPStructure` values are read at all, lowercased;
@@ -1144,6 +1145,10 @@ class NYCTreePointAdapter:
         """
         self.rows = tree_point_rows
         self.planting_spaces = planting_spaces
+        #: The seed epoch's year plus one, NOT the wall clock's. The seed is
+        #: declared byte-for-byte reproducible and a clock reading inside it is
+        #: ERRATA E13's defect.
+        self.horizon_year = horizon_year
         self.limit = limit
         self.structures = {s.lower() for s in structures} if structures else None
         self.borough = borough
@@ -1170,6 +1175,7 @@ class NYCTreePointAdapter:
             "species_unknown_taxon": 0,
             "borough_carried": 0,
             "no_borough_to_carry": 0,
+            "planted_date_beyond_horizon": 0,
         }
 
     # ------------------------------------------------------------------ parts
@@ -1245,22 +1251,42 @@ class NYCTreePointAdapter:
             return None
         return inches
 
-    @staticmethod
-    def parse_planted_date(raw):
+    def parse_planted_date(self, raw):
         """`PlantedDate` -> a date, or None. Ships `2015-08-25 10:46:44`.
 
-        No sentinel list and no horizon clamp, because neither is warranted by
-        anything measured in this source -- inventing a sentinel for a source that
-        does not use one is the same mistake as failing to resolve one that does.
+        NO SENTINEL LIST, because this source does not use one -- inventing a
+        sentinel for a source that does not have one is the same mistake as
+        failing to resolve one that does.
+
+        A HORIZON CLAMP, because this source DOES need one, and the number is
+        measured rather than assumed. Across all 1,121,106 tree points
+        (2026-08-14) `PlantedDate` is non-null on 136,730, of which exactly
+        THREE are in the future and none is before 1800:
+
+            2030-11-02  Full   CreatedDate 2020-11-04   -> 2020 typed as 2030
+            2108-11-23  Full   CreatedDate 2018-11-27   -> 2018 typed as 2108
+            2108-11-23  Stump  CreatedDate 2018-11-27   -> the same, twice
+
+        Each is a transposition whose intended year is legible from its own
+        `CreatedDate`, and CORRECTING them is exactly what this adapter must not
+        do -- that would be inventing a fact. They resolve to None, which is the
+        honest record of a date the city published wrong, and they are counted.
+
+        The upper bound is the SEED EPOCH's year, not the wall clock's: the seed
+        is byte-for-byte reproducible and a clock reading inside it is E13.
         """
         text = (raw or "").strip()
         if not text:
             return None
         head = text.split(" ")[0].split("T")[0]
         try:
-            return _datetime.datetime.strptime(head, "%Y-%m-%d").date()
+            parsed = _datetime.datetime.strptime(head, "%Y-%m-%d").date()
         except ValueError:
             return None
+        if 1800 <= parsed.year <= self.horizon_year:
+            return parsed
+        self.stats["planted_date_beyond_horizon"] += 1
+        return None
 
     # ----------------------------------------------------------------- kinds
 

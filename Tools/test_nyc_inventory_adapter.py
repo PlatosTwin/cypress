@@ -48,6 +48,10 @@ from inventory_contract import (  # noqa: E402
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE = os.path.join(REPO, "Fixtures", "nyc_survey", "nyc_tree_point_sample.json")
 
+#: The seed epoch year plus one, matching what build_seed.py passes. Fixed, not
+#: read off the clock -- a wall-clock reading inside the seed is ERRATA E13.
+HORIZON = 2027
+
 PASSED = 0
 FAILURES: list = []
 
@@ -69,7 +73,7 @@ def load():
 
 def adapter(**kwargs):
     rows, spaces = load()
-    return NYCTreePointAdapter(rows, spaces, **kwargs)
+    return NYCTreePointAdapter(rows, spaces, HORIZON, **kwargs)
 
 
 def by_case(records_with_rows, case):
@@ -79,7 +83,7 @@ def by_case(records_with_rows, case):
 def run():
     """(record, source row) pairs, so a test can name the case it is about."""
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces)
+    a = NYCTreePointAdapter(rows, spaces, HORIZON)
     out = []
     produced = list(a.records())
     # `records()` skips nothing in this fixture (every row has a position), so
@@ -239,7 +243,7 @@ def test_the_join_never_moves_a_trees_position():
     is the tree point's own; the planting space supplies attributes only.
     """
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces)
+    a = NYCTreePointAdapter(rows, spaces, HORIZON)
     for record, row in zip(list(a.records()), rows):
         check(record.lat == row["lat"] and record.lon == row["lon"],
               f"record at ({record.lat}, {record.lon}) but its tree point is at "
@@ -424,6 +428,45 @@ def test_nyc_publishes_no_caretaker_so_none_is_invented():
               f"a care assistant appeared: {record.city_record.get('care_assistant')!r}")
 
 
+def test_a_planting_date_in_the_future_is_dropped_and_counted():
+    """Three of NYC's 136,730 PlantedDates are in the future -- 2030-11-02 and
+    2108-11-23 twice, each a transposition whose intended year is legible from
+    its own CreatedDate. They resolve to None; CORRECTING them would be
+    inventing a fact.
+
+    Fails if the horizon clamp stops applying, which would ship a tree planted
+    in 2108 and trip verify_seed.py check 14.
+    """
+    rows, spaces = load()
+    a = NYCTreePointAdapter(rows, spaces, HORIZON)
+    records = list(a.records())
+    # The count is asserted from the FIXTURE's own rows, before any probe call
+    # touches the counter -- an assertion a direct parse_planted_date() call had
+    # already incremented would be proving its own probe, not the adapter.
+    future_rows = [r for r in rows if (r.get("planteddate") or "") > "2027"]
+    check(bool(future_rows),
+          "the fixture holds no future-dated row, so this test proves nothing")
+    check(a.stats["planted_date_beyond_horizon"] == len(future_rows),
+          f"the clamp counted {a.stats['planted_date_beyond_horizon']} rejections "
+          f"but the fixture holds {len(future_rows)} future-dated rows")
+    for record, row in zip(records, rows):
+        if (row.get("planteddate") or "") > "2027":
+            check(record.planted_on is None,
+                  f"a PlantedDate of {row['planteddate']!r} survived the horizon clamp "
+                  f"as {record.planted_on!r}")
+    check(a.parse_planted_date("2015-08-25 10:46:44") is not None,
+          "the clamp rejected a real 2015 planting date")
+
+
+def test_the_horizon_is_the_seed_epoch_not_the_wall_clock():
+    """ERRATA E13: a clock reading inside a byte-for-byte reproducible seed is a
+    defect. Fails if the adapter reads the current year instead of its argument."""
+    rows, spaces = load()
+    tight = NYCTreePointAdapter(rows, spaces, 2016)
+    check(tight.parse_planted_date("2020-01-01 00:00:00") is None,
+          "a horizon of 2016 accepted a 2020 date; the adapter is not using its argument")
+
+
 def test_the_borough_rides_on_every_record_that_has_one():
     """The distribution design makes a borough-level region the published unit,
     and `boroughcode` exists only on Planting Spaces. If it does not ride on the
@@ -434,7 +477,7 @@ def test_the_borough_rides_on_every_record_that_has_one():
     joined to no planting space.
     """
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces)  # NOTE: with_raw defaults to False
+    a = NYCTreePointAdapter(rows, spaces, HORIZON)  # NOTE: with_raw defaults to False
     for record, row in zip(list(a.records()), rows):
         space = spaces.get((row.get("plantingspaceglobalid") or "").strip())
         expected = (space or {}).get("boroughcode") or None
@@ -469,8 +512,8 @@ def test_optional_passthroughs_are_gated_but_the_borough_is_not():
     and the borough is load-bearing. Fails if they stop being gated, or if
     gating them also gates the borough."""
     rows, spaces = load()
-    plain = NYCTreePointAdapter(rows, spaces, with_raw=False)
-    rich = NYCTreePointAdapter(rows, spaces, with_raw=True)
+    plain = NYCTreePointAdapter(rows, spaces, HORIZON, with_raw=False)
+    rich = NYCTreePointAdapter(rows, spaces, HORIZON, with_raw=True)
     plain_keys, rich_keys = set(), set()
     for record in plain.records():
         if record.raw_json:
@@ -492,7 +535,7 @@ def test_the_borough_filter_drops_rather_than_reassigns():
     boroughs.discard("")
     check(bool(boroughs), "the fixture's planting spaces carry no borough at all")
     target = sorted(boroughs)[0]
-    a = NYCTreePointAdapter(rows, spaces, borough=target)
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, borough=target)
     produced = list(a.records())
     for record in produced:
         check(record.attributes_from == "nyc_planting_spaces",
@@ -507,7 +550,7 @@ def test_the_borough_filter_drops_rather_than_reassigns():
 def test_the_structure_filter_reads_only_what_it_is_asked_for():
     """Fails if `--structures Full` silently ingests stumps too."""
     rows, spaces = load()
-    a = NYCTreePointAdapter(rows, spaces, structures={"full"})
+    a = NYCTreePointAdapter(rows, spaces, HORIZON, structures={"full"})
     produced = list(a.records())
     check(bool(produced), "the Full filter produced nothing at all")
     for record in produced:

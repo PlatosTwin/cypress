@@ -2064,7 +2064,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         if nyc_structures and nyc_structures.lower() != "all":
             structures = {s.strip() for s in nyc_structures.split(",") if s.strip()}
         nyc = NYCTreePointAdapter(
-            nyc_rows, nyc_spaces, limit=limit,
+            nyc_rows, nyc_spaces, horizon_year, limit=limit,
             structures=structures, borough=nyc_borough or None,
             with_raw=with_city_raw,
         )
@@ -2442,6 +2442,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # The distribution design makes a borough the published unit.
             "nyc_borough_carried": str(stats.get("nyc_borough_carried", 0)),
             "nyc_no_borough_to_carry": str(stats.get("nyc_no_borough_to_carry", 0)),
+            "nyc_planted_date_beyond_horizon":
+                str(stats.get("nyc_planted_date_beyond_horizon", 0)),
         }
 
     source_meta = {**source_meta, **sj_meta_keys, **nyc_meta_keys}
