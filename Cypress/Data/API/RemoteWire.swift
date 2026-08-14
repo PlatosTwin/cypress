@@ -150,7 +150,7 @@ public enum RemoteSurface: Error, Equatable, CustomStringConvertible {
     /// The service answers the **community half** of this read and the whole client type needs the
     /// city file too.
     ///
-    /// This is the finding of this round and `docs/errata-pending/remote-half-answers.md` enumerates
+    /// This is the finding of this round and this round's errata entry enumerates
     /// every instance. A `GroveEntry` carries a display name and a coordinate; `GET /me/grove` sends
     /// neither, because both are city-layer facts. Filling them in with a placeholder would put an
     /// unnamed tree at Null Island on a map, which is why this refuses instead. `RoutedAPI` is what

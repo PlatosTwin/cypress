@@ -25,7 +25,7 @@ import Foundation
 ///    even an `{error: …}` envelope — and dress it as a species that is not there.
 ///    **This contradicts spec §3.1's "the remote implementation exists, is tested, and is not on
 ///    the hot path" for Class L**, and the contradiction is recorded in
-///    `docs/errata-pending/remote-half-answers.md` rather than papered over here.
+///    this round's errata entry rather than papered over here.
 ///
 /// 2. **Eight of the nine mutations of spec §3.4 have no route either.** §3.4's conclusion is
 ///    unchanged — they "stay Class L until they are queued", which needs a widened `outbox.kind`
@@ -152,7 +152,7 @@ public struct RemoteAPI: CypressAPI {
     /// to read the body a second time is **not** the fix and is not done: it would need the bearer,
     /// which only `transport` holds, and asking the seam for the error body is a change to the
     /// session layer that every other caller of it would then have to understand. It is written up
-    /// in `docs/errata-pending/remote-half-answers.md` as work for the round that wires this method,
+    /// in this round's errata entry as work for the round that wires this method,
     /// and it costs nothing today because §3.4 keeps `addTree` routed local, where the candidates
     /// are produced from the installed inventory.
     ///
@@ -492,7 +492,7 @@ public struct RemoteAPI: CypressAPI {
     /// language. Two places for one fact is how the sentences drift.
     ///
     /// So `RoutedAPI` routes the journal local for now and says so, and the finding is written down
-    /// in `docs/errata-pending/remote-half-answers.md` rather than fixed by inventing prose the
+    /// in this round's errata entry rather than fixed by inventing prose the
     /// service did not send (DECISIONS constraint 15).
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
         throw RemoteSurface.communityHalfOnly
@@ -674,7 +674,7 @@ public extension RemoteAPI {
     /// is the state the app writes and the one nothing in it has ever moved off.
     ///
     /// It is still a guess where the wire could carry a fact, and it is written down in
-    /// `docs/errata-pending/remote-half-answers.md` as the one field on this payload that a server
+    /// this round's errata entry as the one field on this payload that a server
     /// round should close.
     func treeCommunityHalf(id: UUID) async throws -> TreeCommunityDelta {
         let data = try await transport.send(try request("trees/\(id.uuidString)", method: "GET"))

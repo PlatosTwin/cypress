@@ -409,7 +409,7 @@ public struct RoutedAPI: CypressAPI {
     /// So the journal answers from the phone and **says that it did** — `.fellBackToLocal`, every
     /// time, which is the truthful mark for a read whose remote half is unreachable rather than
     /// merely unreached. Closing it is a server round that sends the summary, and it is written up in
-    /// `docs/errata-pending/remote-half-answers.md`.
+    /// this round's errata entry.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
         let page = try await local.journal(cursor: cursor, limit: limit)
         await log.record(.journal, .fellBackToLocal)
