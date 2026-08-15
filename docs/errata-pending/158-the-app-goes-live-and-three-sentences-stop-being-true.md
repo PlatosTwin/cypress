@@ -73,6 +73,15 @@ drawn; whether it wants a word changed is the same owner question as (1) and bel
 
 ## 3. Screen 17 says "No connection." to somebody with four bars, and SCREENS.md names no sentence that would fix it
 
+> **PARTLY RULED — 2026-08-14, rulings 1 and 3.** A terminally refused row now reads `This couldn't
+> be sent.` and folds into the failed row, and the ruled sentence is required to stay distinguishable
+> from the "No connection." state this section is about. **The case this section actually raises is
+> not fixed**: a `SessionError` on a good connection is *outside* the taxonomy, so it stays `pending`
+> and still renders "No connection." — the ruling narrowed the terminal sentence and said nothing
+> about the fallback. Read this section as still open for that arm.
+> `docs/rulings-pending/copy-and-the-apple-button.md`, and
+> `docs/errata-pending/the-copy-round-and-what-it-did-not-reach.md` §2 for what the ruling gave up.
+
 Review of PR #77 flagged this and it becomes live here. `OutboxFailureReason.sentence(for:)`
 (`Cypress/Data/Outbox/OutboxViewState.swift`) answers **"No connection."** for any error outside the
 `APIError` taxonomy, and that fallback now catches two things it did not before:
