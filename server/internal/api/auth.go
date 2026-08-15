@@ -152,8 +152,30 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 		if _, err := s.Store.RegisterDevice(r.Context(), *request.DeviceUUID); err != nil {
 			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 		}
-		if err := s.Store.ClaimDevice(r.Context(), *request.DeviceUUID, user.ID); err != nil &&
-			!errors.Is(err, store.ErrClaimedByAnotherAccount) {
+		// ── This used to swallow ErrClaimedByAnotherAccount and answer 200 anyway ───────────────
+		//
+		// Review of PR #84 (F3) proved what that costs. `ClaimDevice` returns the #174 guard
+		// whenever `devices.user_id` names somebody else, and nothing on this service ever clears
+		// that column — a sign-out is not a request we receive. So: account A signs in on a phone
+		// and signs out; account B signs in. We kept every contribution on A, returned 200 with B's
+		// session, and the client then ran its own local `linkAccount` unconditionally and moved the
+		// phone's rows to B. Screen 15 drew success while the two sides disagreed about who owns the
+		// work, and nothing on either side could see it.
+		//
+		// `conflict`, with the same sentence `POST /devices/claim` already answers with, because it
+		// is the same guard tripping for the same reason: nothing is wrong with this caller's
+		// authority, the device simply already belongs to somebody, and re-sending will not change
+		// that — which is what non-retryable means. Reusing that code leaves the client's taxonomy
+		// untouched (`Cypress/Core/APIError.swift` already carries `conflict`, already
+		// non-retryable), so no old client meets a code it cannot decode.
+		//
+		// **It refuses before `mintSession`, so this request mints no session.** The `users` row and
+		// any consent recorded above survive, which is correct: the account is real, it simply could
+		// not take this device.
+		if err := s.Store.ClaimDevice(r.Context(), *request.DeviceUUID, user.ID); err != nil {
+			if errors.Is(err, store.ErrClaimedByAnotherAccount) {
+				return apierr.New(apierr.Conflict, "This device is already linked to another account.")
+			}
 			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 		}
 	}

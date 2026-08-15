@@ -32,16 +32,51 @@ import Testing
 import UIKit
 @testable import Cypress
 
+/// The two account ids this suite's scripted `/auth/oidc` answers with.
+///
+/// File-scope rather than statics on the suite: the suite is `@MainActor`, so its statics are too,
+/// and `bootInMemory`'s default argument is evaluated outside that isolation (a warning today, an
+/// error under the Swift 6 language mode).
+private enum AccountSurfaceIDs {
+    /// The service's id, not one this device minted — see `RootView.accountLink()`.
+    static let signedIn = UUID(uuidString: "5E12E12E-0000-4000-8000-00000000E101")!
+    /// What the service answers after a deletion, in the one test that needs it.
+    static let replacement = UUID(uuidString: "5E12E12E-0000-4000-8000-00000000E102")!
+}
+
 @MainActor
 @Suite("The account, and the records only it can read (E131)")
 struct AccountSurfaceTests {
 
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000E1")!
 
+
+    /// Screen 15's action, with Apple's sheet replaced by a value.
+    ///
+    /// Every sign-in in this suite is `.apple`: it is the only one of screen 15's three routes that
+    /// completes since #158 step 5, and the other two now throw `AccountLinkRefusal.unavailable`
+    /// (R72 ruling 2 defers both). Tests below that used to tap `.email` or `.google` to vary the
+    /// provider therefore tap Apple twice instead; what they are about — that the *record* travels
+    /// and is read back — is unchanged.
+    private static func link(_ data: DataLayer) -> AccountAskLink {
+        RootView(
+            data: data,
+            appleSignIn: AppleSignIn { AppleSignInFixture.credential }
+        ).accountLink()
+    }
+
     /// A `DataLayer` over an in-memory store, assembled the way `DataLayer.boot` assembles a real
     /// one — `AccountLinkTests` and `DeviceClaimTests` wire theirs identically. Throwaway by
     /// construction, which is what a suite that deletes accounts needs.
-    private static func bootInMemory() async throws -> DataLayer {
+    ///
+    /// **The session is scripted, and after #158 step 5 it has to be.** `RootView.accountLink()`
+    /// now performs a real `POST /auth/oidc`, and an `AppSession` built with `AuthClient()`'s
+    /// defaults points at `SyncService.defaultBaseURL` — the live `cypress-sync`. Every sign-in
+    /// below would have gone to production. `ScriptedAuthHTTP` is `AccountLinkTests`' double, shared
+    /// rather than copied for exactly that reason.
+    ///
+    /// - Parameter userIDs: what `/auth/oidc` answers, in order, holding the last once they run out.
+    private static func bootInMemory(userIDs: [UUID] = [AccountSurfaceIDs.signedIn]) async throws -> DataLayer {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
@@ -55,7 +90,11 @@ struct AccountSurfaceTests {
             local: api,
             outbox: outbox,
             deviceID: deviceID,
-            session: AppSession(deviceUUID: deviceID),
+            session: AppSession(
+                deviceUUID: deviceID,
+                client: AuthClient(baseURL: ScriptedAuthHTTP.baseURL, http: ScriptedAuthHTTP.minting(userIDs)),
+                credentials: InMemoryCredentialStore()
+            ),
             remoteAccess: .disabled,
             readLog: RemoteReadLog()
         )
@@ -81,14 +120,14 @@ struct AccountSurfaceTests {
     @Test("the license answer travels all the way to the account and can be read back")
     func consentSurvivesToTheAccount() async throws {
         let data = try await Self.bootInMemory()
-        let link = RootView(data: data).accountLink()
+        let link = Self.link(data)
 
         // Declined. `AccountAskModel` leaves the checkbox ungated on the explicit grounds that the
         // answer travels on the request; this is that sentence, checked.
-        try await link(AccountLinkRequest(provider: .email, acceptsLicense: false))
+        try await link(AccountLinkRequest(provider: .apple, acceptsLicense: false))
 
         let declined = try #require(await data.local.accountLink())
-        #expect(declined.provider == AccountAskProvider.email.rawValue, "the provider was discarded")
+        #expect(declined.provider == AccountAskProvider.apple.rawValue, "the provider was discarded")
         #expect(declined.licenseVersion == nil, "a declined license was recorded as agreed to")
         #expect(declined.acceptsLicense == false)
 
@@ -110,7 +149,7 @@ struct AccountSurfaceTests {
     @Test("re-linking after a decline does not leave the previous agreement on the account")
     func decliningClearsAnEarlierConsent() async throws {
         let data = try await Self.bootInMemory()
-        let link = RootView(data: data).accountLink()
+        let link = Self.link(data)
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: false))
@@ -122,17 +161,18 @@ struct AccountSurfaceTests {
 
     // MARK: - 2. Signing out
 
-    /// **The defect this guards is the one sign-out invites.** A local account has no credential:
-    /// `accountLink` mints a `UUID` when it finds none. A sign-out that forgot the id would hand the
-    /// next sign-in a *different* account, leaving every reminder and favorite the first one owned
-    /// readable by no query and removable by no deletion — the unreachable litter RULINGS R3 refuses
-    /// to create. So the assertion is not "signing out worked"; it is that the same person gets
-    /// their own records back.
+    /// **The defect this guards is the one sign-out invites**, and since #158 step 5 the guarantee
+    /// comes from a different place. It used to rest on this device remembering `signedOutUserID`,
+    /// because a local account had no credential to sign back in *with*. It now rests on the
+    /// service: the same Apple subject resolves to the same `users` row, so `/auth/oidc` answers the
+    /// same account id. Either way the assertion is the one that matters — not "signing out worked",
+    /// but that the same person gets their own records back, rather than a rival id leaving every
+    /// reminder and favorite readable by no query and removable by no deletion (RULINGS R3).
     @Test("signing out keeps every record, and signing in again returns to the same account")
     func signOutIsNotAQuietDeletion() async throws {
         let data = try await Self.bootInMemory()
         let tree = try await Self.addTree(data)
-        let link = RootView(data: data).accountLink()
+        let link = Self.link(data)
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         let signedInAs = try #require(await data.local.userID)
@@ -175,9 +215,9 @@ struct AccountSurfaceTests {
     func deletionRunsFromTheShippingSurface() async throws {
         let data = try await Self.bootInMemory()
         let tree = try await Self.addTree(data)
-        let link = RootView(data: data).accountLink()
+        let link = Self.link(data)
 
-        try await link(AccountLinkRequest(provider: .google, acceptsLicense: true))
+        try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         let signedInAs = try #require(await data.local.userID)
         _ = try await data.local.savePrivateReminder(PrivateReminder(
             owner: .user(signedInAs),
@@ -199,10 +239,20 @@ struct AccountSurfaceTests {
     /// A deleted account must not be resumable. `signedOutUserID` exists so a sign-out can be
     /// undone; if deletion left it behind, the next sign-in would resume an account whose rows
     /// `AccountDeletion` had already emptied — signed in as a ghost.
+    ///
+    /// **What this test is about moved with #158 step 5, and the fixture says so out loud.** The id
+    /// is the service's now, so the local `signedOutUserID` is no longer what a sign-in reads — the
+    /// far side is. The scripted service therefore answers the *same* account for the first two
+    /// sign-ins (same Apple subject, same `users` row, which is `UpsertUserForApple`'s behavior) and
+    /// a **different** one for the third, which is what a real `/auth/oidc` does once the row that
+    /// subject resolved to has been deleted. The local assertion below is unchanged and is still
+    /// R3's: a deleted account must leave nothing resumable behind on this device.
     @Test("a deleted account cannot be signed back into")
     func deletionIsNotResumable() async throws {
-        let data = try await Self.bootInMemory()
-        let link = RootView(data: data).accountLink()
+        let data = try await Self.bootInMemory(
+            userIDs: [AccountSurfaceIDs.signedIn, AccountSurfaceIDs.signedIn, AccountSurfaceIDs.replacement]
+        )
+        let link = Self.link(data)
 
         try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         let deleted = try #require(await data.local.userID)
@@ -319,9 +369,7 @@ struct AccountSurfaceTests {
             )
         })
 
-        try await RootView(data: data).accountLink()(
-            AccountLinkRequest(provider: .apple, acceptsLicense: true)
-        )
+        try await Self.link(data)(AccountLinkRequest(provider: .apple, acceptsLicense: true))
         let signedInModel = AccountModel(api: data.local)
         await signedInModel.load()
 

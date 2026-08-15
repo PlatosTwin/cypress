@@ -564,6 +564,65 @@ func TestClaimIsIdempotentAndRefusesAnotherAccountsDevice(t *testing.T) {
 	}
 }
 
+// TestSignInOnAPhoneHeldByAnotherAccountIsRefused is F3 of PR #84's review, made un-regressable.
+//
+// `POST /auth/oidc` performs the claim inline when the body carries a `device_uuid`, and it used to
+// swallow `ErrClaimedByAnotherAccount` and answer 200 with a session anyway. Nothing here ever
+// clears `devices.user_id` — a sign-out is not a request this service receives — so the reachable
+// sequence is ordinary: A signs in on a phone and signs out, B signs in. The service kept every
+// contribution on A, handed B a session, and B's client then moved its own local rows to B. Two
+// sides, one phone, and no agreement about who owns the work.
+//
+// The assertions are in two halves on purpose. The refusal is the visible one; **that the work
+// stayed with A** is the one that says the guard did its job rather than merely returned an error.
+func TestSignInOnAPhoneHeldByAnotherAccountIsRefused(t *testing.T) {
+	h := newHarness(t)
+	deviceUUID := uuid.New()
+
+	// A's phone, with something on it worth arguing over.
+	deviceToken := h.registerDeviceToken(t, deviceUUID)
+	key := uuid.New()
+	h.syncOne(t, deviceToken, map[string]any{
+		"client_uuid": key, "kind": "visit", "tree_uuid": uuid.New(),
+		"occurred_at": time.Now().UTC(), "payload": json.RawMessage(`{}`),
+	})
+	first := h.signIn(t, &deviceUUID)
+
+	// B, on the same phone. A different Apple subject, so this is a different account.
+	h.apple.identity = apple.Identity{
+		Subject: "007777.yyyy.1111", Email: "third@b.test", Nonce: sha256Hex(harnessNonce),
+	}
+	recorder := h.do(t, http.MethodPost, Prefix+"/auth/oidc", "", map[string]any{
+		"identity_token": "an-identity-token", "authorization_code": "an-authorization-code",
+		"nonce": harnessNonce, "device_uuid": deviceUUID, "license_version": "odbl-1.0",
+	})
+
+	if recorder.Code == http.StatusOK {
+		t.Fatal("a second account signed in on a phone the first still holds, and got a session. " +
+			"The service keeps the work on the first account while the client moves its local rows " +
+			"to the second, and screen 15 draws success over the disagreement")
+	}
+	envelope := decodeEnvelope(t, recorder)
+	if envelope.Error.Code != string(apierr.Conflict) {
+		t.Fatalf("code = %q, want conflict — the same code and sentence POST /devices/claim "+
+			"already answers with, because it is the same guard tripping", envelope.Error.Code)
+	}
+	if envelope.Error.Retryable {
+		t.Error("the refusal is retryable; re-sending cannot change whose device this is")
+	}
+
+	// The half that matters: nothing moved.
+	var owner *uuid.UUID
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT user_id FROM contributions WHERE client_uuid = $1`, key).Scan(&owner); err != nil {
+		t.Fatalf("reading the contribution back: %v", err)
+	}
+	if owner == nil || *owner != first.UserID {
+		t.Fatalf("the visit ended up owned by %v, want the first account %v — the refusal was "+
+			"returned after the sweep had already run", owner, first.UserID)
+	}
+}
+
 // TestADeviceTokenCannotClaim pins the authority.
 func TestADeviceTokenCannotClaim(t *testing.T) {
 	h := newHarness(t)

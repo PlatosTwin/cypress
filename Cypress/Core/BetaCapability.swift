@@ -30,10 +30,19 @@ public enum BetaCapability {
 
     /// Whether an account can be created or signed into.
     ///
-    /// `true`: sign-in completes locally through `claimDevice` (ERRATA E124). It was `false` while
-    /// the only path to an account ran through a magic-link server this build does not have.
+    /// `true`. It was `false` while the only path to an account ran through a magic-link server this
+    /// build does not have; ERRATA **E124** flipped it on a *local* account that `claimDevice`
+    /// completed on the device.
+    ///
+    /// **It is neither of those any more.** #158 step 5 wired screen 15's `Continue with Apple` to
+    /// `POST /auth/oidc` on `cypress-sync` (spec §5.2, RULINGS **R72** ruling 2), so signing in is a
+    /// real exchange that mints a real session and the account id is the service's. The other two
+    /// buttons refuse — `AccountLinkRefusal.unavailable`, R72 ruling 2 defers the email magic link
+    /// to its own ticket — so this constant now means "one of screen 15's three routes works", which
+    /// is what R72 ruled it should mean until that ticket lands.
+    ///
     /// Everything device-scoped — favorites (ERRATA E89), private reminders (E23) — keeps working
-    /// exactly as before; a local account simply gives those contributions a `userID` to hang from
+    /// exactly as before; an account simply gives those contributions a `userID` to hang from
     /// instead of the device id, which is the move `claimDevice` was written for.
     public static let accountsAvailable = true
 

@@ -57,21 +57,58 @@ final class RemoteGateComplaintUITests: XCTestCase {
         )
     }
 
-    /// The control, and the half that makes the assertion above a measurement.
+    /// The same rule for the **Apple button's** pin (#158 step 5, review F1).
     ///
-    /// With **no** `CYPRESS_REMOTE` set — the ordinary state of every other test in this suite — the
-    /// gate resolves `.disabled` and there must be no banner at all. Without this, a banner drawn
-    /// unconditionally would pass the test above while covering the app in every run.
+    /// `DebugAppleSignInOverride.resolve` used to answer `nil` for an unrecognized value, which is
+    /// the answer an *absent* variable gets — so it restored the real Apple sheet, and a typo in
+    /// either the key or the value in `AppleSignInUITests` put a live system sheet in front of a
+    /// runner whose simulator may have an Apple Account signed in. It refuses now, and this is the
+    /// half that proves the refusal is not silent.
+    ///
+    /// **Why a UI test when unit tests already cover it.** `AppleSignInTests` proves the *trigger* —
+    /// that a mistyped value resolves to a refusing action and produces a complaint string. What no
+    /// unit test can say is whether anything **draws** it, which is exactly the gap round-4 review
+    /// found for `CYPRESS_REMOTE` and this method's sibling above was written to close. The string
+    /// existed then too.
+    func testAMistypedAppleSignInPinDrawsItself() {
+        let app = XCUIApplication()
+        app.launchEnvironment["CYPRESS_APPLE_SIGN_IN"] = "nonsense"
+        app.launch()
+
+        let banner = app.staticTexts
+            .matching(NSPredicate(format: "label CONTAINS %@", "CYPRESS_APPLE_SIGN_IN=nonsense"))
+            .firstMatch
+        XCTAssertTrue(
+            banner.waitForExistence(timeout: 20),
+            """
+            a CYPRESS_APPLE_SIGN_IN value this build does not understand drew nothing. The Apple \
+            button refuses, which is the fail-safe half — and indistinguishable from a build where \
+            the pin was understood, so a UI test would wait out its timeout on a state nothing was \
+            ever going to draw.
+            """
+        )
+    }
+
+    /// The control, and the half that makes both assertions above measurements.
+    ///
+    /// With **neither** variable set — the ordinary state of every other test in this suite — both
+    /// gates resolve quietly and there must be no banner at all. Without this, a banner drawn
+    /// unconditionally would pass the tests above while covering the app in every run.
+    ///
+    /// Both keys are checked in one launch rather than two, because the assertion is about the
+    /// *absence* of a banner and one clean launch witnesses that for every key at once.
     func testTheDefaultDrawsNoComplaint() {
         let app = XCUIApplication()
         app.launch()
 
-        let banner = app.staticTexts
-            .matching(NSPredicate(format: "label CONTAINS %@", "CYPRESS_REMOTE"))
-            .firstMatch
-        XCTAssertFalse(
-            banner.waitForExistence(timeout: 5),
-            "the gate complained with nothing set, so every ordinary run draws a banner over the app"
-        )
+        for key in ["CYPRESS_REMOTE", "CYPRESS_APPLE_SIGN_IN"] {
+            let banner = app.staticTexts
+                .matching(NSPredicate(format: "label CONTAINS %@", key))
+                .firstMatch
+            XCTAssertFalse(
+                banner.waitForExistence(timeout: 5),
+                "\(key) complained with nothing set, so every ordinary run draws a banner over the app"
+            )
+        }
     }
 }
