@@ -198,14 +198,22 @@ product. A fixture that does not run through the code under test is not evidence
 The server returned `200` with a session when `ClaimDevice` reported
 `ErrClaimedByAnotherAccount`, so A signs in on a phone and signs out, B signs in, the service keeps
 every contribution on A while the client moves the phone's local rows to B. It answers `conflict`
-now, with the sentence `POST /devices/claim` already uses, before minting a session.
+now, with the sentence `POST /devices/claim` already uses, before minting a session — **and after
+`UpsertUserForApple` and `RecordLicenseConsent`**, so a refused sign-in still writes the `users` row
+and still records the consent. Only the device claim and the session are withheld. See §7 for why
+that distinction is stated rather than left to "the request was refused".
 
-**STOP-AND-ASK, and it is new with the fix.** Nothing on the service ever clears `devices.user_id` —
-a sign-out is not a request it receives — so the second account now **cannot sign in on that phone at
-all**. Screen 15 draws `AccountAskCopy.noticeFailed`, *"That did not go through"*, which is honest
-about what happened and says nothing about why or that retrying will not help. A surface that says
-"this phone's contributions belong to another account", and whatever release path goes with it, is
-copy no mock draws and a product decision nobody has taken. Recorded, not built.
+**STOP-AND-ASK, new with the fix — RULED. Owner accepted for beta, 2026-08-14.** Nothing on the
+service ever clears `devices.user_id` — a sign-out is not a request it receives — so the second
+account **cannot sign in on that phone at all**. Screen 15 draws `AccountAskCopy.noticeFailed`,
+*"That did not go through"*, which is honest about what happened and says nothing about why, or that
+retrying will not help.
+
+The owner accepted that state **for the beta** on 2026-08-14: one phone, one account, and a refusal
+that is honest but uninformative. The release path — some way for a device to be handed on, or for an
+account to give a phone up — together with copy that explains the refusal, becomes a designed round
+later rather than something improvised inside a sync-API ticket. Recorded here with its resolution so
+the entry does not read as an open question after it has been answered.
 
 ### 6d. Nothing rolled back between the Keychain write and the local link (F4)
 
@@ -233,7 +241,17 @@ because the client's own fixtures assert these exact envelopes decode:
 ```
 
 Both are the contract behaving correctly — Apple verification failing on a fake token is the expected
-result, not a defect — and both refuse before any write. **Nothing was created on the production
+result, not a defect — and **both of these two refuse before any write**: a fake token fails at
+`s.Apple.Verify`, and an empty authorization code fails validation, both before
+`UpsertUserForApple`, `RegisterDevice` or `RecordLicenseConsent`.
+
+**That scoping is deliberate and was narrowed in round 3.** It is a statement about *these two
+probes*, not about `/auth/oidc` generally. The reviewer verified the ordering in the handler: the
+`conflict` refusal added in §6c lands **after** `UpsertUserForApple` and `RecordLicenseConsent`, so a
+sign-in refused for a device already claimed still writes the `users` row and still records the
+consent. That is correct — the account is real and it agreed to the license; what it could not do was
+take this phone — but it is emphatically not "no write happened", and the earlier unscoped sentence
+would have read as if it were. **Nothing was created on the production
 database by this branch: no `users` row, no `devices` row, no session, no `device_uuid` and no
 `client_uuid`.** The residue list for this round is empty.
 

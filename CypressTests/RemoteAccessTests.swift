@@ -345,15 +345,37 @@ struct RemoteAccessSignInTests {
     }
 }
 
-/// Records every URL a request is made for, and fails all of them in-process.
+/// Records every URL a request is made for, and intercepts **only the hosts these tests are about**.
 ///
 /// Registered globally rather than on one `URLSessionConfiguration`, because the subject is
 /// `URLSession.shared` — the session `AuthClient()` uses by default, and the one the defect ran on.
 /// A scoped protocol could not see it.
 ///
-/// It never lets a request leave: `startLoading` immediately reports `notConnectedToInternet`, the
-/// same failure `OfflineSession.Refuser` reports, so a code path that reaches it takes the offline
-/// branch rather than hanging on a real timeout.
+/// ── Why `canInit` is narrow, which is a regression this suite caused and a reviewer caught ──────
+///
+/// The first version returned `true` for **every** request in the process and failed all of them
+/// with `-1009`. `URLProtocol.registerClass` is process-wide, and `.serialized` only serializes
+/// tests *within* a suite — Swift Testing runs other suites in parallel with this one, so anything
+/// making a request during the window got the refusal. `CityDownloadTests` was in the blast radius:
+/// `CityDownloader(baseURL: dir)` reads a `file://` directory over `URLSession.shared`, and `canInit`
+/// did not exempt `file://` either. Three of its tests failed with `NSURLErrorDomain Code=-1009`,
+/// naming a defect that did not exist, in a suite with nothing to do with this one.
+///
+/// **It was scheduling-dependent, which is what made it worth blocking on rather than tolerating.**
+/// The author's own full run was green and the reviewer's was red three times out of three; a gate
+/// that fails on thread timing meets CI eventually rather than reliably. Diagnosed by controlled
+/// experiment rather than by inspection: `CityDownloadTests` alone passes 11/11, and
+/// `CityDownloadTests` **plus** this suite reproduces all three failures.
+///
+/// So: **record everything, intercept only ours.** The recording is what makes a failure
+/// diagnosable — an unexpected host still shows up in `observed()` — while `canInit` claims only
+/// `cypress-sync` (the service these tests are about) and the `.invalid` control hosts (a reserved
+/// TLD that can never resolve, so claiming it costs nothing). Every other request in the process is
+/// left exactly as it would be with this protocol unregistered.
+///
+/// What is *claimed* never leaves: `startLoading` reports `notConnectedToInternet`, the same failure
+/// `OfflineSession.Refuser` reports, so a code path that reaches it takes the offline branch rather
+/// than hanging on a real timeout.
 final class RecordingProtocol: URLProtocol {
 
     private static let lock = NSLock()
@@ -373,7 +395,14 @@ final class RecordingProtocol: URLProtocol {
         lock.lock()
         urls.append(request.url?.absoluteString ?? "<no url>")
         lock.unlock()
-        return true
+        return isOurs(request.url)
+    }
+
+    /// The hosts this protocol is entitled to answer for. Everything else is recorded and passed
+    /// straight through — see the type's header for what happened when it was not.
+    private static func isOurs(_ url: URL?) -> Bool {
+        guard let host = url?.host else { return false }
+        return host.contains("cypress-sync") || host.hasSuffix(".invalid")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }

@@ -563,8 +563,11 @@ struct RootView: View {
     /// claimed.
     ///
     /// The service refuses now, with `conflict` and the sentence `POST /devices/claim` already
-    /// answers with. It refuses **before minting a session**, so `exchangeApple` throws, nothing is
-    /// persisted, `linkAccount` is never reached, and screen 15 draws
+    /// answers with. It refuses **before minting a session** — and after `UpsertUserForApple` and
+    /// `RecordLicenseConsent`, which is worth stating exactly: the far side keeps the `users` row and
+    /// the consent it just recorded, and only the device claim and the session are withheld. So
+    /// `exchangeApple` throws, nothing is persisted *on this phone*, `linkAccount` is never reached,
+    /// and screen 15 draws
     /// `AccountAskCopy.noticeFailed` — *"That did not go through."* Honest, because it did not: this
     /// phone is not this account's to take.
     ///

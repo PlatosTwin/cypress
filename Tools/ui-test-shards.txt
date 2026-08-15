@@ -112,6 +112,16 @@
 # pace-setter, not 5.6s between two candidates, and it survives this class costing twice what it was
 # measured at. Re-measure before moving it, per the paragraph above.
 #
+# `RemoteGateComplaintUITests` gained a third method in #158 step 5's round 3 — the Apple button's
+# mistyped-pin banner, the sibling of the `CYPRESS_REMOTE` one it already drew. Measured whole on the
+# iPhone 16 Pro simulator (EA0AD796…, 402 pt): `VERIFY-OK: Executed 3 tests, with 0 failures
+# (0 unexpected) in 22.205 seconds`, against 2 tests before it. **The placement did not change and
+# does not need to**: the method is one extra launch on Shard 4, which the arithmetic below already
+# makes the pace-setter, and the class was never in the CI timing table above to begin with — so the
+# honest statement is that Shard 4 grows by roughly one launch (~8s here) and nothing about the
+# ordering of the four shards turns on a number that small. Re-measure on one machine before moving
+# anything for it.
+#
 # `FrameFinitenessGateTests` (#239) was added afterwards and costs nothing worth balancing for:
 # `XCTAssert`s on literal `CGRect`s only, no `XCUIApplication` anywhere in the file. Placed on the
 # shortest line by class COUNT, since there is no per-class time to add it by — the rule above,
