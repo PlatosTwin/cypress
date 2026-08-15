@@ -309,9 +309,13 @@ def test_the_check_that_caught_this_is_in_the_shipped_schema():
     name = "test_the_check_that_caught_this_is_in_the_shipped_schema"
     with tempfile.TemporaryDirectory() as root:
         write_corpus(root, [sj_row(1, "Magnolia", "Yes", 1), sj_row(2, "Magnolia", "No", 2)])
-        with contextlib.redirect_stdout(io.StringIO()):
-            build(root, do_fetch=False, limit=0, with_city_raw=False,
-                  source="city", sj_extent="full")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                build(root, do_fetch=False, limit=0, with_city_raw=False,
+                      source="city", sj_extent="full")
+        except Exception as exc:  # noqa: BLE001
+            check(False, f"{name}: the build raised {type(exc).__name__}: {exc}")
+            return
         conn = sqlite3.connect(os.path.join(root, "Fixtures", "seed", "cypress-seed.sqlite"))
         try:
             species_id = conn.execute("SELECT id FROM species LIMIT 1").fetchone()
@@ -345,7 +349,13 @@ def main() -> int:
         test_the_check_that_caught_this_is_in_the_shipped_schema,
     ]
     for test in tests:
-        test()
+        # A test that raises is a failed test, not a dead run. Without this the
+        # first build to hit the defect these guard against takes the runner
+        # down mid-suite, and every later test's verdict is simply never printed.
+        try:
+            test()
+        except Exception as exc:  # noqa: BLE001
+            check(False, f"{test.__name__}: raised {type(exc).__name__}: {exc}")
 
     print(f"{PASSED} checks passed, {len(FAILURES)} failed")
     for failure in FAILURES:
