@@ -133,30 +133,80 @@ struct OwnerCopyRulingTests {
     /// that item **reached the service** and a person declined it — "This couldn't be sent." is a
     /// false claim about where somebody's field work is. The owner ruled the split on 2026-08-15.
     ///
-    /// Written as a `CaseIterable` sweep rather than one assertion per interesting code: a taxonomy
-    /// code added later arrives here with no opinion attached, and this says so. Silently inheriting
-    /// a sentence is the exact shape of the error being corrected.
+    /// **The expectation is a `switch` with no `default`, and that is the whole of the fix for the
+    /// second version of the same error (PR #88 review, F2b).**
+    ///
+    /// The first version of this sweep wrote the expectation as
+    /// `code == .moderationRejected ? moderationDeclined : refusedTerminally`, over a
+    /// `CaseIterable` loop, and claimed in this comment that "a taxonomy code added later arrives
+    /// here with no opinion attached, and this says so". It did not say so. A ternary is a
+    /// **default**: the reviewer added a hypothetical `case quotaExceeded`, marked it non-retryable
+    /// and gave it a retrying sentence — the two decisions the compiler already forces — and the
+    /// suite passed green with the new code silently inheriting "This couldn't be sent." That is
+    /// round 1's error arriving by the same route, past the test written to prevent it, wearing a
+    /// comment that promised otherwise. A comment is not a test (CLAUDE.md).
+    ///
+    /// `ruledSentence(for:)` below is exhaustive over `APIError` with no `default`, so a new case
+    /// **fails the build at this line** rather than borrowing an answer. That is a step past the
+    /// dictionary-and-`#require` form the review suggested, and deliberately: a dictionary literal
+    /// is not exhaustive either, so a missing key would have been a red test at run time rather
+    /// than the build failure the suggestion described. Three sites now stop a new code —
+    /// `APIError.retryable`, `OutboxFailureReason.sentence(for:)`, and this one — and this is the
+    /// only one of the three that asks the question that matters for the copy.
+    ///
+    /// **Both directions measured, with the reviewer's own hypothetical.** With `quota_exceeded`
+    /// added to `APIError` and both compiler-forced sites answered, this form gives exactly one
+    /// error — `OwnerCopyRulingTests.swift:166:13: error: switch must be exhaustive` — and the
+    /// ternary it replaced gives `Test run with 7 tests in 1 suite passed after 0.030 seconds`,
+    /// green, with the new code inheriting "This couldn't be sent." unasked. The second half is the
+    /// control: on its own, a build failure is only evidence that *something* changed.
     @Test("every terminal code gets the sentence the owner ruled for it, and no other")
-    func everyTerminalCodeGetsItsRuledSentence() {
+    func everyTerminalCodeGetsItsRuledSentence() throws {
+        /// What screen 17 must draw for a terminal row carrying `code`, or nil where the code is
+        /// retryable and this ruling does not reach it.
+        ///
+        /// **If you are here because this stopped compiling, the new code needs an owner's answer
+        /// to one question before it can join either group: did the item reach the service?**
+        /// "This couldn't be sent." says it did not, and is false of anything that did — which is
+        /// exactly how `moderation_rejected` came to be wrong. Do not add a `default`.
+        func ruledSentence(for code: APIError) -> String? {
+            switch code {
+            case .unauthorized, .forbidden, .notFound, .validationFailed, .conflict:
+                // Never left the phone: refused before or at the boundary.
+                return OutboxFailureReason.refusedTerminally
+            case .moderationRejected:
+                // Arrived, was read by a person, and will not be published (owner, 2026-08-15).
+                return OutboxFailureReason.moderationDeclined
+            case .rateLimited, .serverError:
+                // Retryable, so no terminal sentence of its own; the control half below covers it.
+                return nil
+            }
+        }
+
         let moderated = OutboxFailureReason.describe(
             error: APIError.moderationRejected, failCount: 1, state: .failed
         )
         #expect(moderated == "This was reviewed and won't be shared.")
 
+        var swept = 0
         for code in APIError.allCases where !code.retryable {
+            let expected = try #require(
+                ruledSentence(for: code),
+                "`\(code.rawValue)` is non-retryable and has no terminal sentence ruled for it"
+            )
             let sentence = OutboxFailureReason.describe(error: code, failCount: 1, state: .failed)
-            let expected = code == .moderationRejected
-                ? OutboxFailureReason.moderationDeclined
-                : OutboxFailureReason.refusedTerminally
+            swept += 1
             #expect(
                 sentence == expected,
                 """
-                a terminal `\(code.rawValue)` row reads "\(sentence)". If this is a code the taxonomy \
-                grew, it needs an owner's answer to one question before it can borrow either \
-                sentence: did the item reach the service? "This couldn't be sent." says it did not.
+                a terminal `\(code.rawValue)` row reads "\(sentence)" against the ruled \
+                "\(expected)".
                 """
             )
         }
+        // The sweep has to have swept: `allCases` filtered to nothing would pass every assertion
+        // above by making none of them.
+        #expect(swept == 6, "the sweep covered \(swept) non-retryable codes, not the 6 that exist")
 
         // The retryable half is untouched by either ruling and still composes the per-code cause.
         // It is the control for the sweep above, which would otherwise pass on a build where
