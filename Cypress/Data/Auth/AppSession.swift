@@ -10,9 +10,16 @@
 //
 //  `APIError.unauthorized.retryable` is `false` and `OutboxRetryPolicy.nextState` reads exactly
 //  that, so a non-retryable code moves an outbox item to `.failed` **immediately** rather than after
-//  48 h — and the sentence screen 17 then prints is already written: *"Sign in to send this."* So
-//  one expired access token does not slow a drain down, it **ends** it, and tells somebody who is
-//  signed in to sign in (spec §5.8, ERRATA **E261** §3).
+//  48 h. So one expired access token does not slow a drain down, it **ends** it (spec §5.8, ERRATA
+//  **E261** §3).
+//
+//  This paragraph used to finish "and the sentence screen 17 then prints is already written:
+//  *'Sign in to send this.'* … and tells somebody who is signed in to sign in". That sentence is no
+//  longer drawn for a failed row: the owner's ruling 1 of 2026-08-14 makes every terminally refused
+//  row read *"This couldn't be sent."*, and `OutboxFailureReason.sentence(for:)`'s per-code arm for
+//  `unauthorized` is unreachable from an outbox row. The defect this type designs out is the same
+//  one; what a person would read while it happened is now a sentence that says nothing about the
+//  session at all.
 //
 //  Both files are correct alone. The fix is here and at `SessionTransport`: a 401 is a fact about
 //  the session, never about the item.

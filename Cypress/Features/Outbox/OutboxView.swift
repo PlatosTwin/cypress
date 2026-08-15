@@ -407,9 +407,10 @@ struct OutboxQueueRow: View {
     }
 
     /// §2's trailing state word. `retry` is the drawn one and is a control (BUILD-PLAN §4: "cap 48 h
-    /// then state failed with a visible retry button"); `stopped` is not, because retrying a
-    /// non-retryable code promises an outcome the taxonomy says will not change.
-    /// The state word is one short mono token — `waiting`, `stopped`, `retry` — and it belongs at
+    /// then state failed with a visible retry button"), and as of the owner's ruling 3 of
+    /// 2026-08-14 every terminal row draws it: a service refusal folds into this same row instead of
+    /// drawing a fourth state, and the row's sentence is the only thing that tells the two apart.
+    /// The state word is one short mono token — `waiting`, `retry` — and it belongs at
     /// the end of the row, not wrapped down the side of it. At AX5 `waiting` broke to `waiti / ng`
     /// in the corner while the title wrapped underneath it, so it is held to one line: it is a
     /// status token in the row's furniture, and the row's own reason sentence below says the same
@@ -419,9 +420,9 @@ struct OutboxQueueRow: View {
         stateWord.lineLimit(1).fixedSize()
     }
 
-    /// **The amber the two terminal words are drawn in, and why it is not Signal Amber.**
+    /// **The amber the terminal word is drawn in, and why it is not Signal Amber.**
     ///
-    /// `retry` and `stopped` are mono **11 pt bold** on `surface.card`. 11 pt bold is not WCAG
+    /// `retry` is mono **11 pt bold** on `surface.card`. 11 pt bold is not WCAG
     /// "large text" — that exemption starts at 14 pt bold — so the pair takes the 4.5 floor, and
     /// `accentAmber` `#B4711F` reads **3.95:1** there (3.63 on the screen). Nothing was watching:
     /// `ContrastTests` pins `accentAmber` as a *map pin* against map paper, where the 3.0 non-text
@@ -446,10 +447,6 @@ struct OutboxQueueRow: View {
             Text(row.state.rawValue)
                 .font(CypressFont.mono11SemiBold)
                 .foregroundStyle(CypressColor.textFaint)
-        case .stopped:
-            Text(row.state.rawValue)
-                .font(CypressFont.mono11Bold)
-                .foregroundStyle(Self.terminalStateWordColor)
         case .retry:
             Button { onRetry?() } label: {
                 Text(row.state.rawValue)

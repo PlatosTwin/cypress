@@ -159,9 +159,12 @@ client-side conformance round (#158 step 4) owes them: Swift decode tests readin
 
 - **A 401 means the session, never the item.** `APIError.unauthorized.retryable` is `false` and
   `OutboxRetryPolicy.nextState` reads exactly that, so an `unauthorized` on an *item* fails that
-  item terminally and prints "Sign in to send this" to somebody who is signed in (ERRATA **E261**
-  §3). The session is checked once, before any item is looked at. An item that genuinely is not this
-  identity's to send is `forbidden`.
+  item terminally, on a session that only needed refreshing (ERRATA **E261** §3). The session is
+  checked once, before any item is looked at. An item that genuinely is not this identity's to send
+  is `forbidden`. (This bullet used to say the row then prints "Sign in to send this". Since the
+  owner's copy ruling of 2026-08-14 every terminally refused row reads "This couldn't be sent." —
+  the client no longer names the code to the reader, which makes the rule above matter more rather
+  than less.)
 - **A photograph cannot be approved without recording why.** R72 ruling 5 requires the
   approval-reason column *before* the screening pipeline, because `.approved` alone cannot tell
   "screened and passed" from "auto-approved at launch" and that is unrecoverable after the fact. It

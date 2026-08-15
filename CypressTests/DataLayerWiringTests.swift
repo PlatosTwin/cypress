@@ -186,7 +186,22 @@ struct DataLayerWiringTests {
     /// every one of which refuses with exactly that type.
     ///
     /// Asserted through the sentence a person would read, because that is the harm: the reason
-    /// screen 17 shows for a real refusal must be the service's, not a false one about signal.
+    /// screen 17 shows for a real refusal must not be a false one about signal.
+    ///
+    /// **This assertion was relaxed once, and should not be again (PR #88 review, F2).** It read
+    /// `reason.contains("A moderator declined this.")`. The owner's ruling 1 of 2026-08-14 stopped
+    /// screen 17 naming the per-code cause on a terminally refused row; the first implementation of
+    /// that ruling widened the new sentence across all six non-retryable codes and relaxed this line
+    /// to `reason == refusedTerminally` to match — "a correct consequence of the widening", which it
+    /// was, and which is also how a test quietly stops being able to catch what it was written for.
+    /// The widening was wrong for exactly this fixture: a `moderation_rejected` item **reached the
+    /// service**, so "This couldn't be sent." is false of it. The owner ruled the split on
+    /// 2026-08-15.
+    ///
+    /// The assertion is back to a sentence that belongs to this code and to no other, as an equality
+    /// rather than a `contains`. What it proves is unchanged and doubled: a recognized taxonomy code
+    /// settles the row `failed` with its own ruled sentence, while a `RemoteSurface` is outside the
+    /// taxonomy and would leave it `pending` reading "No connection."
     @Test("no refusal reaches screen 17 as No connection. through this wiring")
     func theSendPathCannotProduceARemoteSurface() async throws {
         let transport = ScriptedTransport()
@@ -211,13 +226,20 @@ struct DataLayerWiringTests {
         let record = try #require(try await data.outbox.records().first)
         let reason = try #require(record.item.lastError)
         #expect(
-            reason.contains("A moderator declined this."),
-            "screen 17 would show \"\(reason)\" for a refusal the service explained"
+            reason == OutboxFailureReason.moderationDeclined,
+            "screen 17 would show \"\(reason)\" for an item a person read and declined"
+        )
+        #expect(
+            reason != OutboxFailureReason.refusedTerminally,
+            "screen 17 is telling somebody their work never left the phone, and it did: \"\(reason)\""
         )
         #expect(
             !reason.contains("No connection."),
             "a refused item is telling somebody their connection is down: \"\(reason)\""
         )
+        // The state is half the separation: an unrecognized error is not terminal, so a row reading
+        // the ruled sentence *and* sitting in `failed` cannot be one that fell out of the taxonomy.
+        #expect(record.item.state == .failed)
         #expect(record.item.lastErrorCode == .moderationRejected)
     }
 

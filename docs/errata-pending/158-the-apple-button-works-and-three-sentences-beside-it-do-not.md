@@ -13,6 +13,18 @@ findings this round discharged and which it did not.
 
 Neither is invented an answer to here (DECISIONS constraint 21). Both are drawn on a phone today.
 
+> **RULED — the owner answered both on 2026-08-14**, together with §3 below and with screen 17's
+> refused-item sentence. The rulings are staged unnumbered in
+> `docs/rulings-pending/copy-and-the-apple-button.md` and were implemented on `feat/copy-rulings`;
+> what each replacement now claims, and what it does *not* reach, is
+> `docs/errata-pending/the-copy-round-and-what-it-did-not-reach.md`. The two subsections below are
+> left exactly as written, because the reasoning for why they were **not** answered by an engineer is
+> the part worth keeping — the answers are in the ruling. What changed, in one line each:
+> §1a's `noticeUnavailable` opens *"Google and email sign-in are coming later."*, and §1b's
+> `signedInBody` is gone, replaced by `AccountCopy.storageBody` — *"Check-ins and notes sync to your
+> grove. Photos stay on this phone until you choose to share them."* — drawn in both arms of the
+> account block.
+
 ### 1a. `AccountAskCopy.noticeUnavailable` — screen 15
 
 > *"Accounts are not ready yet. Everything you have saved stays on this phone."*
@@ -82,6 +94,15 @@ that drew no notice for any outcome would pass the first while swallowing every 
 ---
 
 ## 3. Screen 15's `Continue with Apple` is not Apple's button, and that is an App Review question
+
+> **RULED — 2026-08-14, ruling 6: draw the Apple logo as a vector shape into the existing control**,
+> from Apple's own published artwork, with no SF Symbol and no `ASAuthorizationAppleIDButton`; the
+> fill token and the label do not change. This section called the gap correctly — "the gap is the
+> glyph, not the styling" — and its R57 paragraph is now half wrong in a way worth knowing about:
+> `DrawnGlyphGuardTests` really does not trip on this, and the reason is narrower than the section
+> says. Its tokens catch an SF Symbol anywhere in the app target, and they catch **nothing** about
+> `ASAuthorizationAppleIDButton`, which was proved by constructing one and watching the guard stay
+> green. See `docs/errata-pending/the-copy-round-and-what-it-did-not-reach.md` §3.
 
 SCREENS.md 15 §3 draws the control itself: fill `#1C2A21`, `#fff`, radius 14px, `padding:14px`,
 15px/700, label `Continue with Apple`. It is built from tokens as `AccountProviderButton` and this

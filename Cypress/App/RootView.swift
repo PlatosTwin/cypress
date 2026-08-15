@@ -593,11 +593,10 @@ struct RootView: View {
     /// route and two honest 'not yet' buttons". They previously minted a local account, which after
     /// the wiring round told somebody their work was backed up when no session existed to back it up
     /// with. `AccountLinkRefusal.unavailable` is the honest answer, drawn through the notice line
-    /// E111 already designed. **The copy on that line is now imprecise and is a stop-and-ask:**
-    /// `AccountAskCopy.noticeUnavailable` opens *"Accounts are not ready yet"*, which was true when
-    /// no route worked and is not true beside a working Apple button. Raised for the errata and
-    /// unnumbered as this is written; not rewritten here, because inventing a sentence is what
-    /// DECISIONS constraint 21 forbids.
+    /// E111 already designed. **The copy on that line was imprecise for a round and the owner ruled
+    /// it on 2026-08-14 (ruling 4):** `AccountAskCopy.noticeUnavailable` opened *"Accounts are not
+    /// ready yet"*, which was true when no route worked and was not true beside a working Apple
+    /// button. It now names the two routes that are deferred rather than the feature.
     ///
     /// `nonisolated` so the `@Sendable` closure is formed off `RootView`'s `@MainActor` isolation. It
     /// captures four `Sendable` values — an actor, an actor, a `UUID` and a struct holding one

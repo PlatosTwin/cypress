@@ -132,6 +132,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import os
 import sqlite3
@@ -1076,10 +1077,19 @@ CREATE TABLE species_map (
     confidence      REAL NOT NULL,
     is_stub         INTEGER NOT NULL,      -- 1 = fell through to the stub path
     is_placeholder  INTEGER NOT NULL,      -- 1 = vacant-site placeholder, no species
-    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine").
-    -- A tree stands at the site, so it is NOT a placeholder and its status is
-    -- `alive`; it simply carries no species. Provenance is a queryable column
-    -- rather than a comment (DECISIONS constraint 13).
+    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine",
+    -- "Stump"). EVERY COLUMN IN THIS TABLE IS A CLAIM ABOUT THE STRING, AND
+    -- THIS ONE SAYS NOTHING ABOUT THE STATUS OF ANY ROW CARRYING IT. The string
+    -- resolves to no species; whether a tree stands at a given site is
+    -- `trees.status`, and the two are independent.
+    --
+    -- This sentence used to read "a tree stands at the site, so its status is
+    -- `alive`", which was true of every such string while San Francisco was the
+    -- only source -- its five non-taxon strings sit on `alive` rows alone -- and
+    -- is false now. San Jose's `Stump` names no taxon on all of its rows and its
+    -- vacancy flag calls most of them empty. Do not infer a status from this
+    -- column. Provenance is a queryable column rather than a comment (DECISIONS
+    -- constraint 13).
     is_non_taxon    INTEGER NOT NULL DEFAULT 0,
     tree_count      INTEGER NOT NULL,
     CHECK (species_id IS NULL OR (is_placeholder = 0 AND is_non_taxon = 0))
@@ -1108,6 +1118,64 @@ def die(msg: str, code: int = 3) -> "None":
 
 
 NOW = _seed_epoch()
+
+
+def species_map_kind(kinds, species_id) -> str:
+    """One qSpecies STRING's kind, from every row that carried it.
+
+    `species_map` is keyed on the string, so `is_stub` / `is_placeholder` /
+    `is_non_taxon` are claims about the string. They used to be read off
+    whichever row reached the string first, which made them claims about the
+    order of the source file. San Francisco never noticed: its vacancy lives in
+    the species field itself, so every row carrying a given string agrees on the
+    kind. San Jose publishes `VACANTSITE` and `NAMESCIENTIFIC` as two fields,
+    and 611 empty sites name a real taxon -- so `Magnolia` arrives on 2 empty
+    sites and 77 living trees, and when an empty site came first the row claimed
+    a species AND `is_placeholder = 1`, which the table's own CHECK forbids.
+    That is why `--source city --sj-extent full` did not build (ERRATA
+    <errata-pending/species-map-string-kind>).
+
+    The precedence below is not a tie-break. It is which FIELD each kind is
+    reached through:
+
+      * A string that resolved to a species names a taxon, whatever any single
+        row said. That is the CHECK constraint's own statement, so it is first.
+      * `not_a_tree` is only ever reached THROUGH the string: all three sites
+        that return it match `NON_TAXON_SPECIES` or `SJ_NON_TREE_SPECIES` and
+        carry basis `STATED_AS_NON_TAXON`. One such row is therefore a statement
+        about the string -- `Stump` names no taxon on all 1,933 of its rows,
+        including the 1,624 the vacancy flag calls empty.
+      * `placeholder` is the opposite, and decides the string only when EVERY
+        row agrees. San Jose reaches it from `VACANTSITE` on 76,048 of its
+        76,109 placeholder rows -- a field about the SITE, which says nothing
+        about the string. Otherwise `Unknown` (4,507 trees against 6 empty
+        sites) would become a placeholder, when RULINGS R18 and
+        `SanJoseStreetTreeAdapter.classify` both call it a tree whose species is
+        not known.
+
+        THE OTHER 61 ROWS ARE WHERE THAT REASONING AND THIS RULE COME APART, and
+        they are named here because the next reader will meet them. Their basis
+        is `INFERRED_FROM_ABSENT_SPECIES`, which does reach `placeholder`
+        through the string: the string being EMPTY is the whole of the evidence.
+        But that is the absence of content rather than a reading of it, and the
+        basis name says the kind is OURS and not the source's -- where
+        `not_a_tree` earns its one-row power by MATCHING the string against a
+        vocabulary, which is a positive statement about what the string means.
+        So unanimity still wins here, and `''` comes out `is_placeholder = 0` on
+        the strength of the 229 rows San Jose itself placed in the ordinary
+        category, against 812 stated-vacant and those 61. That is also the value
+        `origin/main` shipped -- but there by luck of row order, since reversing
+        the source flips it, and here on purpose.
+
+    Counts measured on the 2026-07-31 caches at `--sj-extent full`.
+    """
+    if species_id is not None:
+        return "stub" if "stub" in kinds else "parsed"
+    if "non_taxon" in kinds:
+        return "non_taxon"
+    if kinds == {"placeholder"}:
+        return "placeholder"
+    return "parsed"
 
 
 def fetch(url: str, dest: str) -> None:
@@ -1386,8 +1454,60 @@ def load_neighborhoods(path: str):
 # --------------------------------------------------------------------------
 
 
+def _species_map_drift(current: str, derived: str):
+    """What actually differs between two species maps, as ROWS keyed by species string.
+
+    Returns (removed, added, changed) -- falsy when the two say the same thing.
+
+    Not a line-by-line comparison. The first version zipped the files
+    positionally and added the length difference, which is not a diff: one
+    inserted row shifts every row after it and all of them count as changed. It
+    reported 628 differing lines for a 631-line file. Nor a byte comparison,
+    which fires when only the line terminator differs and so fired on every
+    build.
+    """
+    def rows_by_key(blob: str) -> dict:
+        reader = csv.reader(io.StringIO(blob))
+        next(reader, None)  # header
+        return {row[0]: row[1:] for row in reader if row}
+
+    before, after = rows_by_key(current), rows_by_key(derived)
+    removed = sorted(set(before) - set(after))
+    added = sorted(set(after) - set(before))
+    changed = sorted(k for k in set(before) & set(after) if before[k] != after[k])
+    return removed, added, changed
+
+
+def species_map_csv(rows) -> str:
+    """The species-map CSV as text, so it can be compared before it is written.
+
+    species_id carries the species UUID, not the internal integer id: integer
+    ids depend on CSV row order, uuids are order-independent and survive a
+    rebuild, which is what a checked-in mapping file needs.
+
+    An empty species_id is the honest answer for three kinds of string: a
+    vacant-site placeholder, a string that names no taxon (NON_TAXON_SPECIES),
+    and nothing else. A correction belongs in the tables at the top of this
+    script, not in the CSV -- the file is derived from them, so an edit to it is
+    lost the next time it is regenerated.
+    """
+    # LF, not csv's default CRLF. The working tree stores these files with LF
+    # (autocrlf=input, no .gitattributes rule), so a CRLF writer made every
+    # build's output differ from the checked-in copy in every single line --
+    # which meant `--write-species-map` churned the whole file, and the drift
+    # NOTE below fired on every build even when the content was identical. The
+    # rows are unchanged; only the terminator is.
+    out = io.StringIO()
+    w = csv.writer(out, lineterminator="\n")
+    w.writerow(["qSpecies_string", "species_id", "confidence"])
+    for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in rows:
+        w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
+    return out.getvalue()
+
+
 def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
-          source: str = DEFAULT_SOURCE, sj_extent: str = "none") -> int:
+          source: str = DEFAULT_SOURCE, sj_extent: str = "none",
+          write_species_map: bool = False) -> int:
     if source not in SOURCES:
         die(f"--source must be one of {', '.join(SOURCES)}, got {source!r}")
     if sj_extent not in SJ_EXTENTS:
@@ -1402,7 +1522,6 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     nb_path = os.path.join(raw_dir, "sf_analysis_neighborhoods.geojson")
     db_path = os.path.join(seed_dir, "cypress-seed.sqlite")
     schema_path = os.path.join(seed_dir, "schema.sql")
-    map_path = os.path.join(fixtures_dir, "sf_species_map.csv")
 
     if do_fetch or not os.path.exists(csv_path):
         fetch(TREES_CSV_URL, csv_path)
@@ -1626,13 +1745,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                 else:
                     stats["enriched_rows"] += 1
 
-        kind = legacy_kind(record)
+        # EVERY row that carries the string, not just the first one to reach it.
+        # `species_map` is keyed on the string, so its columns are claims about
+        # the string; taking them from one arbitrary row made them claims about
+        # file order instead. See `species_map_kind`.
         qs = qspecies_stats.setdefault(
             record.species_text or "",
-            {"kind": kind, "confidence": record.species_confidence or 0.0,
+            {"kinds": set(), "confidence": 0.0,
              "species_id": None, "species_uuid": None, "count": 0, "spaces": set()},
         )
         qs["count"] += 1
+        qs["kinds"].add(legacy_kind(record))
         # Which id space's vocabulary this string belongs to. San Francisco's
         # `Ulmus parvifolia :: Chinese Elm` and San Jose's `Ulmus parvifolia` are
         # two different sources' spellings and they are written to two different
@@ -1663,6 +1786,12 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             species_id = sp["id"]
             qs["species_id"] = species_id
             qs["species_uuid"] = sp["uuid"]
+            # From the rows that RESOLVED the string, so a row carrying the
+            # string without resolving it cannot set the confidence of a
+            # resolution it took no part in. No string in any of the three
+            # `--sj-extent` corpora shows two different confidences among its
+            # resolving rows, so this max is a defined value and not a vote.
+            qs["confidence"] = max(qs["confidence"], record.species_confidence or 0.0)
             if record.species_is_stub:
                 stats["stub_rows"] += 1
             else:
@@ -2061,15 +2190,16 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         qspecies_stats.items(), key=lambda kv: (-kv[1]["count"], kv[0])
     ):
         spaces_by_string[qs_string] = info["spaces"]
+        kind = species_map_kind(info["kinds"], info["species_id"])
         map_rows.append(
             (
                 qs_string,
                 info["species_id"],
                 info["species_uuid"],
                 round(info["confidence"], 2),
-                1 if info["kind"] == "stub" else 0,
-                1 if info["kind"] == "placeholder" else 0,
-                1 if info["kind"] == "non_taxon" else 0,
+                1 if kind == "stub" else 0,
+                1 if kind == "placeholder" else 0,
+                1 if kind == "non_taxon" else 0,
                 info["count"],
             )
         )
@@ -2088,28 +2218,55 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # falsehood as a provenance line naming the wrong inventory. The `species_map`
     # TABLE in the database holds every string in the file, because that table is
     # a property of the file rather than of any one city.
+    #
+    # A BUILD NEVER WRITES THE CHECKED-IN COPY UNLESS ASKED TO. These CSVs used
+    # to be rewritten as a side effect of every run, which meant any build --
+    # including a `--limit` measurement run that reads a fraction of the source
+    # and therefore sees a fraction of the strings -- silently rewrote a tracked
+    # file. An NYC measurement build dirtied `Fixtures/sf_species_map.csv` with
+    # 375 of its 419 lines changed, and the only thing that caught it was an
+    # agent noticing `git status`. A build's inputs are not its outputs: the
+    # derived copy goes to the git-ignored build directory, drift against the
+    # checked-in copy is reported, and updating the checked-in copy is a
+    # deliberate act (`--write-species-map`).
+    map_out_dir = fixtures_dir if write_species_map else os.path.join(fixtures_dir, "build")
+    os.makedirs(map_out_dir, exist_ok=True)
     for space_id, file_name in SPECIES_MAP_FILES.items():
         rows_for_space = [
             row for row in map_rows if space_id in spaces_by_string.get(row[0], set())
         ]
         if not rows_for_space:
             continue
-        path = os.path.join(fixtures_dir, file_name)
+        text = species_map_csv(rows_for_space)
+        path = os.path.join(map_out_dir, file_name)
         with open(path, "w", encoding="utf-8", newline="") as fh:
-            w = csv.writer(fh)
-            # species_id carries the species UUID, not the internal integer id:
-            # integer ids depend on CSV row order, uuids are order-independent and
-            # survive a rebuild, which is what a checked-in mapping file needs.
-            #
-            # An empty species_id is the honest answer for three kinds of string: a
-            # vacant-site placeholder, a string that names no taxon
-            # (NON_TAXON_SPECIES), and nothing else. This file is REGENERATED by
-            # every build, so a correction belongs in the tables at the top of this
-            # script, not in the CSV — editing the CSV loses the edit on the next run.
-            w.writerow(["qSpecies_string", "species_id", "confidence"])
-            for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in rows_for_space:
-                w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
-        log(f"wrote {path} ({len(rows_for_space)} distinct species strings in id space {space_id})")
+            fh.write(text)
+        log(f"wrote {path} ({len(rows_for_space)} distinct species strings "
+            f"in id space {space_id})")
+
+        tracked = os.path.join(fixtures_dir, file_name)
+        if write_species_map or not os.path.exists(tracked):
+            continue
+        with open(tracked, encoding="utf-8", newline="") as fh:
+            current = fh.read()
+        # Gated on the KEYED comparison below, never on raw bytes. A byte
+        # comparison also fires for a difference in line terminators or column
+        # quoting, i.e. for two files that say exactly the same thing -- and a
+        # note that fires on every build is one its reader learns to skim past,
+        # which is the failure this whole branch is about.
+        removed, added, changed = _species_map_drift(current, text)
+        # `any(...)`, not the tuple itself: a tuple of three EMPTY lists is still
+        # a non-empty tuple and therefore truthy, so gating on the return value
+        # directly fired the note at 0/0/0 -- the exact defect this gate was
+        # added to remove, reintroduced by the fix for it. Caught by running the
+        # build whose answer was known (a full --source city build derives the
+        # checked-in map exactly) rather than by reading the diff.
+        if any((removed, added, changed)):
+            log(f"NOTE: {tracked} differs from what this build derived: "
+                f"{len(removed)} rows only in the checked-in copy, {len(added)} only "
+                f"in this build's, {len(changed)} mapped differently. The checked-in "
+                f"copy was NOT touched. If this build read the whole source and the "
+                f"difference is intended, rerun with --write-species-map to update it.")
 
     # ---- which inventory this seed is, and WHEN it was taken.
     #
@@ -2476,9 +2633,18 @@ def main() -> int:
              "large to ship. Reads the cache written by "
              "Tools/fetch_san_jose_trees.py and never touches the service.",
     )
+    ap.add_argument(
+        "--write-species-map",
+        action="store_true",
+        help="update the checked-in Fixtures/*_species_map.csv from this build. Off "
+             "by default: a build must not modify a tracked input as a side effect, "
+             "and a --limit or single-city run derives a map from only part of the "
+             "source. Without it the derived copy goes to Fixtures/build/ and any "
+             "drift against the checked-in copy is reported.",
+    )
     args = ap.parse_args()
     return build(args.repo_root, args.fetch, args.limit, args.with_city_raw, args.source,
-                 args.sj_extent)
+                 args.sj_extent, args.write_species_map)
 
 
 if __name__ == "__main__":
