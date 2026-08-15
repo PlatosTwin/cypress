@@ -151,13 +151,12 @@ struct DeviceRegistration: Decodable {
 /// still holds a live *account* session takes a different branch entirely and none of the above
 /// applies to it.
 ///
-/// That branch has its own divergence and it is **open**: the session survives while
-/// `app_state.currentUserID` does not, nothing re-hydrates it (`DataLayer.boot` reads `app_state`
-/// and never consults this type), so the app shows a signed-out installation while the bearer is the
-/// account's and the service attributes the work to it. It is not this defect — no refusal, no loss,
-/// and an account is *supposed* to be portable — but it is not fixed here, and whether a reinstall
-/// should restore the account or discard the session is a product question rather than an
-/// engineering one.
+/// That branch had its own divergence — the session survived while `app_state.currentUserID` did
+/// not, nothing re-hydrated it, and the app showed a signed-out installation while the bearer was
+/// the account's — and the project owner settled it the **opposite way from this one**: a surviving
+/// account session restores, silently. `SessionRestore` holds the ruling and the reasoning, and
+/// `DataLayer.boot` applies it. The two answers are not inconsistent, they are about two different
+/// things: a device credential belongs to a copy of the app, and an account belongs to a person.
 ///
 /// **No data migration**, and the rule it rests on is this file's header: a non-optional key
 /// discards what is already stored, which is the right answer when the missing fact makes the stored

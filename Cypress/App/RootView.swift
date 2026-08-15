@@ -62,7 +62,11 @@ struct RootView: View {
         self.appleSignIn = appleSignIn
         _outbox = State(wrappedValue: data.makeOutboxViewState())
         _moderation = State(wrappedValue: ModerationModel(api: data.local))
-        _account = State(wrappedValue: AccountModel(api: data.local))
+        // `session:` as well as `api:`, because leaving an account has to leave both halves of it —
+        // see `AccountModel.session`. Without it the You tab's sign-out kept the Keychain item, so
+        // the bearer stayed the account's after the tap and `SessionRestore` signed the person back
+        // in on the next launch.
+        _account = State(wrappedValue: AccountModel(api: data.local, session: data.session))
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
     }
 

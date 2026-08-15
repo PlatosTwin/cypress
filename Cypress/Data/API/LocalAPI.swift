@@ -1963,6 +1963,40 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// The local half of a sign-in that already happened, for a session that outlived the database.
+    ///
+    /// `DataLayer.boot`'s restore arm; `SessionRestore` holds the ruling and the reasoning. It is
+    /// `claimDevice` plus the **erasure** of the three facts a restore cannot know, and that erasure
+    /// is the whole reason this is its own verb rather than a bare `claimDevice` call.
+    ///
+    /// ── Why the clear is unconditional (review of this PR, F3) ─────────────────────────────────
+    ///
+    /// The obvious reading is that there is nothing to clear: a reinstall arrives at an empty
+    /// database, so the role, the provider and the consent are absent already. That is true of the
+    /// reinstall and it is not true of the code. `SessionRestore.reconcile` also answers `.restore`
+    /// when the database names a **different** account, and on that arm the rows are the *previous*
+    /// account's — so a restore that wrote only the id handed the incoming account the outgoing one's
+    /// `current_user_role`, `account_provider` and `account_license_version`. The reviewer measured
+    /// `role=moderator provider=apple license=odbl-1.0` surviving onto an account that had been
+    /// granted none of them. A role is authority; that is an authority grant on an arm written closed
+    /// precisely so that it would fail in the safe direction.
+    ///
+    /// So the clear is unconditional rather than conditioned on which arm called. On the reinstall
+    /// arm it is three no-ops over an empty table. What it buys is that `SessionRestore`'s header
+    /// sentence — *the restore writes no role, no provider and no consent it cannot know* — is true of
+    /// **the code** rather than of whichever fixture a test happened to use. A rule that runs only on
+    /// the branch somebody remembered to mark is a rule stated twice.
+    ///
+    /// The role is written as `.member` rather than cleared, which is `signOut()`'s spelling of the
+    /// same fact and reads back identically ("absent means member").
+    public func restoreAccount(deviceUUID: UUID, userID account: UUID) async throws {
+        self.userRole = .member
+        try await store.setAppState(.currentUserRole, to: UserRole.member.rawValue)
+        try await store.clearAppState(.accountProvider)
+        try await store.clearAppState(.accountLicenseVersion)
+        try await claimDevice(deviceUUID: deviceUUID, userID: account)
+    }
+
     /// What the signed-in account agreed to, read back from `app_state`.
     ///
     /// Nil when nobody is signed in, rather than an empty record: "no consent recorded" and "no
