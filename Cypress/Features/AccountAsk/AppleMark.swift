@@ -5,8 +5,17 @@
 //  The Apple logo on screen 15's `Continue with Apple` button. **The owner ruled it on 2026-08-14**
 //  (ruling 6): draw it as a vector shape into the existing drawn control, per Apple's own
 //  custom-button guidelines, consistent with the five ex-SF-Symbol glyphs (RULINGS R57,
-//  `DrawnGlyphGuardTests`). No SF Symbol, no `ASAuthorizationAppleIDButton`. The button's fill and
-//  its label do not change.
+//  `DrawnGlyphGuardTests`). No SF Symbol, and none of Apple's own button views — neither
+//  `ASAuthorizationAppleIDButton` (UIKit) nor `SignInWithAppleButton` (SwiftUI), each of which draws
+//  Apple's mark for you and takes the whole control with it. The button's fill and its label do not
+//  change.
+//
+//  **Both spellings are named in this paragraph on purpose.**
+//  `AppleMarkTests.theAppConstructsNoSystemAppleButton` scans the app target for each of them and
+//  controls each token against a prose mention, so that a scan for a string this repository does not
+//  contain cannot pass by matching nothing. This is that anchor. The SwiftUI half of it exists
+//  because PR #88's reviewer compiled `SignInWithAppleButton(.continue, …)` into
+//  `AccountProviderButton` — the exact control this ruling governs — and every guard stayed green.
 //
 //  ── 1. Where the geometry came from, since it is not mine ──────────────────────────────────────
 //  Apple's Sign in with Apple JS SDK, which the Human Interface Guidelines link to as the way to

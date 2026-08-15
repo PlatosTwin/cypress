@@ -174,15 +174,33 @@ struct AppleMarkTests {
 
     // MARK: - No borrowed button, either
 
-    /// `DrawnGlyphGuardTests` already refuses an SF Symbol anywhere in the app target, including
-    /// this button — nothing needed extending for that half of ruling 6. The half it cannot see is
-    /// the other one the ruling names: `ASAuthorizationAppleIDButton` is not a glyph API and spells
-    /// neither `systemName:` nor `systemImage:`, so a later round could swap the drawn control for
-    /// Apple's own view with the whole suite green.
+    /// Every spelling that puts Apple's own sign-in button — and therefore Apple's own drawing of
+    /// the mark — on a screen in this app.
     ///
-    /// It reuses `BorrowedGlyphAPI.codeOnly`, which is already calibrated by that suite's own
-    /// controls, because this file names the type in prose in the paragraph above and in
-    /// `AppleMark`'s header.
+    /// **Two of them, and the second was found by PR #88's reviewer compiling it (F4).**
+    /// `ASAuthorizationAppleIDButton` is the UIKit view; `SignInWithAppleButton` is
+    /// `AuthenticationServices`' SwiftUI one, which is the API a SwiftUI codebase actually reaches
+    /// for. The first draft of this guard named only the UIKit spelling, and the reviewer put
+    /// `SignInWithAppleButton(.continue, …)` inside `AccountProviderButton` — the exact control
+    /// ruling 6 governs — with **this guard and `DrawnGlyphGuardTests` both green**.
+    ///
+    /// The list is what the guard is, so it is asserted non-empty and each token is controlled
+    /// separately below; a shared control would let a new token ride on an old token's prose.
+    static let borrowedAppleButtonSpellings = [
+        "ASAuthorizationAppleIDButton",
+        "SignInWithAppleButton",
+    ]
+
+    /// `DrawnGlyphGuardTests` already refuses an SF Symbol anywhere in the app target, including
+    /// this button — nothing needed extending for that half of ruling 6, and it was proved rather
+    /// than assumed. The half it cannot see is the other one the ruling names: neither spelling
+    /// above is a glyph API and neither contains `systemName:` or `systemImage:`, so a later round
+    /// could swap the drawn control for Apple's own view with that whole suite green.
+    ///
+    /// It reuses `BorrowedGlyphAPI.codeOnly`, which that suite's own controls already calibrate,
+    /// because this file names both types in prose in the paragraph above and `AppleMark`'s header
+    /// names them too — a scanner that stopped stripping comments would fail here on its own
+    /// documentation.
     @Test("no Apple-provided sign-in button is constructed anywhere in the app target")
     func theAppConstructsNoSystemAppleButton() throws {
         let root = AppSourceLiterals.repositoryRoot()
@@ -191,19 +209,22 @@ struct AppleMarkTests {
             files.count >= AppSourceLiterals.swiftFileCountFloor,
             "the scan swept \(files.count) files, so it checked next to nothing"
         )
+        #expect(!Self.borrowedAppleButtonSpellings.isEmpty, "an empty token list passes everything")
 
         var hits: [String] = []
-        var proseMentions = 0
+        var proseMentions: [String: Int] = [:]
         for file in files {
             let source = try String(contentsOf: file, encoding: .utf8)
-            guard source.contains("ASAuthorizationAppleIDButton") else { continue }
             let relative = file.path.replacingOccurrences(of: root.path + "/", with: "")
-            let code = BorrowedGlyphAPI.codeOnly(in: source).components(separatedBy: "\n")
-            for (index, line) in code.enumerated()
-            where line.contains("ASAuthorizationAppleIDButton") {
-                hits.append("\(relative):\(index + 1)")
+            var code: [String]?
+            for token in Self.borrowedAppleButtonSpellings where source.contains(token) {
+                proseMentions[token, default: 0] += 1
+                let lines = code ?? BorrowedGlyphAPI.codeOnly(in: source).components(separatedBy: "\n")
+                code = lines
+                for (index, line) in lines.enumerated() where line.contains(token) {
+                    hits.append("\(relative):\(index + 1): \(token)")
+                }
             }
-            proseMentions += 1
         }
 
         #expect(
@@ -213,11 +234,18 @@ struct AppleMarkTests {
             into screen 15's own control instead; changing that is the owner's, not this file's.
             """
         )
-        // The control: the token has to be reachable in this repo's prose, or the scan above is a
-        // grep for a string nothing contains and it would pass on an empty tree.
-        #expect(
-            proseMentions >= 1,
-            "no file in the app target mentions the type at all, so this guard proved nothing"
-        )
+        // The control, per token. Sharing one counter would let a newly added spelling be
+        // "controlled" by an older one's prose mention while matching nothing at all itself.
+        for token in Self.borrowedAppleButtonSpellings {
+            #expect(
+                proseMentions[token, default: 0] >= 1,
+                """
+                no file in the app target mentions `\(token)`, so the scan for it is a grep for a \
+                string this repository does not contain and it would pass on an empty tree. \
+                `AppleMark`'s header names both spellings deliberately; if that was edited, this \
+                control needs a new anchor rather than deleting.
+                """
+            )
+        }
     }
 }

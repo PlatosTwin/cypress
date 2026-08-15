@@ -77,8 +77,9 @@ public struct RemoteAPI: CypressAPI {
     /// Every authenticated call goes through this rather than through `session` below, and the
     /// difference is spec §5.8: it attaches the credential, refreshes once and replays on a 401, and
     /// never lets a session failure reach a caller as `APIError.unauthorized` — which would move an
-    /// outbox item to `.failed` immediately and print "Sign in to send this" to somebody who is
-    /// signed in (ERRATA **E261** §3).
+    /// outbox item to `.failed` immediately, on a session that only needed refreshing (ERRATA
+    /// **E261** §3). This line used to name the sentence that row would print, "Sign in to send
+    /// this"; since the owner's ruling 1 of 2026-08-14 it reads "This couldn't be sent." instead.
     ///
     /// **There is no second retry layer in this file.** Refresh-and-replay lives there, once.
     public let transport: any AuthorizedTransport

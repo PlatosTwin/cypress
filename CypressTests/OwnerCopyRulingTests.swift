@@ -124,6 +124,62 @@ struct OwnerCopyRulingTests {
         )
     }
 
+    // MARK: - The 2026-08-15 correction · one terminal sentence turned out to be two
+
+    /// **A sweep over the whole taxonomy, because the thing it replaces was a scope error.**
+    ///
+    /// Round 1 read ruling 1's "`forbidden`, not retryable" as the whole non-retryable class and
+    /// gave six codes one sentence. Five of the six are fine; `moderation_rejected` is not, because
+    /// that item **reached the service** and a person declined it — "This couldn't be sent." is a
+    /// false claim about where somebody's field work is. The owner ruled the split on 2026-08-15.
+    ///
+    /// Written as a `CaseIterable` sweep rather than one assertion per interesting code: a taxonomy
+    /// code added later arrives here with no opinion attached, and this says so. Silently inheriting
+    /// a sentence is the exact shape of the error being corrected.
+    @Test("every terminal code gets the sentence the owner ruled for it, and no other")
+    func everyTerminalCodeGetsItsRuledSentence() {
+        let moderated = OutboxFailureReason.describe(
+            error: APIError.moderationRejected, failCount: 1, state: .failed
+        )
+        #expect(moderated == "This was reviewed and won't be shared.")
+
+        for code in APIError.allCases where !code.retryable {
+            let sentence = OutboxFailureReason.describe(error: code, failCount: 1, state: .failed)
+            let expected = code == .moderationRejected
+                ? OutboxFailureReason.moderationDeclined
+                : OutboxFailureReason.refusedTerminally
+            #expect(
+                sentence == expected,
+                """
+                a terminal `\(code.rawValue)` row reads "\(sentence)". If this is a code the taxonomy \
+                grew, it needs an owner's answer to one question before it can borrow either \
+                sentence: did the item reach the service? "This couldn't be sent." says it did not.
+                """
+            )
+        }
+
+        // The retryable half is untouched by either ruling and still composes the per-code cause.
+        // It is the control for the sweep above, which would otherwise pass on a build where
+        // `describe` answered one string to everything.
+        for code in APIError.allCases where code.retryable {
+            let sentence = OutboxFailureReason.describe(error: code, failCount: 1, state: .pending)
+            #expect(sentence != OutboxFailureReason.refusedTerminally)
+            #expect(sentence != OutboxFailureReason.moderationDeclined)
+            #expect(sentence == OutboxFailureReason.sentence(for: code))
+        }
+    }
+
+    /// The two terminal sentences disagree about the one fact they are split on. Asserted on the
+    /// words rather than only on the constants, because the words are what the owner ruled.
+    @Test("the two terminal sentences say opposite things about whether the item left the phone")
+    func theTwoTerminalSentencesDisagreeAboutWhereTheWorkIs() {
+        #expect(OutboxFailureReason.refusedTerminally == "This couldn't be sent.")
+        #expect(OutboxFailureReason.moderationDeclined == "This was reviewed and won't be shared.")
+        #expect(OutboxFailureReason.moderationDeclined != OutboxFailureReason.refusedTerminally)
+        // The moderated sentence must not claim the send failed — that is the whole finding.
+        #expect(!OutboxFailureReason.moderationDeclined.lowercased().contains("sent"))
+    }
+
     // MARK: - Ruling 4 · screen 15's deferred routes
 
     /// The ruling quoted and replaced the first sentence only. The second is §7's own promise and

@@ -36,9 +36,15 @@ extension URLSession: AuthHTTP {
 /// `Cypress/Data/Outbox/OutboxViewState.swift`, which is a file and not the type — returns nil for
 /// an error it does not recognize, `OutboxRetryPolicy.nextState` reads nil as "no taxonomy opinion",
 /// and the item stays `.pending` on the backoff. An `APIError.unauthorized` reaching an outbox item
-/// moves it to `.failed` immediately and prints "Sign in to send this" to somebody who is signed in
-/// — spec §5.8 and ERRATA **E261** §3, and it is the defect this whole folder is written to design
-/// out.
+/// moves it to `.failed` immediately — spec §5.8 and ERRATA **E261** §3, and it is the defect this
+/// whole folder is written to design out.
+///
+/// **What the row would then say has changed, and this comment used to name the old sentence.** It
+/// read `prints "Sign in to send this" to somebody who is signed in`. Since the owner's ruling 1 of
+/// 2026-08-14 a terminally refused row reads `OutboxFailureReason.refusedTerminally` — "This
+/// couldn't be sent." — and the per-code sentence for `unauthorized` is unreachable from an outbox
+/// row. The defect is unchanged and is arguably worse dressed this way: the row now says nothing at
+/// all about why, to somebody whose session simply needed refreshing.
 public enum SessionError: Error, Equatable, CustomStringConvertible {
     /// The refresh could not be performed, or the service refused it. There is no session to send
     /// with; the batch is a transport failure and every item stays alive.

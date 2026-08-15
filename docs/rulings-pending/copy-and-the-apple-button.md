@@ -1,9 +1,12 @@
 # The copy round — the owner's rulings of 2026-08-14 on screens 15, 17 and the You tab
 
-*(Unnumbered; the orchestrator splices this under the real next number at merge. Five rulings, each
-taken as an explicit choice among stated alternatives. Ruling 5 of the same round — session restore
-— is a separate ticket and is not here. Implemented on `feat/copy-rulings`; the evidence for each,
-and the two things the round found that the rulings do not cover, are in
+*(Unnumbered; the orchestrator splices this under the real next number at merge. Five rulings from
+2026-08-14, each taken as an explicit choice among stated alternatives, **plus two corrections the
+owner ruled on 2026-08-15** after the adversarial review of PR #88 — the `moderation_rejected`
+sentence, and the rendering of where the stopped-versus-will-retry distinction lives. Both
+corrections are marked in place and dated. Ruling 5 of the original round — session restore — is a
+separate ticket and is not here. Implemented on `feat/copy-rulings`; the evidence for each, and the
+things the round found that the rulings do not cover, are in
 `docs/errata-pending/the-copy-round-and-what-it-did-not-reach.md`.)*
 
 Every sentence below had gone false under the app while it was still being drawn. #158's wiring round
@@ -20,15 +23,40 @@ row that is still trying. The eight per-code sentences remain for a row that is 
 are no longer drawn for one the service has finished with; screen 17's footnote promise that an item
 "says why" is narrowed by that, deliberately.
 
+**`moderation_rejected` is the one exception, and it reads `This was reviewed and won't be shared.`**
+*(Ruled verbatim by the owner on **2026-08-15**, narrowing the sentence above after PR #88's review
+found it applied to six codes rather than one.)* The other five terminal codes — `forbidden`,
+`validation_failed`, `conflict`, `not_found`, `unauthorized` — keep `This couldn't be sent.`, which
+the reviewer checked sibling by sibling and found true of each. It is not true of this one: a
+`moderation_rejected` item **reached the service**, the request was accepted, and a person read the
+content and declined it. "This couldn't be sent." tells that volunteer their work never left the
+phone, which is a false claim about where their field work is (ARCHITECTURE §5.4, DECISIONS
+constraint 3 — the rule this whole round exists to enforce).
+
 **The `stopped` state folds into the failed row, and there is no fourth drawn state.** ERRATA **E83**
 invented `stopped` — the same amber C24 card as `retry`, its own mono word, and no control — because
 `failed` means two different things and SCREENS.md 17 draws one treatment. The ruling reverses that
 half of E83: SCREENS.md 17's "States drawn" line is `waiting`, `retry`, `synced`, and it stays three.
-A refused item draws the failed row, control included, and **the stopped-versus-will-retry
-distinction lives only in the row's own sentence** — which is why the retry control is not withheld
-either. Withholding it would put the distinction back onto the row's furniture, which is what the
-ruling removes. The rest of E83 stands: the taxonomy still fails a non-retryable item immediately
-rather than burning 48 h of backoff on an answer that will not change.
+A refused item draws the failed row, control included. The rest of E83 stands: the taxonomy still
+fails a non-retryable item immediately rather than burning 48 h of backoff on an answer that will not
+change.
+
+> **Where the distinction lives — the owner's correction of 2026-08-15, and the drafting error it
+> corrects.** As first written, this ruling said *"The stopped-vs-will-retry distinction lives only
+> in the outbox detail."* **There is no outbox detail.** SCREENS.md 17 draws a queue of rows, a wi-fi
+> row, a synced section, a summary line and a footnote; there is no detail screen, no navigation off
+> a row, and none is being built. The owner has acknowledged the phrase as a drafting error and ruled
+> the rendering that replaces it:
+>
+> **The row's sentence is the distinction.** A terminal row reads its terminal sentence — ruling 1's,
+> or the `moderation_rejected` sentence above — and a retryable row reads the retryable one. Same
+> card, same furniture, same control; the words carry it.
+>
+> Two things follow, and both are the ruling rather than a reading of it. The retry control is *not*
+> withheld from a refused row, because withholding it would put the distinction back onto the row's
+> furniture. And the sentence has to **survive a retry tap** — a control that erases the only carrier
+> of the distinction defeats the ruling, which is what PR #88's review found it doing (F1) and what
+> the drain behind `OutboxViewState.retry(id:)` fixes.
 
 **The You tab's account block says `Check-ins and notes sync to your grove. Photos stay on this phone
 until you choose to share them.`** It replaces `AccountCopy.signedInBody`'s *"This account gathers

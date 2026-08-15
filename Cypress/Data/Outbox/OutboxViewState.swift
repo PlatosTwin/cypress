@@ -13,8 +13,8 @@ public enum OutboxFailureReason {
     /// The 48 h cap, reached (BUILD-PLAN §4).
     public static let expired = "Tried for 48 hours without getting through. Tap retry when you have a connection."
 
-    /// The service refused this item with a code the taxonomy says will not change — `forbidden`,
-    /// `validation_failed`, `conflict`, `moderation_rejected`, `not_found`, `unauthorized`.
+    /// The service refused this item with a code the taxonomy says will not change, and the item
+    /// never landed — `forbidden`, `validation_failed`, `conflict`, `not_found`, `unauthorized`.
     ///
     /// **The owner ruled this sentence on 2026-08-14** (rulings 1 and 3 of that round), replacing
     /// the composed `"<cause> This one will not go through on its own."`. Two things it is required
@@ -27,7 +27,26 @@ public enum OutboxFailureReason {
     /// them was drawn; they are still drawn for a row that is *retrying*, and no longer for one the
     /// service has finished with. That narrowing is the ruling's, recorded rather than inferred —
     /// see the errata entry for this round.
+    ///
+    /// **`moderation_rejected` is not in this class and the review of PR #88 is why (F2).** It is
+    /// the one non-retryable code whose item *did* leave the phone: it reached `cypress-sync`, the
+    /// service took the request, and a person read the content and declined it. Telling that
+    /// volunteer their work could not be sent is a false claim about where their field work is —
+    /// ARCHITECTURE §5.4, the rule this whole round exists to enforce. It has its own sentence
+    /// below, ruled by the owner on **2026-08-15**.
     public static let refusedTerminally = "This couldn't be sent."
+
+    /// `moderation_rejected`: the item arrived, a person read it, and it will not be published.
+    ///
+    /// **Ruled verbatim by the owner on 2026-08-15**, correcting the widening that rulings 1 and 3
+    /// were implemented with. What it has to get right is the tense of two different verbs: the
+    /// sending happened, and the sharing will not — which is exactly the pair `refusedTerminally`
+    /// gets wrong for this code and right for the other five.
+    ///
+    /// "shared" and not "published": D4 and R12's vocabulary. Nothing in this app tells an
+    /// authority anything (ARCHITECTURE §5.4), and this sentence says what the app can actually
+    /// answer for — whether the record joins the tree's public timeline.
+    public static let moderationDeclined = "This was reviewed and won't be shared."
 
     public static func awaitingWifi(photoCount: Int) -> String {
         photoCount == 1
@@ -55,7 +74,9 @@ public enum OutboxFailureReason {
         let cause = sentence(for: error)
         guard state != .failed else {
             if let apiError = apiError(from: error), !apiError.retryable {
-                return refusedTerminally
+                // Two terminal sentences, split on the one thing they disagree about: whether the
+                // item left the phone. See both constants.
+                return apiError == .moderationRejected ? moderationDeclined : refusedTerminally
             }
             return expired
         }
@@ -67,6 +88,25 @@ public enum OutboxFailureReason {
     }
 
     /// One sentence per taxonomy code (BUILD-PLAN §6).
+    ///
+    /// ── **Which of these screen 17 still draws, since the owner's rulings of 2026-08-14** ───────
+    ///
+    /// Three, and the six-code list is now a map of the taxonomy rather than a list of drawn copy.
+    /// `describe` reaches this function on the *retrying* path only, and `OutboxRetryPolicy` sends
+    /// every non-retryable code straight to `.failed` on its first attempt — so the six sentences
+    /// for `unauthorized`, `forbidden`, `not_found`, `validation_failed`, `conflict` and
+    /// `moderation_rejected` are unreachable from an outbox row. What a person reads instead is
+    /// `refusedTerminally`, or `moderationDeclined` for the last of them.
+    ///
+    /// Still drawn, and drawn often: the `nil` fallback ("No connection.") for anything outside the
+    /// taxonomy, and `rate_limited` / `server_error`, which are the two retryable codes.
+    ///
+    /// **They are kept rather than deleted**, and the reason is not sentiment. `retryable` is a
+    /// property of the code and it can move: the day one of the six becomes retryable — or the day
+    /// something other than an outbox row wants a sentence for a code — this switch is where the
+    /// answer already is, and a `switch` over a `CaseIterable` enum with cases removed is a compile
+    /// error rather than a gap. What is *not* allowed is a comment elsewhere claiming screen 17
+    /// prints one of the six; PR #88's review found five such sites and swept them (F5).
     static func sentence(for error: Error) -> String {
         guard let apiError = apiError(from: error) else {
             return "No connection."
@@ -376,12 +416,51 @@ public final class OutboxViewState: Observable {
     }
 
     /// The retry button on an amber attention card.
+    ///
+    /// ── **Why this drains, and what it drew before it did (PR #88 review, F1)** ────────────────
+    ///
+    /// `OutboxStore.retry` moves the row to `pending` and **NULLs `last_error` and
+    /// `last_error_code`**. That is right for a row that is about to be attempted again and it is a
+    /// lie for a row that is not: until this line drained, the only drains in the app were the six
+    /// feature writers, which fire when somebody saves *other* work, and `syncNow(isOnWifi:)` had
+    /// no call site at all. So one tap on a terminally refused item left it reading `waiting` —
+    /// SCREENS.md 17's word for "still trying" — counted in the header's `N waiting` pill, with its
+    /// sentence and its taxonomy code both erased, and it stayed there until an unrelated save
+    /// happened along. Measured, before and after, on a `forbidden` item:
+    ///
+    /// ```
+    /// BEFORE TAP:    state=retry    isTerminal=true   showsRetryButton=true  reason=This couldn't be sent.
+    /// AFTER TAP:     state=waiting  isTerminal=false  showsRetryButton=false reason=nil  errorCode=nil
+    /// AFTER A DRAIN: state=retry                                             reason=This couldn't be sent.
+    /// ```
+    ///
+    /// Screen 17 §6 is the promise that breaks in the middle line: "an item that cannot sync says
+    /// so, says why, and waits for you". After a tap it said neither. The owner's ruling 3 of
+    /// 2026-08-14 put the whole stopped-versus-will-retry distinction into that sentence, so a
+    /// control that erases it for an unbounded stretch is the ruling's own failure mode.
+    ///
+    /// Draining closes it: the row is `waiting` only while it really is being attempted, and the
+    /// service's answer puts a refused item straight back to `failed` with its sentence — on the
+    /// first attempt, because a non-retryable code does not spend 48 h of backoff (ERRATA E83).
+    /// `OutboxQueueRetryTests` walks that exact sequence.
+    ///
+    /// **Preserving `last_error_code` across the retry instead was the other candidate and is not
+    /// enough on its own**: nothing draws the code (`OutboxPresentation.state(for:)` stopped reading
+    /// it under ruling 3), so keeping it would leave every drawn moment exactly as wrong.
+    ///
+    /// `drain()` and not `syncNow(isOnWifi:)`: the toggle's parameter is a question about the
+    /// connection and nothing in this app can answer it (ERRATA **E81** — there is no reachability
+    /// monitor), which is why `syncNow` never acquired a caller. The bare `drain()` is the same call
+    /// all six feature writers make.
     public func retry(id: UUID) async {
-        _ = try? await queue.retry(id: id)
+        guard (try? await queue.retry(id: id)) == true else { return }
+        _ = try? await queue.drain()
     }
 
+    /// Every terminal row at once, and the same argument as `retry(id:)` applies to each of them.
     public func retryAll() async {
         _ = try? await queue.retryAllFailed()
+        _ = try? await queue.drain()
     }
 
     /// Drains, honoring the wi-fi toggle.
