@@ -55,6 +55,9 @@ TARGET="$1"
 DECLARED="$2"
 [ -e "$TARGET" ] || die "no such file: $TARGET"
 [ -f "$DECLARED" ] || die "no declared entitlements file at: $DECLARED"
+# Lint before parse: a malformed declared file would otherwise exit through a Python
+# traceback — closed, but mute about which input was broken (PR #89 review, round 3).
+plutil -lint -s "$DECLARED" || die "the declared entitlements file is not a valid plist: $DECLARED"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
