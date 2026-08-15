@@ -35,6 +35,25 @@ asserted the local half, because the local half was the whole of what sign-out w
 correct when it was made — the model's own header explains it, and `/auth/*` is genuinely not on
 `CypressAPI`. What changed is that a session now exists to forget.
 
+## The population it had already reached
+
+This is not only a defect going forward. **Every beta install whose owner has tapped `Sign out` is
+already in this state** — `current_user_id` cleared, a live session in the Keychain — and has been
+since the sign-out was written. They do not need to reinstall to meet the mirror rule; they meet it on
+the first launch after the update that carries it, which is what made the discriminator in
+`SessionRestore.reconcile` a merge blocker rather than a refinement (review of PR #87, F1).
+
+The reviewer staged the pre-fix path and measured both halves of it, including the part that makes it
+unrecoverable — the restore's own `claimDevice` erases the evidence on its way past:
+
+```
+PROBE signedOutUserID BEFORE the update boot: 5E12E12E-…-A1
+PROBE signedOutUserID after:                  nil     # claimDevice cleared it
+```
+
+`signed_out_user_id` is the discriminator, and it is a fact `LocalAPI.signOut()` already writes for
+its own stated reason. Reading it is what tells "this database was deleted" from "this person left".
+
 ## What made it load-bearing
 
 Ruling 5 makes `DataLayer.boot` read the Keychain as the authority on who is signed in. Under that
@@ -70,6 +89,26 @@ sign-out the **device** credential is still there. Under the mutation that swaps
 `forgetEverything()`, the control goes red and the sign-out assertion stays green, which is what
 attributes each failure to the right rule. Same discipline as the reinstall/no-re-register pair in
 `158-the-keychain-outlived-the-database.md`.
+
+## Open, and an owner question rather than an engineering one
+
+**What should `endSignedOut` do with the rows the account owns?** Ending signed out leaves every
+account-owned private reminder and favorite attributed to the account
+(`user_id = A, device_id = NULL`), and the reads that answer "mine" ask for the *current* user or this
+device — so on a device with nobody signed in they are visible to nobody. The reviewer measured it:
+
+```
+user_id=A  device_id=NULL  visible=0
+```
+
+That is not new to this round; it is what `LocalAPI.signOut()` has always done, and RULINGS **R3**
+argues for keeping the rows rather than deleting them. The question the mirror rule raises is whether
+an *involuntary* ending — an expired family, a refused session, an upgrade honoring an old sign-out —
+should re-home those rows to the device so the person can still see their own reminders, or whether
+that would be the app quietly re-attributing somebody's records without being asked.
+
+It is a product question and it is **deliberately not answered here**. Recorded for the owner; the
+current behavior stands unchanged in the meantime.
 
 ## Adjacent, and not fixed here
 

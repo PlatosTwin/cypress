@@ -80,6 +80,24 @@ layer already discards it, and the local half has to follow, or the app draws an
 credential behind it. That is the same defect as the first one with the halves swapped, and the
 ruling is not honored by fixing only one of them.
 
+## The input that is not about reinstalls at all
+
+The rule reads three facts, not two, and the third is what an *existing* device needs. "No local
+account beside a live session" describes the reinstall this ruling is about — and equally describes
+every install whose owner tapped `Sign out` under the shipping build, because that sign-out cleared
+`current_user_id` and left the Keychain alone. Those devices reach the rule on the first launch after
+the update, with no reinstall involved, and a two-input rule signs them back into the account they
+left.
+
+`signed_out_user_id` tells the two apart: a session for the account this device recorded itself as
+having left is a session that outlived a deliberate act. It is read only when the database names
+nobody, which is the marker's own meaning — `LocalAPI.resumableUserID()` already guards on exactly
+that.
+
+The general shape is worth more than the instance. **A rule that infers intent from the absence of a
+record has to ask what else produces that absence.** Here the answer was "a deliberate act by a
+population that already exists", and the fact distinguishing them was already on disk.
+
 ## What the ruling made mandatory elsewhere
 
 The rule cannot ship alone, and this is the part worth carrying forward: **a restore is only as
