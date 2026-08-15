@@ -54,6 +54,26 @@ final class AccountModel {
     /// in on.
     private let api: LocalAPI?
 
+    /// The credentials half of the same account, so that leaving one leaves both.
+    ///
+    /// ── Why this model gained a second dependency, and what was wrong without it ───────────────
+    ///
+    /// `signOut()` below called `LocalAPI.signOut()` and nothing else, so the Keychain session
+    /// **survived a sign-out**. Two things followed. The bearer stayed the account's — every request
+    /// the app made after the tap still authenticated as the person who had just signed out, and the
+    /// service went on attributing the work to them. And once `DataLayer.boot` learned to restore a
+    /// signed-in session (`SessionRestore`), the surviving item made the sign-out undo itself on the
+    /// next launch: the database said nobody, the Keychain said somebody, and the mirror rule
+    /// correctly believed the Keychain. A restore that resurrected deliberate sign-outs would be a
+    /// worse defect than the one it was written to close.
+    ///
+    /// So the ruling's own words — *a surviving **signed-in** session* — are made true here: after
+    /// this tap there is no session to survive.
+    ///
+    /// Optional for the same reason `api` is. A model built with neither draws the You tab of a
+    /// device nobody has signed in on, and has nothing to sign out of.
+    private let session: AppSession?
+
     /// Whether there is an account on this device right now. The store's answer, never a cached
     /// flag of this model's own — `AccountAskModel` refuses to hold one for the same reason.
     private(set) var isSignedIn = false
@@ -83,8 +103,9 @@ final class AccountModel {
     /// on `Delete account` cannot start a second deletion against a store the first one is emptying.
     private(set) var isBusy = false
 
-    init(api: LocalAPI?) {
+    init(api: LocalAPI?, session: AppSession? = nil) {
         self.api = api
+        self.session = session
     }
 
     /// Read the account and the reminders. Called from the You tab's `.task` and again whenever a
@@ -124,11 +145,40 @@ final class AccountModel {
     }
 
     /// Sign out, keeping everything. See `LocalAPI.signOut()` for why the account id is remembered.
+    ///
+    /// **Both halves, the local one first, and neither failure swallowed** (review of this PR, F2).
+    /// See `session` for what a sign-out that forgot the Keychain left behind.
+    ///
+    /// The first cut dropped the credential first and argued that this "fails safe". It reasoned
+    /// about one of the two failures. The reviewer measured the other: with a store that refuses
+    /// writes, `try? await api.signOut()` swallowed the local half and left
+    /// `sessionGone=true localStillSignedIn=true drawnSignedIn=true` — the app drawing an account it
+    /// no longer holds a credential for, `attribution` still that account's, for the rest of the run.
+    /// That is the mirror rule violated in the direction the comment claimed the order prevented.
+    ///
+    /// So the order is the other one, and both failures are now stated rather than one:
+    ///
+    /// - **the local half fails** → nothing has changed at all. The session is untouched, the app
+    ///   stays consistently signed in, and the person can tap again. This is the failure the ordering
+    ///   is chosen for, because it is the one a refusing store actually produces.
+    /// - **the credential drop fails** → the database says nobody, `signed_out_user_id` names the
+    ///   account, and the screen draws what the person asked for. The bearer is still the account's
+    ///   until the next launch, which is the pre-existing defect and no worse than it; the next
+    ///   launch's discriminator reads that marker beside the surviving session and ends it properly
+    ///   (`SessionRestore.reconcile`). It converges, and it converges to *signed out*.
+    ///
+    /// `AppSession.signOut()` keeps the *device* credential on purpose, so the anonymous queue goes
+    /// on draining (D9).
     func signOut() async {
         guard let api, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
-        try? await api.signOut()
+        do {
+            try await api.signOut()
+        } catch {
+            return
+        }
+        try? await session?.signOut()
         await load()
     }
 
@@ -146,12 +196,49 @@ final class AccountModel {
     /// The outcome is returned rather than rendered as a tally. R3's copy names *kinds* of record
     /// and counts nothing, because ARCHITECTURE §5.1 forbids counts of user actions and a farewell
     /// is the last place to start one; the numbers exist so a test can assert what happened.
+    /// **The credentials go too, and unlike sign-out that means both of them.**
+    /// `AppSession.forgetEverything()` drops the device credential as well as the session, on its own
+    /// stated grounds: a device token minted under a deleted account's claim is a pointer to it. This
+    /// call is what makes RULINGS **R3**'s promise true of the Keychain and not only of the tables —
+    /// and, since `DataLayer.boot` learned to restore a surviving session, it is also what stops the
+    /// next launch signing the person back into the account they just deleted.
+    ///
+    /// **Only on a deletion that happened** (review of this PR, F2b). The first cut dropped the
+    /// credentials first, and the reviewer measured what that does to the failure: with a refusing
+    /// store, `outcome=nil sessionGone=true deviceGone=true localStillSignedIn=true` — a deletion
+    /// that deleted nothing had destroyed **both** credentials, silently, because the nil outcome is
+    /// discarded at the call site. So the deletion goes first and the credentials follow it only when
+    /// it returned something.
+    ///
+    /// **This is also the order the wire will need** (review of this PR, F5). Nothing sends
+    /// `DELETE /me` today — `RoutedAPI.deleteAccount` routes local — so credential-first cost nothing
+    /// yet. On the day that route is wired it would cost everything: the request that performs the
+    /// deletion authenticates with the session, and dropping the session first makes the remote
+    /// deletion unauthenticatable. The ordering here is what that day needs, arrived at for a reason
+    /// that is already true.
+    ///
+    /// **What this leaves open, stated rather than implied.** If the deletion succeeds and
+    /// `forgetEverything()` then throws, this app holds credentials for an account whose local
+    /// records are gone, and the next launch's reconciliation restores it — the deletion cleared
+    /// `signed_out_user_id`, so the discriminator has nothing to read. That marker is deliberately not
+    /// written back: R3 requires that a deleted account is not resumable, and `AccountDeletionTests`
+    /// asserts exactly that, so buying this arm would sell a promise the rulings make. The residue is
+    /// an account restored with none of its rows, re-deletable from the same screen; the reachable
+    /// failure it replaces was destroying two credentials on every deletion that did nothing.
+    ///
+    /// **Ruled by the owner on 2026-08-15: accepted and documented, and closed by wiring
+    /// `DELETE /me`** in a follow-up round rather than by adding a rule here. Once the deletion
+    /// reaches the service the account is gone on the far side, so a session that survived a failed
+    /// Keychain removal is one the service refuses at the next request — which runs `AppSession`'s
+    /// involuntary-discard path and, through `onSessionEnded`, ends the local half in the same run.
+    /// The race becomes self-correcting, in the direction of the deletion.
     @discardableResult
     func deleteAccount(_ choice: AccountDeletionChoice) async -> AccountDeletion.Outcome? {
         guard let api, !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
         let outcome = try? await api.deleteAccount(choice)
+        if outcome != nil { try? await session?.forgetEverything() }
         await load()
         return outcome
     }
