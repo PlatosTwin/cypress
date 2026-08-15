@@ -42,6 +42,36 @@ to a unique ordered sequence *before* any row is made, and `CityDownloadsModel.d
 the same `CityInstallState.allowsDownload` the row draws its button from, so no caller can start a
 transfer the screen would not offer.
 
+### 1a. The first fix re-opened the defect through a type that could not tell presence from freshness
+
+Found by adversarial review, on the branch, before merge. Worth its own entry because the shape is
+general and the single-gate argument did not catch it.
+
+`CityInstallState.bundled` carried a **non-optional** `contentRev`, so the caller had only one
+`nil` to say two different things with: *"the bundle does not hold this city"* and *"the bundle
+holds it and no record date derives."* The second fell through to `.notInstalled`, whose
+`allowsDownload` is `true` — `81 MB`, a `Download` button, and a transfer that started, for a city
+inside the app. The owner's original report, from the fixed build.
+
+**`allowsDownload` being the single gate did not help, because the gate was asked the wrong
+question.** The state was already wrong before anything consulted it. A single source of truth
+protects against two answers to one question; it does nothing about one answer to the wrong one.
+
+**Reachable, and the reachability is a transliteration seam.** `Tools/build_seed.py` writes San
+Jose's snapshot date as `sj_meta.get("extracted_on", "")` — an empty-string default with no `die()`
+behind it, where the San Francisco path at the same file's `load_city_layer` does have one. So a
+bundle can genuinely ship a city whose `content_rev` does not derive. `SeedCities.contentRev`
+correctly skips empty snapshots, matching the publisher's `if snap:`; what diverges is what the two
+sides *do* about it. `content_rev_for` calls `fail()` and the publish stops. A read on a reader's
+phone cannot usefully refuse to answer, so it returns nil — and the caller then read nil as
+absence.
+
+**The rule this leaves behind:** when a transliteration's source treats a case as fatal, the port's
+non-fatal answer for that case is a new value that did not exist upstream, and every caller has to
+be told what it means. `SeedCities.City`'s own doc comment now says presence is the `id` and
+nothing else, and `CityInstallState.init` takes the whole `SeedCities.City` rather than a
+`String?`, so a caller cannot hand it a record date without also handing it a city.
+
 ## 2. `CityManifest.City` does carry a bbox and a centroid — the data side was never the blocker
 
 **E209 shape B3**, **E213** and **E238** each state that a per-city center is unavailable because
@@ -73,14 +103,59 @@ the claim is **E238** (E209's Shape A, fixed), in its "Left alone, deliberately"
 the proposal repeats the same citation. Recorded here rather than corrected in the proposal, which
 is a dated design document.
 
+## 4. A guard whose offline half could not see the defect it named
+
+`BundledCityTests.aCityCanNeverOccupyTwoRows` asserted the no-duplicate-rows invariant on both the
+loaded and the offline path. The offline half read `model.rows` before any `load()`, and
+`CityDownloadsModel.installed` is populated only inside `load()` — so the fold it was checking was
+`[] + bundledIDs`, which has nothing to deduplicate. Removing the deduplication left those two
+assertions **green**, proven by re-running the round's own red-proof: only the loaded assertions
+failed.
+
+Squarely the guard-green-when-the-defect-is-present shape, and on the one path the fold exists for.
+The fix is to make the catalog unreachable and `await load()` before reading rows: the disk facts
+land, the catalog does not, and the offline branch is exercised for real. Under the same break it
+now reports `["built-in", "sf", "sf", "us-ca-sj"]`.
+
+**The tell, for the next reader:** the assertion named a precondition (*"disk plus bundle both name
+`sf`"*) that no line in the test had established. A precondition a test states in prose and does
+not assert is a precondition it does not have — `#expect(model.installed.map(\.id) == ["sf"])` is
+now in the test, above the assertions that depend on it.
+
+## 5. Two rulings taken by the owner on this round, 2026-08-14
+
+Both surfaced by the adversarial review as judgment calls rather than defects, and both ruled the
+same day. Recorded here because they are decisions about what a screen says, not implementation
+detail, and the next round should not re-open them by accident.
+
+- **A bundled city whose published entry is a newer schema generation keeps `Included in the app`.**
+  The row states neither the format refusal (`needsNewerApp`'s detail line) nor the fact that a
+  newer record exists. Both branches draw no button, so nothing promises what it cannot keep;
+  what such a row owes the reader is revisited by the round that bumps the published format, not
+  before. Pinned by `BundledCityTests.futureSchemaIsRefusedBothWays`.
+- **The offline screen shows the same cities as the online one.** A bundled city keeps its card
+  when the catalog is unreachable rather than disappearing with the network. R43 §3's fetch-failure
+  sentence lists *"the built-in card, every installed city from disk facts alone"* and predates the
+  app being able to read its bundle at all; the ruling extends it rather than contradicting it.
+  Pinned by `BundledCityTests.aCityCanNeverOccupyTwoRows`.
+
 ## What this round deliberately did not do
 
-- **Coverage from the bundle.** §3.3 lists coverage as one of four facts the bundle could state.
-  It is not read: an online row already takes `coverage` from the manifest entry, and an offline
-  row has never drawn a coverage note (R43 §3's `installedOffline` shape). Reading it would mean
-  transliterating `publish_cities.py`'s hand-entered `COVERAGE_KEYS` shim into Swift for no visible
-  change — and R37's trailing clause plans to retire that shim when `build_seed.py` writes
-  `coverage_<id_space>` keys. Left for whichever round needs it to draw something.
 - **No schema change in any of the three version spaces.** `AppSchema.currentVersion`,
   `SeedDatabase.newestKnownSchemaVersion` and `CityManifest.knownFormat` are all untouched, which
   is Stage 0's defining property.
+
+**Coverage from the bundle was briefly in this list and is not any more.** It was omitted on the
+argument that an offline row had never drawn a coverage note — true of `installedOffline`, which
+describes a *downloaded* city, and not of the new bundled row, which is a city card by R43 §3's own
+definition and was the one place the fact was available and unstated. §3.3 lists coverage as one of
+the four things Stage 0 derives from the bundle and §6.1 — the text D5 approved *as scoped* —
+repeats it, so the omission was a deviation from approved scope that a reviewer should not have had
+to catch. It is read now (`SeedCities.coverage`), and San Jose's `Covers downtown only` survives the
+network going away.
+
+The `COVERAGE_KEYS` duplication that argued against it is real and is handled rather than avoided:
+`SeedCities.coverage` prefers the standardized `coverage_<id_space>` key R37 plans, so the shim is
+dead rather than wrong on the day `build_seed.py` writes it, and
+`BundledCityTests.everyPublisherCoverageKeyIsMirrored` parses `COVERAGE_KEYS` out of
+`Tools/publish_cities.py` and fails if the two tables disagree.

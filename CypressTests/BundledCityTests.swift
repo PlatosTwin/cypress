@@ -506,10 +506,14 @@ struct BundledCityTests {
         #expect(ids == [CityDownloadRow.builtInID, "sf", "us-ca-sj"])
         // The owner's 2026-08-14 ruling: all three cards offline, the same cities as online.
         #expect(offlineModel.rows.count == 3)
+        // Looked up by id, never by position: a break that drops a row should read as a missing
+        // row, not as an index crash that takes the rest of the suite's output with it.
+        let offlineSF = try #require(offlineModel.rows.first { $0.id == "sf" })
+        let offlineSJ = try #require(offlineModel.rows.first { $0.id == "us-ca-sj" })
         // `sf` is the downloaded copy, not the bundled one — it is the copy that can be attached.
-        #expect(offlineModel.rows[1].stateLine == "Installed · \(sf.version)")
-        #expect(offlineModel.rows[2].stateLine == "Included in the app · record as of 2026-07-31")
-        #expect(offlineModel.rows[2].coverageNote == "Covers downtown only")
+        #expect(offlineSF.stateLine == "Installed · \(sf.version)")
+        #expect(offlineSJ.stateLine == "Included in the app · record as of 2026-07-31")
+        #expect(offlineSJ.coverageNote == "Covers downtown only")
 
         // Then loaded, where the catalog names `sf` as well — three sources, one row.
         try Data(Self.manifestJSON([sf]).utf8).write(to: dir.appendingPathComponent("manifest.json"))
