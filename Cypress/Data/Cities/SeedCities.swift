@@ -128,7 +128,7 @@ public enum SeedCities {
     /// The rule lives in two files now, which is a real cost. It is paid rather than avoided
     /// because the alternative — a new `seed_meta` key, or a manifest field the bundle could read —
     /// is a schema change in a version space, and Stage 0's defining property is that it makes none.
-    /// `SeedCitiesTests.contentRevMatchesThePublishedVersionString` is what keeps the two honest:
+    /// `BundledCityTests.bundledSeedNamesItsCities` is what keeps the two honest:
     /// it reads the shipped bundle and asserts the answer against the published `content_rev`.
     static func contentRev(forIDSpace space: String, seedMeta: [String: String]) -> String? {
         let prefix = "inventory_"
