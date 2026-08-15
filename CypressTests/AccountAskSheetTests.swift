@@ -198,6 +198,47 @@ struct AccountAskSheetTests {
         #expect(model.presentation.notice == .failed)
     }
 
+    /// **The cancel path (#158 step 5).** Somebody who opened Apple's sheet and dismissed it has not
+    /// had anything go wrong, and `noticeFailed` — "That did not go through" — would be a claim
+    /// about them that is not true. SCREENS.md 15 draws no state for a dismissal, so the screen
+    /// draws what it already drew.
+    ///
+    /// Asserted as `notice == nil` and not merely as `!= .failed`: "any notice but that one" would
+    /// pass on a build that drew the *unavailable* line instead, which is a different false sentence.
+    @Test("a dismissed provider sheet says nothing at all")
+    func cancellationIsSilent() async {
+        let model = AccountAskModel(
+            api: Holdings(contributions: DeviceContributions(visits: 3)),
+            onLink: { _ in throw AccountLinkRefusal.cancelled }
+        )
+        let linked = await model.link(.apple)
+
+        #expect(linked == false, "a cancelled sheet reported an account")
+        #expect(
+            model.presentation.notice == nil,
+            """
+            a dismissed sheet drew "\(model.presentation.notice?.text ?? "")". Nothing failed and \
+            nothing is unavailable; the person closed a sheet, and the screen has nothing true to \
+            add to that (DECISIONS constraint 21 — 15 draws no state for it).
+            """
+        )
+        #expect(model.isLinking == false, "the buttons stayed disabled after a cancelled sheet")
+    }
+
+    /// The two routes RULINGS **R72** ruling 2 deferred. They reach the notice line E111 designed,
+    /// rather than the failure line: nothing failed, the route is not built.
+    @Test("a deferred provider draws the not-yet line, not the failure line")
+    func deferredProviderSaysNotYet() async {
+        let model = AccountAskModel(
+            api: Holdings(contributions: DeviceContributions(visits: 3)),
+            onLink: { _ in throw AccountLinkRefusal.unavailable }
+        )
+        let linked = await model.link(.email)
+
+        #expect(linked == false)
+        #expect(model.presentation.notice == .unavailable)
+    }
+
     @Test("a sign-in that succeeds reports it once, and carries the consent answer")
     func successCarriesConsent() async {
         let recorded = RecordedRequests()

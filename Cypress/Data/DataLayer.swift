@@ -88,11 +88,21 @@ public struct DataLayer: Sendable {
     ///     `RemoteAccess` for why the default is off rather than on; in one line, the UI suite boots
     ///     this function and a missing environment variable must not be the thing that points it at
     ///     production.
+    ///   - authHTTP: the `/auth/*` and `/devices/register` wire. **Nil means "whatever
+    ///     `remoteAccess` says"**, exactly as `transport` does — `URLSession.shared` when it is
+    ///     `.live`, `OfflineSession.make()` otherwise.
+    ///
+    ///     It is a **separate** parameter from `transport`, and separate on purpose: passing a
+    ///     `transport` overrides the gate for `RemoteAPI`'s wire, and it says nothing whatever about
+    ///     `/auth/*`. Letting that override extend here would have put every test that scripts a
+    ///     transport back on a live `AuthClient`, which is the defect this parameter exists to close
+    ///     rather than move (review of PR #84, F1).
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
         baseURL: URL = SyncService.defaultBaseURL,
         transport: (any AuthorizedTransport)? = nil,
+        authHTTP: (any AuthHTTP)? = nil,
         remoteAccess: RemoteAccess = .resolved
     ) async throws -> DataLayer {
         let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: seedURL)
@@ -118,7 +128,35 @@ public struct DataLayer: Sendable {
         // The session is lazy by construction: `AppSession` registers the device the first time a
         // credential is actually needed, so a launch that only wants to look at a map never reaches
         // the network (`AppSession.bootstrap()` says why). Nothing here calls it.
-        let session = AppSession(deviceUUID: deviceID)
+        //
+        // ── This line used to read `AppSession(deviceUUID: deviceID)`, and that was a hole in the
+        //    gate the size of the whole `/auth/*` surface (review of PR #84, F1) ─────────────────
+        //
+        // The default `AuthClient()` is `SyncService.defaultBaseURL` over `URLSession.shared`, and
+        // `boot`'s own `baseURL:` was never handed to it. `remoteAccess` chose between
+        // `SessionTransport` and `RefusingTransport` for `RemoteAPI` — and `AppSession` goes through
+        // neither, so a `.disabled` build still dialled `https://cypress-sync.fly.dev/api/v1` the
+        // moment anything asked it for a credential. The reviewer measured it with a `URLProtocol`
+        // in front of `URLSession.shared`: with `RemoteAccess == .disabled`, a sign-in opened
+        // `…/auth/oidc`.
+        //
+        // It was unreachable-in-practice only for as long as `signInWithApple` had no caller. #158
+        // step 5 gave it one, on screen 15, in a build the UI suite launches — which is exactly the
+        // sequence `RemoteAccess`'s own header describes: nothing was wrong with any individual
+        // test, the absence of a decision pointed the suite at production.
+        //
+        // **The gate is read from `remoteAccess` and not from `access` below.** See `authHTTP`'s
+        // parameter documentation: a caller that passed a `transport` decided what `RemoteAPI`'s
+        // wire is and decided nothing about this one, so the override deliberately does not reach
+        // here. `RemoteAccessTests` proves the resulting build opens no socket, with the
+        // interception calibrated by a control request first.
+        let session = AppSession(
+            deviceUUID: deviceID,
+            client: AuthClient(
+                baseURL: baseURL,
+                http: authHTTP ?? (remoteAccess.allowsNetwork ? URLSession.shared : OfflineSession.make())
+            )
+        )
 
         // ── One decision, not two ──────────────────────────────────────────────────────────────
         //

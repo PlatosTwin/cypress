@@ -93,12 +93,41 @@
 # Sharding further would trade complexity for seconds. The next lever is the build each shard
 # repeats, not the tests it runs.
 #
+# `AppleSignInUITests` (#158 step 5) was added afterwards and has never been on CI. Measured alone on
+# the iPhone 16 Pro simulator (EA0AD796-3052-4EE5-A7A8-A1DE807A3653, 402 pt): `VERIFY-OK: Executed
+# 3 tests, with 0 failures (0 unexpected) in 15.931 seconds`. A different machine and device from the
+# CI table above, exactly as the two entries before it are.
+#
+# PLACED ON SHARD 1, by this file's own arithmetic rather than by its class count. Totals as they
+# stand above, with this class added to each:
+#
+#   Shard 1  332.6 + 15.9 = 348.5s     <- placed here
+#   Shard 2  350.1 + 15.9 = 366.0s
+#   Shard 3  344.8 + 15.9 = 360.7s
+#   Shard 4  362.6 + 15.9 = 378.5s
+#
+# Shard 4 already sets the pace at 362.6s, and Shard 1 is the only line where 15.9s lands without
+# reaching it — so on these numbers the gate's longest TESTS do not move at all. That conclusion is
+# robust in a way `ReadingOrderAccessibilityTests`' was not: the winning margin is 14.1s against the
+# pace-setter, not 5.6s between two candidates, and it survives this class costing twice what it was
+# measured at. Re-measure before moving it, per the paragraph above.
+#
+# `RemoteGateComplaintUITests` gained a third method in #158 step 5's round 3 — the Apple button's
+# mistyped-pin banner, the sibling of the `CYPRESS_REMOTE` one it already drew. Measured whole on the
+# iPhone 16 Pro simulator (EA0AD796…, 402 pt): `VERIFY-OK: Executed 3 tests, with 0 failures
+# (0 unexpected) in 22.205 seconds`, against 2 tests before it. **The placement did not change and
+# does not need to**: the method is one extra launch on Shard 4, which the arithmetic below already
+# makes the pace-setter, and the class was never in the CI timing table above to begin with — so the
+# honest statement is that Shard 4 grows by roughly one launch (~8s here) and nothing about the
+# ordering of the four shards turns on a number that small. Re-measure on one machine before moving
+# anything for it.
+#
 # `FrameFinitenessGateTests` (#239) was added afterwards and costs nothing worth balancing for:
 # `XCTAssert`s on literal `CGRect`s only, no `XCUIApplication` anywhere in the file. Placed on the
 # shortest line by class COUNT, since there is no per-class time to add it by — the rule above,
 # applied where the file's own numbers do not reach.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests
+DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests
