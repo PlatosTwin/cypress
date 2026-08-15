@@ -158,8 +158,8 @@ public enum SessionRestore {
     /// "No local account beside a live session" is **not** only the reinstall this ruling is about.
     /// It is also what the *shipping* build leaves on every device whose owner tapped `Sign out`:
     /// before this round `AccountModel.signOut()` called `LocalAPI.signOut()` alone, which clears
-    /// `current_user_id` and leaves the Keychain untouched (the errata entry
-    /// `session-restore-the-sign-out-that-kept-the-credential.md` is that defect). Those installs do
+    /// `current_user_id` and leaves the Keychain untouched — a defect of its own, written up in this
+    /// round's errata. Those installs do
     /// not need to be reinstalled to reach this function — they reach it on the **first launch after
     /// the update**, and a rule reading only two inputs restores them: the person is silently signed
     /// back into the account they deliberately left.

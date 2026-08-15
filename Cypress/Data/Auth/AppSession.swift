@@ -96,12 +96,26 @@ public actor AppSession {
     /// run now, which is the mirror rule applied at the moment the fact changes rather than at the
     /// next convenient one.
     ///
-    /// **Only the involuntary discards fire it**, and that boundary is load-bearing rather than
-    /// tidy. `signOut()` and `forgetEverything()` are performed *by* a caller that is already doing
-    /// the local half itself (`AccountModel`), and `RootView.accountLink()`'s F4 rollback calls
-    /// `signOut()` on a session whose local half was never written — firing there would sign a person
-    /// out of an account they never linked, and write a `signed_out_user_id` for it, which the
-    /// discriminator in `SessionRestore.reconcile` would then read as a deliberate departure.
+    /// **Only the involuntary discards fire it**, and the reason is ownership rather than
+    /// consequence. `signOut()` and `forgetEverything()` are *asked for* by a caller that is already
+    /// performing the local half itself — `AccountModel` does both halves in one act, in an order it
+    /// chose for stated reasons — so a handler firing underneath them would be a second, uninvited
+    /// writer of the fact that caller is in the middle of writing. Involuntary discards have no such
+    /// caller: this type decides them alone, and nothing else would know.
+    ///
+    /// **A stronger claim stood here and the reviewer measured it false.** It said that firing on
+    /// `signOut()` would make `RootView.accountLink()`'s F4 rollback write a `signed_out_user_id` for
+    /// an account nobody linked, which `SessionRestore.reconcile`'s discriminator would then read as a
+    /// deliberate departure. It would not: `claimDevice` assigns `LocalAPI.userID` only *after* its
+    /// store write succeeds, so a rollback — whose premise is that the local half did not land —
+    /// reaches `LocalAPI.signOut()`'s `guard let account = userID` and returns having written nothing.
+    /// The narrow case the sentence described needs `linkAccount` to fail *after* `claimDevice`
+    /// succeeded, and no test stages it.
+    ///
+    /// It is left recorded rather than deleted because the correction is the useful part: the
+    /// boundary was right, and the reason given for it was a consequence that does not follow. A
+    /// boundary argued from a downstream effect is only as good as the reachability of that effect;
+    /// this one is argued from who owns the write, which does not depend on it.
     private var sessionEnded: (@Sendable (UUID) async -> Void)?
 
     /// Point the local half at this type's involuntary sign-outs. See `sessionEnded`.

@@ -225,6 +225,13 @@ final class AccountModel {
     /// asserts exactly that, so buying this arm would sell a promise the rulings make. The residue is
     /// an account restored with none of its rows, re-deletable from the same screen; the reachable
     /// failure it replaces was destroying two credentials on every deletion that did nothing.
+    ///
+    /// **Ruled by the owner on 2026-08-15: accepted and documented, and closed by wiring
+    /// `DELETE /me`** in a follow-up round rather than by adding a rule here. Once the deletion
+    /// reaches the service the account is gone on the far side, so a session that survived a failed
+    /// Keychain removal is one the service refuses at the next request — which runs `AppSession`'s
+    /// involuntary-discard path and, through `onSessionEnded`, ends the local half in the same run.
+    /// The race becomes self-correcting, in the direction of the deletion.
     @discardableResult
     func deleteAccount(_ choice: AccountDeletionChoice) async -> AccountDeletion.Outcome? {
         guard let api, !isBusy else { return nil }

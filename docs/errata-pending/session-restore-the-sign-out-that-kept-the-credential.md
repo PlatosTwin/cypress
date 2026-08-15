@@ -90,25 +90,54 @@ sign-out the **device** credential is still there. Under the mutation that swaps
 attributes each failure to the right rule. Same discipline as the reinstall/no-re-register pair in
 `158-the-keychain-outlived-the-database.md`.
 
-## Open, and an owner question rather than an engineering one
+## Ruled by the owner, 2026-08-15: an automatic sign-out does not re-home the account's rows
 
-**What should `endSignedOut` do with the rows the account owns?** Ending signed out leaves every
-account-owned private reminder and favorite attributed to the account
-(`user_id = A, device_id = NULL`), and the reads that answer "mine" ask for the *current* user or this
-device — so on a device with nobody signed in they are visible to nobody. The reviewer measured it:
+**The question.** Ending signed out leaves every account-owned private reminder and favorite
+attributed to the account (`user_id = A, device_id = NULL`), and the reads that answer "mine" ask for
+the *current* user or this device — so on a device with nobody signed in they are visible to nobody.
+Measured during review of PR #87:
 
 ```
 user_id=A  device_id=NULL  visible=0
 ```
 
 That is not new to this round; it is what `LocalAPI.signOut()` has always done, and RULINGS **R3**
-argues for keeping the rows rather than deleting them. The question the mirror rule raises is whether
-an *involuntary* ending — an expired family, a refused session, an upgrade honoring an old sign-out —
-should re-home those rows to the device so the person can still see their own reminders, or whether
-that would be the app quietly re-attributing somebody's records without being asked.
+argues for keeping the rows rather than deleting them. What the mirror rule raised is whether an
+*involuntary* ending — an expired family, a refused session, an upgrade honoring an old sign-out —
+should re-home those rows to the device so the person can still see their own reminders.
 
-It is a product question and it is **deliberately not answered here**. Recorded for the owner; the
-current behavior stands unchanged in the meantime.
+**The ruling (owner, 2026-08-15): it should not.** The rows stay the account's and stay invisible
+while nobody is signed in, and **they reappear on the next successful sign-in**. No re-homing, on
+either the deliberate or the automatic path.
+
+The reasoning to carry forward: re-homing would be the app deciding, without being asked, that
+somebody's account records are now this phone's. Invisibility is recoverable by signing in — the same
+Apple identity resolves to the same `users` row — and a re-attribution is not recoverable at all. An
+automatic ending is also the case where the person has expressed no intent whatever, which is the
+worst moment to infer one. So the two paths stay identical, which is also why no code changed for this
+ruling: `signOut()` already does exactly what was ruled.
+
+## Ruled by the owner, 2026-08-15: the interrupted-deletion residual closes by wiring `DELETE /me`
+
+**The residual.** If a deletion succeeds and `AppSession.forgetEverything()` then throws, this app
+holds credentials for an account whose local records are gone, and the next launch's reconciliation
+restores it — the deletion cleared `signed_out_user_id`, so the discriminator has nothing to read.
+Writing that marker back is the obvious repair and it is refused: R3 requires that a deleted account
+is not resumable, and `AccountDeletionTests` asserts exactly that.
+
+**The ruling (owner, 2026-08-15): it is accepted and documented, and it closes in a follow-up round
+by wiring `DELETE /me`** — not by adding a mechanism to the client's local path. The blocker that
+route was left on has expired (see the section below), so the repair is a route to wire rather than a
+rule to invent.
+
+**Why wiring the route closes it, rather than merely narrowing it.** Once the deletion reaches the
+service, the account is gone on the far side, so the surviving session is one the service will refuse
+the first time anything presents it. That refusal already runs `AppSession`'s involuntary-discard path,
+which since this round tells the local half within the same run (`onSessionEnded`). So a restore that
+happened because a Keychain removal failed is undone by the first request that needs a credential —
+**the race becomes self-correcting**, and it corrects in the direction of the deletion. Until that
+round lands, the residue is an account restored with none of its rows, re-deletable from the same
+screen.
 
 ## Adjacent, and not fixed here
 
