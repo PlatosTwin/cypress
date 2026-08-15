@@ -14,6 +14,14 @@ struct RootView: View {
     /// tests that never open the Cities screen need not supply one.
     let onInventoryChange: () -> Void
 
+    /// Screen 15's `Continue with Apple`, as one value (spec §10 step 5).
+    ///
+    /// Threaded through the view rather than reached for inside `accountLink()`, because that is the
+    /// whole of what makes the exchange testable without an Apple Account: `AccountLinkTests` hands
+    /// this a stub that answers a canned `AppleIdentityCredential`, or throws, and drives every path
+    /// from the callback to the stored session. See `AppleSignIn`.
+    let appleSignIn: AppleSignIn
+
     @State private var router = AppRouter()
 
     /// Screen 17's model, owned here because **two screens now show the same preference**.
@@ -44,9 +52,14 @@ struct RootView: View {
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     @MainActor
-    init(data: DataLayer, onInventoryChange: @escaping () -> Void = {}) {
+    init(
+        data: DataLayer,
+        onInventoryChange: @escaping () -> Void = {},
+        appleSignIn: AppleSignIn = .launchDefault()
+    ) {
         self.data = data
         self.onInventoryChange = onInventoryChange
+        self.appleSignIn = appleSignIn
         _outbox = State(wrappedValue: data.makeOutboxViewState())
         _moderation = State(wrappedValue: ModerationModel(api: data.local))
         _account = State(wrappedValue: AccountModel(api: data.local))
@@ -228,6 +241,18 @@ struct RootView: View {
         // claimed the composition root could draw the complaint, and the precedent it cited *is*
         // drawn, twenty lines below. Now so is this.
         if let complaint = data.remoteAccess.complaint {
+            deepLinkAttempted = true
+            deepLinkFailure = complaint
+            return
+        }
+        // A junk `CYPRESS_APPLE_SIGN_IN`, on the same terms and for a sharper reason (review of PR
+        // #84, F1). That seam used to fall through to the **real Apple sheet** on an unrecognized
+        // value, so a typo in either the key or the value put a live system sheet in front of the
+        // two UI tests that tap the button — on a runner whose simulator may have an Apple Account
+        // signed in. It refuses now, and this is the half that stops the refusal being silent:
+        // without it a test would wait out its timeout for a state the build was never going to
+        // draw.
+        if let complaint = DebugAppleSignInOverride.complaint() {
             deepLinkAttempted = true
             deepLinkFailure = complaint
             return
@@ -500,66 +525,140 @@ struct RootView: View {
         ProfileFavoriteWriter(api: data.api, local: data.local, outbox: data.outbox)
     }
 
-    /// Screen 15's sign-in, performed locally (ERRATA E124).
+    /// Screen 15's sign-in: the real Sign in with Apple exchange (spec §5.2 and §10 step 5,
+    /// RULINGS **R72** ruling 2).
     ///
-    /// A local account needs no server: this mints an account id and hands it to `claimDevice`, which
-    /// moves this device's anonymous contributions onto it and persists it in `app_state`. The
-    /// request's email address is neither read nor stored — there is nowhere local it could go, and
-    /// DECISIONS §3.9 wants it nowhere — so the account this closure creates is an *identity*.
+    /// **What this closure used to be, and why the change is not a refactor (ERRATA E124).** It
+    /// minted a `UUID` on the device and handed it to `claimDevice`. That was honest while there was
+    /// no service, and it stopped being honest when #158's wiring round put one behind screen 15's
+    /// drawn promise — an account that "backs them up and lets them join each tree's public
+    /// timeline" is a row on `cypress-sync`, not a locally minted identifier. E124's closing
+    /// sentence, *"nothing on the call path changes"*, was flagged by spec §10 step 5 as a claim to
+    /// check rather than assume; checked, it does not hold, for three reasons the #158 session round
+    /// wrote up (unnumbered as this is written, so there is no E to cite yet). This is the second of
+    /// the two forks it named: nothing about the sheet is captured
+    /// here, an `AppleSignIn` value is threaded in instead, and the closure stays `nonisolated`.
     ///
-    /// **The sentence that used to end this paragraph — "and screen 18's 'saving to this phone only'
-    /// stays true after it" — is no longer true, and not because of anything in this closure.**
-    /// #158's wiring round wired the outbox's send sink to `cypress-sync`, so an *anonymous*
-    /// installation's contributions leave the phone under its device credential (D9 makes that the
-    /// normal case). Screen 18's line is therefore false before this closure is ever reached. Which
-    /// sentence replaces it is a copy question the mocks do not answer — PROTOTYPE-FLOW §1.4's three
-    /// arms key on `account ∈ none | ask | linked | dismissed` and there is no arm for
-    /// *anonymous-and-sent* — so it is a stop-and-ask for the owner rather than something invented
-    /// here (DECISIONS constraint 21). It is raised in #158's wiring round, unnumbered as this is
-    /// written; the erratum it becomes is the one to cite once it has a number.
+    /// **The id is the service's, not this device's.** `signInWithApple` returns the account id
+    /// `/auth/oidc` minted, and `linkAccount` hangs this device's rows from *that*. A locally minted
+    /// id beside a server-minted one is two answers to "who is this", which is the disagreement
+    /// `AppSession.signInWithApple`'s own header says the return value exists to prevent. It is also
+    /// why `resumableUserID()` is gone from this path and is not missed: the same Apple account
+    /// signing in again resolves to the same `users` row through `apple_subject`
+    /// (`server/internal/store/identity.go`), so resumption is the service's answer now rather than
+    /// a value this device has to remember.
     ///
-    /// Idempotent on identity: if this device already carries a `userID` (the ask can return once
-    /// under ERRATA E34), it is reused, so a second link sweeps any freshly-anonymous rows onto the
-    /// same account rather than minting a rival one. When the magic-link service exists this closure
-    /// becomes the client half of the token exchange and nothing on the call path above changes.
+    /// **The device is claimed in the same round trip, and the claim can be refused.** `/auth/oidc`
+    /// registers and claims when the body carries `device_uuid` (`server/internal/api/auth.go`), and
+    /// `linkAccount` then performs the *local* half — the same `claimDevice` as before, plus the
+    /// consent record. Two claims, one on each side of the wire.
     ///
-    /// `nonisolated` so the `@Sendable` closure is formed off `RootView`'s `@MainActor` isolation: it
-    /// captures only two `Sendable` values (`LocalAPI` is an actor, `UUID` a value) read from the
-    /// `Sendable` `data`, so it carries nothing of the view across the boundary it will be called on.
-    /// **What the request carries, and why discarding it was a defect (ERRATA E131).** This closure
-    /// read `_ = request` and threw away both fields screen 15 collects. `AccountAskModel` justifies
-    /// leaving the license checkbox ungated on the grounds that "the answer travels on the request
-    /// instead, so the account records what was actually agreed to and `User.licenseVersion` stays
-    /// honestly nil when nothing was" — a sentence the shipping handler made false. Unchecking the
-    /// box changed nothing anywhere, and an account created by somebody who declined the open
-    /// database license was indistinguishable from one created by somebody who accepted it. Both
-    /// fields now land in `app_state` through `LocalAPI.linkAccount`, where `accountLink()` reads
-    /// them back and the You tab renders which answer was given.
+    /// **Two sentences that used to stand here were false, and review of PR #84 (F3) proved both.**
+    /// They read: *"so D9's 'keep your three visits' is true on the far side before the sheet
+    /// closes"* and *"neither stands in for the other"*. The service used to swallow
+    /// `ErrClaimedByAnotherAccount` and answer `200` anyway, so a reachable sequence — A signs in on
+    /// this phone and signs out, B signs in — kept every contribution on A on the service while this
+    /// closure moved the phone's rows to B unconditionally. Screen 15 drew success over a
+    /// disagreement neither side could see, which is the exact opposite of what those two sentences
+    /// claimed.
     ///
-    /// **The account resumed rather than re-minted.** `resumableUserID()` is the account this device
-    /// signed out of. Without it, signing back in would mint a rival id and leave the first
-    /// account's reminders, favorites and votes owned by an id no query asks for and no deletion
-    /// can reach — see `LocalAPI.signOut()`.
+    /// The service refuses now, with `conflict` and the sentence `POST /devices/claim` already
+    /// answers with. It refuses **before minting a session** — and after `UpsertUserForApple` and
+    /// `RecordLicenseConsent`, which is worth stating exactly: the far side keeps the `users` row and
+    /// the consent it just recorded, and only the device claim and the session are withheld. So
+    /// `exchangeApple` throws, nothing is persisted *on this phone*, `linkAccount` is never reached,
+    /// and screen 15 draws
+    /// `AccountAskCopy.noticeFailed` — *"That did not go through."* Honest, because it did not: this
+    /// phone is not this account's to take.
+    ///
+    /// **What that leaves open is a stop-and-ask, not a gap this round fills.** Nothing on the
+    /// service ever clears `devices.user_id` (a sign-out is not a request it receives), so the second
+    /// account cannot sign in on this phone *at all* — and "That did not go through" does not say
+    /// why, or that trying again will not help. A surface that says "this phone's contributions
+    /// belong to another account" is copy no mock draws, and inventing it here is what DECISIONS
+    /// constraint 21 forbids. Raised for the errata, unnumbered as this is written.
+    ///
+    /// **The license answer travels (ERRATA E131).** §6's checkbox becomes `license_version` on the
+    /// exchange, and spec §5.6 makes the two answers two different bodies: a version string when it
+    /// was checked, an explicit `null` when it was not. `.unstated` is never used here — screen 15
+    /// always asked, so this request is always about consent. It lands locally as well, through
+    /// `linkAccount`, which is where the You tab reads it back.
+    ///
+    /// **Google and email refuse, and that is spec §5.3 rather than a gap.** R72 ruling 2 ships
+    /// Apple first and defers the magic link to its own ticket, leaving screen 15 with "one working
+    /// route and two honest 'not yet' buttons". They previously minted a local account, which after
+    /// the wiring round told somebody their work was backed up when no session existed to back it up
+    /// with. `AccountLinkRefusal.unavailable` is the honest answer, drawn through the notice line
+    /// E111 already designed. **The copy on that line is now imprecise and is a stop-and-ask:**
+    /// `AccountAskCopy.noticeUnavailable` opens *"Accounts are not ready yet"*, which was true when
+    /// no route worked and is not true beside a working Apple button. Raised for the errata and
+    /// unnumbered as this is written; not rewritten here, because inventing a sentence is what
+    /// DECISIONS constraint 21 forbids.
+    ///
+    /// `nonisolated` so the `@Sendable` closure is formed off `RootView`'s `@MainActor` isolation. It
+    /// captures four `Sendable` values — an actor, an actor, a `UUID` and a struct holding one
+    /// `@Sendable` closure — so it still carries nothing of the view across the boundary it will be
+    /// called on.
     nonisolated func accountLink() -> AccountAskLink {
-        // `local`: every call in this closure — `userID`, `resumableUserID`, `linkAccount` — is
-        // about this installation's own account row in `app_state` (ERRATA E86), and none of the
-        // three is a `CypressAPI` requirement.
+        // `local`: the account row in `app_state` (ERRATA E86) — not a `CypressAPI` requirement.
+        // `session`: the credentials and the exchange. Both are actors; `deviceID` is a value.
         let api = data.local
+        let session = data.session
         let deviceID = data.deviceID
+        let appleSignIn = appleSignIn
         return { request in
-            // The account already on this device, else the one it signed out of, else a new one.
-            let existing: UUID?
-            if let current = await api.userID {
-                existing = current
-            } else {
-                existing = try await api.resumableUserID()
+            guard request.provider == .apple else {
+                throw AccountLinkRefusal.unavailable
             }
-            try await api.linkAccount(
-                deviceUUID: deviceID,
-                userID: existing ?? UUID(),
-                provider: request.provider.rawValue,
-                acceptsLicense: request.acceptsLicense
+
+            // Apple's sheet. Throws `AccountLinkRefusal.cancelled` if it was dismissed, which
+            // reaches `AccountAskModel.link` and draws nothing.
+            let credential = try await appleSignIn()
+
+            // The exchange. Registers this device, claims it, records consent and mints the
+            // session, all on the far side; a refusal arrives as the taxonomy and becomes the
+            // notice line.
+            let userID = try await session.signInWithApple(
+                credential,
+                licenseVersion: request.acceptsLicense
+                    ? .accepted(LicenseConsent.currentVersion)
+                    : .declined
             )
+
+            // The local half, against the id the service just minted.
+            //
+            // ── Why this is wrapped, and what the bare call left behind (review of PR #84, F4) ──
+            //
+            // `signInWithApple` has **already persisted `SessionCredentials` to the Keychain** by the
+            // time this line runs. If `linkAccount` throws, the bare version left the phone holding a
+            // live account session while `app_state.currentUserID` stayed unset — and
+            // `AppSession.authorization()` reads `storedSession` *before* it looks at the device
+            // credential, so every later request would go out with an account bearer while every
+            // contribution stayed attributed `.anonymous(deviceID:)`. Screen 15 draws "That did not
+            // go through" over all of it, so the person is told nothing happened while the phone is
+            // half signed in.
+            //
+            // `signOut()` is exactly the rollback wanted and nothing more: it forgets the *session*
+            // and deliberately keeps the *device* credential, so the anonymous queue this
+            // installation was draining before the tap goes on draining after it (D9). The original
+            // error is rethrown — the failure to report is the one that happened, not the tidy-up.
+            //
+            // **What this does not close, stated rather than implied.** If `persist(session)` itself
+            // throws inside `signInWithApple`, the service already holds a user, a claimed device and
+            // a refresh-token family this client just dropped. That is one layer down, inside
+            // `AppSession`, and it is the divergence class that type's own header calls open. This
+            // closes the arm reachable from screen 15.
+            do {
+                try await api.linkAccount(
+                    deviceUUID: deviceID,
+                    userID: userID,
+                    provider: request.provider.rawValue,
+                    acceptsLicense: request.acceptsLicense
+                )
+            } catch {
+                try? await session.signOut()
+                throw error
+            }
         }
     }
 

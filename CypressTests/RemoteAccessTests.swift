@@ -79,11 +79,19 @@ struct RemoteAccessTests {
         return directory.appendingPathComponent("cypress.sqlite")
     }
 
-    /// **`DataLayer.boot()` as the app calls it wires no send sink and opens no socket.**
+    /// **`DataLayer.boot()` as the app calls it wires no send sink**, and the drain below is the
+    /// observable end of that.
     ///
     /// This is the test the round exists for. It passes no `transport:` and no `remoteAccess:`, so
     /// it takes exactly the path `AppModel` takes — which is the path the UI suite takes, because
     /// the UI suite boots the real app.
+    ///
+    /// **Its headline used to read "wires no send sink and opens no socket", and the second half was
+    /// not this test's to claim** (review of PR #84, F1). What this observes is the *outbox*. The
+    /// process had another socket the whole time — `AppSession`'s, built on `AuthClient()`'s live
+    /// defaults outside this gate — and nothing here could have seen it, which is precisely why it
+    /// went unnoticed until a caller appeared. `RemoteAccessSignInTests` makes the process-level
+    /// claim, with a `URLProtocol` and a control request.
     ///
     /// The drain is the observable end of it: with the gate off there is no send sink, so a queued
     /// visit settles `done` on the apply half alone and `report.sent` is zero. Before this gate the
@@ -211,4 +219,197 @@ struct RemoteAccessTests {
             Issue.record("failed with \(type(of: error)) rather than a URLError: \(error)")
         }
     }
+
+}
+
+/// The sign-in path's own gate proofs, in a suite of their own and **serialized**.
+///
+/// `RecordingProtocol` is registered globally — it has to be, because the subject is
+/// `URLSession.shared` — so it is one recorder shared by every test that installs it. Swift Testing
+/// runs tests in parallel by default, and the first cut of these two ran concurrently and each saw
+/// the other's control request. `.serialized` is what makes each reading its own.
+///
+/// The assertions are also written to survive unrelated traffic: the calibration asks whether its
+/// own control was *seen*, and the measurement asks whether anything reached the **service**, rather
+/// than either one requiring the recording to be empty of everything.
+@Suite("RemoteAccess — the sign-in path", .serialized)
+struct RemoteAccessSignInTests {
+
+    private static func databaseURL() throws -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-remote-signin-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("cypress.sqlite")
+    }
+
+    /// Every URL recorded that names the service. The one question these tests ask.
+    private static func serviceCalls() -> [String] {
+        RecordingProtocol.observed().filter {
+            $0.contains("cypress-sync") || $0.contains("/auth/") || $0.contains("/devices/")
+        }
+    }
+
+    /// **`DataLayer.boot()` as the app calls it opens no socket for a sign-in either** (review of
+    /// PR #84, F1).
+    ///
+    /// The gate covered `RemoteAPI`'s wire and nothing else. `boot` built its `AppSession` as
+    /// `AppSession(deviceUUID:)` — the default `AuthClient()`, which is `SyncService.defaultBaseURL`
+    /// over `URLSession.shared` — and `boot`'s own `baseURL:` never reached it. `signInWithApple`
+    /// goes through neither `SessionTransport` nor `RefusingTransport`, so with the gate `.disabled`
+    /// a tap on screen 15 still dialled `https://cypress-sync.fly.dev/api/v1/auth/oidc`. The
+    /// reviewer measured exactly that, and this is their probe kept as a test.
+    ///
+    /// **`theAppsOwnBootIsOffline` above could never have caught it**: that test observes the
+    /// *outbox*, and the new socket is not the outbox's. This one observes the process.
+    ///
+    /// ── Calibration, which is the half that makes it a measurement ─────────────────────────────
+    ///
+    /// A recorder that intercepts nothing reports an empty list, and an empty list is what "no
+    /// socket was opened" looks like — the two are indistinguishable without a control. So the
+    /// control runs **first**: a deliberate request to a `.invalid` host must be *recorded*, proving
+    /// the protocol is in front of `URLSession.shared`, before the measured call is believed. That
+    /// is CLAUDE.md's "calibrate the instrument before you trust the reading", and the reviewer used
+    /// the same order.
+    ///
+    /// Nothing leaves the machine either way: `URLProtocol.startLoading` fails every request
+    /// in-process, and the control's host does not resolve.
+    @Test("the app's own boot cannot reach the service for a sign-in either")
+    func theAppsOwnBootDoesNotDialTheSignIn() async throws {
+        URLProtocol.registerClass(RecordingProtocol.self)
+        defer { URLProtocol.unregisterClass(RecordingProtocol.self) }
+        RecordingProtocol.reset()
+
+        // ── Control: prove the recorder sees a request through `URLSession.shared` at all. ──────
+        let control = URL(string: "https://cypress-remote-access-control.invalid/probe")!
+        _ = try? await URLSession.shared.data(from: control)
+        let calibration = RecordingProtocol.observed()
+        #expect(
+            calibration.contains(control.absoluteString),
+            """
+            the recorder saw \(calibration) and not the control request it was pointed at, so it is \
+            not in front of URLSession.shared and the measurement below would report "no socket" no \
+            matter what the app did. Nothing is proved until this line passes.
+            """
+        )
+        RecordingProtocol.reset()
+
+        // ── The measurement. `boot` exactly as `AppModel` calls it. ────────────────────────────
+        let data = try await DataLayer.boot(databaseURL: try Self.databaseURL(), seedURL: nil)
+        #expect(data.remoteAccess == .disabled, "the app's own boot resolved \(data.remoteAccess)")
+
+        _ = try? await data.session.signInWithApple(
+            AppleIdentityCredential(
+                identityToken: "not-a-token",
+                authorizationCode: "not-a-code",
+                rawNonce: "not-a-nonce"
+            ),
+            licenseVersion: .declined
+        )
+
+        let reached = Self.serviceCalls()
+        #expect(
+            reached.isEmpty,
+            """
+            with RemoteAccess == .disabled a sign-in opened \(reached). The gate covers RemoteAPI's \
+            wire and this path goes through neither transport, so a DEBUG build — which is every UI \
+            test on every runner — posts a real credential at production the moment somebody taps \
+            screen 15's Apple button.
+            """
+        )
+    }
+
+    /// The other half of the same gate, at the type rather than through `boot`: a device
+    /// registration is the *first* thing `AppSession` does on a fresh install, and it must not dial
+    /// either.
+    @Test("a device registration under the gate refuses in-process rather than over a socket")
+    func theGateStopsDeviceRegistrationToo() async throws {
+        URLProtocol.registerClass(RecordingProtocol.self)
+        defer { URLProtocol.unregisterClass(RecordingProtocol.self) }
+        RecordingProtocol.reset()
+
+        let control = URL(string: "https://cypress-remote-access-control2.invalid/probe")!
+        _ = try? await URLSession.shared.data(from: control)
+        #expect(
+            RecordingProtocol.observed().contains(control.absoluteString),
+            "the recorder is not in front of URLSession.shared; nothing below is a measurement"
+        )
+        RecordingProtocol.reset()
+
+        let data = try await DataLayer.boot(databaseURL: try Self.databaseURL(), seedURL: nil)
+        _ = try? await data.session.authorization()
+
+        #expect(
+            Self.serviceCalls().isEmpty,
+            "a device registration under the gate opened \(Self.serviceCalls())"
+        )
+    }
+}
+
+/// Records every URL a request is made for, and intercepts **only the hosts these tests are about**.
+///
+/// Registered globally rather than on one `URLSessionConfiguration`, because the subject is
+/// `URLSession.shared` — the session `AuthClient()` uses by default, and the one the defect ran on.
+/// A scoped protocol could not see it.
+///
+/// ── Why `canInit` is narrow, which is a regression this suite caused and a reviewer caught ──────
+///
+/// The first version returned `true` for **every** request in the process and failed all of them
+/// with `-1009`. `URLProtocol.registerClass` is process-wide, and `.serialized` only serializes
+/// tests *within* a suite — Swift Testing runs other suites in parallel with this one, so anything
+/// making a request during the window got the refusal. `CityDownloadTests` was in the blast radius:
+/// `CityDownloader(baseURL: dir)` reads a `file://` directory over `URLSession.shared`, and `canInit`
+/// did not exempt `file://` either. Three of its tests failed with `NSURLErrorDomain Code=-1009`,
+/// naming a defect that did not exist, in a suite with nothing to do with this one.
+///
+/// **It was scheduling-dependent, which is what made it worth blocking on rather than tolerating.**
+/// The author's own full run was green and the reviewer's was red three times out of three; a gate
+/// that fails on thread timing meets CI eventually rather than reliably. Diagnosed by controlled
+/// experiment rather than by inspection: `CityDownloadTests` alone passes 11/11, and
+/// `CityDownloadTests` **plus** this suite reproduces all three failures.
+///
+/// So: **record everything, intercept only ours.** The recording is what makes a failure
+/// diagnosable — an unexpected host still shows up in `observed()` — while `canInit` claims only
+/// `cypress-sync` (the service these tests are about) and the `.invalid` control hosts (a reserved
+/// TLD that can never resolve, so claiming it costs nothing). Every other request in the process is
+/// left exactly as it would be with this protocol unregistered.
+///
+/// What is *claimed* never leaves: `startLoading` reports `notConnectedToInternet`, the same failure
+/// `OfflineSession.Refuser` reports, so a code path that reaches it takes the offline branch rather
+/// than hanging on a real timeout.
+final class RecordingProtocol: URLProtocol {
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var urls: [String] = []
+
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        urls = []
+    }
+
+    static func observed() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return urls
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        lock.lock()
+        urls.append(request.url?.absoluteString ?? "<no url>")
+        lock.unlock()
+        return isOurs(request.url)
+    }
+
+    /// The hosts this protocol is entitled to answer for. Everything else is recorded and passed
+    /// straight through — see the type's header for what happened when it was not.
+    private static func isOurs(_ url: URL?) -> Bool {
+        guard let host = url?.host else { return false }
+        return host.contains("cypress-sync") || host.hasSuffix(".invalid")
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+    }
+
+    override func stopLoading() {}
 }

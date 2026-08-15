@@ -74,10 +74,22 @@ enum DebugDeepLink {
     /// Screen 04 (the camera) is absent for a different reason: presenting it raises a system
     /// permission alert, and what the test would then read is Springboard's tree, not Cypress's.
     ///
-    /// Screen 15 (the account ask) is absent because it is not a `Route`: it is presented from inside
-    /// the visit-save flow on the third save (`VisitSavedView`), the same reason screen 18 is not
-    /// here. The harness drives `AppRouter`, which has no case that opens it. It signs in locally now
-    /// (ERRATA E124), but through that flow, not a deep link.
+    /// **Screen 15 (the account ask) is here now, and the sentence that used to stand in its place
+    /// was false.** It read: "absent because it is not a `Route`: it is presented from inside the
+    /// visit-save flow on the third save (`VisitSavedView`)… The harness drives `AppRouter`, which
+    /// has no case that opens it." `AppRouter.Route.accountAsk` has existed since ERRATA **E131**
+    /// gave the You tab a way back in after a sign-out, and `RootView` presents it over the tab root
+    /// exactly as it presents `careLog` and `share`. The comment simply outlived the route.
+    ///
+    /// The alternative was the You tab's own `Sign in` row, and it was tried and rejected: whether
+    /// that row is drawn at all depends on whether this device is signed in, and `.moderationReview`
+    /// two cases up **promotes the account** — so a UI test taking that door reads whichever run went
+    /// before it (E216's family). A deep link that presents the sheet directly depends on nothing.
+    ///
+    /// What the Apple button does on the far side is a real `POST /auth/oidc` since #158 step 5
+    /// (ERRATA E124's local sign-in is gone), so a UI test that wants a *refusal* pins one with
+    /// `CYPRESS_APPLE_SIGN_IN` — see `DebugAppleSignInOverride`, and its header for why there is no
+    /// way to pin a success. This case writes nothing.
     enum Screen: String, CaseIterable {
         // Pushed destinations.
         case treeProfile        // 03
@@ -125,6 +137,7 @@ enum DebugDeepLink {
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
+        case accountAsk         // 15 — see the note above
         // Tab roots other than the map, which needs no deep link.
         case grove              // 08
         case journal            // 12 — the Journal tab's `Neighborhood` segment
@@ -392,6 +405,11 @@ enum DebugDeepLink {
                 router.present(.careLog(try await standingTree(api)))
             case .share:
                 router.present(.share(try await standingTree(api)))
+            case .accountAsk:
+                // Screen 15, over whichever tab root the app opened on. No record to resolve and
+                // nothing written — the sheet's whole input is `deviceContributions()`, a COUNT
+                // over rows this device already holds.
+                router.present(.accountAsk)
             case .grove:
                 router.tab = .grove
             case .journal:
