@@ -98,6 +98,12 @@
 # 3 tests, with 0 failures (0 unexpected) in 15.931 seconds`. A different machine and device from the
 # CI table above, exactly as the two entries before it are.
 #
+# ITS COST MOVED in the hittability-race repair: `Executed 3 tests … in 19.841 seconds` on the same
+# iPhone 16 Pro, against the 15.931 s recorded below. The +3.9 s is the settle waits the repair is
+# made of — `settledFrame` waits for the cover to stop moving instead of reading a property 0.3 s
+# after the sheet's controls appear. Shard 1 therefore stands at ~352.5 s against the pace-setter's
+# 362.6 s, so the placement below still holds and the gate's longest TESTS still do not move.
+#
 # PLACED ON SHARD 1, by this file's own arithmetic rather than by its class count. Totals as they
 # stand above, with this class added to each:
 #
