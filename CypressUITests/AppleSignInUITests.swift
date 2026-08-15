@@ -123,7 +123,11 @@ final class AppleSignInUITests: XCTestCase {
     /// settle loop absorbs a presentation still converging. A bare property read absorbs neither,
     /// because it has already returned.
     ///
-    /// **The wait is therefore the assertion**, and there is deliberately no second read after it.
+    /// **The wait is therefore the assertion**, and there is deliberately no second read *of the
+    /// property it just proved*. That is the rule, and it is about derived properties recomputed
+    /// from a snapshot — `isHittable`, `exists` — not about every line that follows a wait: the
+    /// label equality in `testTheAppleButtonIsDrawnAndHittable` is a different claim about a static
+    /// string, and it stays.
     /// The first version of this fix kept one — `XCTAssertTrue(apple.isHittableWithoutRaising(…))`
     /// on the line after the wait — which reintroduced the whole defect 310 ms later and, under
     /// `continueAfterFailure = false`, could never even report: a genuinely unhittable button aborts
@@ -206,6 +210,23 @@ final class AppleSignInUITests: XCTestCase {
             """,
             timeout: 30
         )
+
+        // **A second claim, and deliberately not a second sample of the first one.** The wait above
+        // proves the control can be reached; this proves what it is *called*, which no wait covers.
+        //
+        // It is exempt from the rule the header sets, and the exemption is the point: `label` is a
+        // static string, not a derived property recomputed from a snapshot, so it was never exposed
+        // to the mechanism that made `isHittable` unreliable under load. Deleting it in this file's
+        // second round was collateral damage from collapsing the body onto the wait, caught in
+        // review.
+        //
+        // **It also carries #88's accessibility guard.** The owner's ruling 6 of 2026-08-14 put
+        // Apple's logo ahead of this title inside the same control, and a button's accessible name
+        // is whatever its image and its label contribute between them — an unhidden decorative
+        // `Shape` would read as "Apple, Continue with Apple" or worse. `AppleMark` is
+        // `accessibilityHidden`, and this equality is what says so on a device rather than in a
+        // comment. That makes this line load-bearing for a ruling, not decoration.
+        XCTAssertEqual(apple.label, Copy.apple)
     }
 
     /// **The cancel path, which is the only reason this file needs a device.**
@@ -263,9 +284,13 @@ final class AppleSignInUITests: XCTestCase {
             "screen 15's `\(Copy.apple)` after a cancelled sheet",
             timeout: 30
         )
-        XCTAssertTrue(
-            app.buttons[Copy.decline].firstMatch.exists,
-            "a cancelled sheet took §7's decline control with it"
+        // Routed through the same wait rather than left as a bare read, because the header makes a
+        // rule of that and a reader will apply it file-wide. Reachability is also the truer claim
+        // here: §7's decline is a control a person is meant to be able to press, and "it is still
+        // in the tree" would be satisfied by one that had become unpressable.
+        assertReachable(
+            app.buttons[Copy.decline].firstMatch,
+            "screen 15's §7 decline control after a cancelled sheet"
         )
 
         // And it says nothing about what happened, because nothing happened.
@@ -275,6 +300,20 @@ final class AppleSignInUITests: XCTestCase {
         // *yet*. Giving it three seconds to be falsified is what makes "nothing appeared" a claim
         // rather than a coincidence — and it is the same lesson as the hittability read above,
         // pointing the other way.
+        //
+        // The real budget is wider than the 3 s suggests, because `settledFrame` and the first
+        // sentence's wait run before the second's: measured from the tap, sentence 1's window is
+        // tap+1.6 s → tap+4.7 s and sentence 2's is tap+4.8 s → tap+7.8 s. The failure that
+        // motivated this was on `unavailable`, which gets the later window.
+        //
+        // **TRIPWIRE, because this bound is calibrated against a synchronous link path.** Today the
+        // notice is set on a synchronous model update — `RemoteAccess.disabled` in DEBUG, an
+        // `OfflineSession`, no socket — so a notice that is going to be drawn is drawn within a
+        // frame or two of the tap, and 4.7 s is orders of magnitude more than it needs. If the
+        // account-link path ever becomes genuinely **async** — a real exchange, a retry, anything
+        // carrying a multi-second timeout — a late notice slips past this window and the test goes
+        // green with the defect present, which is this repository's signature failure. Whoever makes
+        // that change has to revisit this number.
         for sentence in [Copy.failed, Copy.unavailable] {
             let notice = app.staticTexts
                 .matching(NSPredicate(format: "label CONTAINS %@", sentence))
