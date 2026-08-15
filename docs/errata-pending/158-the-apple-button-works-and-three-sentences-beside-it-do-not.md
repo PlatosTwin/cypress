@@ -157,7 +157,69 @@ against this round:
 
 ---
 
-## 6. What was measured against the live service, and what was created there
+## 6. Round 2 — what the adversarial review found, and the one thing it changes about §7 below
+
+PR #84's reviewer proved three defects. All are fixed on the branch; two of them change what earlier
+sections of this entry were entitled to claim, so they are recorded here rather than only in the
+commit.
+
+### 6a. The sign-in path was outside the `CYPRESS_REMOTE` gate entirely (F1)
+
+`DataLayer.boot` built its session as `AppSession(deviceUUID:)` — the default `AuthClient()`, which
+is `SyncService.defaultBaseURL` over `URLSession.shared` — and `boot`'s own `baseURL:` never reached
+it. `RemoteAccess` chose between `SessionTransport` and `RefusingTransport` for `RemoteAPI`, and the
+session went through neither. **With the gate `.disabled`, a tap on screen 15 still dialled
+`https://cypress-sync.fly.dev/api/v1/auth/oidc`**, measured with a `URLProtocol` in front of
+`URLSession.shared`.
+
+It predates step 5 and was unreachable only for as long as `signInWithApple` had no caller. Step 5
+gave it one, in a build the UI suite launches — the sequence `RemoteAccess`'s own header describes.
+
+Two sentences in this repository were false because of it, and both are corrected in place:
+`RemoteAccessTests`' "wires no send sink and **opens no socket**" (true of the outbox, not of the
+process) and `AppleSignInUITests`' "this suite is hermetic". The second half of F1 is its own hazard:
+`DebugAppleSignInOverride.resolve` answered `nil` for an unrecognized value, which restores the
+**real Apple sheet** — so a typo in a UI test put a live system sheet on a runner whose simulator may
+have an Apple Account signed in, which is a real credential POSTed at production from CI.
+
+### 6b. Nothing observed that the two nonces were the same nonce (F2)
+
+`prepare` and `credential` were free functions each taking a `nonce:`, and the controller passed one
+to each. Replacing the second with `AuthNonce.random()` left the entire suite green while every real
+sign-in would have failed the server's `nonceMatches`. The pairing is a value now
+(`AppleAuthorizationAttempt`) and is asserted across a real controller.
+
+Worth recording as a measurement lesson rather than a defect: `AccountLinkTests`' wire assertion
+stayed green under the hash-for-raw inversion, because its fixture was a **literal** rather than the
+product. A fixture that does not run through the code under test is not evidence about it.
+
+### 6c. `/auth/oidc` swallowed the #174 guard, and the refusal it now returns has a consequence (F3)
+
+The server returned `200` with a session when `ClaimDevice` reported
+`ErrClaimedByAnotherAccount`, so A signs in on a phone and signs out, B signs in, the service keeps
+every contribution on A while the client moves the phone's local rows to B. It answers `conflict`
+now, with the sentence `POST /devices/claim` already uses, before minting a session.
+
+**STOP-AND-ASK, and it is new with the fix.** Nothing on the service ever clears `devices.user_id` —
+a sign-out is not a request it receives — so the second account now **cannot sign in on that phone at
+all**. Screen 15 draws `AccountAskCopy.noticeFailed`, *"That did not go through"*, which is honest
+about what happened and says nothing about why or that retrying will not help. A surface that says
+"this phone's contributions belong to another account", and whatever release path goes with it, is
+copy no mock draws and a product decision nobody has taken. Recorded, not built.
+
+### 6d. Nothing rolled back between the Keychain write and the local link (F4)
+
+`signInWithApple` persists before `linkAccount` runs; if the local half threw, the phone kept a live
+account session while `app_state.currentUserID` stayed unset, and `AppSession.authorization()` reads
+`storedSession` first — so every later request went out with an account bearer while every
+contribution stayed anonymous, under a screen saying nothing had happened. `accountLink()` rolls the
+session back now, keeping the device credential so the anonymous queue goes on draining.
+
+One arm is still open and is named rather than implied: if `persist(session)` throws *inside*
+`signInWithApple`, the service holds a user, a claimed device and a refresh-token family the client
+dropped. That is `AppSession`'s own divergence class, which its header already calls open.
+
+## 7. What was measured against the live service, and what was created there
 
 `POST https://cypress-sync.fly.dev/api/v1/auth/oidc`, twice, with obviously fake tokens. Recorded
 because the client's own fixtures assert these exact envelopes decode:
@@ -176,6 +238,11 @@ database by this branch: no `users` row, no `devices` row, no session, no `devic
 `client_uuid`.** The residue list for this round is empty.
 
 The real end-to-end tap remains the owner's, on a device, after merge. No test in this repository
-uses an Apple credential, and `DebugAppleSignInOverride` has no value that pins a *success* precisely
-so that no mutated build can reach the service — asserted by a test rather than written down as a
-rule.
+uses an Apple credential.
+
+**What keeps a test build off the service, corrected in round 2.** This paragraph used to rest that
+claim on `DebugAppleSignInOverride` having no `success` value. That seam cannot mint a credential,
+which is true and is not the guarantee: §6a is the guarantee, and until round 2 it did not hold. What
+keeps a DEBUG build off `cypress-sync` is `RemoteAccess` — now including the `/auth/*` wire — proved
+by `RemoteAccessSignInTests` with its interception calibrated by a control request before the
+measurement is believed.

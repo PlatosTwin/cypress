@@ -22,9 +22,24 @@ import XCTest
 ///
 /// The refusals are pinned with `CYPRESS_APPLE_SIGN_IN` (`DebugAppleSignInOverride`). **There is no
 /// value that pins a success**, deliberately: a pinned success would hand `AppSession` a forged
-/// credential and `POST /auth/oidc` at `cypress-sync`, which is a mutated build talking to
-/// production. Both values below refuse before anything reaches the network, so this suite is
-/// hermetic — it opens no socket, exactly like `RemoteGateComplaintUITests`.
+/// credential.
+///
+/// ── What makes this suite hermetic, corrected (review of PR #84, F1) ─────────────────────────────
+///
+/// This paragraph used to end "so this suite is hermetic — it opens no socket, exactly like
+/// `RemoteGateComplaintUITests`", and that was a claim about the pins rather than about the build.
+/// It was false twice over. `DataLayer.boot` built its `AppSession` on `AuthClient()`'s live
+/// defaults, outside the `CYPRESS_REMOTE` gate entirely, so the app under test dialled production
+/// the moment anything asked for a credential; and `DebugAppleSignInOverride.resolve` answered `nil`
+/// for an unrecognized value, which restores the **real Apple sheet** — so a typo in either the key
+/// or the value below put a live system sheet in front of a runner whose simulator may have an Apple
+/// Account signed in.
+///
+/// Both are closed, and the guarantee now comes from the gate rather than from this file: a DEBUG
+/// launch resolves `RemoteAccess.disabled`, `boot` gives the session an `OfflineSession`, and
+/// `RemoteAccessSignInTests` proves no socket opens with the interception calibrated first. A
+/// mistyped pin refuses and draws a complaint instead of the sheet. This suite is hermetic because
+/// of those two facts, not because of the values it happens to pass.
 ///
 /// ── How screen 15 is reached ─────────────────────────────────────────────────────────────────────
 ///

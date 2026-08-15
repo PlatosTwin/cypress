@@ -79,11 +79,19 @@ struct RemoteAccessTests {
         return directory.appendingPathComponent("cypress.sqlite")
     }
 
-    /// **`DataLayer.boot()` as the app calls it wires no send sink and opens no socket.**
+    /// **`DataLayer.boot()` as the app calls it wires no send sink**, and the drain below is the
+    /// observable end of that.
     ///
     /// This is the test the round exists for. It passes no `transport:` and no `remoteAccess:`, so
     /// it takes exactly the path `AppModel` takes — which is the path the UI suite takes, because
     /// the UI suite boots the real app.
+    ///
+    /// **Its headline used to read "wires no send sink and opens no socket", and the second half was
+    /// not this test's to claim** (review of PR #84, F1). What this observes is the *outbox*. The
+    /// process had another socket the whole time — `AppSession`'s, built on `AuthClient()`'s live
+    /// defaults outside this gate — and nothing here could have seen it, which is precisely why it
+    /// went unnoticed until a caller appeared. `RemoteAccessSignInTests` makes the process-level
+    /// claim, with a `URLProtocol` and a control request.
     ///
     /// The drain is the observable end of it: with the gate off there is no send sink, so a queued
     /// visit settles `done` on the apply half alone and `report.sent` is zero. Before this gate the
