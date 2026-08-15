@@ -98,11 +98,19 @@
 # 3 tests, with 0 failures (0 unexpected) in 15.931 seconds`. A different machine and device from the
 # CI table above, exactly as the two entries before it are.
 #
-# ITS COST MOVED in the hittability-race repair: `Executed 3 tests … in 19.841 seconds` on the same
-# iPhone 16 Pro, against the 15.931 s recorded below. The +3.9 s is the settle waits the repair is
-# made of — `settledFrame` waits for the cover to stop moving instead of reading a property 0.3 s
-# after the sheet's controls appear. Shard 1 therefore stands at ~352.5 s against the pace-setter's
-# 362.6 s, so the placement below still holds and the gate's longest TESTS still do not move.
+# ITS COST MOVED TWICE, and the second move is not this branch's — read both before re-deriving.
+#
+# 1. The hittability-race repair added settle waits: `Executed 3 tests … in 24.745 seconds` on the
+#    iPhone 16 Pro, against the 15.931 s recorded below.
+# 2. **#88 adds a FOURTH test to this class** (`testTheAppleButtonKeepsApplesMinimumSize`) and merges
+#    ahead of this branch, so the 3-test figure above is stale on arrival. Measured by #91's reviewer
+#    on the merged tree (iPhone 16e): `Executed 4 tests … in 24.197 seconds`.
+#
+# So after both land this is a **4-test class at ~24-25 s**, Shard 1 sits near **356.8 s**, and the
+# margin to the 362.6 s pace-setter is about **5.8 s** rather than the ~10 s the older note implied.
+# The placement still holds and the gate's longest TESTS still do not move — but the margin is now
+# inside the spread this file warns about, so the next class added anywhere should re-measure rather
+# than reason from these numbers.
 #
 # PLACED ON SHARD 1, by this file's own arithmetic rather than by its class count. Totals as they
 # stand above, with this class added to each:
