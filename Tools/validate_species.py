@@ -443,15 +443,23 @@ def main() -> int:
               f"corpus of, so no fixture is validated against that space.")
     if stated_inventory and stated_inventory not in seed_inventories:
         # Not fatal here -- this script validates fixtures, not the build -- but
-        # never silent: `seed_meta.trees_source` is what
-        # `InventorySource(id:seedMeta:)` resolves a row's provenance through, so
-        # a seed whose largest inventory is not the one it names is misdescribing
-        # itself to the app as well as to this script.
+        # never silent.
+        #
+        # Be precise about who this misleads, because the obvious answer is
+        # wrong: PER-ROW provenance does NOT go through this key. `InventorySource
+        # (id:seedMeta:)` resolves from the `inventory_<id>_*` keys, which the
+        # shipped seed carries for every inventory it holds rows from, and only
+        # falls back to `trees_source` when those are absent. What this key IS is
+        # `InventorySource(seedMeta:)` -- `CypressStore.seedProvenance`, the
+        # file's own primary inventory, the seed-wide answer.
         print(f"  WARNING: seed_meta.trees_source says {stated_inventory!r}, which is "
               f"not the primary inventory of any id space here "
               f"({sorted(seed_inventories)}). build_seed writes that key as a literal "
               f"in its two --source branches, so a seed built for any other city "
-              f"misreports its own provenance. Rule 0 uses the rows, not the claim.")
+              f"names the wrong file-wide provenance: that key is what "
+              f"InventorySource(seedMeta:) / CypressStore.seedProvenance reads. "
+              f"Per-row provenance is unaffected -- it resolves through the "
+              f"inventory_<id>_* keys. Rule 0 uses the rows, not the claim.")
 
     # ---- Rule 0: the aim. Each fixture states the corpus it describes, and a
     # fixture aimed at another corpus is one error, not one per entry.
@@ -559,18 +567,23 @@ def main() -> int:
             f"leaf_retention set for {len(lr) - len(nulls)}/{len(lr)} species; "
             f"no sf_tree_count in this fixture, so no row-weighted coverage"
         )
+    # Weighted by the same sf_tree_count, so it is suppressed for the same
+    # reason: "0 mapped rows" beside a real species count reads as a measured
+    # zero rather than as a column this fixture does not have.
     report.note(
-        f"family set for {sum(1 for e in lr if e.get('family'))}/{len(lr)} species, "
-        f"{with_family:,} mapped rows"
+        f"family set for {sum(1 for e in lr if e.get('family'))}/{len(lr)} species"
+        + (f", {with_family:,} mapped rows" if total_rows else "")
     )
     # A null leaf_retention is a value the app can represent, not a hole to be
     # filled: unknown renders no phenology chip and no autumn colour (ERRATA E9).
     report.note(f"{len(nulls)} entries carry a null leaf_retention and render as 'not known yet'")
     retired = [e for e in lr if e.get("scientific_name") in RETIRED_SPECIES_NAMES]
+    retired_sites = sum(e.get("sf_tree_count") or 0 for e in retired)
     report.note(
         f"{len(retired)} of those entries name no taxon and were retired from the seed "
-        f"entirely ({sum(e.get('sf_tree_count') or 0 for e in retired):,} planting sites, "
-        f"now carrying no species at all)"
+        f"entirely"
+        + (f" ({retired_sites:,} planting sites, now carrying no species at all)"
+           if total_rows else "")
     )
     evergreens = [e for e in lr if e.get("leaf_retention") == "evergreen"]
     report.note(f"{len(evergreens)} evergreen species; all checked against D5")

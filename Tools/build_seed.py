@@ -1425,7 +1425,6 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     nb_path = os.path.join(raw_dir, "sf_analysis_neighborhoods.geojson")
     db_path = os.path.join(seed_dir, "cypress-seed.sqlite")
     schema_path = os.path.join(seed_dir, "schema.sql")
-    map_path = os.path.join(fixtures_dir, "sf_species_map.csv")
 
     if do_fetch or not os.path.exists(csv_path):
         fetch(TREES_CSV_URL, csv_path)
@@ -2143,13 +2142,27 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         with open(tracked, encoding="utf-8", newline="") as fh:
             current = fh.read()
         if current != text:
-            drifted = sum(
-                1 for a, b in zip(current.splitlines(), text.splitlines()) if a != b
-            ) + abs(len(current.splitlines()) - len(text.splitlines()))
-            log(f"NOTE: {tracked} differs from what this build derived "
-                f"({drifted} lines). The checked-in copy was NOT touched. If this "
-                f"build read the whole source and the difference is intended, "
-                f"rerun with --write-species-map to update it.")
+            # Compared as ROWS KEYED BY THEIR SPECIES STRING, not line against
+            # line. The first version zipped the two files positionally and added
+            # the length difference, which is not a diff: one inserted row shifts
+            # every row after it and every one of them counts as changed. It
+            # reported 628 differing lines where git reported 123 added and 600
+            # removed, so the number in the message was larger than the file and
+            # meant nothing.
+            def rows_by_key(blob: str) -> dict:
+                reader = csv.reader(io.StringIO(blob))
+                next(reader, None)  # header
+                return {row[0]: row[1:] for row in reader if row}
+
+            before, after = rows_by_key(current), rows_by_key(text)
+            removed = sorted(set(before) - set(after))
+            added = sorted(set(after) - set(before))
+            changed = sorted(k for k in set(before) & set(after) if before[k] != after[k])
+            log(f"NOTE: {tracked} differs from what this build derived: "
+                f"{len(removed)} rows only in the checked-in copy, {len(added)} only "
+                f"in this build's, {len(changed)} mapped differently. The checked-in "
+                f"copy was NOT touched. If this build read the whole source and the "
+                f"difference is intended, rerun with --write-species-map to update it.")
 
     # ---- which inventory this seed is, and WHEN it was taken.
     #

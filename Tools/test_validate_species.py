@@ -403,6 +403,41 @@ def test_an_overlay_is_still_an_overlay_inside_its_own_id_space():
         check(r.returncode == 2, f"an overlay in a multi-city seed was accepted ({r.returncode})")
 
 
+def test_a_one_row_margin_still_resolves_and_resolves_the_same_way():
+    """FAILS IF: the near-tie answer stops being deterministic, or flips.
+
+    Per-id-space grain can never separate `sf_city` from `sf_datasf` -- both
+    publish the same TreeID numbering and are in space `sf` on purpose, which is
+    what made the DataSF -> city switch reversible (E156). So San Francisco is
+    the PERMANENT near-tie case, decided by row count alone, and 100 vs 101 is
+    the whole margin the rule has to work with.
+
+    A one-row margin is a real answer and is taken: the larger inventory wins,
+    whichever it is, and the same input gives the same answer every run. This
+    pins both directions so a change to the ordering cannot silently swap which
+    of San Francisco's two inventories a fixture set is validated against.
+    """
+    for bigger, smaller in (("sf_city", "sf_datasf"), ("sf_datasf", "sf_city")):
+        with tempfile.TemporaryDirectory() as d:
+            seed = write_seed(
+                os.path.join(d, "s.sqlite"),
+                [(PRESENT_UUID, "Pinus radiata", "Monterey Pine", None)],
+                bigger,
+                contributions={"sf": {bigger: 101, smaller: 100}},
+            )
+            cur = write_fixture(os.path.join(d, "c.yaml"), bigger, [])
+            lr = write_fixture(os.path.join(d, "l.yaml"), bigger, [entry()])
+            r = run_script(seed, cur, lr)
+            check(r.returncode == 0,
+                  f"a one-row majority for {bigger!r} did not resolve ({r.returncode})")
+            # ...and the loser by one row is still refused.
+            cur2 = write_fixture(os.path.join(d, "c2.yaml"), smaller, [])
+            lr2 = write_fixture(os.path.join(d, "l2.yaml"), smaller, [entry()])
+            r2 = run_script(seed, cur2, lr2)
+            check(r2.returncode == 2,
+                  f"{smaller!r}, behind by one row, was accepted as the corpus")
+
+
 def test_an_exact_tie_resolves_to_no_corpus_rather_than_a_coin_flip():
     """FAILS IF: a tie is broken by row order or alphabet and answered anyway.
 
@@ -443,6 +478,7 @@ def main() -> int:
         test_a_partial_overlay_inventory_does_not_make_a_seed_its_corpus,
         test_a_fused_two_city_seed_validates_both_cities,
         test_an_overlay_is_still_an_overlay_inside_its_own_id_space,
+        test_a_one_row_margin_still_resolves_and_resolves_the_same_way,
         test_an_exact_tie_resolves_to_no_corpus_rather_than_a_coin_flip,
         test_a_fixture_that_declares_no_corpus_is_refused,
         test_the_escape_hatch_skips_identity_and_says_so,

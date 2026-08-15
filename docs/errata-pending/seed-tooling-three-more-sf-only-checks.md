@@ -1,8 +1,8 @@
-# Unnumbered — two more `verify_seed.py` checks are San Francisco-only, and fail on the shipped seed
+# Unnumbered — two more `verify_seed.py` checks are San Francisco-only, plus a named limit of the species-fixture gate
 
 Staged unnumbered per CLAUDE.md's "Numbering and shared files"; the orchestrator splices it under
-the real next number at merge. Written on `fix/seed-tooling`, the branch that repaired checks 1 and
-12 of the same script.
+the real next number at merge. Written on `fix/seed-tooling`, the branch that repaired checks 1, 12 and 13 of
+the same script.
 
 **Check 13 of the three below was fixed on this branch after the owner ruled on it (2026-08-14);
 it is kept here as the record of what was measured and what was decided. Checks 2 and 16b are
@@ -10,8 +10,8 @@ still failing and are the live items.**
 
 `Tools/verify_seed.py` on `origin/main` reports `34/38 checks passed` against
 `Fixtures/seed/cypress-seed.sqlite` — the seed the app actually bundles, unmodified. Two of the four
-failures were the checks that branch was scoped to fix. **The other two are still failing after it,
-and with check 13 they are one defect wearing three hats:** the script was written when a seed meant
+failures were the checks that branch was scoped to fix. **Checks 2 and 16b are still failing after
+it, and with check 13 they are one defect wearing three hats:** the script was written when a seed meant
 San Francisco, and the shipped seed has carried two id spaces since #129.
 
 Measured 2026-08-14 against a seed whose `seed_meta` reads
@@ -65,7 +65,50 @@ carrying polygons is what makes that a contradiction, and it is asserted as one.
 San Jose still has no neighborhood geometry. The ruling makes that acceptable to ship; it does not
 make it invisible, and the 0.000% line is printed on every run.
 
-## 3. Check 16b — "every tree uuid == uuidv5(NS_TREE, TreeID)" — 52,788 of 198,625 rows disagree
+## 3. `validate_species.py` rule 0 cannot yet tell a partial corpus from a complete one
+
+Not a `verify_seed` check, and not a defect in what shipped on this branch — a **named limit** of it,
+recorded here because the next round needs it and because the failure it produces is silent.
+
+Rule 0 decides whether a species fixture may be validated against a seed by asking which inventory
+that seed is a corpus of, per id space, derived as the inventory contributing the most rows within
+the space. That answers *"which inventory dominates this space"*. It does **not** answer *"is this
+inventory's corpus complete here"*, and the two come apart for a partial ingest of a city that has
+only one inventory — a borough-scoped pack is the obvious candidate. Such a space's only inventory
+is trivially its primary, so the gate opens and every species the partial ingest did not reach
+reports as fixture drift.
+
+Measured 2026-08-14, on a seed built `--source datasf` with 300,000 NYC **tree** rows added under
+`nyc_tree_points` in id space `us-ny-nyc` and **no NYC species rows at all**:
+
+```
+seed corpora: sf -> 'sf_datasf', us-ny-nyc -> 'nyc_tree_points'
+10391 checks run
+503 FAILURES:
+```
+
+decomposing as:
+
+```
+ 503 species_uuid <uuid> is not in the seed database species table
+   0 common_name does not match the seed row
+   0 scientific_name does not match the seed row
+```
+
+**Write the decomposition down, because it is the whole finding.** All-absences / zero-common_name /
+zero-scientific_name is character-for-character the wrong-corpus signature — the same shape as the
+original 84 and the 586 that rule 0 was built to refuse. Here rule 0 *accepts* the run, so those 503
+arrive looking exactly like fixture drift and there is nothing on screen to say otherwise. A reader
+who does not know this signature will go hunting for 503 nonexistent defects. A reader who does can
+tell in one glance that the seed, not the fixture, is the wrong side of the comparison.
+
+The real answer is for the seed to record per-inventory completeness: `rows_from_<inventory>` against
+that inventory's own published feature count. `seed_meta` carries those counts only ad hoc today —
+`trees_source_feature_count` for whichever source was active, `sj_source_feature_count` for San Jose,
+no general key — so this is a seed-format change and was deliberately not invented on this branch. It
+is on the s17/region round's agenda, alongside the `trees_source` literal below.
+
+## 4. Check 16b — "every tree uuid == uuidv5(NS_TREE, TreeID)" — 52,788 of 198,625 rows disagree
 
 ```
   [FAIL] 16b. every tree uuid == uuidv5(NS_TREE, TreeID)
@@ -90,7 +133,7 @@ through `inventory_contract`'s own `identity_seed` rather than restating the der
 argument the file already makes for importing `species_trigrams` instead of copying it, so that a
 change to the scheme cannot leave the verifier agreeing with a stale copy of itself.
 
-## Why this was not fixed on that branch
+## Why 2 and 16b were not fixed on that branch
 
 Scope. The branch was chartered on four named defects and these were three more; check 13 was folded
 in only because the owner's ruling arrived while the branch was open, and folding the rest in would
@@ -99,3 +142,5 @@ have put more untested check rewrites into one review. They are recorded here ra
 its readers to skim the failures, and the two real defects on this branch sat in that noise. Whoever
 takes this should also decide whether `verify_seed.py` should refuse to run at all on a file whose id
 spaces it has no per-space rule for, rather than reporting a confident wrong number.
+
+Item 3 is different in kind: nothing about it is failing, and that is exactly the problem with it.
