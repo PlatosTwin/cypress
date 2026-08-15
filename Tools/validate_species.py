@@ -197,18 +197,31 @@ def seed_species(path: Path) -> tuple[dict[str, dict], str, str]:
             "GROUP BY id_space, inventory_source"
         ).fetchall()
     stated = stated_row[0] if stated_row else ""
+    by_space: dict[str, list] = {}
+    for space, inventory, count in contributions:
+        by_space.setdefault(space, []).append((count, inventory))
+
     primaries: dict[str, str] = {}
-    # Sorted by count descending then name, so a tie resolves to a stable answer
-    # instead of whichever row came back first.
-    for space, inventory, count in sorted(
-        contributions, key=lambda r: (r[0], -r[2], r[1])
-    ):
-        primaries.setdefault(space, inventory)
-    # A seed with no trees cannot say what it is a corpus of; fall back to the
-    # claim rather than inventing one.
-    if not primaries and stated:
+    ambiguous: dict[str, list[str]] = {}
+    for space, rows_here in by_space.items():
+        top = max(count for count, _ in rows_here)
+        winners = sorted(inventory for count, inventory in rows_here if count == top)
+        if len(winners) > 1:
+            # An exact tie means the file does not answer "which inventory is
+            # this space a corpus of". Breaking it by row order or alphabet would
+            # answer confidently anyway, and the wrong half of a coin flip here
+            # validates a fixture set against a corpus that is not its own. So
+            # the space gets no primary and the ambiguity is reported.
+            ambiguous[space] = winners
+            continue
+        primaries[space] = winners[0]
+    # A seed with no trees at all cannot say what it is a corpus of; fall back to
+    # the claim rather than inventing one. A seed whose only spaces are AMBIGUOUS
+    # is a different case and must not fall back -- it has rows and they do not
+    # agree, which the claim cannot settle.
+    if not primaries and not ambiguous and stated:
         primaries = {"": stated}
-    return {row["uuid"]: dict(row) for row in rows}, primaries, stated
+    return {row["uuid"]: dict(row) for row in rows}, primaries, stated, ambiguous
 
 
 def citations_ok(citations, where: str, report: Report) -> None:
@@ -417,12 +430,17 @@ def main() -> int:
     args = parser.parse_args()
 
     report = Report()
-    seed, primaries, stated_inventory = seed_species(args.seed)
+    seed, primaries, stated_inventory, ambiguous = seed_species(args.seed)
     seed_inventories = set(primaries.values())
     print(f"seed database: {len(seed)} species rows in {args.seed}")
-    print("seed corpora: " + ", ".join(
+    print("seed corpora: " + (", ".join(
         f"{space or '<unknown space>'} -> {inv!r}" for space, inv in sorted(primaries.items())
-    ) + "  (the largest contributor within each id space)")
+    ) or "none resolved") + "  (the largest contributor within each id space)")
+    for space, winners in sorted(ambiguous.items()):
+        # Reported, and the space is left with no corpus: see seed_species.
+        print(f"  WARNING: id space {space!r} has no single largest inventory -- "
+              f"{winners} are tied. This file does not say which of them it is a "
+              f"corpus of, so no fixture is validated against that space.")
     if stated_inventory and stated_inventory not in seed_inventories:
         # Not fatal here -- this script validates fixtures, not the build -- but
         # never silent: `seed_meta.trees_source` is what

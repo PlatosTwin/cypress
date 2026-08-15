@@ -403,6 +403,38 @@ def test_an_overlay_is_still_an_overlay_inside_its_own_id_space():
         check(r.returncode == 2, f"an overlay in a multi-city seed was accepted ({r.returncode})")
 
 
+def test_an_exact_tie_resolves_to_no_corpus_rather_than_a_coin_flip():
+    """FAILS IF: a tie is broken by row order or alphabet and answered anyway.
+
+    Two inventories with exactly equal row counts in one id space means the file
+    does not say which of them it is a corpus of. Picking one is a confident
+    answer to a question the data did not settle, and the wrong half of that coin
+    flip validates a fixture set against a corpus that is not its own -- the
+    original defect, reached by a different road. The space gets no corpus and
+    the tie is named.
+
+    Before this, the alphabetically first inventory silently won: a 100/100 tie
+    between sf_city and sf_datasf resolved to sf_city and refused the other.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        seed = write_seed(
+            os.path.join(d, "s.sqlite"), [], "sf_city",
+            contributions={"sf": {"sf_city": 100, "sf_datasf": 100}},
+        )
+        for declared in ("sf_city", "sf_datasf"):
+            cur = write_fixture(os.path.join(d, f"c-{declared}.yaml"), declared, [])
+            lr = write_fixture(os.path.join(d, f"l-{declared}.yaml"), declared, [entry()])
+            r = run_script(seed, cur, lr)
+            check(
+                r.returncode == 2,
+                f"a tied space still validated {declared!r} ({r.returncode})",
+            )
+            check(
+                "are tied" in r.stdout,
+                f"the tie was not named for {declared!r}: {r.stdout[:400]}",
+            )
+
+
 def main() -> int:
     for test in [
         test_a_flavor_mismatch_is_one_error_and_not_one_per_entry,
@@ -411,6 +443,7 @@ def main() -> int:
         test_a_partial_overlay_inventory_does_not_make_a_seed_its_corpus,
         test_a_fused_two_city_seed_validates_both_cities,
         test_an_overlay_is_still_an_overlay_inside_its_own_id_space,
+        test_an_exact_tie_resolves_to_no_corpus_rather_than_a_coin_flip,
         test_a_fixture_that_declares_no_corpus_is_refused,
         test_the_escape_hatch_skips_identity_and_says_so,
         test_a_uuid_naming_a_different_species_fails,
