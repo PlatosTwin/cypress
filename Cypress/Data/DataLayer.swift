@@ -177,9 +177,20 @@ public struct DataLayer: Sendable {
         // (`SessionCredentials.userID`). `AppSession.bootstrap()` rules that a launch must not dial
         // out for somebody who only wanted to look at a map; a restore that had to would have broken
         // that rule for every launch, not just the one after a reinstall.
+        //
+        // **Three inputs, not two, and the third is the one an existing device needs** (review of
+        // this PR, F1). "No local account beside a live session" describes the reinstall this ruling
+        // is about — and equally describes every beta install whose owner tapped `Sign out` under the
+        // shipping build, because that sign-out cleared `current_user_id` and left the Keychain alone.
+        // Those devices reach this line on the first launch after the update, with no reinstall
+        // involved, and a two-input rule signs them back into the account they left.
+        // `signed_out_user_id` is what tells the two apart; `SessionRestore.reconcile` has the whole
+        // argument, including why it is read only when the database names nobody.
         let storedUserID = (try await store.appState(.currentUserID)).flatMap(UUID.init(uuidString:))
+        let signedOutUserID = (try await store.appState(.signedOutUserID)).flatMap(UUID.init(uuidString:))
         let reconciliation = SessionRestore.reconcile(
             storedUserID: storedUserID,
+            signedOutUserID: signedOutUserID,
             sessionUserID: await session.signedInUserID
         )
 
@@ -188,28 +199,45 @@ public struct DataLayer: Sendable {
         //
         // **A restore does not raise it, and that is deliberate**: no route on this service reports a
         // role, so a restored install reads back `.member`. A role is authority, and the direction to
-        // fail in is the one that does not grant it (`SessionRestore`'s header).
+        // fail in is the one that does not grant it. `LocalAPI.restoreAccount` is where that is
+        // enforced rather than here, because it is enforced for the provider and the consent in the
+        // same breath.
         let role = (try await store.appState(.currentUserRole)).flatMap(UserRole.init(rawValue:)) ?? .member
         let local = LocalAPI(store: store, deviceID: deviceID, userID: storedUserID, role: role)
 
-        // Applied through `LocalAPI`'s own two verbs rather than by writing `app_state` here. A
-        // restore is the local half of a sign-in and `claimDevice` is exactly that half — it sweeps
-        // this installation's unattributed rows onto the account, writes the id, and clears the
-        // signed-out marker; ending signed out is `signOut()`, which keeps every row and remembers
-        // the id. Re-implementing either as a bare `setAppState` would be a second statement of a
-        // rule that already has one.
+        // Applied through `LocalAPI`'s own verbs rather than by writing `app_state` here. A restore is
+        // the local half of a sign-in: `restoreAccount` sweeps this installation's unattributed rows
+        // onto the account and writes the id, and clears the three facts a restore cannot know.
+        // Ending signed out is `signOut()`, which keeps every row and remembers the id. Re-
+        // implementing either as a bare `setAppState` would be a second statement of a rule that
+        // already has one.
         //
         // Both are idempotent, which is what makes a launch killed part-way through recoverable: the
-        // next launch reads both halves again and reaches the same verdict. See `SessionRestore` for
-        // why there is no "restore in progress" flag to be left behind.
+        // next launch reads all three inputs again and reaches the same verdict. See `SessionRestore`
+        // for why there is no "restore in progress" flag to be left behind.
         switch reconciliation {
         case .unchanged:
             break
         case let .restore(userID):
-            try await local.claimDevice(deviceUUID: deviceID, userID: userID)
+            try await local.restoreAccount(deviceUUID: deviceID, userID: userID)
         case .endSignedOut:
+            // **Both halves.** One of the two states that reach here is a live session beside a
+            // deliberate sign-out (F1), and leaving that session standing would leave the bearer as
+            // the account's — which is the defect the ending is supposed to close, not a leftover of
+            // it. On the other state the session is already gone or already dead, and this is a
+            // no-op. `signOut()` and not `forgetEverything()`: the device credential goes on draining
+            // the anonymous queue (D9).
             try await local.signOut()
+            try await session.signOut()
         }
+
+        // The mirror rule, applied at the moment the fact changes rather than only at the next launch
+        // (review of this PR, F4). `AppSession` discards a session the service refuses; without this
+        // the app went on drawing that account until the app was relaunched. `signOut()` and not
+        // `forgetEverything()` for the reason above, and `try?` because there is nothing a failed
+        // local sign-out could report to — the next launch's reconciliation reaches the same verdict
+        // from `app_state` and the now-empty Keychain.
+        await session.onSessionEnded { [local] _ in try? await local.signOut() }
 
         // ── One decision, not two ──────────────────────────────────────────────────────────────
         //

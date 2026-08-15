@@ -118,7 +118,14 @@ public enum AccountReconciliation: Equatable, Sendable {
     /// *different* account, which see `SessionRestore.reconcile`.
     case restore(userID: UUID)
 
-    /// The database names an account and no live session is left. End signed out.
+    /// This installation is to stop acting as this account: **both halves of it.**
+    ///
+    /// Two states reach here. The database names an account and no live session is left — sixty days
+    /// without a launch, or a refusal the session layer already acted on. Or the database names
+    /// nobody, a session survives, and `signed_out_user_id` says the person left that very account on
+    /// purpose (see `SessionRestore.reconcile`); the second is why this act drops the *session* as
+    /// well as the local half, and not only for tidiness — a session left standing is the bearer
+    /// every later request goes out with.
     ///
     /// Not a deletion: `LocalAPI.signOut()` keeps every row the account wrote and remembers the id
     /// under `AppStateKey.signedOutUserID`, which is what "signing out is not a quiet, unlabeled
@@ -138,10 +145,39 @@ public enum SessionRestore {
     ///
     /// - Parameters:
     ///   - storedUserID: `app_state.current_user_id`, the database's half.
+    ///   - signedOutUserID: `app_state.signed_out_user_id` — the account somebody **left on
+    ///     purpose**. See the discriminator section below; it is read only when `storedUserID` is
+    ///     nil.
     ///   - sessionUserID: `AppSession.signedInUserID`, the Keychain's half. **Already liveness-tested
     ///     by that property**, so a session whose refresh token has expired arrives here as nil and
     ///     is answered `.endSignedOut` — which is the same verdict `authorization()` reaches on the
     ///     same session, arrived at from the other side.
+    ///
+    /// ── The discriminator, and the population it exists for (review of this PR, F1) ─────────────
+    ///
+    /// "No local account beside a live session" is **not** only the reinstall this ruling is about.
+    /// It is also what the *shipping* build leaves on every device whose owner tapped `Sign out`:
+    /// before this round `AccountModel.signOut()` called `LocalAPI.signOut()` alone, which clears
+    /// `current_user_id` and leaves the Keychain untouched (the errata entry
+    /// `session-restore-the-sign-out-that-kept-the-credential.md` is that defect). Those installs do
+    /// not need to be reinstalled to reach this function — they reach it on the **first launch after
+    /// the update**, and a rule reading only two inputs restores them: the person is silently signed
+    /// back into the account they deliberately left.
+    ///
+    /// The reviewer staged exactly that path and measured it, including the part that makes it
+    /// unrecoverable — `claimDevice` clears `signed_out_user_id` on its way past, so the evidence of
+    /// the deliberate sign-out is destroyed by the act that ignores it.
+    ///
+    /// So the marker is read. `signed_out_user_id == sessionUserID` means *this person left this
+    /// account on purpose*, and the answer is `.endSignedOut`, which takes the session with it. It is
+    /// not a new key and not a progress flag: it is a fact `LocalAPI.signOut()` already writes, for
+    /// its own stated reason, and this is the second reader of it.
+    ///
+    /// **It is consulted only when `storedUserID` is nil, and that is the marker's own meaning rather
+    /// than a convenience.** `AppStateKey.signedOutUserID` is "the account this device was signed in
+    /// as *before somebody signed out*", and `LocalAPI.resumableUserID()` already guards on exactly
+    /// this — "the question only means anything when there is no current account". A marker consulted
+    /// beside a live local account would be answering a question nobody asked.
     ///
     /// ── The mismatch arm, which should be unreachable and is written closed anyway ──────────────
     ///
@@ -158,12 +194,18 @@ public enum SessionRestore {
     /// the two halves stay in disagreement for the life of the install. `applyOne`'s nil-`DeviceUUID`
     /// branch is the same shape and settled the same way: an unreachable arm is still written to fail
     /// in the safe direction.
-    public static func reconcile(storedUserID: UUID?, sessionUserID: UUID?) -> AccountReconciliation {
+    public static func reconcile(
+        storedUserID: UUID?,
+        signedOutUserID: UUID?,
+        sessionUserID: UUID?
+    ) -> AccountReconciliation {
         switch (storedUserID, sessionUserID) {
         case (nil, nil):
             return .unchanged
         case let (nil, .some(session)):
-            return .restore(userID: session)
+            // The discriminator. A session for the account this device recorded itself as having
+            // left is a session that outlived a deliberate act, not one that outlived a reinstall.
+            return signedOutUserID == session ? .endSignedOut(userID: session) : .restore(userID: session)
         case let (.some(stored), nil):
             return .endSignedOut(userID: stored)
         case let (.some(stored), .some(session)):

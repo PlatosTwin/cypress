@@ -128,13 +128,17 @@ struct SessionReconcileTests {
 
     @Test("both halves empty is the ordinary anonymous launch and changes nothing")
     func neitherHalf() {
-        #expect(SessionRestore.reconcile(storedUserID: nil, sessionUserID: nil) == .unchanged)
+        #expect(SessionRestore.reconcile(storedUserID: nil, signedOutUserID: nil, sessionUserID: nil) == .unchanged)
     }
 
     @Test("a session with no local account restores it")
     func sessionOnly() {
         #expect(
-            SessionRestore.reconcile(storedUserID: nil, sessionUserID: RestoreFixture.accountID)
+            SessionRestore.reconcile(
+                storedUserID: nil,
+                signedOutUserID: nil,
+                sessionUserID: RestoreFixture.accountID
+            )
                 == .restore(userID: RestoreFixture.accountID)
         )
     }
@@ -142,7 +146,11 @@ struct SessionReconcileTests {
     @Test("a local account with no session ends signed out")
     func storedOnly() {
         #expect(
-            SessionRestore.reconcile(storedUserID: RestoreFixture.accountID, sessionUserID: nil)
+            SessionRestore.reconcile(
+                storedUserID: RestoreFixture.accountID,
+                signedOutUserID: nil,
+                sessionUserID: nil
+            )
                 == .endSignedOut(userID: RestoreFixture.accountID)
         )
     }
@@ -152,8 +160,57 @@ struct SessionReconcileTests {
         #expect(
             SessionRestore.reconcile(
                 storedUserID: RestoreFixture.accountID,
+                signedOutUserID: nil,
                 sessionUserID: RestoreFixture.accountID
             ) == .unchanged
+        )
+    }
+
+    /// **The upgrade population** (review of this PR, F1). A session that outlived a *deliberate*
+    /// sign-out is not a session that outlived a reinstall, and the difference is a fact the app
+    /// already wrote.
+    @Test("a session for the account this device recorded leaving ends signed out, not restored")
+    func aDeliberateSignOutIsRespected() {
+        #expect(
+            SessionRestore.reconcile(
+                storedUserID: nil,
+                signedOutUserID: RestoreFixture.accountID,
+                sessionUserID: RestoreFixture.accountID
+            ) == .endSignedOut(userID: RestoreFixture.accountID),
+            """
+            the rule restored an account this device had recorded itself as having left. That is the \
+            state the shipping build leaves on every install whose owner tapped Sign out, so this is \
+            not a reinstall being read wrong — it is the first launch after the update, undoing a \
+            deliberate act.
+            """
+        )
+    }
+
+    /// The control that keeps the discriminator from swallowing the ruling: a marker naming somebody
+    /// *else* is not this session's departure, and the reinstall still restores.
+    @Test("a signed-out marker for a different account does not block the restore")
+    func aMarkerForAnotherAccountDoesNotBlockTheRestore() {
+        #expect(
+            SessionRestore.reconcile(
+                storedUserID: nil,
+                signedOutUserID: RestoreFixture.otherAccountID,
+                sessionUserID: RestoreFixture.accountID
+            ) == .restore(userID: RestoreFixture.accountID),
+            "a departure from one account was read as a departure from another, and the ruling lost"
+        )
+    }
+
+    /// The marker speaks only when the database names nobody — `LocalAPI.resumableUserID()`'s own
+    /// guard, and this is the second reader to honor it.
+    @Test("a stale signed-out marker beside a live local account is not consulted")
+    func aStaleMarkerBesideALiveAccountIsIgnored() {
+        #expect(
+            SessionRestore.reconcile(
+                storedUserID: RestoreFixture.accountID,
+                signedOutUserID: RestoreFixture.accountID,
+                sessionUserID: RestoreFixture.accountID
+            ) == .unchanged,
+            "a leftover marker signed out an account that is currently, actively signed in"
         )
     }
 
@@ -164,6 +221,7 @@ struct SessionReconcileTests {
         #expect(
             SessionRestore.reconcile(
                 storedUserID: RestoreFixture.accountID,
+                signedOutUserID: nil,
                 sessionUserID: RestoreFixture.otherAccountID
             ) == .restore(userID: RestoreFixture.otherAccountID),
             """
@@ -689,6 +747,174 @@ struct SessionRestoreBoundaryTests {
         )
     }
 
+    /// **The upgrade population, staged through the real pre-#87 path** (review of this PR, F1).
+    ///
+    /// The shipping build's sign-out is `LocalAPI.signOut()` alone — that is literally what
+    /// `AccountModel.signOut()` did on `main`, and it is what this test calls, deliberately, rather
+    /// than the fixed `AccountModel`. So the state booted below is the one on a real device that has
+    /// been updated: `current_user_id` cleared, `signed_out_user_id` written, and a **live session
+    /// still in the Keychain**. No reinstall is involved.
+    ///
+    /// Without the discriminator this is indistinguishable from the reinstall the ruling is about, and
+    /// the first launch after the update signs the person back into the account they left.
+    @Test("a sign-out performed by the shipping build is respected by the first launch after the update")
+    func theUpgradePopulationIsNotSignedBackIn() async throws {
+        let credentials = InMemoryCredentialStore()
+        let databaseURL = try RestoreFixture.databaseURL()
+        try RestoreFixture.seedSession(credentials)
+
+        let beforeTheUpdate = try await RestoreFixture.boot(
+            databaseURL: databaseURL,
+            credentials: credentials,
+            http: RestoreFixture.silentHTTP()
+        )
+        #expect(await beforeTheUpdate.local.userID == RestoreFixture.accountID, "the fixture never signed in")
+
+        // The shipping build's sign-out: the local half and nothing else. `AccountModel` is
+        // deliberately not used — the point is the state a *previous version* of this app left.
+        try await beforeTheUpdate.local.signOut()
+
+        // Calibration: the staged state really is the one under test — local half gone, marker
+        // written, session alive. Without this the boot below could be converging from anything.
+        #expect(try await beforeTheUpdate.store.appState(.currentUserID) == nil, "the local half did not clear")
+        #expect(
+            try await beforeTheUpdate.store.appState(.signedOutUserID) == RestoreFixture.accountID.uuidString,
+            "no signed-out marker was written, so there is no discriminator to read and nothing is staged"
+        )
+        #expect(
+            await beforeTheUpdate.session.signedInUserID == RestoreFixture.accountID,
+            "the session was not left alive, so this stages the fixed sign-out rather than the shipping one"
+        )
+
+        let firstLaunchAfterTheUpdate = try await RestoreFixture.boot(
+            databaseURL: databaseURL,
+            credentials: credentials,
+            http: RestoreFixture.silentHTTP()
+        )
+        #expect(
+            await firstLaunchAfterTheUpdate.local.userID == nil,
+            """
+            the update signed the person back into the account they had deliberately left. This needs \
+            no reinstall — it is every beta install whose owner ever tapped Sign out, on its first \
+            launch after the update.
+            """
+        )
+        #expect(
+            await firstLaunchAfterTheUpdate.session.storedSession == nil,
+            """
+            the launch respected the sign-out on screen and left the session in the Keychain, so the \
+            bearer is still the account's — the ending has to take both halves.
+            """
+        )
+        // The marker survives, because the account is still resumable by signing in again. It is the
+        // `claimDevice` sweep that erases it, and that sweep is what did not run.
+        #expect(
+            try await firstLaunchAfterTheUpdate.local.resumableUserID() == RestoreFixture.accountID,
+            "ending signed out erased the record of which account this device had left"
+        )
+    }
+
+    /// **The mismatch arm's authority grant** (review of this PR, F3).
+    ///
+    /// `theRestoreInventsNothing` asserts over an *empty* database, where role, provider and consent
+    /// are absent whatever the restore does — the assertions were true of the fixture rather than of
+    /// the code. This is the same claim over a database that already names another account, with the
+    /// three facts deliberately set first, which is the only staging that can tell the two apart.
+    @Test("a restore over a database naming another account inherits none of its role, provider or consent")
+    func theMismatchArmInheritsNothing() async throws {
+        let credentials = InMemoryCredentialStore()
+        let databaseURL = try RestoreFixture.databaseURL()
+
+        // Account A, signed in and promoted, with a consent on record.
+        try RestoreFixture.seedSession(credentials, userID: RestoreFixture.otherAccountID)
+        let asOther = try await RestoreFixture.boot(
+            databaseURL: databaseURL,
+            credentials: credentials,
+            http: RestoreFixture.silentHTTP()
+        )
+        #expect(await asOther.local.userID == RestoreFixture.otherAccountID, "account A never signed in")
+        try await asOther.local.setRole(.moderator)
+        try await asOther.store.setAppState(.accountProvider, to: "apple")
+        try await asOther.store.setAppState(.accountLicenseVersion, to: LicenseConsent.currentVersion)
+
+        // Calibration: the three facts really are on the database, so their absence below is the
+        // restore clearing them rather than the fixture never having written them.
+        #expect(await asOther.local.userRole == .moderator, "the role was not staged")
+        #expect(try await asOther.store.appState(.accountProvider) == "apple", "the provider was not staged")
+        #expect(
+            try await asOther.store.appState(.accountLicenseVersion) == LicenseConsent.currentVersion,
+            "the consent was not staged"
+        )
+
+        // The session now names account B. `reconcile` answers `.restore(B)`.
+        try RestoreFixture.seedSession(credentials, userID: RestoreFixture.accountID)
+        let asAccount = try await RestoreFixture.boot(
+            databaseURL: databaseURL,
+            credentials: credentials,
+            http: RestoreFixture.silentHTTP()
+        )
+
+        #expect(await asAccount.local.userID == RestoreFixture.accountID, "the session's account did not win")
+        #expect(
+            await asAccount.local.userRole == .member,
+            """
+            the incoming account inherited the outgoing one's role. A role is authority and no route \
+            on this service reports one, so this is the app granting authority on the strength of a \
+            row the previous account left behind.
+            """
+        )
+        let record = try await asAccount.local.accountLink()
+        #expect(record?.provider == nil, "the incoming account inherited the outgoing one's provider")
+        #expect(
+            record?.licenseVersion == nil,
+            "the incoming account inherited a license consent the outgoing account gave"
+        )
+        #expect(
+            AccountCopy.licenseLine(for: record) == nil,
+            "the You tab drew a license sentence about a consent another account gave"
+        )
+    }
+
+    /// **The local half follows the credential within the run** (review of this PR, F4a).
+    ///
+    /// The mirror rule used to be re-evaluated only at launch, so a session the service refused
+    /// mid-use left the app drawing a signed-in account with no credential behind it until the next
+    /// relaunch — the same disagreement as a reinstall, in the other direction, with the rule that
+    /// exists to stop it asleep.
+    @Test("a session refused mid-run ends the local account in the same run")
+    func aRefusalEndsTheLocalAccountWithoutARelaunch() async throws {
+        let credentials = InMemoryCredentialStore()
+        // The access token is already dead, so the first authorization must refresh — and be refused.
+        try RestoreFixture.seedSession(credentials, accessLifetime: -1)
+        let refusing = ScriptedAuthHTTP { _ in
+            (401, ScriptedAuthHTTP.refusal("unauthorized", "Your session has expired."))
+        }
+
+        let data = try await RestoreFixture.boot(
+            databaseURL: try RestoreFixture.databaseURL(),
+            credentials: credentials,
+            http: refusing
+        )
+        #expect(await data.local.userID == RestoreFixture.accountID, "the restore never happened")
+
+        await #expect(throws: SessionError.refreshFailed) {
+            _ = try await data.session.authorization()
+        }
+
+        // No relaunch. Same `DataLayer`, same actors.
+        #expect(
+            await data.local.userID == nil,
+            """
+            the service refused the session and the app went on naming that account for the rest of \
+            the run — drawing it, and attributing every contribution to it, with no credential left \
+            to send as it.
+            """
+        )
+        let account = AccountModel(api: data.local, session: data.session)
+        await account.load()
+        #expect(!account.isSignedIn, "the You tab drew a signed-in account whose session had been refused")
+    }
+
     /// The device credential is **kept** by a sign-out, and the anonymous queue goes on draining
     /// (D9). The control that stops the assertion above from being satisfied by a sign-out that
     /// simply threw both credentials away.
@@ -721,6 +947,99 @@ struct SessionRestoreBoundaryTests {
             server-side, so an unnecessary one signs out a queue that was draining (D9).
             """
         )
+    }
+
+    /// **A sign-out whose local half fails changes nothing** (review of this PR, F2).
+    ///
+    /// The measured failure of the first ordering was `sessionGone=true localStillSignedIn=true
+    /// drawnSignedIn=true`: the credential thrown away and the app still drawing the account, for the
+    /// rest of the run. The local half goes first now, so a store that refuses writes leaves the two
+    /// halves exactly as they were and the person can tap again.
+    @Test("a sign-out whose local half fails leaves both halves signed in")
+    func aFailedLocalSignOutChangesNothing() async throws {
+        let credentials = InMemoryCredentialStore()
+        try RestoreFixture.seedSession(credentials)
+        let data = try await RestoreFixture.boot(
+            databaseURL: try RestoreFixture.databaseURL(),
+            credentials: credentials,
+            http: RestoreFixture.silentHTTP()
+        )
+        #expect(await data.local.userID == RestoreFixture.accountID, "the fixture never signed in")
+
+        try await Self.refuseWrites(data)
+
+        let account = AccountModel(api: data.local, session: data.session)
+        await account.signOut()
+
+        #expect(
+            await data.session.storedSession != nil,
+            """
+            the sign-out threw the credential away over a local half that could not be written. The \
+            app then draws the account — `isSignedIn` reads `LocalAPI.userID`, which is untouched — \
+            with no credential left to be it, for the rest of the run.
+            """
+        )
+        #expect(await data.local.userID == RestoreFixture.accountID, "the local half half-succeeded")
+    }
+
+    /// **A deletion that deleted nothing destroys no credentials** (review of this PR, F2b).
+    ///
+    /// Measured on the first ordering: `outcome=nil sessionGone=true deviceGone=true
+    /// localStillSignedIn=true` — both credentials gone on a deletion that did not happen, silently,
+    /// because `YouTabView` discards the outcome.
+    @Test("a deletion that fails destroys neither credential")
+    func aFailedDeletionKeepsTheCredentials() async throws {
+        let credentials = InMemoryCredentialStore()
+        try RestoreFixture.seedSession(credentials)
+        let data = try await RestoreFixture.boot(
+            databaseURL: try RestoreFixture.databaseURL(),
+            credentials: credentials,
+            http: RestoreFixture.silentHTTP()
+        )
+        let device = DeviceCredential(
+            deviceToken: "device-token-1",
+            expiresAt: RestoreFixture.capturedAt.addingTimeInterval(365 * 24 * 60 * 60),
+            deviceUUID: data.deviceID
+        )
+        try credentials.setData(try AuthCoding.encoder.encode(device), forKey: CredentialKey.device)
+
+        try await Self.refuseWrites(data)
+
+        let account = AccountModel(api: data.local, session: data.session)
+        let outcome = await account.deleteAccount(.eraseEverything)
+
+        #expect(outcome == nil, "the deletion succeeded, so this test is not about a failed one")
+        #expect(
+            await data.session.storedSession != nil,
+            "a deletion that deleted nothing threw the account's session away"
+        )
+        #expect(
+            try credentials.data(forKey: CredentialKey.device) != nil,
+            """
+            a deletion that deleted nothing threw the device credential away. Re-registering retires \
+            the previous token server-side, so the anonymous queue this installation was draining is \
+            signed out by a tap that did nothing.
+            """
+        )
+    }
+
+    /// Put the store's writer connection into `PRAGMA query_only`, and **prove it took**.
+    ///
+    /// `AccountLinkTests` established both the technique and the calibration: making the file
+    /// read-only does not work, because POSIX permissions are checked at `open(2)` and the store
+    /// already holds a writable descriptor. Without the probe, "nothing changed" would be reported
+    /// just as happily by a run in which nothing needed to change.
+    private static func refuseWrites(_ data: DataLayer) async throws {
+        try await data.store.queue.write { connection in
+            try connection.execute("PRAGMA query_only = 1")
+        }
+        var refuses = false
+        do {
+            try await data.store.setAppState(.accountProvider, to: "probe")
+        } catch {
+            refuses = true
+        }
+        #expect(refuses, "the store still accepts writes, so nothing below is about a failed local half")
     }
 
     /// Deleting the account must not leave a session that signs the person back into it.

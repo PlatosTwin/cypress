@@ -146,22 +146,39 @@ final class AccountModel {
 
     /// Sign out, keeping everything. See `LocalAPI.signOut()` for why the account id is remembered.
     ///
-    /// **Both halves, and the credential first.** See `session` for what a sign-out that forgot the
-    /// Keychain left behind. The order is the one that fails safe: if forgetting the session throws,
-    /// the local half is left standing too, so the app stays consistently signed in and the person
-    /// can tap again — rather than reaching the state this method exists to prevent, a database that
-    /// says nobody beside a credential that says somebody. `AppSession.signOut()` keeps the *device*
-    /// credential on purpose, so the anonymous queue goes on draining (D9).
+    /// **Both halves, the local one first, and neither failure swallowed** (review of this PR, F2).
+    /// See `session` for what a sign-out that forgot the Keychain left behind.
+    ///
+    /// The first cut dropped the credential first and argued that this "fails safe". It reasoned
+    /// about one of the two failures. The reviewer measured the other: with a store that refuses
+    /// writes, `try? await api.signOut()` swallowed the local half and left
+    /// `sessionGone=true localStillSignedIn=true drawnSignedIn=true` — the app drawing an account it
+    /// no longer holds a credential for, `attribution` still that account's, for the rest of the run.
+    /// That is the mirror rule violated in the direction the comment claimed the order prevented.
+    ///
+    /// So the order is the other one, and both failures are now stated rather than one:
+    ///
+    /// - **the local half fails** → nothing has changed at all. The session is untouched, the app
+    ///   stays consistently signed in, and the person can tap again. This is the failure the ordering
+    ///   is chosen for, because it is the one a refusing store actually produces.
+    /// - **the credential drop fails** → the database says nobody, `signed_out_user_id` names the
+    ///   account, and the screen draws what the person asked for. The bearer is still the account's
+    ///   until the next launch, which is the pre-existing defect and no worse than it; the next
+    ///   launch's discriminator reads that marker beside the surviving session and ends it properly
+    ///   (`SessionRestore.reconcile`). It converges, and it converges to *signed out*.
+    ///
+    /// `AppSession.signOut()` keeps the *device* credential on purpose, so the anonymous queue goes
+    /// on draining (D9).
     func signOut() async {
         guard let api, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
-            try await session?.signOut()
+            try await api.signOut()
         } catch {
             return
         }
-        try? await api.signOut()
+        try? await session?.signOut()
         await load()
     }
 
@@ -186,26 +203,35 @@ final class AccountModel {
     /// and, since `DataLayer.boot` learned to restore a surviving session, it is also what stops the
     /// next launch signing the person back into the account they just deleted.
     ///
-    /// **First, and refusing if it fails** — the same order and the same rule as `signOut`, stated
-    /// once for both: *never leave this app holding a credential for an account it has stopped
-    /// having.* The two failures are not symmetric, which is what settles it. Dropping the
-    /// credentials and then failing to delete leaves an intact account this phone is signed out of,
-    /// and signing in again resolves to the same `users` row through `apple_subject`. Deleting and
-    /// then failing to drop leaves a session for an account whose records are gone — and the next
-    /// launch's reconciliation, reading a cleared `app_state` beside a live session, would sign the
-    /// person straight back into it. One is an inconvenience; the other is the deletion undoing
-    /// itself.
+    /// **Only on a deletion that happened** (review of this PR, F2b). The first cut dropped the
+    /// credentials first, and the reviewer measured what that does to the failure: with a refusing
+    /// store, `outcome=nil sessionGone=true deviceGone=true localStillSignedIn=true` — a deletion
+    /// that deleted nothing had destroyed **both** credentials, silently, because the nil outcome is
+    /// discarded at the call site. So the deletion goes first and the credentials follow it only when
+    /// it returned something.
+    ///
+    /// **This is also the order the wire will need** (review of this PR, F5). Nothing sends
+    /// `DELETE /me` today — `RoutedAPI.deleteAccount` routes local — so credential-first cost nothing
+    /// yet. On the day that route is wired it would cost everything: the request that performs the
+    /// deletion authenticates with the session, and dropping the session first makes the remote
+    /// deletion unauthenticatable. The ordering here is what that day needs, arrived at for a reason
+    /// that is already true.
+    ///
+    /// **What this leaves open, stated rather than implied.** If the deletion succeeds and
+    /// `forgetEverything()` then throws, this app holds credentials for an account whose local
+    /// records are gone, and the next launch's reconciliation restores it — the deletion cleared
+    /// `signed_out_user_id`, so the discriminator has nothing to read. That marker is deliberately not
+    /// written back: R3 requires that a deleted account is not resumable, and `AccountDeletionTests`
+    /// asserts exactly that, so buying this arm would sell a promise the rulings make. The residue is
+    /// an account restored with none of its rows, re-deletable from the same screen; the reachable
+    /// failure it replaces was destroying two credentials on every deletion that did nothing.
     @discardableResult
     func deleteAccount(_ choice: AccountDeletionChoice) async -> AccountDeletion.Outcome? {
         guard let api, !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
-        do {
-            try await session?.forgetEverything()
-        } catch {
-            return nil
-        }
         let outcome = try? await api.deleteAccount(choice)
+        if outcome != nil { try? await session?.forgetEverything() }
         await load()
         return outcome
     }
