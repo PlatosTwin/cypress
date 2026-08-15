@@ -66,6 +66,29 @@ public struct CityLibrary: Sendable {
         public let version: String
         public let fileURL: URL
         public let bytes: Int64
+        /// The city's own name, read out of the installed file (`dim_city.display_name`, s16+).
+        /// Nil for a file too old to carry one — the caller then falls back to the id, which is
+        /// what every offline row said before this existed.
+        public let displayName: String?
+        /// The shipped extent's word, read out of the same file's `seed_meta`. Nil for full
+        /// coverage — the same meaning the manifest's `coverage` field carries.
+        public let coverage: String?
+
+        public init(
+            id: String,
+            version: String,
+            fileURL: URL,
+            bytes: Int64,
+            displayName: String? = nil,
+            coverage: String? = nil
+        ) {
+            self.id = id
+            self.version = version
+            self.fileURL = fileURL
+            self.bytes = bytes
+            self.displayName = displayName
+            self.coverage = coverage
+        }
     }
 
     /// The installed version of one city, or nil. One version directory at most survives any
@@ -93,6 +116,13 @@ public struct CityLibrary: Sendable {
 
     /// Every city on disk, by id. Rendered directly when the manifest is unreachable — the
     /// offline screen is disk facts alone.
+    ///
+    /// **The display name is one of those disk facts now.** Since s16 every published city file
+    /// carries `dim_city.display_name`, narrowed to that city's single row by
+    /// `Tools/publish_cities.py`, so reading it here costs one read-only open per installed city
+    /// and stops an offline reader being shown `us-ca-sj` where their own phone says `San Jose`.
+    /// The open is bounded — this method is called on screen load and after an install or a
+    /// remove, never per render — and a file that cannot answer simply has no name.
     public func installedCities() -> [InstalledCity] {
         guard let ids = try? FileManager.default.contentsOfDirectory(
             at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
@@ -106,7 +136,14 @@ public struct CityLibrary: Sendable {
                 let url = fileURL(id: id, version: version)
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let bytes = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-                return InstalledCity(id: id, version: version, fileURL: url, bytes: bytes)
+                // A city file holds exactly one id space (R37.3 narrows it), so the name for this
+                // id is whichever row the file carries — matched on the id rather than assumed to
+                // be first, because assuming would be wrong the day a pack holds two.
+                let named = SeedCities.read(fileAt: url).first { $0.id == id }
+                return InstalledCity(
+                    id: id, version: version, fileURL: url, bytes: bytes,
+                    displayName: named?.displayName, coverage: named?.coverage
+                )
             }
             .sorted { $0.id < $1.id }
     }
