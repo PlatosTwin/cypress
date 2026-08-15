@@ -670,7 +670,9 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             | tail -40
           # The archive is deliberately UNSIGNED; the Export step below performs the one real
-          # signing pass. Both alternatives were run before this landed, not reasoned about:
+          # signing pass, and the ad-hoc signing step in between is what carries the
+          # entitlements across that gap — read it before touching either signing flag here.
+          # Both alternatives were run before this landed, not reasoned about:
           # run 31052462134 proved that under automatic signing `archive` demands an Apple
           # DEVELOPMENT identity (`No signing certificate "iOS Development" found`, on a
           # keychain verifiably holding the imported Distribution identity) — which also names
@@ -690,7 +692,39 @@ jobs:
           echo "archive carries marketing version: $SHIPPED_VERSION"
           [ "$SHIPPED_VERSION" = "$MARKETING_VERSION" ] || { echo "archive version $SHIPPED_VERSION does not match VERSION file $MARKETING_VERSION — the override did not take" >&2; exit 1; }
 
-      - name: Export and upload to TestFlight
+      # ── Sign the archive ad hoc, so the product requests its entitlements ────────────
+      # Export builds the final signature from what the archived app's signature REQUESTS,
+      # never from the Xcode project — CODE_SIGN_ENTITLEMENTS is processed at archive-time
+      # signing, which CODE_SIGNING_ALLOWED=NO above deliberately skips. That gap is how
+      # builds 34 and 35 shipped without com.apple.developer.applesignin: the export re-signed
+      # the unsigned archive with baseline entitlements only (application-identifier,
+      # team-identifier, get-task-allow), every step green, and Sign in with Apple failed
+      # instantly on device. Both directions were run locally before this landed (2026-08-15,
+      # same commit, same export options): an unsigned archive exports with the entitlement
+      # ABSENT from the signature even though the embedded profile authorizes it, and an
+      # ad-hoc-signed archive exports with it PRESENT.
+      #
+      # Ad hoc (`-s -`) because it needs no certificate, no profile and no secret, and the
+      # export replaces it wholesale with the real Apple Distribution signature — its only job
+      # is to carry the entitlements request across the archive-to-export gap. Signing at
+      # archive time instead was tried and refused: manual style with CODE_SIGN_IDENTITY=-
+      # fails on `"Cypress" requires a provisioning profile`, with or without
+      # AD_HOC_CODE_SIGNING_ALLOWED=YES and PROVISIONING_PROFILE_REQUIRED=NO (2026-08-15).
+      - name: Sign the archive ad hoc, with the app's declared entitlements
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/Cypress.xcarchive/Products/Applications/Cypress.app"
+          codesign --force -s - --entitlements Cypress/Cypress.entitlements "$APP"
+          # Readback, for the log's provenance: what does the archive's signature now request?
+          codesign -d --entitlements "$RUNNER_TEMP/archive-entitlements.plist" --xml "$APP"
+          cat "$RUNNER_TEMP/archive-entitlements.plist"; echo
+
+      # `destination = export` in Tools/ExportOptions.plist: the signed .ipa lands on disk so
+      # the guard below can inspect the exact bytes that will be uploaded. With `upload`, the
+      # final product existed only inside xcodebuild and nothing could look at it before
+      # TestFlight — which is how builds 34 and 35 went out missing their entitlements with
+      # every check green.
+      - name: Export the signed .ipa
         env:
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -705,6 +739,36 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             | tail -30
+
+      # ── Refuse to upload a product that lost an entitlement ──────────────────────────
+      # The guard this pipeline was missing when builds 34 and 35 shipped. It fails the job
+      # BEFORE the upload if any required entitlement is absent from the product's signature
+      # (what iOS enforces) or from the embedded profile's Entitlements dict (what the store
+      # accepts) — see Tools/verify_entitlements.sh for the required list and the calibration
+      # evidence. On the profile side its failure message names the one portal action, for the
+      # day the cloud-managed distribution profile predates a new capability and
+      # -allowProvisioningUpdates does not regenerate it.
+      - name: Refuse to upload a product missing a required entitlement
+        run: |
+          set -euo pipefail
+          IPA="$(find "$RUNNER_TEMP/export" -maxdepth 1 -name '*.ipa' -print -quit)"
+          [ -n "$IPA" ] || { echo "::error::the export produced no .ipa under $RUNNER_TEMP/export"; exit 1; }
+          Tools/verify_entitlements.sh "$IPA"
+
+      # The same bytes the guard just inspected, uploaded by altool with the same API key the
+      # export used. The key file is already at $RUNNER_TEMP/private_keys/AuthKey_<id>.p8,
+      # which is exactly the layout altool's $API_PRIVATE_KEYS_DIR lookup expects.
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/private_keys
+        run: |
+          set -euo pipefail
+          IPA="$(find "$RUNNER_TEMP/export" -maxdepth 1 -name '*.ipa' -print -quit)"
+          [ -n "$IPA" ] || { echo "::error::no .ipa to upload under $RUNNER_TEMP/export"; exit 1; }
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --api-key "$ASC_KEY_ID" --api-issuer "$ASC_ISSUER_ID"
 
       # ── One testable build, as asked ─────────────────────────────────────────────────
       # Processing is asynchronous: the build is not in App Store Connect the moment the upload
