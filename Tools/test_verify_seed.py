@@ -26,7 +26,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from verify_seed import duplicate_external_refs, inventory_row_counts  # noqa: E402
+from verify_seed import (  # noqa: E402
+    duplicate_external_refs,
+    inventory_row_counts,
+    neighborhood_coverage,
+)
 
 FAILURES: list[str] = []
 PASSED = 0
@@ -50,8 +54,10 @@ CREATE TABLE trees (
     id               INTEGER PRIMARY KEY,
     id_space         TEXT NOT NULL,
     external_ref     TEXT,
-    inventory_source TEXT NOT NULL
+    inventory_source TEXT NOT NULL,
+    neighborhood_id  INTEGER
 );
+CREATE TABLE neighborhoods (id INTEGER PRIMARY KEY);
 """
 
 
@@ -65,6 +71,21 @@ def seed(trees, inventories=(), meta=()) -> sqlite3.Connection:
         "INSERT INTO trees (id_space, external_ref, inventory_source) VALUES (?, ?, ?)",
         trees,
     )
+    return conn
+
+
+def hood_seed(rows, polygons: int) -> sqlite3.Connection:
+    """A seed for check 13. `rows` is (id_space, total, stamped)."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(FIXTURE_SCHEMA)
+    conn.executemany("INSERT INTO neighborhoods (id) VALUES (?)",
+                     [(i + 1,) for i in range(polygons)])
+    for space, total, stamped in rows:
+        conn.executemany(
+            "INSERT INTO trees (id_space, external_ref, inventory_source, "
+            "neighborhood_id) VALUES (?, NULL, ?, ?)",
+            [(space, space, 1 if i < stamped else None) for i in range(total)],
+        )
     return conn
 
 
@@ -176,6 +197,62 @@ def test_an_undeclared_inventory_is_visible():
     )
 
 
+# ---------------------------------------------------------------------------
+# Check 13: neighborhood coverage is per city, because polygons are
+# ---------------------------------------------------------------------------
+
+
+def test_a_city_with_no_polygons_is_reported_not_failed():
+    """FAILS IF: check 13 averages two cities into one percentage again.
+
+    The shipped shape. San Jose has never had neighborhood geometry ingested, so
+    none of its 52,788 trees can be stamped; averaged with San Francisco that
+    read as "26.578% have no neighborhood" and looked like a coverage
+    regression. The owner ruled on 2026-08-14 that shipping the downtown San
+    Jose window with no neighborhood line is acceptable, so this reports rather
+    than fails -- and keeps saying 0.000% for as long as it is true.
+    """
+    conn = hood_seed([("sf", 1000, 999), ("us-ca-sj", 500, 0)], polygons=41)
+    rows, below, collapsed = neighborhood_coverage(conn)
+    check(not below, f"a city with no polygons was failed: {below}")
+    check(not collapsed, "a partly-stamped file was called collapsed")
+    check(
+        dict((r[0], round(r[3], 1)) for r in rows) == {"sf": 99.9, "us-ca-sj": 0.0},
+        f"per-space coverage is wrong: {rows}",
+    )
+
+
+def test_a_city_that_has_polygons_is_still_held_to_the_threshold():
+    """FAILS IF: the per-space rule becomes a way to excuse real under-stamping.
+
+    The calibration. San Francisco stamps, so it has geometry, so a drop to 90%
+    is a genuine regression in the polygon join and must still go red. Waiving
+    the cities that cannot stamp must not waive the one that can.
+    """
+    conn = hood_seed([("sf", 1000, 900), ("us-ca-sj", 500, 0)], polygons=41)
+    rows, below, _ = neighborhood_coverage(conn)
+    check(
+        any(b.startswith("sf ") for b in below),
+        f"a real SF stamping regression went unreported: {below}",
+    )
+
+
+def test_a_total_stamping_collapse_is_caught():
+    """FAILS IF: 'no space stamps anything' reads as 'no space has polygons'.
+
+    The hole the per-space rule opens and this closes. If the polygon join broke
+    entirely, every space would stamp zero, every space would look like San Jose,
+    and a purely per-space rule would pass a completely broken file. The file
+    still carrying polygons is what makes it a contradiction.
+    """
+    conn = hood_seed([("sf", 1000, 0), ("us-ca-sj", 500, 0)], polygons=41)
+    _, below, collapsed = neighborhood_coverage(conn)
+    check(collapsed, "a total stamping collapse passed as 'no city has geometry'")
+    conn2 = hood_seed([("us-ca-sj", 500, 0)], polygons=0)
+    _, _, collapsed2 = neighborhood_coverage(conn2)
+    check(not collapsed2, "a seed with no polygons at all was called collapsed")
+
+
 def main() -> int:
     for test in [
         test_a_ref_shared_across_id_spaces_is_not_a_duplicate,
@@ -184,6 +261,9 @@ def main() -> int:
         test_a_non_sf_seed_reports_its_own_inventories,
         test_a_seed_that_lost_rows_disagrees_with_its_own_claim,
         test_an_undeclared_inventory_is_visible,
+        test_a_city_with_no_polygons_is_reported_not_failed,
+        test_a_city_that_has_polygons_is_still_held_to_the_threshold,
+        test_a_total_stamping_collapse_is_caught,
     ]:
         test()
 

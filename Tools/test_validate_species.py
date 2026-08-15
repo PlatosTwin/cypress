@@ -53,13 +53,24 @@ def check(condition, message):
         FAILURES.append(message)
 
 
-def write_seed(path: str, rows, trees_source: str) -> str:
-    """A seed carrying only what the validator reads: species and provenance."""
+def write_seed(path: str, rows, trees_source: str, contributions=None) -> str:
+    """A seed carrying only what the validator reads.
+
+    `contributions` is {inventory: row count} -- the rows rule 0 derives the
+    seed's own inventory from. It defaults to a single inventory matching
+    `trees_source`, which is the ordinary single-city case; pass it explicitly to
+    build the shipped seed's shape, where a second inventory rides along as a
+    partial overlay.
+    """
+    if contributions is None:
+        contributions = {trees_source: 1}
     conn = sqlite3.connect(path)
     conn.executescript(
         "CREATE TABLE species (uuid TEXT PRIMARY KEY, scientific_name TEXT, "
         "common_name TEXT, leaf_retention TEXT, deleted_at TEXT);"
         "CREATE TABLE seed_meta (key TEXT PRIMARY KEY, value TEXT);"
+        "CREATE TABLE inventories (id TEXT PRIMARY KEY);"
+        "CREATE TABLE trees (id INTEGER PRIMARY KEY, inventory_source TEXT);"
     )
     conn.executemany(
         "INSERT INTO species (uuid, scientific_name, common_name, leaf_retention, "
@@ -67,6 +78,12 @@ def write_seed(path: str, rows, trees_source: str) -> str:
         rows,
     )
     conn.execute("INSERT INTO seed_meta VALUES ('trees_source', ?)", (trees_source,))
+    for inventory, count in contributions.items():
+        conn.execute("INSERT INTO inventories VALUES (?)", (inventory,))
+        conn.executemany(
+            "INSERT INTO trees (inventory_source) VALUES (?)",
+            [(inventory,)] * count,
+        )
     conn.commit()
     conn.close()
     return path
@@ -77,7 +94,10 @@ def write_fixture(path: str, inventory, entries) -> str:
     lines = ["schema_version: 1"]
     if inventory is not None:
         lines.append(f"inventory: {inventory}")
-    lines.append("species:")
+    if not entries:
+        lines.append("species: []")
+    else:
+        lines.append("species:")
     for e in entries:
         lines.append(f"  - scientific_name: {e['scientific_name']}")
         lines.append(f"    species_uuid: {e['species_uuid']}")
@@ -157,6 +177,60 @@ def test_a_matching_flavor_runs_the_identity_rules():
         check(
             "is not in the seed database species table" in r.stdout,
             "real fixture drift went unreported on a matched seed",
+        )
+
+
+def test_a_city_build_seed_has_no_branch_for_can_still_be_validated():
+    """FAILS IF: rule 0 goes back to comparing against `seed_meta.trees_source`.
+
+    `build_seed` writes that key as a literal -- "sf_city" or "sf_datasf", one
+    per `--source` branch -- so it can never name another city's inventory. An
+    equality test against it makes every non-SF fixture unpassable by
+    construction, and prints a remediation nobody can carry out. Rule 0 derives
+    the seed's inventory from the rows instead, so a corpus from a city this
+    script has never heard of validates on its own terms. Here the seed even
+    MISREPORTS itself as sf_city, exactly as an NYC build does today.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        seed = write_seed(
+            os.path.join(d, "s.sqlite"),
+            [(PRESENT_UUID, "Pinus radiata", "Monterey Pine", None)],
+            "sf_city",                                  # the literal, wrong
+            contributions={"nyc_tree_points": 9},       # what the rows say
+        )
+        cur = write_fixture(os.path.join(d, "curated.yaml"), "nyc_tree_points", [])
+        lr = write_fixture(os.path.join(d, "lr.yaml"), "nyc_tree_points", [entry()])
+        r = run_script(seed, cur, lr)
+        check(r.returncode == 0, f"an NYC-flavored corpus was refused ({r.returncode}): {r.stdout[-300:]}")
+        check(
+            "WARNING: seed_meta.trees_source says 'sf_city'" in r.stdout,
+            "the seed misreporting its own provenance was not surfaced",
+        )
+
+
+def test_a_partial_overlay_inventory_does_not_make_a_seed_its_corpus():
+    """FAILS IF: rule 0 weakens to membership in the `inventories` table.
+
+    This is the shipped seed's shape and the reason membership is not enough:
+    it registers `sf_datasf` and carries 12,260 rows from it, riding on top of
+    133,577 from `sf_city`. A membership test therefore ADMITS the sf_datasf
+    fixtures against it -- measured, that puts all 84 original failures back.
+    Contributing some rows is not the same as being the corpus this file is of.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        seed = write_seed(
+            os.path.join(d, "s.sqlite"), [], "sf_city",
+            contributions={"sf_city": 133, "sf_datasf": 12},
+        )
+        cur = write_fixture(os.path.join(d, "curated.yaml"), "sf_datasf",
+                            [entry(species_uuid=ABSENT_UUID)])
+        lr = write_fixture(os.path.join(d, "lr.yaml"), "sf_datasf",
+                           [entry(species_uuid=ABSENT_UUID)])
+        r = run_script(seed, cur, lr)
+        check(r.returncode == 2, f"a partial overlay was treated as the corpus ({r.returncode})")
+        check(
+            "is not in the seed database species table" not in r.stdout,
+            "the overlay run emitted per-entry identity failures",
         )
 
 
@@ -260,6 +334,8 @@ def main() -> int:
     for test in [
         test_a_flavor_mismatch_is_one_error_and_not_one_per_entry,
         test_a_matching_flavor_runs_the_identity_rules,
+        test_a_city_build_seed_has_no_branch_for_can_still_be_validated,
+        test_a_partial_overlay_inventory_does_not_make_a_seed_its_corpus,
         test_a_fixture_that_declares_no_corpus_is_refused,
         test_the_escape_hatch_skips_identity_and_says_so,
         test_a_uuid_naming_a_different_species_fails,

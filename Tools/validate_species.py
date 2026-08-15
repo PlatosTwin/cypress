@@ -137,12 +137,30 @@ def die(message: str) -> None:
     sys.exit(2)
 
 
-def seed_species(path: Path) -> tuple[dict[str, dict], str]:
-    """The seed's species rows, and which inventory built the file (rule 0).
+def seed_species(path: Path) -> tuple[dict[str, dict], str, str]:
+    """The seed's species rows, the inventory it is a corpus OF, and what it claims.
 
-    `trees_source` is the string `build_seed` writes and `trees.inventory_source`
-    stores -- `sf_city`, `sf_datasf`, and so on. It is what a fixture's own
-    `inventory:` key is compared against.
+    Rule 0 needs "which inventory's species corpus is complete in this file",
+    and there are three candidate answers in a seed. None of the obvious two
+    works, which is worth writing down because both were tried:
+
+      * `seed_meta.trees_source` is a LITERAL. `build_seed` writes the string
+        "sf_city" or "sf_datasf" in its two `--source` branches and has no third,
+        so it can never name another city's inventory however the seed was built.
+        Comparing against it makes any non-SF fixture unpassable by construction.
+      * MEMBERSHIP in the `inventories` table is too weak in the other direction.
+        The shipped seed registers `sf_datasf` and carries 12,260 rows from it
+        alongside 133,577 from `sf_city`, so a membership test admits exactly the
+        run this rule exists to refuse -- measured, it puts the 84 failures back.
+
+    So the answer is derived from the rows: the inventory that contributed the
+    most of them is the one this file is a corpus of, and the others are partial
+    overlays on top of it. That is computed from the data rather than from a
+    string a build wrote about itself, which is the point -- it stays true for a
+    city `build_seed` has no branch for.
+
+    Returns (species, primary_inventory, stated_inventory). The two inventories
+    disagreeing is itself a finding; see rule 0's note in main().
     """
     uri = f"file:{path}?mode=ro"
     with sqlite3.connect(uri, uri=True) as con:
@@ -153,10 +171,20 @@ def seed_species(path: Path) -> tuple[dict[str, dict], str]:
             "SELECT uuid, scientific_name, common_name, leaf_retention FROM species "
             "WHERE deleted_at IS NULL"
         ).fetchall()
-        source = con.execute(
+        stated_row = con.execute(
             "SELECT value FROM seed_meta WHERE key = 'trees_source'"
         ).fetchone()
-    return {row["uuid"]: dict(row) for row in rows}, (source[0] if source else "")
+        # Ordered by name as well as count so a tie is deterministic rather than
+        # whichever row SQLite reached first.
+        primary_row = con.execute(
+            "SELECT inventory_source FROM trees GROUP BY inventory_source "
+            "ORDER BY COUNT(*) DESC, inventory_source LIMIT 1"
+        ).fetchone()
+    stated = stated_row[0] if stated_row else ""
+    # A seed with no trees cannot say what it is a corpus of; fall back to the
+    # claim rather than inventing one.
+    primary = primary_row[0] if primary_row else stated
+    return {row["uuid"]: dict(row) for row in rows}, primary, stated
 
 
 def citations_ok(citations, where: str, report: Report) -> None:
@@ -365,9 +393,20 @@ def main() -> int:
     args = parser.parse_args()
 
     report = Report()
-    seed, seed_inventory = seed_species(args.seed)
+    seed, seed_inventory, stated_inventory = seed_species(args.seed)
     print(f"seed database: {len(seed)} species rows in {args.seed}")
-    print(f"seed inventory: {seed_inventory!r}")
+    print(f"seed inventory: {seed_inventory!r} (the largest contributor to `trees`)")
+    if stated_inventory and stated_inventory != seed_inventory:
+        # Not fatal here -- this script validates fixtures, not the build -- but
+        # never silent: `seed_meta.trees_source` is what
+        # `InventorySource(id:seedMeta:)` resolves a row's provenance through, so
+        # a seed whose largest inventory is not the one it names is misdescribing
+        # itself to the app as well as to this script.
+        print(f"  WARNING: seed_meta.trees_source says {stated_inventory!r}, but most "
+              f"rows come from {seed_inventory!r}. build_seed writes that key as a "
+              f"literal in its two --source branches, so a seed built for any other "
+              f"city misreports its own provenance. Rule 0 uses the rows, not the "
+              f"claim.")
 
     # ---- Rule 0: the aim. Each fixture states the corpus it describes, and a
     # fixture aimed at another corpus is one error, not one per entry.
@@ -406,7 +445,13 @@ def main() -> int:
                 print(f"    python3 Tools/build_seed.py --source "
                       f"{declared.split('_', 1)[1]}   # builds an {declared!r} seed")
             else:
-                print(f"    (build a seed whose seed_meta.trees_source is {declared!r})")
+                # Deliberately not "build a seed whose trees_source is X": that
+                # key is a literal with two SF values, so such an instruction is
+                # unreachable for every other city. The reachable fact is that
+                # the seed must be a corpus OF that inventory.
+                print(f"    (validate this fixture against a seed most of whose "
+                      f"trees come from {declared!r}; `--source` has no branch for "
+                      f"it, so that seed comes from that city's own ingest)")
         print("  ...or pass --allow-flavor-mismatch to run only the rules that do not")
         print("  read the seed. Those cannot be faked; the identity rules can.")
         return 2
