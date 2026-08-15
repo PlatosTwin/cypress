@@ -131,9 +131,16 @@ struct OutboxPresentationTests {
         #expect(revived.isTerminal == false)
     }
 
-    @Test("a terminal failure the API will never accept is not offered a retry")
-    func nonRetryableIsStoppedRatherThanRetryable() async throws {
-        let (queue, clock) = try await Self.makeQueue(script: .allFail(.validationFailed))
+    /// **Ruling 3 of 2026-08-14, and the behavior it replaced.** Until it, a terminally refused item
+    /// drew its own `stopped` word with no control (ERRATA E83). It now folds into the failed row —
+    /// same word, same amber card, same retry control — carrying ruling 1's sentence.
+    ///
+    /// The assertion on the *control* is the load-bearing half: withholding it would put the
+    /// stopped-vs-will-retry distinction back on the row's furniture, and the ruling puts it in the
+    /// sentence alone.
+    @Test("a refused item folds into the failed row, carrying the ruled sentence")
+    func aRefusedItemFoldsIntoTheFailedRow() async throws {
+        let (queue, clock) = try await Self.makeQueue(script: .allFail(.forbidden))
         try await Self.enqueueMeasurement(on: queue, at: clock.now)
         _ = try await queue.drain()
 
@@ -142,11 +149,65 @@ struct OutboxPresentationTests {
             now: clock.now
         )
         let row = try #require(presentation.queue.first)
-        // Terminal, amber, and honest about the fact that a tap will not change it.
-        #expect(row.state == .stopped)
+        #expect(row.state == .retry)
         #expect(row.isTerminal)
-        #expect(row.showsRetryButton == false)
-        #expect(row.reason?.contains("will not go through on its own") == true)
+        #expect(row.showsRetryButton)
+        #expect(row.reason == OutboxFailureReason.refusedTerminally)
+        #expect(row.reason == "This couldn't be sent.")
+    }
+
+    /// The other half of ruling 3: the 48 h cap and a refusal are the same drawn row, and the
+    /// sentence is the whole of the difference. Written as one test over both so that a change
+    /// which collapses the sentences too cannot pass by halves.
+    @Test("the two terminal reasons draw one row and differ only in their sentence")
+    func theTwoTerminalReasonsDifferOnlyInTheirSentence() async throws {
+        func terminalRow(_ script: OutboxTestSupport.Script, expire: Bool) async throws -> OutboxPresentation.Row {
+            let (queue, clock) = try await Self.makeQueue(script: script)
+            try await Self.enqueueMeasurement(on: queue, at: clock.now)
+            _ = try await queue.drain()
+            if expire {
+                clock.advance(by: OutboxRetryPolicy.cap + 1)
+                _ = try await queue.drain()
+            }
+            let presentation = Self.presentation(
+                try await queue.snapshot(treeNames: Self.treeNames, syncPhotosOnWifiOnly: true),
+                now: clock.now
+            )
+            return try #require(presentation.queue.first)
+        }
+
+        let refused = try await terminalRow(.allFail(.validationFailed), expire: false)
+        let capped = try await terminalRow(.allFail(.serverError), expire: true)
+
+        #expect(refused.state == capped.state)
+        #expect(refused.isTerminal == capped.isTerminal)
+        #expect(refused.showsRetryButton == capped.showsRetryButton)
+        #expect(
+            refused.reason != capped.reason,
+            "both terminal rows read \(refused.reason ?? "nil") — nothing on screen 17 tells a refusal from the 48 h cap"
+        )
+        #expect(refused.reason == OutboxFailureReason.refusedTerminally)
+        #expect(capped.reason == OutboxFailureReason.expired)
+    }
+
+    /// Ruling 1's second clause: the refused sentence has to be distinguishable from the retryable
+    /// "No connection." state. A dropped connection is outside the taxonomy, so it stays `pending`
+    /// and keeps saying so; the refusal is terminal and says something else.
+    @Test("a refused row and a row that lost its connection do not read the same")
+    func aRefusalDoesNotReadLikeALostConnection() async throws {
+        let (queue, clock) = try await Self.makeQueue(script: .connectionDropped)
+        try await Self.enqueueMeasurement(on: queue, at: clock.now)
+        _ = try await queue.drain()
+        let offline = try #require(
+            Self.presentation(
+                try await queue.snapshot(treeNames: Self.treeNames, syncPhotosOnWifiOnly: true),
+                now: clock.now
+            ).queue.first
+        )
+
+        #expect(offline.state == .waiting)
+        #expect(offline.reason == "No connection.")
+        #expect(OutboxFailureReason.refusedTerminally != offline.reason)
     }
 
     // MARK: - The wi-fi sentence, clause by clause

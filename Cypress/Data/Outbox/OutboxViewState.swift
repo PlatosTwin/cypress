@@ -13,6 +13,22 @@ public enum OutboxFailureReason {
     /// The 48 h cap, reached (BUILD-PLAN §4).
     public static let expired = "Tried for 48 hours without getting through. Tap retry when you have a connection."
 
+    /// The service refused this item with a code the taxonomy says will not change — `forbidden`,
+    /// `validation_failed`, `conflict`, `moderation_rejected`, `not_found`, `unauthorized`.
+    ///
+    /// **The owner ruled this sentence on 2026-08-14** (rulings 1 and 3 of that round), replacing
+    /// the composed `"<cause> This one will not go through on its own."`. Two things it is required
+    /// to do and does: it is the *whole* sentence for a terminally refused row, and it is
+    /// distinguishable from the retryable `sentence(for:)` fallback below — a row that lost its
+    /// connection still reads "No connection." and is still trying.
+    ///
+    /// What it deliberately stops doing is naming the code. Screen 17's footnote asks an item that
+    /// cannot sync to "say why", and eight per-code sentences were the answer while every one of
+    /// them was drawn; they are still drawn for a row that is *retrying*, and no longer for one the
+    /// service has finished with. That narrowing is the ruling's, recorded rather than inferred —
+    /// see the errata entry for this round.
+    public static let refusedTerminally = "This couldn't be sent."
+
     public static func awaitingWifi(photoCount: Int) -> String {
         photoCount == 1
             ? "The note is saved. One photo is waiting for wi-fi."
@@ -39,7 +55,7 @@ public enum OutboxFailureReason {
         let cause = sentence(for: error)
         guard state != .failed else {
             if let apiError = apiError(from: error), !apiError.retryable {
-                return "\(cause) This one will not go through on its own."
+                return refusedTerminally
             }
             return expired
         }
@@ -111,6 +127,10 @@ public struct OutboxItemSnapshot: Identifiable, Sendable, Hashable {
 
     /// Screen 17 draws the `retry` state as an amber attention card. That is exactly the terminal
     /// `failed` state, which is the only one with a retry affordance.
+    ///
+    /// It agrees with `OutboxPresentation.Row.showsRetryButton` again as of the owner's ruling 3 of
+    /// 2026-08-14: a terminally refused item folds into the same failed row rather than drawing a
+    /// fourth state of its own, so every `failed` row carries the control.
     public var showsRetryAffordance: Bool { state == .failed }
 }
 

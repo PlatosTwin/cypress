@@ -56,8 +56,10 @@ final class AppleSignInUITests: XCTestCase {
         /// `AccountAskCopy.noticeFailed`, matched on its distinctive opening clause rather than
         /// whole, so a revision to the second sentence does not fail this test for the wrong reason.
         static let failed = "That did not go through"
-        /// `AccountAskCopy.noticeUnavailable`'s opening clause.
-        static let unavailable = "Accounts are not ready yet"
+        /// `AccountAskCopy.noticeUnavailable`'s opening clause, as the owner ruled it on 2026-08-14
+        /// (ruling 4). It used to read "Accounts are not ready yet", which stopped being true in the
+        /// round `Continue with Apple` started working.
+        static let unavailable = "Google and email sign-in are coming later"
     }
 
     override func setUp() {

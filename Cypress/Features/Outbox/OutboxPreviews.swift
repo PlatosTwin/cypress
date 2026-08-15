@@ -278,9 +278,11 @@ enum OutboxPreviewFixtures {
     }
 }
 
-/// **Terminal, and not worth a tap.** `validation_failed` is not retryable, so the row reads
-/// `stopped` and carries no control. **NOT SPECIFIED**; see ERRATA.
-#Preview("17 · stopped") {
+/// **Terminal because the service refused it.** `validation_failed` is not retryable, and since the
+/// owner's ruling 3 of 2026-08-14 that row is the same amber `retry` card the 48 h cap draws — the
+/// preview above — carrying the one sentence that separates them, `This couldn't be sent.` Kept as
+/// its own preview precisely so the two can be read side by side.
+#Preview("17 · refused") {
     NavigationStack {
         OutboxScreen(
             presentation: OutboxPreviewFixtures.presentation([

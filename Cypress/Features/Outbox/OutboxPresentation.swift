@@ -36,14 +36,21 @@ import Foundation
 
 struct OutboxPresentation {
 
-    /// The word in a row's trailing corner. §2 draws two of these; the third is recorded in ERRATA.
+    /// The word in a row's trailing corner. Both are drawn by §2, and there is no third.
+    ///
+    /// **A third case, `stopped`, stood here until the owner's ruling 3 of 2026-08-14.** It was
+    /// ERRATA E83's answer to `failed` meaning two things — the 48 h cap ran out, or the service
+    /// refused with a code that will not change — and it drew the second as its own amber word with
+    /// no control. The ruling folds that state back into this one: SCREENS.md 17's "States drawn"
+    /// line names `waiting`, `retry` and `synced`, and a fourth drawn state is not the owner's
+    /// design. What tells the two apart is the row's own sentence and nothing else, which is why
+    /// the control is *not* withheld from a refused row either — withholding it would put the
+    /// distinction back on the row's furniture, which is the thing the ruling removed.
     enum RowState: String {
         /// Still trying, whether or not it has failed before.
         case waiting
-        /// Terminal after the 48 h cap, and retrying can still work. §2's drawn amber state.
+        /// Terminal: the 48 h cap ran out, or the service refused it outright. §2's amber state.
         case retry
-        /// Terminal because the API said this will never be accepted. **NOT SPECIFIED**; see ERRATA.
-        case stopped
     }
 
     /// What the 38pt leading tile holds.
@@ -75,7 +82,8 @@ struct OutboxPresentation {
         /// Terminal rows take C24's amber card. A row inside its retry window does not, however many
         /// times it has failed.
         var isTerminal: Bool { state != .waiting }
-        /// Only the recoverable terminal state gets a control (BUILD-PLAN §4).
+        /// Every terminal row gets the control (BUILD-PLAN §4 attaches it to `failed`, and the
+        /// owner's ruling 3 of 2026-08-14 keeps a refused row in that same failed row).
         var showsRetryButton: Bool { state == .retry }
     }
 
@@ -163,17 +171,17 @@ struct OutboxPresentation {
         return reason == OutboxFailureReason.awaitingWifi(photoCount: item.photoCount) ? nil : reason
     }
 
-    /// `waiting` / `retry` / `stopped`.
+    /// `waiting` / `retry`.
     ///
-    /// The split inside `failed` is the one SCREENS.md does not draw. `OutboxRetryPolicy.nextState`
-    /// produces `failed` for two different reasons: the 48 h cap ran out, or the API returned a code
-    /// that is not retryable. The first is worth a tap and the second is not — offering `retry` on a
-    /// `validation_failed` row promises an outcome BUILD-PLAN §6's taxonomy says will not change,
-    /// and the row's own sentence already reads "This one will not go through on its own". See ERRATA.
+    /// `OutboxRetryPolicy.nextState` still produces `failed` for two different reasons — the 48 h
+    /// cap ran out, or the API returned a code that is not retryable — and this screen no longer
+    /// draws them apart. That is the owner's ruling 3 of 2026-08-14, overruling ERRATA E83's
+    /// `stopped`: the two terminal reasons share the failed row, and the only thing that separates
+    /// them is the sentence `OutboxFailureReason.describe` wrote into `lastError`
+    /// (`refusedTerminally` against `expired`). `errorCode` is still carried on the snapshot and is
+    /// still what the sentence was chosen by; it is simply not read here any more.
     private func state(for item: OutboxItemSnapshot) -> RowState {
-        guard item.state == .failed else { return .waiting }
-        if let code = item.errorCode, !code.retryable { return .stopped }
-        return .retry
+        item.state == .failed ? .retry : .waiting
     }
 
     private func tile(for item: OutboxItemSnapshot) -> Tile {

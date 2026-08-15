@@ -106,9 +106,9 @@ struct AccountAskPresentation: Equatable {
         /// means **that** button — Apple works, and `Continue with Google` and `Use email` are the
         /// two "not yet" routes R72 ruling 2 deferred (`AccountLinkRefusal.unavailable`).
         ///
-        /// **`noticeUnavailable`'s first sentence is therefore imprecise and is a stop-and-ask.**
-        /// See its own doc comment; it is not rewritten here, because a replacement would be a
-        /// sentence nobody drew (DECISIONS constraint 21).
+        /// **`noticeUnavailable`'s first sentence names those two routes as of the owner's ruling 4
+        /// of 2026-08-14**, so this case and its sentence now mean the same thing. See that
+        /// constant's own doc comment for what it used to say and why it stood wrong for a round.
         case unavailable
         /// The provider or the service was there and the attempt did not go through. **Not** what a
         /// dismissed sheet produces — see `AccountLinkRefusal.cancelled`, which draws nothing.
@@ -227,19 +227,22 @@ enum AccountAskCopy {
 
     /// **NOT SPECIFIED** — see `AccountAskPresentation.Notice`.
     ///
-    /// "Not ready yet" rather than "failed": nothing failed. The second sentence is §7's own
+    /// Still "not yet" rather than "failed": nothing failed. The second sentence is §7's own
     /// promise, which is the one thing about this screen that is true on every build.
     ///
-    /// **STOP-AND-ASK, raised by #158 step 5 and not answered here.** The first sentence was written
-    /// when no route worked — "the app has no auth server at all and `CypressAPI` says so in as many
-    /// words" — and it is now drawn beside a `Continue with Apple` that signs people in. *Accounts*
-    /// are ready; the route that was tapped is not. Rewriting it means writing a sentence no mock
-    /// draws, which is the owner's under DECISIONS constraint 21, so it is written up for the errata
-    /// — unnumbered as this is written — and left standing. The alternative considered and rejected
-    /// was leaving
-    /// Google and email minting local accounts, which told somebody their work was backed up when
-    /// nothing had been sent.
-    static let noticeUnavailable = "Accounts are not ready yet. Everything you have saved stays on this phone."
+    /// **The first sentence is the owner's, ruled 2026-08-14 (ruling 4).** It used to open
+    /// *"Accounts are not ready yet"*, written when no route on this screen worked and left standing
+    /// through #158 step 5 as a stop-and-ask rather than rewritten by whoever noticed — by then it
+    /// was drawn beside a `Continue with Apple` that signs people in, so *accounts* were ready while
+    /// the route that had been tapped was not. The replacement names the two deferred routes instead
+    /// of the feature, which keeps it true for exactly as long as Google and email are deferred
+    /// (spec §5.3, RULINGS R72 ruling 2) and makes it false the moment either ships — the right
+    /// direction for a sentence about a deferral to fail in.
+    ///
+    /// The second sentence is unchanged, deliberately: the ruling replaced the clause it quoted and
+    /// nothing beside it.
+    static let noticeUnavailable =
+        "Google and email sign-in are coming later. Everything you have saved stays on this phone."
 
     /// **NOT SPECIFIED** — the other half. Deliberately does not say why: the taxonomy behind it is
     /// `APIError`, whose codes are not sentences, and guessing at a cause is how "sent to the city"
