@@ -44,16 +44,43 @@ exact .ipa, and uploads those same bytes with `xcrun altool --upload-app`, authe
 same API key (Xcode 26.6's altool documents API-key auth and the `$API_PRIVATE_KEYS_DIR` lookup,
 which matches where the workflow already writes `AuthKey_<id>.p8`).
 
-The guard requires each entitlement in its explicit list (`application-identifier` as the
-was-this-ever-distribution-signed canary, plus `com.apple.developer.applesignin`) to appear in
-**both** the product's signature (`codesign -d --entitlements`) and the embedded profile's
-`Entitlements` dict (`security cms -D`). Calibrated on 2026-08-15 against three known cases
-before being trusted: red on the build-34-shaped .ipa (signature missing the entitlement, and
-the message says signature, not profile), red on a bare unsigned app, red on a signed app whose
-embedded profile predates the capability (message names the portal action), green on the fixed
-shape. A `--upload-app` against a live ASC key cannot run on this machine by design, so the first
-real upload through the new path is the proving run — `workflow_dispatch` exists exactly for
-this class of change, and an upload failure is a red job, not a silent one.
+The guard's required list is **derived from `Cypress/Cypress.entitlements` itself** — the same
+file the project signs with — plus one hand-kept baseline key, `application-identifier`, the
+was-this-ever-distribution-signed canary that the signing machinery supplies rather than the
+file. A hand-kept required list would have been a third copy of a fact the repo already states
+twice, unenforced at exactly the moment the next capability lands; the shard matrix in the same
+workflow already makes this argument about `Tools/ui-test-shards.txt`, and the PR #89 review
+made it about the guard's first draft. Each declared key must appear in the product's signature
+(`codesign -d --entitlements`) **with its declared value** — presence alone blessed an
+`applesignin = <array/>` signature that Sign in with Apple does not work under, demonstrated
+end-to-end against the first draft — and must be authorized by the embedded profile's
+`Entitlements` dict (`security cms -D`), element-by-element for list values. Two fences red the
+declaration itself: a value containing `$(` (the release pipeline's plain `codesign` pass does
+not expand substitutions, so the literal would ship and compare equal) and an empty value (a
+faithful copy of a broken declaration would otherwise verify green).
+
+Calibrated on 2026-08-15, one green and eight reds, each red checked for its **reason** and not
+just its color: the build-34-shaped .ipa (message blames the signature, not the profile), a bare
+unsigned app, a signed app whose embedded profile predates the capability (message names the
+portal action), a signature carrying `applesignin = []` (WRONG VALUE, plus the baseline canary),
+a declared file saying `<array/>` (declaration refused), a declared file carrying
+`$(AppIdentifierPrefix)` (declaration refused), an .ipa holding two `.app` bundles (refuses to
+judge a package by one member), and an .ipa with no `Payload/` (which diagnoses itself rather
+than dying mute on the `$(find)` under `set -e` — the first draft's silent-abort, caught in
+review with a control).
+
+A `--upload-app` against a live ASC key cannot run on this machine by design. The review
+established the proving run is **this PR's own merge**: `Tools/ExportOptions.plist` and
+`Tools/verify_entitlements.sh` are outside `plan`'s `NO_ARCHIVE` set, so the merge commit ships
+automatically — it consumes the next build number and, if it reaches the expire step, expires
+build 35. Nobody should wait for a `workflow_dispatch` that is not needed. The step order
+protects the testers (export → guard → upload → expire → tag: any failure before upload leaves
+build 35 testable), and an upload failure is a red job, not a silent one. What the merge run
+must show: the ad-hoc readback listing `applesignin`, the export either regenerating the store
+profile or failing loudly on it, the guard's per-key table, and the `ls -R` of the export
+directory that settles whether an app-store-connect export writes a `Symbols/` directory —
+plus the dSYMs artifact, kept for 30 days because the shipped binary is stripped and the
+archive's dSYM (same UUID) is the only thing that can ever symbolicate it.
 
 ## 3. The cloud-managed distribution profile also predates the capability — and the fix converts that from silent to loud
 
@@ -78,5 +105,9 @@ A capability added to the project arrives at testers only if all three hold: the
 file declares it, the shipped signature requests it, and the profile authorizes it. The project
 and the device were checked here; the middle leg had no witness, and it is the only leg the
 release pipeline manufactures itself. When the next capability lands (push, iCloud, App Groups),
-add its key to `REQUIRED_ENTITLEMENTS` in `Tools/verify_entitlements.sh` in the same PR — that
-one line is what makes the loss impossible to repeat silently.
+there is nothing to remember: the guard derives its required keys and values from
+`Cypress/Cypress.entitlements`, so the new key is guarded the moment it is declared. The two
+exceptions are stated in the script itself — a declared value that needs `$(…)` substitution is
+refused until the signing pass can expand it, and a machinery-supplied key that never appears in
+the declared file (the `application-identifier` shape) belongs in the script's small baseline
+list.
