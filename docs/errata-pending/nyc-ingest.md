@@ -299,3 +299,55 @@ commonest tree by a factor of 1.4, and it reaches SelecTree only through record 
 Two things follow for anyone matching against this source: decode the entity, and use the
 `other_taxa` synonym list, which `leaf_retention.yaml` already relies on 50 times under the
 `selectree_synonym_other_taxa` match method.
+
+---
+
+### E??? — rule 0 compares a fixture against `trees_source`, which does not name the cities in a seed
+
+PR #85 makes each species fixture declare the corpus it describes and compares that against
+`seed_meta.trees_source`. For San Francisco that is exactly right. For a multi-city seed it cannot
+work, and NYC is the first case.
+
+**`trees_source` names which of SAN FRANCISCO's two inventories a build used, and nothing else.**
+`build_seed.py` hardcodes it in two branches — `"trees_source": "sf_city"` and
+`"trees_source": "sf_datasf"` — selected by `--source`, whose domain is `SOURCES = ("city",
+"datasf")`. A whole-city NYC build writes **`sf_datasf`**, identical to an SF-only build. Measured
+2026-08-14 on both seeds.
+
+So `Fixtures/species/nyc_species.yaml` declares `inventory: nyc_tree_points`, which is truthful and
+which rule 0 refuses. Run against PR #85's branch (`origin/fix/seed-tooling`, 5ccf2eb) with a
+whole-city NYC seed:
+
+    seed inventory: 'sf_datasf'
+    nyc_species.yaml: 503 entries, describes 'nyc_tree_points'  <-- NOT this seed's inventory
+    FATAL: this seed was built from 'sf_datasf', but nyc_species.yaml describes 'nyc_tree_points'.
+
+**Its remediation instruction is unreachable.** The message says "build a seed whose
+seed_meta.trees_source is 'nyc_tree_points'"; no such seed can exist, because `trees_source` only
+ever takes the two SF values. `--allow-flavor-mismatch` runs and passes 26,321 checks, but reports
+`IDENTITY NOT CHECKED for 503 entries` — the seed-reading rules, which are the ones that catch real
+drift, are skipped.
+
+The two options are a lie or a gap, so neither was taken silently:
+
+  * declaring `inventory: sf_datasf` would make rule 0 pass and would state that this file describes
+    DataSF's export. It describes NYC Parks' Forestry Tree Points. That defeats the exact
+    distinction rule 0 exists to draw — "this species is missing" versus "that city never listed it".
+  * declaring the truth leaves NYC's fixture outside the gate until the comparison is widened.
+
+**A comparison that works for both, measured on the same seed:** ask whether the declared inventory
+is among the seed's own `inventories` rows, rather than equal to `trees_source`.
+
+| fixture | declares | `== trees_source` | `in inventories` |
+|---|---|---|---|
+| `curated.yaml` | `sf_datasf` | PASS | PASS |
+| `leaf_retention.yaml` | `sf_datasf` | PASS | PASS |
+| `nyc_species.yaml` | `nyc_tree_points` | **FAIL** | **PASS** |
+
+`inventories` is populated from the inventories that actually contributed rows, `trees.inventory_source`
+carries the same strings per row, and `nyc_tree_points` is already one of them. Rule 0's intent
+survives intact; only its single-corpus assumption goes.
+
+**Also for the merge:** PR #85 and this branch both add a `--extra` option to
+`validate_species.py`, independently and with the same name and semantics. They are compatible but
+they will conflict textually.

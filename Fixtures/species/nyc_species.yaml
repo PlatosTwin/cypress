@@ -35,6 +35,24 @@
 generated: "2026-08-14"
 generator: "Tools/build_nyc_species_content.py"
 schema_version: 1
+# The corpus this file describes, compared against the seed's `trees_source` by
+# Tools/validate_species.py (rule 0, PR #85). These entries are one per species
+# NYC Parks' Forestry Tree Points contributes, so this file describes THAT
+# inventory -- not DataSF's export and not SF Public Works' city layer.
+#
+# `nyc_tree_points` is read off the seed, not guessed. It is the string
+# `trees.inventory_source` carries on all 898,643 NYC rows, the `inventories.id`
+# the build registers, the stem of the `inventory_nyc_tree_points_*` seed_meta
+# keys, and the `Inventory.id` in Tools/inventory_contract.py. Those four
+# agreeing is what `InventorySource(id:seedMeta:)` resolves a row's provenance
+# from.
+#
+# NOTE FOR WHOEVER MERGES #85 AND THIS BRANCH: rule 0 compares this against
+# `seed_meta.trees_source`, and `trees_source` does NOT name the cities in a
+# seed. build_seed.py hardcodes it to `sf_city` or `sf_datasf` from the
+# `--source` flag, so an NYC build writes `sf_datasf` and this declaration is a
+# deliberate, truthful mismatch. See the round's report and errata.
+inventory: nyc_tree_points
 species:
 
 - species_uuid: "5a327f8b-7a05-5bb3-b971-ed0eb9b55bc8"
