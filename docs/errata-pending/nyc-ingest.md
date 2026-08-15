@@ -102,20 +102,40 @@ repeat, together. The distinction was settled by pulling the actual rows, not by
 
 ---
 
-### E??? — `Tools/validate_species.py` is red on `main`, with 84 failures
+### E??? — `validate_species.py` is red on `main` because its default seed is built from the other `--source`
 
-Running it on an untouched `origin/main` worktree (commit `63607f1`) with the shipped seed copied in
-exits **1** with 84 failures, of the form:
+**Superseded diagnosis (2026-08-14, curation round).** An earlier version of this entry recorded
+that `Tools/validate_species.py` exits 1 with 84 failures on an untouched `origin/main`, which is
+true, and left the cause open. The cause is now measured, and the gate is not broken.
 
-    - Ulmus glabra: species_uuid 4d1f3b24-... is not in the seed database species table
-    - Castanea dentata: common_name does not match the seed row (None in the database)
+`Fixtures/species/{leaf_retention,curated}.yaml` were generated against a **`--source datasf`**
+corpus — `leaf_retention.yaml`'s own header says so: "one row per distinct DataSF qSpecies string
+that the seed database maps to a species (577 of them)". The seed the validator points at by
+default, `Fixtures/seed/cypress-seed.sqlite`, is the shipped **`--source city`** build. The two
+corpora are different: 731 species against 569, drawn from two different inventories with two
+different species vocabularies.
 
-The NYC branch produces **byte-identical** output apart from the seed's file path, so this predates
-the round and was not caused by it. Recorded because CLAUDE.md's verification rules make an
-already-red gate a hazard: the next agent to run it will not be able to tell its own breakage from
-this, and the round after that will be tempted to treat 84 failures as the baseline.
+A four-cell grid, all measured 2026-08-14:
 
----
+| fixtures | seed | failures |
+|---|---|---:|
+| the two California files | shipped seed (`--source city`, 731 species) | **84** |
+| the two California files | a `--source datasf` SF-only seed (569 species) | **0** |
+| the two California files | a `--source datasf` + NYC seed (1,072 species) | **0** |
+| all three files, including `nyc_species.yaml` | a `--source datasf` + NYC seed | **0** |
+| all three files | shipped seed *(mismatched on purpose, as a control)* | 586 |
+
+The last row is the control: 586 = 84 + 503, one extra failure per NYC entry, which is what
+"the fixture describes species this seed does not contain" looks like. Without it the grid
+would not distinguish a real gate from one that passes everything.
+
+So the 84 failures are an **artifact of pointing the validator at a seed built from a different
+`--source`**, not evidence of drift in the fixtures. The fix is a one-line default or a documented
+invocation, and it belongs to whoever owns the fixtures; it is recorded here because a permanently
+red gate teaches everyone to ignore it, and because the next agent to run it deserves to know it
+goes green when aimed correctly.
+
+**The curation round's own delta is 0**: cell four against cell three.
 
 ### E??? — `Tools/verify_seed.py` checks 1, 2, 13 and 16b are San Francisco-only
 
@@ -242,3 +262,40 @@ The gap closes by ADDING species to the corpus, not by mapping — which is what
 for an unmapped string. So the gate as written measures "how much of NYC overlaps California", and a
 number that can only be moved by curating ~270 new species is a curation-round dependency, not an
 ingest-round one.
+
+---
+
+### E??? — a fixture generator that reads its own output is not idempotent, and silently shrinks
+
+`Tools/build_nyc_species_content.py` chose which species to source by asking a **built seed** which
+ones had a NULL `family` or `leaf_retention`. That works exactly once. Fold its output into a seed,
+re-run it, and the species it already covered are no longer NULL — so they are no longer targets,
+and the file is rewritten with only the leftovers.
+
+Measured here: a re-run took `Fixtures/species/nyc_species.yaml` from **506 entries to 143**, and
+reported `family sourced: 0` while doing it. Nothing errored. The only tell was the entry count in
+its own summary line.
+
+The fix is to decide the target set from the **other fixtures** — the stable, checked-in inputs —
+and never from the artifact downstream of them. The script now does that and is asserted idempotent:
+a second run against a seed built with its own output produces a byte-identical file.
+
+Recorded because the shape is general and this repo is full of generated fixtures: **if a generator's
+input includes anything derived from its own output, its second run is not its first run.**
+
+---
+
+### E??? — SelecTree writes the hybrid sign as the HTML entity `&times`
+
+63 of Cal Poly SelecTree's 2,087 catalogue names spell the multiplication sign as a literal
+`&times` — `Platanus &times hispanica`, `Aesculus &times carnea`, `Amelanchier &times grandiflora
+'Autumn Brilliance'`. It is not `×` (U+00D7) and not `x`.
+
+A matcher that normalises only `x` and `×` therefore fails to match every hybrid in the catalogue.
+For the NYC curation that was worth **97,449 rows** on its own: `Platanus x acerifolia` is NYC's
+commonest tree by a factor of 1.4, and it reaches SelecTree only through record 1099
+(`Platanus &times hispanica`), whose `other_taxa` explicitly lists `Platanus &times acerifolia`.
+
+Two things follow for anyone matching against this source: decode the entity, and use the
+`other_taxa` synonym list, which `leaf_retention.yaml` already relies on 50 times under the
+`selectree_synonym_other_taxa` match method.

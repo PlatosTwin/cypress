@@ -259,6 +259,13 @@ def main() -> int:
         "--leaf-retention", default=REPO / "Fixtures/species/leaf_retention.yaml", type=Path
     )
     parser.add_argument("--seed", default=REPO / "Fixtures/seed/cypress-seed.sqlite", type=Path)
+    # A fixture describing a city this seed does not contain. `nyc_species.yaml`
+    # names 503 species an SF-only seed has never heard of, so it is passed
+    # explicitly and checked against a seed that HAS them, rather than being
+    # bolted onto the two California files where every entry would read as drift.
+    # Same rules, same gate: every non-null botanical value needs a citation.
+    parser.add_argument("--extra", action="append", default=[], type=Path,
+                        help="an additional species fixture, held to the same rules")
     parser.add_argument("--json", action="store_true", help="emit machine-readable output")
     args = parser.parse_args()
 
@@ -278,8 +285,18 @@ def main() -> int:
     for entry in lr:
         check_entry(entry, seed, report, curated=False)
 
+    extra_docs = []
+    for path in args.extra:
+        doc = load_yaml(path)
+        entries = doc["species"]
+        print(f"{path.name}: {len(entries)} entries")
+        for entry in entries:
+            check_entry(entry, seed, report, curated=False)
+        extra_docs.append((path.name, entries))
+
     # ---- Cross-file consistency and uniqueness.
-    for label, entries in (("curated.yaml", curated), ("leaf_retention.yaml", lr)):
+    for label, entries in ((("curated.yaml", curated), ("leaf_retention.yaml", lr))
+                           + tuple(extra_docs)):
         ids = [e.get("species_uuid") for e in entries]
         report.check(len(set(ids)) == len(ids), f"{label}: duplicate species_uuid")
 

@@ -1345,7 +1345,8 @@ def build_species_trigram_index(conn) -> int:
     return len(pairs)
 
 
-def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool = True) -> dict:
+def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool = True,
+                         extra_files: tuple = ()) -> dict:
     """Fixtures/species/*.yaml -> {species uuid: content row}. BUILD-PLAN section 8.
 
     Two files, read in this order so the authored guide wins the overlap:
@@ -1375,7 +1376,20 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
     content = {}
     stats = {"leaf_retention": 0, "family": 0, "curated": 0, "retired": 0, "merged": 0, "absent": 0}
 
-    def apply(entry: dict, path: str, curated: bool) -> None:
+    def apply(entry: dict, path: str, curated: bool, allow_absent: bool = False) -> None:
+        """`allow_absent` -- this fixture may legitimately describe species this
+        build does not contain.
+
+        `strict` exists to catch DRIFT: a fixture and a parser that disagree
+        about what the corpus holds. A whole-city fixture read by a
+        single-borough build is not drift -- `nyc_species.yaml` describes all
+        898,643 NYC rows, and a Manhattan pack contains 98,929 of them, so ~400
+        of its entries name species that pack correctly does not have.
+
+        The NAME-MISMATCH check below stays strict for every file: a fixture
+        claiming a different name for a uuid the seed DOES carry is still a
+        build failure, whichever file it came from.
+        """
         name = entry.get("scientific_name")
         species_uuid = entry.get("species_uuid")
 
@@ -1392,7 +1406,7 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
                     f"not carry ({species_uuid})")
             stats["merged"] += 1
         elif species_uuid not in uuid_to_name:
-            if not strict:
+            if allow_absent or not strict:
                 # `--limit` builds only part of the CSV, so most species are simply absent.
                 stats["absent"] += 1
                 return
@@ -1441,6 +1455,12 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
             for note in entry.get("care_notes") or []
         ]
 
+    # `extra_files` carries the fixtures that only describe a city this build
+    # actually contains. `nyc_species.yaml` names 500-odd species that an
+    # SF-only build has never heard of, and `strict` would (correctly) call every
+    # one of them drift between the fixtures and the parser. So the file is
+    # offered when NYC is in the build and withheld when it is not, rather than
+    # weakening the check that catches real drift.
     for path, curated in (
         (os.path.join(fixtures_dir, "species", "leaf_retention.yaml"), False),
         (os.path.join(fixtures_dir, "species", "curated.yaml"), True),
@@ -1453,6 +1473,19 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
         log(f"loaded {len(entries)} entries from {os.path.basename(path)}")
         for entry in entries:
             apply(entry, path, curated)
+
+    for path, curated in tuple(extra_files):
+        if not os.path.exists(path):
+            die(f"missing species fixture {path}")
+        with open(path, "r", encoding="utf-8") as fh:
+            document = yaml.safe_load(fh)
+        entries = document.get("species") or []
+        before = stats["absent"]
+        for entry in entries:
+            apply(entry, path, curated, allow_absent=True)
+        log(f"loaded {len(entries)} entries from {os.path.basename(path)} "
+            f"({stats['absent'] - before} name species this build does not contain, "
+            f"which a city-scoped fixture read by a partial build is expected to)")
 
     # D5 / DECISIONS constraint 14, enforced here as well as in the database CHECK,
     # in Species.init and in Tools/validate_species.py. BUILD-PLAN section 7 wants
@@ -2196,8 +2229,12 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # rather than swallowed. The name-mismatch check stays strict on both paths --
     # a fixture claiming a different name for a uuid the seed does carry is still a
     # build failure.
+    nyc_fixtures = ()
+    if nyc_rows is not None:
+        nyc_fixtures = ((os.path.join(fixtures_dir, "species", "nyc_species.yaml"), False),)
     species_content, content_stats = load_species_content(
-        fixtures_dir, species_by_key, strict=(source == "datasf" and not limit)
+        fixtures_dir, species_by_key, strict=(source == "datasf" and not limit),
+        extra_files=nyc_fixtures,
     )
     if content_stats["absent"]:
         log(f"species fixtures: {content_stats['absent']} sourced entries name a species "
