@@ -18,6 +18,33 @@ Checks, in the order BUILD-PLAN section 8 and DECISIONS D5 care about them:
      Botanical fields are `family`, `leaf_retention`, each non-empty seasonal array,
      each id_tip, and each care_note. This is the anti-fabrication gate from
      BUILD-PLAN section 15: "Do not invent botanical content".
+  0. THE AIM. Every fixture describes ONE corpus, and states which in its own
+     `inventory:` key. A species fixture is a sourcing record for the species a
+     particular inventory publishes, so validating it against a seed built from
+     a different inventory compares two things that were never the same list.
+     That is a category error, and it is reported as ONE error naming both
+     sides -- not as a per-entry failure for every species the other corpus
+     happens not to carry.
+     This is the whole of the defect that made this script red on main. The
+     fixtures describe `sf_datasf`; the shipped seed is built `--source city`,
+     i.e. `sf_city`. Aimed at a matching seed the script passed at 0 failures;
+     aimed at the shipped one it reported 84 failures, and every one of them was
+     the flavor mismatch rather than a defect in the data. Measured 2026-08-14:
+     against a matched `sf_datasf` seed, 16,434 checks and no failures; against
+     the shipped `sf_city` seed, 84 failures (58 absences, 26 common_name); with
+     `nyc_species.yaml` added against that same SF seed, 586 (525 absences, 61
+     common_name) and -- the part that matters -- ZERO scientific_name conflicts
+     in any cell. A flavor mismatch produces absence and common-name noise and
+     never a genuine contradiction, which is why refusing to run is safe and
+     tolerating the noise would not be: an absence tolerated on the wrong seed
+     is exactly where real fixture drift would hide.
+     Which corpus a seed IS is derived per id space, not per file: a fused seed
+     holding two cities whole is a corpus of both, and each city's fixtures
+     validate against its own. See `seed_species` for the two answers that do
+     not work and why.
+     Pass --allow-flavor-mismatch to run the rules that do not need the seed
+     (D5, months, citations, shape) against any seed. The identity rules are
+     then SKIPPED and reported as skipped, never quietly passed.
   4. Scientific names, species ids and common names match the seed database's
      `species` table exactly, so the loading migration cannot silently create rows.
      The exception is the handful of entries `Tools/build_seed.py` deliberately
@@ -68,6 +95,8 @@ class Report:
     def __init__(self) -> None:
         self.failures: list[str] = []
         self.notes: list[str] = []
+        # Entries whose identity rules were skipped by --allow-flavor-mismatch.
+        self.skipped_identity = 0
         self.checks = 0
 
     def check(self, ok: bool, message: str) -> bool:
@@ -85,7 +114,68 @@ def load_yaml(path: Path) -> dict:
         return yaml.safe_load(handle)
 
 
-def seed_species(path: Path) -> dict[str, dict]:
+def fixture_inventory(doc: dict, path: Path) -> str:
+    """Which inventory's corpus this fixture describes (rule 0).
+
+    Declared in the fixture, not guessed here and not passed on the command
+    line: the corpus a sourcing record describes is a property of the record,
+    and a flag would let one run aim two fixtures that describe different
+    cities at one seed without either of them ever saying so.
+    """
+    inventory = doc.get("inventory")
+    if not inventory:
+        die(
+            f"{path.name}: no `inventory:` key. A species fixture must state which "
+            f"inventory's corpus it describes -- it is the only thing that makes "
+            f"'this species is missing' distinguishable from 'this species was "
+            f"never in that city'. Add e.g. `inventory: sf_datasf` at the top level."
+        )
+    return inventory
+
+
+def die(message: str) -> None:
+    # Flush first: without it the stderr line overtakes the buffered stdout
+    # above it and the reader sees the verdict before the context for it.
+    sys.stdout.flush()
+    print(f"FATAL: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def seed_species(path: Path) -> tuple[dict[str, dict], str, str]:
+    """The seed's species rows, the inventory it is a corpus OF, and what it claims.
+
+    Rule 0 needs "which inventory's species corpus is complete in this file",
+    and there are three candidate answers in a seed. None of the obvious two
+    works, which is worth writing down because both were tried:
+
+      * `seed_meta.trees_source` is a LITERAL. `build_seed` writes the string
+        "sf_city" or "sf_datasf" in its two `--source` branches and has no third,
+        so it can never name another city's inventory however the seed was built.
+        Comparing against it makes any non-SF fixture unpassable by construction.
+      * MEMBERSHIP in the `inventories` table is too weak in the other direction.
+        The shipped seed registers `sf_datasf` and carries 12,260 rows from it
+        alongside 133,577 from `sf_city`, so a membership test admits exactly the
+        run this rule exists to refuse -- measured, it puts the 84 failures back.
+
+    So the answer is derived from the rows -- but PER ID SPACE, not per file. The
+    inventory that contributed the most rows *within one id space* is the corpus
+    that space is of, and any other inventory in that space is a partial overlay
+    on top of it.
+
+    Per file was the obvious version and it is wrong on a fused seed. A file
+    holding a complete San Francisco ingest and a complete New York one holds two
+    complete corpora, and picking the larger refuses the smaller city's fixtures
+    by construction -- which is the same shape as the defect this rule replaces,
+    a legitimate configuration the gate cannot express. Measured before fixing:
+    on a fused sf_datasf + nyc_tree_points seed the file-wide rule validated NYC
+    and refused SF. Id spaces are what separate cities in this schema, so they
+    are the right grain here too, the same as checks 1 and 13.
+
+    Returns (species, primaries, stated_inventory), where `primaries` maps each
+    id space to the inventory it is a corpus of. A fixture matches if it names
+    any of them. `stated_inventory` disagreeing with all of them is itself a
+    finding; see rule 0's note in main().
+    """
     uri = f"file:{path}?mode=ro"
     with sqlite3.connect(uri, uri=True) as con:
         con.row_factory = sqlite3.Row
@@ -95,7 +185,43 @@ def seed_species(path: Path) -> dict[str, dict]:
             "SELECT uuid, scientific_name, common_name, leaf_retention FROM species "
             "WHERE deleted_at IS NULL"
         ).fetchall()
-    return {row["uuid"]: dict(row) for row in rows}
+        stated_row = con.execute(
+            "SELECT value FROM seed_meta WHERE key = 'trees_source'"
+        ).fetchone()
+        # Counts per (id space, inventory); the winner is picked below in Python.
+        # Deliberately NOT a `GROUP BY id_space` over an ordered subquery: which
+        # row a bare column takes in a SQLite aggregate is undefined except
+        # alongside min()/max(), so that spelling would work by luck.
+        contributions = con.execute(
+            "SELECT id_space, inventory_source, COUNT(*) FROM trees "
+            "GROUP BY id_space, inventory_source"
+        ).fetchall()
+    stated = stated_row[0] if stated_row else ""
+    by_space: dict[str, list] = {}
+    for space, inventory, count in contributions:
+        by_space.setdefault(space, []).append((count, inventory))
+
+    primaries: dict[str, str] = {}
+    ambiguous: dict[str, list[str]] = {}
+    for space, rows_here in by_space.items():
+        top = max(count for count, _ in rows_here)
+        winners = sorted(inventory for count, inventory in rows_here if count == top)
+        if len(winners) > 1:
+            # An exact tie means the file does not answer "which inventory is
+            # this space a corpus of". Breaking it by row order or alphabet would
+            # answer confidently anyway, and the wrong half of a coin flip here
+            # validates a fixture set against a corpus that is not its own. So
+            # the space gets no primary and the ambiguity is reported.
+            ambiguous[space] = winners
+            continue
+        primaries[space] = winners[0]
+    # A seed with no trees at all cannot say what it is a corpus of; fall back to
+    # the claim rather than inventing one. A seed whose only spaces are AMBIGUOUS
+    # is a different case and must not fall back -- it has rows and they do not
+    # agree, which the claim cannot settle.
+    if not primaries and not ambiguous and stated:
+        primaries = {"": stated}
+    return {row["uuid"]: dict(row) for row in rows}, primaries, stated, ambiguous
 
 
 def citations_ok(citations, where: str, report: Report) -> None:
@@ -133,9 +259,24 @@ def check_months(values, where: str, report: Report) -> None:
     report.check(list(values) == sorted(values), f"{where} is not sorted: {values}")
 
 
-def check_entry(entry: dict, seed: dict[str, dict], report: Report, *, curated: bool) -> None:
+def check_entry(
+    entry: dict,
+    seed: dict[str, dict],
+    report: Report,
+    *,
+    curated: bool,
+    check_identity: bool = True,
+) -> None:
     name = entry.get("scientific_name", "<unnamed>")
     species_uuid = entry.get("species_uuid")
+
+    # ---- Rule 0: with --allow-flavor-mismatch the seed is a different corpus,
+    # so every rule that reads it is skipped outright. Skipped is reported as
+    # skipped; a rule that cannot be evaluated must never report as satisfied.
+    if not check_identity:
+        report.skipped_identity += 1
+        check_content(entry, report, curated=curated)
+        return
 
     # ---- Rule 4, first exception: strings that name no taxon. Tools/build_seed.py
     # maps them to no species, so there is no seed row to match against. What
@@ -188,6 +329,17 @@ def check_entry(entry: dict, seed: dict[str, dict], report: Report, *, curated: 
             f"({row['common_name']!r} in the database)",
         )
 
+    check_content(entry, report, curated=curated)
+
+
+def check_content(entry: dict, report: Report, *, curated: bool) -> None:
+    """Rules 1, 2, 3 and 5 -- everything that reads the fixture and not the seed.
+
+    Split out so that --allow-flavor-mismatch can skip the identity rules
+    without also skipping the anti-fabrication gate, which is the reason this
+    script exists and does not depend on any seed.
+    """
+    name = entry.get("scientific_name", "<unnamed>")
     # ---- Rule 5 plus Rule 3 for the two scalar botanical fields.
     citations = entry.get("citations") or {}
     leaf_retention = entry.get("leaf_retention")
@@ -259,27 +411,117 @@ def main() -> int:
         "--leaf-retention", default=REPO / "Fixtures/species/leaf_retention.yaml", type=Path
     )
     parser.add_argument("--seed", default=REPO / "Fixtures/seed/cypress-seed.sqlite", type=Path)
+    # A fixture describing a city this seed does not contain. `nyc_species.yaml`
+    # names 503 species an SF-only seed has never heard of, so it is passed
+    # explicitly and checked against a seed that HAS them, rather than being
+    # bolted onto the two California files where every entry would read as drift.
+    # Same rules, same gate: every non-null botanical value needs a citation.
+    parser.add_argument("--extra", action="append", default=[], type=Path,
+                        help="an additional species fixture, held to the same rules")
+    parser.add_argument(
+        "--allow-flavor-mismatch",
+        action="store_true",
+        help="run the rules that do not read the seed (D5, months, citations, "
+             "shape) even when a fixture describes a different inventory than the "
+             "seed was built from. The identity rules are SKIPPED, not relaxed, "
+             "and the count of skipped entries is reported.",
+    )
     parser.add_argument("--json", action="store_true", help="emit machine-readable output")
     args = parser.parse_args()
 
     report = Report()
-    seed = seed_species(args.seed)
+    seed, primaries, stated_inventory, ambiguous = seed_species(args.seed)
+    seed_inventories = set(primaries.values())
     print(f"seed database: {len(seed)} species rows in {args.seed}")
+    print("seed corpora: " + (", ".join(
+        f"{space or '<unknown space>'} -> {inv!r}" for space, inv in sorted(primaries.items())
+    ) or "none resolved") + "  (the largest contributor within each id space)")
+    for space, winners in sorted(ambiguous.items()):
+        # Reported, and the space is left with no corpus: see seed_species.
+        print(f"  WARNING: id space {space!r} has no single largest inventory -- "
+              f"{winners} are tied. This file does not say which of them it is a "
+              f"corpus of, so no fixture is validated against that space.")
+    if stated_inventory and stated_inventory not in seed_inventories:
+        # Not fatal here -- this script validates fixtures, not the build -- but
+        # never silent.
+        #
+        # Be precise about who this misleads, because the obvious answer is
+        # wrong: PER-ROW provenance does NOT go through this key. `InventorySource
+        # (id:seedMeta:)` resolves from the `inventory_<id>_*` keys, which the
+        # shipped seed carries for every inventory it holds rows from, and only
+        # falls back to `trees_source` when those are absent. What this key IS is
+        # `InventorySource(seedMeta:)` -- `CypressStore.seedProvenance`, the
+        # file's own primary inventory, the seed-wide answer.
+        print(f"  WARNING: seed_meta.trees_source says {stated_inventory!r}, which is "
+              f"not the primary inventory of any id space here "
+              f"({sorted(seed_inventories)}). build_seed writes that key as a literal "
+              f"in its two --source branches, so a seed built for any other city "
+              f"names the wrong file-wide provenance: that key is what "
+              f"InventorySource(seedMeta:) / CypressStore.seedProvenance reads. "
+              f"Per-row provenance is unaffected -- it resolves through the "
+              f"inventory_<id>_* keys. Rule 0 uses the rows, not the claim.")
 
-    curated_doc = load_yaml(args.curated)
-    curated = curated_doc["species"]
-    print(f"curated.yaml: {len(curated)} entries")
-    for entry in curated:
-        check_entry(entry, seed, report, curated=True)
+    # ---- Rule 0: the aim. Each fixture states the corpus it describes, and a
+    # fixture aimed at another corpus is one error, not one per entry.
+    fixtures = [
+        ("curated.yaml", args.curated, True),
+        ("leaf_retention.yaml", args.leaf_retention, False),
+    ] + [(p.name, p, False) for p in args.extra]
 
-    lr_doc = load_yaml(args.leaf_retention)
-    lr = lr_doc["species"]
-    print(f"leaf_retention.yaml: {len(lr)} entries")
-    for entry in lr:
-        check_entry(entry, seed, report, curated=False)
+    loaded, mismatched = [], []
+    for label, path, is_curated in fixtures:
+        doc = load_yaml(path)
+        declared = fixture_inventory(doc, path)
+        entries = doc["species"]
+        # Any id space's corpus will do: a fused seed carrying two cities whole
+        # carries both their corpora, and each city's fixtures validate against
+        # its own.
+        matches = declared in seed_inventories
+        print(f"{label}: {len(entries)} entries, describes {declared!r}"
+              + ("" if matches else "  <-- NO id space here is a corpus of it"))
+        if not matches:
+            mismatched.append((label, declared))
+        loaded.append((label, entries, is_curated, matches))
+
+    if mismatched and not args.allow_flavor_mismatch:
+        detail = "; ".join(f"{label} describes {declared!r}" for label, declared in mismatched)
+        print()
+        print(f"FATAL: this seed is a corpus of {sorted(seed_inventories)}, but {detail}.")
+        print("  These are different corpora, so 'the seed has no row for this species'")
+        print("  means 'that city never listed it', not 'the fixtures have drifted'.")
+        print("  Validating across the mismatch reports hundreds of failures and hides")
+        print("  the real ones. Aim this at a matching seed:")
+        # Deduplicated on the inventory, not on the fixture: two fixtures
+        # describing one corpus need one command, printed once.
+        for declared in dict.fromkeys(d for _, d in mismatched):
+            # `--source` names one of SAN FRANCISCO'S two inventories; only that
+            # mapping is known here, and inventing a flag for another city's
+            # inventory would be a confident wrong instruction.
+            if declared in ("sf_city", "sf_datasf"):
+                print(f"    python3 Tools/build_seed.py --source "
+                      f"{declared.split('_', 1)[1]}   # builds an {declared!r} seed")
+            else:
+                # Deliberately not "build a seed whose trees_source is X": that
+                # key is a literal with two SF values, so such an instruction is
+                # unreachable for every other city. The reachable fact is that
+                # the seed must be a corpus OF that inventory.
+                print(f"    (validate this fixture against a seed most of whose "
+                      f"trees come from {declared!r}; `--source` has no branch for "
+                      f"it, so that seed comes from that city's own ingest)")
+        print("  ...or pass --allow-flavor-mismatch to run only the rules that do not")
+        print("  read the seed. Those cannot be faked; the identity rules can.")
+        return 2
+
+    for label, entries, is_curated, matches in loaded:
+        for entry in entries:
+            check_entry(entry, seed, report, curated=is_curated,
+                        check_identity=matches)
+
+    curated = next(e for label, e, _, _ in loaded if label == "curated.yaml")
+    lr = next(e for label, e, _, _ in loaded if label == "leaf_retention.yaml")
 
     # ---- Cross-file consistency and uniqueness.
-    for label, entries in (("curated.yaml", curated), ("leaf_retention.yaml", lr)):
+    for label, entries in [(lbl, e) for lbl, e, _, _ in loaded]:
         ids = [e.get("species_uuid") for e in entries]
         report.check(len(set(ids)) == len(ids), f"{label}: duplicate species_uuid")
 
@@ -308,26 +550,49 @@ def main() -> int:
     # vacant sites or placeholder strings that map to no species, so 93.06% is the ceiling
     # for any species-keyed table.
     datasf_rows = 198_435
+    # `sf_tree_count` is San Francisco's own column and a fixture from another
+    # city carries none, so this coverage note has no denominator to work with.
+    # Guarded rather than assumed: an unguarded divide ended an otherwise
+    # entirely passing run in a ZeroDivisionError traceback, which reads as a
+    # broken tool rather than as "this note does not apply here".
+    if total_rows:
+        report.note(
+            f"leaf_retention set for {len(lr) - len(nulls)}/{len(lr)} species, "
+            f"{covered:,}/{total_rows:,} mapped rows "
+            f"({covered / total_rows * 100:.2f}% of mapped rows, "
+            f"{covered / datasf_rows * 100:.2f}% of all {datasf_rows:,} DataSF rows)"
+        )
+    else:
+        report.note(
+            f"leaf_retention set for {len(lr) - len(nulls)}/{len(lr)} species; "
+            f"no sf_tree_count in this fixture, so no row-weighted coverage"
+        )
+    # Weighted by the same sf_tree_count, so it is suppressed for the same
+    # reason: "0 mapped rows" beside a real species count reads as a measured
+    # zero rather than as a column this fixture does not have.
     report.note(
-        f"leaf_retention set for {len(lr) - len(nulls)}/{len(lr)} species, "
-        f"{covered:,}/{total_rows:,} mapped rows ({covered / total_rows * 100:.2f}% of mapped rows, "
-        f"{covered / datasf_rows * 100:.2f}% of all {datasf_rows:,} DataSF rows)"
-    )
-    report.note(
-        f"family set for {sum(1 for e in lr if e.get('family'))}/{len(lr)} species, "
-        f"{with_family:,} mapped rows"
+        f"family set for {sum(1 for e in lr if e.get('family'))}/{len(lr)} species"
+        + (f", {with_family:,} mapped rows" if total_rows else "")
     )
     # A null leaf_retention is a value the app can represent, not a hole to be
     # filled: unknown renders no phenology chip and no autumn colour (ERRATA E9).
     report.note(f"{len(nulls)} entries carry a null leaf_retention and render as 'not known yet'")
     retired = [e for e in lr if e.get("scientific_name") in RETIRED_SPECIES_NAMES]
+    retired_sites = sum(e.get("sf_tree_count") or 0 for e in retired)
     report.note(
         f"{len(retired)} of those entries name no taxon and were retired from the seed "
-        f"entirely ({sum(e.get('sf_tree_count') or 0 for e in retired):,} planting sites, "
-        f"now carrying no species at all)"
+        f"entirely"
+        + (f" ({retired_sites:,} planting sites, now carrying no species at all)"
+           if total_rows else "")
     )
     evergreens = [e for e in lr if e.get("leaf_retention") == "evergreen"]
     report.note(f"{len(evergreens)} evergreen species; all checked against D5")
+    if report.skipped_identity:
+        report.note(
+            f"IDENTITY NOT CHECKED for {report.skipped_identity} entries "
+            f"(--allow-flavor-mismatch). Nothing here says their species_uuid, "
+            f"scientific_name or common_name agrees with any seed."
+        )
 
     if args.json:
         print(json.dumps({"checks": report.checks, "failures": report.failures}, indent=1))

@@ -132,6 +132,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import os
 import sqlite3
@@ -1453,8 +1454,60 @@ def load_neighborhoods(path: str):
 # --------------------------------------------------------------------------
 
 
+def _species_map_drift(current: str, derived: str):
+    """What actually differs between two species maps, as ROWS keyed by species string.
+
+    Returns (removed, added, changed) -- falsy when the two say the same thing.
+
+    Not a line-by-line comparison. The first version zipped the files
+    positionally and added the length difference, which is not a diff: one
+    inserted row shifts every row after it and all of them count as changed. It
+    reported 628 differing lines for a 631-line file. Nor a byte comparison,
+    which fires when only the line terminator differs and so fired on every
+    build.
+    """
+    def rows_by_key(blob: str) -> dict:
+        reader = csv.reader(io.StringIO(blob))
+        next(reader, None)  # header
+        return {row[0]: row[1:] for row in reader if row}
+
+    before, after = rows_by_key(current), rows_by_key(derived)
+    removed = sorted(set(before) - set(after))
+    added = sorted(set(after) - set(before))
+    changed = sorted(k for k in set(before) & set(after) if before[k] != after[k])
+    return removed, added, changed
+
+
+def species_map_csv(rows) -> str:
+    """The species-map CSV as text, so it can be compared before it is written.
+
+    species_id carries the species UUID, not the internal integer id: integer
+    ids depend on CSV row order, uuids are order-independent and survive a
+    rebuild, which is what a checked-in mapping file needs.
+
+    An empty species_id is the honest answer for three kinds of string: a
+    vacant-site placeholder, a string that names no taxon (NON_TAXON_SPECIES),
+    and nothing else. A correction belongs in the tables at the top of this
+    script, not in the CSV -- the file is derived from them, so an edit to it is
+    lost the next time it is regenerated.
+    """
+    # LF, not csv's default CRLF. The working tree stores these files with LF
+    # (autocrlf=input, no .gitattributes rule), so a CRLF writer made every
+    # build's output differ from the checked-in copy in every single line --
+    # which meant `--write-species-map` churned the whole file, and the drift
+    # NOTE below fired on every build even when the content was identical. The
+    # rows are unchanged; only the terminator is.
+    out = io.StringIO()
+    w = csv.writer(out, lineterminator="\n")
+    w.writerow(["qSpecies_string", "species_id", "confidence"])
+    for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in rows:
+        w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
+    return out.getvalue()
+
+
 def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
-          source: str = DEFAULT_SOURCE, sj_extent: str = "none") -> int:
+          source: str = DEFAULT_SOURCE, sj_extent: str = "none",
+          write_species_map: bool = False) -> int:
     if source not in SOURCES:
         die(f"--source must be one of {', '.join(SOURCES)}, got {source!r}")
     if sj_extent not in SJ_EXTENTS:
@@ -1469,7 +1522,6 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     nb_path = os.path.join(raw_dir, "sf_analysis_neighborhoods.geojson")
     db_path = os.path.join(seed_dir, "cypress-seed.sqlite")
     schema_path = os.path.join(seed_dir, "schema.sql")
-    map_path = os.path.join(fixtures_dir, "sf_species_map.csv")
 
     if do_fetch or not os.path.exists(csv_path):
         fetch(TREES_CSV_URL, csv_path)
@@ -2166,28 +2218,55 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # falsehood as a provenance line naming the wrong inventory. The `species_map`
     # TABLE in the database holds every string in the file, because that table is
     # a property of the file rather than of any one city.
+    #
+    # A BUILD NEVER WRITES THE CHECKED-IN COPY UNLESS ASKED TO. These CSVs used
+    # to be rewritten as a side effect of every run, which meant any build --
+    # including a `--limit` measurement run that reads a fraction of the source
+    # and therefore sees a fraction of the strings -- silently rewrote a tracked
+    # file. An NYC measurement build dirtied `Fixtures/sf_species_map.csv` with
+    # 375 of its 419 lines changed, and the only thing that caught it was an
+    # agent noticing `git status`. A build's inputs are not its outputs: the
+    # derived copy goes to the git-ignored build directory, drift against the
+    # checked-in copy is reported, and updating the checked-in copy is a
+    # deliberate act (`--write-species-map`).
+    map_out_dir = fixtures_dir if write_species_map else os.path.join(fixtures_dir, "build")
+    os.makedirs(map_out_dir, exist_ok=True)
     for space_id, file_name in SPECIES_MAP_FILES.items():
         rows_for_space = [
             row for row in map_rows if space_id in spaces_by_string.get(row[0], set())
         ]
         if not rows_for_space:
             continue
-        path = os.path.join(fixtures_dir, file_name)
+        text = species_map_csv(rows_for_space)
+        path = os.path.join(map_out_dir, file_name)
         with open(path, "w", encoding="utf-8", newline="") as fh:
-            w = csv.writer(fh)
-            # species_id carries the species UUID, not the internal integer id:
-            # integer ids depend on CSV row order, uuids are order-independent and
-            # survive a rebuild, which is what a checked-in mapping file needs.
-            #
-            # An empty species_id is the honest answer for three kinds of string: a
-            # vacant-site placeholder, a string that names no taxon
-            # (NON_TAXON_SPECIES), and nothing else. This file is REGENERATED by
-            # every build, so a correction belongs in the tables at the top of this
-            # script, not in the CSV — editing the CSV loses the edit on the next run.
-            w.writerow(["qSpecies_string", "species_id", "confidence"])
-            for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in rows_for_space:
-                w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
-        log(f"wrote {path} ({len(rows_for_space)} distinct species strings in id space {space_id})")
+            fh.write(text)
+        log(f"wrote {path} ({len(rows_for_space)} distinct species strings "
+            f"in id space {space_id})")
+
+        tracked = os.path.join(fixtures_dir, file_name)
+        if write_species_map or not os.path.exists(tracked):
+            continue
+        with open(tracked, encoding="utf-8", newline="") as fh:
+            current = fh.read()
+        # Gated on the KEYED comparison below, never on raw bytes. A byte
+        # comparison also fires for a difference in line terminators or column
+        # quoting, i.e. for two files that say exactly the same thing -- and a
+        # note that fires on every build is one its reader learns to skim past,
+        # which is the failure this whole branch is about.
+        removed, added, changed = _species_map_drift(current, text)
+        # `any(...)`, not the tuple itself: a tuple of three EMPTY lists is still
+        # a non-empty tuple and therefore truthy, so gating on the return value
+        # directly fired the note at 0/0/0 -- the exact defect this gate was
+        # added to remove, reintroduced by the fix for it. Caught by running the
+        # build whose answer was known (a full --source city build derives the
+        # checked-in map exactly) rather than by reading the diff.
+        if any((removed, added, changed)):
+            log(f"NOTE: {tracked} differs from what this build derived: "
+                f"{len(removed)} rows only in the checked-in copy, {len(added)} only "
+                f"in this build's, {len(changed)} mapped differently. The checked-in "
+                f"copy was NOT touched. If this build read the whole source and the "
+                f"difference is intended, rerun with --write-species-map to update it.")
 
     # ---- which inventory this seed is, and WHEN it was taken.
     #
@@ -2554,9 +2633,18 @@ def main() -> int:
              "large to ship. Reads the cache written by "
              "Tools/fetch_san_jose_trees.py and never touches the service.",
     )
+    ap.add_argument(
+        "--write-species-map",
+        action="store_true",
+        help="update the checked-in Fixtures/*_species_map.csv from this build. Off "
+             "by default: a build must not modify a tracked input as a side effect, "
+             "and a --limit or single-city run derives a map from only part of the "
+             "source. Without it the derived copy goes to Fixtures/build/ and any "
+             "drift against the checked-in copy is reported.",
+    )
     args = ap.parse_args()
     return build(args.repo_root, args.fetch, args.limit, args.with_city_raw, args.source,
-                 args.sj_extent)
+                 args.sj_extent, args.write_species_map)
 
 
 if __name__ == "__main__":
