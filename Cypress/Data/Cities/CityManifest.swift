@@ -53,7 +53,7 @@ public struct CityManifest: Equatable, Sendable {
         /// The city file's extent, as the publisher measured it. Decoded but not yet drawn:
         /// Stage 2's location-triggered offer is what needs it.
         ///
-        /// **ERRATA E209 shape B3, E213 and E214 each record that this manifest "carries no center
+        /// **ERRATA E209 shape B3, E213 and E238 each record that this manifest "carries no center
         /// or bbox to derive one from" and call the fix a wider ticket. That premise was false of
         /// the artifact and true only of this type** — `publish_cities.py` has emitted `bbox` and
         /// `centroid` since #156. The blocker was two `Decodable` properties.

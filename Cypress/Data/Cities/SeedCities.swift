@@ -19,7 +19,10 @@ import SQLite3
 ///   different file. The publisher pairs `seed_meta.inventory_<tag>_id_space` with
 ///   `inventory_<tag>_snapshot_on` and takes the newest; so does `contentRev(forIDSpace:seedMeta:)`
 ///   below. Run against the shipped bundle it yields `2026-07-31` for both spaces, which is exactly
-///   the `r2026-07-31` in both published version strings.
+///   the `r2026-07-31` in both published version strings. **It can legitimately be nil** — see that
+///   method's note on where the transliteration stops;
+/// - **the coverage word** — `seed_meta`, by the publisher's `COVERAGE_KEYS` rule
+///   (`coverage(forIDSpace:seedMeta:)`).
 ///
 /// **Deliberately not read: anything that would need the file's bytes hashed.** R60 makes a
 /// version string's `build_id` the first 8 hex of the source seed's sha256, so a bundled city
@@ -28,23 +31,47 @@ import SQLite3
 public enum SeedCities {
 
     /// One city inside a seed or city file.
+    ///
+    /// **Presence is the `id`; every other field is optional and may legitimately be absent.** A
+    /// caller deciding whether the bundle holds a city must ask whether it has a `City` at all,
+    /// never whether that city has a date. Those were briefly the same question here, and that is
+    /// precisely how the `Download` button came back for a bundled city — see
+    /// `CityInstallState.bundled`.
     public struct City: Equatable, Sendable {
         /// `id_spaces.id` — `sf`, `us-ca-sj`. The same key the manifest and the library use.
         public let id: String
         /// The city's own name as the file states it, or nil when the file is too old to carry one.
         public let displayName: String?
-        /// The newest snapshot date among this city's inventories, by the publisher's rule.
+        /// The newest snapshot date among this city's inventories, by the publisher's rule, or nil
+        /// when the file's own receipt does not support one.
         public let contentRev: String?
+        /// The shipped extent's word (`downtown`), or nil for full coverage — the same meaning, from
+        /// the same `seed_meta` keys, that the manifest's `coverage` field carries.
+        public let coverage: String?
 
-        public init(id: String, displayName: String?, contentRev: String?) {
+        public init(id: String, displayName: String?, contentRev: String?, coverage: String? = nil) {
             self.id = id
             self.displayName = displayName
             self.contentRev = contentRev
+            self.coverage = coverage
         }
     }
 
-    /// The cities in the app's bundled seed, or `[]` when there is no bundle to read (a unit-test
-    /// bundle without the ~103 MB resource, which is a legitimate configuration here).
+    /// The app bundle's cities, read **once per process**.
+    ///
+    /// A `static let` rather than a call, because `CityDownloadsModel`'s default argument is
+    /// evaluated inside a `ViewBuilder` switch arm (`RootView`'s `case .cityDownloads`), which is
+    /// produced on every pass over that switch while `_model = State(wrappedValue:)` keeps only the
+    /// first. The read is two small queries against a two-row table and no hitch was measured; it
+    /// is cached because the property that consumes it says "once", and an invariant a comment
+    /// states is one the code should hold.
+    ///
+    /// Only `Bundle.main` is cached. `inBundle(_:)` with an explicit bundle re-reads, because a
+    /// caller naming a bundle is asking about that file rather than about this process.
+    public static let inMainBundle: [City] = inBundle(.main)
+
+    /// The cities in a bundle's seed, or `[]` when there is no bundle to read (a unit-test bundle
+    /// without the ~103 MB resource, which is a legitimate configuration here).
     ///
     /// Reads the file rather than remembering an answer: the bundle is swapped by a build, and a
     /// constant listing its cities is a comment that would go stale exactly when it mattered.
@@ -101,7 +128,8 @@ public enum SeedCities {
             City(
                 id: $0.id,
                 displayName: $0.displayName,
-                contentRev: contentRev(forIDSpace: $0.id, seedMeta: meta)
+                contentRev: contentRev(forIDSpace: $0.id, seedMeta: meta),
+                coverage: coverage(forIDSpace: $0.id, seedMeta: meta)
             )
         }
     }
@@ -130,6 +158,15 @@ public enum SeedCities {
     /// is a schema change in a version space, and Stage 0's defining property is that it makes none.
     /// `BundledCityTests.bundledSeedNamesItsCities` is what keeps the two honest:
     /// it reads the shipped bundle and asserts the answer against the published `content_rev`.
+    ///
+    /// **Where the transliteration deliberately stops, and what the caller owes it.** The empty
+    /// check matches the publisher's `if snap:`, and it is load-bearing: `Tools/build_seed.py`
+    /// writes San Jose's date as `sj_meta.get("extracted_on", "")` — an empty-string default with
+    /// no `die()` behind it, unlike the San Francisco path — so a bundle really can ship a city
+    /// whose date does not derive. The publisher's response to that is to `fail()` the whole
+    /// publish; this method's is to return nil, because refusing to answer is not something a read
+    /// on a reader's phone can usefully do. **Nil therefore means "no date", never "no city",** and
+    /// a caller that reads it as absence re-opens the defect this whole type exists to close.
     static func contentRev(forIDSpace space: String, seedMeta: [String: String]) -> String? {
         let prefix = "inventory_"
         let suffix = "_id_space"
@@ -143,4 +180,28 @@ public enum SeedCities {
         }
         return dates.max()
     }
+
+    /// `Tools/publish_cities.py`'s `COVERAGE_KEYS` lookup, transliterated: the `seed_meta` key that
+    /// states this city's shipped extent, or nil for full coverage.
+    ///
+    /// **Two keys, in the order R37 plans to retire them.** The standardized `coverage_<id_space>`
+    /// is preferred; `legacyCoverageKeys` is the publisher's own per-city shim, which its comment
+    /// describes as lasting *"until `build_seed.py` standardizes on `coverage_<id_space>`"*. R37's
+    /// trailing clause says the same, and names a third city as the trigger. Preferring the
+    /// standardized key means the day `build_seed.py` writes it, this reader is already correct and
+    /// the shim below is dead rather than wrong.
+    ///
+    /// The shim is a hand-entered table duplicated across two languages, which is a cost worth
+    /// naming: if a city is added to `COVERAGE_KEYS` and not here, its bundled row silently claims
+    /// full coverage. `BundledCityTests.everyPublisherCoverageKeyIsMirrored` is the guard —
+    /// it reads the shipped bundle and asserts the answer against the live manifest's own word.
+    static func coverage(forIDSpace space: String, seedMeta: [String: String]) -> String? {
+        for key in ["coverage_\(space)"] + Array(legacyCoverageKeys[space].map { [$0] } ?? []) {
+            if let value = seedMeta[key], !value.isEmpty { return value }
+        }
+        return nil
+    }
+
+    /// `publish_cities.py`'s `COVERAGE_KEYS`, mirrored. Absent id ⇒ full coverage.
+    static let legacyCoverageKeys: [String: String] = ["us-ca-sj": "sj_ship_extent"]
 }

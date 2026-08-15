@@ -70,19 +70,24 @@ public struct CityLibrary: Sendable {
         /// Nil for a file too old to carry one — the caller then falls back to the id, which is
         /// what every offline row said before this existed.
         public let displayName: String?
+        /// The shipped extent's word, read out of the same file's `seed_meta`. Nil for full
+        /// coverage — the same meaning the manifest's `coverage` field carries.
+        public let coverage: String?
 
         public init(
             id: String,
             version: String,
             fileURL: URL,
             bytes: Int64,
-            displayName: String? = nil
+            displayName: String? = nil,
+            coverage: String? = nil
         ) {
             self.id = id
             self.version = version
             self.fileURL = fileURL
             self.bytes = bytes
             self.displayName = displayName
+            self.coverage = coverage
         }
     }
 
@@ -137,7 +142,7 @@ public struct CityLibrary: Sendable {
                 let named = SeedCities.read(fileAt: url).first { $0.id == id }
                 return InstalledCity(
                     id: id, version: version, fileURL: url, bytes: bytes,
-                    displayName: named?.displayName
+                    displayName: named?.displayName, coverage: named?.coverage
                 )
             }
             .sorted { $0.id < $1.id }

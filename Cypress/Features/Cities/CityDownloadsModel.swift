@@ -27,8 +27,9 @@ final class CityDownloadsModel {
 
     private let library: CityLibrary
     private let downloader: CityDownloader
-    /// What the app's own bundle holds, read from the bundled seed once (`SeedCities`). Constant
-    /// for the life of the process — the bundle is swapped by a build, not by anything on screen.
+    /// What the app's own bundle holds (`SeedCities`). The default is `inMainBundle`, which reads
+    /// the seed once per process — this model is rebuilt on every push and its default argument is
+    /// evaluated more often than that, so the caching lives there rather than being asserted here.
     private let bundledCities: [SeedCities.City]
     /// The composition root's re-boot: tears down `DataLayer` and attaches the (new) choice.
     private let onInventoryChange: () -> Void
@@ -37,7 +38,7 @@ final class CityDownloadsModel {
     init(
         library: CityLibrary,
         downloader: CityDownloader = CityDownloader(),
-        bundledCities: [SeedCities.City] = SeedCities.inBundle(),
+        bundledCities: [SeedCities.City] = SeedCities.inMainBundle,
         onInventoryChange: @escaping () -> Void
     ) {
         self.library = library
@@ -48,25 +49,40 @@ final class CityDownloadsModel {
 
     // MARK: - The screen's rows
 
-    /// **One row per city, by construction.** Three sources can name the same city — the catalog,
-    /// the download library, and the app bundle — and before this round the bundle was invisible to
-    /// all of them, which is how the screen came to offer 81 MB of a city it was already drawing.
-    /// The ids are folded to a unique, ordered sequence *before* any row is made, so no path
-    /// through this model can emit two rows for one city and no reader is left choosing between two
-    /// indistinguishable copies of San Francisco.
+    /// **One row per city, by construction, from all three sources on both paths.** The catalog,
+    /// the download library and the app bundle can each name the same city — and before this round
+    /// the bundle was invisible to all of them, which is how the screen came to offer 81 MB of a
+    /// city it was already drawing. Every id from all three is folded to a unique, ordered sequence
+    /// *before* any row is made, so no path through this model can emit two rows for one city and no
+    /// reader is left choosing between two indistinguishable copies of San Francisco.
+    ///
+    /// **Precedence is the same on both paths, and that is the point.** A published entry describes
+    /// the city best, because `installState` gives it the library and the bundle as well. Failing
+    /// that, a *downloaded* copy outranks the bundled one — the `active-city` marker can point at it,
+    /// so it is the copy that can be in use, removed, or re-attached. The bundle is last, and it is
+    /// what makes a city visible at all when neither of the other two knows it.
+    ///
+    /// The loaded branch briefly went catalog → bundle with the library left out entirely, so a
+    /// downloaded, attached, *delisted* city drew its bundled row instead: `In use` and `Remove`
+    /// vanished from an 81 MB file that was attached at that moment, and `Built-in inventory` drew
+    /// `Use` while something else was in use. The offline branch had it right, and the two now
+    /// answer through the same `diskRow(for:)`.
     var rows: [CityDownloadRow] {
         var rows: [CityDownloadRow] = [.builtIn(isActive: activeCityID == nil)]
+        let bundledIDs = bundledCities.map(\.id)
+        let installedIDs = installed.map(\.id)
         switch catalog {
         case .loaded(let manifest):
             let published = Dictionary(
                 manifest.cities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
             )
-            rows += orderedUniqueIDs(manifest.cities.map(\.id) + bundledCities.map(\.id))
+            rows += orderedUniqueIDs(manifest.cities.map(\.id) + installedIDs + bundledIDs)
                 .compactMap { id in
                     guard let city = published[id] else {
-                        // Bundled and unpublished: reachable the moment the bundle is built with a
-                        // city the catalog has not caught up to.
-                        return bundledCities.first { $0.id == id }.map(CityDownloadRow.bundled)
+                        // Not in the catalog: an installed copy, else the bundle's own. Reachable
+                        // whenever a manifest is older than the device — a city delisted, or one
+                        // published after the bundle was built and not yet in the catalog.
+                        return diskRow(for: id)
                     }
                     return .published(
                         city: city,
@@ -79,21 +95,22 @@ final class CityDownloadsModel {
         case .checking, .unavailable:
             // Disk facts alone — every installed city keeps its no-network affordances, and the
             // bundle's own cities are disk facts too, which is the whole point of this round: what
-            // the app holds does not depend on reaching a bucket.
-            let onDisk = Dictionary(
-                installed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
-            )
-            rows += orderedUniqueIDs(installed.map(\.id) + bundledCities.map(\.id))
-                .compactMap { id in
-                    if let city = onDisk[id] {
-                        // A downloaded copy shadows the bundled one (the `active-city` marker
-                        // points at it), so it is the copy the row describes.
-                        return .installedOffline(city, isActive: activeCityID == id)
-                    }
-                    return bundledCities.first { $0.id == id }.map(CityDownloadRow.bundled)
-                }
+            // the app holds does not depend on reaching a bucket. **Ruled by the owner, 2026-08-14**
+            // (review finding 9): the offline screen shows the same cities as the online one, so a
+            // bundled city keeps its card here rather than disappearing with the network.
+            rows += orderedUniqueIDs(installedIDs + bundledIDs).compactMap(diskRow(for:))
         }
         return rows
+    }
+
+    /// The row for a city the catalog cannot describe: the downloaded copy if there is one, else the
+    /// bundled one, else nothing. **One implementation, used by both branches**, which is what keeps
+    /// their precedence from drifting apart again.
+    private func diskRow(for id: String) -> CityDownloadRow? {
+        if let city = installed.first(where: { $0.id == id }) {
+            return .installedOffline(city, isActive: activeCityID == id)
+        }
+        return bundledCities.first { $0.id == id }.map(CityDownloadRow.bundled)
     }
 
     /// The one place a city's state is decided, so the row and the `Download` action can never be
@@ -102,7 +119,9 @@ final class CityDownloadsModel {
         CityInstallState(
             published: city,
             installedVersion: installed.first { $0.id == city.id }?.version,
-            bundledContentRev: bundledCities.first { $0.id == city.id }?.contentRev
+            // The whole city, not its date: a bundled city with no derivable record date is still
+            // bundled, and collapsing those two facts is what put the `Download` button back.
+            bundled: bundledCities.first { $0.id == city.id }
         )
     }
 

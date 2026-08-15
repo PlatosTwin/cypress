@@ -63,9 +63,20 @@ enum CityDownloadsCopy {
     /// The claim is deliberately narrow: **record-date parity, and nothing more.** Not "identical
     /// to the published file", which would need 108 MB hashed at launch (R60), and not a version
     /// string, which the bundle cannot compute.
-    static func bundledLine(contentRev: String) -> String {
-        "Included in the app · record as of \(contentRev)"
+    ///
+    /// A nil `contentRev` **drops the suffix** rather than reaching for another card's copy. This
+    /// row briefly borrowed `builtInSubtitle` for that case, which put `Ships with the app and
+    /// cannot be removed` — a sentence R43 §3 wrote for the built-in card, and a removability claim
+    /// — onto a city row, and invented a third state D5 never ruled. The line below is D5's own,
+    /// minus a clause the file could not back: no new sentence, and nothing claimed that is not
+    /// known.
+    static func bundledLine(contentRev: String?) -> String {
+        guard let contentRev else { return bundled }
+        return "\(bundled) · record as of \(contentRev)"
     }
+
+    /// D5's line without its record-date clause.
+    static let bundled = "Included in the app"
 
     /// Mirrors `updateLine`'s shape — what is newer, and what you are holding.
     static func bundledOutdatedLine(bundledContentRev: String) -> String {
@@ -163,7 +174,11 @@ struct CityDownloadRow: Equatable, Identifiable {
             // file too old to carry one — still never a prettier name this layer made up
             // (DECISIONS constraint 15).
             title: installed.displayName ?? installed.id,
-            coverageNote: nil,
+            // Same argument as the title, one line down: R43 §3 lists coverage as a city card's
+            // second line, and since s16 the installed file's own `seed_meta` states it. A row that
+            // knew San Jose's name from the file and still hid its downtown-only limit would be
+            // stating the easy half of what it read.
+            coverageNote: coverageIfPartial(installed.coverage),
             stateLine: CityDownloadsCopy.installedLine(version: installed.version),
             detailLine: nil,
             isFailure: false,
@@ -178,13 +193,19 @@ struct CityDownloadRow: Equatable, Identifiable {
     /// No affordance: `Use` for the bundle belongs to the built-in card, which attaches the whole
     /// fused file rather than one of the cities inside it (R43 §1 — exactly one inventory is
     /// attached, always).
+    ///
+    /// **Coverage is drawn here, from the file.** This row is a city card by R43 §3's definition,
+    /// and that ruling lists coverage as a card's second line without conditioning it on where the
+    /// facts came from; §3.3 lists coverage as one of the four things Stage 0 derives from the
+    /// bundle, and §6.1 — the text D5 approved *as scoped* — repeats it. It was briefly omitted on
+    /// the argument that an offline row had never drawn one, which was true of `installedOffline`
+    /// and not of this row: San Jose's downtown-only limit was the one fact available and unstated.
     static func bundled(_ city: SeedCities.City) -> CityDownloadRow {
         CityDownloadRow(
             id: city.id,
             title: city.displayName ?? city.id,
-            coverageNote: nil,
-            stateLine: city.contentRev.map(CityDownloadsCopy.bundledLine(contentRev:))
-                ?? CityDownloadsCopy.builtInSubtitle,
+            coverageNote: coverageIfPartial(city.coverage),
+            stateLine: CityDownloadsCopy.bundledLine(contentRev: city.contentRev),
             detailLine: nil,
             isFailure: false,
             progress: nil,
@@ -239,13 +260,17 @@ struct CityDownloadRow: Equatable, Identifiable {
         // `BundledCityTests.everyStateAgreesWithAllowsDownload`, not by a debug `assert` here: a
         // crash in a release-mode-invisible check is a worse guard than a test that always runs.
         return CityDownloadRow(
-            id: city.id, title: city.displayName, coverageNote: coverageIfPartial(city),
+            id: city.id, title: city.displayName, coverageNote: coverageIfPartial(city.coverage),
             stateLine: row.stateLine, detailLine: row.detail,
             isFailure: false, progress: nil, affordances: row.affordances
         )
     }
 
-    private static func coverageIfPartial(_ city: CityManifest.City) -> String? {
-        city.coverage == "full" ? nil : CityDownloadsCopy.coverageNote(city.coverage)
+    /// One reading of the coverage word for every row that draws one, whether it came from the
+    /// manifest or out of a file's own `seed_meta` (`SeedCities.coverage`). `"full"` and absent are
+    /// the same thing said two ways — the publisher writes the word, the seed omits the key.
+    private static func coverageIfPartial(_ coverage: String?) -> String? {
+        guard let coverage, coverage != "full", !coverage.isEmpty else { return nil }
+        return CityDownloadsCopy.coverageNote(coverage)
     }
 }
