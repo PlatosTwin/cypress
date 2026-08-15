@@ -370,9 +370,19 @@ enum YouCopy {
     /// no account on any device the app currently runs on (ERRATA E86). A switch here would be a
     /// control that forgets what it was told, which is worse than no control at all.
     ///
-    /// So the screen says what is true today. Every clause is checkable: `publicAttribution`
+    /// So the screen says what is true today. Every clause was checkable: `publicAttribution`
     /// defaults to `false`, `LocalAPI` writes only to this device, and nothing in the app can flip
     /// it. See ERRATA (E100).
+    ///
+    /// **The middle one stopped being checkable, and it is not rewritten here.** *"everything you
+    /// save stays on this phone"* was true while `LocalAPI` was the only writer. #158's wiring round
+    /// gave `DataLayer.boot` a send sink over `RemoteAPI`, so check-ins and notes leave the phone
+    /// under a device credential with no account anywhere (D9) — which is the same falsehood the
+    /// owner ruled out of `AccountCopy.storageBody` on 2026-08-14, in a card one section up this
+    /// same screen. That ruling quoted and replaced *that* sentence and said nothing about this one,
+    /// so this one stands, wrong, written up unnumbered for the errata rather than rewritten by
+    /// whoever noticed (DECISIONS constraint 21). The rest of it — attribution is opt-in, it is off,
+    /// nothing in the app can turn it on — is still true and is the half E100 is about.
     static let privacyBody =
         " everything you save stays on this phone. Public attribution is opt-in, it is off, and "
         + "there is nothing in the app yet that can turn it on."

@@ -287,6 +287,12 @@ enum AccountAskMetrics {
     /// §2: `margin:0 0 16px`.
     static let bodyBottom: CGFloat = 16
 
+    /// §3–5: `15px/700` is the drawn label, and `AppleMark` needs the size as a number rather than
+    /// as a `Font` — Apple's logo file is sized from the title (see `AppleMark.fileHeight`). It is
+    /// the size `CypressFont.body15Bold` is built at; the two are pinned together by
+    /// `AppleMarkTests.theMarkIsSizedFromTheTitleTheButtonDraws`.
+    static let providerTitleSize: CGFloat = 15
+
     /// §3–5: `padding:14px` (Apple) / `13px` (outlined), `margin-bottom:8px`, and `16px` under the
     /// last one.
     static let primaryPadding: CGFloat = 14
