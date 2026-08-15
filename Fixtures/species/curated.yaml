@@ -26,6 +26,11 @@
 generated: "2026-07-21"
 generator: "authored in a Claude Code session; the fetch and join scripts are described in SOURCES.md"
 schema_version: 1
+# The corpus this file describes, compared against the seed's `trees_source`
+# by Tools/validate_species.py (rule 0). These entries are one per distinct
+# DataSF qSpecies string, so this file describes the DataSF export and not
+# SF Public Works' city layer, which inventories a different set of species.
+inventory: sf_datasf
 species:
 - species_uuid: "7d22dcda-354d-5f7d-9be0-3739ea8c6688"
   scientific_name: "Platanus x hispanica"

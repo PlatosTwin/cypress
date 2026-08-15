@@ -55,3 +55,8 @@ shots/
 # Publisher output (Tools/publish_cities.py): per-city seed files + manifest,
 # regenerable from Fixtures/seed/cypress-seed.sqlite; never source.
 /dist/
+
+# Species maps derived by a build. The checked-in Fixtures/*_species_map.csv are the
+# record; these are what the current build derived, written here so a build never
+# modifies a tracked input. Update the tracked copy with --write-species-map.
+Fixtures/build/
