@@ -186,7 +186,17 @@ struct DataLayerWiringTests {
     /// every one of which refuses with exactly that type.
     ///
     /// Asserted through the sentence a person would read, because that is the harm: the reason
-    /// screen 17 shows for a real refusal must be the service's, not a false one about signal.
+    /// screen 17 shows for a real refusal must not be a false one about signal.
+    ///
+    /// **What that sentence can still prove, and what it cannot since 2026-08-14.** The owner's
+    /// ruling 1 of that date makes a terminally refused row read `This couldn't be sent.` rather
+    /// than the per-code cause, so it no longer names *which* refusal — this test used to assert it
+    /// contained "A moderator declined this.", which is not a thing screen 17 says any more. It
+    /// still separates the two states this invariant is about, and separates them twice over: a
+    /// recognized taxonomy code settles the row `failed` with the ruled sentence, while a
+    /// `RemoteSurface` is outside the taxonomy and would leave it `pending` reading "No connection."
+    /// The part the sentence gave up is carried by `lastErrorCode`, which was always the stronger
+    /// claim and is asserted below.
     @Test("no refusal reaches screen 17 as No connection. through this wiring")
     func theSendPathCannotProduceARemoteSurface() async throws {
         let transport = ScriptedTransport()
@@ -211,13 +221,16 @@ struct DataLayerWiringTests {
         let record = try #require(try await data.outbox.records().first)
         let reason = try #require(record.item.lastError)
         #expect(
-            reason.contains("A moderator declined this."),
+            reason == OutboxFailureReason.refusedTerminally,
             "screen 17 would show \"\(reason)\" for a refusal the service explained"
         )
         #expect(
             !reason.contains("No connection."),
             "a refused item is telling somebody their connection is down: \"\(reason)\""
         )
+        // The state is half the separation: an unrecognized error is not terminal, so a row reading
+        // the ruled sentence *and* sitting in `failed` cannot be one that fell out of the taxonomy.
+        #expect(record.item.state == .failed)
         #expect(record.item.lastErrorCode == .moderationRejected)
     }
 
