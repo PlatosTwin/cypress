@@ -7,8 +7,11 @@
 //      **a 401 must never reach an outbox item.**
 //
 //  `APIError.unauthorized.retryable` is `false`; `OutboxRetryPolicy.nextState` reads exactly that
-//  and moves a non-retryable item to `.failed` immediately; `OutboxFailureReason.sentence(for:)`
-//  then prints "Sign in to send this" — to somebody who is signed in. (The type is
+//  and moves a non-retryable item to `.failed` immediately; screen 17 then draws that row as
+//  terminal, reading `OutboxFailureReason.refusedTerminally` — "This couldn't be sent." — to
+//  somebody whose session only needed refreshing. (Until the owner's ruling 1 of 2026-08-14 the row
+//  read `sentence(for:)`'s per-code line, "Sign in to send this", which is what this header used to
+//  name; that arm is now unreachable from an outbox row.) (The type is
 //  `OutboxFailureReason`; `Cypress/Data/Outbox/OutboxViewState.swift` is the file it lives in.) So the assertions below do not stop at "the right
 //  error type was thrown": several of them hand the thrown error to `OutboxRetryPolicy` and check
 //  the state the queue would really take, because that is the sentence the spec makes and the type
@@ -740,8 +743,9 @@ struct SessionTests {
             the session failure carries a taxonomy code (\
             \(String(describing: OutboxFailureReason.apiError(from: error)))). If that code is \
             non-retryable — and `unauthorized` is — `OutboxRetryPolicy.nextState` fails every item in \
-            the batch terminally and screen 17 prints "Sign in to send this" to somebody who is \
-            signed in (ERRATA E261 §3).
+            the batch terminally and screen 17 draws every one of them as refused, reading \
+            "This couldn't be sent.", to somebody whose session only needed refreshing (ERRATA \
+            E261 §3).
             """
         )
         let item = OutboxItem(

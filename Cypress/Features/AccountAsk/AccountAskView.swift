@@ -167,6 +167,9 @@ struct AccountAskScreen: View {
                 AccountProviderButton(
                     title: button.title,
                     isPrimary: button.isPrimary,
+                    // Ruling 6 of 2026-08-14. Keyed on the provider rather than on `isPrimary`,
+                    // which happens to select the same button today and means something else.
+                    showsAppleMark: button.provider == .apple,
                     isEnabled: !presentation.isLinking,
                     action: { onTapProvider(button.provider) }
                 )
@@ -288,24 +291,30 @@ struct AccountAskScreen: View {
 /// Not `PrimaryButton`/`SecondaryOutlineButton`: 15 gives these their own fill (`#1C2A21` rather
 /// than Cypress Deep), their own padding (14 / 13 rather than 15 / 14) and no shadow, and bending C6
 /// into a fourth style for one screen would make every other CTA in the app answer for this one.
+///
+/// **The Apple mark rides on the primary one** (the owner's ruling 6 of 2026-08-14). `AppleMark`
+/// holds Apple's artwork and the proportions it is placed by; this type only arranges them, and
+/// draws nothing different for the other two routes.
 struct AccountProviderButton: View {
 
     let title: String
     let isPrimary: Bool
+    /// Whether this route is Apple's, and therefore carries Apple's logo file ahead of the title.
+    var showsAppleMark = false
     var isEnabled: Bool = true
     let action: () -> Void
 
+    /// The logo file's height, which Apple derives from the title's size and which therefore has to
+    /// follow the title through Dynamic Type. `relativeTo: .body` is the curve `CypressFont`'s own
+    /// `body15Bold` scales on, so the two move together at every setting.
+    @ScaledMetric(relativeTo: .body) private var markFileHeight =
+        AppleMark.fileHeight(forTitleSize: AccountAskMetrics.providerTitleSize)
+
+    private var markFileWidth: CGFloat { markFileHeight * AppleMark.aspectRatio }
+
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(CypressFont.body15Bold)
-                .foregroundStyle(isPrimary ? CypressColor.accountPrimaryLabel : CypressColor.textInk)
-                // A control label never gives up its own words. The `.account` sheet is a
-                // content-sized card with no scroll, so at AX5 the compressed column squeezed
-                // this `Text` to one line and it read `Continue with Goo…` — an ellipsis inside
-                // a control (ERRATA E196 §6). Every paragraph on this sheet already carries the
-                // same modifier; the button labels were the only text that could still be folded.
-                .fixedSize(horizontal: false, vertical: true)
+            content
                 .frame(maxWidth: .infinity)
                 .padding(
                     .vertical,
@@ -328,5 +337,44 @@ struct AccountProviderButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
+    }
+
+    /// The mark and the title, or the title alone.
+    ///
+    /// **The pair is centered rather than pinned to the leading edge**, which is what
+    /// `ASAuthorizationAppleIDButton` does on this platform and what the mock draws for the title
+    /// on its own; Apple's own web renderer left-aligns the group instead, and its numbers are
+    /// minimums either way. `leadingMargin` is applied as horizontal padding so that the minimum
+    /// still holds at the type sizes where the label fills the button and the centering stops
+    /// giving it away for free.
+    @ViewBuilder
+    private var content: some View {
+        if showsAppleMark {
+            HStack(spacing: AppleMark.titleMargin(forFileWidth: markFileWidth)) {
+                AppleMark()
+                    .fill(CypressColor.accountPrimaryLabel)
+                    .frame(width: markFileWidth, height: markFileHeight)
+                    // Apple's file carries the mark's own alternative text on the system button;
+                    // here the title beside it says the same words, and a control with two labels
+                    // reads them both out.
+                    .accessibilityHidden(true)
+                label
+            }
+            .padding(.horizontal, AppleMark.leadingMargin(forFileWidth: markFileWidth))
+        } else {
+            label
+        }
+    }
+
+    private var label: some View {
+        Text(title)
+            .font(CypressFont.body15Bold)
+            .foregroundStyle(isPrimary ? CypressColor.accountPrimaryLabel : CypressColor.textInk)
+            // A control label never gives up its own words. The `.account` sheet is a
+            // content-sized card with no scroll, so at AX5 the compressed column squeezed
+            // this `Text` to one line and it read `Continue with Goo…` — an ellipsis inside
+            // a control (ERRATA E196 §6). Every paragraph on this sheet already carries the
+            // same modifier; the button labels were the only text that could still be folded.
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

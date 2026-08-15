@@ -491,7 +491,9 @@ struct RemoteAPITests {
     /// A per-item `forbidden` is carried through as itself — never as `unauthorized`.
     ///
     /// `server/README.md`: "A 401 means the session, never the item." An `unauthorized` on an item
-    /// is non-retryable and prints "Sign in to send this" to somebody who is signed in (E261 §3).
+    /// is non-retryable, so it fails that item terminally on a session that only needed refreshing
+    /// (E261 §3). The row then reads "This couldn't be sent." — this line used to name "Sign in to
+    /// send this", which the owner's ruling 1 of 2026-08-14 took off screen 17.
     @Test("a per-item failure keeps the service's own code")
     func aPerItemFailureKeepsTheServicesOwnCode() async throws {
         let item = try OutboxPayload.visit(

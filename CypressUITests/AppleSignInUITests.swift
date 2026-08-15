@@ -56,8 +56,10 @@ final class AppleSignInUITests: XCTestCase {
         /// `AccountAskCopy.noticeFailed`, matched on its distinctive opening clause rather than
         /// whole, so a revision to the second sentence does not fail this test for the wrong reason.
         static let failed = "That did not go through"
-        /// `AccountAskCopy.noticeUnavailable`'s opening clause.
-        static let unavailable = "Accounts are not ready yet"
+        /// `AccountAskCopy.noticeUnavailable`'s opening clause, as the owner ruled it on 2026-08-14
+        /// (ruling 4). It used to read "Accounts are not ready yet", which stopped being true in the
+        /// round `Continue with Apple` started working.
+        static let unavailable = "Google and email sign-in are coming later"
     }
 
     override func setUp() {
@@ -104,7 +106,55 @@ final class AppleSignInUITests: XCTestCase {
 
         // The label is Apple's own approved wording and the mock's, character for character. Asserted
         // here as well as in the unit suite because this is the string a person actually reads.
+        //
+        // **It is also the assertion that the mark did not take the label's words.** The owner's
+        // ruling 6 of 2026-08-14 put Apple's logo ahead of this title inside the same control, and
+        // the accessible name of a button carrying an image and a label is whatever the two of them
+        // contribute — an unhidden decorative `Shape` would have made it "Apple, Continue with
+        // Apple" or worse. `AppleMark` is `accessibilityHidden`, and this equality is what says so
+        // on a device rather than in a comment.
         XCTAssertEqual(apple.label, Copy.apple)
+    }
+
+    /// **Apple's minimum button size, measured on the running screen** — the one part of ruling 6's
+    /// guidelines that no unit test can reach, because it is a property of the drawn control on a
+    /// real width rather than of any value in the source.
+    ///
+    /// "Minimum width 140 pt, minimum height 30 pt", from the same HIG section the mark's geometry
+    /// comes from (`AppleMark`'s header cites it). The app's own 44 pt target floor is stricter on
+    /// height and is asserted with it, so a regression that shrank the control to Apple's floor
+    /// while breaking this app's would still be red.
+    ///
+    /// The width is checked against the two outlined routes as well: 15 draws all three the same
+    /// width, and a mark that had been allowed to shrink its own button — by hugging instead of
+    /// filling — would leave the Apple route narrower than the two beneath it while every other
+    /// assertion in this file passed.
+    func testTheAppleButtonKeepsApplesMinimumSize() {
+        let app = launchAccountAsk(applePinnedTo: nil)
+
+        let apple = app.buttons[Copy.apple].firstMatch
+        XCTAssertTrue(apple.exists, "screen 15 drew no `\(Copy.apple)`")
+        let frame = apple.frame
+
+        XCTAssertGreaterThanOrEqual(
+            frame.width, 140,
+            "the button is \(frame.width) pt wide, under Apple's 140 pt minimum for a Sign in with Apple button"
+        )
+        XCTAssertGreaterThanOrEqual(
+            frame.height, 44,
+            "the button is \(frame.height) pt tall, under this app's 44 pt target floor (Apple's own minimum is 30)"
+        )
+
+        let decline = app.buttons[Copy.decline].firstMatch
+        XCTAssertTrue(decline.exists)
+        XCTAssertGreaterThanOrEqual(
+            frame.width, decline.frame.width,
+            """
+            the Apple route is \(frame.width) pt wide against \(decline.frame.width) pt for §7's \
+            decline control, so it is no longer the full-width primary SCREENS.md 15 §3 draws — the \
+            mark has taken width off its own button.
+            """
+        )
     }
 
     /// **The cancel path, which is the only reason this file needs a device.**
