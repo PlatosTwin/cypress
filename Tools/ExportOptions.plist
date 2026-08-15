@@ -11,8 +11,12 @@
 	  beta is INTERNAL (owner's decision, 2026-08-03), so no Beta App Review runs and a build
 	  is testable minutes after processing.
 
-	  `destination = upload` means the export step uploads directly rather than writing an
-	  .ipa for someone to hand to Transporter. That is the whole point of doing this in CI.
+	  `destination = export` writes the signed .ipa to disk instead of uploading it inside
+	  the export step. That is deliberate, and it is what let builds 34 and 35 ship without
+	  their entitlements: with `upload`, the final product exists only inside xcodebuild and
+	  nothing can look at it before it reaches TestFlight. Now the workflow inspects the
+	  exact .ipa (Tools/verify_entitlements.sh) and then uploads those same bytes with
+	  `xcrun altool --upload-app`, authenticated by the same API key.
 
 	  Signing is left automatic and resolved by the App Store Connect API key the workflow
 	  passes to xcodebuild, which is why no distribution certificate or provisioning profile
@@ -21,7 +25,7 @@
 	<key>method</key>
 	<string>app-store-connect</string>
 	<key>destination</key>
-	<string>upload</string>
+	<string>export</string>
 	<key>signingStyle</key>
 	<string>automatic</string>
 	<key>teamID</key>
