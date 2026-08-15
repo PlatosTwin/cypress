@@ -239,3 +239,29 @@ test that silently depends on a third party is one CI outage away from a red nob
 
 **No workflow runs `Tools/test_*.py` at all** — observed by the reviewer, being filed separately, and
 not fixed here.
+
+### 8f. `except Exception` does not catch a refusing build, which is why 8e stayed hidden
+
+Round-2 review finding. `build_seed.die()` is `sys.exit()`, so every deliberate refusal — the stub
+ceiling, a missing fixture, an inconsistent cache — arrives as **`SystemExit`, which inherits from
+`BaseException` and not from `Exception`**. The suite's three handlers named `Exception`, so a
+refusing build killed the file mid-run: **no verdict for any of the 19 checks**, passing or failing,
+and no output but the `FATAL:` line on stderr.
+
+This is the mechanism behind 8e. A `URLError` from the geojson fetch would have been caught and
+reported against the test that provoked it; `die()` wrapping it in `SystemExit` aborted everything
+instead, which reads like a crashed tool rather than a failing test. The same thing happened a
+second time in the same round when the stub corpus first breached the 2% ceiling. Twice the run
+ended with a bare `FATAL:` line and an exit code, and twice it looked like an environment problem.
+
+Fixed as `except (Exception, SystemExit)` in all three places. **Not `BaseException`**, which would
+also swallow `KeyboardInterrupt` and turn a Ctrl-C into a FAIL line before starting the next build.
+
+Red-proved by forcing a refusal (`SF_FILLER = 1`, putting the stub share at 25% against the 2%
+ceiling): before, `0 verdict lines` and exit 2; after, `0 checks passed, 10 failed`, every one
+reading `the build raised SystemExit: 2`, and exit 1.
+
+**The general shape, and the reason it is worth an entry:** a test harness that catches `Exception`
+cannot report the failures of any tool that refuses by exiting, and this repo's tooling refuses by
+exiting on purpose. The failure presents as infrastructure noise rather than as a red test — the
+most expensive way for a guard to be silent, because nobody files it.

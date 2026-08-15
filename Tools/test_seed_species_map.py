@@ -171,6 +171,20 @@ def species_map_of(sj_rows):
     Returns `("crash", exception)` instead of a mapping when the build raises,
     so a test can name the failure rather than taking the whole run down with
     it. The build that this file exists for raised `sqlite3.IntegrityError`.
+
+    `SystemExit` IS NAMED EXPLICITLY BECAUSE `except Exception` DOES NOT CATCH
+    IT. `build_seed.die()` is `sys.exit()`, so every deliberate refusal -- the
+    stub ceiling, a missing fixture, an inconsistent cache -- arrives as
+    `SystemExit`, which inherits from `BaseException`. Without it a REFUSING
+    build killed this file mid-run: no verdict for any check, passing or
+    failing, and the only output the `FATAL:` line on stderr. That is how the
+    network dependency in `write_corpus` stayed hidden -- a `URLError` would
+    have been caught and reported against the test that provoked it, but
+    `die()` wrapping it in `SystemExit` aborted everything instead.
+
+    `BaseException` would also work and is not used: it swallows
+    `KeyboardInterrupt`, turning a Ctrl-C into a FAIL line and carrying on to
+    the next build.
     """
     with tempfile.TemporaryDirectory() as root:
         write_corpus(root, sj_rows)
@@ -180,7 +194,7 @@ def species_map_of(sj_rows):
             with contextlib.redirect_stdout(io.StringIO()):
                 build(root, do_fetch=False, limit=0, with_city_raw=False,
                       source="city", sj_extent="full")
-        except Exception as exc:  # noqa: BLE001
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
             return "crash", exc
         db = os.path.join(root, "Fixtures", "seed", "cypress-seed.sqlite")
         conn = sqlite3.connect(db)
@@ -407,7 +421,7 @@ def test_the_check_that_caught_this_is_in_the_shipped_schema():
             with contextlib.redirect_stdout(io.StringIO()):
                 build(root, do_fetch=False, limit=0, with_city_raw=False,
                       source="city", sj_extent="full")
-        except Exception as exc:  # noqa: BLE001
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
             check(False, f"{name}: the build raised {type(exc).__name__}: {exc}")
             return
         conn = sqlite3.connect(os.path.join(root, "Fixtures", "seed", "cypress-seed.sqlite"))
@@ -449,7 +463,7 @@ def main() -> int:
         # down mid-suite, and every later test's verdict is simply never printed.
         try:
             test()
-        except Exception as exc:  # noqa: BLE001
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
             check(False, f"{test.__name__}: raised {type(exc).__name__}: {exc}")
 
     print(f"{PASSED} checks passed, {len(FAILURES)} failed")
