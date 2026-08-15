@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+"""Tests for what a `species_map` row claims about a qSpecies STRING.
+
+    python3 Tools/test_seed_species_map.py
+
+Every test here builds a real seed from a synthetic corpus of a dozen rows,
+through the real `build()`, and reads the real `species_map` table out of it.
+That is deliberate and it is the point: the defect these guard against
+(<errata-pending/species-map-string-kind>) lived in the aggregation *inside*
+`build`, and a test that called the classifier directly would have gone green
+while the build still crashed. The corpus is San Jose-shaped because San Jose is
+the source that separates vacancy from species; San Francisco cannot express the
+defect at all, which is why it went eight months unseen.
+
+Every test states what would have to go wrong for it to fail, because a test
+whose failure mode nobody can name is a test nobody will fix correctly.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import json
+import os
+import sqlite3
+import sys
+import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from build_seed import ENRICHED_COLUMNS, build  # noqa: E402
+
+FAILURES: list[str] = []
+PASSED = 0
+
+
+def check(condition, message):
+    global PASSED
+    if condition:
+        PASSED += 1
+    else:
+        FAILURES.append(message)
+
+
+# A point inside San Jose's bounding box, and one inside San Francisco's. Both
+# are real coordinates from the cached layers, so `accepts`' bbox test sees the
+# same shape of number it sees in a full build.
+SJ_LON, SJ_LAT = -121.758019, 37.237292
+SF_LON, SF_LAT = -122.468983, 37.786610
+
+#: `Fixtures/raw/street_tree_list.csv`'s first line, verbatim.
+DATASF_HEADER = (
+    "TreeID,qLegalStatus,qSpecies,qAddress,SiteOrder,qSiteInfo,PlantType,qCaretaker,"
+    "qCareAssistant,PlantDate,DBH,PlotSize,PermitNotes,XCoord,YCoord,Latitude,Longitude,"
+    "Location,Fire Prevention Districts,Police Districts,Supervisor Districts,Zip Codes,"
+    "Neighborhoods (old),Analysis Neighborhoods"
+)
+
+
+#: Ordinary San Francisco rows carried purely to clear the stub ceiling. The
+#: build refuses when the stub path exceeds 2% of species-bearing rows
+#: (BUILD-PLAN section 7), and the corpus below deliberately contains one stub,
+#: so it needs more than fifty rows that are not stubs to be buildable at all.
+#: At 100 the share is 1/101 = 0.99%, comfortably inside the gate.
+SF_FILLER = 100
+
+
+def sf_row(tree_id, botanical, common):
+    """One San Francisco city-layer feature, in that layer's own spelling.
+
+    `botanical=None` with a one-word `common` is the stub specimen: nothing in
+    `Magnolia` alone says it is botanical, so `_botanical_shape` refuses to move
+    it across and the string packs to `:: Magnolia`.
+    """
+    return {
+        "TREEID": tree_id, "OBJECTID": tree_id, "SiteOrder": 1,
+        "Address": f"{tree_id} TEST ST", "COMMON": common, "BOTANICAL": botanical,
+        "DBH": 3, "PlantType": "Tree",
+        # Spread along a line well inside the SF bbox so no two rows coincide.
+        "Latitude": SF_LAT + tree_id * 1e-5, "Longitude": SF_LON + tree_id * 1e-5,
+    }
+
+
+def sj_row(facility_id, species, vacant, object_id):
+    """One San Jose feature, in the layer's own spelling.
+
+    `VACANTSITE` and `NAMESCIENTIFIC` are separate fields here, which is the
+    whole reason this file exists: the layer can and does say "this site is
+    empty" and "the species is Magnolia" on one row.
+    """
+    return {
+        "attributes": {
+            "OBJECTID": object_id,
+            "FACILITYID": str(facility_id),
+            "NAMESCIENTIFIC": species,
+            "TRUNKDIAM": 0,
+            "INSTALLDATE": None,
+            "CONDITION": None,
+            "ADDRESSNUM": "1",
+            "STREETNAME": "TEST ST",
+            "GROWSPACE": "Park Strip",
+            "SPACEWIDTH": "4",
+            "VACANTSITE": vacant,
+            "OWNEDBY": "San Jose",
+            "MAINTBY": "General Fund",
+        },
+        # Each row gets its own coordinate so no two land on one point.
+        "geometry": {"x": SJ_LON + object_id * 1e-5, "y": SJ_LAT + object_id * 1e-5},
+    }
+
+
+def write_corpus(root, sj_rows):
+    """A repo-root holding the smallest corpus `build(source="city")` accepts."""
+    raw = os.path.join(root, "Fixtures", "raw")
+    os.makedirs(raw, exist_ok=True)
+    os.makedirs(os.path.join(root, "Fixtures", "seed"), exist_ok=True)
+
+    # The DataSF export's own header, with no rows under it. Two readers want
+    # different subsets of it -- `load_datasf_attributes` the enrichment
+    # columns, `SFDataSFAdapter` the geometry and species ones -- so the header
+    # is spelled in full rather than assembled from either one's list.
+    with open(os.path.join(raw, "street_tree_list.csv"), "w", encoding="utf-8") as fh:
+        fh.write(DATASF_HEADER + "\n")
+    missing = set(ENRICHED_COLUMNS) - set(DATASF_HEADER.split(","))
+    assert not missing, f"DATASF_HEADER has fallen behind ENRICHED_COLUMNS: {sorted(missing)}"
+
+    # An EMPTY neighborhood layer, written rather than omitted. `build` fetches
+    # this file from data.sfgov.org when it is absent, even without `--fetch`,
+    # so a corpus that leaves it out quietly reaches the network on every run
+    # and fails when that service does (HTTP 503, seen 2026-08-15). With zero
+    # features every row gets `neighborhood_id = NULL`, which is what the San
+    # Jose rows under test would get from the real layer anyway (E176).
+    with open(os.path.join(raw, "sf_analysis_neighborhoods.geojson"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"type": "FeatureCollection", "features": []}, fh)
+
+    # The seed's authored species content, empty. These tests are about which
+    # STRING maps to which species, and the fixtures add family, leaf retention
+    # and field-guide prose to a species already minted -- they cannot change a
+    # `species_map` row. Empty keeps the corpus's species catalogue exactly the
+    # rows under test.
+    os.makedirs(os.path.join(root, "Fixtures", "species"), exist_ok=True)
+    for fixture in ("leaf_retention.yaml", "curated.yaml"):
+        with open(os.path.join(root, "Fixtures", "species", fixture), "w",
+                  encoding="utf-8") as fh:
+            fh.write("species: []\n")
+
+    # San Francisco's half of the corpus: filler, then one stub. The stub is
+    # here because San Jose CANNOT produce one -- its adapter passes
+    # `species_is_stub=False` unconditionally -- so without an SF row the
+    # `is_stub` branch of `species_map_kind` would have no specimen at all.
+    city = [sf_row(n, "Pinus radiata", "Monterey Pine") for n in range(1, SF_FILLER + 1)]
+    city.append(sf_row(SF_FILLER + 1, None, "Magnolia"))
+    with open(os.path.join(raw, "city_street_trees.ndjson"), "w", encoding="utf-8") as fh:
+        for row in city:
+            fh.write(json.dumps(row) + "\n")
+    with open(os.path.join(raw, "city_street_trees.meta.json"), "w", encoding="utf-8") as fh:
+        json.dump({"rows_written": len(city), "extracted_on": "2026-07-31",
+                   "server_last_edit_date": "2026-07-20"}, fh)
+
+    with open(os.path.join(raw, "sj_street_trees.ndjson"), "w", encoding="utf-8") as fh:
+        for row in sj_rows:
+            fh.write(json.dumps(row) + "\n")
+    with open(os.path.join(raw, "sj_street_trees.meta.json"), "w", encoding="utf-8") as fh:
+        json.dump({"rows_written": len(sj_rows), "extracted_on": "2026-07-31"}, fh)
+
+
+def species_map_of(sj_rows):
+    """Build a seed from `sj_rows` and return its `species_map`, keyed by string.
+
+    Returns `("crash", exception)` instead of a mapping when the build raises,
+    so a test can name the failure rather than taking the whole run down with
+    it. The build that this file exists for raised `sqlite3.IntegrityError`.
+
+    `SystemExit` IS NAMED EXPLICITLY BECAUSE `except Exception` DOES NOT CATCH
+    IT. `build_seed.die()` is `sys.exit()`, so every deliberate refusal -- the
+    stub ceiling, a missing fixture, an inconsistent cache -- arrives as
+    `SystemExit`, which inherits from `BaseException`. Without it a REFUSING
+    build killed this file mid-run: no verdict for any check, passing or
+    failing, and the only output the `FATAL:` line on stderr. That is how the
+    network dependency in `write_corpus` stayed hidden -- a `URLError` would
+    have been caught and reported against the test that provoked it, but
+    `die()` wrapping it in `SystemExit` aborted everything instead.
+
+    `BaseException` would also work and is not used: it swallows
+    `KeyboardInterrupt`, turning a Ctrl-C into a FAIL line and carrying on to
+    the next build.
+    """
+    with tempfile.TemporaryDirectory() as root:
+        write_corpus(root, sj_rows)
+        try:
+            # The build narrates ~60 lines per run; the tests read the database,
+            # not the narration.
+            with contextlib.redirect_stdout(io.StringIO()):
+                build(root, do_fetch=False, limit=0, with_city_raw=False,
+                      source="city", sj_extent="full")
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
+            return "crash", exc
+        db = os.path.join(root, "Fixtures", "seed", "cypress-seed.sqlite")
+        conn = sqlite3.connect(db)
+        try:
+            rows = conn.execute(
+                "SELECT qspecies_string, species_id, species_uuid, confidence, "
+                "is_stub, is_placeholder, is_non_taxon, tree_count FROM species_map"
+            ).fetchall()
+        finally:
+            conn.close()
+        return {row[0]: row[1:] for row in rows}
+
+
+def row_of(species_map, string, test_name):
+    """`species_map[string]`, or None with the reason recorded."""
+    if isinstance(species_map, tuple):
+        check(False, f"{test_name}: the build raised "
+                     f"{type(species_map[1]).__name__}: {species_map[1]}")
+        return None
+    if string not in species_map:
+        check(False, f"{test_name}: no species_map row for {string!r}; "
+                     f"the corpus holds {sorted(species_map)}")
+        return None
+    return species_map[string]
+
+
+# Column positions in the tuple `species_map_of` returns.
+SPECIES_ID, SPECIES_UUID, CONFIDENCE, IS_STUB, IS_PLACEHOLDER, IS_NON_TAXON, TREE_COUNT = range(7)
+
+
+def test_a_string_on_an_empty_site_and_on_a_tree_still_names_its_species():
+    """FAILS IF: a string that resolved to a species is filed as a placeholder.
+
+    THE DEFECT THIS FILE WAS WRITTEN FOR. San Jose's `VACANTSITE` field marks a
+    site empty while `NAMESCIENTIFIC` still names what stood there, so `Magnolia`
+    arrives on 2 empty sites and 77 living trees in the real layer. The empty
+    site is listed FIRST here because that is the order that crashed: the row
+    took its kind from whichever record reached the string first, so it claimed
+    a species AND `is_placeholder = 1`, and `species_map`'s own CHECK refuses
+    that pair. `--source city --sj-extent full` did not build at all.
+    """
+    name = "test_a_string_on_an_empty_site_and_on_a_tree_still_names_its_species"
+    rows = [
+        sj_row(1, "Magnolia", "Yes", 1),   # the empty site, first
+        sj_row(2, "Magnolia", "No", 2),
+        sj_row(3, "Magnolia", "No", 3),
+    ]
+    row = row_of(species_map_of(rows), "Magnolia", name)
+    if row is None:
+        return
+    check(row[SPECIES_ID] is not None,
+          f"{name}: 'Magnolia' carries no species_id though two trees resolved it")
+    check(row[IS_PLACEHOLDER] == 0,
+          f"{name}: 'Magnolia' is filed as a vacant-site placeholder, but two "
+          f"living trees carry it")
+    check(row[IS_NON_TAXON] == 0, f"{name}: 'Magnolia' is filed as naming no taxon")
+    check(row[CONFIDENCE] > 0.0,
+          f"{name}: 'Magnolia' resolved to a species at confidence "
+          f"{row[CONFIDENCE]}, which is the empty site's confidence and not the "
+          f"resolution's")
+
+
+def test_a_species_map_row_does_not_depend_on_the_order_of_the_source_file():
+    """FAILS IF: reordering the source rows changes what the seed says.
+
+    The invariant behind the crash, stated as an invariant. `species_map` is
+    keyed on the string, so every column in the row is a claim about the string;
+    a claim that moves when the file is re-sorted is a claim about the file.
+
+    The corpus carries TWO species, each on both an empty site and living trees,
+    and the second corpus is the exact reversal of the first -- the same shape
+    as the reviewer's reversal of all 344,879 real rows. Two species rather than
+    one on purpose: with one, `species_id` is pinned to the same integer in both
+    orders and an assertion over the whole row passes without meaning it.
+    """
+    name = "test_a_species_map_row_does_not_depend_on_the_order_of_the_source_file"
+    forward = [sj_row(1, "Magnolia", "Yes", 1),
+               sj_row(2, "Magnolia", "No", 2),
+               sj_row(3, "Magnolia", "No", 3),
+               sj_row(4, "Zelkova serrata", "Yes", 4),
+               sj_row(5, "Zelkova serrata", "No", 5),
+               sj_row(6, "Zelkova serrata", "No", 6)]
+    reversed_ = list(reversed(forward))
+    forward_map = species_map_of(forward)
+    reversed_map = species_map_of(reversed_)
+    for string in ("Magnolia", "Zelkova serrata"):
+        a = row_of(forward_map, string, name)
+        b = row_of(reversed_map, string, name)
+        if a is None or b is None:
+            continue
+        compare_order_independent_part(a, b, string, name)
+
+
+def compare_order_independent_part(a, b, string, name):
+    """Assert the part of a `species_map` row the seed promises is stable."""
+    # EVERYTHING EXCEPT THE INTEGER `species_id`, WHICH IS NOT ORDER-INDEPENDENT
+    # AND IS NOT MEANT TO BE. `sp["id"] = len(species_by_key) + 1` mints ids in
+    # encounter order, and the `species_map` DDL says so in as many words:
+    # "integer ids depend on CSV row order, uuids do not". Reversing the real
+    # 344,879-row source moves 328 of 1,245 rows in `species_id` and in nothing
+    # else, so an assertion over the whole row would report that as a defect.
+    # `species_uuid`, asserted below, is the order-independent identity the
+    # checked-in mapping files are keyed on, so the exclusion loses no coverage.
+    # Do not "tighten" this back to `a == b`.
+    compared = [i for i in range(7) if i != SPECIES_ID]
+    check([a[i] for i in compared] == [b[i] for i in compared],
+          f"{name}: {string!r} came out differently when the source was "
+          f"reversed: forward {a}, reversed {b}")
+    check((a[SPECIES_UUID] is not None) and a[SPECIES_UUID] == b[SPECIES_UUID],
+          f"{name}: {string!r}'s species uuid moved with the row order: "
+          f"{a[SPECIES_UUID]} then {b[SPECIES_UUID]}")
+
+
+def test_a_string_the_parser_could_not_read_stays_a_stub():
+    """FAILS IF: a string that resolved through the stub path loses `is_stub`.
+
+    The stub arm of rule 1. `species_map_kind` answers `stub` or `parsed` for
+    any string that resolved to a species, and only the `parsed` half was
+    covered -- replacing the whole branch with `return "parsed"` left the rest
+    of this file green while five real rows at `--sj-extent full` (`:: 9662`,
+    `:: Magnolia`, `:: Chitalpatashkentensis`, `:: Magnolia Little Gem`,
+    `:: Podocarpus Gracilor`) silently flipped `is_stub` to 0. Found by
+    adversarial review of PR #90 by mutation.
+
+    `CypressTests/SeedStubNamingTests` would eventually catch it, but only
+    against a rebuilt and re-bundled seed, which is not something every change
+    to this file produces.
+    """
+    name = "test_a_string_the_parser_could_not_read_stays_a_stub"
+    # The corpus's San Francisco half carries `:: Magnolia`; see `write_corpus`.
+    row = row_of(species_map_of([sj_row(1, "Quercus agrifolia", "No", 1)]),
+                 ":: Magnolia", name)
+    if row is None:
+        return
+    check(row[IS_STUB] == 1,
+          f"{name}: ':: Magnolia' resolved through the stub path but is not "
+          f"filed as a stub")
+    check(row[SPECIES_ID] is not None,
+          f"{name}: a stub still names a species -- the stub IS the species "
+          f"(RULINGS R47)")
+    check(row[IS_PLACEHOLDER] == 0 and row[IS_NON_TAXON] == 0,
+          f"{name}: ':: Magnolia' carries a species and a placeholder or "
+          f"non-taxon flag, which the CHECK forbids")
+
+
+def test_a_string_that_names_no_taxon_says_so_even_where_the_flag_says_empty():
+    """FAILS IF: `Stump` is filed as a vacant-site placeholder.
+
+    `not_a_tree` is only ever reached THROUGH the species string -- every site
+    that returns it matches `NON_TAXON_SPECIES` or `SJ_NON_TREE_SPECIES` and
+    carries basis `STATED_AS_NON_TAXON` -- so one such row is a statement about
+    the string. `Stump` names no taxon on all 1,933 of its rows in the real
+    layer, including the 1,624 the vacancy flag calls empty, and the majority
+    being empty sites does not make the WORD a placeholder.
+    """
+    name = "test_a_string_that_names_no_taxon_says_so_even_where_the_flag_says_empty"
+    rows = [sj_row(1, "Stump", "Yes", 1),
+            sj_row(2, "Stump", "Yes", 2),
+            sj_row(3, "Stump", "Yes", 3),
+            sj_row(4, "Stump", "No", 4)]
+    row = row_of(species_map_of(rows), "Stump", name)
+    if row is None:
+        return
+    check(row[IS_NON_TAXON] == 1,
+          f"{name}: 'Stump' is not filed as naming no taxon")
+    check(row[SPECIES_ID] is None,
+          f"{name}: 'Stump' minted species {row[SPECIES_ID]}")
+
+
+def test_one_empty_site_does_not_make_a_tree_string_a_placeholder():
+    """FAILS IF: `Unknown` becomes a placeholder because one site is empty.
+
+    The opposite direction, and the reason the placeholder rule needs every row
+    to agree rather than any row to vote. `VACANTSITE` is a field about the
+    SITE; it says nothing about the string. RULINGS R18 and
+    `SanJoseStreetTreeAdapter.classify` both hold that `Unknown` is a tree whose
+    species is not known -- not a hole in the pavement -- and in the real layer
+    4,507 such trees carry it against 6 empty sites.
+    """
+    name = "test_one_empty_site_does_not_make_a_tree_string_a_placeholder"
+    rows = [sj_row(1, "Unknown", "Yes", 1),
+            sj_row(2, "Unknown", "No", 2),
+            sj_row(3, "Unknown", "No", 3)]
+    row = row_of(species_map_of(rows), "Unknown", name)
+    if row is None:
+        return
+    check(row[IS_PLACEHOLDER] == 0,
+          f"{name}: 'Unknown' is filed as a vacant-site placeholder")
+    check(row[SPECIES_ID] is None,
+          f"{name}: 'Unknown' minted species {row[SPECIES_ID]} (issue #103)")
+
+
+def test_a_string_on_empty_sites_only_is_a_placeholder():
+    """FAILS IF: the placeholder flag stops being reachable.
+
+    The control for the two tests above. Both narrow what `is_placeholder`
+    claims, and a rule that narrowed it to nothing would satisfy both while
+    emptying the column -- so this asserts the flag still lands on the string
+    every one of whose rows is an empty site, which is the case it is for.
+    """
+    name = "test_a_string_on_empty_sites_only_is_a_placeholder"
+    rows = [sj_row(1, "Vacant site", "Yes", 1), sj_row(2, "Vacant site", "Yes", 2)]
+    row = row_of(species_map_of(rows), "Vacant site", name)
+    if row is None:
+        return
+    check(row[IS_PLACEHOLDER] == 1,
+          f"{name}: a string carried only by empty sites is not a placeholder")
+    check(row[SPECIES_ID] is None, f"{name}: 'Vacant site' minted a species")
+
+
+def test_the_check_that_caught_this_is_in_the_shipped_schema():
+    """FAILS IF: `species_map`'s CHECK is not in the database the build writes.
+
+    Calibration, not coverage. Every test above reads a table whose constraint
+    is what turned this defect into a crash instead of a wrong row that shipped.
+    If that constraint were dropped, all of them would still pass on a seed
+    nothing was guarding -- so this asserts the guard is live by writing the
+    exact row the build used to write and requiring SQLite to refuse it.
+    """
+    name = "test_the_check_that_caught_this_is_in_the_shipped_schema"
+    with tempfile.TemporaryDirectory() as root:
+        write_corpus(root, [sj_row(1, "Magnolia", "Yes", 1), sj_row(2, "Magnolia", "No", 2)])
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                build(root, do_fetch=False, limit=0, with_city_raw=False,
+                      source="city", sj_extent="full")
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
+            check(False, f"{name}: the build raised {type(exc).__name__}: {exc}")
+            return
+        conn = sqlite3.connect(os.path.join(root, "Fixtures", "seed", "cypress-seed.sqlite"))
+        try:
+            species_id = conn.execute("SELECT id FROM species LIMIT 1").fetchone()
+            check(species_id is not None, f"{name}: the corpus minted no species to point at")
+            if species_id is None:
+                return
+            try:
+                conn.execute(
+                    "INSERT INTO species_map(qspecies_string,species_id,species_uuid,"
+                    "confidence,is_stub,is_placeholder,is_non_taxon,tree_count) "
+                    "VALUES('a placeholder that names a species',?,NULL,0.9,0,1,0,1)",
+                    (species_id[0],),
+                )
+                check(False, f"{name}: the database accepted a placeholder row carrying "
+                             f"a species_id; species_map's CHECK is not enforcing")
+            except sqlite3.IntegrityError as exc:
+                check("CHECK constraint failed" in str(exc),
+                      f"{name}: the insert was refused, but for {exc} rather than "
+                      f"the CHECK constraint")
+        finally:
+            conn.close()
+
+
+def main() -> int:
+    tests = [
+        test_a_string_on_an_empty_site_and_on_a_tree_still_names_its_species,
+        test_a_species_map_row_does_not_depend_on_the_order_of_the_source_file,
+        test_a_string_the_parser_could_not_read_stays_a_stub,
+        test_a_string_that_names_no_taxon_says_so_even_where_the_flag_says_empty,
+        test_one_empty_site_does_not_make_a_tree_string_a_placeholder,
+        test_a_string_on_empty_sites_only_is_a_placeholder,
+        test_the_check_that_caught_this_is_in_the_shipped_schema,
+    ]
+    for test in tests:
+        # A test that raises is a failed test, not a dead run. Without this the
+        # first build to hit the defect these guard against takes the runner
+        # down mid-suite, and every later test's verdict is simply never printed.
+        try:
+            test()
+        except (Exception, SystemExit) as exc:  # noqa: BLE001
+            check(False, f"{test.__name__}: raised {type(exc).__name__}: {exc}")
+
+    print(f"{PASSED} checks passed, {len(FAILURES)} failed")
+    for failure in FAILURES:
+        print(f"  FAIL: {failure}")
+    return 1 if FAILURES else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

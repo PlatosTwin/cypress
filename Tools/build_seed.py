@@ -1077,10 +1077,19 @@ CREATE TABLE species_map (
     confidence      REAL NOT NULL,
     is_stub         INTEGER NOT NULL,      -- 1 = fell through to the stub path
     is_placeholder  INTEGER NOT NULL,      -- 1 = vacant-site placeholder, no species
-    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine").
-    -- A tree stands at the site, so it is NOT a placeholder and its status is
-    -- `alive`; it simply carries no species. Provenance is a queryable column
-    -- rather than a comment (DECISIONS constraint 13).
+    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine",
+    -- "Stump"). EVERY COLUMN IN THIS TABLE IS A CLAIM ABOUT THE STRING, AND
+    -- THIS ONE SAYS NOTHING ABOUT THE STATUS OF ANY ROW CARRYING IT. The string
+    -- resolves to no species; whether a tree stands at a given site is
+    -- `trees.status`, and the two are independent.
+    --
+    -- This sentence used to read "a tree stands at the site, so its status is
+    -- `alive`", which was true of every such string while San Francisco was the
+    -- only source -- its five non-taxon strings sit on `alive` rows alone -- and
+    -- is false now. San Jose's `Stump` names no taxon on all of its rows and its
+    -- vacancy flag calls most of them empty. Do not infer a status from this
+    -- column. Provenance is a queryable column rather than a comment (DECISIONS
+    -- constraint 13).
     is_non_taxon    INTEGER NOT NULL DEFAULT 0,
     tree_count      INTEGER NOT NULL,
     CHECK (species_id IS NULL OR (is_placeholder = 0 AND is_non_taxon = 0))
@@ -1109,6 +1118,64 @@ def die(msg: str, code: int = 3) -> "None":
 
 
 NOW = _seed_epoch()
+
+
+def species_map_kind(kinds, species_id) -> str:
+    """One qSpecies STRING's kind, from every row that carried it.
+
+    `species_map` is keyed on the string, so `is_stub` / `is_placeholder` /
+    `is_non_taxon` are claims about the string. They used to be read off
+    whichever row reached the string first, which made them claims about the
+    order of the source file. San Francisco never noticed: its vacancy lives in
+    the species field itself, so every row carrying a given string agrees on the
+    kind. San Jose publishes `VACANTSITE` and `NAMESCIENTIFIC` as two fields,
+    and 611 empty sites name a real taxon -- so `Magnolia` arrives on 2 empty
+    sites and 77 living trees, and when an empty site came first the row claimed
+    a species AND `is_placeholder = 1`, which the table's own CHECK forbids.
+    That is why `--source city --sj-extent full` did not build (ERRATA
+    <errata-pending/species-map-string-kind>).
+
+    The precedence below is not a tie-break. It is which FIELD each kind is
+    reached through:
+
+      * A string that resolved to a species names a taxon, whatever any single
+        row said. That is the CHECK constraint's own statement, so it is first.
+      * `not_a_tree` is only ever reached THROUGH the string: all three sites
+        that return it match `NON_TAXON_SPECIES` or `SJ_NON_TREE_SPECIES` and
+        carry basis `STATED_AS_NON_TAXON`. One such row is therefore a statement
+        about the string -- `Stump` names no taxon on all 1,933 of its rows,
+        including the 1,624 the vacancy flag calls empty.
+      * `placeholder` is the opposite, and decides the string only when EVERY
+        row agrees. San Jose reaches it from `VACANTSITE` on 76,048 of its
+        76,109 placeholder rows -- a field about the SITE, which says nothing
+        about the string. Otherwise `Unknown` (4,507 trees against 6 empty
+        sites) would become a placeholder, when RULINGS R18 and
+        `SanJoseStreetTreeAdapter.classify` both call it a tree whose species is
+        not known.
+
+        THE OTHER 61 ROWS ARE WHERE THAT REASONING AND THIS RULE COME APART, and
+        they are named here because the next reader will meet them. Their basis
+        is `INFERRED_FROM_ABSENT_SPECIES`, which does reach `placeholder`
+        through the string: the string being EMPTY is the whole of the evidence.
+        But that is the absence of content rather than a reading of it, and the
+        basis name says the kind is OURS and not the source's -- where
+        `not_a_tree` earns its one-row power by MATCHING the string against a
+        vocabulary, which is a positive statement about what the string means.
+        So unanimity still wins here, and `''` comes out `is_placeholder = 0` on
+        the strength of the 229 rows San Jose itself placed in the ordinary
+        category, against 812 stated-vacant and those 61. That is also the value
+        `origin/main` shipped -- but there by luck of row order, since reversing
+        the source flips it, and here on purpose.
+
+    Counts measured on the 2026-07-31 caches at `--sj-extent full`.
+    """
+    if species_id is not None:
+        return "stub" if "stub" in kinds else "parsed"
+    if "non_taxon" in kinds:
+        return "non_taxon"
+    if kinds == {"placeholder"}:
+        return "placeholder"
+    return "parsed"
 
 
 def fetch(url: str, dest: str) -> None:
@@ -1678,13 +1745,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                 else:
                     stats["enriched_rows"] += 1
 
-        kind = legacy_kind(record)
+        # EVERY row that carries the string, not just the first one to reach it.
+        # `species_map` is keyed on the string, so its columns are claims about
+        # the string; taking them from one arbitrary row made them claims about
+        # file order instead. See `species_map_kind`.
         qs = qspecies_stats.setdefault(
             record.species_text or "",
-            {"kind": kind, "confidence": record.species_confidence or 0.0,
+            {"kinds": set(), "confidence": 0.0,
              "species_id": None, "species_uuid": None, "count": 0, "spaces": set()},
         )
         qs["count"] += 1
+        qs["kinds"].add(legacy_kind(record))
         # Which id space's vocabulary this string belongs to. San Francisco's
         # `Ulmus parvifolia :: Chinese Elm` and San Jose's `Ulmus parvifolia` are
         # two different sources' spellings and they are written to two different
@@ -1715,6 +1786,12 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             species_id = sp["id"]
             qs["species_id"] = species_id
             qs["species_uuid"] = sp["uuid"]
+            # From the rows that RESOLVED the string, so a row carrying the
+            # string without resolving it cannot set the confidence of a
+            # resolution it took no part in. No string in any of the three
+            # `--sj-extent` corpora shows two different confidences among its
+            # resolving rows, so this max is a defined value and not a vote.
+            qs["confidence"] = max(qs["confidence"], record.species_confidence or 0.0)
             if record.species_is_stub:
                 stats["stub_rows"] += 1
             else:
@@ -2113,15 +2190,16 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         qspecies_stats.items(), key=lambda kv: (-kv[1]["count"], kv[0])
     ):
         spaces_by_string[qs_string] = info["spaces"]
+        kind = species_map_kind(info["kinds"], info["species_id"])
         map_rows.append(
             (
                 qs_string,
                 info["species_id"],
                 info["species_uuid"],
                 round(info["confidence"], 2),
-                1 if info["kind"] == "stub" else 0,
-                1 if info["kind"] == "placeholder" else 0,
-                1 if info["kind"] == "non_taxon" else 0,
+                1 if kind == "stub" else 0,
+                1 if kind == "placeholder" else 0,
+                1 if kind == "non_taxon" else 0,
                 info["count"],
             )
         )
