@@ -125,10 +125,14 @@ row therefore "disagrees" with a recomputation that dropped the prefix.
 It is the same root cause as check 12 (fixed on this branch): a check keyed on `external_ref` alone
 where the schema and the contract are keyed on `(id_space, external_ref)`. Note the same family of
 defect was independently found in `build_seed` itself during this round — `seed_meta.trees_source` is
-written as one of two San Francisco string literals, so a seed built for any other city misreports
-its own provenance to `InventorySource(id:seedMeta:)`. `Tools/validate_species.py` now warns when a
-seed's largest inventory is not the one it names, which makes that defect visible; fixing it is
-`build_seed`'s job and is not done here. The fix is to recompute
+written as one of two San Francisco string literals, so a seed built for any other city names the
+wrong **file-wide** provenance. Be precise about who that misleads, because the obvious answer is
+wrong: per-row provenance does NOT read this key. `InventorySource(id:seedMeta:)` resolves from the
+`inventory_<id>_*` keys, which the shipped seed carries for every inventory it holds rows from, and
+falls back to the literal only when those are absent. The literal's consumer is
+`InventorySource(seedMeta:)` / `CypressStore.seedProvenance`, the file's own primary inventory.
+`Tools/validate_species.py` makes it visible by warning when the literal names no id space's primary
+inventory; fixing the literal is `build_seed`'s job and is not done here. The fix is to recompute
 through `inventory_contract`'s own `identity_seed` rather than restating the derivation — the same
 argument the file already makes for importing `species_trigrams` instead of copying it, so that a
 change to the scheme cannot leave the verifier agreeing with a stale copy of itself.

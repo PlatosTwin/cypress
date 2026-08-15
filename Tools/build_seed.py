@@ -1387,6 +1387,30 @@ def load_neighborhoods(path: str):
 # --------------------------------------------------------------------------
 
 
+def _species_map_drift(current: str, derived: str):
+    """What actually differs between two species maps, as ROWS keyed by species string.
+
+    Returns (removed, added, changed) -- falsy when the two say the same thing.
+
+    Not a line-by-line comparison. The first version zipped the files
+    positionally and added the length difference, which is not a diff: one
+    inserted row shifts every row after it and all of them count as changed. It
+    reported 628 differing lines for a 631-line file. Nor a byte comparison,
+    which fires when only the line terminator differs and so fired on every
+    build.
+    """
+    def rows_by_key(blob: str) -> dict:
+        reader = csv.reader(io.StringIO(blob))
+        next(reader, None)  # header
+        return {row[0]: row[1:] for row in reader if row}
+
+    before, after = rows_by_key(current), rows_by_key(derived)
+    removed = sorted(set(before) - set(after))
+    added = sorted(set(after) - set(before))
+    changed = sorted(k for k in set(before) & set(after) if before[k] != after[k])
+    return removed, added, changed
+
+
 def species_map_csv(rows) -> str:
     """The species-map CSV as text, so it can be compared before it is written.
 
@@ -1400,8 +1424,14 @@ def species_map_csv(rows) -> str:
     script, not in the CSV -- the file is derived from them, so an edit to it is
     lost the next time it is regenerated.
     """
+    # LF, not csv's default CRLF. The working tree stores these files with LF
+    # (autocrlf=input, no .gitattributes rule), so a CRLF writer made every
+    # build's output differ from the checked-in copy in every single line --
+    # which meant `--write-species-map` churned the whole file, and the drift
+    # NOTE below fired on every build even when the content was identical. The
+    # rows are unchanged; only the terminator is.
     out = io.StringIO()
-    w = csv.writer(out)
+    w = csv.writer(out, lineterminator="\n")
     w.writerow(["qSpecies_string", "species_id", "confidence"])
     for qs_string, _sid, suuid, conf, _stub, _ph, _nt, _count in rows:
         w.writerow([qs_string, suuid or "", f"{conf:.2f}"])
@@ -2141,23 +2171,19 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             continue
         with open(tracked, encoding="utf-8", newline="") as fh:
             current = fh.read()
-        if current != text:
-            # Compared as ROWS KEYED BY THEIR SPECIES STRING, not line against
-            # line. The first version zipped the two files positionally and added
-            # the length difference, which is not a diff: one inserted row shifts
-            # every row after it and every one of them counts as changed. It
-            # reported 628 differing lines where git reported 123 added and 600
-            # removed, so the number in the message was larger than the file and
-            # meant nothing.
-            def rows_by_key(blob: str) -> dict:
-                reader = csv.reader(io.StringIO(blob))
-                next(reader, None)  # header
-                return {row[0]: row[1:] for row in reader if row}
-
-            before, after = rows_by_key(current), rows_by_key(text)
-            removed = sorted(set(before) - set(after))
-            added = sorted(set(after) - set(before))
-            changed = sorted(k for k in set(before) & set(after) if before[k] != after[k])
+        # Gated on the KEYED comparison below, never on raw bytes. A byte
+        # comparison also fires for a difference in line terminators or column
+        # quoting, i.e. for two files that say exactly the same thing -- and a
+        # note that fires on every build is one its reader learns to skim past,
+        # which is the failure this whole branch is about.
+        removed, added, changed = _species_map_drift(current, text)
+        # `any(...)`, not the tuple itself: a tuple of three EMPTY lists is still
+        # a non-empty tuple and therefore truthy, so gating on the return value
+        # directly fired the note at 0/0/0 -- the exact defect this gate was
+        # added to remove, reintroduced by the fix for it. Caught by running the
+        # build whose answer was known (a full --source city build derives the
+        # checked-in map exactly) rather than by reading the diff.
+        if any((removed, added, changed)):
             log(f"NOTE: {tracked} differs from what this build derived: "
                 f"{len(removed)} rows only in the checked-in copy, {len(added)} only "
                 f"in this build's, {len(changed)} mapped differently. The checked-in "
