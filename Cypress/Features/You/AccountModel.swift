@@ -54,6 +54,26 @@ final class AccountModel {
     /// in on.
     private let api: LocalAPI?
 
+    /// The credentials half of the same account, so that leaving one leaves both.
+    ///
+    /// ── Why this model gained a second dependency, and what was wrong without it ───────────────
+    ///
+    /// `signOut()` below called `LocalAPI.signOut()` and nothing else, so the Keychain session
+    /// **survived a sign-out**. Two things followed. The bearer stayed the account's — every request
+    /// the app made after the tap still authenticated as the person who had just signed out, and the
+    /// service went on attributing the work to them. And once `DataLayer.boot` learned to restore a
+    /// signed-in session (`SessionRestore`), the surviving item made the sign-out undo itself on the
+    /// next launch: the database said nobody, the Keychain said somebody, and the mirror rule
+    /// correctly believed the Keychain. A restore that resurrected deliberate sign-outs would be a
+    /// worse defect than the one it was written to close.
+    ///
+    /// So the ruling's own words — *a surviving **signed-in** session* — are made true here: after
+    /// this tap there is no session to survive.
+    ///
+    /// Optional for the same reason `api` is. A model built with neither draws the You tab of a
+    /// device nobody has signed in on, and has nothing to sign out of.
+    private let session: AppSession?
+
     /// Whether there is an account on this device right now. The store's answer, never a cached
     /// flag of this model's own — `AccountAskModel` refuses to hold one for the same reason.
     private(set) var isSignedIn = false
@@ -83,8 +103,9 @@ final class AccountModel {
     /// on `Delete account` cannot start a second deletion against a store the first one is emptying.
     private(set) var isBusy = false
 
-    init(api: LocalAPI?) {
+    init(api: LocalAPI?, session: AppSession? = nil) {
         self.api = api
+        self.session = session
     }
 
     /// Read the account and the reminders. Called from the You tab's `.task` and again whenever a
@@ -124,10 +145,22 @@ final class AccountModel {
     }
 
     /// Sign out, keeping everything. See `LocalAPI.signOut()` for why the account id is remembered.
+    ///
+    /// **Both halves, and the credential first.** See `session` for what a sign-out that forgot the
+    /// Keychain left behind. The order is the one that fails safe: if forgetting the session throws,
+    /// the local half is left standing too, so the app stays consistently signed in and the person
+    /// can tap again — rather than reaching the state this method exists to prevent, a database that
+    /// says nobody beside a credential that says somebody. `AppSession.signOut()` keeps the *device*
+    /// credential on purpose, so the anonymous queue goes on draining (D9).
     func signOut() async {
         guard let api, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
+        do {
+            try await session?.signOut()
+        } catch {
+            return
+        }
         try? await api.signOut()
         await load()
     }
@@ -146,11 +179,32 @@ final class AccountModel {
     /// The outcome is returned rather than rendered as a tally. R3's copy names *kinds* of record
     /// and counts nothing, because ARCHITECTURE §5.1 forbids counts of user actions and a farewell
     /// is the last place to start one; the numbers exist so a test can assert what happened.
+    /// **The credentials go too, and unlike sign-out that means both of them.**
+    /// `AppSession.forgetEverything()` drops the device credential as well as the session, on its own
+    /// stated grounds: a device token minted under a deleted account's claim is a pointer to it. This
+    /// call is what makes RULINGS **R3**'s promise true of the Keychain and not only of the tables —
+    /// and, since `DataLayer.boot` learned to restore a surviving session, it is also what stops the
+    /// next launch signing the person back into the account they just deleted.
+    ///
+    /// **First, and refusing if it fails** — the same order and the same rule as `signOut`, stated
+    /// once for both: *never leave this app holding a credential for an account it has stopped
+    /// having.* The two failures are not symmetric, which is what settles it. Dropping the
+    /// credentials and then failing to delete leaves an intact account this phone is signed out of,
+    /// and signing in again resolves to the same `users` row through `apple_subject`. Deleting and
+    /// then failing to drop leaves a session for an account whose records are gone — and the next
+    /// launch's reconciliation, reading a cleared `app_state` beside a live session, would sign the
+    /// person straight back into it. One is an inconvenience; the other is the deletion undoing
+    /// itself.
     @discardableResult
     func deleteAccount(_ choice: AccountDeletionChoice) async -> AccountDeletion.Outcome? {
         guard let api, !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
+        do {
+            try await session?.forgetEverything()
+        } catch {
+            return nil
+        }
         let outcome = try? await api.deleteAccount(choice)
         await load()
         return outcome

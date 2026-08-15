@@ -1,0 +1,167 @@
+//
+//  SessionRestore.swift
+//  Cypress — Data/Auth
+//
+//  What a launch does when the Keychain and the database disagree about who is signed in.
+//
+//  ── The state this exists for ──────────────────────────────────────────────────────────────────
+//
+//  **On iOS the Keychain survives app deletion; the database does not.** That one sentence produces
+//  two different defects, and this file is the second one. `DeviceCredential`'s header has the first:
+//  an anonymous installation's device token outlives the `app_state.device_uuid` it was minted for,
+//  the phone authenticates as the old `devices` row, and every item it sends is refused forever. That
+//  arm is closed at `AppSession.storedDeviceCredential`.
+//
+//  The account arm is not that defect and it is not fixed by that fix. `AppSession.authorization()`
+//  consults `storedSession` **first**, so a reinstall on a phone holding a live account session never
+//  reaches the device credential at all. Nothing is refused and nothing is lost — `applyOne`'s user
+//  arm accepts an item carrying no `user_id` (`server/internal/api/sync.go`). What goes wrong is
+//  quieter: `app_state.current_user_id` was in the database and is gone, so the app draws itself as
+//  signed out **while every request it makes goes out with the account's bearer** and the service
+//  attributes the work to that account. The person is signed in on the wire and signed out on the
+//  screen.
+//
+//  ── The ruling ────────────────────────────────────────────────────────────────────────────────
+//
+//  The project owner ruled (2026-08-14, ruling 5) that a surviving signed-in session **restores,
+//  silently**: the app boots signed in and the local account state is rebuilt. The
+//  recommendation on the table was the opposite — discard the session — and it was not taken.
+//
+//  **This deliberately diverges from the device arm's ruling, and the divergence is the point.**
+//  PR #81 settled that a surviving *device* credential reads as no credential at all, because a
+//  device credential is per-installation: it is a fact about a copy of the app, and a copy of the app
+//  that has been deleted has no facts left. An account session is not per-installation. It is the
+//  person's, an account is supposed to be portable, and the same Apple identity signing in again
+//  would resolve to the same `users` row through `apple_subject` anyway
+//  (`server/internal/store/identity.go`). So the two arms answer the same question — "what does a
+//  surviving Keychain item mean after a reinstall?" — with opposite answers, on purpose, because the
+//  item means a different thing in each.
+//
+//  ── What "rebuilt from the server" turns out to mean, measured rather than assumed ──────────────
+//
+//  Very little travels, and that is a finding rather than a shortcut. Taking the local account state
+//  a signed-in installation holds, one field at a time:
+//
+//  - **`current_user_id`** — the account id. It is *in the session*: `SessionCredentials.userID` is
+//    the id `POST /auth/oidc` minted, stored in the Keychain beside the tokens. The one fact the
+//    restore actually needs is the one fact that survived, so the restore needs **no round trip** and
+//    reaches no network. That matters beyond tidiness: `AppSession.bootstrap()`'s header rules that a
+//    launch must not reach the network, and a restore that had to would have been a launch-time
+//    request for somebody who only wanted to look at a map.
+//  - **the grove, the known species, the favorites, the map membership** — already live. `RoutedAPI`
+//    joins `GET /me/grove`, `/me/grove/species`, `/me/grove/{id}/favorite` and `/me/map-membership`
+//    onto the phone's own answer on **every** read (spec §4.3, R36). There is nothing to rebuild into
+//    the database because these were never read out of it alone; the moment the app knows it is
+//    signed in, those four surfaces answer with the account's rows.
+//  - **`current_user_role`** — no route on this service returns it. It reads back as `.member`
+//    (`AppStateKey.currentUserRole`: "absent means member"), which is the ground state and the safe
+//    direction: a role is authority, and inventing one from a reinstall would grant it.
+//  - **`account_provider` and `account_license_version`** — no route returns these either. They are
+//    left **unwritten**, which is not a gap being papered over: `AccountLinkRecord`'s header already
+//    names this exact shape — "a missing `provider` is an account claimed by something other than
+//    screen 15" — and `AccountSection.licenseLine(for:)` already returns nil for it, so the You tab
+//    draws no license line rather than a wrong one. Writing `LicenseConsent.currentVersion` here
+//    would be this app claiming somebody agreed to a license on the strength of a reinstall.
+//  - **the journal, and the photographs** — not rebuildable, and not faked. `RemoteAPI.journal`
+//    throws `communityHalfOnly` because the service does not send the summary prose the rows draw,
+//    and `RoutedAPI` routes the journal local and says so. A restored install's journal is empty
+//    because its contributions are, which is the truth about that database.
+//
+//  So the restore is the **local half of a sign-in that already happened**, and it is performed with
+//  the same verb: `LocalAPI.claimDevice`, which is what `linkAccount` calls and exactly the subset of
+//  it that is knowable here.
+//
+//  ── Why this is a mirror and not a migration ──────────────────────────────────────────────────
+//
+//  The rule is stated as an equality rather than as a one-way repair:
+//
+//      **`app_state.current_user_id` mirrors the Keychain session, and the session is the
+//      authority.**
+//
+//  Both directions are load-bearing. The forward direction is the restore. The reverse direction is
+//  the refusal path: when the service refuses a surviving session — a revoked family, a deleted
+//  account, sixty days without a launch — `AppSession` already discards it
+//  (`performMint`'s `.user` arm removes the stored session on `unauthorized` or `forbidden`, and
+//  `authorization()` removes one whose refresh token has expired). Without the reverse direction the
+//  local half would stand there naming an account with no credential behind it, which is the same
+//  defect as the forward one with the halves swapped.
+//
+//  An equality also answers the resumability question **by construction**, which is the reason it is
+//  written this way rather than as a sequence of steps with a "restore in progress" flag. There is no
+//  such flag and no new `AppStateKey`. Every launch reads both halves and applies whichever act makes
+//  them agree; a launch killed halfway through leaves a state the next launch reads and converges
+//  from. Nothing is half-applied that a re-read cannot see, because the only thing recorded is the
+//  answer itself. A flag would have been a third fact that could disagree with the two it was about.
+//
+
+import Foundation
+
+/// What a launch must do to make the database agree with the Keychain about who is signed in.
+///
+/// Deliberately a value with no I/O in it, so the rule can be tested without a store, a Keychain or a
+/// network, and so the four arms are enumerable rather than buried in `DataLayer.boot`'s straight
+/// line. `SessionRestore.reconcile` is the only thing that produces one.
+public enum AccountReconciliation: Equatable, Sendable {
+
+    /// The two halves already agree — including the ordinary case where both say nobody.
+    case unchanged
+
+    /// The session names an account the database does not. Sign in locally, as that account.
+    ///
+    /// This is the reinstall the ruling is about. It also covers the case where the database names a
+    /// *different* account, which see `SessionRestore.reconcile`.
+    case restore(userID: UUID)
+
+    /// The database names an account and no live session is left. End signed out.
+    ///
+    /// Not a deletion: `LocalAPI.signOut()` keeps every row the account wrote and remembers the id
+    /// under `AppStateKey.signedOutUserID`, which is what "signing out is not a quiet, unlabeled
+    /// deletion" means one layer down.
+    case endSignedOut(userID: UUID)
+}
+
+/// The mirror rule, in one place.
+///
+/// A caseless enum rather than a type with state: there is nothing to hold. The inputs are read by
+/// `DataLayer.boot` from the two places that own them and handed here, so this function can be
+/// exercised over every pairing of the two halves — which is what
+/// `CypressTests/SessionRestoreTests.swift` does.
+public enum SessionRestore {
+
+    /// Which act makes the two halves agree.
+    ///
+    /// - Parameters:
+    ///   - storedUserID: `app_state.current_user_id`, the database's half.
+    ///   - sessionUserID: `AppSession.signedInUserID`, the Keychain's half. **Already liveness-tested
+    ///     by that property**, so a session whose refresh token has expired arrives here as nil and
+    ///     is answered `.endSignedOut` — which is the same verdict `authorization()` reaches on the
+    ///     same session, arrived at from the other side.
+    ///
+    /// ── The mismatch arm, which should be unreachable and is written closed anyway ──────────────
+    ///
+    /// `storedUserID` and `sessionUserID` both present and **different** is a state nothing in this
+    /// app produces: the two halves are written together at sign-in (`RootView.accountLink()`, whose
+    /// F4 rollback exists precisely so a failure cannot leave one without the other) and cleared
+    /// together at sign-out. It is answered `.restore(sessionUserID)` rather than left alone, on the
+    /// authority stated in this file's header: the session is the credential every request already
+    /// goes out with, so it is the original and the `app_state` row is the copy. Failing the other
+    /// way — keeping the local id — would draw one account while sending as another, which is the
+    /// exact disagreement `AppSession.signInWithApple`'s return value exists to prevent.
+    ///
+    /// The alternative reading of an unreachable arm is "do nothing", and doing nothing here means
+    /// the two halves stay in disagreement for the life of the install. `applyOne`'s nil-`DeviceUUID`
+    /// branch is the same shape and settled the same way: an unreachable arm is still written to fail
+    /// in the safe direction.
+    public static func reconcile(storedUserID: UUID?, sessionUserID: UUID?) -> AccountReconciliation {
+        switch (storedUserID, sessionUserID) {
+        case (nil, nil):
+            return .unchanged
+        case let (nil, .some(session)):
+            return .restore(userID: session)
+        case let (.some(stored), nil):
+            return .endSignedOut(userID: stored)
+        case let (.some(stored), .some(session)):
+            return stored == session ? .unchanged : .restore(userID: session)
+        }
+    }
+}

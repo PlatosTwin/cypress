@@ -97,13 +97,23 @@ public struct DataLayer: Sendable {
     ///     `/auth/*`. Letting that override extend here would have put every test that scripts a
     ///     transport back on a live `AuthClient`, which is the defect this parameter exists to close
     ///     rather than move (review of PR #84, F1).
+    ///   - credentials: where the session and device credentials live. Defaults to the Keychain,
+    ///     which is what ships.
+    ///
+    ///     It is a parameter for one reason and it is not tidiness: the account reconciliation below
+    ///     reads this store, so a test of it that could not supply one would have to seed the
+    ///     **real** login Keychain of whoever ran the suite — leaving an item behind that a later run
+    ///     on the same machine would find and read as a signed-in account. `SessionTests` already
+    ///     names that hazard and answers it with a per-run service name; this parameter is the same
+    ///     answer for the composition root.
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
         baseURL: URL = SyncService.defaultBaseURL,
         transport: (any AuthorizedTransport)? = nil,
         authHTTP: (any AuthHTTP)? = nil,
-        remoteAccess: RemoteAccess = .resolved
+        remoteAccess: RemoteAccess = .resolved,
+        credentials: any CredentialStore = KeychainCredentialStore()
     ) async throws -> DataLayer {
         let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: seedURL)
 
@@ -116,12 +126,6 @@ public struct DataLayer: Sendable {
             deviceID = UUID()
             try await store.setAppState(.deviceUUID, to: deviceID.uuidString)
         }
-
-        let userID = (try await store.appState(.currentUserID)).flatMap(UUID.init(uuidString:))
-        // The account's role (ERRATA E124-B), carried in `app_state` like the user id — there is no
-        // `users` table on device (ERRATA E86). Absent, or an unknown string, reads as `.member`.
-        let role = (try await store.appState(.currentUserRole)).flatMap(UserRole.init(rawValue:)) ?? .member
-        let local = LocalAPI(store: store, deviceID: deviceID, userID: userID, role: role)
 
         // ── The service ────────────────────────────────────────────────────────────────────────
         //
@@ -155,8 +159,57 @@ public struct DataLayer: Sendable {
             client: AuthClient(
                 baseURL: baseURL,
                 http: authHTTP ?? (remoteAccess.allowsNetwork ? URLSession.shared : OfflineSession.make())
-            )
+            ),
+            credentials: credentials
         )
+
+        // ── Who this installation is, decided from both halves rather than from the database ────
+        //
+        // `app_state.current_user_id` used to be read straight into `LocalAPI` and that was the whole
+        // of the account's boot. It is a database fact, and on iOS the database does not survive an
+        // app deletion while the Keychain does — so a reinstall on a phone holding a live account
+        // session drew a signed-out app whose every request went out with the account's bearer.
+        // `SessionRestore` states the rule that closes it, in both directions, and its header carries
+        // the owner's ruling and the reason this arm diverges from the device arm's opposite one.
+        //
+        // **Nothing here reaches the network, and that is a requirement rather than a happy result.**
+        // The only fact the restore needs is the account id, and the account id is *in* the session
+        // (`SessionCredentials.userID`). `AppSession.bootstrap()` rules that a launch must not dial
+        // out for somebody who only wanted to look at a map; a restore that had to would have broken
+        // that rule for every launch, not just the one after a reinstall.
+        let storedUserID = (try await store.appState(.currentUserID)).flatMap(UUID.init(uuidString:))
+        let reconciliation = SessionRestore.reconcile(
+            storedUserID: storedUserID,
+            sessionUserID: await session.signedInUserID
+        )
+
+        // The account's role (ERRATA E124-B), carried in `app_state` like the user id — there is no
+        // `users` table on device (ERRATA E86). Absent, or an unknown string, reads as `.member`.
+        //
+        // **A restore does not raise it, and that is deliberate**: no route on this service reports a
+        // role, so a restored install reads back `.member`. A role is authority, and the direction to
+        // fail in is the one that does not grant it (`SessionRestore`'s header).
+        let role = (try await store.appState(.currentUserRole)).flatMap(UserRole.init(rawValue:)) ?? .member
+        let local = LocalAPI(store: store, deviceID: deviceID, userID: storedUserID, role: role)
+
+        // Applied through `LocalAPI`'s own two verbs rather than by writing `app_state` here. A
+        // restore is the local half of a sign-in and `claimDevice` is exactly that half — it sweeps
+        // this installation's unattributed rows onto the account, writes the id, and clears the
+        // signed-out marker; ending signed out is `signOut()`, which keeps every row and remembers
+        // the id. Re-implementing either as a bare `setAppState` would be a second statement of a
+        // rule that already has one.
+        //
+        // Both are idempotent, which is what makes a launch killed part-way through recoverable: the
+        // next launch reads both halves again and reaches the same verdict. See `SessionRestore` for
+        // why there is no "restore in progress" flag to be left behind.
+        switch reconciliation {
+        case .unchanged:
+            break
+        case let .restore(userID):
+            try await local.claimDevice(deviceUUID: deviceID, userID: userID)
+        case .endSignedOut:
+            try await local.signOut()
+        }
 
         // ── One decision, not two ──────────────────────────────────────────────────────────────
         //

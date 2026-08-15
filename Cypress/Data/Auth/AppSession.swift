@@ -117,10 +117,14 @@ public actor AppSession {
     ///
     /// **This closes the anonymous arm and only that arm.** `authorization()` below returns
     /// `.user(…)` from `storedSession` before it ever reads this property, so a reinstall on a phone
-    /// holding a live account session never arrives here. That case has its own divergence — the
-    /// session outlives `app_state.currentUserID` and nothing re-hydrates it — and it is open, not
-    /// closed; `DeviceCredential`'s header states it in full. Do not read this property's guard as
-    /// "reinstall is handled".
+    /// holding a live account session never arrives here.
+    ///
+    /// That case is now closed too, and **closed the opposite way**, which is the thing to carry away
+    /// from this paragraph rather than a rule of thumb about surviving Keychain items. A surviving
+    /// *device* credential reads as no credential, because it is a fact about an installation that no
+    /// longer exists. A surviving *account session* restores, because it is the person's rather than
+    /// the copy of the app's. `SessionRestore` holds the ruling, the reasoning and the mirror rule
+    /// `DataLayer.boot` applies; `signedInUserID` above is the door it reads this side through.
     ///
     /// Both readers of this property — `authorization()` and `stored(_:otherThan:)` — must agree
     /// about what "this installation has a credential" means, and a rule stated twice is a rule that
@@ -138,8 +142,25 @@ public actor AppSession {
         return stored
     }
 
-    /// The account this device is signed in as, for callers that need the id and not the token.
-    public var userID: UUID? { storedSession?.userID }
+    /// The account this installation is signed in as, for callers that need the id and not the token.
+    ///
+    /// **Liveness is part of the question, and that is the whole difference from
+    /// `storedSession?.userID`.** A session whose refresh token has expired cannot buy another access
+    /// token and cannot be rescued; `authorization()` below deletes it on sight for exactly that
+    /// reason. A caller asking "who is signed in" must get the same answer that call would act on, or
+    /// the app draws an account whose next request signs it out.
+    ///
+    /// This property replaced a looser `userID` that returned `storedSession?.userID` unconditionally.
+    /// It had no callers when it was tightened; the rename is deliberate, so that a caller written
+    /// against the old meaning fails to compile rather than silently getting the new one.
+    ///
+    /// Nothing is deleted here even when the answer is nil. A getter with a side effect is the harder
+    /// thing to reason about (`storedDeviceCredential` says the same), and `authorization()` is where
+    /// the dead session is actually cleared — on the path that has a reason to write.
+    public var signedInUserID: UUID? {
+        guard let session = storedSession, session.refreshTokenIsLive(at: now()) else { return nil }
+        return session.userID
+    }
 
     // MARK: - Bootstrap
 
@@ -159,7 +180,9 @@ public actor AppSession {
     ///
     /// **The order matters to more than performance.** A live account session short-circuits here,
     /// before `storedDeviceCredential`'s installation check runs at all — which is why that check
-    /// closes the anonymous reinstall and leaves the signed-in one open. See `DeviceCredential`.
+    /// closes the anonymous reinstall and does not touch the signed-in one. The signed-in one is
+    /// closed at boot instead, by `SessionRestore`, and closed the other way round; see
+    /// `DeviceCredential`.
     ///
     /// An access token that has expired is refreshed here rather than being sent and coming back
     /// 401 — the round trip saved is not the point, the 401 avoided is.
