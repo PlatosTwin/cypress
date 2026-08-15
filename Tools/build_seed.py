@@ -1076,10 +1076,19 @@ CREATE TABLE species_map (
     confidence      REAL NOT NULL,
     is_stub         INTEGER NOT NULL,      -- 1 = fell through to the stub path
     is_placeholder  INTEGER NOT NULL,      -- 1 = vacant-site placeholder, no species
-    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine").
-    -- A tree stands at the site, so it is NOT a placeholder and its status is
-    -- `alive`; it simply carries no species. Provenance is a queryable column
-    -- rather than a comment (DECISIONS constraint 13).
+    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine",
+    -- "Stump"). EVERY COLUMN IN THIS TABLE IS A CLAIM ABOUT THE STRING, AND
+    -- THIS ONE SAYS NOTHING ABOUT THE STATUS OF ANY ROW CARRYING IT. The string
+    -- resolves to no species; whether a tree stands at a given site is
+    -- `trees.status`, and the two are independent.
+    --
+    -- This sentence used to read "a tree stands at the site, so its status is
+    -- `alive`", which was true of every such string while San Francisco was the
+    -- only source -- its five non-taxon strings sit on `alive` rows alone -- and
+    -- is false now. San Jose's `Stump` names no taxon on all of its rows and its
+    -- vacancy flag calls most of them empty. Do not infer a status from this
+    -- column. Provenance is a queryable column rather than a comment (DECISIONS
+    -- constraint 13).
     is_non_taxon    INTEGER NOT NULL DEFAULT 0,
     tree_count      INTEGER NOT NULL,
     CHECK (species_id IS NULL OR (is_placeholder = 0 AND is_non_taxon = 0))
@@ -1135,12 +1144,27 @@ def species_map_kind(kinds, species_id) -> str:
         carry basis `STATED_AS_NON_TAXON`. One such row is therefore a statement
         about the string -- `Stump` names no taxon on all 1,933 of its rows,
         including the 1,624 the vacancy flag calls empty.
-      * `placeholder` is the opposite. San Jose reaches it from `VACANTSITE`, a
-        field about the SITE that says nothing about the string, so it decides
-        the string only when EVERY row agrees. Otherwise `Unknown` (4,507 trees
-        against 6 empty sites) would become a placeholder, when RULINGS R18 and
+      * `placeholder` is the opposite, and decides the string only when EVERY
+        row agrees. San Jose reaches it from `VACANTSITE` on 76,048 of its
+        76,109 placeholder rows -- a field about the SITE, which says nothing
+        about the string. Otherwise `Unknown` (4,507 trees against 6 empty
+        sites) would become a placeholder, when RULINGS R18 and
         `SanJoseStreetTreeAdapter.classify` both call it a tree whose species is
         not known.
+
+        THE OTHER 61 ROWS ARE WHERE THAT REASONING AND THIS RULE COME APART, and
+        they are named here because the next reader will meet them. Their basis
+        is `INFERRED_FROM_ABSENT_SPECIES`, which does reach `placeholder`
+        through the string: the string being EMPTY is the whole of the evidence.
+        But that is the absence of content rather than a reading of it, and the
+        basis name says the kind is OURS and not the source's -- where
+        `not_a_tree` earns its one-row power by MATCHING the string against a
+        vocabulary, which is a positive statement about what the string means.
+        So unanimity still wins here, and `''` comes out `is_placeholder = 0` on
+        the strength of the 229 rows San Jose itself placed in the ordinary
+        category, against 812 stated-vacant and those 61. That is also the value
+        `origin/main` shipped -- but there by luck of row order, since reversing
+        the source flips it, and here on purpose.
 
     Counts measured on the 2026-07-31 caches at `--sj-extent full`.
     """

@@ -160,3 +160,82 @@ column.
 `test_the_check_that_caught_this_is_in_the_shipped_schema` writes the offending row by hand and
 requires SQLite to refuse it, so the constraint the other five lean on is proven live rather than
 assumed.
+
+## 8. What adversarial review of the fix added (PR #90, review 4944399783)
+
+Four findings, all taken. The reviewer's own instruments were calibrated against a case whose answer
+was already known — a patched dump of main's crashing build, checked row-for-row against the
+`downtown` build that does not crash (1,012/1,012) — and the diagnosis was independently
+strengthened: **reversing all 344,879 source rows at `origin/main` moves the crash to a different
+set of strings** (`Citrus japonica`, `Eucalyptus cinerea`, `Zelkova serrata 'Wireless'`), which is
+the order-dependence demonstrated rather than argued.
+
+### 8a. The fix falsified a comment that ships inside the seed
+
+`Stump` becoming `is_non_taxon = 1` created the first counterexample to the `species_map` DDL's own
+sentence: *"A tree stands at the site, so it is NOT a placeholder and its status is `alive`."* At
+`origin/main` that was true of every `is_non_taxon = 1` string in all three extents — San Francisco
+has five, and all five sit on `alive` rows only. After the fix, **240 of `Stump`'s 337 rows are
+`vacant_site` at the shipping extent** and 1,624 of 1,933 at `full`.
+
+The comment travels: it is carried verbatim in the built seed's `sqlite_master.sql` and in the
+`Fixtures/seed/schema.sql` written beside it, so it reaches every reader of the artifact. Corrected
+to say the flag is a claim about the *string* and says nothing about any row's status. **The change
+is comment-only** — the DDL with comments stripped is identical to `origin/main`'s, and the same
+comparison reports a difference on the raw text, so it is not a blind check. Nothing else moved:
+`verify_seed` 6e and `DataGates` both assert only the species side.
+
+This is the shape CLAUDE.md means by "a confident comment is where bugs have survived here", and it
+is worth noting that the comment was true when written and was falsified by a change fifteen hundred
+lines away.
+
+### 8b. The stated justification was false for 61 rows
+
+The rule's docstring argued that `placeholder` differs from `not_a_tree` because San Jose reaches it
+from `VACANTSITE`, a field about the site. True of 76,048 of San Jose's 76,109 placeholder rows —
+and **not of 61**, whose basis is `INFERRED_FROM_ABSENT_SPECIES` and which reach `placeholder`
+*through the string*, the string being empty.
+
+The value is unaffected and stays `is_placeholder = 0` for `''`. What was wrong was the reasoning the
+next author would extend, so the docstring now names those 61 and says why unanimity still wins: an
+empty string is the *absence* of content rather than a reading of it, and that basis says the kind is
+ours rather than the source's, where `not_a_tree` earns its one-row power by matching the string
+against a vocabulary. `''` comes out on the strength of the 229 rows San Jose itself placed in the
+ordinary category, against 812 stated-vacant and those 61.
+
+### 8c. A guard with a hole, found by mutation rather than by reading
+
+`return "stub" if "stub" in kinds else "parsed"` → `return "parsed"` left the new suite **13/13
+green** while five real rows at `--sj-extent full` silently flipped `is_stub` to 0. The other three
+rules each went red under their own mutant, so the suite was otherwise well-aimed; this one branch
+had no specimen.
+
+The cause is structural and worth remembering: **San Jose cannot mint a stub** — its adapter passes
+`species_is_stub=False` unconditionally — so a San Jose-shaped corpus could never reach that branch,
+however many cases it held. The fix is a San Francisco row (`BOTANICAL` null, `COMMON` a single
+word) that packs to `:: Magnolia` and takes the stub path. Now red under the same mutant, naming the
+flag.
+
+The corpus needed 100 ordinary rows to carry that one stub: the build refuses when the stub path
+exceeds 2% of species-bearing rows, and one stub in four rows is 25%.
+
+### 8d. The order test asserted more than the seed promises
+
+It compared the whole row, which includes the integer `species_id` — and integer ids are minted in
+encounter order *by design*, as the DDL says in as many words. It passed only because the corpus
+minted a single species. The comparison now excludes `species_id` and asserts `species_uuid`
+instead, which is the order-independent identity the checked-in mapping files are keyed on, and the
+corpus carries two species compared against its own exact reversal. Verified load-bearing:
+`species_id` genuinely swaps 3↔4 under that reversal while the uuid holds, so the old assertion
+would now fail on a non-defect.
+
+### 8e. The test suite was reaching the network on every build
+
+Not a review finding — surfaced while fixing 8c, when data.sfgov.org returned HTTP 503. `build`
+fetches `sf_analysis_neighborhoods.geojson` when it is absent **even without `--fetch`**, so a
+synthetic corpus that omitted the file downloaded it on every one of its seven builds. Writing an
+empty `FeatureCollection` makes the suite hermetic and takes it from minutes to **0.3 seconds**. A
+test that silently depends on a third party is one CI outage away from a red nobody caused.
+
+**No workflow runs `Tools/test_*.py` at all** — observed by the reviewer, being filed separately, and
+not fixed here.

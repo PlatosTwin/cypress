@@ -57,6 +57,30 @@ DATASF_HEADER = (
 )
 
 
+#: Ordinary San Francisco rows carried purely to clear the stub ceiling. The
+#: build refuses when the stub path exceeds 2% of species-bearing rows
+#: (BUILD-PLAN section 7), and the corpus below deliberately contains one stub,
+#: so it needs more than fifty rows that are not stubs to be buildable at all.
+#: At 100 the share is 1/101 = 0.99%, comfortably inside the gate.
+SF_FILLER = 100
+
+
+def sf_row(tree_id, botanical, common):
+    """One San Francisco city-layer feature, in that layer's own spelling.
+
+    `botanical=None` with a one-word `common` is the stub specimen: nothing in
+    `Magnolia` alone says it is botanical, so `_botanical_shape` refuses to move
+    it across and the string packs to `:: Magnolia`.
+    """
+    return {
+        "TREEID": tree_id, "OBJECTID": tree_id, "SiteOrder": 1,
+        "Address": f"{tree_id} TEST ST", "COMMON": common, "BOTANICAL": botanical,
+        "DBH": 3, "PlantType": "Tree",
+        # Spread along a line well inside the SF bbox so no two rows coincide.
+        "Latitude": SF_LAT + tree_id * 1e-5, "Longitude": SF_LON + tree_id * 1e-5,
+    }
+
+
 def sj_row(facility_id, species, vacant, object_id):
     """One San Jose feature, in the layer's own spelling.
 
@@ -100,6 +124,16 @@ def write_corpus(root, sj_rows):
     missing = set(ENRICHED_COLUMNS) - set(DATASF_HEADER.split(","))
     assert not missing, f"DATASF_HEADER has fallen behind ENRICHED_COLUMNS: {sorted(missing)}"
 
+    # An EMPTY neighborhood layer, written rather than omitted. `build` fetches
+    # this file from data.sfgov.org when it is absent, even without `--fetch`,
+    # so a corpus that leaves it out quietly reaches the network on every run
+    # and fails when that service does (HTTP 503, seen 2026-08-15). With zero
+    # features every row gets `neighborhood_id = NULL`, which is what the San
+    # Jose rows under test would get from the real layer anyway (E176).
+    with open(os.path.join(raw, "sf_analysis_neighborhoods.geojson"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"type": "FeatureCollection", "features": []}, fh)
+
     # The seed's authored species content, empty. These tests are about which
     # STRING maps to which species, and the fixtures add family, leaf retention
     # and field-guide prose to a species already minted -- they cannot change a
@@ -111,11 +145,12 @@ def write_corpus(root, sj_rows):
                   encoding="utf-8") as fh:
             fh.write("species: []\n")
 
-    city = [{
-        "TREEID": 1, "OBJECTID": 1, "Address": "1 TEST ST", "SiteOrder": 1,
-        "COMMON": "Monterey Pine", "BOTANICAL": "Pinus radiata", "DBH": 3,
-        "Latitude": SF_LAT, "Longitude": SF_LON, "PlantType": "Tree",
-    }]
+    # San Francisco's half of the corpus: filler, then one stub. The stub is
+    # here because San Jose CANNOT produce one -- its adapter passes
+    # `species_is_stub=False` unconditionally -- so without an SF row the
+    # `is_stub` branch of `species_map_kind` would have no specimen at all.
+    city = [sf_row(n, "Pinus radiata", "Monterey Pine") for n in range(1, SF_FILLER + 1)]
+    city.append(sf_row(SF_FILLER + 1, None, "Magnolia"))
     with open(os.path.join(raw, "city_street_trees.ndjson"), "w", encoding="utf-8") as fh:
         for row in city:
             fh.write(json.dumps(row) + "\n")
@@ -214,22 +249,81 @@ def test_a_species_map_row_does_not_depend_on_the_order_of_the_source_file():
     The invariant behind the crash, stated as an invariant. `species_map` is
     keyed on the string, so every column in the row is a claim about the string;
     a claim that moves when the file is re-sorted is a claim about the file.
-    Both corpora below hold the same three rows.
+
+    The corpus carries TWO species, each on both an empty site and living trees,
+    and the second corpus is the exact reversal of the first -- the same shape
+    as the reviewer's reversal of all 344,879 real rows. Two species rather than
+    one on purpose: with one, `species_id` is pinned to the same integer in both
+    orders and an assertion over the whole row passes without meaning it.
     """
     name = "test_a_species_map_row_does_not_depend_on_the_order_of_the_source_file"
-    site_first = [sj_row(1, "Magnolia", "Yes", 1),
-                  sj_row(2, "Magnolia", "No", 2),
-                  sj_row(3, "Magnolia", "No", 3)]
-    trees_first = [sj_row(2, "Magnolia", "No", 2),
-                   sj_row(3, "Magnolia", "No", 3),
-                   sj_row(1, "Magnolia", "Yes", 1)]
-    a = row_of(species_map_of(site_first), "Magnolia", name)
-    b = row_of(species_map_of(trees_first), "Magnolia", name)
-    if a is None or b is None:
+    forward = [sj_row(1, "Magnolia", "Yes", 1),
+               sj_row(2, "Magnolia", "No", 2),
+               sj_row(3, "Magnolia", "No", 3),
+               sj_row(4, "Zelkova serrata", "Yes", 4),
+               sj_row(5, "Zelkova serrata", "No", 5),
+               sj_row(6, "Zelkova serrata", "No", 6)]
+    reversed_ = list(reversed(forward))
+    forward_map = species_map_of(forward)
+    reversed_map = species_map_of(reversed_)
+    for string in ("Magnolia", "Zelkova serrata"):
+        a = row_of(forward_map, string, name)
+        b = row_of(reversed_map, string, name)
+        if a is None or b is None:
+            continue
+        compare_order_independent_part(a, b, string, name)
+
+
+def compare_order_independent_part(a, b, string, name):
+    """Assert the part of a `species_map` row the seed promises is stable."""
+    # EVERYTHING EXCEPT THE INTEGER `species_id`, WHICH IS NOT ORDER-INDEPENDENT
+    # AND IS NOT MEANT TO BE. `sp["id"] = len(species_by_key) + 1` mints ids in
+    # encounter order, and the `species_map` DDL says so in as many words:
+    # "integer ids depend on CSV row order, uuids do not". Reversing the real
+    # 344,879-row source moves 328 of 1,245 rows in `species_id` and in nothing
+    # else, so an assertion over the whole row would report that as a defect.
+    # `species_uuid`, asserted below, is the order-independent identity the
+    # checked-in mapping files are keyed on, so the exclusion loses no coverage.
+    # Do not "tighten" this back to `a == b`.
+    compared = [i for i in range(7) if i != SPECIES_ID]
+    check([a[i] for i in compared] == [b[i] for i in compared],
+          f"{name}: {string!r} came out differently when the source was "
+          f"reversed: forward {a}, reversed {b}")
+    check((a[SPECIES_UUID] is not None) and a[SPECIES_UUID] == b[SPECIES_UUID],
+          f"{name}: {string!r}'s species uuid moved with the row order: "
+          f"{a[SPECIES_UUID]} then {b[SPECIES_UUID]}")
+
+
+def test_a_string_the_parser_could_not_read_stays_a_stub():
+    """FAILS IF: a string that resolved through the stub path loses `is_stub`.
+
+    The stub arm of rule 1. `species_map_kind` answers `stub` or `parsed` for
+    any string that resolved to a species, and only the `parsed` half was
+    covered -- replacing the whole branch with `return "parsed"` left the rest
+    of this file green while five real rows at `--sj-extent full` (`:: 9662`,
+    `:: Magnolia`, `:: Chitalpatashkentensis`, `:: Magnolia Little Gem`,
+    `:: Podocarpus Gracilor`) silently flipped `is_stub` to 0. Found by
+    adversarial review of PR #90 by mutation.
+
+    `CypressTests/SeedStubNamingTests` would eventually catch it, but only
+    against a rebuilt and re-bundled seed, which is not something every change
+    to this file produces.
+    """
+    name = "test_a_string_the_parser_could_not_read_stays_a_stub"
+    # The corpus's San Francisco half carries `:: Magnolia`; see `write_corpus`.
+    row = row_of(species_map_of([sj_row(1, "Quercus agrifolia", "No", 1)]),
+                 ":: Magnolia", name)
+    if row is None:
         return
-    check(a == b,
-          f"{name}: the same three rows in two orders produced two different "
-          f"species_map rows: empty-site-first {a}, trees-first {b}")
+    check(row[IS_STUB] == 1,
+          f"{name}: ':: Magnolia' resolved through the stub path but is not "
+          f"filed as a stub")
+    check(row[SPECIES_ID] is not None,
+          f"{name}: a stub still names a species -- the stub IS the species "
+          f"(RULINGS R47)")
+    check(row[IS_PLACEHOLDER] == 0 and row[IS_NON_TAXON] == 0,
+          f"{name}: ':: Magnolia' carries a species and a placeholder or "
+          f"non-taxon flag, which the CHECK forbids")
 
 
 def test_a_string_that_names_no_taxon_says_so_even_where_the_flag_says_empty():
@@ -343,6 +437,7 @@ def main() -> int:
     tests = [
         test_a_string_on_an_empty_site_and_on_a_tree_still_names_its_species,
         test_a_species_map_row_does_not_depend_on_the_order_of_the_source_file,
+        test_a_string_the_parser_could_not_read_stays_a_stub,
         test_a_string_that_names_no_taxon_says_so_even_where_the_flag_says_empty,
         test_one_empty_site_does_not_make_a_tree_string_a_placeholder,
         test_a_string_on_empty_sites_only_is_a_placeholder,
