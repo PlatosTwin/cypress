@@ -38,6 +38,10 @@ Checks, in the order BUILD-PLAN section 8 and DECISIONS D5 care about them:
      never a genuine contradiction, which is why refusing to run is safe and
      tolerating the noise would not be: an absence tolerated on the wrong seed
      is exactly where real fixture drift would hide.
+     Which corpus a seed IS is derived per id space, not per file: a fused seed
+     holding two cities whole is a corpus of both, and each city's fixtures
+     validate against its own. See `seed_species` for the two answers that do
+     not work and why.
      Pass --allow-flavor-mismatch to run the rules that do not need the seed
      (D5, months, citations, shape) against any seed. The identity rules are
      then SKIPPED and reported as skipped, never quietly passed.
@@ -153,14 +157,24 @@ def seed_species(path: Path) -> tuple[dict[str, dict], str, str]:
         alongside 133,577 from `sf_city`, so a membership test admits exactly the
         run this rule exists to refuse -- measured, it puts the 84 failures back.
 
-    So the answer is derived from the rows: the inventory that contributed the
-    most of them is the one this file is a corpus of, and the others are partial
-    overlays on top of it. That is computed from the data rather than from a
-    string a build wrote about itself, which is the point -- it stays true for a
-    city `build_seed` has no branch for.
+    So the answer is derived from the rows -- but PER ID SPACE, not per file. The
+    inventory that contributed the most rows *within one id space* is the corpus
+    that space is of, and any other inventory in that space is a partial overlay
+    on top of it.
 
-    Returns (species, primary_inventory, stated_inventory). The two inventories
-    disagreeing is itself a finding; see rule 0's note in main().
+    Per file was the obvious version and it is wrong on a fused seed. A file
+    holding a complete San Francisco ingest and a complete New York one holds two
+    complete corpora, and picking the larger refuses the smaller city's fixtures
+    by construction -- which is the same shape as the defect this rule replaces,
+    a legitimate configuration the gate cannot express. Measured before fixing:
+    on a fused sf_datasf + nyc_tree_points seed the file-wide rule validated NYC
+    and refused SF. Id spaces are what separate cities in this schema, so they
+    are the right grain here too, the same as checks 1 and 13.
+
+    Returns (species, primaries, stated_inventory), where `primaries` maps each
+    id space to the inventory it is a corpus of. A fixture matches if it names
+    any of them. `stated_inventory` disagreeing with all of them is itself a
+    finding; see rule 0's note in main().
     """
     uri = f"file:{path}?mode=ro"
     with sqlite3.connect(uri, uri=True) as con:
@@ -174,17 +188,27 @@ def seed_species(path: Path) -> tuple[dict[str, dict], str, str]:
         stated_row = con.execute(
             "SELECT value FROM seed_meta WHERE key = 'trees_source'"
         ).fetchone()
-        # Ordered by name as well as count so a tie is deterministic rather than
-        # whichever row SQLite reached first.
-        primary_row = con.execute(
-            "SELECT inventory_source FROM trees GROUP BY inventory_source "
-            "ORDER BY COUNT(*) DESC, inventory_source LIMIT 1"
-        ).fetchone()
+        # Counts per (id space, inventory); the winner is picked below in Python.
+        # Deliberately NOT a `GROUP BY id_space` over an ordered subquery: which
+        # row a bare column takes in a SQLite aggregate is undefined except
+        # alongside min()/max(), so that spelling would work by luck.
+        contributions = con.execute(
+            "SELECT id_space, inventory_source, COUNT(*) FROM trees "
+            "GROUP BY id_space, inventory_source"
+        ).fetchall()
     stated = stated_row[0] if stated_row else ""
+    primaries: dict[str, str] = {}
+    # Sorted by count descending then name, so a tie resolves to a stable answer
+    # instead of whichever row came back first.
+    for space, inventory, count in sorted(
+        contributions, key=lambda r: (r[0], -r[2], r[1])
+    ):
+        primaries.setdefault(space, inventory)
     # A seed with no trees cannot say what it is a corpus of; fall back to the
     # claim rather than inventing one.
-    primary = primary_row[0] if primary_row else stated
-    return {row["uuid"]: dict(row) for row in rows}, primary, stated
+    if not primaries and stated:
+        primaries = {"": stated}
+    return {row["uuid"]: dict(row) for row in rows}, primaries, stated
 
 
 def citations_ok(citations, where: str, report: Report) -> None:
@@ -393,20 +417,23 @@ def main() -> int:
     args = parser.parse_args()
 
     report = Report()
-    seed, seed_inventory, stated_inventory = seed_species(args.seed)
+    seed, primaries, stated_inventory = seed_species(args.seed)
+    seed_inventories = set(primaries.values())
     print(f"seed database: {len(seed)} species rows in {args.seed}")
-    print(f"seed inventory: {seed_inventory!r} (the largest contributor to `trees`)")
-    if stated_inventory and stated_inventory != seed_inventory:
+    print("seed corpora: " + ", ".join(
+        f"{space or '<unknown space>'} -> {inv!r}" for space, inv in sorted(primaries.items())
+    ) + "  (the largest contributor within each id space)")
+    if stated_inventory and stated_inventory not in seed_inventories:
         # Not fatal here -- this script validates fixtures, not the build -- but
         # never silent: `seed_meta.trees_source` is what
         # `InventorySource(id:seedMeta:)` resolves a row's provenance through, so
         # a seed whose largest inventory is not the one it names is misdescribing
         # itself to the app as well as to this script.
-        print(f"  WARNING: seed_meta.trees_source says {stated_inventory!r}, but most "
-              f"rows come from {seed_inventory!r}. build_seed writes that key as a "
-              f"literal in its two --source branches, so a seed built for any other "
-              f"city misreports its own provenance. Rule 0 uses the rows, not the "
-              f"claim.")
+        print(f"  WARNING: seed_meta.trees_source says {stated_inventory!r}, which is "
+              f"not the primary inventory of any id space here "
+              f"({sorted(seed_inventories)}). build_seed writes that key as a literal "
+              f"in its two --source branches, so a seed built for any other city "
+              f"misreports its own provenance. Rule 0 uses the rows, not the claim.")
 
     # ---- Rule 0: the aim. Each fixture states the corpus it describes, and a
     # fixture aimed at another corpus is one error, not one per entry.
@@ -420,9 +447,12 @@ def main() -> int:
         doc = load_yaml(path)
         declared = fixture_inventory(doc, path)
         entries = doc["species"]
-        matches = declared == seed_inventory
+        # Any id space's corpus will do: a fused seed carrying two cities whole
+        # carries both their corpora, and each city's fixtures validate against
+        # its own.
+        matches = declared in seed_inventories
         print(f"{label}: {len(entries)} entries, describes {declared!r}"
-              + ("" if matches else "  <-- NOT this seed's inventory"))
+              + ("" if matches else "  <-- NO id space here is a corpus of it"))
         if not matches:
             mismatched.append((label, declared))
         loaded.append((label, entries, is_curated, matches))
@@ -430,7 +460,7 @@ def main() -> int:
     if mismatched and not args.allow_flavor_mismatch:
         detail = "; ".join(f"{label} describes {declared!r}" for label, declared in mismatched)
         print()
-        print(f"FATAL: this seed was built from {seed_inventory!r}, but {detail}.")
+        print(f"FATAL: this seed is a corpus of {sorted(seed_inventories)}, but {detail}.")
         print("  These are different corpora, so 'the seed has no row for this species'")
         print("  means 'that city never listed it', not 'the fixtures have drifted'.")
         print("  Validating across the mismatch reports hundreds of failures and hides")

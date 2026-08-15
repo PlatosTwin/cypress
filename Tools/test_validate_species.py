@@ -56,21 +56,25 @@ def check(condition, message):
 def write_seed(path: str, rows, trees_source: str, contributions=None) -> str:
     """A seed carrying only what the validator reads.
 
-    `contributions` is {inventory: row count} -- the rows rule 0 derives the
-    seed's own inventory from. It defaults to a single inventory matching
+    `contributions` is {inventory: row count} for one id space, or
+    {id_space: {inventory: count}} for several. Rule 0 derives the seed's corpora
+    from these rows, per id space. It defaults to a single inventory matching
     `trees_source`, which is the ordinary single-city case; pass it explicitly to
-    build the shipped seed's shape, where a second inventory rides along as a
-    partial overlay.
+    build the shipped seed's shape (a partial overlay riding along) or a fused
+    two-city seed.
     """
     if contributions is None:
         contributions = {trees_source: 1}
+    if not any(isinstance(v, dict) for v in contributions.values()):
+        contributions = {"sf": contributions}
     conn = sqlite3.connect(path)
     conn.executescript(
         "CREATE TABLE species (uuid TEXT PRIMARY KEY, scientific_name TEXT, "
         "common_name TEXT, leaf_retention TEXT, deleted_at TEXT);"
         "CREATE TABLE seed_meta (key TEXT PRIMARY KEY, value TEXT);"
         "CREATE TABLE inventories (id TEXT PRIMARY KEY);"
-        "CREATE TABLE trees (id INTEGER PRIMARY KEY, inventory_source TEXT);"
+        "CREATE TABLE trees (id INTEGER PRIMARY KEY, id_space TEXT, "
+        "inventory_source TEXT);"
     )
     conn.executemany(
         "INSERT INTO species (uuid, scientific_name, common_name, leaf_retention, "
@@ -78,12 +82,13 @@ def write_seed(path: str, rows, trees_source: str, contributions=None) -> str:
         rows,
     )
     conn.execute("INSERT INTO seed_meta VALUES ('trees_source', ?)", (trees_source,))
-    for inventory, count in contributions.items():
-        conn.execute("INSERT INTO inventories VALUES (?)", (inventory,))
-        conn.executemany(
-            "INSERT INTO trees (inventory_source) VALUES (?)",
-            [(inventory,)] * count,
-        )
+    for space, per_space in contributions.items():
+        for inventory, count in per_space.items():
+            conn.execute("INSERT INTO inventories VALUES (?)", (inventory,))
+            conn.executemany(
+                "INSERT INTO trees (id_space, inventory_source) VALUES (?, ?)",
+                [(space, inventory)] * count,
+            )
     conn.commit()
     conn.close()
     return path
@@ -196,7 +201,7 @@ def test_a_city_build_seed_has_no_branch_for_can_still_be_validated():
             os.path.join(d, "s.sqlite"),
             [(PRESENT_UUID, "Pinus radiata", "Monterey Pine", None)],
             "sf_city",                                  # the literal, wrong
-            contributions={"nyc_tree_points": 9},       # what the rows say
+            contributions={"us-ny-nyc": {"nyc_tree_points": 9}},  # what the rows say
         )
         cur = write_fixture(os.path.join(d, "curated.yaml"), "nyc_tree_points", [])
         lr = write_fixture(os.path.join(d, "lr.yaml"), "nyc_tree_points", [entry()])
@@ -220,7 +225,7 @@ def test_a_partial_overlay_inventory_does_not_make_a_seed_its_corpus():
     with tempfile.TemporaryDirectory() as d:
         seed = write_seed(
             os.path.join(d, "s.sqlite"), [], "sf_city",
-            contributions={"sf_city": 133, "sf_datasf": 12},
+            contributions={"sf": {"sf_city": 133, "sf_datasf": 12}},
         )
         cur = write_fixture(os.path.join(d, "curated.yaml"), "sf_datasf",
                             [entry(species_uuid=ABSENT_UUID)])
@@ -330,12 +335,82 @@ def test_skipping_identity_does_not_skip_the_anti_fabrication_gate():
     check(report.skipped_identity == 1, "the skipped entry was not counted")
 
 
+def test_a_fused_two_city_seed_validates_both_cities():
+    """FAILS IF: rule 0 picks ONE corpus per file instead of one per id space.
+
+    The structural hole in the obvious version, found by review before it
+    shipped. A seed can hold a complete San Francisco ingest AND a complete New
+    York one -- that is what the region/s17 round is for -- and such a file is a
+    corpus of both. A file-wide "largest contributor" rule picks the bigger city
+    and refuses the smaller one's fixtures by construction, which is the same
+    shape as the defect rule 0 exists to fix: a legitimate configuration the gate
+    cannot express. Measured on a fused sf_datasf + nyc_tree_points seed, the
+    file-wide rule validated NYC and refused SF.
+
+    Id spaces are what separate cities in this schema, so each space has its own
+    corpus and a fixture matches if it names any of them.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        seed = write_seed(
+            os.path.join(d, "s.sqlite"),
+            [(PRESENT_UUID, "Pinus radiata", "Monterey Pine", None)],
+            "sf_datasf",
+            contributions={
+                "sf": {"sf_datasf": 195},
+                "us-ny-nyc": {"nyc_tree_points": 650},   # the larger city
+            },
+        )
+        # The SMALLER city's fixtures, which a file-wide rule would refuse.
+        cur = write_fixture(os.path.join(d, "curated.yaml"), "sf_datasf", [])
+        lr = write_fixture(os.path.join(d, "lr.yaml"), "sf_datasf", [entry()])
+        r = run_script(seed, cur, lr)
+        check(
+            r.returncode == 0,
+            f"a fused seed refused the smaller city's fixtures ({r.returncode}): "
+            f"{r.stdout[-300:]}",
+        )
+        # ...and the larger city's fixtures validate against the same file.
+        cur2 = write_fixture(os.path.join(d, "curated2.yaml"), "nyc_tree_points", [])
+        lr2 = write_fixture(os.path.join(d, "lr2.yaml"), "nyc_tree_points", [entry()])
+        r2 = run_script(seed, cur2, lr2)
+        check(
+            r2.returncode == 0,
+            f"a fused seed refused the larger city's fixtures ({r2.returncode})",
+        )
+
+
+def test_an_overlay_is_still_an_overlay_inside_its_own_id_space():
+    """FAILS IF: per-id-space widens into "any inventory that contributed".
+
+    The calibration for the test above, and the shipped seed's exact shape.
+    `sf_datasf` contributes 12,260 rows to the `sf` space on top of `sf_city`'s
+    133,577 -- inside ONE space, so it is still an overlay and its fixtures are
+    still refused. Splitting by id space must not turn every co-resident
+    inventory into a corpus of its own.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        seed = write_seed(
+            os.path.join(d, "s.sqlite"), [], "sf_city",
+            contributions={
+                "sf": {"sf_city": 133, "sf_datasf": 12},
+                "us-ca-sj": {"sj_street_tree": 52},
+            },
+        )
+        cur = write_fixture(os.path.join(d, "curated.yaml"), "sf_datasf", [])
+        lr = write_fixture(os.path.join(d, "lr.yaml"), "sf_datasf",
+                           [entry(species_uuid=ABSENT_UUID)])
+        r = run_script(seed, cur, lr)
+        check(r.returncode == 2, f"an overlay in a multi-city seed was accepted ({r.returncode})")
+
+
 def main() -> int:
     for test in [
         test_a_flavor_mismatch_is_one_error_and_not_one_per_entry,
         test_a_matching_flavor_runs_the_identity_rules,
         test_a_city_build_seed_has_no_branch_for_can_still_be_validated,
         test_a_partial_overlay_inventory_does_not_make_a_seed_its_corpus,
+        test_a_fused_two_city_seed_validates_both_cities,
+        test_an_overlay_is_still_an_overlay_inside_its_own_id_space,
         test_a_fixture_that_declares_no_corpus_is_refused,
         test_the_escape_hatch_skips_identity_and_says_so,
         test_a_uuid_naming_a_different_species_fails,
