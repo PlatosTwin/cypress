@@ -90,6 +90,59 @@ public actor AppSession {
     /// family is in flight awaits that task rather than starting a rival one.
     private var mintingInFlight: [CredentialFamily: Task<Authorization, Error>] = [:]
 
+    /// Called when this type discards a stored session **involuntarily** — the service refused it, or
+    /// its refresh family ran out. The composition root points it at the local half.
+    ///
+    /// ── Why this exists, and why it is not a notification about sign-out (review of this PR, F4) ──
+    ///
+    /// `SessionRestore` makes `app_state.current_user_id` a mirror of the stored session, and until
+    /// this seam existed that mirror was only re-evaluated at launch. So a session refused mid-use
+    /// left the app drawing a signed-in account with no credential behind it for the rest of the run:
+    /// the halves disagreed exactly as they did on a reinstall, in the opposite direction, and the
+    /// rule that exists to stop that was asleep. The local half follows the credential within the same
+    /// run now, which is the mirror rule applied at the moment the fact changes rather than at the
+    /// next convenient one.
+    ///
+    /// **Only the involuntary discards fire it**, and the reason is ownership rather than
+    /// consequence. `signOut()` and `forgetEverything()` are *asked for* by a caller that is already
+    /// performing the local half itself — `AccountModel` does both halves in one act, in an order it
+    /// chose for stated reasons — so a handler firing underneath them would be a second, uninvited
+    /// writer of the fact that caller is in the middle of writing. Involuntary discards have no such
+    /// caller: this type decides them alone, and nothing else would know.
+    ///
+    /// **A stronger claim stood here and the reviewer measured it false.** It said that firing on
+    /// `signOut()` would make `RootView.accountLink()`'s F4 rollback write a `signed_out_user_id` for
+    /// an account nobody linked, which `SessionRestore.reconcile`'s discriminator would then read as a
+    /// deliberate departure. It would not: `claimDevice` assigns `LocalAPI.userID` only *after* its
+    /// store write succeeds, so a rollback — whose premise is that the local half did not land —
+    /// reaches `LocalAPI.signOut()`'s `guard let account = userID` and returns having written nothing.
+    /// The narrow case the sentence described needs `linkAccount` to fail *after* `claimDevice`
+    /// succeeded, and no test stages it.
+    ///
+    /// It is left recorded rather than deleted because the correction is the useful part: the
+    /// boundary was right, and the reason given for it was a consequence that does not follow. A
+    /// boundary argued from a downstream effect is only as good as the reachability of that effect;
+    /// this one is argued from who owns the write, which does not depend on it.
+    private var sessionEnded: (@Sendable (UUID) async -> Void)?
+
+    /// Point the local half at this type's involuntary sign-outs. See `sessionEnded`.
+    ///
+    /// One handler, replaced rather than accumulated: there is one local half, and a list would be a
+    /// way for two of them to disagree about the same fact.
+    public func onSessionEnded(_ handler: @escaping @Sendable (UUID) async -> Void) {
+        sessionEnded = handler
+    }
+
+    /// Remove the stored session and tell the local half, if there was one to remove.
+    ///
+    /// The id is read **before** the removal, because the handler's whole argument is which account
+    /// just ended and the only record of it is the item being deleted.
+    private func discardSession() async {
+        let ending = storedSession?.userID
+        try? credentials.removeData(forKey: CredentialKey.session)
+        if let ending { await sessionEnded?(ending) }
+    }
+
     public init(
         deviceUUID: UUID,
         client: AuthClient = AuthClient(),
@@ -124,10 +177,14 @@ public actor AppSession {
     ///
     /// **This closes the anonymous arm and only that arm.** `authorization()` below returns
     /// `.user(…)` from `storedSession` before it ever reads this property, so a reinstall on a phone
-    /// holding a live account session never arrives here. That case has its own divergence — the
-    /// session outlives `app_state.currentUserID` and nothing re-hydrates it — and it is open, not
-    /// closed; `DeviceCredential`'s header states it in full. Do not read this property's guard as
-    /// "reinstall is handled".
+    /// holding a live account session never arrives here.
+    ///
+    /// That case is now closed too, and **closed the opposite way**, which is the thing to carry away
+    /// from this paragraph rather than a rule of thumb about surviving Keychain items. A surviving
+    /// *device* credential reads as no credential, because it is a fact about an installation that no
+    /// longer exists. A surviving *account session* restores, because it is the person's rather than
+    /// the copy of the app's. `SessionRestore` holds the ruling, the reasoning and the mirror rule
+    /// `DataLayer.boot` applies; `signedInUserID` above is the door it reads this side through.
     ///
     /// Both readers of this property — `authorization()` and `stored(_:otherThan:)` — must agree
     /// about what "this installation has a credential" means, and a rule stated twice is a rule that
@@ -145,8 +202,25 @@ public actor AppSession {
         return stored
     }
 
-    /// The account this device is signed in as, for callers that need the id and not the token.
-    public var userID: UUID? { storedSession?.userID }
+    /// The account this installation is signed in as, for callers that need the id and not the token.
+    ///
+    /// **Liveness is part of the question, and that is the whole difference from
+    /// `storedSession?.userID`.** A session whose refresh token has expired cannot buy another access
+    /// token and cannot be rescued; `authorization()` below deletes it on sight for exactly that
+    /// reason. A caller asking "who is signed in" must get the same answer that call would act on, or
+    /// the app draws an account whose next request signs it out.
+    ///
+    /// This property replaced a looser `userID` that returned `storedSession?.userID` unconditionally.
+    /// It had no callers when it was tightened; the rename is deliberate, so that a caller written
+    /// against the old meaning fails to compile rather than silently getting the new one.
+    ///
+    /// Nothing is deleted here even when the answer is nil. A getter with a side effect is the harder
+    /// thing to reason about (`storedDeviceCredential` says the same), and `authorization()` is where
+    /// the dead session is actually cleared — on the path that has a reason to write.
+    public var signedInUserID: UUID? {
+        guard let session = storedSession, session.refreshTokenIsLive(at: now()) else { return nil }
+        return session.userID
+    }
 
     // MARK: - Bootstrap
 
@@ -166,7 +240,9 @@ public actor AppSession {
     ///
     /// **The order matters to more than performance.** A live account session short-circuits here,
     /// before `storedDeviceCredential`'s installation check runs at all — which is why that check
-    /// closes the anonymous reinstall and leaves the signed-in one open. See `DeviceCredential`.
+    /// closes the anonymous reinstall and does not touch the signed-in one. The signed-in one is
+    /// closed at boot instead, by `SessionRestore`, and closed the other way round; see
+    /// `DeviceCredential`.
     ///
     /// An access token that has expired is refreshed here rather than being sent and coming back
     /// 401 — the round trip saved is not the point, the 401 avoided is.
@@ -180,8 +256,9 @@ public actor AppSession {
             }
             // Sixty days without a launch. There is nothing left to rotate and the person signs in
             // again; the device credential below is what keeps the anonymous queue draining
-            // meanwhile.
-            try? credentials.removeData(forKey: CredentialKey.session)
+            // meanwhile. Through `discardSession`, so the local half stops naming the account in this
+            // run rather than at the next launch — see `sessionEnded`.
+            await discardSession()
         }
         if let device = storedDeviceCredential, device.isLive(at: now()) {
             return .device(device.deviceToken)
@@ -266,7 +343,7 @@ public actor AppSession {
                 // leaves the stored session exactly where it is: a person must not be signed out by
                 // a subway tunnel.
                 if error == .unauthorized || error == .forbidden {
-                    try? credentials.removeData(forKey: CredentialKey.session)
+                    await discardSession()
                 }
                 throw SessionError.refreshFailed
             } catch {
