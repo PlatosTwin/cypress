@@ -59,9 +59,15 @@
 //  - **`account_provider` and `account_license_version`** — no route returns these either. They are
 //    left **unwritten**, which is not a gap being papered over: `AccountLinkRecord`'s header already
 //    names this exact shape — "a missing `provider` is an account claimed by something other than
-//    screen 15" — and `AccountSection.licenseLine(for:)` already returns nil for it, so the You tab
+//    screen 15" — and `AccountCopy.licenseLine(for:)` already returns nil for it, so the You tab
 //    draws no license line rather than a wrong one. Writing `LicenseConsent.currentVersion` here
 //    would be this app claiming somebody agreed to a license on the strength of a reinstall.
+//
+//    That is also the whole of the answer to DECISIONS constraint 21 for this round: **the restored
+//    state needs no drawn state of its own.** It is the signed-in You tab, minus a line the mocks
+//    already allow to be absent. No spinner, no partial-data state, nothing invented — and nothing
+//    to invent one for, because the restore is synchronous, offline and finished before the first
+//    frame.
 //  - **the journal, and the photographs** — not rebuildable, and not faked. `RemoteAPI.journal`
 //    throws `communityHalfOnly` because the service does not send the summary prose the rows draw,
 //    and `RoutedAPI` routes the journal local and says so. A restored install's journal is empty

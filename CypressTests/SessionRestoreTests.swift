@@ -227,6 +227,15 @@ struct SessionRestoreBootTests {
         // **The launch reached no network.** `AppSession.bootstrap()` rules that a launch must not,
         // and the restore is written to need nothing the Keychain does not already hold. A boot that
         // dialled out would break that rule for every launch, not just this one.
+        //
+        // **What red-proving this assertion turned up, because it is worth knowing before trusting
+        // it.** Two plausible mutations — a `bootstrap()` and a `reauthorize(after: .user(…))` added
+        // to the restore — left it *green*, and correctly: `AppSession.authorization()` returns the
+        // live stored access token without a round trip, and `mint`'s `stored(_:otherThan:)` branch
+        // returns the same token to a caller holding a different one. So this assertion does not
+        // catch every added call; it catches every added call that actually reaches the wire, which
+        // is the property it names. `reauthorize(after: .device(…))` does reach it, and under that
+        // mutation this line reports `…/devices/register`.
         let calls = await http.requests
         #expect(
             calls.isEmpty,
