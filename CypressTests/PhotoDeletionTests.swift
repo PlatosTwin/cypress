@@ -30,6 +30,9 @@ struct PhotoDeletionTests {
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000B001")!
     private static let userID = UUID(uuidString: "0E000000-0000-4000-8000-00000000B002")!
     private static let strangerID = UUID(uuidString: "0E000000-0000-4000-8000-00000000B003")!
+    /// The installation a stranger's photograph would have come from (`AppSchema` v16). Not this
+    /// one, which is the whole of what makes such a row a stranger's.
+    private static let strangersDeviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000B004")!
     private static let moment = Date(timeIntervalSince1970: 1_800_000_000)
 
     private static func photoDirectory() -> URL {
@@ -191,9 +194,17 @@ struct PhotoDeletionTests {
             )
         )
         let photo = try #require(try await api.treeProfile(id: tree.id).photos.items.first).id
+        // **`taken_on_device` moves with the owner, and it has to** (`AppSchema` v16). This fixture
+        // makes a stranger's photograph by writing one here and then rewriting the owner, and since
+        // v16 that is no longer enough: the row would still say this installation took it, which is
+        // true — and is exactly the case the v16 gate admits, a photograph this phone wrote that an
+        // account has since adopted. A photograph that is genuinely somebody else's arrived from
+        // somebody else's installation, so the fixture says that too. Without this line the test
+        // asserts the opposite of its own name.
         try await store.queue.write { connection in
             try connection.execute("""
-                UPDATE photos SET user_id = '\(Self.strangerID.uuidString)', device_id = NULL
+                UPDATE photos SET user_id = '\(Self.strangerID.uuidString)', device_id = NULL,
+                                  taken_on_device = '\(Self.strangersDeviceID.uuidString)'
                  WHERE id = '\(photo.uuidString)'
                 """)
         }

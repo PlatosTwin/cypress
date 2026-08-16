@@ -311,27 +311,35 @@ public struct ContributionStore {
     /// `visit_id`. It is not defaulted, and that is the point — ERRATA E136's hole was a write path
     /// that quietly recorded no owner, and a default here would be a way to write that row again by
     /// forgetting an argument rather than by typing one.
+    ///
+    /// `takenOnDevice` is the second of those and is undefaulted for the same reason (`AppSchema`
+    /// v16). It is **not** derived from `owner` here, because the two disagree exactly when it
+    /// matters: a photograph taken while signed in is the account's and was still written by this
+    /// installation, and it is that case — after the account stops being the one signed in — that
+    /// the column exists for.
     @discardableResult
     public func insert(
         _ photo: Photo,
         localPath: String?,
         owner: PhotoOwner,
+        takenOnDevice: UUID,
         connection: SQLiteConnection
     ) throws -> WriteOutcome {
         let statement = try connection.cachedStatement("""
             INSERT INTO photos
                 (id, tree_uuid, visit_id, storage_key, local_path, shot_type, moderation_state,
                  blur_applied, width, height, captured_at, public_lat, public_lon,
-                 created_at, updated_at, deleted_at, user_id, device_id)
+                 created_at, updated_at, deleted_at, user_id, device_id, taken_on_device)
             VALUES
                 (:id, :tree, :visit, :key, :path, :shot, :moderation,
                  :blur, :width, :height, :captured, :lat, :lon,
-                 :created, :updated, :deleted, :user, :device)
+                 :created, :updated, :deleted, :user, :device, :taken)
             ON CONFLICT(id) DO NOTHING
             """)
         _ = try statement.bind([
             ":user": owner.userID,
             ":device": owner.deviceID,
+            ":taken": takenOnDevice,
             ":id": photo.id,
             ":tree": photo.treeID,
             ":visit": photo.visitID,
@@ -546,6 +554,10 @@ public struct ContributionStore {
         public let id: UUID
         public let treeID: UUID
         public let owner: PhotoOwner
+        /// The installation that wrote the row (`AppSchema` v16), which is not an owner and is never
+        /// read as one — `PhotoOwner.permitsRemoval(by:takenOnDevice:)` is the only rule that sees
+        /// it. Nil on a row anonymized by the leaving door, and on nothing else a live build writes.
+        public let takenOnDevice: UUID?
         public let storageKey: String?
         public let localPath: String?
     }
@@ -553,7 +565,7 @@ public struct ContributionStore {
     /// The photograph a delete is about, or nil when there is no live row with that id.
     public func photoForDeletion(id: UUID, connection: SQLiteConnection) throws -> PhotoForDeletion? {
         let statement = try connection.cachedStatement("""
-            SELECT tree_uuid, user_id, device_id, storage_key, local_path FROM photos
+            SELECT tree_uuid, user_id, device_id, taken_on_device, storage_key, local_path FROM photos
              WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
             """)
         _ = try statement.bind([":id": id.uuidString])
@@ -571,6 +583,7 @@ public struct ContributionStore {
                 id: id,
                 treeID: try row.uuid("tree_uuid"),
                 owner: owner,
+                takenOnDevice: try row.uuidIfPresent("taken_on_device"),
                 storageKey: try row.stringIfPresent("storage_key"),
                 localPath: try row.stringIfPresent("local_path")
             )
@@ -587,6 +600,15 @@ public struct ContributionStore {
     /// deleted their account through the door that leaves the work in place — is in the first set
     /// and not in this one. Seeing and unmaking are two questions; conflating them would hand a
     /// stranger's withdrawn record to whoever holds the phone next.
+    ///
+    /// **The third arm is provenance and not a third owner** (`AppSchema` v16,
+    /// `PhotoOwner.permitsRemoval(by:takenOnDevice:)`, which this statement is the SQL of): a
+    /// photograph this installation wrote and an account has since adopted is still this
+    /// installation's to unmake, which is what stopped being true when `claimDevice` cleared
+    /// `device_id` and the account stopped being the one signed in. The `NOT (user_id IS NULL AND
+    /// device_id IS NULL)` clause is the anonymized row refusing first, exactly as the Swift rule
+    /// refuses `.nobody` before it looks at provenance — the column is cleared on that path, so the
+    /// clause is the belt to its braces and R3 does not rest on a single `UPDATE` having run.
     public func deletablePhotoIDs(
         treeID: UUID,
         attribution: Attribution,
@@ -595,8 +617,7 @@ public struct ContributionStore {
         let statement = try connection.cachedStatement("""
             SELECT id FROM photos
              WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
-               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
-                    OR device_id = :device COLLATE NOCASE)
+               AND \(Self.removalPredicate())
             """)
         _ = try statement.bind([
             ":tree": treeID.uuidString,
@@ -633,6 +654,26 @@ public struct ContributionStore {
         _ = try statement.bind([":tree": treeID.uuidString])
         defer { _ = try? statement.reset() }
         return Set(try statement.fetchAll { try $0.uuidIfPresent("id") }.compactMap { $0 })
+    }
+
+    /// `PhotoOwner.permitsRemoval(by:takenOnDevice:)` as SQL, in one place because it is written in
+    /// three: the set that draws the control, the vote delete, and the tombstone `UPDATE`.
+    ///
+    /// **Three copies of a permission rule is how one of them drifts**, and the two in
+    /// `deletePhoto` have to agree exactly or a deletion tombstones the photograph and leaves the
+    /// votes on it, or refuses the photograph after removing them. `prefix` is the table alias the
+    /// vote statement needs (`p.`) and nothing else; it is a literal at both call sites, never a
+    /// caller's string, which is the same rule `setPhotoVote`'s owner column follows.
+    ///
+    /// The `:user`/`:device` binds are the caller's, and the anonymized clause leads for the reason
+    /// the Swift rule refuses `.nobody` first.
+    private static func removalPredicate(prefix: String = "") -> String {
+        """
+        NOT (\(prefix)user_id IS NULL AND \(prefix)device_id IS NULL)
+                 AND ((:user IS NOT NULL AND \(prefix)user_id = :user COLLATE NOCASE)
+                      OR \(prefix)device_id = :device COLLATE NOCASE
+                      OR \(prefix)taken_on_device = :device COLLATE NOCASE)
+        """
     }
 
     /// What one photograph's deletion changed, in rows.
@@ -687,8 +728,7 @@ public struct ContributionStore {
             DELETE FROM photo_votes WHERE photo_id = :id COLLATE NOCASE
               AND EXISTS (SELECT 1 FROM photos p
                            WHERE p.id = :id COLLATE NOCASE AND p.deleted_at IS NULL
-                             AND ((:user IS NOT NULL AND p.user_id = :user COLLATE NOCASE)
-                                  OR p.device_id = :device COLLATE NOCASE))
+                             AND \(Self.removalPredicate(prefix: "p.")))
             """)
         _ = try votes.bind(owned)
         try votes.run()
@@ -702,8 +742,7 @@ public struct ContributionStore {
                    width = NULL, height = NULL,
                    public_lat = NULL, public_lon = NULL
              WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
-               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
-                    OR device_id = :device COLLATE NOCASE)
+               AND \(Self.removalPredicate())
             """)
         var ownedAndNow = owned
         ownedAndNow[":now"] = date

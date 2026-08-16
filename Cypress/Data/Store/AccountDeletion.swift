@@ -396,8 +396,19 @@ public struct AccountDeletion {
         // The photograph loses its owner and keeps its place. Its own field, mirroring
         // `deletedPhotos` on the other door, for the reason `Outcome` gives about not letting one
         // number stand for two different acts.
+        //
+        // **`taken_on_device` comes off in the same statement** (`AppSchema` v16). That column is
+        // provenance rather than ownership and the deletion gate reads it, so leaving it would make
+        // this door's promise last exactly as long as the phone: the next person holding it would
+        // find the deleted account's photographs deletable again, which is the outcome the
+        // paragraph above spends its length refusing. The Swift rule refuses `.nobody` before it
+        // looks at provenance and the SQL leads with the same clause; this is what makes both of
+        // those true of the row rather than only of the code.
         outcome.anonymizedPhotos = try run(
-            "UPDATE photos SET user_id = NULL, updated_at = :now WHERE user_id = :user COLLATE NOCASE",
+            """
+            UPDATE photos SET user_id = NULL, taken_on_device = NULL, updated_at = :now
+             WHERE user_id = :user COLLATE NOCASE
+            """,
             userAndNow, on: connection
         )
 

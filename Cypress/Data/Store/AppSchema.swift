@@ -45,7 +45,8 @@ public enum AppSchema {
         Migration(version: 12, name: "a photograph says whose it is", migrate: applyV12),
         Migration(version: 13, name: "anonymized means anonymous, permanently", sql: v13),
         Migration(version: 14, name: "a species claim can be corrected, and the correction keeps it", migrate: applyV14),
-        Migration(version: 15, name: "applying a mutation locally and sending it are two facts", migrate: applyV15)
+        Migration(version: 15, name: "applying a mutation locally and sending it are two facts", migrate: applyV15),
+        Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16)
     ]
 
     /// The version a freshly migrated database reports.
@@ -1537,6 +1538,72 @@ public enum AppSchema {
 
             CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
             CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+            """)
+    }
+
+    // MARK: - v16
+
+    /// `photos` learns **which installation took it**, which is not the same question as whose it is
+    /// — the column the owner ruled for on 2026-08-15, against a report from their own phone that
+    /// photographs taken before photo deletion existed could not be deleted.
+    ///
+    /// **The defect, in one sentence.** `PhotoOwner` has three arms and only one of them survives a
+    /// change of account: `.device` is compared against `app_state.device_uuid`, which lives in the
+    /// same file as the photographs and therefore cannot stop matching; `.nobody` is refused on
+    /// purpose (R3, E157); and `.user` matches only while this installation is signed in as exactly
+    /// that account. Two changes then composed. v12's backfill handed every visitless photograph to
+    /// whatever account happened to be signed in during an app update — the one attribution in this
+    /// app that corresponds to no act by the person. E270 removed the way back: the only sign-in
+    /// that succeeds now is Apple's, the id is the service's, and `claimDevice` clears
+    /// `signed_out_user_id` on its way past (E272). An account minted in the local-account era can
+    /// never be signed into again, so the photographs it holds are on the screen, drawn, with no
+    /// delete control and — unlike an anonymized row, which task #131 gave a sentence — nothing
+    /// saying why.
+    ///
+    /// **Provenance, not a second owner.** `taken_on_device` is never consulted to answer *whose*
+    /// a photograph is: no query reads it for attribution, `claimDevice` does not touch it, and v12's
+    /// "at most one owner" CHECK is untouched, so nothing gains a precedence rule that a reader
+    /// could get wrong. It answers one narrower question — did this installation write this row —
+    /// and `PhotoOwner.permitsRemoval(by:takenOnDevice:)` is where that answer meets the other two.
+    ///
+    /// **The backfill is a weaker claim than v12's, deliberately.** Every row in `main.photos` was
+    /// written by this installation: `beginPhotoUpload` and `addTree` are the only writers, both run
+    /// in `LocalAPI`, and nothing syncs anybody else's photographs down — the same standing fact v12
+    /// reasoned from and that `LocalAPI.treeProfile` restates where it fills `ownPhotoIDs`. v12 used
+    /// it to name a *person*, which is what over-attributed. This uses it to name a *machine*, which
+    /// is the thing it actually establishes.
+    ///
+    /// **Not the backfill the owner ruled against on 2026-08-15**, which is worth saying because the
+    /// word is the same and the ruling is a week old. That one is about *sync*: pre-sync-path rows
+    /// and pre-existing photo binaries stay on the device permanently, nothing is re-enqueued, and
+    /// no future send path sweeps them up. This writes one local column in the app's own database,
+    /// enqueues nothing, uploads nothing, and leaves the outbox untouched.
+    ///
+    /// **An anonymized photograph is skipped, and that is the whole of R3 in this migration.** A row
+    /// with neither owner is one whose contributor deleted their account through the door that
+    /// leaves the work in place, and it is nobody's to take back — for ever, which is the ruling
+    /// E157 records. Backfilling provenance onto those rows would hand them to whoever holds the
+    /// phone and quietly repeal it. `AccountDeletion.anonymizeContributions` clears the column for
+    /// the same reason on every future deletion.
+    ///
+    /// **`ALTER TABLE ADD COLUMN`, not a rebuild**, on v10's, v11's and v12's argument, and
+    /// **idempotent by guard** in the same shape: `ADD COLUMN` has no `IF NOT EXISTS`, so a run
+    /// interrupted between the DDL and the version bump would otherwise fail on "duplicate column
+    /// name" and strand the database one version short.
+    ///
+    /// **No index.** `photos` holds tens of rows per install and the column is read by the deletion
+    /// gate — once per profile read, on a statement already narrowed by `tree_uuid`, which
+    /// `idx_photos_tree` serves.
+    private static func applyV16(_ connection: SQLiteConnection) throws {
+        guard try !connection.columnNames(ofTable: "photos").contains("taken_on_device") else { return }
+        try connection.execute("""
+            ALTER TABLE photos ADD COLUMN taken_on_device TEXT;
+
+            -- Every row this installation still holds an owner for, it also wrote. A row with
+            -- neither owner is an anonymized one and is skipped: see the header.
+            UPDATE photos
+               SET taken_on_device = (SELECT value FROM app_state WHERE key = 'device_uuid')
+             WHERE NOT (user_id IS NULL AND device_id IS NULL);
             """)
     }
 

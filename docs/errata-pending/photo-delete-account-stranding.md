@@ -150,4 +150,36 @@ The shape that follows from the rest of this entry, for whoever holds the migrat
   stranded, and it is a weaker claim than v12's, because it attributes a machine rather than a
   person.
 
-Still open: which round the migration rides, and who holds the seat for it.
+#### Built, in a round of its own
+
+The owner assigned the seat in the same decision round. `AppSchema` **v16**, "a photograph
+remembers which installation took it", is that column, and it is the shape above:
+`taken_on_device` is provenance and no query reads it as an owner, `claimDevice` leaves it alone,
+the leaving door clears it in the same statement that takes the name off, and the backfill writes
+`app_state.device_uuid` onto every row that still has an owner — which is what repairs the
+photographs already stranded on the phone this was reported from.
+
+`PhotoOwner.permitsRemoval(by:takenOnDevice:)` is where the three arms meet, and it refuses
+`.nobody` before it reads provenance; `ContributionStore.removalPredicate` is that rule as SQL, in
+one place because it is written in three — the set that draws the control, the vote delete and the
+tombstone `UPDATE` — and it leads with the same refusal. Neither of those two lines is decoration:
+removing either one turns exactly one expectation red on its own, which is what `PhotoProvenanceTests`
+red-proved.
+
+**Not the backfill the owner ruled against on the same day.** That ruling is about sync —
+pre-sync-path rows and pre-existing photo binaries stay on the device permanently, nothing is
+re-enqueued, no future send path sweeps them up. v16 writes one local column, enqueues nothing and
+uploads nothing.
+
+**One existing test changed, and it is worth reading before the diff is trusted.**
+`PhotoDeletionTests.astrangersPhotographIsRefused` made a stranger's photograph by writing one on
+this device and then rewriting `user_id`. Since v16 that row still says, truthfully, that this
+installation took it — which is the case v16 admits — so the fixture now also gives it a stranger's
+installation. That is the fixture being made to mean its own name, and the guard it protects is
+asserted independently by `PhotoProvenanceTests.aStrangersPhotographIsStillRefused`.
+
+**What is deliberately not in it.** The state this report came from draws a photograph with no
+delete control and no sentence. After v16 that state is much rarer and not impossible — a
+photograph that genuinely came from another installation will produce it the day anything syncs one
+down. Task #131 gave the ownerless row its sentence; this one still has none. New copy on a shipped
+screen is a stop-and-ask (DECISIONS constraint 21), so it stays here rather than in the diff.

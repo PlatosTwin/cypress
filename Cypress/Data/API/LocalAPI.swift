@@ -502,6 +502,7 @@ public actor LocalAPI: CypressAPI {
                 photo,
                 localPath: draft.photoLocalPath,
                 owner: PhotoOwner(attribution),
+                takenOnDevice: deviceID,
                 connection: connection
             )
         }
@@ -1482,6 +1483,7 @@ public actor LocalAPI: CypressAPI {
                 photo,
                 localPath: request.localPath,
                 owner: PhotoOwner(attribution),
+                takenOnDevice: deviceID,
                 connection: connection
             )
         }
@@ -1650,7 +1652,13 @@ public actor LocalAPI: CypressAPI {
             try contributions.photoForDeletion(id: id, connection: connection)
         }
         guard let subject else { throw APIError.notFound }
-        guard subject.owner.isOwned(by: who) else { throw APIError.forbidden }
+        // `permitsRemoval` and not `isOwned` (`AppSchema` v16): a photograph this installation wrote
+        // and an account has since adopted stays this installation's to unmake, which is what
+        // stopped being true when `claimDevice` cleared `device_id` and the account stopped being
+        // the one signed in. An anonymized row is still refused, by the rule's own first line.
+        guard subject.owner.permitsRemoval(by: who, takenOnDevice: subject.takenOnDevice) else {
+            throw APIError.forbidden
+        }
 
         // 2. Whether this is the last photograph of a tree that needed one to exist. Read before the
         //    delete, because afterwards the answer is the same for a tree that never had one.
@@ -2352,7 +2360,8 @@ public actor LocalAPI: CypressAPI {
             try data.write(to: destination, options: .atomic)
             try await store.queue.write { connection in
                 try contributions.insert(
-                    photo, localPath: nil, owner: PhotoOwner(attribution), connection: connection
+                    photo, localPath: nil, owner: PhotoOwner(attribution),
+                    takenOnDevice: deviceID, connection: connection
                 )
                 try contributions.markPhotoUploaded(
                     id: photo.id,
@@ -2383,7 +2392,8 @@ public actor LocalAPI: CypressAPI {
     public func debugAnonymizePhoto(id: UUID) async throws {
         try await store.queue.write { connection in
             let statement = try connection.cachedStatement("""
-                UPDATE photos SET user_id = NULL, device_id = NULL, updated_at = :now
+                UPDATE photos SET user_id = NULL, device_id = NULL, taken_on_device = NULL,
+                                  updated_at = :now
                  WHERE id = :id COLLATE NOCASE
                 """)
             _ = try statement.bind([":id": id.uuidString, ":now": now()])
