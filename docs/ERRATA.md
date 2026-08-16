@@ -15375,6 +15375,15 @@ imported Distribution identity and the ASC API key. The `VERSION`-file readback 
 unaffected and held through all three runs. 0.2 (14) was minted from this configuration and tagged
 `build-14` at 32f5ec6.
 
+> **The "one and only signing pass" carries a cost this entry did not know about — see ERRATA
+> **E276**.** `xcodebuild -exportArchive` never reads the Xcode project: it builds the final
+> signature's entitlements from what the archived app's *existing* signature requests, and an
+> unsigned archive requests nothing. So from the moment the project gained a
+> `CODE_SIGN_ENTITLEMENTS` file, this configuration silently dropped every entitlement in it —
+> TestFlight builds 34 and 35 shipped with Sign in with Apple broken on device. The configuration
+> above is still what ships and is still right for the reason given; what it needs beside it is an
+> ad-hoc signing pass over the app inside the archive, so the export has a request to honor.
+
 The lesson, in one line: **an identity in the keychain is necessary, not sufficient — what matters
 is which build step performs the signing moment.** Under Automatic signing, archive-then-export
 wants to sign twice with two different identity classes; the only configuration that signs exactly
@@ -19583,3 +19592,2250 @@ made the migration reject the rows it was migrating, and would have stranded eve
 contribution on every phone until a server existed. The parameter has **no default**: the unsafe
 answer is `false`, and a defaulted `false` is a hazard you get by forgetting rather than by
 choosing.
+
+### E265 — A conformance that compiled *because* the implementation was absent, and the guard that ends it (task #76)
+
+#### The defect
+
+`CypressAPI` carries **31 requirements**. `RemoteAPI` declared **17** of them. The other 14 were
+satisfied by `public extension CypressAPI` defaults spread over ten files, so the type conformed,
+the build was green, and nothing anywhere said that more than a third of the boundary had no
+implementation behind it. That is not a bug in the defaults — a default is exactly what it looks
+like — it is a bug in what "conforms" is being read to mean. Under the owner's full-API-surface
+ruling for #158 (`docs/design-proposals/2026-08-09-task158-live-layer.md` §1, §3.3), `RemoteAPI` is
+declared complete, and the type system reports success *precisely because* the implementation is
+absent.
+
+Ten of the fourteen defaults throw `.notFound`, which is survivable: an error is a thing a screen
+can render honestly. Four **return a value**, which is not:
+
+| requirement | default | file |
+| --- | --- | --- |
+| `speciesGuide(id:near:)` | the field-guide entry with no population facts | `SpeciesGuide.swift` |
+| `mapMembership(_:)` | `[]` | `MapMembership.swift` |
+| `deviceContributions()` | `.none` | `DeviceContributions.swift` |
+| `isFavorite(treeID:)` | derived from `grove()` | `CypressAPI.swift` |
+
+Rendered, those are a species guide with no population line, a map on which the reader owns and
+hearts no tree in the city, a device that has contributed nothing, and a heart that reads false.
+None of them throws and none of them logs.
+
+#### What the ticket's premises got right, and the one thing they did not
+
+The counts hold exactly: 31 requirements, 17 declared, 14 inherited, ten throwing, four
+value-returning. What is worth recording is that **two of the four were only accidentally loud.**
+`speciesGuide`'s default body is `SpeciesGuide(species: try await species(id: id))` and
+`isFavorite`'s is `try await grove().first { … }`, so on `RemoteAPI` as it stood both *did* throw —
+by borrowing the refusal of a neighbouring stub one call down. That is an artifact of which methods
+happened to be written first, and it evaporates at step 4 of the #158 plan, the moment `species(id:)`
+and `grove()` become real network calls. Only `mapMembership` and `deviceContributions` answered
+silently on the tree as it stood; the other two were scheduled to start.
+
+This matters for sequencing rather than for blame: the window in which this defect is *invisible*
+opens wider as the implementation proceeds, which is the concrete form of the spec's "before or
+alongside, never after."
+
+#### The fix
+
+Two halves, and neither is an API implementation — #76 is the guard, #158 is the implementation.
+
+1. **`RemoteAPI` now declares all 31 requirements.** Thirteen of the fourteen new bodies are
+   `throw unimplemented` (`.serverError`, retryable, so an outbox item that reaches one survives on
+   the backoff). The fourteenth is `deviceContributions()`, which returns `.none` — the spec's
+   **Class D**, device-only and never remote — written down with its reason beside it rather than
+   arrived at by having nothing to say.
+2. **`CypressTests/APIConformanceGuardTests`**, eight gates, all measured off the working tree:
+   - the requirement set is **parsed out of `Cypress/Data/API/CypressAPI.swift`** on every run, never
+     listed by hand;
+   - every conformance in the app target that a release build compiles must declare every
+     requirement, compared on name, argument labels, parameter types and return type. A conformance
+     is a **type**, not a declaration: its own body and every `extension <TypeName>` in the app
+     target contribute, minus anything a release build does not compile;
+   - the set of such conformances must be the two this file names, so a third cannot land
+     unclassified and a fixture cannot be smuggled out from behind `#if DEBUG`;
+   - no member of a `public extension CypressAPI` — instance method, **`static` method, computed
+     `var` or `subscript`** — may be anything other than a protocol requirement; **E125's
+     mechanism**, guarded at the source;
+   - a complete conformance erased to `any CypressAPI` must reach its own witnesses for all 31
+     calls, which is the same erasure every screen performs and the one E125 says a test holding the
+     concrete type cannot see, with the probe's hand-written call list checked **both ways** against
+     the parse;
+   - `LocalAPI` — the conformance the shipped app actually holds — erased to `any CypressAPI` over
+     a seeded store carrying one device-added tree and one device-held favorite must answer
+     `speciesGuide` with a population count, `mapMembership(.favorites)` and `(.yours)` with that
+     tree, and `deviceContributions()` with something held. Each answer differs from the default's,
+     so each assertion separates the witness from the inheritance;
+   - and two calibration gates ahead of all of them: two positive controls, two **negative**
+     controls (`savePrivateReminder` and `outboxStatus` are named in prose inside the very file whose
+     protocol body is parsed, and are not requirements), the shared source-file floor, and the
+     conditional-compilation classification checked branch by branch.
+
+Effects (`async`, `throws`) are deliberately **not** compared: a synchronous non-throwing witness
+legally satisfies an `async throws` requirement, so comparing them would red a conformance that is
+in fact complete.
+
+#### The half of it that was wrong, and how it was found
+
+The first version of this guard shipped to review with all six gates green **and the defect present**,
+which is the failure mode this repository names as its dominant one. `Parser.debugRegions` decided
+whether a region was DEBUG-only by asking whether the `#if` line *contained* the substring `DEBUG`,
+kept that verdict through `#else`, and was consulted only for the position of a **type declaration**.
+Three shapes defeat that, and the reviewer demonstrated all three live rather than arguing them:
+
+- `#if DEBUG … #else <conformance> #endif` — the `#else` branch is what a **release** build compiles,
+  and it was being marked debug-only, so a release-only conformance was filed as a preview double and
+  never asked to declare anything. It then inherited all fourteen defaults, `mapMembership → []` and
+  `deviceContributions → .none` among them.
+- `#if !DEBUG <conformance> #endif` — `contains("DEBUG")` matches the negation, same result.
+- `#if DEBUG` **inside** a shipping conformance's body — the classification was never applied to
+  members at all, so a requirement declared there counted as declared while the release build
+  inherited the default. **This shape is already in the tree**: `LocalAPI.swift` carries a 330-line
+  `#if DEBUG` region inside its conformance body.
+
+With two of the three present, on a build that really recompiled, the whole suite reported green.
+
+The fix is a real directive stack — `#if` pushes, `#elseif` replaces the top, `#else` replaces the top
+with **false**, `#endif` pops, and a condition counts as debug-only only when it is *exactly* `DEBUG`
+— applied to members as well as to declarations. Anything the scan cannot classify is treated as
+release-compiled, which is the direction that fails loudly.
+
+**The lesson is not "the parser had a bug".** The old comment on that function asserted the safe
+direction as an obvious property — *"a conformance this misses is classified as shipping, which is the
+direction that fails loudly"* — and that sentence was false for the three cases above. It was written
+because it seemed self-evident, and this repository's rule is that a confident comment is where bugs
+survive. The claim is now true because a gate makes it true:
+`theDirectiveStackClassifiesEachBranch` feeds eleven directive shapes to the scanner and checks each
+against an answer known before it ran, including a positive control, without which the whole gate
+could pass by the scan marking nothing at all.
+
+#### The trap this guard had to avoid, and the case that was constructed to check it
+
+A guard that enumerates a protocol's requirements from a hand-written list passes on the day somebody
+adds a thirty-second requirement and forgets the list — green precisely when its condition is
+present, which is this repository's dominant defect class. The existential probe **is** such a list:
+Swift cannot generate calls from a protocol, so 31 call sites are written out by hand. It is tied
+back to the parse — the probe records which requirement it reached, and the test asserts the observed
+names cover the *parsed* requirement set — so an unprobed requirement fails the test rather than
+quietly shrinking it.
+
+Eight defect cases were constructed and run, each red for the reason named — four before review, and
+four more against the conditional-compilation family review found:
+
+- **the tree as it stood on main.** `RemoteAPI (Cypress/Data/API/RemoteAPI.swift) does not declare
+  14 of 31 CypressAPI requirements` — and all fourteen listed by signature.
+- **a witness behind `#if DEBUG` inside a shipping conformance body** (the reviewer's shape (a)):
+  `… does not declare 1 of 31 … · mapMembership(_: MapMembership) -> Set<UUID>`.
+- **a conformance in an `#else` branch, and one under `#if !DEBUG`** (shapes (b) and (c)). Neither is
+  compiled by the Debug test build at all, which is precisely why a *source* scan has to see them:
+  `the app target's non-#if DEBUG CypressAPI conformances are ["LocalAPI", "ReleaseOnlyElseAPI",
+  "ReleaseOnlyNegatedAPI", "RemoteAPI"]`, plus `… does not declare 31 of 31 …` for each.
+- **a `var` and a `static func` in `extension CypressAPI`**, E125's mechanism in the two shapes the
+  first version of gate 5 filtered out: `2 member(s) of extension CypressAPI are not protocol
+  requirements: · static func makeDefault() -> Int · var apiFlavor`.
+- **a witness whose signature does not match.** `RemoteAPI.mapMembership` returning `[UUID]` instead
+  of `Set<UUID>` compiles, does not satisfy the requirement, and leaves the default in force. This
+  is the case a label-only comparison would have passed. `… does not declare 1 of 31 … ·
+  mapMembership(_: MapMembership) -> Set<UUID>`.
+- **E125's shape.** `mapMembership` removed from the protocol, its extension default left in place:
+  `1 member(s) of extension CypressAPI are not protocol requirements`, and, separately, from the live
+  half — `mapMembership: returned a value — a protocol-extension default answered it`.
+- **the drift case.** A thirty-second requirement added with a value-returning default and no probe:
+  `LocalAPI … does not declare 1 of 32`, `RemoteAPI … does not declare 1 of 32`, and `1 CypressAPI
+  requirement(s) have no call in this test, so nothing here can tell whether they dispatch:
+  neighborhoodDigest.`
+
+And one on the classification rather than the count: `RemoteAPI` wrapped in `#if DEBUG` produces
+`the app target's non-#if DEBUG CypressAPI conformances are ["LocalAPI"], and this file expects
+["LocalAPI", "RemoteAPI"]`.
+
+One case was run the other way, to check that a correct conformance is not reported as broken: a real
+`exportLatest` witness moved into `public extension RemoteAPI { … }` — which is what #158 will do to
+that file once 31 bodies need `// MARK:` sections — leaves gate 3 **green**. Before review it did not:
+it reported the method missing and diagnosed a protocol-extension default that was not in force.
+
+#### What it does not check, said out loud
+
+That a declared method is *correct*. `throw .serverError` satisfies every gate here and should: the
+whole reason the spec sequences #76 before #158 is that a conformance which compiles with fourteen
+methods missing cannot tell anyone whether the fifteenth was written.
+
+It does not police the fourteen `#if DEBUG` preview doubles or the seventeen test doubles. A default
+answering `[]` in an Xcode canvas is a fixture; the same default reached from a shipped screen is the
+defect, and `CypressAPI`'s own "two methods that were requirements and are not any more" note is the
+argument for not taxing thirty-one fixtures to say so.
+
+And it reads Swift with a small scanner rather than a real parser. It handles the declaration shapes
+this repository writes; a shape it cannot read fails as a mismatch, which is red rather than green.
+The reviewer put eight reformattings through it — wrapped parameter lists, `where` clauses, attribute
+prefixes — without producing a false green, which is evidence about those eight and not a proof about
+the ninth. The one family that did break it was conditional compilation, and that family now has its
+own gate.
+
+**Three of the four value-returning defaults are checked live; the fourth cannot be, and the reason
+is worth recording because the first version of this entry got it wrong.** That version claimed three
+of the four were indistinguishable from the real implementation. They are — over an *empty* store,
+which is a fact about the fixture and not about the requirements. Given one device-added tree and one
+device-held favorite, `mapMembership(.favorites)`, `mapMembership(.yours)` and `deviceContributions()`
+all separate from `[]` and `.none` at once. The claim was measured rather than argued in review, and
+the correction matters in the direction that stings: those two are exactly the pair that answered
+**silently on the tree as it stood**, so a gate covering only `speciesGuide` covered the case that
+becomes dangerous at #158 step 4 and neither case that was live.
+
+`isFavorite` is the one that genuinely does not separate, and that is a finding rather than a gap in
+the fixture. Its default is `grove().first { … }?.isFavorite`, and `grove()` is `LocalAPI`'s own
+witness — so the default reaches the real implementation and computes the right answer. There is
+nothing for a test to catch, because the difference between the default and the witness is one
+indexed SELECT against a whole-list read (#167): a cost, not an answer. Gate 4 is what holds
+`isFavorite` to being declared, and gate 4 is a structural gate for exactly this reason.
+
+**The erasure gate was red-proved too**, since three assertions passing in 37 ms is the kind of
+number that deserves a control: deleting `LocalAPI`'s `mapMembership` and `deviceContributions` so
+the extension defaults become the witnesses turns it red on all three —
+`mapMembership(.favorites) came back without a tree this device has hearted (0 member(s))`,
+the same for `.yours`, and `deviceContributions() reported nothing held`.
+
+### E266 — #158 step 3 landed; steps 5 and 6 are blocked on two things that branch could not supply
+
+Written while building #158 step 3 (the session) on `feat/158-session-auth`. Three findings, and
+the first two are refutations of premises this ticket was briefed on.
+
+#### 1. E124's "nothing on the call path changes" is false, in three specific ways
+
+ERRATA **E124** closes with: *"When the magic-link service lands, `accountLink()` swaps its body for
+the client half of the token exchange and nothing on the call path changes."* `BetaCapability` and
+`Cypress/App/RootView.swift` both repeat it. The #158 spec §10 step 5 already flagged it as a claim
+to check rather than assume; checked, it does not hold.
+
+- **The closure is `nonisolated` and captures nothing of the view — deliberately.** Its own comment
+  says so: it "captures only two `Sendable` values … so it carries nothing of the view across the
+  boundary it will be called on." Sign in with Apple needs an `ASPresentationAnchor`, which is a
+  `UIWindow`, which is `@MainActor` state the composition root has to reach. Either the closure stops
+  being `nonisolated` or something new is threaded to it. Either is a change on the call path.
+- **`AccountLinkRequest` cannot carry what the exchange needs.** It has two fields — provider and
+  license consent — and `CypressTests/AccountAskSheetTests.swift` pins that shape *by reflection*, on
+  purpose: it is DECISIONS §3.9's no-passwords rule made structural. The identity token, the
+  authorization code and the raw nonce therefore cannot travel on it, so the closure must acquire
+  them itself, from a dependency the composition root constructs and does not construct today.
+- **A cancelled sign-in has no state.** `AccountAskModel.link` turns *any* thrown error into
+  `Notice.failed` — "that did not go through". Somebody who opens Apple's sheet and taps Cancel has
+  not had anything go wrong, and SCREENS.md 15 draws no state for it. That is a copy question
+  (DECISIONS constraint 21), not an implementation detail, and it did not exist while the sign-in was
+  local and could not be cancelled.
+
+None of the three is hard. The point is that "nothing on the call path changes" is the sentence that
+would let a reader skip looking, and all three are on the call path.
+
+#### 2. Sign in with Apple needs an entitlement this repository does not have, and cannot add
+
+`ASAuthorizationAppleIDProvider` requires the `com.apple.developer.applesignin` entitlement and the
+matching capability on the App ID. What is in the tree, checked rather than assumed:
+
+- there is no `.entitlements` file anywhere in the repository;
+- `Cypress.xcodeproj/project.pbxproj` sets no `CODE_SIGN_ENTITLEMENTS` for any of the four
+  configurations — `CODE_SIGN_STYLE = Automatic` and `DEVELOPMENT_TEAM` are the whole of the signing
+  configuration;
+- there is no `.xcconfig` anywhere, so there is no way to set that build setting without editing
+  `project.pbxproj`, which ARCHITECTURE §2 forbids in as many words ("If you believe you need a
+  project change, stop and ask").
+
+So the client half of step 5 is written and tested (`Cypress/Data/Auth/AppSession.swift`'s
+`signInWithApple`, `CypressTests/SessionTests.swift`), and the sheet that would feed it cannot
+succeed on any build produced from this tree. `server/README.md` already names the other half of the
+same gap — "an Apple `.p8` key with Sign in with Apple enabled, and the Service ID / key configured
+in the Apple Developer account. Nothing in this repository can create one."
+
+**Not measured here:** that `performRequests()` fails without the entitlement is Apple's documented
+behavior, not something this branch ran. What *was* checked is the three bullets above.
+
+#### 3. Step 6 has no true copy to move to until the send sink exists, and step 5 makes the current copy false
+
+Spec §10 step 6 deletes `BetaCapability.accountsAreLocalOnly` and moves screen 18's storage line "on
+the same commit". Both replacement strings exist in the corpus, so nothing would have to be invented:
+screen 15 falls back to `AccountAskCopy.body`, the drawn sentence, and
+`Cypress/Features/Visit/VisitSaveLedger.swift`'s `storageLine` gains PROTOTYPE-FLOW §1.4's `linked`
+arm, `Backed up to your account · joins the public timeline when signal returns.`
+
+What is not true is the timing, and it is false in both directions:
+
+- **Keeping the flag after step 5 is a lie.** `AccountAskCopy.bodyLocalAccount` says the account "is
+  made on this phone, nothing is uploaded, and none of the services below has been contacted." After
+  a real `POST /auth/oidc`, Apple has been contacted and the account exists on `cypress-sync`. That
+  is ERRATA **E131**'s defect with the sign reversed.
+- **Deleting it before the send sink is also a lie.** Both replacement strings promise a backup.
+  Nothing is uploaded until the outbox has a send sink, which `DataLayer` deliberately does not wire
+  — `CypressTests/OutboxApplySendSplitTests.swift` pins that it does not — and wiring it is a later
+  step than either 5 or 6.
+
+So steps 5 and 6 belong on the same landing as the send sink, not before it. This is recorded rather
+than resolved: which copy screen 15 draws in an intermediate state is the owner's, under DECISIONS
+constraint 21, and the honest answer may be that there is no intermediate state to draw.
+
+#### 4. A guard that was green with the thing it guards deleted
+
+Not an erratum about the app, but the shape this project keeps finding. The single-flight refresh
+test — two concurrent 401s must cost one refresh, because the service revokes a session family when a
+refresh token is presented twice — **passed with the single-flight slot deleted**. Two `async let`s
+over a double that never suspends simply ran one after the other, and the second read the first's
+stored result. It only became a measurement once the double could hold one route's answer long enough
+for the two callers to overlap. Found by red-proofing, which is the only reason it is not still
+green.
+
+### E267 — The sync service answers halves, and spec §3.1's "the remote implementation exists" is not true of Class L
+
+*Found while implementing `RemoteAPI`'s bodies for #158 step 4 (wave 2b), by reading
+`server/internal/api/server.go`'s route table rather than the documentation about it.*
+
+`docs/design-proposals/2026-08-09-task158-live-layer.md` §3.1 describes Class L as "answered from
+the installed city file; **the remote implementation exists, is tested, and is not on the hot
+path**." Checked against the service that was actually built, the second clause is false, and the
+falseness is deliberate on the server's side rather than an omission: `server/README.md`'s own "What
+this service is not" says "the city layer — the map's pan loop, species, the almanac — is answered on
+the phone from the installed city file and **never reaches here**."
+
+The route table mounts eighteen routes. None is city-layer. So there is no Class L remote
+implementation to write, and a body that called `GET /species/{id}` would take Go's `http.ServeMux`
+404 — which is not an `{error: {code, message, retryable}}` envelope — and dress it as a species that
+is not there. `RemoteAPI` refuses instead, with the reason attached (`RemoteSurface`), which is what
+spec §3.3 means by "a refusal is an implementation, an inherited default is not".
+
+**The same check found a second, larger thing, and it changes what "Class R goes remote" means.**
+The service answers the *community and account half* of every read it serves, and every whole
+`CypressAPI` type needs the city file as well. So the router **joins**; it does not switch. Eight
+instances, each one a place where a naive "route it remote" would have returned a value that looks
+like an answer:
+
+| Read | What the service sends | What the client type needs and does not get |
+|---|---|---|
+| `grove()` | `tree_uuid`, favorite, last visit, `GroveRecord`, hero photo | `GroveEntry.displayName`, `GroveEntry.coordinate` — both city-layer, and the coordinate is not optional |
+| `groveSpecies()` | `species_id`, `first_met` | `KnownSpecies`' two names and `firstMetAddress`; `GroveSpecies.neighborhood`, the ring's denominator, which `reads.go` declines to guess at under D16 |
+| `treeProfile(id:)` | photographs, own/deletable sets, visit count | the `Tree` itself, its species, its inventory row |
+| `journal(cursor:limit:)` | `client_uuid`, kind, `tree_uuid`, `occurred_at`, raw `payload` | `JournalEntry.treeDisplayName` **and `summary`** — see below |
+| `deletePhoto(id:)` | `{"deleted": true}` | `PhotoDeletion`'s `treeID` and its four counts |
+| `addTree(_:)` | `{id, status}` | every other column of `Tree` (recoverable from the draft, which is the authority) |
+| `deleteAccount(_:)` | three counters | `AccountDeletion.Outcome`'s other seventeen fields |
+| `addTree(_:)`, on `conflict` | `detail.candidates` | — see the transport-seam item below |
+
+`RoutedAPI` joins the first three. The rest are recorded here rather than papered over, and four of
+them want a decision or a server round:
+
+1. **The journal cannot be joined by the client at all.** `JournalEntry.summary` is built by the
+   `UNION ALL` in `ContributionStore.journal` out of the local tables' own columns and humanized by
+   `LocalAPI.humanize`; the service sends the raw mutation and no summary. Rebuilding the sentence
+   on the client would be a second implementation of one fact in a second language, and writing a
+   different sentence would be inventing copy the mocks do not have (DECISIONS constraint 21). The
+   journal therefore routes local and reports itself degraded on every read. **Closing it is a
+   server round that sends the summary.**
+
+2. **`ProximityConflict.candidates` do not survive the transport seam.** The service sends them, as
+   a sibling of `error` because `APIError.Envelope`'s nested container decodes exactly `code`,
+   `message` and `retryable`. `AuthorizedTransport.send` returns the 2xx body or throws the taxonomy
+   code, so by the time a `conflict` reaches `RemoteAPI.addTree` the body is gone and the method
+   throws the bare `.conflict`. It costs nothing today — §3.4 keeps `addTree` routed local, where
+   the candidates come from the installed inventory — and it must be fixed by the round that wires
+   the method, by widening the session seam to carry the error body once rather than by re-sending
+   the draft.
+
+3. **`GET /trees/{id}` sends `is_publicly_visible` and not `moderation_state`.** `true` pins
+   `approved` exactly; `false` is `pending` or `rejected` and there is no third fact on the payload.
+   The client maps `false` to `.pending`. Every visibility predicate in the app answers identically
+   on both readings — a rejected photograph reaches that response only for its own contributor,
+   whose rule is `deletedAt == nil` either way — so nothing is drawn wrongly, but it is a guess
+   where the wire could carry a fact. One field on one payload closes it.
+
+4. **`DELETE /me`'s three counters cannot fill `AccountDeletion.Outcome`.** `RemoteAPI` writes
+   `contributions` and `photos` onto the pair the *door* names — anonymized under `leaveRecords`,
+   deleted under `eraseEverything` — and leaves the rest at zero, because writing a count into the
+   wrong pair would tell somebody their records were destroyed when they were kept. `tombstones` has
+   no field at all and is deliberately not mapped onto `discardedOutboxItems`: one counts marks the
+   service wrote, the other counts what the local half discarded.
+
+**None of this is a defect in the server.** Every one of these shapes is argued in
+`server/internal/api` in R36's own terms, and the argument is right: a route that returned the city
+half as well "would put the map's own data on the network for no gain". What is wrong is the
+sentence in the spec that let a brief say "implement the 32 method bodies" as though thirty-two
+network calls were available. **The rule this yields, for the rounds after it:** on this
+architecture a Class R read is a *join*, and any round that treats one as a switch will return a
+whole client type most of whose fields it invented.
+
+### E268 — The app goes live, and three sentences stop being true (task #158, the wiring round)
+
+Written on `feat/158-wiring`, the round in which `DataLayer.boot` stopped constructing a
+`LocalAPI` and started constructing a router with a server behind it.
+
+Six findings. The first three are copy questions the owner has to answer and this branch
+deliberately did not; the fourth is a defect in the service that only becomes reachable now; **the
+fifth is blocking and is why this round does not work in production** — read it first.
+
+---
+
+#### 1. Wiring the send sink makes screen 18's storage line false, and the mocks have no arm for the state it is now in
+
+`Cypress/Features/Visit/VisitSaveLedger.swift`'s `storageLine` draws one of two sentences:
+
+- ask resolved → **"Saving to this phone only. You can add an account any time."**
+- otherwise → **"Saved to this phone. You can add an account later to back it up."**
+
+Both were true while the outbox had one sink. They are not true now. `DataLayer.boot` wires
+`APIOutboxSendSink` over `RemoteAPI`, and D9 makes the *anonymous* case the normal one rather than
+the exception — `AppSession.authorization()` says why in one line: "a queue that could not drain
+without an account is a queue that fills up." So an installation that has never opened screen 15 is
+sending its visits to `cypress-sync` under a device credential, and the word "only" is a claim about
+where somebody's work is that the app can no longer make.
+
+**Why it was not simply rewritten.** PROTOTYPE-FLOW §1.4 gives three arms and every one of them keys
+on `account`:
+
+| arm | string |
+| --- | --- |
+| `linked` | `Backed up to your account · joins the public timeline when signal returns.` |
+| `dismissed` | `Saving to this phone only. You can add an account any time.` |
+| otherwise | `Saved to this phone. You can add an account later to back it up.` |
+
+The brief for this round said both replacement strings already exist in the corpus and to use them
+rather than invent any. **The strings do exist** — `AccountAskCopy.body` at
+`Cypress/Features/AccountAsk/AccountAskPresentation.swift`, and the `linked` arm verbatim in
+`docs/distilled/PROTOTYPE-FLOW.md` §1.4. What does not exist is the **state**. The `linked` arm needs
+somebody signed in, and Sign in with Apple is blocked on an entitlement this repository cannot add
+(ERRATA **E266** §2), so on every build
+producible from this tree it is unreachable. The state the app is actually in is **anonymous, and
+sent**, and the mocks enumerate four account states — `none`, `ask`, `linked`, `dismissed` — none of
+which is it.
+
+A fourth sentence is copy, and copy is not an engineer's to write (DECISIONS constraint 21). So the
+line stands, wrong, with the reason written above it in the source, and this is the ask. Two prose
+comments that asserted the opposite — `RootView.accountLink()`'s "screen 18's 'saving to this phone
+only' stays true after it" and `VisitSavedView`'s "which stays true" — were corrected in the same
+commit, because a confident comment is where bugs survive here.
+
+#### 2. Screen 15's copy went the other way, and that one *is* resolved — by deletion
+
+`BetaCapability.accountsAreLocalOnly` and `AccountAskCopy.bodyLocalAccount` are gone.
+
+ERRATA **E131** introduced them because SCREENS.md §2's drawn sentence — "An account backs them up
+and lets them join each tree's public timeline" — made two promises a local account kept neither of,
+and it substituted a sentence ending "**nothing is uploaded, and none of the services below has been
+contacted**".
+
+That substitute is the sentence this round makes false, and flatly: the outbox uploads, and
+`cypress-sync` has been contacted before anybody reads the screen. Meanwhile both of §2's promises
+became the service's actual behavior — `POST /devices/claim` re-homes this device's rows onto the
+account, and `photos.go` auto-approves a photograph from a signed-in account where a device's stays
+`pending`, which *is* joining the tree's timeline. So the constant ended the way `BetaCapability`'s
+own header says a capability constant should end: **by deletion, with the drawn copy returning**, not
+by a flip.
+
+**The residual, stated rather than left to be found.** §2's first clause is "They live on this phone
+right now", and after this round they live on this phone *and* on the service, unattributed to any
+account. It is the mocks' own sentence and it is far closer to true than what it replaced, so it is
+drawn; whether it wants a word changed is the same owner question as (1) and belongs with it.
+
+#### 3. Screen 17 says "No connection." to somebody with four bars, and SCREENS.md names no sentence that would fix it
+
+> **PARTLY RULED — 2026-08-14, rulings 1 and 3.** A terminally refused row now reads `This couldn't
+> be sent.` and folds into the failed row, and the ruled sentence is required to stay distinguishable
+> from the "No connection." state this section is about. **The case this section actually raises is
+> not fixed**: a `SessionError` on a good connection is *outside* the taxonomy, so it stays `pending`
+> and still renders "No connection." — the ruling narrowed the terminal sentence and said nothing
+> about the fallback. Read this section as still open for that arm.
+> RULINGS **R74**, and ERRATA **E271** §2 for what the ruling gave up.
+
+Review of PR #77 flagged this and it becomes live here. `OutboxFailureReason.sentence(for:)`
+(`Cypress/Data/Outbox/OutboxViewState.swift`) answers **"No connection."** for any error outside the
+`APIError` taxonomy, and that fallback now catches two things it did not before:
+
+- **`SessionError`.** `SessionTransport` deliberately converts every credential failure into a
+  `SessionError` rather than `APIError.unauthorized`, because `unauthorized.retryable` is `false` and
+  a lapsed session would otherwise move the whole queue to `.failed` in one pass and print "Sign in
+  to send this." to somebody who is signed in (spec §5.8, ERRATA E261 §3). That design is right and
+  this entry does not question it. Its leftover is the *sentence*: a refused refresh on a good
+  connection renders as "No connection."
+- **`SessionError.malformedResponse`.** A 2xx body this client cannot decode is a shape mismatch, and
+  it also renders as "No connection." This is not hypothetical — it is how the first draft of
+  `DataLayerWiringTests.theSendPathCannotProduceARemoteSurface` went red, with a fixture whose error
+  envelope was the wrong shape.
+
+**What SCREENS.md offers: nothing.** Screen 17's section (`docs/distilled/SCREENS.md`) names no
+per-cause sentence at all. Its whole failure vocabulary is a row sub-label (`upload failed twice`), a
+header pill already overruled by E81, and the footnote promise — *"Nothing here disappears silently.
+An item that cannot sync says so, says why, and waits for you."* The eight per-code sentences the app
+draws are engineer-authored against BUILD-PLAN §6's list of **codes**, which carries no copy.
+
+So there is no honest sentence to pick, and the footnote is the thing being broken: the item does
+wait, and it does say why, and the why is false. This is the ask. Note that the *retry* behavior is
+correct in every case above — an item outside the taxonomy stays alive on the backoff, which is
+exactly what a session failure should do — so this is a copy defect and not a queue defect.
+
+#### 4. The 72 h photo grace window is documented on both sides and swept by nothing, and `PhotosForTree` does not filter on it
+
+Found while establishing whether the photo half of the outbox could be given its second sink this
+round (it could not — see the PR body). It is a service defect independent of that question.
+
+`POST /photos/begin` inserts a `photos` row and returns a presigned `PUT`.
+`POST /photos/{id}/received` sets `bytes_received_at`, which `store.MarkPhotoBytesReceived`'s own
+comment calls "closing the 72 h grace window", and `PhotoUploadTicket.binaryGracePeriod` says the
+same on the client. **Nothing collects the rows where that window stays open.** There is no sweeper
+anywhere in `server/` — no cron, no ticker, no `DeleteExpired` — and
+`server/internal/store/photos.go`'s `PhotosForTree` selects every row for a tree with no predicate on
+`bytes_received_at` at all.
+
+The consequence: a `begin` whose `PUT` never lands leaves a **permanent phantom photograph** on that
+tree for every reader. `GET /trees/{id}` returns it, `RoutedAPI.treeProfile` merges it into the
+photo series, and `photoData(id:)` hands back a presigned GET for a storage key holding nothing —
+which the client correctly turns into a failed read, on a photograph the profile said was there.
+
+Two independent repairs, and it wants both: filter `PhotosForTree` (and `reads.go`'s hero-photo
+query) on `bytes_received_at IS NOT NULL OR created_at > now() - 72h`, so an in-flight upload is
+still its own contributor's and an abandoned one is nobody's; and sweep the abandoned rows and their
+storage keys, because a row nothing will ever fetch is still a row.
+
+**This is also the reason the photo send sink is not in this round.** Any retry of a failed binary
+send must call `POST /photos/begin` again — the route mints a fresh id per call and takes no
+idempotency key — so every retry leaves an abandoned row behind, and with no sweeper each one is a
+phantom photograph rather than a row that quietly expires. The design ERRATA **E264** assigns to its
+own ticket therefore has a server prerequisite that E264 did not know about.
+
+#### 5. **BLOCKING** — `POST /sync` refuses every anonymous item, because two different identifiers are both called "device id"
+
+Found by running the wiring round's own client code against the deployed service. It is the reason
+this round's deliverable does not work in production, and it is a server defect.
+
+##### What happens
+
+Every item an anonymous installation sends comes back:
+
+```
+{"results":[{"client_uuid":"…","status":"failed","error":"forbidden",
+             "message":"That item belongs to a different device."}]}
+```
+
+`APIError.forbidden.retryable` is `false`, so `OutboxRetryPolicy.nextState` moves the row straight to
+`.failed` — not after 48 h, on the **first drain** — and screen 17 prints *"This account is not
+allowed to send that."* to a phone doing exactly what D9 asks of it. Measured through the real
+composition root: `DrainReport(attempted: 2, … failedTerminally: 2, sent: 0)`, both rows
+`applied=true sent=false`.
+
+##### The mechanism, isolated with a control
+
+Three probes against `https://cypress-sync.fly.dev`, one device token, same item shape:
+
+| probe | `device_id` sent | answer |
+| --- | --- | --- |
+| A | the caller's own registered `device_uuid` | `forbidden` — "That item belongs to a different device." |
+| B | some other UUID | `forbidden` — same message |
+| C | **omitted** | `applied`, and `GET /me/grove` returns the row |
+
+A and B answering identically is the finding. The comparison in `applyOne`
+(`server/internal/api/sync.go`) is
+
+```go
+if item.DeviceID != nil && *item.DeviceID != *who.DeviceID {
+    return failed(apierr.Forbidden, "That item belongs to a different device.")
+}
+```
+
+and the two sides are in different vocabularies:
+
+- `item.DeviceID` is the **client's** installation id — `app_state.device_uuid` (D9), the value the
+  phone registers with and sends to `POST /devices/claim` as `device_uuid`.
+- `who.DeviceID` is `devices.id`, a **server-minted row key**:
+  `store.RegisterDevice` inserts `devices (id, device_uuid) VALUES (uuid.New(), $deviceUUID)` and
+  `DeviceTokenOwner` returns `device_tokens.device_id`, which is that row key.
+
+They can never be equal, so the predicate is `true` for every item that carries a `device_id` at
+all. `claimDevice` gets this right — it resolves `device_uuid` through `RegisterDevice` before using
+it — so the translation exists in the codebase; `applyOne` is the one place that skipped it.
+
+##### Why nothing caught it
+
+`server/internal/api/api_test.go` has no test that sends the caller's own `device_uuid` and expects
+success. Every green sync test **omits** `device_id` (probe C's shape), and the single test that
+sends one sends `uuid.New()` — a stranger's — and asserts the refusal. So the happy path of the
+anonymous client is the one path the server's own suite does not cover, and the defect is invisible
+from inside it. This is the project's dominant failure family again: a guard green with its defect
+present, because the case that would fail it was never written.
+
+##### The fix, applied — in PR #80, not here
+
+Written out in this entry first and *reverted*, because at the time there was no Go toolchain on the
+machine, no container runtime running, and `server/` has no CI: this repository does not accept a
+change nobody watched build. A toolchain arrived, and the fix shipped as its own server-only PR. It
+is recorded here in the shape it actually took, which is the shape this entry predicted:
+
+1. `store.DeviceTokenOwner` returns **both** identifiers, joining `devices` on
+   `device_tokens.device_id` and selecting `d.device_uuid` beside `t.device_id`.
+2. `api.caller` gains `DeviceUUID *uuid.UUID`, set on the opaque-token path beside `DeviceID`.
+3. `applyOne` compares against it:
+   `if item.DeviceID != nil && (who.DeviceUUID == nil || *item.DeviceID != *who.DeviceUUID)`.
+
+Once per credential rather than once per item — `applyOne` runs per item over a batch of up to
+**500** (`maxSyncBatch`, `internal/api/sync.go`), so resolving `item.DeviceID → devices.id` at the
+comparison site would have added up to 500 queries per request to fix a comparison. **No migration**:
+the join reads columns that already exist.
+
+The first draft of this paragraph said "up to 100", which is the *client's* number and not this
+one — §6's page cap, quoted in `OutboxQueue.batchSize`'s comment, where the shipping value is 25.
+Two caps exist and they are on opposite sides of the wire; the argument here is about what the server
+will accept in one request, and the real figure makes it five times stronger than the one I reached
+for.
+
+The `tokens.SubjectDevice` JWT branch is left with a nil `DeviceUUID` and the reason written beside
+it. Nothing mints a signed device token, so there is no fact there saying which vocabulary its `id`
+is in; nil makes `applyOne` refuse, which is the safe direction.
+
+**Two things the round turned up that this entry had not predicted.**
+
+*There is exactly one instance of the mismatch, and the check for a second is worth keeping.* The
+only other device-identifier comparison in non-test server code is `ownsPhoto`
+(`internal/api/photos.go`), and it is correct for a reason worth stating: `photo.DeviceID` is read
+out of the `photos` table where it was written from `who.DeviceID`, so both sides are `devices.id`
+and nothing client-supplied enters. Of the four client-supplied device fields on the wire, three go
+straight into `RegisterDevice`/`ClaimDevice`, which translate. And the *user* arm is not an
+analogous bug: the client's user id **is** `users.id`, minted by the service and handed back by
+`/auth/oidc`.
+
+*`go test ./...` answers `ok` for every package while the half that matters skips.* Without
+`CYPRESS_TEST_DATABASE_URL`, `internal/api` skips the SQL half and still prints `ok`. **Two counts,
+because they are two different measurements and only one of them is about the shipped tree:**
+
+| tree | skipped | passed |
+| --- | --- | --- |
+| before the fix — the shape I calibrated the instrument against | 43 | 12 |
+| the shipped tree | 44 | 12 |
+
+The difference is the new test, which skips without a database exactly like the 43 it joins — so the
+guard written to catch this defect is itself invisible under the command most people will run. That
+is the finding, not a footnote to it. That is this project's signature failure mode
+living in the server's harness, and it is why the fix was verified against a real Postgres (0
+skipped, 121 passing) rather than against those `ok` lines. **`ok` from `go test` is not evidence
+about the SQL half.** `server/README.md` says the suite skips loudly; the per-test skips are loud and
+the per-package verdict is not, and the per-package verdict is what a reader sees.
+
+##### The red-proof, both directions
+
+Reverting the fix fails the new test with the deployed service's own refusal — *an item naming its
+own device was "failed" (forbidden: That item belongs to a different device.)* — so it goes red for
+the production reason rather than merely red. The negative control matters as much: deleting the
+ownership predicate entirely (the lazy repair) fails the *stranger's-device* arm of the same test,
+which is what makes the first assertion a measurement instead of a coincidence.
+
+##### What must not happen before it lands
+
+**This client change must not reach TestFlight until PR #80 has merged *and* `cypress-sync` has
+been deployed.** Merging the fix is not the same as shipping it, and the deployed service is what the
+client meets. Before the wiring
+round, an anonymous queue drained locally and settled `done`; after it, and against the service as
+deployed today, every item settles `failed` with a sentence that is both wrong and non-retryable.
+The client is correct in what it sends — `device_id` is exactly what `syncItem` declares and what
+the server's own comment says a device credential authorizes — so the repair belongs on the server,
+followed by a deploy.
+
+##### One thing the same probes prove, and it is the round's good news
+
+With `device_id` omitted (probe C) the whole path works end to end against the deployed service:
+`POST /devices/register` → `POST /sync` → `200 applied` → `GET /me/grove` returns the row with its
+`record` counts and `last_visited_at`. The routes, the wire shapes, the taxonomy and the session are
+all correct. One comparison stands between this round's client and a working live path.
+
+#### 6. Four more comments that stopped being true, corrected in the same branch
+
+Swept for on the way out, because "a confident comment is where bugs have survived here" and this
+round falsifies a whole family of them at once. Each said, in its own words, *there is no server*:
+
+- `RootView.accountLink()` — "screen 18's 'saving to this phone only' stays true after it".
+- `VisitSavedView` — the same claim, about the same line, in the sheet that presents screen 15.
+- `AccountDeletionChoice.eraseEverything` — "there is no server and nothing has been uploaded … so
+  on this app as it stands it is a complete erasure and the copy is allowed to say so plainly".
+  **This one is load-bearing**: it is the justification for what the erasing door promises. The
+  erasure is still complete over everything the app can reach, because `DELETE /me` erases the
+  service's rows too — but "nobody has already seen them" is no longer true by construction, and
+  whether the drawn copy wants a word about that belongs with the copy questions above.
+- `LocalAPI.uploadPhoto` — "§3.10 says server-side, and there is no server" as the reason EXIF is
+  stripped on the phone. The behavior is right and the reason has changed: stripping at the boundary
+  beats stripping at the far end, and now that binaries can travel it is the only version that works.
+
+`AppSchema` v15's `remote_sent` comment ("Never 1 on any database this migration has ever met,
+because there is no server yet") was narrowed rather than corrected — the claim is about rows the
+*migration* rewrites, which is still true, and the sentence now says which rows it means and why the
+`done` CHECK still does not name the column.
+
+### E269 — The Keychain outlived the database, and the queue could never recover (task #158)
+
+Written on `fix/158-reinstall-credential`, after the wiring round put a live service behind the
+app and end-to-end verification took the merged client through an app deletion.
+
+---
+
+#### The defect
+
+**Delete the app, reinstall it, and the phone can never sync again.** Every item it sends is refused
+with `forbidden` — *"That item belongs to a different device."* — and nothing the person can do from
+inside the app changes that.
+
+#### The mechanism, which is a pairing nobody stored
+
+Two facts, each correct on its own:
+
+- **The Keychain survives app deletion on iOS.** `KeychainCredentialStore` holds the anonymous
+  installation's device token, and deleting the app does not take it.
+- **`app_state.device_uuid` does not survive.** D9's installation id lives in the SQLite database
+  inside the app container, so deleting the app takes it, and `DataLayer.boot` mints a fresh one on
+  the next launch — exactly as it is written to.
+
+Together they produce a state neither of them describes: a credential minted for installation **A**,
+presented by installation **B**. The service resolves the token to A's `devices` row; every item
+names B; `applyOne` compares the two and refuses all of them.
+
+Note what is *not* wrong. The token is live, well-formed, and accepted. The database is correct. The
+registration was correct when it happened. Only the **pairing** between them is wrong, and nothing
+in the client recorded a pairing to check — `DeviceCredential` stored `deviceToken` and `expiresAt`
+and nothing else. The mismatch was not undetected; it was **inexpressible**.
+
+#### Why it never healed, which is what made it a blocker rather than a bug
+
+Four independent reasons, and every one of them has to hold for the state to be permanent:
+
+1. **The refusal is a per-item verdict inside a `200 OK`.** `POST /sync` answers a batch with one
+   status per item, so a refused item is a field in a successful response.
+2. **`SessionTransport` rotates on a 401 and there is no 401.** Refresh-and-replay (spec §5.8) is the
+   client's whole answer to "the credential is wrong", and it is wired to a status code this failure
+   never produces.
+3. **`forbidden` is not retryable**, so `OutboxRetryPolicy` settles each item `.failed` on the first
+   drain rather than leaving it on the 48 h backoff.
+4. **The act that causes it is deleting the app** — the first thing anybody tries when something
+   looks wrong, and the one action guaranteed to reproduce it.
+
+The type's own header is where this reads most sharply. It said:
+
+> It is **not an attestation**: a reinstall mints a new one and the server cannot tell the
+> difference.
+
+The second clause is true. The first is false — a reinstall mints a new one only if something told
+it to, and nothing did. A confident comment describing the behaviour its author assumed.
+
+#### The fix
+
+`DeviceCredential` carries the `device_uuid` it was minted for, and `AppSession
+.storedDeviceCredential` reads a credential minted for another installation as **no credential at
+all** — which routes it into the ordinary lazy registration and mints a fresh one through the
+existing single-flight door. The check sits at the single door to the stored value rather than at its
+two call sites, because both readers must agree what "this installation has a credential" means and a
+rule stated twice can disagree with itself.
+
+**The enabling change is a split, and it is the part worth remembering.** `DeviceCredential` was both
+the wire shape (decoded off `POST /devices/register`) and the storage shape (encoded into the
+Keychain). A type that is both cannot carry a field the wire does not send — so the missing field was
+not an oversight, it was *unwritable* while the conflation stood. `DeviceRegistration` is now the
+wire answer; `DeviceCredential` is what is stored; and `SessionCredentials.swift`'s header states the
+persistence rule that only the storage half has: a non-optional key discards what is already stored,
+which is right when the missing fact makes the stored value untrustworthy and wrong when it would
+throw away a usable credential — because re-registering retires the previous token server-side.
+
+No migration: the app is unreleased, and the discard-and-re-register path is the desired outcome for
+a pre-pairing payload anyway.
+
+#### The control that killed the impostor fix
+
+The obvious repair — re-register on every launch — passes the reinstall test and is its own defect:
+`POST /devices/register` calls `RevokeDeviceTokens` on **every** call (`server/README.md`), so a
+phone that re-registered per launch would retire the credential it was about to drain with. Every
+launch would sign out the queue it was trying to send.
+
+So the reinstall assertion ships with a control asserting the opposite case — a credential minted for
+*this* installation is reused and **nothing** registers. Under the mutation that removes the pairing
+check, the reinstall test goes red and the control stays green, which is what attributes the failure
+to the check rather than to the fixture. Same discipline as `registersOnceAndReuses`, which is the
+test that already existed for the same reason on the empty-store path.
+
+Two smaller guards ride along: that the pairing survives encoding (a `deviceUUID` lost in the coder
+would restore the defect while every in-process test still passed, because they hold one process),
+and that a pre-pairing payload reads as absent.
+
+**Four existing fixtures were seeding the Keychain with the wire payload.** Two went red under the
+split. **Two stayed green while seeding nothing readable** — the rotation tests, which then silently
+measured a path that begins with an empty store. A fixture that decodes to nothing is a test that has
+quietly changed subject, and it is the reason the split's fallout was worth reading test by test
+rather than fixing until the suite was green.
+
+#### Still open: the user arm
+
+`AppSession.authorization()` consults `storedSession` **first** and returns `.user(…)` before it ever
+reaches the device credential. So a reinstall on a phone whose Keychain still holds a live account
+session takes a different branch, and the fix above does not touch it.
+
+That branch does not have this defect — `applyOne`'s user arm accepts items carrying no `user_id`, so
+nothing is refused and nothing is lost. It has a different one: the session survives while
+`app_state.currentUserID` does not, and nothing re-hydrates it (`DataLayer.boot` reads `app_state`
+and never consults `AppSession`). The result is an installation that shows itself as signed out while
+its bearer is the account's and the service attributes the work to that account.
+
+Whether a reinstall should restore the account from the surviving session or discard the session is a
+**product question**, not an engineering one — an account is supposed to be portable, which is the
+argument for restoring it, and a phone that silently resumes somebody's account after a delete-and-
+reinstall is the argument against. It is recorded here rather than decided.
+
+#### The two screen 17 sentences, and why they are not in this entry's fix
+
+The field verification saw *"This account is not allowed to send that."* on an anonymous
+installation, and a `stopped` row under a footnote promising the item "waits for you" with no retry
+affordance reachable. **Both were this defect's symptoms** and both are gone at the fixed head.
+
+Neither sentence was changed, and neither could be without inventing copy:
+
+- The forbidden sentence is the **client's own** (`OutboxFailureReason.sentence(for:)`), not the
+  service's message — the service's `message` is never rendered. It assumes an account where D9 makes
+  anonymous the normal case. `docs/distilled/SCREENS.md` names **no** per-code sentence for screen 17
+  at all; the eight are engineer-authored against BUILD-PLAN §6's list of *codes*, which carries no
+  copy.
+- `stopped` is not a drawn state. SCREENS.md draws `waiting`, `retry` and `synced`; the app invented
+  the fourth, and `OutboxPreviews` marks it "NOT SPECIFIED". Its lack of a retry control is argued in
+  `OutboxView` — retrying a non-retryable code promises an outcome the taxonomy says will not change
+  — and that argument is sound. What is unresolved is that SCREENS.md also says "a failure asks for a
+  retry instead of vanishing", so the invented state sits against the mocks' own sentence.
+
+Both are copy and design questions for the owner (DECISIONS constraint 21).
+
+### E270 — #158 step 5: the Apple button signs people in, and three drawn sentences around it stopped being true
+
+Written while building #158 step 5 (screen 15's `Continue with Apple`) on `feat/158-siwa-button`.
+Everything below was checked against the code, the seed, the deployed service or the running screen;
+nothing is inferred from prose.
+
+It follows ERRATA **E266**, and §5 says which of that entry's
+findings this round discharged and which it did not.
+
+---
+
+#### 1. Two of the three findings this round produced are copy questions, and both are the owner's
+
+Neither is invented an answer to here (DECISIONS constraint 21). Both are drawn on a phone today.
+
+> **RULED — the owner answered both on 2026-08-14**, together with §3 below and with screen 17's
+> refused-item sentence. The rulings are RULINGS **R74** and were implemented on
+> `feat/copy-rulings`; what each replacement now claims, and what it does *not* reach, is
+> ERRATA **E271**. The two subsections below are
+> left exactly as written, because the reasoning for why they were **not** answered by an engineer is
+> the part worth keeping — the answers are in the ruling. What changed, in one line each:
+> §1a's `noticeUnavailable` opens *"Google and email sign-in are coming later."*, and §1b's
+> `signedInBody` is gone, replaced by `AccountCopy.storageBody` — *"Check-ins and notes sync to your
+> grove. Photos stay on this phone until you choose to share them."* — drawn in both arms of the
+> account block.
+
+##### 1a. `AccountAskCopy.noticeUnavailable` — screen 15
+
+> *"Accounts are not ready yet. Everything you have saved stays on this phone."*
+
+Written when no route on screen 15 worked, and true then. It is now the line drawn when somebody
+taps **`Continue with Google`** or **`Use email`**, standing beside a `Continue with Apple` that
+completes a real sign-in. *Accounts* are ready; that **route** is not. Spec §5.3 and RULINGS **R72**
+ruling 2 both say those two buttons should present "the existing 'not yet' notice", so the behavior
+is ruled — what is not ruled is that the existing notice's first sentence has aged out from under
+it.
+
+The alternative was leaving both buttons as they were, which is worse and is why the change was made
+anyway: until this round they **minted a local account**. After #158's wiring round put a send sink
+behind the outbox, that told somebody their work was backed up while no session existed to back it
+up with — ERRATA **E131**'s defect with the sign reversed. A one-word imprecision replaced a
+substantive false promise; it is still an imprecision.
+
+##### 1b. `AccountCopy.signedInBody` — screen 18, and the brief named this one in advance
+
+> *"This account gathers what you save here under one name on this device. **Nothing is uploaded**,
+> and nothing about you is public."*
+
+The middle clause is false, in two independent ways, and neither of them is this round's doing
+alone:
+
+- `DataLayer.boot` wires the outbox's send sink over `RemoteAPI` whenever the remote gate allows
+  network, so an **anonymous** installation's contributions already leave the phone. That landed in
+  #158's wiring round, before this branch existed.
+- After this round, a signed-in account is a row on `cypress-sync` with a session in the Keychain,
+  and `photos.go` auto-approves a photograph from one where a device's stays `pending`.
+
+The third clause still holds — `User.publicAttribution` cannot be turned on anywhere in the app
+(ERRATA E100) — so "nothing about you is public" is true.
+
+Left standing, deliberately. Screen 17/18 copy is the owner's, this round's brief names it as a
+stop-and-ask by name, and it is the same open question PROTOTYPE-FLOW §1.4's storage line already
+has: its three arms key on `account ∈ none | ask | linked | dismissed` and there is no arm for
+*anonymous-and-sent*. What was done instead is that `AccountSection.swift`'s header and
+`signedInBody`'s own doc comment now say the sentence is false and why — a comment nobody corrected
+is how a false promise survives a review.
+
+---
+
+#### 2. The cancel path had no drawn state, and silence is the only answer that invents nothing
+
+New with this round: until it, screen 15's sign-in was local and could not be cancelled. With
+Apple's sheet in front of the tap it can be, and `AccountAskModel.link` turned *every* throw into
+`Notice.failed` — *"That did not go through."*
+
+Three answers were available and two of them invent:
+
+- **`.failed`** is a claim that something went wrong about somebody who dismissed a sheet. False.
+- **A fourth sentence** is copy no mock draws (constraint 21).
+- **Nothing** is what SCREENS.md 15 draws — the sheet, unchanged — and what a dismissed system sheet
+  leaves behind in every other iOS app.
+
+The third is what ships (`AccountLinkRefusal.cancelled`). Recorded here rather than merely done,
+because it is the one place this feature answers a copy question by declining to write copy, and a
+later reader should find the reasoning rather than an unexplained empty `catch`.
+
+It is proved on a device as well as in a unit test, and the two assertions are deliberately opposite:
+`AppleSignInUITests.testACancelledSheetLeavesScreenFifteenExactlyAsDrawn` asserts the sheet is intact
+**and** that neither notice sentence is present, and
+`testAFailedAuthorizationDrawsTheNoticeThatCancellingDoesNot` is its control — without it, a build
+that drew no notice for any outcome would pass the first while swallowing every real failure.
+
+---
+
+#### 3. Screen 15's `Continue with Apple` is not Apple's button, and that is an App Review question
+
+> **RULED — 2026-08-14, ruling 6: draw the Apple logo as a vector shape into the existing control**,
+> from Apple's own published artwork, with no SF Symbol and no `ASAuthorizationAppleIDButton`; the
+> fill token and the label do not change. This section called the gap correctly — "the gap is the
+> glyph, not the styling" — and its R57 paragraph is now half wrong in a way worth knowing about:
+> `DrawnGlyphGuardTests` really does not trip on this, and the reason is narrower than the section
+> says. Its tokens catch an SF Symbol anywhere in the app target, and they catch **nothing** about
+> `ASAuthorizationAppleIDButton`, which was proved by constructing one and watching the guard stay
+> green. See ERRATA **E271** §3.
+
+SCREENS.md 15 §3 draws the control itself: fill `#1C2A21`, `#fff`, radius 14px, `padding:14px`,
+15px/700, label `Continue with Apple`. It is built from tokens as `AccountProviderButton` and this
+round did not change a pixel of it, because the brief and constraint 21 both say the button appears
+as the mock draws it.
+
+What is worth an owner's eye before submission: Apple's guidelines for Sign in with Apple ask that
+the button use their supplied control or match their published design, and the mock's version
+carries **no Apple mark**. The colour and the label are within Apple's own vocabulary — `Continue
+with Apple` is one of the approved wordings, and black is one of the approved appearances — so the
+gap is the glyph, not the styling.
+
+Two things that are *not* the problem, checked rather than assumed:
+
+- **R57 does not trip.** The drawn-glyph policy is about SF Symbols, and
+  `DrawnGlyphGuardTests.BorrowedGlyphAPI.tokens` is `["systemName:", "systemImage:"]`. Nothing this
+  round added spells either. The suite is green with `AppleSignIn.swift` in the target.
+- **The entitlement is present.** `Cypress/Cypress.entitlements` carries
+  `com.apple.developer.applesignin = [Default]` and both configurations set
+  `CODE_SIGN_ENTITLEMENTS` (PR #82, now on main).
+
+Not resolved here: swapping in `ASAuthorizationAppleIDButton` would change a drawn screen, which is
+the owner's call, and doing it as a side effect of a sync-API round is the thing constraint 21
+exists to stop.
+
+---
+
+#### 4. Two smaller findings
+
+**`LocalAPI.resumableUserID()` has no shipping caller any more.** It existed so that signing back in
+did not mint a rival id beside the one this device signed out of. The id is the service's now — the
+same Apple account resolves to the same `users` row through `apple_subject` — so resumption is
+answered on the far side, and a value this device remembered could only disagree with it. It is not
+deleted: `AccountDeletionTests` and `AccountSurfaceTests` read it to prove that a **deletion** leaves
+nothing resumable, which is RULINGS R3's promise and unaffected. Its doc comment now says so.
+
+**`DebugDeepLink.Screen`'s note on screen 15 was false.** It read that 15 is absent "because it is
+not a `Route`… The harness drives `AppRouter`, which has no case that opens it."
+`AppRouter.Route.accountAsk` has existed since ERRATA **E131** gave the You tab a way back in after a
+sign-out. The comment outlived the route by a whole ticket. There is a `.accountAsk` case now.
+
+Worth one line on *why* the deep link rather than the You tab's own `Sign in` row, which was the
+first attempt: whether that row draws at all depends on whether this device is signed in, and
+`DebugDeepLink`'s `.moderationReview` case **promotes the account**. A UI test taking that door reads
+whichever run went before it — ERRATA **E216**'s family, arrived at from a direction E216 does not
+cover.
+
+---
+
+#### 5. What the earlier entry got right, and the two parts of it that are now discharged
+
+ERRATA **E266** was written on `feat/158-session-auth`. Read
+against this round:
+
+- **§1 holds, all three bullets.** E124's *"nothing on the call path changes"* is false.
+  `AccountLinkRequest` really could not carry the exchange, so the credential is acquired by a
+  dependency the composition root now constructs (`AppleSignIn`); a cancelled sign-in really had no
+  state, and §2 above is what it became. On the first bullet the entry offered a fork — *either* the
+  closure stops being `nonisolated` *or* something new is threaded to it — and it is the second: the
+  window is resolved inside `AppleSignInController` at presentation time, so `accountLink()` stays
+  `nonisolated` and still carries nothing of the view.
+- **§2 is discharged.** "Sign in with Apple needs an entitlement this repository does not have, and
+  cannot add" was true when written and is not now: the owner added the capability in Xcode and PR
+  #82 carries the `.entitlements` file and `CODE_SIGN_ENTITLEMENTS` in both configurations.
+- **§3 is half discharged and half open.** Its timing argument — that steps 5 and 6 belong on the
+  same landing as the send sink — was taken: the wiring round landed the sink and deleted
+  `BetaCapability.accountsAreLocalOnly`, so **step 6 was already done before this branch started**
+  and this round is step 5 alone. What it did not anticipate is that finishing the sequence in that
+  order leaves screen 18's line false in the *other* direction, which is §1b above.
+- **One citation in it is wrong**, already noted in PR #77's review and repeated here so it is fixed
+  at splice time: the reflection pin on `AccountLinkRequest` is
+  `CypressTests/AccountAskSheetTests.swift`, not `AccountAskTests.swift`.
+
+---
+
+#### 6. Round 2 — what the adversarial review found, and the one thing it changes about §7 below
+
+PR #84's reviewer proved three defects. All are fixed on the branch; two of them change what earlier
+sections of this entry were entitled to claim, so they are recorded here rather than only in the
+commit.
+
+##### 6a. The sign-in path was outside the `CYPRESS_REMOTE` gate entirely (F1)
+
+`DataLayer.boot` built its session as `AppSession(deviceUUID:)` — the default `AuthClient()`, which
+is `SyncService.defaultBaseURL` over `URLSession.shared` — and `boot`'s own `baseURL:` never reached
+it. `RemoteAccess` chose between `SessionTransport` and `RefusingTransport` for `RemoteAPI`, and the
+session went through neither. **With the gate `.disabled`, a tap on screen 15 still dialled
+`https://cypress-sync.fly.dev/api/v1/auth/oidc`**, measured with a `URLProtocol` in front of
+`URLSession.shared`.
+
+It predates step 5 and was unreachable only for as long as `signInWithApple` had no caller. Step 5
+gave it one, in a build the UI suite launches — the sequence `RemoteAccess`'s own header describes.
+
+Two sentences in this repository were false because of it, and both are corrected in place:
+`RemoteAccessTests`' "wires no send sink and **opens no socket**" (true of the outbox, not of the
+process) and `AppleSignInUITests`' "this suite is hermetic". The second half of F1 is its own hazard:
+`DebugAppleSignInOverride.resolve` answered `nil` for an unrecognized value, which restores the
+**real Apple sheet** — so a typo in a UI test put a live system sheet on a runner whose simulator may
+have an Apple Account signed in, which is a real credential POSTed at production from CI.
+
+##### 6b. Nothing observed that the two nonces were the same nonce (F2)
+
+`prepare` and `credential` were free functions each taking a `nonce:`, and the controller passed one
+to each. Replacing the second with `AuthNonce.random()` left the entire suite green while every real
+sign-in would have failed the server's `nonceMatches`. The pairing is a value now
+(`AppleAuthorizationAttempt`) and is asserted across a real controller.
+
+Worth recording as a measurement lesson rather than a defect: `AccountLinkTests`' wire assertion
+stayed green under the hash-for-raw inversion, because its fixture was a **literal** rather than the
+product. A fixture that does not run through the code under test is not evidence about it.
+
+##### 6c. `/auth/oidc` swallowed the #174 guard, and the refusal it now returns has a consequence (F3)
+
+The server returned `200` with a session when `ClaimDevice` reported
+`ErrClaimedByAnotherAccount`, so A signs in on a phone and signs out, B signs in, the service keeps
+every contribution on A while the client moves the phone's local rows to B. It answers `conflict`
+now, with the sentence `POST /devices/claim` already uses, before minting a session — **and after
+`UpsertUserForApple` and `RecordLicenseConsent`**, so a refused sign-in still writes the `users` row
+and still records the consent. Only the device claim and the session are withheld. See §7 for why
+that distinction is stated rather than left to "the request was refused".
+
+**STOP-AND-ASK, new with the fix — RULED. Owner accepted for beta, 2026-08-14.** Nothing on the
+service ever clears `devices.user_id` — a sign-out is not a request it receives — so the second
+account **cannot sign in on that phone at all**. Screen 15 draws `AccountAskCopy.noticeFailed`,
+*"That did not go through"*, which is honest about what happened and says nothing about why, or that
+retrying will not help.
+
+The owner accepted that state **for the beta** on 2026-08-14: one phone, one account, and a refusal
+that is honest but uninformative. The release path — some way for a device to be handed on, or for an
+account to give a phone up — together with copy that explains the refusal, becomes a designed round
+later rather than something improvised inside a sync-API ticket. Recorded here with its resolution so
+the entry does not read as an open question after it has been answered.
+
+##### 6d. Nothing rolled back between the Keychain write and the local link (F4)
+
+`signInWithApple` persists before `linkAccount` runs; if the local half threw, the phone kept a live
+account session while `app_state.currentUserID` stayed unset, and `AppSession.authorization()` reads
+`storedSession` first — so every later request went out with an account bearer while every
+contribution stayed anonymous, under a screen saying nothing had happened. `accountLink()` rolls the
+session back now, keeping the device credential so the anonymous queue goes on draining.
+
+One arm is still open and is named rather than implied: if `persist(session)` throws *inside*
+`signInWithApple`, the service holds a user, a claimed device and a refresh-token family the client
+dropped. That is `AppSession`'s own divergence class, which its header already calls open.
+
+#### 7. What was measured against the live service, and what was created there
+
+`POST https://cypress-sync.fly.dev/api/v1/auth/oidc`, twice, with obviously fake tokens. Recorded
+because the client's own fixtures assert these exact envelopes decode:
+
+```
+{"identity_token":"obviously.fake.token","authorization_code":"obviously-fake-code","nonce":"obviously-fake-nonce"}
+  → HTTP 401 {"error":{"code":"unauthorized","message":"That sign-in could not be verified.","retryable":false}}
+
+{"identity_token":"obviously.fake.token"}
+  → HTTP 400 {"error":{"code":"validation_failed","message":"That sign-in was incomplete. Please try signing in again.","retryable":false}}
+```
+
+Both are the contract behaving correctly — Apple verification failing on a fake token is the expected
+result, not a defect — and **both of these two refuse before any write**: a fake token fails at
+`s.Apple.Verify`, and an empty authorization code fails validation, both before
+`UpsertUserForApple`, `RegisterDevice` or `RecordLicenseConsent`.
+
+**That scoping is deliberate and was narrowed in round 3.** It is a statement about *these two
+probes*, not about `/auth/oidc` generally. The reviewer verified the ordering in the handler: the
+`conflict` refusal added in §6c lands **after** `UpsertUserForApple` and `RecordLicenseConsent`, so a
+sign-in refused for a device already claimed still writes the `users` row and still records the
+consent. That is correct — the account is real and it agreed to the license; what it could not do was
+take this phone — but it is emphatically not "no write happened", and the earlier unscoped sentence
+would have read as if it were. **Nothing was created on the production
+database by this branch: no `users` row, no `devices` row, no session, no `device_uuid` and no
+`client_uuid`.** The residue list for this round is empty.
+
+The real end-to-end tap remains the owner's, on a device, after merge. No test in this repository
+uses an Apple credential.
+
+**What keeps a test build off the service, corrected in round 2.** This paragraph used to rest that
+claim on `DebugAppleSignInOverride` having no `success` value. That seam cannot mint a credential,
+which is true and is not the guarantee: §6a is the guarantee, and until round 2 it did not hold. What
+keeps a DEBUG build off `cypress-sync` is `RemoteAccess` — now including the `/auth/*` wire — proved
+by `RemoteAccessSignInTests` with its interception calibrated by a control request before the
+measurement is believed.
+
+### E271 — The copy round: what the owner's five rulings fixed, and the two sentences beside them that are still false
+
+Written on `feat/copy-rulings`, the round that implements the owner's rulings 1, 2, 3, 4 and 6 of
+**2026-08-14**, and the two corrections the owner ruled on **2026-08-15** after the adversarial
+review. The rulings themselves are RULINGS **R74**.
+
+Everything below was checked against the code, the tests or the running screen. The two findings in
+§4 are new with this round and are **not** ruled. §6 is round 2: what the review proved, including
+one defect in behavior that this round's own tests were arranged not to see.
+
+---
+
+#### 1. What the rulings discharged, and what each replacement is now claiming
+
+Three earlier entries raised these as stop-and-asks and deliberately did not answer them.
+Read against this round:
+
+| raised in | the false sentence | ruled |
+| --- | --- | --- |
+| ERRATA **E270** §1a | `AccountAskCopy.noticeUnavailable`, *"Accounts are not ready yet"* | ruling 4 |
+| the same entry, §1b | `AccountCopy.signedInBody`, *"Nothing is uploaded"* | ruling 2 |
+| the same entry, §3 | screen 15's button carries no Apple mark | ruling 6 |
+| ERRATA **E268** §3 | screen 17's per-code sentences | rulings 1 and 3 |
+
+**The replacements make narrower claims than the sentences they replace, and each one's falsifier is
+written at its own site.** That is the pattern worth carrying forward — a sentence with no stated
+falsifier is how the last set went stale without anyone noticing:
+
+- `AccountCopy.storageBody`'s first clause is `DataLayer.boot` wiring `APIOutboxSendSink`, and its
+  second is `OutboxSendSink` having exactly one method that is not a photo. Both are pinned by
+  `OwnerCopyRulingTests.nothingOnTheSendSideCanCarryAPhotograph`, which reads the protocol's own
+  surface off the source and goes red on the round that adds the photo sink — which is the round the
+  owner said revisits the sentence.
+- `AccountAskCopy.noticeUnavailable` names Google and email rather than "accounts", so it becomes
+  false when either ships rather than when anything ships.
+- `OutboxFailureReason.refusedTerminally` is asserted against the retryable fallback it has to be
+  distinguishable from, not only against itself
+  (`OutboxPresentationTests.aRefusalDoesNotReadLikeALostConnection`).
+
+**`AccountCopy.signedInBody` was renamed to `storageBody`** in the same change, because it is no
+longer a signed-in sentence. That is a rename of a shared identifier and will break any other live
+branch that reads it (CLAUDE.md, "Numbering and shared files").
+
+#### 2. Ruling 3 reverses half of ERRATA E83, and the half it keeps is the half that matters
+
+E83 records that `failed` is two terminal states and SCREENS.md draws one, and it answered with a
+fourth drawn state, `stopped` — the same amber card, its own mono word, no control. The ruling folds
+that back in: one drawn terminal row, and the sentence is the whole of the difference.
+
+E83's other argument survives intact and should not be read as overturned with it: a non-retryable
+code still fails the item immediately rather than spending 48 h of backoff on an answer BUILD-PLAN §6
+says will not change. What changed is only what screen 17 *draws* about the two.
+
+**What the round gave up, stated rather than left to be found.** Screen 17 §6's footnote is "An item
+that cannot sync says so, says why, and waits for you", and `This couldn't be sent.` does not say
+why. For a terminally refused row the "why" survives only as `lastErrorCode`, which nothing draws.
+That is the ruling's trade — the owner had the composed `<cause> This one will not go through on its
+own.` in front of them as the alternative — and it is recorded here so a later reader does not read
+the footnote as unqualified.
+
+**Six of the eight per-code sentences are unreachable from an outbox row, which is a larger
+consequence than it first reads.** `describe` reaches `sentence(for:)` only on the retrying path,
+and `OutboxRetryPolicy.nextState` sends every non-retryable code to `.failed` on its first attempt —
+so `unauthorized`, `forbidden`, `not_found`, `validation_failed`, `conflict` and
+`moderation_rejected` never draw their own line. Three remain in service: the out-of-taxonomy
+fallback ("No connection.") and the two retryable codes. The six are kept rather than deleted, with
+the reason written at the function; what is *not* kept is any comment elsewhere claiming screen 17
+prints one of them, and §6d is that sweep.
+
+**One consequence that is a real behavior change, not only copy.** A refused row carries the retry
+control, where `stopped` withheld it — the alternative, a control on one terminal row and not on the
+other, is the furniture-level distinction the ruling removed. **It also turned out to be round 2's
+finding, because the control did not do what the ruling assumed it did**: see §6a.
+`OutboxPresentationTests.theTwoTerminalReasonsDifferOnlyInTheirSentence` holds the drawing and
+`OutboxQueueRetryTests` holds the behavior, and both are needed — the first only ever looks at the
+row *before* the tap, which is exactly how the defect in §6a survived it.
+
+#### 3. The Apple mark: where the geometry came from, and the guideline this does not satisfy
+
+`AppleMark` transcribes Apple's `small` Sign in with Apple logo file — the one Apple's own renderer
+uses by default for a button with text — control point for control point, from the path data in
+Apple's Sign in with Apple JS SDK
+(`https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js`), which the
+HIG links to as the way to "get the code". The file's own padding is transcribed with it, because
+that padding is what puts the mark on the title's optical centre and it is **not symmetric**: 13.634
+above the glyph and 15.834 below, in a 44-unit box. Trimming to the glyph and centring would have
+moved the mark down a point, and nothing would have said so.
+
+**Three things Apple asks for that this round does not give, all recorded rather than papered over:**
+
+- **"Use only the logo artwork downloaded from Apple Design Resources; never create a custom Apple
+  logo."** Nothing here is drawn by eye, but it is a transcription rather than the file, and the
+  literal reading asks for the file. That is the trade ruling 6 takes: R57's "every glyph in this app
+  is a `Shape` drawn in this repo" against a vendor asset in the catalog. **App Review evaluates all
+  custom Sign in with Apple buttons**, so it is an owner-visible risk and not a private one.
+- **"the title's font size would be 43% of the button's height".** SCREENS.md 15 §3 draws 15 px/700
+  with `padding:14px`, which is nearer a third. The mock is not this round's to move and the ruling
+  says the label does not change, so the mark is sized from the *title* — Apple's own composed rule,
+  "the button's height would be 233% of the title's font size" — rather than from the button. The
+  proportion between mark and text is Apple's; the proportion between text and button is the mock's.
+  Sizing from the title is also the only version that survives Dynamic Type: at AX5 the button's
+  height is set by a label on three lines, and a mark matched to that would be half the sheet.
+- **The 8% trailing margin between title and button edge** binds only when the title nearly fills the
+  control. Screen 15's does not at the drawn size — the mark and the label are centred as a pair, so
+  the margin is ~90 pt on a 350 pt button — and at the accessibility sizes where the label wraps, the
+  guaranteed margin is Apple's leading minimum rather than 8%. Named because it is a real gap at a
+  setting Apple's guideline was not written about — **and it is narrower than this bullet first
+  claimed**: measured at AX5 on a 430 pt device the trailing margin is 82.67 pt against Apple's
+  31.20, because the label wraps before it can fill the width. It is an absent guarantee, not an
+  observed shortfall on any device tried. See §6e.
+
+**`DrawnGlyphGuardTests` needed no extension for ruling 6 and this was measured, not assumed.** Its
+tokens are `systemName:` and `systemImage:`, which cover any SF Symbol anywhere in the app target
+including this button. What it cannot see is the other half of the ruling:
+`ASAuthorizationAppleIDButton` is not a glyph API and spells neither token. Constructing one in
+`Cypress/App/AppleSignIn.swift` left `theAppBorrowsNoGlyphs` **green** — run and read, not inferred.
+`AppleMarkTests.theAppConstructsNoSystemAppleButton` is the guard for that half, reusing the same
+already-calibrated scanner.
+
+#### 4. Two sentences the rulings did not reach, and neither is fixed here
+
+##### 4a. `YouCopy.privacyBody` says "everything you save stays on this phone", on the same screen
+
+One section below the account card ruling 2 just fixed, the You tab's privacy callout reads:
+
+> *"…everything you save stays on this phone. Public attribution is opt-in, it is off, and there is
+> nothing in the app yet that can turn it on."*
+
+The first clause is the **same falsehood** ruling 2 removed from the card above it, from the same
+cause: #158's wiring round put `APIOutboxSendSink` behind the outbox, so check-ins and notes leave
+the phone under a device credential with no account anywhere (D9). The rest of the sentence is true
+and is what ERRATA E100 is about — `User.publicAttribution` cannot be turned on anywhere in the app.
+
+Ruling 2 quoted and replaced `signedInBody` and said nothing about this one, so it stands, wrong,
+with the reason written above it in the source. **This is the ask.** It is a small ask: the ruled
+sentence one card up is a candidate answer, and the two would then agree.
+
+##### 4b. `VisitSaveLedger.storageLine` — screen 18's line under the success block — is still open
+
+Raised in ERRATA **E268** §1 and untouched here. Both
+of its arms are false for the same reason:
+
+- ask resolved → *"Saving to this phone only. You can add an account any time."*
+- otherwise → *"Saved to this phone. You can add an account later to back it up."*
+
+It is a different sentence from ruling 2's, on a different screen, with its own three arms in
+PROTOTYPE-FLOW §1.4 keyed on `account ∈ none | ask | linked | dismissed` — and the state the app is
+actually in, **anonymous and sent**, is still not one of the four. Ruling 2 does not generalize onto
+it: "one body for both arms" was an answer about the account block's two arms, and §1.4's arms are a
+different set answering a different question. Naming it here so that "the storage line" is not read
+as settled by this round.
+
+#### 5. Four things about the ruling text itself, two resolved by reading and two that had to go back to the owner
+
+Recorded because a later reader will meet the same ambiguities in the ruling text. **The two that had
+to be asked are listed first, and both were found by the review rather than by the author** — which
+is the lesson of the section: round 1 listed only the two below them, and being confident about which
+ambiguities are safe to resolve by reading is itself the thing to be suspicious of.
+
+**How wide ruling 1's class is — asked, and the answer changed the app.** The ruling names
+`forbidden` and "not retryable"; round 1 read that as the whole non-retryable class, six codes. The
+review checked the six one at a time and found five true and one false: a `moderation_rejected` item
+**did** leave the phone. The owner ruled the split on 2026-08-15 and gave that code its own sentence
+verbatim. This is a scope question about a copy ruling — which is a copy question — and the reading
+that widened it was one an engineer should not have taken alone.
+
+**"The distinction lives only in the outbox detail" — asked, and it was a drafting error.** There is
+no outbox detail in this app: SCREENS.md 17 draws rows, a wi-fi row, a synced section, a summary
+line and a footnote, and `Cypress/Features/Outbox/` is three files. Round 1 silently rendered the
+phrase as "the row's own sentence" **inside the ruling file itself** — the document that becomes
+law — and then derived the retry-control decision from its own rendering. The owner has acknowledged
+the drafting error and ruled the replacement rendering (2026-08-15); the ruling file now quotes the
+original phrase, names it as an error, and gives the correction. The rendering happened to be right;
+putting it in the permanent record under the owner's name was not.
+
+The two below were resolved by reading, and stand:
+
+**"Screen 18 (account/storage)" is the You tab, not SCREENS.md's screen 18.** SCREENS.md 18 is *Next
+tree*, the save confirmation. The repository's own `DebugDeepLink.Screen` labels the You tab `you //
+18`, which is where the number in the ruling comes from, and the ruling quotes *"Nothing is
+uploaded"* — which is `AccountCopy.signedInBody`'s and nothing else's. The site is unambiguous even
+though the number is not; §4b is the sentence that genuinely is on SCREENS.md 18 and it is left open.
+
+**"One body for both arms" is implemented as the card being drawn in both arms**, not merely as one
+string serving whichever arm draws it. The anonymous arm drew no body at all before this round, so
+the narrower reading would make the clause say nothing. The heading still differs — a signed-in phone
+gets `Signed in on this phone`, an anonymous one gets no heading rather than one nobody wrote — and
+`AccountCopy.storageCardTitle(isSignedIn:)` is that decision as a value a test can read. If the owner
+meant the narrower reading, the change is one `if`.
+
+#### 6. Round 2 — what the adversarial review found, and the two rulings it produced
+
+PR #88's reviewer proved six findings, one of them a defect in behavior that the round's own tests
+were arranged not to see. All six are fixed on the branch. Two of them went back to the owner and
+came back as rulings dated **2026-08-15**, which are recorded in RULINGS **R74** rather than
+only here.
+
+##### 6a. The retry control erased the only carrier of the distinction, and drew `waiting` for an item that could never be sent (F1)
+
+Ruling 3 put the whole stopped-versus-will-retry distinction into the row's sentence. `OutboxStore.retry`
+sets `state = 'pending'` and **NULLs `last_error` and `last_error_code`** — right for a row about to
+be attempted again, and this round left it attached to a control that attempted nothing.
+`OutboxView`'s `onRetry` called `OutboxViewState.retry(id:)` and nothing else; there is no drain
+behind it, and `syncNow(isOnWifi:)` had **zero call sites in the app**. The only drains were the six
+feature writers, which fire when a volunteer saves some *other* piece of work.
+
+Measured by the reviewer on a `forbidden` item through a real `OutboxQueue`:
+
+```
+BEFORE TAP:    state=retry    isTerminal=true   showsRetryButton=true   reason=This couldn't be sent.
+AFTER TAP:     state=waiting  isTerminal=false  showsRetryButton=false  reason=nil
+               item.state=.pending  errorCode=nil  waitingCount=1  failedCount=0
+AFTER A DRAIN: state=retry                                              reason=This couldn't be sent.
+```
+
+So the tap was not a no-op. It drew the row as `waiting` — SCREENS.md 17's word for "still trying" —
+counted it in the header's `N waiting` pill, removed the sentence entirely, and left it there until
+an unrelated save happened along. Screen 17 §6 promises that an item which cannot sync "says so, says
+why, and waits for you"; after one tap it said neither.
+
+**The fix is to make the control do what its label says**: `retry(id:)` and `retryAll()` now drain,
+so a row is `waiting` only while it really is being attempted, and the service's answer returns a
+refused item to `failed` with its sentence on the first attempt (E83's fail-immediately). The other
+candidate — preserving `last_error_code` across the retry — was considered and is not sufficient
+alone: nothing draws the code since ruling 3 stopped `OutboxPresentation.state(for:)` reading it, so
+every drawn moment would have been exactly as wrong.
+
+**Why the suite did not see it, which is the part worth carrying forward.**
+`theTwoTerminalReasonsDifferOnlyInTheirSentence` is a real guard and it red-proves correctly — but it
+reads the row *before* the tap. The round wrote a test for the drawing the ruling specified and none
+for the behavior of the control the same ruling insisted on keeping. That is this project's dominant
+family (a guard green with the defect present) arrived at from a direction the family's own note does
+not name: not a check that ran on nothing, but a check that ran one frame too early.
+
+**One thing the fix does not reach, named rather than implied.** With the remote gate `.disabled`
+there is no send sink at all, so a drain settles nothing and a retried row does sit `pending` with no
+sentence. That is a property of the gate — every item in that configuration waits forever — and not
+of this control; it is the same state the queue is in before anyone taps anything.
+
+##### 6b. A sentence ruled for one code was applied to six, and for `moderation_rejected` it was false (F2)
+
+Round 1 read ruling 1's "`forbidden`, not retryable" as the whole non-retryable class. The reviewer
+checked the six one at a time against what each row used to say, and found the widening true of five
+and false of one: a `moderation_rejected` item **reached `cypress-sync`**, the request was accepted,
+and a person read the content and declined it. "This couldn't be sent." tells that volunteer their
+work never left the phone.
+
+**Ruled by the owner on 2026-08-15**: `moderation_rejected` reads `This was reviewed and won't be
+shared.`, verbatim; the other five keep `This couldn't be sent.` The split is in
+`OutboxFailureReason` with the argument written at both constants.
+
+`DataLayerWiringTests.theSendPathCannotProduceARemoteSurface` is the test that would have caught it —
+it used to assert `reason.contains("A moderator declined this.")` and round 1 relaxed it to
+`reason == refusedTerminally` as "a correct consequence of the widening". It is the round's clearest
+instance of a test being loosened to fit a change instead of the change being questioned. It now
+asserts `moderationDeclined` for the `moderation_rejected` fixture it has always used, which is a
+tighter assertion than either.
+
+`conflict` is the softer case the reviewer also raised: the proximity dedupe returns it because the
+thing is *already recorded*, so "couldn't be sent" points at the wrong cause even though nothing
+landed. The owner ruled the split at `moderation_rejected` only, and `conflict` keeps the shared
+sentence. Named here because it is the next one anybody will ask about.
+
+##### 6c. The new glyph guard named the UIKit spelling only (F4)
+
+`AppleMarkTests.theAppConstructsNoSystemAppleButton` was written after measuring that
+`DrawnGlyphGuardTests` cannot see `ASAuthorizationAppleIDButton`. It could not see
+`SignInWithAppleButton` either — `AuthenticationServices`' SwiftUI view, which is the API a SwiftUI
+codebase actually reaches for. The reviewer compiled
+`SignInWithAppleButton(.continue, onRequest:onCompletion:)` into `AccountProviderButton`, the exact
+control ruling 6 governs, and **both guards passed**.
+
+The guard now scans both spellings, and its prose control is **per token** rather than shared: one
+counter would have let a newly added token be "controlled" by an older token's mention while matching
+nothing itself. `AppleMark`'s header names both spellings deliberately and says that it is the
+anchor.
+
+##### 6d. Five sites still described a sentence screen 17 no longer prints (F5)
+
+`AppSession.swift`, `AuthHTTP.swift`, `RemoteAPI.swift`, `server/README.md` and two test files all
+said that an `unauthorized` on an item "prints 'Sign in to send this' to somebody who is signed in".
+That was E261 §3's design rationale and it was true when written; after ruling 1 a failed
+`unauthorized` row reads "This couldn't be sent." Each site now states the current sentence and says
+what it used to say, because the counterfactual framing ("if a 401 reached an outbox item, then…") is
+exactly what makes a stale claim read as current. E261's own numbered entry in `docs/ERRATA.md` is
+left alone: it is the record of what was true then.
+
+The defect those comments exist to design out is unchanged, and it is arguably worse dressed the new
+way — the row now says nothing at all about the session to somebody whose token only needed
+refreshing.
+
+##### 6e. What the reviewer verified rather than doubted, recorded because it is evidence
+
+The transcription in §3 was re-derived independently: `appleid.auth.js` fetched, `M.small` parsed,
+and **all 59 control points** compared against `AppleMark` after translating x by −6. Every point
+matches to seven significant figures, with the comparator calibrated first — 59 mismatches at a wrong
+translation, 2 with a single coordinate moved by 0.5. The crop offset, the padding figures and the
+0.5/0.7 placement fractions were each traced back to the renderer's own arithmetic rather than to
+Apple's prose.
+
+Two measurements from that pass correct claims made here in round 1:
+
+- **The "at cap height" description is a standard-size observation.** At AX5 the label wraps to
+  `Continue` / `with Apple` and the mark centres against the two-line block. Nothing specifies this
+  and the reviewer did not call it a defect; it is stated because the narrower claim read as general.
+  At the drawn size, measured on an iPhone 16 Plus: mark **9.33 × 11.33 pt** against a predicted
+  9.39 × 11.54, gap to title **7.00 pt** against Apple's 6.67 minimum, the mark's top 1.33 pt above
+  cap height.
+- **The 8% trailing-margin deviation §3 names is narrower than §3 claimed.** Measured at AX5 on a
+  430 pt device the trailing margin is **82.67 pt** against Apple's 31.20, because the label wraps
+  before it can fill the width. The deviation is real as an absence of a guarantee, not as an
+  observed shortfall on any device tried.
+
+### E272 — Signing out kept the credential, and deleting the account kept both
+
+Found on `feat/session-restore` while implementing owner ruling 5 of 2026-08-14; the ruling itself
+is RULINGS **R75**.
+
+---
+
+#### The defect
+
+`AccountModel.signOut()` called `LocalAPI.signOut()` and nothing else. The You tab's sign-out
+therefore cleared `app_state.current_user_id` and **left the account's session in the Keychain**.
+
+`AppSession.authorization()` reads `storedSession` before it looks at anything else, so from the tap
+onward the app was in this state:
+
+- every screen drew a signed-out installation;
+- every request it made authenticated as the account that had just signed out;
+- `applyOne`'s user arm accepted those items, so the service went on attributing the work to that
+  account — including work the person did after leaving it.
+
+`deleteAccount` had the same shape one step worse: `AppSession.forgetEverything()` exists, is
+documented as the deletion's counterpart ("a device token minted under a deleted account's claim is
+a pointer to it"), and had **no caller at all**. So RULINGS R3's promise held over the tables and not
+over the Keychain.
+
+#### Why it stayed invisible
+
+The same reason `LocalAPI.deleteAccount` was complete and uncalled before ERRATA E131: nothing on
+screen reads a credential. `AccountModel.load()` asks `LocalAPI.userID`, which was correctly nil, so
+the You tab drew exactly the right thing over exactly the wrong state. Every test of sign-out
+asserted the local half, because the local half was the whole of what sign-out was written to do.
+
+`AccountModel` holding only `LocalAPI` is the structural half of it, and that choice was argued and
+correct when it was made — the model's own header explains it, and `/auth/*` is genuinely not on
+`CypressAPI`. What changed is that a session now exists to forget.
+
+#### The population it had already reached
+
+This is not only a defect going forward. **Every beta install whose owner has tapped `Sign out` is
+already in this state** — `current_user_id` cleared, a live session in the Keychain — and has been
+since the sign-out was written. They do not need to reinstall to meet the mirror rule; they meet it on
+the first launch after the update that carries it, which is what made the discriminator in
+`SessionRestore.reconcile` a merge blocker rather than a refinement (review of PR #87, F1).
+
+The reviewer staged the pre-fix path and measured both halves of it, including the part that makes it
+unrecoverable — the restore's own `claimDevice` erases the evidence on its way past:
+
+```
+PROBE signedOutUserID BEFORE the update boot: 5E12E12E-…-A1
+PROBE signedOutUserID after:                  nil     # claimDevice cleared it
+```
+
+`signed_out_user_id` is the discriminator, and it is a fact `LocalAPI.signOut()` already writes for
+its own stated reason. Reading it is what tells "this database was deleted" from "this person left".
+
+#### What made it load-bearing
+
+Ruling 5 makes `DataLayer.boot` read the Keychain as the authority on who is signed in. Under that
+rule the surviving item is not merely wrong, it is *believed*: the database says nobody, the Keychain
+says somebody, and the next launch signs the person back into the account they left. A restore that
+undid every deliberate sign-out would have been a worse defect than the one the ruling was written to
+close — so the restore could not ship without this.
+
+That is the general lesson rather than the specific fix. **A rule that resolves a disagreement
+between two stores turns every place that updates one of them into a correctness requirement.**
+Before the mirror rule, forgetting the Keychain on sign-out was a leak. After it, it is a loop.
+
+#### The fix
+
+`AccountModel` takes the `AppSession` beside the `LocalAPI`. Sign-out forgets the session and keeps
+the device credential — the anonymous queue was draining before the tap and goes on draining after it
+(D9). Deletion calls `forgetEverything()`, which drops both.
+
+Both drop the credential **first** and refuse if that throws, and the two orderings are one rule:
+*never leave this app holding a credential for an account it has stopped having.* The failures are
+not symmetric, which is what settles it. Dropping the credentials and then failing to delete leaves
+an intact account this phone is signed out of, and signing in again resolves to the same `users` row.
+Deleting and then failing to drop leaves a session whose account's records are gone — and the next
+launch's reconciliation would sign the person straight back into it.
+
+#### The control that keeps the fix honest
+
+The sign-out assertion — "the session is gone after the tap" — is satisfied just as well by a
+sign-out that threw *both* credentials away, and that would be its own defect: `POST
+/devices/register` retires the previous token on every call, so an unnecessary re-registration signs
+out a queue that was draining. So the fix ships with a control asserting the opposite case: after a
+sign-out the **device** credential is still there. Under the mutation that swaps `signOut()` for
+`forgetEverything()`, the control goes red and the sign-out assertion stays green, which is what
+attributes each failure to the right rule. Same discipline as the reinstall/no-re-register pair in
+ERRATA **E269**.
+
+#### Ruled by the owner, 2026-08-15: an automatic sign-out does not re-home the account's rows
+
+**The question.** Ending signed out leaves every account-owned private reminder and favorite
+attributed to the account (`user_id = A, device_id = NULL`), and the reads that answer "mine" ask for
+the *current* user or this device — so on a device with nobody signed in they are visible to nobody.
+Measured during review of PR #87:
+
+```
+user_id=A  device_id=NULL  visible=0
+```
+
+That is not new to this round; it is what `LocalAPI.signOut()` has always done, and RULINGS **R3**
+argues for keeping the rows rather than deleting them. What the mirror rule raised is whether an
+*involuntary* ending — an expired family, a refused session, an upgrade honoring an old sign-out —
+should re-home those rows to the device so the person can still see their own reminders.
+
+**The ruling (owner, 2026-08-15): it should not.** The rows stay the account's and stay invisible
+while nobody is signed in, and **they reappear on the next successful sign-in**. No re-homing, on
+either the deliberate or the automatic path.
+
+The reasoning to carry forward: re-homing would be the app deciding, without being asked, that
+somebody's account records are now this phone's. Invisibility is recoverable by signing in — the same
+Apple identity resolves to the same `users` row — and a re-attribution is not recoverable at all. An
+automatic ending is also the case where the person has expressed no intent whatever, which is the
+worst moment to infer one. So the two paths stay identical, which is also why no code changed for this
+ruling: `signOut()` already does exactly what was ruled.
+
+#### Ruled by the owner, 2026-08-15: the interrupted-deletion residual closes by wiring `DELETE /me`
+
+**The residual.** If a deletion succeeds and `AppSession.forgetEverything()` then throws, this app
+holds credentials for an account whose local records are gone, and the next launch's reconciliation
+restores it — the deletion cleared `signed_out_user_id`, so the discriminator has nothing to read.
+Writing that marker back is the obvious repair and it is refused: R3 requires that a deleted account
+is not resumable, and `AccountDeletionTests` asserts exactly that.
+
+**The ruling (owner, 2026-08-15): it is accepted and documented, and it closes in a follow-up round
+by wiring `DELETE /me`** — not by adding a mechanism to the client's local path. The blocker that
+route was left on has expired (see the section below), so the repair is a route to wire rather than a
+rule to invent.
+
+**Why wiring the route closes it, rather than merely narrowing it.** Once the deletion reaches the
+service, the account is gone on the far side, so the surviving session is one the service will refuse
+the first time anything presents it. That refusal already runs `AppSession`'s involuntary-discard path,
+which since this round tells the local half within the same run (`onSessionEnded`). So a restore that
+happened because a Keychain removal failed is undone by the first request that needs a credential —
+**the race becomes self-correcting**, and it corrects in the direction of the deletion. Until that
+round lands, the residue is an account restored with none of its rows, re-deletable from the same
+screen.
+
+#### Adjacent, and not fixed here
+
+`DELETE /me` still has no shipping caller. `AccountModel` deletes through `LocalAPI.deleteAccount`,
+and `RoutedAPI.deleteAccount` routes local as well, so an account deleted in the You tab is deleted
+on the phone and left standing on the service.
+
+The routing is documented as deliberate, and the reason it gives has since stopped being true.
+`RoutedAPI.deleteAccount` says the remote half needs the client's still-queued `client_uuid`s, that
+this router holds no queue to read them from, and that `RemoteAPI.pendingOutboxKeys` "is the seam for
+that and the composition root is what fills it". The composition root **does** fill it —
+`DataLayer.boot` passes a provider that reads the outbox table — so the stated blocker was removed by
+the wiring round and the routing did not follow. That is a separate finding from this one, about a
+route rather than a credential, and it is recorded here because the two were found in the same read.
+
+Its interaction with this round is worth one line, though: because deletion is local-only, the
+`forgetEverything()` added above throws away credentials for an account that still exists on the
+service. That is the safe direction — the phone stops acting as an account whose records it has
+destroyed — and it is not the end state R3 describes.
+
+### E273 — Two more `verify_seed.py` checks are San Francisco-only, plus a named limit of the species-fixture gate
+
+Written on `fix/seed-tooling`, the branch that repaired checks 1, 12 and 13 of the same script.
+
+**Check 13 of the three below was fixed on this branch after the owner ruled on it (2026-08-14);
+it is kept here as the record of what was measured and what was decided. Checks 2 and 16b are
+still failing and are the live items.**
+
+`Tools/verify_seed.py` on `origin/main` reports `34/38 checks passed` against
+`Fixtures/seed/cypress-seed.sqlite` — the seed the app actually bundles, unmodified. Two of the four
+failures were the checks that branch was scoped to fix. **Checks 2 and 16b are still failing after
+it, and with check 13 they are one defect wearing three hats:** the script was written when a seed meant
+San Francisco, and the shipped seed has carried two id spaces since #129.
+
+Measured 2026-08-14 against a seed whose `seed_meta` reads
+`id_spaces_in_file = sf,us-ca-sj`, `rows_from_sj_street_tree = 52788`, `sj_ship_extent = downtown`.
+
+#### 1. Check 2 — "zero trees outside the SF bbox" — 52,788 offending rows
+
+```
+  [FAIL] 2. zero trees outside the SF bbox
+         52788 offending rows
+```
+
+That is exactly `rows_from_sj_street_tree`. The check reads one bounding box, `seed_meta.sf_bbox`,
+and holds every tree in the file to it. San Jose's 52,788 shipped rows are 60 km outside it and are
+supposed to be. `build_seed.BBOX_BY_ID_SPACE` already carries a box per id space, so the fact the
+check needs is in the build; the check is asking a question with only one city's answer in it.
+
+The honest form is per id space: every tree must sit inside the box declared for **its own** space.
+That is strictly stronger than what check 2 asks today, because it would also catch a San Jose tree
+that had landed in San Francisco's coordinates.
+
+#### 2. Check 13 — "neighborhood stamping covers >= 99% of trees" — 26.578%  [FIXED on this branch]
+
+```
+  [FAIL] 13. neighborhood stamping covers >= 99% of trees
+         52,790 trees (26.578%) have no neighborhood
+```
+
+Same 52,788 rows, plus two SF trees that genuinely missed a polygon. The `neighborhoods` table holds
+41 rows and all of them are the DataSF SF analysis neighborhoods (`j2bu-swwd`); no San Jose
+neighborhood geometry has ever been ingested, so no San Jose tree can be stamped. The check reads as
+a coverage regression and is really a statement that a second city arrived without its polygons.
+
+This one was **not** purely a verifier defect — there was a product question inside it. A San Jose
+tree with no neighborhood is a tree whose profile cannot render a neighborhood line. **The owner
+ruled on 2026-08-14: acceptable for the beta's downtown window, report per id space.** Check 13 now
+holds each id space that has geometry to the 99% bar and reports one that has none, rather than
+averaging two cities into a number that describes neither:
+
+```
+  [PASS] 13. every id space that has neighborhood geometry stamps >= 99% of its trees
+         sf: 145,835/145,837 stamped (99.999%); us-ca-sj: 0/52,788 stamped (0.000%)   (41 polygons in the file)
+```
+
+Which spaces have geometry is derived from the stamping itself rather than from a column
+(`neighborhoods` carries no `id_space`) or from the literal `"sf"`. That opens one hole, which is
+closed explicitly: if the polygon join broke entirely, every space would stamp zero, every space
+would look like San Jose, and a purely per-space rule would pass a wholly broken file. The file still
+carrying polygons is what makes that a contradiction, and it is asserted as one.
+
+San Jose still has no neighborhood geometry. The ruling makes that acceptable to ship; it does not
+make it invisible, and the 0.000% line is printed on every run.
+
+#### 3. `validate_species.py` rule 0 cannot yet tell a partial corpus from a complete one
+
+Not a `verify_seed` check, and not a defect in what shipped on this branch — a **named limit** of it,
+recorded here because the next round needs it and because the failure it produces is silent.
+
+Rule 0 decides whether a species fixture may be validated against a seed by asking which inventory
+that seed is a corpus of, per id space, derived as the inventory contributing the most rows within
+the space. That answers *"which inventory dominates this space"*. It does **not** answer *"is this
+inventory's corpus complete here"*, and the two come apart for a partial ingest of a city that has
+only one inventory — a borough-scoped pack is the obvious candidate. Such a space's only inventory
+is trivially its primary, so the gate opens and every species the partial ingest did not reach
+reports as fixture drift.
+
+Measured 2026-08-14, on a seed built `--source datasf` with 300,000 NYC **tree** rows added under
+`nyc_tree_points` in id space `us-ny-nyc` and **no NYC species rows at all**:
+
+```
+seed corpora: sf -> 'sf_datasf', us-ny-nyc -> 'nyc_tree_points'
+10391 checks run
+503 FAILURES:
+```
+
+decomposing as:
+
+```
+ 503 species_uuid <uuid> is not in the seed database species table
+   0 common_name does not match the seed row
+   0 scientific_name does not match the seed row
+```
+
+**Write the decomposition down, because it is the whole finding.** All-absences / zero-common_name /
+zero-scientific_name is character-for-character the wrong-corpus signature — the same shape as the
+original 84 and the 586 that rule 0 was built to refuse. Here rule 0 *accepts* the run, so those 503
+arrive looking exactly like fixture drift and there is nothing on screen to say otherwise. A reader
+who does not know this signature will go hunting for 503 nonexistent defects. A reader who does can
+tell in one glance that the seed, not the fixture, is the wrong side of the comparison.
+
+The real answer is for the seed to record per-inventory completeness: `rows_from_<inventory>` against
+that inventory's own published feature count. `seed_meta` carries those counts only ad hoc today —
+`trees_source_feature_count` for whichever source was active, `sj_source_feature_count` for San Jose,
+no general key — so this is a seed-format change and was deliberately not invented on this branch. It
+is on the s17/region round's agenda, alongside the `trees_source` literal below.
+
+#### 4. Check 16b — "every tree uuid == uuidv5(NS_TREE, TreeID)" — 52,788 of 198,625 rows disagree
+
+```
+  [FAIL] 16b. every tree uuid == uuidv5(NS_TREE, TreeID)
+         52788 of 198,625 rows disagree
+```
+
+This is the most misleading of the three, because it reads as a failure of the identity guarantee and
+is the opposite: it is the identity guarantee working. The check recomputes
+`uuid5(NS_TREE, str(external_ref))` — the bare ref. Identity is minted from
+`record.identity_seed(ID_SPACES[space])`, which prefixes the space: `sf` is frozen empty (so SF rows
+match by coincidence of the prefix being `""`), and `us-ca-sj` declares `us-ca-sj:`. Every San Jose
+row therefore "disagrees" with a recomputation that dropped the prefix.
+
+It is the same root cause as check 12 (fixed on this branch): a check keyed on `external_ref` alone
+where the schema and the contract are keyed on `(id_space, external_ref)`. Note the same family of
+defect was independently found in `build_seed` itself during this round — `seed_meta.trees_source` is
+written as one of two San Francisco string literals, so a seed built for any other city names the
+wrong **file-wide** provenance. Be precise about who that misleads, because the obvious answer is
+wrong: per-row provenance does NOT read this key. `InventorySource(id:seedMeta:)` resolves from the
+`inventory_<id>_*` keys, which the shipped seed carries for every inventory it holds rows from, and
+falls back to the literal only when those are absent. The literal's consumer is
+`InventorySource(seedMeta:)` / `CypressStore.seedProvenance`, the file's own primary inventory.
+`Tools/validate_species.py` makes it visible by warning when the literal names no id space's primary
+inventory; fixing the literal is `build_seed`'s job and is not done here. The fix is to recompute
+through `inventory_contract`'s own `identity_seed` rather than restating the derivation — the same
+argument the file already makes for importing `species_trigrams` instead of copying it, so that a
+change to the scheme cannot leave the verifier agreeing with a stale copy of itself.
+
+#### Why 2 and 16b were not fixed on that branch
+
+Scope. The branch was chartered on four named defects and these were three more; check 13 was folded
+in only because the owner's ruling arrived while the branch was open, and folding the rest in would
+have put more untested check rewrites into one review. They are recorded here rather than fixed because
+**the failure they produce is the dangerous kind**: a verifier that has been red for a while trains
+its readers to skim the failures, and the two real defects on this branch sat in that noise. Whoever
+takes this should also decide whether `verify_seed.py` should refuse to run at all on a file whose id
+spaces it has no per-space rule for, rather than reporting a confident wrong number.
+
+Item 3 is different in kind: nothing about it is failing, and that is exactly the problem with it.
+
+### E274 — A `species_map` row described the source file's order, and `--sj-extent full` could not build
+
+Found by the **PR #85 reviewer** (finding 8, "info, not this PR", 2026-08-15), correctly filed as
+pre-existing at `origin/main` and outside that branch's scope. Reproduced here at `8378c17` before
+anything was changed. All counts below are from the 2026-07-31 caches.
+
+---
+
+#### 1. The crash
+
+```
+File "Tools/build_seed.py", line 2076, in build
+    conn.executemany(
+sqlite3.IntegrityError: CHECK constraint failed:
+    species_id IS NULL OR (is_placeholder = 0 AND is_non_taxon = 0)
+```
+
+`Tools/build_seed.py --source city --sj-extent full` did not build. Three rows violated the
+constraint, all of them San Jose strings:
+
+| qSpecies string | species | rows as empty site | rows as living tree |
+|---|---|---|---|
+| `Magnolia` | 665 | 2 | 77 |
+| `Acer rubrum 'Armstrong'` | 42 | 7 | 32 |
+| `Zelkova serrata 'Wireless'` | 659 | 4 | 4 |
+
+Each row claimed a `species_id` **and** `is_placeholder = 1`, which is the one pair the table
+forbids.
+
+#### 2. Why: a claim about the string, read off one row
+
+`species_map` is keyed on `qspecies_string`, so every column in a row is a claim about the
+**string**. `build` accumulated those claims in `qspecies_stats`, and two of them were taken from
+whichever record reached the string first:
+
+```python
+qs = qspecies_stats.setdefault(
+    record.species_text or "",
+    {"kind": kind, "confidence": record.species_confidence or 0.0, ...},
+)
+```
+
+`setdefault` fires once, so `kind` and `confidence` belong to record #1. `species_id`, four lines
+below, is set by **any** record that resolves a species. When those disagreed, the row asserted
+both.
+
+**San Francisco cannot express the disagreement, which is why this survived from the table's
+introduction.** SF's vacancy lives inside the species field itself (`Potential Site ::`), so every
+record carrying a given string necessarily agrees on the kind. San Jose publishes `VACANTSITE` and
+`NAMESCIENTIFIC` as two independent fields, and `SanJoseStreetTreeAdapter`'s own docstring records
+that **611 rows are `VACANTSITE = 'Yes'` and name a real taxon**. The adapter handles those
+correctly — it keeps the flag and drops the species — but the row still carries the string, so the
+string arrives on both empty sites and living trees. Counting the at-risk rows from the other
+direction, through `species_map` rather than through the adapter, gives 611 as well.
+
+**The kind was therefore a property of the file's sort order.** The same three records in the
+opposite order build a different row, and at `origin/main` build without crashing.
+
+#### 3. The shipping configuration was one row-order away from the same crash
+
+`--sj-extent downtown` is what ships. It builds today, and it does so by luck:
+
+| extent | strings that resolve a species *and* appear on an empty site | of those, crashed |
+|---|---|---|
+| `none` (San Francisco alone) | 0 | 0 |
+| `downtown` (ships) | **21** (43 empty-site rows) | 0 |
+| `full` | 112 (611 empty-site rows) | 3 |
+
+For all 21 downtown strings, San Jose's export happens to list a living tree before an empty site.
+Nothing holds that in place: it is the publisher's row order, and it changes when they re-export.
+The green build was not evidence the code was right — only that the file arrived in a lucky order.
+
+#### 4. The fix, and why the precedence is not a tie-break
+
+Every row that carries a string now contributes, and the kind is decided once
+(`build_seed.species_map_kind`) by **which field each kind is reached through**:
+
+1. **A string that resolved to a species names a taxon**, whatever any single row said. That is the
+   CHECK constraint's own statement, so it comes first.
+2. **`not_a_tree` is only ever reached THROUGH the string.** All three sites that return it match
+   `NON_TAXON_SPECIES` or `SJ_NON_TREE_SPECIES` and carry basis `STATED_AS_NON_TAXON`. One such row
+   is therefore a statement about the string.
+3. **`placeholder` is the opposite** — San Jose reaches it from `VACANTSITE`, a field about the
+   *site* that says nothing about the string — so it decides the string only when every row agrees.
+
+`confidence` is likewise taken from the rows that **resolved** the string, so a row carrying the
+string without resolving it cannot set the confidence of a resolution it took no part in. No string
+in any of the three corpora shows two different confidences among its resolving rows, so this is a
+defined value and not a vote.
+
+**Rule 3 needs every row to agree, and that is load-bearing.** An earlier draft let any empty-site
+row decide, which is the obvious reading and is wrong: it turns `Unknown` — 4,507 living trees
+against 6 empty sites — into a vacant-site placeholder, against RULINGS R18 and the adapter's own
+`Unknown is a tree whose species is not known`. The data caught it; the reasoning had not.
+
+#### 5. What changed in the seed, measured
+
+| | strings | kind changes | confidence changes |
+|---|---|---|---|
+| `--sj-extent none` | 630 | **0** | **0** |
+| `--sj-extent downtown` | 1,012 | 1 (`Stump`) | 0 |
+| `--sj-extent full` | 1,245 | 4 | 3 |
+
+**San Francisco alone is untouched, and that is a measurement rather than an argument**: the
+`species_map` table built at `origin/main` and the one built with the fix are byte-identical over
+all 630 rows, and `Fixtures/sf_species_map.csv` has the same SHA-256 from both. The same comparison
+against a tree that does differ reports a difference, so the check is not blind.
+
+The four changes, all San Jose:
+
+- the three crash rows above now carry their species, `is_placeholder = 0`, and the confidence of
+  the resolution (0.7, 0.9, 0.9) rather than the empty site's 0.0;
+- `Stump` moves from `is_placeholder = 1` to `is_non_taxon = 1`. It is in `SJ_NON_TREE_SPECIES`, so
+  it names no taxon on all 1,933 of its rows — including the 1,624 the vacancy flag calls empty.
+  The majority of its rows being empty sites does not make the *word* a placeholder.
+
+`''` and `Unknown` are deliberately unchanged: both are trees whose species is not known.
+
+#### 6. `--sj-extent full` now builds, and what `verify_seed` still says about it
+
+The build completes (490,716 trees; San Jose's 344,879 is the largest inventory, which is what the
+extent exists to make possible). `Tools/verify_seed.py` reports **33/38**, failing checks 1, 2, 12,
+13 and 16b. **None is about this change** — every one is the verifier assuming a
+San-Francisco-only seed, and each counts exactly the 344,879 San Jose rows:
+
+- **1** row count outside `150,000..260,000`; **2** SF bbox; **13** neighborhood coverage, which
+  `build_seed` already documents as expected (E176: there is no San Jose neighborhood layer);
+  **16b** tree uuids, which San Jose derives through its own frozen id-space prefix by design.
+- **12** `external_ref is unique` reports 137,886 duplicates because it groups by `external_ref`
+  alone. The schema's constraint is `UNIQUE (id_space, external_ref)`, and grouped that way the
+  count is **0**. The PR #85 reviewer measured the same blindness independently on the shipped seed
+  (0 within-space, 17,518 cross-space).
+
+The species_map checks — 4, 6d, 6e — pass. `--sj-extent downtown` verifies at **34/38**, failing 2,
+12, 13 and 16b: the same four the PR #85 reviewer measured on the shipped seed, from a different
+worktree and a different build.
+
+**These five are recorded, not fixed.** Teaching `verify_seed` about id spaces is a change to what
+the verifier means, and it belongs to whoever owns the multi-city verification round.
+
+#### 7. The guard
+
+`Tools/test_seed_species_map.py`. Every test builds a real seed from a dozen synthetic San
+Jose-shaped rows through the real `build()` and reads the real `species_map` out of it — not the
+classifier in isolation, because the defect lived in the aggregation *inside* `build` and a test of
+the classifier alone would have gone green while the build still crashed.
+
+Red-proved by restoring `Tools/build_seed.py` to `origin/main` with the test file untouched: 5 of 6
+tests fail, three of them with the original `IntegrityError` verbatim, and the two flag tests with
+`'Stump' is not filed as naming no taxon` and `'Unknown' is filed as a vacant-site placeholder`.
+The sixth — a string carried only by empty sites is still a placeholder — passes in **both** states,
+which is what it is for: it is the control against a rule that satisfied the others by emptying the
+column.
+
+`test_the_check_that_caught_this_is_in_the_shipped_schema` writes the offending row by hand and
+requires SQLite to refuse it, so the constraint the other five lean on is proven live rather than
+assumed.
+
+#### 8. What adversarial review of the fix added (PR #90, review 4944399783)
+
+Four findings, all taken. The reviewer's own instruments were calibrated against a case whose answer
+was already known — a patched dump of main's crashing build, checked row-for-row against the
+`downtown` build that does not crash (1,012/1,012) — and the diagnosis was independently
+strengthened: **reversing all 344,879 source rows at `origin/main` moves the crash to a different
+set of strings** (`Citrus japonica`, `Eucalyptus cinerea`, `Zelkova serrata 'Wireless'`), which is
+the order-dependence demonstrated rather than argued.
+
+##### 8a. The fix falsified a comment that ships inside the seed
+
+`Stump` becoming `is_non_taxon = 1` created the first counterexample to the `species_map` DDL's own
+sentence: *"A tree stands at the site, so it is NOT a placeholder and its status is `alive`."* At
+`origin/main` that was true of every `is_non_taxon = 1` string in all three extents — San Francisco
+has five, and all five sit on `alive` rows only. After the fix, **240 of `Stump`'s 337 rows are
+`vacant_site` at the shipping extent** and 1,624 of 1,933 at `full`.
+
+The comment travels: it is carried verbatim in the built seed's `sqlite_master.sql` and in the
+`Fixtures/seed/schema.sql` written beside it, so it reaches every reader of the artifact. Corrected
+to say the flag is a claim about the *string* and says nothing about any row's status. **The change
+is comment-only** — the DDL with comments stripped is identical to `origin/main`'s, and the same
+comparison reports a difference on the raw text, so it is not a blind check. Nothing else moved:
+`verify_seed` 6e and `DataGates` both assert only the species side.
+
+This is the shape CLAUDE.md means by "a confident comment is where bugs have survived here", and it
+is worth noting that the comment was true when written and was falsified by a change fifteen hundred
+lines away.
+
+##### 8b. The stated justification was false for 61 rows
+
+The rule's docstring argued that `placeholder` differs from `not_a_tree` because San Jose reaches it
+from `VACANTSITE`, a field about the site. True of 76,048 of San Jose's 76,109 placeholder rows —
+and **not of 61**, whose basis is `INFERRED_FROM_ABSENT_SPECIES` and which reach `placeholder`
+*through the string*, the string being empty.
+
+The value is unaffected and stays `is_placeholder = 0` for `''`. What was wrong was the reasoning the
+next author would extend, so the docstring now names those 61 and says why unanimity still wins: an
+empty string is the *absence* of content rather than a reading of it, and that basis says the kind is
+ours rather than the source's, where `not_a_tree` earns its one-row power by matching the string
+against a vocabulary. `''` comes out on the strength of the 229 rows San Jose itself placed in the
+ordinary category, against 812 stated-vacant and those 61.
+
+##### 8c. A guard with a hole, found by mutation rather than by reading
+
+`return "stub" if "stub" in kinds else "parsed"` → `return "parsed"` left the new suite **13/13
+green** while five real rows at `--sj-extent full` silently flipped `is_stub` to 0. The other three
+rules each went red under their own mutant, so the suite was otherwise well-aimed; this one branch
+had no specimen.
+
+The cause is structural and worth remembering: **San Jose cannot mint a stub** — its adapter passes
+`species_is_stub=False` unconditionally — so a San Jose-shaped corpus could never reach that branch,
+however many cases it held. The fix is a San Francisco row (`BOTANICAL` null, `COMMON` a single
+word) that packs to `:: Magnolia` and takes the stub path. Now red under the same mutant, naming the
+flag.
+
+The corpus needed 100 ordinary rows to carry that one stub: the build refuses when the stub path
+exceeds 2% of species-bearing rows, and one stub in four rows is 25%.
+
+##### 8d. The order test asserted more than the seed promises
+
+It compared the whole row, which includes the integer `species_id` — and integer ids are minted in
+encounter order *by design*, as the DDL says in as many words. It passed only because the corpus
+minted a single species. The comparison now excludes `species_id` and asserts `species_uuid`
+instead, which is the order-independent identity the checked-in mapping files are keyed on, and the
+corpus carries two species compared against its own exact reversal. Verified load-bearing:
+`species_id` genuinely swaps 3↔4 under that reversal while the uuid holds, so the old assertion
+would now fail on a non-defect.
+
+##### 8e. The test suite was reaching the network on every build
+
+Not a review finding — surfaced while fixing 8c, when data.sfgov.org returned HTTP 503. `build`
+fetches `sf_analysis_neighborhoods.geojson` when it is absent **even without `--fetch`**, so a
+synthetic corpus that omitted the file downloaded it on every one of its seven builds. Writing an
+empty `FeatureCollection` makes the suite hermetic and takes it from minutes to **0.3 seconds**. A
+test that silently depends on a third party is one CI outage away from a red nobody caused.
+
+**No workflow runs `Tools/test_*.py` at all** — observed by the reviewer, being filed separately, and
+not fixed here.
+
+##### 8f. `except Exception` does not catch a refusing build, which is why 8e stayed hidden
+
+Round-2 review finding. `build_seed.die()` is `sys.exit()`, so every deliberate refusal — the stub
+ceiling, a missing fixture, an inconsistent cache — arrives as **`SystemExit`, which inherits from
+`BaseException` and not from `Exception`**. The suite's three handlers named `Exception`, so a
+refusing build killed the file mid-run: **no verdict for any of the 19 checks**, passing or failing,
+and no output but the `FATAL:` line on stderr.
+
+This is the mechanism behind 8e. A `URLError` from the geojson fetch would have been caught and
+reported against the test that provoked it; `die()` wrapping it in `SystemExit` aborted everything
+instead, which reads like a crashed tool rather than a failing test. The same thing happened a
+second time in the same round when the stub corpus first breached the 2% ceiling. Twice the run
+ended with a bare `FATAL:` line and an exit code, and twice it looked like an environment problem.
+
+Fixed as `except (Exception, SystemExit)` in all three places. **Not `BaseException`**, which would
+also swallow `KeyboardInterrupt` and turn a Ctrl-C into a FAIL line before starting the next build.
+
+Red-proved by forcing a refusal (`SF_FILLER = 1`, putting the stub share at 25% against the 2%
+ceiling): before, `0 verdict lines` and exit 2; after, `0 checks passed, 10 failed`, every one
+reading `the build raised SystemExit: 2`, and exit 1.
+
+**The general shape, and the reason it is worth an entry:** a test harness that catches `Exception`
+cannot report the failures of any tool that refuses by exiting, and this repo's tooling refuses by
+exiting on purpose. The failure presents as infrastructure noise rather than as a red test — the
+most expensive way for a guard to be silent, because nobody files it.
+
+### E275 — The app could not read its own bundle, and three entries blamed the wrong artifact (Stage 0, city data distribution)
+
+Written on `feat/stage0-bundle-truth`, the round that implemented Stage 0 of
+`docs/design-proposals/2026-08-14-city-data-distribution.md` (owner ruling D5; the rulings of that
+round are RULINGS **R76**).
+
+Three findings. The second is a correction to entries already in `docs/ERRATA.md`, and the third
+corrects the citation the design proposal itself used for it.
+
+---
+
+#### 1. The Cities screen offered an 81 MB download of a city the app was drawing
+
+The owner's report, verbatim in the design proposal: *"i can download from sf and sjc even though
+those ostensibly ship with the app"*.
+
+`CityDownloadsModel.rows` built each city's state as
+`CityInstallState(published:installedVersion:)` where `installedVersion` came from
+`CityLibrary.installedCities()`. `CityLibrary` reads `Application Support/Cypress/cities/` and
+nothing else — it is the record of what was **downloaded**. The bundled seed is not in that
+directory and has no entry there by design, so `sf` resolved `.notInstalled`, and
+`CityDownloadRow.decide` returned `(CityDownloadsCopy.size(city.bytes), nil, [.download])`: `81 MB`
+and a `Download` button, for 145,837 trees already on the map.
+
+**The root cause is not the comparison, it is that nothing anywhere asked the bundled seed which
+cities it held.** Every fact needed was inside the file the app already has open —
+`id_spaces.id`, `dim_city.display_name`, and `Tools/publish_cities.py`'s own `content_rev_for`
+rule over `seed_meta` — and no code path read any of it. `CityLibrary`'s own doc comment records
+the assumption that made this invisible: *"Disk is the record."* That was right for downloads and
+silently wrong for the bundle, which is installed in every sense the reader cares about and in
+none the directory layout can express.
+
+Fixed by `Cypress/Data/Cities/SeedCities.swift`, which lifts those three facts out of any seed or
+city file, and by `CityInstallState.bundled` / `.bundledOutdated`, the two row states the owner's
+ruling D5 added to R43 §3's enumeration.
+
+**A second consequence, one press of the button further along.** Downloading `sf` left the reader
+with two rows for San Francisco — `Built-in inventory` and `San Francisco` — and a `Use` that
+switched between two copies of the same data with no way to tell them apart. Closed structurally
+rather than by the fix above alone: `CityDownloadsModel.rows` folds catalog, library and bundle ids
+to a unique ordered sequence *before* any row is made, and `CityDownloadsModel.download` refuses on
+the same `CityInstallState.allowsDownload` the row draws its button from, so no caller can start a
+transfer the screen would not offer.
+
+##### 1a. The first fix re-opened the defect through a type that could not tell presence from freshness
+
+Found by adversarial review, on the branch, before merge. Worth its own entry because the shape is
+general and the single-gate argument did not catch it.
+
+`CityInstallState.bundled` carried a **non-optional** `contentRev`, so the caller had only one
+`nil` to say two different things with: *"the bundle does not hold this city"* and *"the bundle
+holds it and no record date derives."* The second fell through to `.notInstalled`, whose
+`allowsDownload` is `true` — `81 MB`, a `Download` button, and a transfer that started, for a city
+inside the app. The owner's original report, from the fixed build.
+
+**`allowsDownload` being the single gate did not help, because the gate was asked the wrong
+question.** The state was already wrong before anything consulted it. A single source of truth
+protects against two answers to one question; it does nothing about one answer to the wrong one.
+
+**Reachable, and the reachability is a transliteration seam.** `Tools/build_seed.py` writes San
+Jose's snapshot date as `sj_meta.get("extracted_on", "")` — an empty-string default with no `die()`
+behind it, where the San Francisco path at the same file's `load_city_layer` does have one. So a
+bundle can genuinely ship a city whose `content_rev` does not derive. `SeedCities.contentRev`
+correctly skips empty snapshots, matching the publisher's `if snap:`; what diverges is what the two
+sides *do* about it. `content_rev_for` calls `fail()` and the publish stops. A read on a reader's
+phone cannot usefully refuse to answer, so it returns nil — and the caller then read nil as
+absence.
+
+**The rule this leaves behind:** when a transliteration's source treats a case as fatal, the port's
+non-fatal answer for that case is a new value that did not exist upstream, and every caller has to
+be told what it means. `SeedCities.City`'s own doc comment now says presence is the `id` and
+nothing else, and `CityInstallState.init` takes the whole `SeedCities.City` rather than a
+`String?`, so a caller cannot hand it a record date without also handing it a city.
+
+#### 2. `CityManifest.City` does carry a bbox and a centroid — the data side was never the blocker
+
+**E209 shape B3**, **E213** and **E238** each state that a per-city center is unavailable because
+*"`CityManifest.City` carries no center or bbox to derive one from"*, and E238 files the fix as
+*"a different, wider ticket"*. E213 declined `MapKitBasemap.defaultCentre` for the same stated
+reason.
+
+**That is true of the Swift type and false of the artifact.** `Tools/publish_cities.py` has emitted
+`bbox` (min/max lat and lon) and `centroid` for every city since the original #156 commit, and both
+keys are in the live manifest — fetched 2026-08-14, San Francisco's bbox is
+`lat [37.70802, 37.819956]`, `lon [-122.511131, -122.366622]`, its centroid
+`{37.763988, -122.438877}`. `CityManifest.City` simply did not decode them, and R37.4's tolerance
+for additive keys is why it did not have to.
+
+The blocker named in all three entries was two `Decodable` properties. They are decoded now
+(`CityManifest.City.bbox`, `.centroid`, both optional so a manifest predating them still decodes),
+along with `content_rev`, which is likewise an existing key this reader had never looked at.
+
+**`MapKitBasemap.defaultCentre` is still untouched** — this round is Stage 0 and the opening-camera
+work is Stage 2 (§7 of the design proposal). What changes is why it is deferred: it is a decision
+about the map's opening state, not a missing data field.
+
+#### 3. The design proposal cites E214 where it means E238
+
+`docs/design-proposals/2026-08-14-city-data-distribution.md` §1.2 attributes the "no center or
+bbox" claim to *"E209 shape B3, E213 and E214"*. E214 is #106's premise round — San Francisco Rec
+& Park publishes no tree inventory — and says nothing about the manifest. The third entry carrying
+the claim is **E238** (E209's Shape A, fixed), in its "Left alone, deliberately" section. §6.1 of
+the proposal repeats the same citation. Recorded here rather than corrected in the proposal, which
+is a dated design document.
+
+#### 4. A guard whose offline half could not see the defect it named
+
+`BundledCityTests.aCityCanNeverOccupyTwoRows` asserted the no-duplicate-rows invariant on both the
+loaded and the offline path. The offline half read `model.rows` before any `load()`, and
+`CityDownloadsModel.installed` is populated only inside `load()` — so the fold it was checking was
+`[] + bundledIDs`, which has nothing to deduplicate. Removing the deduplication left those two
+assertions **green**, proven by re-running the round's own red-proof: only the loaded assertions
+failed.
+
+Squarely the guard-green-when-the-defect-is-present shape, and on the one path the fold exists for.
+The fix is to make the catalog unreachable and `await load()` before reading rows: the disk facts
+land, the catalog does not, and the offline branch is exercised for real. Under the same break it
+now reports `["built-in", "sf", "sf", "us-ca-sj"]`.
+
+**The tell, for the next reader:** the assertion named a precondition (*"disk plus bundle both name
+`sf`"*) that no line in the test had established. A precondition a test states in prose and does
+not assert is a precondition it does not have — `#expect(model.installed.map(\.id) == ["sf"])` is
+now in the test, above the assertions that depend on it.
+
+#### 5. Two rulings taken by the owner on this round, 2026-08-14
+
+Both surfaced by the adversarial review as judgment calls rather than defects, and both ruled the
+same day. Recorded here because they are decisions about what a screen says, not implementation
+detail, and the next round should not re-open them by accident.
+
+- **A bundled city whose published entry is a newer schema generation keeps `Included in the app`.**
+  The row states neither the format refusal (`needsNewerApp`'s detail line) nor the fact that a
+  newer record exists. Both branches draw no button, so nothing promises what it cannot keep;
+  what such a row owes the reader is revisited by the round that bumps the published format, not
+  before. Pinned by `BundledCityTests.futureSchemaIsRefusedBothWays`.
+- **The offline screen shows the same cities as the online one.** A bundled city keeps its card
+  when the catalog is unreachable rather than disappearing with the network. R43 §3's fetch-failure
+  sentence lists *"the built-in card, every installed city from disk facts alone"* and predates the
+  app being able to read its bundle at all; the ruling extends it rather than contradicting it.
+  Pinned by `BundledCityTests.aCityCanNeverOccupyTwoRows`.
+
+#### What this round deliberately did not do
+
+- **No schema change in any of the three version spaces.** `AppSchema.currentVersion`,
+  `SeedDatabase.newestKnownSchemaVersion` and `CityManifest.knownFormat` are all untouched, which
+  is Stage 0's defining property.
+
+**Coverage from the bundle was briefly in this list and is not any more.** It was omitted on the
+argument that an offline row had never drawn a coverage note — true of `installedOffline`, which
+describes a *downloaded* city, and not of the new bundled row, which is a city card by R43 §3's own
+definition and was the one place the fact was available and unstated. §3.3 lists coverage as one of
+the four things Stage 0 derives from the bundle and §6.1 — the text D5 approved *as scoped* —
+repeats it, so the omission was a deviation from approved scope that a reviewer should not have had
+to catch. It is read now (`SeedCities.coverage`), and San Jose's `Covers downtown only` survives the
+network going away.
+
+The `COVERAGE_KEYS` duplication that argued against it is real and is handled rather than avoided:
+`SeedCities.coverage` prefers the standardized `coverage_<id_space>` key R37 plans, so the shim is
+dead rather than wrong on the day `build_seed.py` writes it, and
+`BundledCityTests.everyPublisherCoverageKeyIsMirrored` parses `COVERAGE_KEYS` out of
+`Tools/publish_cities.py` and fails if the two tables disagree.
+
+### E276 — The entitlements the project declared never reached TestFlight, and every step was green
+
+Written on `claude/epic-mcnulty-baf13b` while fixing the release pipeline after TestFlight builds
+34 and 35 shipped with Sign in with Apple broken on device (instant failure, no sheet), while a
+locally archived dev-signed build of the same commit worked. Everything below was reproduced locally
+on 2026-08-15 with real archives and exports on this machine; nothing is inferred from
+documentation.
+
+#### 1. Export signs what the archive's signature requests — an unsigned archive requests nothing
+
+`.github/workflows/testflight.yml` archives with `CODE_SIGNING_ALLOWED=NO` (deliberate; automatic
+signing on the runner demands a Development identity it does not have, runs 31052462134 and
+31054628357), and the Export step performs the only signing pass, authenticated by the ASC API
+key. The trap: `xcodebuild -exportArchive` never reads the Xcode project. It builds the final
+signature's entitlements from what the archived app's **existing signature** requests — and an
+unsigned archive requests nothing, so `CODE_SIGN_ENTITLEMENTS` (`Cypress/Cypress.entitlements`,
+added with the Sign in with Apple button) was processed by nobody.
+
+Reproduced both directions on the same commit, same export options, dev signing:
+
+- **Red**: archive with `CODE_SIGNING_ALLOWED=NO`, export → the product's signature carries only
+  `application-identifier`, `com.apple.developer.team-identifier`, `get-task-allow`.
+  `com.apple.developer.applesignin` is absent from the signature **even though the embedded
+  profile authorizes it** — the profile is the ceiling, the signature's request is the floor, and
+  iOS enforces the signature. This is builds 34 and 35 exactly.
+- **Green**: ad-hoc-sign the app inside the archive
+  (`codesign --force -s - --entitlements Cypress/Cypress.entitlements <app>`), same export → the
+  entitlement is present in the exported signature, which `codesign -v --strict` accepts.
+
+Builds 1–33 were unaffected only because the project had no entitlements file yet — there was
+nothing to lose. The fix ships the ad-hoc pass as a release-job step: no certificate, no profile,
+no new secret, and the export replaces it wholesale with the real Apple Distribution signature.
+Signing the archive properly at build time was tried and refused: manual style with
+`CODE_SIGN_IDENTITY=-` fails on `"Cypress" requires a provisioning profile`, with or without
+`AD_HOC_CODE_SIGNING_ALLOWED=YES` and `PROVISIONING_PROFILE_REQUIRED=NO`.
+
+#### 2. `destination = upload` meant the shipped product was uninspectable, so the guard forced a split
+
+With `destination = upload` the final .ipa exists only inside xcodebuild; nothing can look at it
+before it reaches TestFlight, which is why this class of loss could ever be silent. The pipeline
+now exports to disk (`destination = export`), runs `Tools/verify_entitlements.sh` against the
+exact .ipa, and uploads those same bytes with `xcrun altool --upload-app`, authenticated by the
+same API key (Xcode 26.6's altool documents API-key auth and the `$API_PRIVATE_KEYS_DIR` lookup,
+which matches where the workflow already writes `AuthKey_<id>.p8`).
+
+The guard's required list is **derived from `Cypress/Cypress.entitlements` itself** — the same
+file the project signs with — plus one hand-kept baseline key, `application-identifier`, the
+was-this-ever-distribution-signed canary that the signing machinery supplies rather than the
+file. A hand-kept required list would have been a third copy of a fact the repo already states
+twice, unenforced at exactly the moment the next capability lands; the shard matrix in the same
+workflow already makes this argument about `Tools/ui-test-shards.txt`, and the PR #89 review
+made it about the guard's first draft. Each declared key must appear in the product's signature
+(`codesign -d --entitlements`) **with its declared value** — presence alone blessed an
+`applesignin = <array/>` signature that Sign in with Apple does not work under, demonstrated
+end-to-end against the first draft — and must be authorized by the embedded profile's
+`Entitlements` dict (`security cms -D`), element-by-element for list values. Two fences red the
+declaration itself: a value containing `$(` (the release pipeline's plain `codesign` pass does
+not expand substitutions, so the literal would ship and compare equal) and an empty value (a
+faithful copy of a broken declaration would otherwise verify green).
+
+Calibrated on 2026-08-15, one green and eight reds, each red checked for its **reason** and not
+just its color: the build-34-shaped .ipa (message blames the signature, not the profile), a bare
+unsigned app, a signed app whose embedded profile predates the capability (message names the
+portal action), a signature carrying `applesignin = []` (WRONG VALUE, plus the baseline canary),
+a declared file saying `<array/>` (declaration refused), a declared file carrying
+`$(AppIdentifierPrefix)` (declaration refused), an .ipa holding two `.app` bundles (refuses to
+judge a package by one member), and an .ipa with no `Payload/` (which diagnoses itself rather
+than dying mute on the `$(find)` under `set -e` — the first draft's silent-abort, caught in
+review with a control).
+
+A `--upload-app` against a live ASC key cannot run on this machine by design. The review
+established the proving run is **this PR's own merge**: `Tools/ExportOptions.plist` and
+`Tools/verify_entitlements.sh` are outside `plan`'s `NO_ARCHIVE` set, so the merge commit ships
+automatically — it consumes the next build number and, if it reaches the expire step, expires
+build 35. Nobody should wait for a `workflow_dispatch` that is not needed. The step order
+protects the testers (export → guard → upload → expire → tag: any failure before upload leaves
+build 35 testable), and an upload failure is a red job, not a silent one. What the merge run
+must show: the ad-hoc readback listing `applesignin`, the export either regenerating the store
+profile or failing loudly on it, the guard's per-key table, and the `ls -R` of the export
+directory that settles whether an app-store-connect export writes a `Symbols/` directory —
+plus the dSYMs artifact, kept for 30 days because the shipped binary is stripped and the
+archive's dSYM (same UUID) is the only thing that can ever symbolicate it.
+
+#### 3. The cloud-managed distribution profile also predates the capability — and the fix converts that from silent to loud
+
+The locally cached `iOS Team Store Provisioning Profile: app.cypress.Cypress` (generated
+2026-07-30, before the entitlements file landed) has **no** `com.apple.developer.applesignin` in
+its `Entitlements` dict, while the dev team profile regenerated 2026-08-14 has it — the App ID
+capability is registered; the store profile is just stale. Builds 34 and 35 sailed past that
+staleness because their empty signatures demanded nothing of the profile. With the archive now
+requesting the entitlement, an offline export against the stale profile fails loudly:
+
+    error: exportArchive Provisioning profile "iOS Team Store Provisioning Profile:
+    app.cypress.Cypress" doesn't include the com.apple.developer.applesignin entitlement.
+
+In CI, `-allowProvisioningUpdates` plus the ASC key is expected to regenerate the store profile
+during export (profiles are regenerable and uncapped — the certificate half was the #232
+problem, not this). If it ever does not, the export or the guard goes red naming the one portal
+action, instead of TestFlight receiving a build whose button does nothing.
+
+#### 4. The general lesson, for the next capability
+
+A capability added to the project arrives at testers only if all three hold: the entitlements
+file declares it, the shipped signature requests it, and the profile authorizes it. The project
+and the device were checked here; the middle leg had no witness, and it is the only leg the
+release pipeline manufactures itself. When the next capability lands (push, iCloud, App Groups),
+there is nothing to remember: the guard derives its required keys and values from
+`Cypress/Cypress.entitlements`, so the new key is guarded the moment it is declared. The two
+exceptions are stated in the script itself — a declared value that needs `$(…)` substitution is
+refused until the signing pass can expand it, and a machinery-supplied key that never appears in
+the declared file (the `application-identifier` shape) belongs in the script's small baseline
+list.

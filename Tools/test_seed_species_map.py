@@ -6,7 +6,7 @@
 Every test here builds a real seed from a synthetic corpus of a dozen rows,
 through the real `build()`, and reads the real `species_map` table out of it.
 That is deliberate and it is the point: the defect these guard against
-(<errata-pending/species-map-string-kind>) lived in the aggregation *inside*
+(ERRATA E274) lived in the aggregation *inside*
 `build`, and a test that called the classifier directly would have gone green
 while the build still crashed. The corpus is San Jose-shaped because San Jose is
 the source that separates vacancy from species; San Francisco cannot express the

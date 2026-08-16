@@ -7006,3 +7006,286 @@ is bigger than it was, and a reader debugging a UI test's screen has two variabl
 of one. `MapOpeningCamera`'s `MapCameraMemory.shared` is the single place the pin is applied, and
 the `#if DEBUG` is at that construction site rather than inside the type, so a Release build has no
 branch to take.
+
+### R74 — The copy round: screens 15, 17 and the You tab (owner rulings of 2026-08-14, corrected 2026-08-15)
+
+*(Five rulings from 2026-08-14, each taken as an explicit choice among stated alternatives, **plus
+two corrections the owner ruled on 2026-08-15** after the adversarial review of PR #88 — the
+`moderation_rejected` sentence, and the rendering of where the stopped-versus-will-retry distinction
+lives. Both corrections are marked in place and dated. Ruling 5 of the original round — session
+restore — is **R75**. Implemented on `feat/copy-rulings`; the evidence for each, and the things the
+round found that the rulings do not cover, are in ERRATA **E271**.)*
+
+Every sentence below had gone false under the app while it was still being drawn. #158's wiring round
+gave the outbox a send sink over `cypress-sync`, and #158 step 5 made `Continue with Apple` a real
+exchange; between them they falsified a family of promises about where a volunteer's work lives. Each
+was left standing on purpose, because copy is the owner's under DECISIONS constraint 21. These are
+the answers.
+
+**A terminally refused outbox item says `This couldn't be sent.`** Screen 17's row for an item the
+service refused with a code the taxonomy says will not change — `forbidden` and its five siblings —
+carries that sentence and no other. It replaces the composed `"<cause> This one will not go through
+on its own."`, and it must stay distinguishable from the retryable `No connection.` state, which is a
+row that is still trying. The eight per-code sentences remain for a row that is still retrying and
+are no longer drawn for one the service has finished with; screen 17's footnote promise that an item
+"says why" is narrowed by that, deliberately.
+
+**`moderation_rejected` is the one exception, and it reads `This was reviewed and won't be shared.`**
+*(Ruled verbatim by the owner on **2026-08-15**, narrowing the sentence above after PR #88's review
+found it applied to six codes rather than one.)* The other five terminal codes — `forbidden`,
+`validation_failed`, `conflict`, `not_found`, `unauthorized` — keep `This couldn't be sent.`, which
+the reviewer checked sibling by sibling and found true of each. It is not true of this one: a
+`moderation_rejected` item **reached the service**, the request was accepted, and a person read the
+content and declined it. "This couldn't be sent." tells that volunteer their work never left the
+phone, which is a false claim about where their field work is (ARCHITECTURE §5.4, DECISIONS
+constraint 3 — the rule this whole round exists to enforce).
+
+**The `stopped` state folds into the failed row, and there is no fourth drawn state.** ERRATA **E83**
+invented `stopped` — the same amber C24 card as `retry`, its own mono word, and no control — because
+`failed` means two different things and SCREENS.md 17 draws one treatment. The ruling reverses that
+half of E83: SCREENS.md 17's "States drawn" line is `waiting`, `retry`, `synced`, and it stays three.
+A refused item draws the failed row, control included. The rest of E83 stands: the taxonomy still
+fails a non-retryable item immediately rather than burning 48 h of backoff on an answer that will not
+change.
+
+> **Where the distinction lives — the owner's correction of 2026-08-15, and the drafting error it
+> corrects.** As first written, this ruling said *"The stopped-vs-will-retry distinction lives only
+> in the outbox detail."* **There is no outbox detail.** SCREENS.md 17 draws a queue of rows, a wi-fi
+> row, a synced section, a summary line and a footnote; there is no detail screen, no navigation off
+> a row, and none is being built. The owner has acknowledged the phrase as a drafting error and ruled
+> the rendering that replaces it:
+>
+> **The row's sentence is the distinction.** A terminal row reads its terminal sentence — ruling 1's,
+> or the `moderation_rejected` sentence above — and a retryable row reads the retryable one. Same
+> card, same furniture, same control; the words carry it.
+>
+> Two things follow, and both are the ruling rather than a reading of it. The retry control is *not*
+> withheld from a refused row, because withholding it would put the distinction back onto the row's
+> furniture. And the sentence has to **survive a retry tap** — a control that erases the only carrier
+> of the distinction defeats the ruling, which is what PR #88's review found it doing (F1) and what
+> the drain behind `OutboxViewState.retry(id:)` fixes.
+
+**The You tab's account block says `Check-ins and notes sync to your grove. Photos stay on this phone
+until you choose to share them.`** It replaces `AccountCopy.signedInBody`'s *"This account gathers
+what you save here under one name on this device. Nothing is uploaded, and nothing about you is
+public."*, whose middle clause was false in two independent ways. **One body for both arms** —
+anonymous and signed-in — so the card is drawn in the signed-out arm too, which is the state the old
+sentence was most wrong about and the one arm that never drew it. The claim that photographs do not
+upload is true today; **the round that lands the photo sink revisits this sentence**, and the owner
+said so as part of the ruling.
+
+**Screen 15's deferred routes say `Google and email sign-in are coming later.`** It replaces
+*"Accounts are not ready yet"*, which was written when no route on that screen worked and stopped
+being true beside a `Continue with Apple` that signs people in. The notice's second sentence —
+"Everything you have saved stays on this phone." — is §7's own promise and is untouched: the ruling
+quoted the first clause and replaced that.
+
+**Screen 15's Apple button draws the Apple logo as a vector shape.** Into the existing drawn control,
+per Apple's Sign in with Apple custom-button guidelines, with the geometry taken from Apple's
+published artwork rather than from memory — consistent with RULINGS **R57**, which makes every glyph
+in this app a `Shape` drawn in this repository. **No SF Symbol and no
+`ASAuthorizationAppleIDButton`.** The button's fill token and its label do not change.
+
+R57 is amended by that last one only in what it now covers: the policy's own statement in
+`ShareDestinationGlyph` argues in passing that Apple glyphs "would put three vendors' marks on one
+row of a screen that draws its own", which was about screen 10's share row and is unaffected. Screen
+15's mark is a vendor's own requirement on that vendor's own control, and it is the first drawn glyph
+in the app whose geometry is not this project's to choose. What that costs is written up in the
+errata entry: Apple's guidelines ask for the downloaded artwork file itself, and this is a
+transcription of it.
+
+### R75 — A surviving account session restores; a surviving device credential does not (owner ruling 5 of 2026-08-14)
+
+*(Owner ruling 5 of 2026-08-14, implemented on `feat/session-restore`. What the round found on the
+way, including the sign-out that kept the credential, is ERRATA **E272**.)*
+
+---
+
+#### The question
+
+On iOS the Keychain survives app deletion. The app's SQLite database does not — it lives in the
+container. So a reinstall pairs *surviving credentials* with a *fresh, empty database*, and the app
+has to decide what a surviving credential means.
+
+It was asked twice, because there are two credentials.
+
+#### The two answers, which are opposite on purpose
+
+**A surviving device credential reads as no credential at all** (PR #81, ERRATA **E269**). The
+token is live and the service accepts it, but it
+resolves to the `devices` row of an installation that no longer exists; every item the phone sends
+names the new installation, and `applyOne` refuses all of them, permanently. The credential is
+discarded and the installation re-registers.
+
+**A surviving account session restores, silently.** The app boots signed in and the local account
+state is rebuilt.
+
+The recommendation on the table was to discard the session — symmetry with the device arm, and the
+argument that a phone which silently resumes somebody's account after a delete-and-reinstall is
+doing something the person did not ask for. The owner ruled the other way.
+
+##### Why the two differ, stated so the next reader does not "fix" the asymmetry
+
+A device credential is **per-installation**. It is a fact about a copy of the app, and a copy of the
+app that has been deleted has no facts left; keeping it is keeping a claim about something that is
+gone. An account session is **the person's**. An account is supposed to be portable — it is what
+"backs up your trees" means on screen 15 — and the same Apple identity signing in again would
+resolve to the same `users` row through `apple_subject` regardless. Discarding the session would
+have made the person perform a sign-in whose only possible outcome is the state they were already
+in.
+
+Note also what the two arms are correcting. The device arm corrects a state that is **broken**:
+every sync refused, forever, with no in-app recovery. The account arm corrects a state that is
+**merely dishonest**: nothing is refused and nothing is lost, but the app draws a signed-out
+installation while every request it makes goes out with the account's bearer and the service
+attributes the work to that account. Different defects, different repairs.
+
+#### What the ruling costs, and what it does not
+
+**It costs no round trip.** "Rebuild the local account state from the server" turns out to need
+almost nothing from the server. The one fact the restore requires is the account id, and the account
+id is in the session itself (`SessionCredentials.userID`). The account surfaces — the grove, the
+known species, favorites, map membership — are Class R reads that `RoutedAPI` already joins live on
+every read, so they answer with the account's rows the moment the app knows it is signed in. The
+restore is therefore synchronous, offline, and finished before the first frame, which keeps
+`AppSession.bootstrap()`'s rule that a launch must not reach the network.
+
+**It restores nothing it cannot know.** No route on this service reports an account's role, the
+provider that signed it in, or the license consent it gave. None of the three is written. A role
+defaults to `member` — a role is authority and the direction to fail in is the one that does not
+grant it — and the provider and consent are left absent, which `AccountLinkRecord` already models
+("a missing `provider` is an account claimed by something other than screen 15") and
+`AccountCopy.licenseLine(for:)` already draws as no line at all. The alternative would have been the
+app asserting somebody agreed to an open-database license on the strength of a reinstall.
+
+**It needs no new drawn state** (DECISIONS constraint 21). The restored state is the ordinary
+signed-in You tab, minus a line the mocks already permit to be absent.
+
+**It needs no migration and no new `app_state` key.** The rule is stated as an equality —
+`current_user_id` mirrors the Keychain session, and the session is the authority — so a launch killed
+part-way through leaves a state the next launch reads and converges from. A "restore in progress"
+flag would have been a third fact that could disagree with the two it was about.
+
+#### The rule the ruling turned into, which runs in both directions
+
+> **`app_state.current_user_id` mirrors the Keychain session. The session is the authority.**
+
+The forward direction is the restore. The reverse direction is the refusal: when the service refuses
+a surviving session — a revoked family, a deleted account, sixty days without a launch — the session
+layer already discards it, and the local half has to follow, or the app draws an account with no
+credential behind it. That is the same defect as the first one with the halves swapped, and the
+ruling is not honored by fixing only one of them.
+
+#### The input that is not about reinstalls at all
+
+The rule reads three facts, not two, and the third is what an *existing* device needs. "No local
+account beside a live session" describes the reinstall this ruling is about — and equally describes
+every install whose owner tapped `Sign out` under the shipping build, because that sign-out cleared
+`current_user_id` and left the Keychain alone. Those devices reach the rule on the first launch after
+the update, with no reinstall involved, and a two-input rule signs them back into the account they
+left.
+
+`signed_out_user_id` tells the two apart: a session for the account this device recorded itself as
+having left is a session that outlived a deliberate act. It is read only when the database names
+nobody, which is the marker's own meaning — `LocalAPI.resumableUserID()` already guards on exactly
+that.
+
+The general shape is worth more than the instance. **A rule that infers intent from the absence of a
+record has to ask what else produces that absence.** Here the answer was "a deliberate act by a
+population that already exists", and the fact distinguishing them was already on disk.
+
+#### What the ruling made mandatory elsewhere
+
+The rule cannot ship alone, and this is the part worth carrying forward: **a restore is only as
+correct as the acts that are supposed to end a session.** The You tab's sign-out forgot the Keychain
+entirely — it cleared `current_user_id` and left the session standing — which was already wrong (the
+bearer stayed the account's after the tap) and became load-bearing under this ruling, because the
+mirror rule would have read the surviving item as authority and signed the person back in on the
+next launch. A restore that resurrected deliberate sign-outs would be a worse defect than the one it
+was written to close.
+
+So signing out now forgets the session (keeping the *device* credential, so the anonymous queue goes
+on draining), and deleting the account now forgets both. Neither had a caller before this round.
+
+The general form, for whoever adds the next credential: **anything that ends an account locally must
+end it in the Keychain, in the same act.** The mirror rule believes the Keychain, and it is right to.
+
+### R76 — City data distribution: the published unit, the staged sequence, and what is deliberately left open (owner rulings of 2026-08-14)
+
+*(Source: `docs/design-proposals/2026-08-14-city-data-distribution.md`, whose Decisions section
+carries the same rulings as D1–D16 with the evidence behind each. Ruled by the owner on 2026-08-14,
+each as an explicit choice among stated alternatives. Stage 0's implementation round, and the three
+entries it corrects, are ERRATA **E275**.)*
+
+**The published unit becomes a region, and a borough is the region for NYC.** Five borough packs
+(54–169 MB raw at the proposal's estimates), plus a whole-NYC pack published beside them for the
+reader with the disk and the patience. San Francisco and San Jose become cities with exactly one
+region each — one shape everywhere, no NYC-only concept, no permanent branch in the publisher or the
+Cities screen. Revisit the unit only if the real Queens number from the ingest lands materially above
+~200 MB.
+
+**Seed schema 17 is one generation with one author.** The region column and region dimension land in
+the same generation as the standing-dead `kind`/`status` change the owner already ruled schema-first.
+One migration round, one review; the NYC ingest targets a single settled schema. The manifest moves
+`manifest_format` 1 → 2 in the same stage, and both formats publish side by side for one release
+cycle — the format-1 manifest listing whole-city packs only — so unupdated installs do not lose the
+catalog.
+
+**The staged sequence is approved and Stage 0 starts now**, before the ingest picks a unit: the app
+reads its own bundle's cities, content revisions and coverage by the publisher's own rule; the Cities
+screen gains *included in the app* and *newer record available* row states (an amendment to R43 §3's
+enumeration); the `Download` affordance disappears where it cannot keep its promise; offline rows
+take their titles from `dim_city.display_name`; and `bbox`/`centroid` decoding lands in the same
+change. The bundle row compares on `content_rev` alone — record-date parity, claimed as nothing more.
+
+**The download path grows up now, not with Stage 1**: brotli on the wire inside `manifest_format` 1
+(R37.4's reserved key; 4.56x measured on the published `sf` artifact), a background-identifier
+`URLSession` initiated in the foreground, resume via ranged GETs, and a free-space precheck including
+the `NSPrivacyAccessedAPICategoryDiskSpace` declaration it requires.
+
+**The location-triggered offer fires from the Cities screen**, plus at most a one-time prompt after
+the map is panned somewhere the attached inventory does not cover — not on launch. This supersedes
+the owner's original "on open" phrasing by the owner's own ruling. The prompt's copy remains a
+constraint-21 stop-and-ask when it is mocked.
+
+**The freshness destination is deliberately open.** The owner declined to commit to either overlay
+packs or R36's shape B; the choice is made after Stage 1's real download sizes are in hand, and
+Stage 3's design begins by closing it rather than assuming overlays. Until then, regional packs are
+the delta mechanism. The auto-refresh ticket R43 §6 deferred stays unwritten until after Stage 1.
+
+**What does not move:** the fused seed keeps publishing with NYC out of it, so worktree and CI costs
+are unchanged; the bundle stays R36's bootstrap (SF + San Jose), revisited deliberately at a natural
+break rather than by drift; and the NYC notify-the-City and verbatim-disclaimer obligation is settled
+before the first NYC publish — trial and beta packs included — not before the ingest.
+
+**`CLAUDE.md`'s version-spaces bullet gains the third space, `manifest_format`**, under the same
+discipline as the other two: named, its number struck from the prose, read from the code
+(`Cypress/Data/Cities/CityManifest.swift` and `Tools/publish_cities.py`).
+
+#### Addendum — four rulings taken later the same day, on the ingest's measured numbers
+
+The `feat/nyc-ingest` extract completed after the rulings above and its measurements superseded the
+proposal's estimates (Queens 175.7 MB measured — under the ~200 MB revisit line, so the borough unit
+stands). Four further rulings, same day, same method:
+
+**The s17 ruling stands with its premise corrected.** The owner chose schema-first for standing-dead
+believing a new schema slot was needed; `trees.status` already carries `dead_reported` (R19), so
+that work is an ingest-contract change on the Python side that may need no migration — and it still
+rides the s17 round with the same author. What makes 16 → 17 a real generation is the region shape:
+borough cannot ride `city_raw`, whose column family renders as `Cared for by …`, so it is a genuine
+`trees.region` column plus region dimension. One round, one author, as originally intended.
+
+**Orphan trees are assigned a borough by geometry at ingest.** The 22,995 standing trees (2.56%,
+overwhelmingly the newest plantings) that join to no planting space get their borough by
+point-in-polygon against the City's official borough boundaries, so the borough packs sum to the
+whole city. Derived from official geometry, not invented; constraint 15 holds.
+
+**The stale address source is used, deduped, and documented.** Forestry Planting Spaces (17 months
+staler than Tree Points; 6,864 whole-row duplicates) is deduped deterministically and its own date
+recorded in provenance, so the record never claims an address fresher than its source. Refresh when
+the City republishes.
+
+**The first NYC publish is gated on species coverage at 90% of rows.** Exact mappings cover 59% of
+rows today; the publish — trial and beta packs included — waits until synonymy rulings take mapped
+coverage to at least 90%, and the long tail lands through content-rev refreshes. The synonymy review
+round is sized by this number.
