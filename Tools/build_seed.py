@@ -1132,8 +1132,7 @@ def species_map_kind(kinds, species_id) -> str:
     and 611 empty sites name a real taxon -- so `Magnolia` arrives on 2 empty
     sites and 77 living trees, and when an empty site came first the row claimed
     a species AND `is_placeholder = 1`, which the table's own CHECK forbids.
-    That is why `--source city --sj-extent full` did not build (ERRATA
-    <errata-pending/species-map-string-kind>).
+    That is why `--source city --sj-extent full` did not build (ERRATA E274).
 
     The precedence below is not a tie-break. It is which FIELD each kind is
     reached through:
