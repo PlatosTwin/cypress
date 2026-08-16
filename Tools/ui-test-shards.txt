@@ -98,6 +98,37 @@
 # 3 tests, with 0 failures (0 unexpected) in 15.931 seconds`. A different machine and device from the
 # CI table above, exactly as the two entries before it are.
 #
+# ITS COST MOVED TWICE — the hittability-race repair added settle and bounded waits, and #88 added a
+# fourth test (`testTheAppleButtonKeepsApplesMinimumSize`). **The only figure worth keeping is the
+# one measured on the tree that carries both**, because deriving it from two numbers that describe
+# different code is how the previous two versions of this note went wrong:
+#
+#   composed tree (#91 + #88), iPhone 16e:     `Executed 4 tests … in 29.222 seconds`
+#   composed tree (#91 + #88), iPhone 16 Pro:  `Executed 4 tests … in 30.802 seconds`
+#
+# Two devices, ~29-31 s, which is the range to use.
+#
+# Not ~24 s. The two earlier figures — 24.745 s (4 tests' worth of waits but only 3 tests) and
+# 24.197 s (4 tests, but before the bounded waits existed) — agree with each other by coincidence and
+# neither describes this class as it now stands.
+#
+# WHICH MAKES SHARD 1 AND SHARD 4 EFFECTIVELY TIED, and this note should not imply headroom it does
+# not have:
+#
+#   Shard 1  332.6 + 29.2 = 361.8 s   (16e)     vs. the 362.6 s comparator below -> margin  0.8 s
+#   Shard 1  332.6 + 30.8 = 363.4 s   (16 Pro)   vs. the same comparator          -> margin -0.8 s
+#
+# The sign of the margin changes with the device it was measured on, which is the whole finding:
+# these two shards are **tied**, and on any given run either could set the pace. **Both figures are
+# also stale in the same direction**: #88 grew `RemoteGateComplaintUITests`, which sits on Shard 4,
+# so the comparator is probably above 362.6 s too and the real ordering is unknown rather than
+# narrow.
+#
+# So the honest instruction, rather than a derived number: **re-measure Shard 1 and Shard 4 on one
+# machine after #88 and #91 have both landed.** This file's own rule — "Re-measure on a single
+# machine before moving it for a number this small" — now applies to leaving this class where it is,
+# not only to moving it.
+#
 # PLACED ON SHARD 1, by this file's own arithmetic rather than by its class count. Totals as they
 # stand above, with this class added to each:
 #
