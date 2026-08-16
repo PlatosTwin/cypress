@@ -127,7 +127,27 @@ Open the photograph that will not delete.
   can be answered without inferring anything about accounts — is a column or a side table on
   `photos`, and therefore a schema version. **Migration seat, owner-assigned.**
 
-#### Open
+#### Answered, 2026-08-15
 
-Which of the two states the owner's phone is in, by the check above; and, if it is this one, which
-of the three repairs to take.
+**The phone is in this state.** The owner ran the check above on the photograph that will not
+delete: no sentence, no control. So the photographs are owned by an account, not anonymized by the
+leaving door, and the diagnosis stands as written.
+
+**The owner chose the third repair**: the photograph remembers which installation took it, so the
+question can be answered without inferring anything about accounts.
+
+The shape that follows from the rest of this entry, for whoever holds the migration seat:
+
+- A new column on `photos` carrying **provenance, not ownership** — the installation that wrote the
+  row. It is never an owner, so v12's "at most one owner" CHECK is untouched and nothing gains a
+  precedence rule to get wrong. `claimDevice` must not clear it; clearing `device_id` on adoption
+  stays exactly as it is (E23).
+- The delete gate admits it *in addition to* the two owner arms, and `.nobody` keeps refusing —
+  the leaving door clears provenance along with the owner, or R3 and E157 are quietly repealed.
+- The backfill writes `app_state.device_uuid` onto every existing row, on the same standing fact v12
+  reasoned from and that `LocalAPI.treeProfile` restates where it fills `ownPhotoIDs`: every row in
+  `main.photos` was written by this installation. That is what repairs the photographs already
+  stranded, and it is a weaker claim than v12's, because it attributes a machine rather than a
+  person.
+
+Still open: which round the migration rides, and who holds the seat for it.
