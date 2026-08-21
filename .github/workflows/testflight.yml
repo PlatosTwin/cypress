@@ -343,9 +343,12 @@ jobs:
             exit 0
           fi
           # A branch name may contain slashes; a note filename must not, or the suggestion would
-          # name a subdirectory of the notes directory. Read from the environment rather than
-          # interpolated into the script — a branch name is attacker-controllable text, and
-          # `${{ }}` splices it into the shell source before the shell ever sees a quote.
+          # name a subdirectory of the notes directory. Read from the environment (see this step's
+          # `env:`) rather than interpolated into the script — a branch name is attacker-
+          # controllable text, and a GitHub expression splices it into the shell SOURCE before the
+          # shell ever sees a quote. Note also that GitHub interpolates expressions anywhere in a
+          # `run:` block, comments included, so one written out here as an example would be
+          # evaluated; an empty one fails the whole file's validation and no checks appear at all.
           suggestion="docs/whats-new/${HEAD_REF//\//-}.md"
           # `github.sha` on a pull_request event is the MERGE commit, so base…merge is the net
           # diff — the same pair `scope` reads above, and for the same reason.
