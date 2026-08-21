@@ -239,6 +239,42 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
+**City-inventory disputes.** Owner ruling, 2026-08-21, refined the same day (both pending
+splice — full spec in `docs/rulings-pending/city-inventory-disputes.md`): city data must be
+disputable from the UI, and city-tree disputes are richer than the community-tree flags. City
+trees: checkboxes for nature of issue (pin in wrong location; wrong species; wrong other metadata
+— e.g. a clearly wrong planted year, or a recorded tree whose plot is empty), suggested values,
+and a notes field; plus a missing-tree defect for a tree that is on city property but absent from
+the city database, whose entry point cannot be a tree profile. Flagged trees get a small badge
+showing their flags, and the filters box gains a "trees with data issues" filter. Community trees:
+location and species disputes only — and the existing community flagging view is itself not
+quality (owner, same day: bad copy throughout, and a flag cannot be retracted by its author),
+so the round gives community flagging a detailed design pass with owner decision rounds rather
+than inheriting the shipped flow. Disputes are stored app-side in the writable database; the
+city inventory stays read-only, and sync-back to the city is explicitly deferred. Reverses the
+"community rows only" deferral in `SpeciesClaim.swift`'s header. Needs the writable-schema
+migration seat after the §3.4 round's. Sequenced after §3.4 lands; exact slot at scheduling.
+
+**Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
+user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
+itself — "This is that almanac's 'walk the nine' list, one tree at a time" (screen 14) and its
+kin — are holdovers from a demo-era voice and come out. The audit enumerates every candidate line
+with its screen and source location, then brings them to the owner as batched decision rounds
+(copy on mock-specified screens is constraint-21 territory); nothing is reworded silently. Not
+scheduled.
+
+**Seed inventory expansion beyond NYC.** Owner requests, 2026-08-21: add street trees to the data
+seed for **Oakland and Los Angeles**, and then also **Dallas, Phoenix, Philadelphia, San Antonio,
+San Diego, Jacksonville, Austin, Charlotte, Columbus, Seattle, Denver, and Nashville**. Each city
+is the NYC shape again — source the inventory, read its license, ingest, validate species
+coverage, cut packs — and the s17 region dimension is the prerequisite, so all of it queues behind
+NYC's first publish. Whether each city publishes an open street-tree inventory at all, and under
+what terms, is unresearched: the first step per city is the sourcing-and-license pass, and a city
+with no usable inventory comes back to the owner as a finding, not a silent drop. A tester asked
+for Marin/Sausalito/Mill Valley coverage the same day (recorded in the beta-feedback pending
+ruling); when this is scheduled, evaluate the whole list together against the distribution plan's
+per-inventory machinery rather than one city at a time. Not scheduled.
+
 **iNaturalist licensing.** Content is CC BY-NC and Cypress has a paid organizational tier. We store
 aggregate integers, which is defensible, but it is a position rather than a permission. The
 dependency is kept removable: dropping it costs 11 bloom arrays, 8 fruit arrays and one fall-color
