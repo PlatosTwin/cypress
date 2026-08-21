@@ -213,6 +213,16 @@ enum MapLayout {
     static let chevronHeight: CGFloat = 14
     static let chevronStroke: CGFloat = 2
 
+    /// The bar `MapTreeCard.titlePlaceholder` draws where the name will be, for the moment between
+    /// the tap and the profile read landing. **NOT SPECIFIED** — see that property for why the card
+    /// draws a bar there rather than a word.
+    ///
+    /// The height is `CypressFont.listNameSerif`'s drawn line (17.5pt serif), so the row is the height it
+    /// will be once the name arrives and nothing under the card moves when it does. The width is a
+    /// street-tree name's worth of bar, short of the badge that sits beside it.
+    static let cardTitlePlaceholderWidth: CGFloat = 132
+    static let cardTitlePlaceholderHeight: CGFloat = 21
+
     /// A tapped pin grows a little so the card and the pin read as one selection. **NOT SPECIFIED**
     /// in SCREENS.md — 01 draws no selected pin — so it is deliberately the smallest change that
     /// still answers the tap, and it moves nothing else.

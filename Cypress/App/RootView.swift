@@ -365,14 +365,16 @@ struct RootView: View {
                 onLink: accountLink(),
                 // Abandoning the flow — the shortlist's back chevron, and the camera's ✕ on the
                 // profile entrance. Relative on purpose: nothing was contributed, so the honest place
-                // to land is the screen that opened the camera. `onDone` is the one that is finished,
-                // and it goes somewhere absolute (ERRATA E151).
+                // to land is the screen that opened the camera. `onBackToMap` is the one that has
+                // finished, and it goes somewhere absolute (ERRATA E151).
                 onExit: { router.sheet = nil },
-                // "Done for today" — the end of a contribution rather than the abandoning of one, and
-                // the control whose label already promises what the owner asked for. It is the map's
-                // FAB that starts this flow and the map that a volunteer morning is conducted from, so
-                // finishing goes there rather than to whichever screen happened to be underneath.
-                onDone: { router.goToMap() },
+                // Screen 18's "Back to the map" — the end of a contribution rather than the
+                // abandoning of one. It is the map's FAB that starts this flow and the map that a
+                // volunteer morning is conducted from, so this lands there rather than on whichever
+                // screen happened to be underneath. **This closure has not changed**; the control
+                // that calls it used to say "Done for today", and the owner's ruling of 2026-08-21
+                // renamed the function to the place it goes (see `VisitSavedView`).
+                onBackToMap: { router.goToMap() },
                 onOpenTree: { id in
                     router.sheet = nil
                     // Not a second copy of the profile this flow may have been opened from (E151).

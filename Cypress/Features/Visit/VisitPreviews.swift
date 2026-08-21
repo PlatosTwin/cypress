@@ -267,8 +267,8 @@ enum VisitPreviewFixtures {
             ledger: VisitSaveLedger(defaults: transientDefaults()),
             onNextTree: { _ in },
             onRouteComplete: {},
-            onDone: {},
-            onOpenTimeline: { _ in }
+            onBackToMap: {},
+            onBackToTree: { _ in }
         )
     }
 

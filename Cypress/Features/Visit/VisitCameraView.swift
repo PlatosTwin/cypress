@@ -88,7 +88,34 @@ struct VisitCameraView: View {
                 drawnLayout
             }
         }
-        .background(CypressColor.Dark.bgCamera)
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **The ground is painted under the keyboard, and it has to be said in one modifier.**
+        //
+        // Reported from the field on build 25: with the note field focused, the strip behind and
+        // around the keyboard on this screen draws **white**, on a screen whose whole point is that
+        // it is dark regardless of the system setting (ARCHITECTURE §6).
+        //
+        // What was here was `.background(CypressColor.Dark.bgCamera)` followed by
+        // `.ignoresSafeArea(edges: .top)`, and both halves of that are load-bearing in the defect. A
+        // plain `.background` is laid out *behind the content and to the content's size*, and the
+        // content's size respects the keyboard safe area — which is what it must do, for the reason
+        // `CareLogView` and `BottomSheet` both write down: opt out of `.keyboard` and the keyboard
+        // covers the field being typed into (#146). So the moment the keyboard raised, the content
+        // shrank, the background shrank with it, and what showed through underneath was the hosting
+        // controller's own ground. This screen is presented in a `fullScreenCover`, which hosts it
+        // in a fresh context whose default background is the system's — white in a light appearance,
+        // which is every appearance as far as this screen is concerned, because `cypressForcedDark`
+        // pins the *environment* `colorScheme` for the tokens and does not repaint the host.
+        // `.ignoresSafeArea(edges: .top)` then made the mismatch invisible at the top and left it
+        // untouched at the bottom, which is exactly where the keyboard comes from.
+        //
+        // The fix is to move the escape onto the **fill**: `Color.ignoresSafeArea()` defaults to
+        // `SafeAreaRegions.all`, which includes `.keyboard`, so the paint covers the whole window
+        // while the content it sits behind goes on respecting every inset it respected before. The
+        // layout does not move: nothing about where the content sits changes, only what is drawn
+        // behind it.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        .background(CypressColor.Dark.bgCamera.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .cypressForcedDark()
         .task { await model.load() }

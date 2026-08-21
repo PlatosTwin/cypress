@@ -429,9 +429,28 @@ struct MapAnnotationLayer: UIViewRepresentable {
         configuration.showsTraffic = false
         mapView.preferredConfiguration = configuration
 
-        // The mock has no zoom, compass or scale control. SCREENS.md 01 lists zoom controls under
-        // **NOT SPECIFIED**, so none are added.
-        mapView.showsCompass = false
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **The compass is on, and it is the owner's decision rather than this file's.**
+        //
+        // This line read `showsCompass = false` and gave the reason above: the mock has no compass
+        // and SCREENS.md 01 lists map controls under **NOT SPECIFIED**, so none was added. What that
+        // reasoning missed is one line further down — `isRotateEnabled = true`. This map turns, and
+        // a map that turns and does not say which way is north can be left pointing somewhere a
+        // reader did not choose with nothing on screen to undo it. TestFlight found exactly that.
+        //
+        // The owner ruled on 2026-08-21: a MapKit-native compass, visible only when the camera is
+        // off north, and tapping it returns to north. That is `MKMapView`'s own default behavior for
+        // this property — `MKCompassButton` fades itself in on rotation, fades out at a heading of
+        // zero, and its tap animates the camera back — so honoring the ruling is turning the flag on
+        // and drawing nothing. It is also the reason the ruling can be honored at all without a
+        // mock: no glyph of ours is involved, so R57's no-SF-Symbols policy is not in question and
+        // there is no bespoke control to specify.
+        //
+        // The scale bar stays off. Nothing ruled it and the original reasoning still holds for it:
+        // it answers a question nobody on this screen is asking, and it is not the undo for a
+        // gesture the map already allows.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        mapView.showsCompass = true
         mapView.showsScale = false
         // **Not `showsUserLocation`.** That would have `MKMapView` open a second `CLLocationManager`
         // of its own, beside `MapLocationProvider`'s — two GPS sessions for one dot, which is the

@@ -102,16 +102,20 @@ struct VisitFlowView: View {
     /// practice it dismisses the cover onto the screen that opened it.
     var onExit: () -> Void = {}
 
-    /// **Finishing** the flow — screen 18's "Done for today" (ERRATA E151).
+    /// **Leaving the flow for the map** — screen 18's second control (ERRATA E151).
     ///
     /// Separate from `onExit`, which it used to be wired to, because the two mean different things and
     /// the container can only act on the difference if it can see it. Abandoning is relative — go back
-    /// where you were. Finishing is a destination: a contribution has been made and the person is done,
-    /// and "back where you were" is the tree profile they photographed from, which is the one place a
-    /// person who has finished does *not* want to be. Defaults to `onExit` so a caller that has no
-    /// opinion behaves as before rather than silently doing nothing.
-    var onDone: (() -> Void)?
-    /// "See it on the tree's timeline" (screen 03), and where a tree this flow has just added goes.
+    /// where you were. This one is a destination: a contribution has been made, and "back where you
+    /// were" is the tree profile they photographed from, which is the one place the person pressing
+    /// this does *not* want to be. Defaults to `onExit` so a caller that has no opinion behaves as
+    /// before rather than silently doing nothing.
+    ///
+    /// **It was `onDone`, for a control that said "Done for today".** The destination has not moved —
+    /// it was `goToMap()` then and it is `goToMap()` now — and the owner's ruling of 2026-08-21 is
+    /// that the control names the map rather than the end of a morning. See `VisitSavedView`.
+    var onBackToMap: (() -> Void)?
+    /// Screen 18's "back to this tree" (screen 03), and where a tree this flow has just added goes.
     var onOpenTree: (UUID) -> Void = { _ in }
     /// "Route done · see your grove" (screen 08).
     var onOpenGrove: () -> Void = {}
@@ -222,8 +226,8 @@ struct VisitFlowView: View {
                 onLink: onLink,
                 onNextTree: { next in step = .camera(Subject(next)) },
                 onRouteComplete: onOpenGrove,
-                onDone: onDone ?? onExit,
-                onOpenTimeline: onOpenTree
+                onBackToMap: onBackToMap ?? onExit,
+                onBackToTree: onOpenTree
             )
             .id(receipt.visit.id)
         }

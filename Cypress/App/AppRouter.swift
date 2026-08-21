@@ -128,7 +128,7 @@ final class AppRouter {
 
     /// Pushes, optionally declining to stack a second copy of the screen already in front.
     ///
-    /// The visit flow needs the second form (ERRATA E151). Screen 18's "See it on the tree's timeline"
+    /// The visit flow needs the second form (ERRATA E151). Screen 18's back-to-this-tree control
     /// is reached from two entrances, and one of them — the profile's own photo CTA — is *already on that
     /// tree's profile*. Pushing unconditionally put a second, identical profile of the same tree on the
     /// stack, so the way out got one chevron longer every time somebody photographed a tree from its own
