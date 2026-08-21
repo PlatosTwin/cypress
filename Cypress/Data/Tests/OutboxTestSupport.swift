@@ -31,6 +31,27 @@ public enum OutboxTestSupport {
         public var closure: @Sendable () -> Date { { [self] in now } }
     }
 
+    /// Removes the queue rows a **fixture** wrote, so a suite counts what it enqueued.
+    ///
+    /// `LocalAPI.addTree` is one of spec §3.4's nine mutations, and since the round that queued them
+    /// it writes an `add_tree` row of its own — inside the transaction that adds the tree, which is
+    /// what makes the two atomic. Ten suites call `addTree` for no reason but to have a tree to hang
+    /// a visit, a favorite or a measurement on, and every queue-wide count in them would otherwise be
+    /// counting the fixture rather than the mutation under test.
+    ///
+    /// **It deletes by kind, and only the kinds named**, so it cannot quietly swallow the row a test
+    /// is about. A suite that is *about* §3.4's kinds — `CommunityOutboxKindTests` — does not call
+    /// it, which is what keeps those rows under test somewhere.
+    public static func discardFixtureRows(
+        ofKind kinds: [OutboxItem.Kind] = [.addTree],
+        in store: CypressStore
+    ) async throws {
+        let list = kinds.map { "'\($0.rawValue)'" }.joined(separator: ",")
+        try await store.queue.write { connection in
+            try connection.execute("DELETE FROM outbox WHERE kind IN (\(list))")
+        }
+    }
+
     /// What the scripted transport should do on the next pass.
     public enum Script: Sendable, Equatable {
         /// Everything succeeds.

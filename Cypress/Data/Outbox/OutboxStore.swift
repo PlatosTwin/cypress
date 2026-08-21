@@ -38,6 +38,53 @@ public struct OutboxStore {
     /// this is `ON CONFLICT DO NOTHING` on the unique `client_uuid` rather than a plain INSERT.
     @discardableResult
     public func enqueue(_ item: OutboxItem, connection: SQLiteConnection) throws -> Bool {
+        try enqueue(item, locallyApplied: false, connection: connection)
+    }
+
+    /// Enqueues a mutation this device has **already committed**, from inside the transaction that
+    /// committed it (spec §3.4's nine).
+    ///
+    /// ── Why these rows are born `local_applied = 1` ────────────────────────────────────────────
+    ///
+    /// For the six original kinds the drain *is* the local commit: nothing has touched this device's
+    /// tables when the row is written, `OutboxQueue`'s apply sink runs `LocalAPI.sync`, and that
+    /// call is what puts the visit on the tree (ERRATA E261 §2). §3.4's nine are the other shape.
+    /// `LocalAPI.addTree` runs a proximity dedupe, strips a photograph's metadata, mints a tree and
+    /// returns it; `deletePhoto` tombstones a row behind two ownership gates and then removes files;
+    /// `correctSpecies` supersedes an assertion chain. Each is performed **first**, because the
+    /// caller needs the answer, and each writes its queue row inside its own transaction — so either
+    /// both happened or neither did, and there is no window in which the mutation is committed and
+    /// the row that would send it is not.
+    ///
+    /// Marking them applied is a statement of fact rather than an optimization: the mutation is on
+    /// this device by the time the row exists. `OutboxQueue.drain` already skips the apply half for
+    /// such a row (`live.filter { !$0.locallyApplied }`), so what is left is the send, which is the
+    /// half that was missing. Leaving them at 0 would offer them to the apply sink, and applying one
+    /// a second time is a second correction, a second flag, a second withdrawal —
+    /// `LocalAPI.apply(_:)` refuses them outright for that reason.
+    ///
+    /// **This is not a backfill and must never become one.** It writes one row for one mutation at
+    /// the moment that mutation happens. Nothing sweeps rows that already exist into the queue; see
+    /// `AppSchema` v17.
+    ///
+    /// **The `Bool` says whether a row was written, and every caller today discards it, on an
+    /// invariant worth stating rather than assuming**: the `ON CONFLICT(client_uuid) DO NOTHING`
+    /// arm cannot fire for these ten. Nine mint a fresh `UUID()` at the call site, and `addTree`
+    /// reuses `TreeDraft.clientUUID`, which `community_trees.client_uuid TEXT NOT NULL UNIQUE` has
+    /// already refused in the same transaction if it is a repeat. A future kind that keys on
+    /// something a caller can hand in twice inherits a silent drop instead — so it reads this
+    /// result, or it does not use this method.
+    @discardableResult
+    public func enqueueLocallyApplied(_ item: OutboxItem, connection: SQLiteConnection) throws -> Bool {
+        try enqueue(item, locallyApplied: true, connection: connection)
+    }
+
+    @discardableResult
+    private func enqueue(
+        _ item: OutboxItem,
+        locallyApplied: Bool,
+        connection: SQLiteConnection
+    ) throws -> Bool {
         let statement = try connection.cachedStatement("""
             INSERT INTO outbox
                 (id, kind, client_uuid, payload, photo_paths, state, fail_count,
@@ -45,11 +92,12 @@ public struct OutboxStore {
                  next_attempt_at, created_at, updated_at)
             VALUES
                 (:id, :kind, :client, :payload, :photos, :state, :failCount,
-                 :lastError, :lastErrorCode, 0, 0, :created,
+                 :lastError, :lastErrorCode, :localApplied, 0, :created,
                  NULL, :created, :updated)
             ON CONFLICT(client_uuid) DO NOTHING
             """)
         _ = try statement.bind([
+            ":localApplied": locallyApplied ? 1 : 0,
             ":id": item.id,
             ":kind": item.kind.rawValue,
             ":client": item.clientUUID,
@@ -454,15 +502,36 @@ public struct OutboxStore {
         let discarded = connection.changes
         _ = try discard.reset()
 
-        // The four append-only contribution kinds. `userID` is a top-level key on each of their
-        // payloads (`Visit`, `TreeObservation`, `TreeMeasurement`, `CareEvent` all flatten
-        // `Attribution` into `userID` + `deviceID`).
+        // The append-only contribution kinds, in **two families with two payload shapes**.
         //
+        // The four original ones flatten `Attribution` into top-level `userID` + `deviceID`
+        // (`Visit`, `TreeObservation`, `TreeMeasurement`, `CareEvent`). Spec §3.4's ten carry the
+        // `Attribution` as an object, so the account is at `$.attribution.userID`
+        // (`CommunityMutations.swift`).
+        //
+        // **Both families have to be named or a deletion under-deletes**, and the failure is R3's
+        // stated one: a signed-in contributor's queued species correction, photo withdrawal or
+        // hazard redirect would keep naming the account through the deletion and then drain to the
+        // service afterwards. A single `$.userID` predicate matches none of them — the key is not
+        // there — so the rows would be silently untouched, which is the shape of under-deletion that
+        // reads as success at every layer.
+        let contributions = """
+            (kind IN ('visit','observation','measurement','care_event')
+             OR kind IN ('add_tree','species_claim','species_correction',
+                         'wrong_species_report','never_existed_report',
+                         'species_review_dismissal','record_review_dismissal',
+                         'photo_vote','photo_withdrawal','hazard_redirect'))
+            """
+        // Either shape. `json_extract` answers NULL for a path a payload does not have, so exactly
+        // one half of this can match any given row and neither can match a device-owned one.
+        let mine = """
+            (json_extract(payload, '$.userID') = :user COLLATE NOCASE
+             OR json_extract(payload, '$.attribution.userID') = :user COLLATE NOCASE)
+            """
+
         // One statement or the other, chosen by the door, over exactly the same set of rows — so
         // there is no arrangement of the two in which a queued contribution is both anonymized and
         // discarded, and none in which it is neither.
-        let contributions = "kind IN ('visit','observation','measurement','care_event')"
-        let mine = "json_extract(payload, '$.userID') = :user COLLATE NOCASE"
 
         switch choice {
         case .leaveRecords:
@@ -481,9 +550,13 @@ public struct OutboxStore {
             try tombstone.run()
             _ = try tombstone.reset()
 
+            // Both keys, in one statement, because a row has one of them and `json_remove` is a
+            // no-op on a path that is not there. Naming only the one a kind "should" have would put
+            // the mapping from kind to payload shape in a second place, and the two would drift.
             let anonymize = try connection.cachedStatement("""
                 UPDATE outbox
-                   SET payload = json_remove(payload, '$.userID'), updated_at = :now
+                   SET payload = json_remove(json_remove(payload, '$.userID'), '$.attribution.userID'),
+                       updated_at = :now
                  WHERE \(contributions) AND \(mine)
                 """)
             _ = try anonymize.bind([":now": date, ":user": userID.uuidString])

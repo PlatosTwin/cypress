@@ -44,14 +44,24 @@ struct DeletionTombstoneTests {
 
     /// There is no seed in these tests, so the tree is a community add — which `LocalAPI.requireTree`
     /// accepts and an invented UUID does not.
-    private static func makeTree(api: LocalAPI, at longitude: Double = -122.44) async throws -> Tree {
-        try await api.addTree(
+    private static func makeTree(
+        api: LocalAPI,
+        in store: CypressStore,
+        at longitude: Double = -122.44
+    ) async throws -> Tree {
+        let tree = try await api.addTree(
             TreeDraft(
                 coordinate: Coordinate(latitude: 37.77, longitude: longitude),
                 photoLocalPath: "/tmp/cypress-tombstone-test.jpg",
                 attribution: Attribution.anonymous(deviceID: deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own, owned by
+        // whoever is signed in — so a deletion sweeps it, and the counts below would be counting the
+        // fixture. That sweep is real and is asserted in `CommunityOutboxKindTests`; here the tree is
+        // only somewhere to hang a visit.
+        try await OutboxTestSupport.discardFixtureRows(in: store)
+        return tree
     }
 
     /// One of each of the four append-only kinds, written straight into the tables.
@@ -109,7 +119,7 @@ struct DeletionTombstoneTests {
     @Test("a record the leaving door anonymized is not adopted by the next account on the phone")
     func theNextAccountDoesNotInheritAnonymizedRecords() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         try await Self.writeContributions(
             treeID: tree.id,
             attribution: Attribution(userID: Self.firstUser, deviceID: Self.deviceID),
@@ -144,7 +154,7 @@ struct DeletionTombstoneTests {
     @Test("the tombstone names every table the leaving door anonymizes")
     func everyAnonymizedTableIsTombstoned() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         try await Self.writeContributions(
             treeID: tree.id,
             attribution: Attribution(userID: Self.firstUser, deviceID: Self.deviceID),
@@ -178,7 +188,7 @@ struct DeletionTombstoneTests {
     func theDevicesOwnWorkIsStillClaimable() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID, now: { Self.moment })
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         // Never signed in, never deleted: D9's ordinary contributor, whose rows look identical to an
         // anonymized one in every column. The tombstone is the only thing that tells them apart, and
@@ -202,7 +212,7 @@ struct DeletionTombstoneTests {
     @Test("work done on the phone after a deletion belongs to whoever signs in next")
     func workDoneAfterTheDeletionIsStillClaimable() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         try await Self.writeContributions(
             treeID: tree.id,
             attribution: Attribution(userID: Self.firstUser, deviceID: Self.deviceID),
@@ -254,7 +264,7 @@ struct DeletionTombstoneTests {
     func aQueuedContributionCannotSmuggleItselfOntoTheNextAccount() async throws {
         let (store, api) = try await Self.signedIn()
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         let queued = Visit(
             treeID: tree.id,
@@ -287,7 +297,7 @@ struct DeletionTombstoneTests {
     @Test("the anonymized records are gone from every device-scoped surface")
     func noDeviceScopedSurfaceShowsThem() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         try await Self.writeContributions(
             treeID: tree.id,
             attribution: Attribution(userID: Self.firstUser, deviceID: Self.deviceID),

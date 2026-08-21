@@ -282,11 +282,18 @@ enum OutboxCopy {
         "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"
     }
 
-    /// §2 names four of the six kinds. `Favorite` and `Reminder` are **NOT SPECIFIED** — no mocked
-    /// row carries either — and are the plain nouns the rest of the app already uses for them.
+    /// §2 names four of the six kinds it was written against. `Favorite` and `Reminder` are **NOT
+    /// SPECIFIED** — no mocked row carries either — and are the plain nouns the rest of the app
+    /// already uses for them.
     ///
     /// A private reminder deliberately names no hazard category here. D4 keeps hazards off every
     /// surface but the owner's own record, and a queue is a list, not that record.
+    ///
+    /// **Spec §3.4's ten are unspecified in the same way and are handled the same way**, which is
+    /// the precedent above rather than a new decision: each is the noun the screen that captured it
+    /// already uses (`TreeProfileCopy.correctSpeciesAction`, `reportSpeciesAction`,
+    /// `reportNeverExistedAction`), shortened to a label. Nothing here invents a civic or botanical
+    /// fact, and the hazard row names no category for the reason the reminder row does not.
     static func kindLabel(_ kind: OutboxItem.Kind) -> String {
         switch kind {
         case .visit: return "Visit"
@@ -295,6 +302,16 @@ enum OutboxCopy {
         case .careEvent: return "Care"
         case .favoriteToggle: return "Favorite"
         case .privateReminder: return "Reminder"
+        case .addTree: return "New tree"
+        case .speciesClaim: return "Species"
+        case .speciesCorrection: return "Species correction"
+        case .wrongSpeciesReport: return "Species report"
+        case .neverExistedReport: return "Record report"
+        case .speciesReviewDismissal: return "Species review"
+        case .recordReviewDismissal: return "Record review"
+        case .photoVote: return "Photo vote"
+        case .photoWithdrawal: return "Photo removed"
+        case .hazardRedirect: return "Hazard redirect"
         }
     }
 
@@ -337,6 +354,18 @@ enum OutboxCopy {
 
         case .privateReminder:
             return "private to you"
+
+        // ── §3.4's ten carry no sub-line, and that is a refusal rather than a gap ─────────────
+        //
+        // §2 specifies a sub-line for three kinds and the row reads `<Kind> · <Tree> · <time>`
+        // without one. Every clause that could go here would be invented: a species name the mock
+        // never asked for, a reason a dismissal does not record, a thumb direction, a hazard
+        // category D4 keeps off every surface but the owner's own record. DECISIONS constraint 21
+        // makes that a stop-and-ask, and the kind label already says what the person did.
+        case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport, .neverExistedReport,
+             .speciesReviewDismissal, .recordReviewDismissal, .photoVote, .photoWithdrawal,
+             .hazardRedirect:
+            return nil
 
         case nil:
             return nil

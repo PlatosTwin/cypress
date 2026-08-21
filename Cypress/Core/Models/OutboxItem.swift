@@ -66,6 +66,43 @@ public struct OutboxItem: CoreEntity {
         /// separate from the hazard-redirect log, so it is a mutation like any other and queues like
         /// one. `AppSchema` v4 widens the stored vocabulary to match.
         case privateReminder = "private_reminder"
+
+        // ── Spec §3.4's nine ───────────────────────────────────────────────────────────────────
+        //
+        // Nine mutations that a shipping screen performs and that reached this device's tables and
+        // nothing else. §3.4 rules them "Class L until they are queued", and queueing them is this
+        // vocabulary growing: `AppSchema` v17 widens the stored `CHECK`, `server/migrations`
+        // widens `contributions.kind`, and `sync.go`'s `syncKinds` accepts them.
+        //
+        // They are ten cases and nine mutations because §3.4 counts the review-dismissal *pair* as
+        // one entry. The pair stays two cases here: the two dismissals close reports on different
+        // seams under different rules (`ReviewFlag.Kind.Resolution`, ERRATA E170), and one case for
+        // both would put that distinction inside a payload field where `outbox.kind` cannot see it.
+        //
+        // **None of these carries a photo binary**, and the two that touch photographs least of
+        // all: `addTree` ingests its required photograph in the same transaction that writes the
+        // row, and `photoWithdrawal` is a deletion. See `OutboxSendSink` for why that matters.
+
+        /// A community tree somebody added (`CypressAPI.addTree`).
+        case addTree = "add_tree"
+        /// A first species name on a tree nobody had named (`claimSpecies`).
+        case speciesClaim = "species_claim"
+        /// A correction that supersedes the name in force (`correctSpecies`, `AppSchema` v14).
+        case speciesCorrection = "species_correction"
+        /// "The species on this tree is wrong" (`flagWrongSpecies`, ticket #124).
+        case wrongSpeciesReport = "wrong_species_report"
+        /// "This record never had a tree behind it" (`flagNeverExisted`, ticket #125).
+        case neverExistedReport = "never_existed_report"
+        /// A `wrong_species` report closed without changing the name (`dismissSpeciesReview`).
+        case speciesReviewDismissal = "species_review_dismissal"
+        /// A `never_existed` report closed leaving the record standing (`dismissRecordReview`).
+        case recordReviewDismissal = "record_review_dismissal"
+        /// A thumb on a photograph, or one taken back (`setPhotoVote`, `AppSchema` v8).
+        case photoVote = "photo_vote"
+        /// A photograph withdrawn (`deletePhoto`). See `PhotoWithdrawal`.
+        case photoWithdrawal = "photo_withdrawal"
+        /// The hazard sheet that sent somebody to 311 (`logHazardRedirect`, BUILD-PLAN §6).
+        case hazardRedirect = "hazard_redirect"
     }
 
     /// `outbox.state` (BUILD-PLAN §4), verbatim. Screen 17 shows per-item state and retry.

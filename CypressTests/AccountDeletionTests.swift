@@ -40,14 +40,24 @@ struct AccountDeletionTests {
 
     /// A tree to hang contributions on. There is no seed in these tests, so it is a community add —
     /// which `LocalAPI.requireTree` accepts and an invented UUID does not.
-    private static func makeTree(api: LocalAPI, at longitude: Double = -122.44) async throws -> Tree {
-        try await api.addTree(
+    private static func makeTree(
+        api: LocalAPI,
+        in store: CypressStore,
+        at longitude: Double = -122.44
+    ) async throws -> Tree {
+        let tree = try await api.addTree(
             TreeDraft(
                 coordinate: Coordinate(latitude: 37.77, longitude: longitude),
                 photoLocalPath: "/tmp/cypress-deletion-test.jpg",
                 attribution: Attribution.anonymous(deviceID: deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This suite is not about that row, and every
+        // queue count below would otherwise be counting the fixture. See
+        // `OutboxTestSupport.discardFixtureRows`.
+        try await OutboxTestSupport.discardFixtureRows(in: store)
+        return tree
     }
 
     private static func scalar(_ sql: String, in store: CypressStore) async throws -> Int {
@@ -103,7 +113,7 @@ struct AccountDeletionTests {
     @Test("a contribution survives deletion with its owner nulled")
     func contributionsSurviveAnonymized() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
         let visit = try await Self.writeContributions(treeID: tree.id, attribution: attribution, in: store)
 
@@ -176,8 +186,8 @@ struct AccountDeletionTests {
     @Test("a private reminder and a favorite do not survive their account")
     func exclusivelyOwnedRowsAreDeleted() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
-        let other = try await Self.makeTree(api: api, at: -122.46)
+        let tree = try await Self.makeTree(api: api, in: store)
+        let other = try await Self.makeTree(api: api, in: store, at: -122.46)
 
         try await store.queue.write { connection in
             let contributions = ContributionStore()
@@ -242,7 +252,7 @@ struct AccountDeletionTests {
     @Test("a favorite tombstone goes with the account too")
     func tombstonesAreDeleted() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         // On, then off: one row whose `deleted_at` is set. E89 keeps this row rather than deleting
         // it so that sync can carry the un-favorite event — and there is no such sync for an
@@ -273,7 +283,7 @@ struct AccountDeletionTests {
     @Test("a failure part-way through leaves nothing anonymized")
     func theDeletionIsOneTransaction() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
         try await Self.writeContributions(treeID: tree.id, attribution: attribution, in: store)
         try await store.queue.write { connection in
@@ -337,7 +347,7 @@ struct AccountDeletionTests {
     @Test("queued reminders and favorites are discarded, queued contributions are anonymized")
     func theOutboxIsTakenWithTheAccount() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
 
         let queuedVisit = Visit(treeID: tree.id, attribution: attribution, capturedAt: Self.moment)
@@ -399,7 +409,7 @@ struct AccountDeletionTests {
     @Test("with no erasure in progress a user-owned favorite still cannot be hard-deleted")
     func theTriggerStillRefusesEverythingElse() async throws {
         let (store, api) = try await Self.signedIn()
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         try await store.queue.write { connection in
             try ContributionStore().applyFavoriteToggle(
                 owner: .user(Self.userID), treeID: tree.id, clientUUID: UUID(),
@@ -587,7 +597,7 @@ struct AccountDeletionTests {
         api: LocalAPI,
         store: CypressStore
     ) async throws -> (tree: Tree, visit: Visit, photo: (id: UUID, url: URL)) {
-        let tree = try await makeTree(api: api)
+        let tree = try await makeTree(api: api, in: store)
         let attribution = Attribution(userID: userID, deviceID: deviceID)
         let visit = try await writeContributions(treeID: tree.id, attribution: attribution, in: store)
         let photo = try await photograph(api: api, treeID: tree.id, visitID: visit.id)
@@ -750,6 +760,12 @@ struct AccountDeletionTests {
                 )
             )
 
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This suite is not about that row, and every
+        // queue count below would otherwise be counting the fixture. See
+        // `OutboxTestSupport.discardFixtureRows`.
+            try await OutboxTestSupport.discardFixtureRows(in: store)
+
             #expect(try await Self.scalar(
                 "SELECT COUNT(*) AS n FROM photos WHERE visit_id IS NULL", in: store
             ) == 1, "fixture: \(choice)")
@@ -793,8 +809,8 @@ struct AccountDeletionTests {
     @Test("the destructive door does not touch the device's own rows or a stranger's")
     func theDestructiveDoorIsScopedToTheAccount() async throws {
         let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
-        let mine = try await Self.makeTree(api: api)
-        let theirs = try await Self.makeTree(api: api, at: -122.46)
+        let mine = try await Self.makeTree(api: api, in: store)
+        let theirs = try await Self.makeTree(api: api, in: store, at: -122.46)
 
         try await Self.writeContributions(
             treeID: mine.id, attribution: Attribution(userID: Self.userID, deviceID: Self.deviceID), in: store
@@ -829,7 +845,7 @@ struct AccountDeletionTests {
     @Test("the destructive door discards queued contributions instead of landing them anonymously")
     func theDestructiveDoorEmptiesTheQueue() async throws {
         let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
 
         // A queued visit with a staged JPEG, which is the state a phone is in on a bus: the
