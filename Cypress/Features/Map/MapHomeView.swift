@@ -128,7 +128,17 @@ struct MapHomeView: View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 MapCanvas(
-                    basemap: { basemap(topInset: proxy.safeAreaInsets.top) },
+                    basemap: {
+                        basemap(
+                            topInset: proxy.safeAreaInsets.top,
+                            // The same reconstruction `chrome` is handed below, and for the same
+                            // reason: every term the compass's affordability is computed from
+                            // counts from the top of the display rather than of the safe area.
+                            screenHeight: proxy.size.height
+                                + proxy.safeAreaInsets.top
+                                + proxy.safeAreaInsets.bottom
+                        )
+                    },
                     overlay: {
                         chrome(
                             topInset: proxy.safeAreaInsets.top,
@@ -298,7 +308,10 @@ struct MapHomeView: View {
     ///   own inset. Handed in rather than read off the `MKMapView`, for the reason
     ///   `MapLayout.topChromeReserved` gives about baked-in safe areas: the live number is the only
     ///   correct one, and this proxy is where the screen already reads it.
-    private func basemap(topInset: CGFloat) -> some View {
+    /// - Parameter screenHeight: the whole display, reconstructed the same way `chrome` reconstructs
+    ///   it. The compass needs it because whether this screen can afford one at all is a property of
+    ///   the screen — see `MapLayout.compassIsAffordable`.
+    private func basemap(topInset: CGFloat, screenHeight: CGFloat) -> some View {
         MapKitBasemap(
             position: $position,
             region: $region,
@@ -320,6 +333,7 @@ struct MapHomeView: View {
             // the compass over it — there is no vertical room to step into. See `MapLayout`'s
             // compass block for the sweep that establishes that.
             compassTopInset: MapLayout.compassTop(
+                screenHeight: screenHeight,
                 topInset: topInset,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             ),

@@ -1086,10 +1086,14 @@ struct AX5ReflowTests {
             for topInset in Self.supportedTopInsets {
                 for namedSpecies in 0...MapSpeciesSlot.allCases.count {
                     for isAccessibilitySize in [true, false] {
-                        let top = MapLayout.compassTop(
+                        // `nil` is a screen that cannot afford the control at all, which is a
+                        // decision rather than a failure — see `MapLayout.compassIsAffordable`.
+                        // There is nothing to clear, so there is nothing to assert.
+                        guard let top = MapLayout.compassTop(
+                            screenHeight: screenHeight,
                             topInset: topInset,
                             isAccessibilitySize: isAccessibilitySize
-                        )
+                        ) else { continue }
                         let chipRowBottom = MapLayout.topChromeReserved(
                             topInset: topInset,
                             isAccessibilitySize: isAccessibilitySize
@@ -1124,6 +1128,99 @@ struct AX5ReflowTests {
                             \(top + MapLayout.compassSize) and the bottom chrome begins at \
                             \(bottomBlockTop). The compass is drawn by MapKit *under* the chrome, \
                             so an overlap is the control covered, not crowded.
+                            """
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// **The exemption above is narrow, and this is what stops it swallowing the guard.**
+    ///
+    /// `theCompassFitsBetweenTheTwoBlocks` skips the screens that cannot afford a compass, and an
+    /// affordability rule that quietly returned `false` everywhere would make that whole sweep
+    /// vacuous while staying green — this project's own dominant guard failure, and the reason
+    /// `theLegendCeilingAlwaysCutsAChipAtAX5` gates its exemption on the room the screen had rather
+    /// than on the answer under test.
+    ///
+    /// So the exemption is named exactly: **every screen and inset this app runs gets a compass, at
+    /// both ends of the type ramp, except a 667 pt screen at AX5 with a notched inset** — a pairing
+    /// the sweep crosses deliberately and no shipping phone is. It is asserted as an expected `nil`
+    /// rather than skipped, so a change that quietly *restored* it fails here too and gets read: the
+    /// only way to seat a compass there is out of `noticeFloor`, and that is the location notice's
+    /// `Settings` button.
+    @Test("every supported screen gets a compass, except the one that provably cannot house it")
+    func theCompassIsDrawnWhereverItFits() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                for isAccessibilitySize in [true, false] {
+                    let top = MapLayout.compassTop(
+                        screenHeight: screenHeight,
+                        topInset: topInset,
+                        isAccessibilitySize: isAccessibilitySize
+                    )
+                    // A 667 pt screen at AX5 *paired with a notched inset* — a combination the
+                    // sweep crosses on purpose and no shipping phone is. The real iPhone SE
+                    // reports a 20 pt inset and keeps its compass at every size.
+                    let expectedAbsent = screenHeight == 667 && isAccessibilitySize && topInset >= 47
+                    #expect(
+                        (top == nil) == expectedAbsent,
+                        """
+                        on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
+                        isAccessibilitySize=\(isAccessibilitySize): compassTop is \
+                        \(top.map(String.init(describing:)) ?? "nil") where \
+                        \(expectedAbsent ? "nil" : "a value") was expected. If a compass has just \
+                        been withdrawn from a phone that had one, screen 01 has lost the only undo \
+                        for a rotation on that device; if one has appeared on the 667 pt screen at \
+                        AX5, MapLayout.chromeBudgetShortfall is about to go positive and the \
+                        location notice's Settings button is what pays for it.
+                        """
+                    )
+                }
+            }
+        }
+    }
+
+    /// **Seating the compass never pushes the notice below its own floor.**
+    ///
+    /// The cap is only safe because the compass yields rather than pushes: where the pot cannot
+    /// carry both the band and `noticeFloor`, `compassIsAffordable` says no and no cap is applied.
+    /// That floor is `MapLocationNotice`'s `Settings` button — the reader's only remedy for the
+    /// permission the card is about — so this is the assertion that says the new term took its room
+    /// from slack and not from the remedy.
+    ///
+    /// Swept over every palette size as well, because the cap and the legend's reservation interact:
+    /// the notice is squeezed from both ends and only their *sum* can breach the floor.
+    @Test("seating the compass never pushes the location notice below its floor")
+    func theCompassNeverEatsTheNoticeFloor() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                for namedSpecies in 0...MapSpeciesSlot.allCases.count {
+                    for isAccessibilitySize in [true, false] {
+                        let shortfall = MapLayout.chromeBudgetShortfall(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        #expect(shortfall == 0, "a screen stopped being able to house both occupants")
+
+                        let notice = MapLayout.noticeMaxHeight(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            namedSpecies: namedSpecies,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        #expect(
+                            notice >= MapLayout.noticeFloor(isAccessibilitySize: isAccessibilitySize),
+                            """
+                            on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
+                            \(namedSpecies) legend chip(s), isAccessibilitySize=\
+                            \(isAccessibilitySize): the notice is given \(notice) pt against a floor \
+                            of \(MapLayout.noticeFloor(isAccessibilitySize: isAccessibilitySize)). \
+                            The compass's band is meant to come out of slack and to yield entirely \
+                            where there is none — MapLayout.compassIsAffordable is no longer \
+                            refusing where it must, and the card's Settings button is what pays.
                             """
                         )
                     }
