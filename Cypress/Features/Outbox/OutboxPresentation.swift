@@ -438,7 +438,8 @@ enum OutboxCopy {
 
     /// The same label for a synced list that reaches back past today.
     ///
-    /// **NOT SPECIFIED**, and the implementation's choice — see the pending ruling of 2026-08-21.
+    /// **NOT SPECIFIED**, and the implementation's choice — recorded in `docs/RULINGS.md` once
+    /// the orchestrator splices this branch's pending entry under its real number at merge.
     /// The owner ruled the *stamps*, in response to a report that the stamps and this heading
     /// disagreed; fixing only the stamps left the screen able to draw `Synced earlier today` over a
     /// row stamped `Jan 14`, which is the same contradiction from the other side (PR #102 review).

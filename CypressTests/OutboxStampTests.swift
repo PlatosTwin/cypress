@@ -252,7 +252,8 @@ struct OutboxStampTests {
     ///
     /// **Asserted as a change, not as a string.** What matters is that the heading is not the same
     /// answer for both lists — pinning `Recently synced` here would make this a copy test, and the
-    /// wording is the implementation's rather than the owner's (recorded in the pending ruling). The
+    /// wording is the implementation's rather than the owner's, and is recorded as such in the
+    /// entry the orchestrator splices into `docs/RULINGS.md` at merge. The
     /// one literal claim is the narrow one that actually failed: a spanning list's heading must not
     /// be the `today` one.
     @Test("the synced heading stops claiming today once its own list spans days")
