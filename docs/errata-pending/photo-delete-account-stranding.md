@@ -162,9 +162,29 @@ photographs already stranded on the phone this was reported from.
 `PhotoOwner.permitsRemoval(by:takenOnDevice:)` is where the three arms meet, and it refuses
 `.nobody` before it reads provenance; `ContributionStore.removalPredicate` is that rule as SQL, in
 one place because it is written in three — the set that draws the control, the vote delete and the
-tombstone `UPDATE` — and it leads with the same refusal. Neither of those two lines is decoration:
-removing either one turns exactly one expectation red on its own, which is what `PhotoProvenanceTests`
-red-proved.
+tombstone `UPDATE` — and it leads with the same refusal. Neither of those two lines is decoration.
+An earlier draft of this entry said that removing either one turns "exactly one expectation red on
+its own"; that was written from reasoning rather than from a log, and the review measured otherwise
+— one edit at a time, restored by file copy between runs, on iPhone 16 Pro `EA0AD796-…`:
+
+- removing the Swift `.nobody` refusal turned **three** expectations red:
+  `PhotoProvenanceTests.anOwnerlessRowIsRefusedWhateverTheProvenanceSays`' first `#expect`, and in
+  `PhotoDeletionTests.anAnonymizedPhotographIsRefused` both the error expectation — `expected error
+  ".forbidden" of type APIError, but ".notFound" of type APIError was thrown instead` — and the
+  `fileExists` line after it;
+- removing the SQL leading clause turned **two** red: the same provenance test's second `#expect`,
+  and `PhotoOwnershipTests` on `an anonymized photograph is still shown and is no longer deletable`.
+
+**The `.notFound`/`fileExists` pair was not a second copy of the same guard, and finding out why
+changed the code.** `LocalAPI.deletePhoto` removed the bytes from disk before the SQL predicate was
+ever evaluated, so in precisely the case the SQL clause exists to be the belt for — Swift permits,
+SQL refuses — the row was correctly saved and the photograph was already destroyed, and the caller
+was told `notFound`. Unreachable with both halves in place, since the two rules agree on every row
+shape; reachable the moment one of them drifts, which is what belt-and-braces is for. The method
+now claims the row inside its write transaction first and removes the bytes only once the tombstone
+has taken, which also closes the race the `counts.photos == 1` guard used to report *after* the
+files were gone. With the fix in, that same `.nobody` red-proof lands two issues rather than three:
+the refused delete no longer touches the picture, so the `fileExists` line stays green.
 
 **Not the backfill the owner ruled against on the same day.** That ruling is about sync —
 pre-sync-path rows and pre-existing photo binaries stay on the device permanently, nothing is
@@ -183,3 +203,27 @@ delete control and no sentence. After v16 that state is much rarer and not impos
 photograph that genuinely came from another installation will produce it the day anything syncs one
 down. Task #131 gave the ownerless row its sentence; this one still has none. New copy on a shipped
 screen is a stop-and-ask (DECISIONS constraint 21), so it stays here rather than in the diff.
+
+#### Left for the owner
+
+**The same root cause reaches the other consumer of "is this mine", and v16 does not follow it
+there.** The diagnosis in this entry is that `.user(U)` matches only while this installation is
+signed in as exactly `U`, and E270 made a local-era `U` impossible to sign into again. v16 repairs
+the *deletion* consumer of that comparison. It has a second consumer:
+`ContributionStore.heroPhotoIDs(treeIDs:attribution:)`'s `is_own` column, which feeds
+`TreeProfile.isPhotoVisible(_:own:)` — `own ? isVisibleToItsContributor : isPubliclyVisible`.
+
+Take the photograph this report is about: taken on this phone, adopted by `claimDevice`, owned by an
+account that can no longer be signed into. After v16 it is deletable again. It is still `own: false`
+to `is_own`, which has the two owner arms and no provenance term, so in the species-guide nearby
+heroes (07 §6) it is judged by `isPubliclyVisible`, it is `.pending`, and **it is not drawn at all**.
+Nothing in the app can set `.approved`.
+
+This is not a regression — the behaviour is identical before and after v16 — which is why it is
+recorded here rather than fixed in that change. The decision it needs is the owner's, because
+either answer moves a screen: leave the two predicates deliberately different (deletion is about
+permission, `is_own` is about attribution-for-visibility, and provenance is not attribution), or put
+`is_own` on the same three-arm rule, which starts drawing photographs on the nearby section that
+are not drawn today. The doc comments on `heroPhotoIDs` and on `TreeProfile.isPhotoVisible` now say
+the two comparisons differ on purpose and point here; before v16 they both claimed the comparisons
+were the same, which is how this went unnoticed.

@@ -216,6 +216,16 @@ struct PhotoDeletionTests {
 
     /// A photograph whose contributor deleted their account through the door that leaves the work in
     /// place. It belongs to nobody, and nobody includes whoever is holding the phone now.
+    ///
+    /// **The fixture nulls the owners and deliberately leaves `taken_on_device` set** — a row shape
+    /// neither shipping path produces any more, since both `AccountDeletion.anonymizeContributions`
+    /// and `LocalAPI.debugAnonymizePhoto` clear provenance in the same statement that clears the
+    /// name. That is not an oversight to be tidied away: it is the only place in the suite where the
+    /// *shipping delete path* meets a row that belongs to nobody and still claims this installation,
+    /// which is exactly the row `PhotoOwner.permitsRemoval` refuses on its first line before it ever
+    /// reads provenance (`AppSchema` v16, and the pending erratum on photo-delete account
+    /// stranding). Correcting the fixture to match the leaving door would delete that coverage
+    /// silently, so the assertion below states the constraint instead.
     @Test("an anonymized photograph cannot be deleted by the next person on this phone")
     func anAnonymizedPhotographIsRefused() async throws {
         let (store, api, _) = try await Self.signedIn()
@@ -235,6 +245,13 @@ struct PhotoDeletionTests {
                 UPDATE photos SET user_id = NULL, device_id = NULL WHERE id = '\(photo.uuidString)'
                 """)
         }
+        // The row is ownerless *and* still says this phone took it — see the header. If this ever
+        // fails, the fixture has been aligned with the leaving door and the `.nobody`-first
+        // ordering has lost its only shipping-path test.
+        let provenance = try await store.queue.read { connection in
+            try ContributionStore().photoForDeletion(id: photo, connection: connection)?.takenOnDevice
+        }
+        #expect(provenance == Self.deviceID, "the fixture no longer claims this installation")
 
         await #expect(throws: APIError.forbidden) { _ = try await api.deletePhoto(id: photo) }
         #expect(FileManager.default.fileExists(atPath: file.path))

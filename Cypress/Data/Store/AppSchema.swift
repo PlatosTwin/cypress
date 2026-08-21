@@ -1586,19 +1586,34 @@ public enum AppSchema {
     /// phone and quietly repeal it. `AccountDeletion.anonymizeContributions` clears the column for
     /// the same reason on every future deletion.
     ///
-    /// **`ALTER TABLE ADD COLUMN`, not a rebuild**, on v10's, v11's and v12's argument, and
-    /// **idempotent by guard** in the same shape: `ADD COLUMN` has no `IF NOT EXISTS`, so a run
-    /// interrupted between the DDL and the version bump would otherwise fail on "duplicate column
-    /// name" and strand the database one version short.
+    /// **`ALTER TABLE ADD COLUMN`, not a rebuild**, on v10's, v11's and v12's argument. The
+    /// column-absence guard covers **the `ALTER` only**, and the reason is narrower than the one
+    /// v10, v11 and v12 inherited from each other: `ADD COLUMN` has no `IF NOT EXISTS` and throws
+    /// "duplicate column name" on a table that already has it, so a replay needs the DDL skipped.
+    /// It is not protection against a run interrupted between the DDL and the version bump —
+    /// `SchemaMigrator.migrate` runs `migrate(connection)` and `setUserVersion` inside one
+    /// transaction and SQLite's `ADD COLUMN` is transactional, so that half-state does not exist.
+    ///
+    /// **The backfill runs unconditionally, and is idempotent by construction**: an owned row is
+    /// rewritten with the same `device_uuid`, an ownerless row is skipped by the `WHERE`, and a row
+    /// anonymized after v16 stays skipped. Gating it on the column being absent would have been the
+    /// dangerous half of one guard — any database in which the column exists and the backfill has
+    /// not run (hand-repaired, a future partial fix, an abandoned experiment) would take v16 as a
+    /// silent no-op and keep exactly the stranded rows this migration was written for.
+    ///
+    /// **When `app_state` has no `device_uuid` the backfill writes NULL**, because the subquery
+    /// yields NULL rather than no row — the whole statement is then a no-op in the only situation
+    /// that produces it, a fresh install, where migrations run before `DataLayer.boot` mints the key
+    /// and there are no photographs yet to attribute.
     ///
     /// **No index.** `photos` holds tens of rows per install and the column is read by the deletion
     /// gate — once per profile read, on a statement already narrowed by `tree_uuid`, which
     /// `idx_photos_tree` serves.
     private static func applyV16(_ connection: SQLiteConnection) throws {
-        guard try !connection.columnNames(ofTable: "photos").contains("taken_on_device") else { return }
+        if try !connection.columnNames(ofTable: "photos").contains("taken_on_device") {
+            try connection.execute("ALTER TABLE photos ADD COLUMN taken_on_device TEXT")
+        }
         try connection.execute("""
-            ALTER TABLE photos ADD COLUMN taken_on_device TEXT;
-
             -- Every row this installation still holds an owner for, it also wrote. A row with
             -- neither owner is an anonymized one and is skipped: see the header.
             UPDATE photos

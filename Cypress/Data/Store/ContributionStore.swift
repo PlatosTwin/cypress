@@ -455,9 +455,24 @@ public struct ContributionStore {
     /// own filter and it is not enough here — it would hand a stranger's `.pending` photograph to
     /// the nearby section as a hero thumbnail the day anything syncs one down, which is exactly the
     /// defect E215 named for the hero pill and the browser. `attribution` is compared against each
-    /// row's own `user_id`/`device_id` in SQL — the same comparison `deletablePhotoIDs` makes — and
-    /// the resulting own/not-own flag is handed to `TreeProfile.isPhotoVisible`, E215's own rule,
-    /// rather than a second predicate restated here that could drift from it.
+    /// row's own `user_id`/`device_id` in SQL, and the resulting own/not-own flag is handed to
+    /// `TreeProfile.isPhotoVisible`, E215's own rule, rather than a second predicate restated here
+    /// that could drift from it.
+    ///
+    /// **`is_own` is not `deletablePhotoIDs`' predicate, and since `AppSchema` v16 it is not even
+    /// the same shape** — the two comparisons differ on purpose, which is worth saying plainly
+    /// because this comment used to claim they were one. Removal now has three arms and a leading
+    /// ownerless refusal: `taken_on_device` admits a photograph this installation wrote and an
+    /// account has since adopted. This column keeps the two owner arms and no provenance term,
+    /// because it answers a different question — who is being *shown* their own work, which is
+    /// attribution — and provenance is deliberately not attribution (v16's header: no query reads
+    /// that column to decide whose a photograph is). The consequence is real and is not settled
+    /// here: a repaired, again-deletable photograph whose owning account can no longer be signed
+    /// into is still `own: false`, so `isPhotoVisible` judges it by `isPubliclyVisible`, it is
+    /// `.pending`, and the species-guide nearby heroes (07 §6) do not draw it. That is unchanged by
+    /// v16 rather than caused by it, and it is recorded in the pending erratum on photo-delete
+    /// account stranding for an owner ruling, because moving `is_own` onto the removal rule changes
+    /// what a screen draws.
     public func heroPhotoIDs(
         treeIDs: Set<UUID>,
         attribution: Attribution,
@@ -666,7 +681,9 @@ public struct ContributionStore {
     /// caller's string, which is the same rule `setPhotoVote`'s owner column follows.
     ///
     /// The `:user`/`:device` binds are the caller's, and the anonymized clause leads for the reason
-    /// the Swift rule refuses `.nobody` first.
+    /// the Swift rule refuses `.nobody` first. That refusal is a real second gate rather than a
+    /// restatement: `LocalAPI.deletePhoto` claims the row through this predicate before it removes
+    /// any bytes, so a refusal here costs the caller a `notFound` and costs the photograph nothing.
     private static func removalPredicate(prefix: String = "") -> String {
         """
         NOT (\(prefix)user_id IS NULL AND \(prefix)device_id IS NULL)
@@ -699,7 +716,9 @@ public struct ContributionStore {
     /// A tombstone on its own would be a lie, though, because the reason somebody deletes one
     /// photograph is usually what is *in* it. So the row loses `storage_key`, `local_path`, `width`,
     /// `height` and its fuzzed coordinate in the same statement that sets `deleted_at`; the caller
-    /// removes the bytes from disk before this runs. What is left is a photograph's id, its tree,
+    /// removes the bytes from disk once this statement has matched, inside the same transaction, so
+    /// that a refusal by the predicate below cannot arrive after the picture is gone
+    /// (`LocalAPI.deletePhoto`). What is left is a photograph's id, its tree,
     /// its shot type, when it was taken and whose it was — the same facts the visit beside it
     /// already carries, and none of them a picture.
     ///

@@ -148,15 +148,19 @@ struct PhotoProvenanceTests {
 
     // MARK: - The upgrade
 
-    /// **The phones this was reported from already hold the stranded rows**, so a column that is only
-    /// written going forward fixes nobody. A v15 database whose photograph belongs to an account
-    /// this installation is not signed in as comes out of the upgrade deletable.
-    @Test("the upgrade repairs a photograph stranded under an account that is gone")
-    func theUpgradeRepairsAStrandedPhotograph() async throws {
+    /// A v15 database holding the two rows the upgrade has to tell apart, migrated the rest of the
+    /// way: one photograph stranded under an account (`user_id` set, `device_id` cleared — the row
+    /// `claimDevice` leaves and the shape the report came from), and one anonymized by the leaving
+    /// door. These are written as rows rather than driven through the shipping calls on purpose:
+    /// the write path is v16's and would record provenance itself, which is the thing the migration
+    /// tests must not be handed for free.
+    private static func upgradedFromV15() async throws -> (
+        store: CypressStore, treeID: UUID, stranded: UUID, anonymized: UUID
+    ) {
         let store = try await CypressStore.inMemory(
             migrations: AppSchema.migrations.filter { $0.version <= 15 }
         )
-        let stamp = SQLiteTimestamp.string(from: Self.moment)
+        let stamp = SQLiteTimestamp.string(from: moment)
         let tree = UUID(), stranded = UUID(), anonymized = UUID()
         try await store.queue.write { connection in
             #expect(
@@ -164,17 +168,26 @@ struct PhotoProvenanceTests {
                 "a v15 database already had the column"
             )
             try connection.execute("""
-                INSERT INTO app_state (key, value) VALUES ('device_uuid','\(Self.deviceID.uuidString)');
+                INSERT INTO app_state (key, value) VALUES ('device_uuid','\(deviceID.uuidString)');
                 INSERT INTO photos (id, tree_uuid, shot_type, captured_at, created_at, updated_at,
                                     user_id, device_id)
                 VALUES ('\(stranded.uuidString)','\(tree.uuidString)','full_tree',
-                        '\(stamp)','\(stamp)','\(stamp)','\(Self.userID.uuidString)',NULL),
+                        '\(stamp)','\(stamp)','\(stamp)','\(userID.uuidString)',NULL),
                        ('\(anonymized.uuidString)','\(tree.uuidString)','trunk',
                         '\(stamp)','\(stamp)','\(stamp)',NULL,NULL);
                 """)
             let applied = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
             #expect(applied == AppSchema.migrations.map(\.version).filter { $0 > 15 })
         }
+        return (store, tree, stranded, anonymized)
+    }
+
+    /// **The phones this was reported from already hold the stranded rows**, so a column that is only
+    /// written going forward fixes nobody. A v15 database whose photograph belongs to an account
+    /// this installation is not signed in as comes out of the upgrade deletable.
+    @Test("the upgrade repairs a photograph stranded under an account that is gone")
+    func theUpgradeRepairsAStrandedPhotograph() async throws {
+        let (store, tree, stranded, anonymized) = try await Self.upgradedFromV15()
 
         // Signed out, which is the state the report came from.
         let api = Self.api(store)
@@ -188,12 +201,62 @@ struct PhotoProvenanceTests {
         // And R3's row was not repaired with it — see the next test for what that means on the way in.
         #expect(try await Self.provenance(of: anonymized, in: store) == nil)
         await #expect(throws: APIError.forbidden) { _ = try await api.deletePhoto(id: anonymized) }
+    }
 
-        // A replay of the step is a no-op rather than "duplicate column name".
+    /// **The upgrade's third cell: signed in as a different account than the one the rows are
+    /// stranded under.** The write-path half of this is `aPhotographSurvivesADifferentAccount`; this
+    /// is the same person's phone before they update the app, which is where the report actually
+    /// came from — a row left under a local-era account, and an Apple account signed in since. The
+    /// third arm does not consult `:user` at all, so what is being asserted is that it does not have
+    /// to: provenance names the machine, and the machine is the same one.
+    @Test("the upgrade repairs a stranded photograph for a different account signed in now")
+    func theUpgradeRepairsAStrandedPhotographForADifferentAccount() async throws {
+        let (store, tree, stranded, _) = try await Self.upgradedFromV15()
+        let api = Self.api(store, userID: Self.secondUserID)
+
+        #expect(await api.attribution.userID == Self.secondUserID, "the fixture signed in as the wrong account")
+        #expect(
+            try await Self.provenance(of: stranded, in: store) == Self.deviceID,
+            "the upgrade did not record which installation wrote the row"
+        )
+        #expect(
+            try await Self.deletableIDs(treeID: tree, in: store, for: api).contains(stranded),
+            "an account that is not the row's owner was refused a photograph this phone took"
+        )
+        _ = try await api.deletePhoto(id: stranded)
+        #expect(
+            !(try await Self.deletableIDs(treeID: tree, in: store, for: api).contains(stranded)),
+            "the delete reported success and left the photograph"
+        )
+    }
+
+    /// **What a replay of v16 must do, which is not nothing.** The step's guard covers the `ALTER`
+    /// alone — `ADD COLUMN` has no `IF NOT EXISTS` — while the backfill `UPDATE` runs every time and
+    /// is idempotent by construction. So this exercises the `WHERE`, not the guard: provenance is
+    /// taken off the stranded row first, and the replay has to put it back (proving the backfill
+    /// ran) while leaving R3's ownerless row NULL (proving the `WHERE` still skips it). Gating the
+    /// `UPDATE` on the column being absent makes the first expectation red; broadening the `WHERE`
+    /// makes the second.
+    @Test("replaying the step re-runs the backfill and still refuses R3's row")
+    func replayingTheStepRunsTheBackfillAndSkipsTheAnonymizedRow() async throws {
+        let (store, _, stranded, anonymized) = try await Self.upgradedFromV15()
+
         try await store.queue.write { connection in
+            try connection.execute(
+                "UPDATE photos SET taken_on_device = NULL WHERE id = '\(stranded.uuidString)'"
+            )
+            // Rather than "duplicate column name", which is the whole reason the `ALTER` is guarded.
             try AppSchema.migrations.first(where: { $0.version == 16 })?.migrate(connection)
         }
-        #expect(try await Self.provenance(of: anonymized, in: store) == nil, "the replay disturbed the backfill")
+
+        #expect(
+            try await Self.provenance(of: stranded, in: store) == Self.deviceID,
+            "the replay ran nothing, so a database with the column and no backfill stays stranded"
+        )
+        #expect(
+            try await Self.provenance(of: anonymized, in: store) == nil,
+            "the replay backfilled a row the leaving door emptied"
+        )
     }
 
     // MARK: - What the repair must not reach
