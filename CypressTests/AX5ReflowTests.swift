@@ -1229,6 +1229,60 @@ struct AX5ReflowTests {
         }
     }
 
+    /// **`FlowRow` never draws a chip wider than the column it was given** (PR #102).
+    ///
+    /// Every measurement in that layout was `sizeThatFits(.unspecified)` — the subview's *ideal*
+    /// size, asked for with no constraint — and the ideal was then both wrapped against and placed
+    /// at. A chip narrower than the row makes those the same number; one wider does not, and the row
+    /// placed it at its ideal anyway. Measured on an iPhone 16 Pro Max at AX5, a `Sycamore, London
+    /// Plane` chip drew **446 pt inside a 408 pt column on a 440 pt screen** — off the trailing edge
+    /// of the phone, and, once the compass's column is reserved, straight over the compass.
+    ///
+    /// **Why this is a unit test and not left to the UI guard.**
+    /// `IdentifyFABReachabilityTests.testTheSpeciesLegendClearsTheCompassColumnAtAX5WithLocationDenied`
+    /// asserts the legend's rectangle on a running phone, and on a 402 pt device at the pinned
+    /// camera it never engages: no single chip there beats the column on its own, so the chips
+    /// merely re-wrap and the legend fits either way — checked, by removing this clamp and watching
+    /// that test stay green. The overflow needs a name long enough to beat the column by itself,
+    /// which is a fixture question rather than a device question.
+    ///
+    /// **And it is the placed width that is asserted, not the reported one.** `FlowRow.sizeThatFits`
+    /// already returns `min(widest, width)`, so the size it *reports* is clamped whether or not the
+    /// subview it *placed* was — the defect is invisible from outside the layout, which is why it
+    /// survived. A `GeometryReader` in the chip's own background reports the width it was given.
+    @Test("FlowRow never places a chip wider than the column it was given")
+    func flowRowClampsAChipWiderThanItsColumn() async {
+        let column: CGFloat = 200
+        let probe = WidthProbe()
+        // One chip whose natural width is far past the column, drawn the way a real legend chip is:
+        // one line of `body12SemiBold` that truncates rather than wrapping.
+        let row = FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
+            Text("Sycamore, London Plane and Then Some More Words Besides")
+                .font(CypressFont.body12SemiBold)
+                .lineLimit(1)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
+                            probe.record(width)
+                        }
+                    }
+                }
+        }
+        _ = await Self.ax5Size(of: row, width: column, size: .large)
+
+        let placed = probe.widest
+        #expect(placed > 0, "the probe never reported a width, so nothing below measured anything")
+        #expect(
+            placed <= column + 0.5,
+            """
+            FlowRow placed a chip \(placed) pt wide in a \(column) pt column. It is measuring the \
+            subview's ideal size and placing it at that, so a species name longer than the column \
+            is drawn straight out of it — off the trailing edge of the phone, and over MapKit's \
+            compass once that column is reserved (PR #102's blocking finding).
+            """
+        )
+    }
+
     /// **The trailing reserve is bought for nothing, and this is the arithmetic that says so.**
     ///
     /// The whole argument for solving PR #102's blocking finding sideways is that width is free:
@@ -1336,3 +1390,25 @@ struct AX5ReflowTests {
     }
 }
 #endif
+
+/// Collects the widths a probed subview was actually laid out at.
+///
+/// A class rather than `@State` because the reader is a test rather than a view, and the widest
+/// value rather than the last because a hosted view settles through several passes and only the
+/// bound matters — a layout that was ever too wide drew too wide.
+final class WidthProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [CGFloat] = []
+
+    func record(_ width: CGFloat) {
+        lock.lock()
+        defer { lock.unlock() }
+        seen.append(width)
+    }
+
+    var widest: CGFloat {
+        lock.lock()
+        defer { lock.unlock() }
+        return seen.max() ?? 0
+    }
+}

@@ -116,31 +116,42 @@ struct MapSpeciesLegend: View {
 
     var body: some View {
         if !named.isEmpty {
-            if let maxHeight {
-                ScrollView {
+            Group {
+                if let maxHeight {
+                    ScrollView {
+                        chips
+                    }
+                    .frame(maxHeight: maxHeight)
+                    // Vertical only, and load-bearing for "unchanged where there is room": without
+                    // it a legend well under its ceiling sits in a tall, mostly empty scroll well
+                    // instead of hugging its own rows. `MapLocationNotice` and `MapSuggestionList`
+                    // carry it for exactly this reason.
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
                     chips
                 }
-                .frame(maxHeight: maxHeight)
-                // Vertical only, and load-bearing for "unchanged where there is room": without it a
-                // legend well under its ceiling sits in a tall, mostly empty scroll well instead of
-                // hugging its own rows. `MapLocationNotice` and `MapSuggestionList` carry it for
-                // exactly this reason.
-                .fixedSize(horizontal: false, vertical: true)
-                // **The labeled group is the scroller, not the rows inside it** (task #258). An
-                // element's frame is what an assistive technology draws its cursor around and what
-                // XCUITest measures, and the rows inside a clamped `ScrollView` extend past the
-                // window that clips them: on an iPhone 16e at AX5 the visible legend ends at y 417
-                // and the `FlowRow` inside it reports a bottom edge of 477.67 — 48 pt of element
-                // over controls it does not draw on. Labeling the outer view reports the rectangle
-                // the reader can actually see and touch. Found by this ticket's own geometric
-                // guard, which went red on a screen that was, in a screenshot, correct.
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
-            } else {
-                chips
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
             }
+            // **The labeled group is the scroller, not the rows inside it** (task #258). An
+            // element's frame is what an assistive technology draws its cursor around and what
+            // XCUITest measures, and the rows inside a clamped `ScrollView` extend past the window
+            // that clips them: on an iPhone 16e at AX5 the visible legend ends at y 417 and the
+            // `FlowRow` inside it reports a bottom edge of 477.67 — 48 pt of element over controls
+            // it does not draw on. Labeling the outer view reports the rectangle the reader can
+            // actually see and touch. Found by that ticket's own geometric guard, which went red on
+            // a screen that was, in a screenshot, correct.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
+            // **The compass's column, and this modifier is outside the element on purpose** (PR
+            // #102). A first attempt padded `chips`, inside both the `ScrollView` and the labeled
+            // element, and the UI guard caught it: the legend still measured 365 pt of a 370 pt
+            // column on a 402 pt phone, because the scroller — not the rows — is what fills the
+            // width and what the element reports. That is not a measurement quibble. **A
+            // `ScrollView` takes touches across its whole frame** where the bare `FlowRow` takes
+            // them only on the chips (`MapHomeView.chrome`: "the empty width beside a chip has
+            // never taken a touch"), so a scroller reaching the trailing edge steals the compass's
+            // taps with no chip drawn there at all. Narrowing the element itself is what holds the
+            // column open for both branches.
+            .padding(.trailing, trailingReserve)
         }
     }
 
@@ -162,9 +173,6 @@ struct MapSpeciesLegend: View {
                 .cypressHitArea()
             }
         }
-        // The compass's column, kept clear by narrowing the row rather than by moving anything.
-        // See `trailingReserve`.
-        .padding(.trailing, trailingReserve)
     }
 
     private func chip(_ entry: MapSpeciesPalette.Entry) -> some View {
