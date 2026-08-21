@@ -11,6 +11,13 @@ conflicts with convenience, the rule wins.
   (they live in `docs/distilled/`, not `docs/`)
 - `docs/errata-pending/`, `docs/rulings-pending/` — see **Numbering** below
 - `docs/CONTRIBUTING.md` — how work lands on main; see **Branching and review** below
+- **Pulling TestFlight tester feedback** — dispatch the `App Store Connect feedback` workflow
+  (`.github/workflows/asc-feedback.yml`) and read its `asc-feedback` artifact; that file's header
+  states the route, and ERRATA **E254** "What was pulled, and how" carries the endpoint table and
+  what the API will not tell you. No machine of the owner's carries an App Store Connect key, by
+  design — never ask for one, the same rule as the seed publish. Apple serves the screenshots from
+  pre-signed URLs that expire within days, so the artifact's downloaded PNGs are the durable copy,
+  not the links in the JSON.
 
 ## Verification — this project's signature failure mode is false green
 - Run tests with `Tools/run_tests.sh <udid> <log> [xcodebuild args…]`; judge any log with
