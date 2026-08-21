@@ -406,7 +406,9 @@ def cmd_check(arguments: list[str]) -> None:
                     f"{path}: a note line is {len(line)} characters, over the {MAX_LINE} this "
                     "allows. One sentence a tester would read, not a paragraph — the 4000-"
                     "character TestFlight budget is shared with every other open branch.")
-            kind = "internal" if is_internal(line) else "tester-visible"
+            # "not shipped" rather than "internal", so the line's own `internal:` prefix is not
+            # printed twice in the same sentence.
+            kind = "not shipped" if is_internal(line) else "tester-visible"
             print(f"  {path}: {kind}: {line}")
 
     if problems:
