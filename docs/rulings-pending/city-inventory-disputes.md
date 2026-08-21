@@ -41,6 +41,18 @@ and the existing filters box gains a **"trees with data issues"** filter.
 **Community trees.** Disputing **location and species only** — the existing species report stays,
 a location dispute is added, and the city-tree metadata/suggested-values machinery does not apply.
 
+**Addendum, same day — the community flagging view as shipped is not quality.** Two owner
+reports: (1) the community-trees flagging view carries "a bunch of bad copy"; (2) a community
+tree can be flagged but not unflagged by the person who flagged it, which the owner calls out as
+wrong — possibly a placeholder nobody designed. (The shipped screen does have `withdraw` /
+`keep` answers on an open report, gated by `canResolve`, but whatever they cover, the owner's
+experience is that unflagging is not available — the gap between those two statements is itself
+a design question.) The owner's instruction: the community flagging flow **goes through detailed
+design before it is considered quality**. The dispute round therefore treats community flagging
+as a design pass with owner decision rounds, not a copy touch-up: retractability by the flag's
+author, the view's full copy (which also feeds the copy audit), and the report/withdraw/keep
+state machine all get designed deliberately.
+
 This spec is the owner's own UI direction and is the constraint-21 authority for these controls;
 visual detail beyond what is written here still goes back to the owner at build time.
 
