@@ -1066,6 +1066,108 @@ struct AX5ReflowTests {
         }
     }
 
+    // MARK: - MapKit's compass (PR #102)
+
+    /// **The compass sits under the chip row and clears the bottom block, at every size the app
+    /// runs.**
+    ///
+    /// It is a fixed 44 pt control in the map's top-trailing ornament slot, aimed at
+    /// `MapLayout.compassTop` — the chip row's own bottom edge. The legend hangs below that on the
+    /// same side and is held out of the compass's *column* rather than stepped over vertically
+    /// (`MapSpeciesLegend.trailingReserve`), so the only vertical claim to check is that the control
+    /// fits between the row it hangs from and the bottom-anchored block, on every screen and inset.
+    ///
+    /// Swept rather than spot-checked, for the reason every other reservation here is: a compass
+    /// that clears on a 440 pt phone and lands in the notice on a 667 pt one is a control that is
+    /// reachable on the reviewer's device and not on a reader's.
+    @Test("MapKit's compass clears the chip row above it and the bottom chrome below it")
+    func theCompassFitsBetweenTheTwoBlocks() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                for namedSpecies in 0...MapSpeciesSlot.allCases.count {
+                    for isAccessibilitySize in [true, false] {
+                        let top = MapLayout.compassTop(
+                            topInset: topInset,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        let chipRowBottom = MapLayout.topChromeReserved(
+                            topInset: topInset,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        #expect(
+                            top >= chipRowBottom,
+                            """
+                            the compass starts at y \(top), above the filter chip row's bottom edge \
+                            at \(chipRowBottom) — it would be drawn under the chip row, which is \
+                            the state the owner's ruling was implemented out of (the needle came \
+                            up inside the search field).
+                            """
+                        )
+
+                        let notice = MapLayout.noticeMaxHeight(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            namedSpecies: namedSpecies,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        let bottomBlockTop = screenHeight
+                            - MapLayout.bottomSlotReservedAbove(
+                                isAccessibilitySize: isAccessibilitySize
+                            )
+                            - notice
+                        #expect(
+                            top + MapLayout.compassSize <= bottomBlockTop,
+                            """
+                            on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
+                            \(namedSpecies) legend chip(s), isAccessibilitySize=\
+                            \(isAccessibilitySize): the compass occupies y \(top)–\
+                            \(top + MapLayout.compassSize) and the bottom chrome begins at \
+                            \(bottomBlockTop). The compass is drawn by MapKit *under* the chrome, \
+                            so an overlap is the control covered, not crowded.
+                            """
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// **The trailing reserve is bought for nothing, and this is the arithmetic that says so.**
+    ///
+    /// The whole argument for solving PR #102's blocking finding sideways is that width is free:
+    /// `legendNaturalHeight` bounds the legend at *one chip per line* already, so narrowing its
+    /// column can push the drawn legend toward that bound and never past it. If that stops being
+    /// true — a chip that wraps to two lines, a bound that starts counting pairs — the reserve
+    /// starts costing vertical budget silently, and every clearance above is spending points that
+    /// belong to somebody else.
+    ///
+    /// Asserted where it is cheapest to state: the per-count reservation is exactly `count` chips
+    /// and `count − 1` gaps, with no term that could depend on how wide the column is.
+    @Test("the legend's height reservation is one chip per line, so a narrower column costs nothing")
+    func theLegendReservationIsIndependentOfItsWidth() {
+        for isAccessibilitySize in [true, false] {
+            let chip = MapLayout.legendChipHeight(isAccessibilitySize: isAccessibilitySize)
+            for count in 1...MapSpeciesSlot.allCases.count {
+                let reserved = MapLayout.legendNaturalHeight(
+                    namedSpecies: count,
+                    isAccessibilitySize: isAccessibilitySize
+                )
+                #expect(
+                    reserved == CGFloat(count) * chip + CGFloat(count - 1) * MapLayout.chipGap,
+                    """
+                    the legend's reservation for \(count) chip(s) at \
+                    isAccessibilitySize=\(isAccessibilitySize) is \(reserved), which is no longer \
+                    one chip per line. MapSpeciesLegend.trailingReserve is affordable only because \
+                    this bound already assumes the worst shape — if the reservation now depends on \
+                    how many chips pair up on a line, taking width off the legend takes height off \
+                    it too, and the compass's clearance is being paid for out of the notice's \
+                    budget without anybody deciding to (PR #102).
+                    """
+                )
+            }
+        }
+    }
+
     /// **Engages.** Offered a budget the card's own unbounded AX5 height is known to exceed — half
     /// of it — the card must not grow past that budget. The budget is derived from a real
     /// measurement rather than a literal so this stays true if the shipped copy ever changes: it is

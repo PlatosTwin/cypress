@@ -32,6 +32,34 @@ struct ZoomTests {
         #expect(PhotoZoom.clampScale(.infinity) == PhotoZoom.range.lowerBound)
     }
 
+    /// **`clampOffset`'s own non-finite guard, which had no case** (PR #102 review).
+    ///
+    /// `clampScale`'s was covered above and this one was not, though it is the same hazard reaching
+    /// the same place by the other route: a NaN offset is not clamped by `min`/`max` — every
+    /// comparison against a NaN is false, so it would travel straight through the arithmetic and
+    /// into the layout. `.zero` rather than a bound, because there is no "nearest" to a NaN, and
+    /// the whole frame is the one position that is never a surprise.
+    ///
+    /// Both axes separately: the guard is two conditions and a version that checked only `width`
+    /// would pass a test that only ever handed it a bad `width`.
+    @Test("a non-finite pan offset is refused rather than clamped")
+    func viewerOffsetRefusesNonFinite() {
+        let content = PhotoZoom.fittedSize(image: Self.portrait, in: Self.box)
+        func clamped(_ proposed: CGSize) -> CGSize {
+            PhotoZoom.clampOffset(proposed, content: content, scale: 3, in: Self.box)
+        }
+
+        #expect(clamped(CGSize(width: CGFloat.nan, height: 0)) == .zero)
+        #expect(clamped(CGSize(width: 0, height: CGFloat.nan)) == .zero)
+        #expect(clamped(CGSize(width: CGFloat.infinity, height: 0)) == .zero)
+        #expect(clamped(CGSize(width: 0, height: -CGFloat.infinity)) == .zero)
+        // The control: a finite offset on the same fixture is still clamped rather than zeroed, so
+        // the guard above is refusing NaNs and not refusing everything.
+        let finite = clamped(CGSize(width: 5_000, height: 5_000))
+        #expect(finite != .zero, "the finite control was zeroed, so the guard is too wide")
+        #expect(finite.width.isFinite && finite.height.isFinite)
+    }
+
     /// The measurement the whole pan clamp rests on: `PhotoFit` letterboxes, so the drawn
     /// photograph is not the box it is drawn in.
     @Test("the fitted size is the photograph, not the frame around it")

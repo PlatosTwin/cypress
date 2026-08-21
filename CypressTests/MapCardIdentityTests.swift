@@ -95,6 +95,49 @@ struct MapCardIdentityTests {
         #expect(subject.isAwaitingIdentity == false)
     }
 
+    /// **`title`'s first clause, which nothing covered** (PR #102 review).
+    ///
+    /// This suite reached the species-common-name branch and the read-with-no-species branch and
+    /// skipped the one a *named* tree takes — the clause that runs before either of them. A named
+    /// tree is the case D15 exists for: the tree's own name wins over the species' common name.
+    ///
+    /// The second half is the guard on the guard. `activeName` is only an answer while it
+    /// `isDisplayable`, and a retired or moderated-away name must fall through to the species
+    /// rather than being drawn on the card — the same `status == .active && deletedAt == nil` rule
+    /// `TreeProfilePresentation` and `MemorialPresentation` read it by.
+    @Test("a named tree is called by its name, unless that name has been retired")
+    func aNamedTreeUsesItsOwnName() throws {
+        let species = try Self.species(commonName: "London Plane")
+        func subject(nameStatus: TreeName.Status) -> MapCardSubject {
+            MapCardSubject(
+                pin: Self.pin(),
+                profile: TreeProfile(
+                    tree: Self.tree(speciesCurrentID: Self.speciesID),
+                    activeName: TreeName(
+                        treeID: Self.treeID,
+                        name: "The Tea Tree at 46th",
+                        givenBy: nil,
+                        status: nameStatus
+                    ),
+                    species: species
+                )
+            )
+        }
+
+        #expect(
+            subject(nameStatus: .active).title == "The Tea Tree at 46th",
+            "a named tree fell through to its species' common name — D15 has it the other way round"
+        )
+        #expect(
+            subject(nameStatus: .retired).title == "London Plane",
+            """
+            a retired name was still drawn on the card. `TreeName.isDisplayable` is what stops a \
+            name a moderator removed from surviving on screen 01, and the card must fall through \
+            to the species the way every other screen does.
+            """
+        )
+    }
+
     /// ERRATA E107's rule, re-asserted here because it is the one identity that must survive an
     /// unresolved profile: a vacant site is read off the *pin*, so it is answered from the instant
     /// the card appears and never waits on anything.
