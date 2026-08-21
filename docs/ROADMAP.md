@@ -239,13 +239,17 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
-**Seed inventory expansion: Oakland and Los Angeles.** Owner request, 2026-08-21: add street trees
-from Oakland and Los Angeles to the data seed. Each city is the NYC shape again — source the
-inventory, read its license, ingest, validate species coverage, cut packs — and the s17 region
-dimension is the prerequisite, so both queue behind NYC's first publish. A tester asked for
-Marin/Sausalito/Mill Valley coverage the same day (recorded in the beta-feedback pending ruling);
-when this is scheduled, evaluate all three asks together against the distribution plan's
-per-inventory machinery rather than one at a time. Not scheduled.
+**Seed inventory expansion beyond NYC.** Owner requests, 2026-08-21: add street trees to the data
+seed for **Oakland and Los Angeles**, and then also **Dallas, Phoenix, Philadelphia, San Antonio,
+San Diego, Jacksonville, Austin, Charlotte, Columbus, Seattle, Denver, and Nashville**. Each city
+is the NYC shape again — source the inventory, read its license, ingest, validate species
+coverage, cut packs — and the s17 region dimension is the prerequisite, so all of it queues behind
+NYC's first publish. Whether each city publishes an open street-tree inventory at all, and under
+what terms, is unresearched: the first step per city is the sourcing-and-license pass, and a city
+with no usable inventory comes back to the owner as a finding, not a silent drop. A tester asked
+for Marin/Sausalito/Mill Valley coverage the same day (recorded in the beta-feedback pending
+ruling); when this is scheduled, evaluate the whole list together against the distribution plan's
+per-inventory machinery rather than one city at a time. Not scheduled.
 
 **iNaturalist licensing.** Content is CC BY-NC and Cypress has a paid organizational tier. We store
 aggregate integers, which is defensible, but it is a position rather than a permission. The
