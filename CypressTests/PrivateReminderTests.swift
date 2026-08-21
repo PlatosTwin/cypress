@@ -23,14 +23,24 @@ struct PrivateReminderTests {
 
     /// A tree to attach reminders to. There is no seed in these tests, so it is a community add —
     /// which `LocalAPI.requireTree` accepts and an invented UUID does not.
-    private static func makeTree(api: LocalAPI, at longitude: Double = -122.44) async throws -> Tree {
-        try await api.addTree(
+    private static func makeTree(
+        api: LocalAPI,
+        in store: CypressStore,
+        at longitude: Double = -122.44
+    ) async throws -> Tree {
+        let tree = try await api.addTree(
             TreeDraft(
                 coordinate: Coordinate(latitude: 37.77, longitude: longitude),
                 photoLocalPath: "/tmp/cypress-reminder-test.jpg",
                 attribution: Attribution.anonymous(deviceID: deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This suite is not about that row, and every
+        // queue count below would otherwise be counting the fixture. See
+        // `OutboxTestSupport.discardFixtureRows`.
+        try await OutboxTestSupport.discardFixtureRows(in: store)
+        return tree
     }
 
     private static func reminders(
@@ -63,7 +73,7 @@ struct PrivateReminderTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         // Exactly what screen 06 hands the composition root.
         let draft = PrivateReminderDraft(treeID: tree.id, category: .hangingOrBrokenLimb)
@@ -95,7 +105,7 @@ struct PrivateReminderTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         // One draft, two taps — the id is minted per selection, which is what makes the second tap a
         // replay rather than a second reminder.
@@ -142,7 +152,7 @@ struct PrivateReminderTests {
             let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: nil)
             let api = LocalAPI(store: store, deviceID: Self.deviceID)
             let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-            let tree = try await Self.makeTree(api: api)
+            let tree = try await Self.makeTree(api: api, in: store)
             treeID = tree.id
 
             let first = PrivateReminderDraft(treeID: tree.id, category: .hangingOrBrokenLimb)
@@ -281,8 +291,8 @@ struct PrivateReminderTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
-        let other = try await Self.makeTree(api: api, at: -122.40)
+        let tree = try await Self.makeTree(api: api, in: store)
+        let other = try await Self.makeTree(api: api, in: store, at: -122.40)
 
         // Two reminders written before sign-in…
         for category in [HazardCategory.hangingOrBrokenLimb, .uprooted] {

@@ -456,11 +456,14 @@ struct PhotoDeletionTests {
 
         #expect(outcome.dequeuedBinaries == 1, "the queue kept a path to a deleted photograph")
         #expect(try await Self.rowCount(
-            "SELECT COUNT(*) AS n FROM outbox WHERE json_array_length(photo_paths) = 0", in: store
+            "SELECT COUNT(*) AS n FROM outbox WHERE kind = 'visit' AND json_array_length(photo_paths) = 0",
+            in: store
         ) == 1)
         // The visit itself is still queued: the person deleted a picture, not the record of having
-        // stood in front of the tree.
-        #expect(try await Self.rowCount("SELECT COUNT(*) AS n FROM outbox", in: store) == 1)
+        // stood in front of the tree. Narrowed to the visit because the deletion queues a
+        // `photo_withdrawal` of its own now, and the tree an `add_tree` — both are real rows and
+        // neither is what this test is asking about.
+        #expect(try await Self.rowCount("SELECT COUNT(*) AS n FROM outbox WHERE kind = 'visit'", in: store) == 1)
     }
 
     // MARK: - The boundary

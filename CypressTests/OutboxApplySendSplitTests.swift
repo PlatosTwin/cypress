@@ -25,14 +25,20 @@ struct OutboxApplySendSplitTests {
 
     /// A tree to attach contributions to. No seed here, so it is a community add — which
     /// `LocalAPI.requireTree` accepts and an invented UUID does not.
-    private static func makeTree(api: LocalAPI) async throws -> Tree {
-        try await api.addTree(
+    private static func makeTree(api: LocalAPI, in store: CypressStore) async throws -> Tree {
+        let tree = try await api.addTree(
             TreeDraft(
                 coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
                 photoLocalPath: "/tmp/cypress-outbox-split-test.jpg",
                 attribution: Attribution.anonymous(deviceID: deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This suite is not about that row, and every
+        // queue count below would otherwise be counting the fixture. See
+        // `OutboxTestSupport.discardFixtureRows`.
+        try await OutboxTestSupport.discardFixtureRows(in: store)
+        return tree
     }
 
     /// The real apply sink with a tally on it.
@@ -71,7 +77,7 @@ struct OutboxApplySendSplitTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let queue = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         _ = try await queue.enqueue(
             .visit(Visit(
@@ -104,7 +110,7 @@ struct OutboxApplySendSplitTests {
         let apply = CountingApply(APIOutboxTransport(api: api))
         let send = OutboxTestSupport.ScriptedSendSink(script: .connectionDropped)
         let queue = OutboxQueue(queue: store.queue, apply: apply, send: send, now: clock.closure)
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         let visit = Visit(
             treeID: tree.id,

@@ -27,14 +27,24 @@ struct FavoriteTests {
 
     /// A tree to favorite. There is no seed in these tests, so it is a community add — which
     /// `LocalAPI.requireTree` accepts and an invented UUID does not.
-    private static func makeTree(api: LocalAPI, at longitude: Double = -122.44) async throws -> Tree {
-        try await api.addTree(
+    private static func makeTree(
+        api: LocalAPI,
+        in store: CypressStore,
+        at longitude: Double = -122.44
+    ) async throws -> Tree {
+        let tree = try await api.addTree(
             TreeDraft(
                 coordinate: Coordinate(latitude: 37.77, longitude: longitude),
                 photoLocalPath: "/tmp/cypress-favorite-test.jpg",
                 attribution: Attribution.anonymous(deviceID: deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This suite is not about that row, and every
+        // queue count below would otherwise be counting the fixture. See
+        // `OutboxTestSupport.discardFixtureRows`.
+        try await OutboxTestSupport.discardFixtureRows(in: store)
+        return tree
     }
 
     /// One favorite row, read straight from SQL. The store has no "read a favorite" API — it
@@ -105,7 +115,7 @@ struct FavoriteTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         let attribution = await api.attribution
         #expect(attribution.isAnonymous, "the fixture is only meaningful on a device with no account")
@@ -148,7 +158,7 @@ struct FavoriteTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         // One key, two taps — which is what `RootView` does by keeping the client uuid it minted for
         // this tree, the way screen 06 keeps `PrivateReminderDraft.reminderID`.
@@ -279,9 +289,9 @@ struct FavoriteTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let first = try await Self.makeTree(api: api)
-        let second = try await Self.makeTree(api: api, at: -122.40)
-        let strangers = try await Self.makeTree(api: api, at: -122.36)
+        let first = try await Self.makeTree(api: api, in: store)
+        let second = try await Self.makeTree(api: api, in: store, at: -122.40)
+        let strangers = try await Self.makeTree(api: api, in: store, at: -122.36)
 
         for tree in [first, second] {
             _ = try await FavoriteOutboxWriter.save(
@@ -321,7 +331,7 @@ struct FavoriteTests {
         // A favorite made after sign-in is the account's from the start, and a later claim by a
         // different account does not take it.
         await api.setUserID(Self.userID)
-        let third = try await Self.makeTree(api: api, at: -122.32)
+        let third = try await Self.makeTree(api: api, in: store, at: -122.32)
         _ = try await FavoriteOutboxWriter.save(
             treeID: third.id,
             isFavorite: true,
@@ -340,9 +350,9 @@ struct FavoriteTests {
     func signInMergesACollision() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let shared = try await Self.makeTree(api: api)
-        let deviceOnly = try await Self.makeTree(api: api, at: -122.40)
-        let accountOnly = try await Self.makeTree(api: api, at: -122.36)
+        let shared = try await Self.makeTree(api: api, in: store)
+        let deviceOnly = try await Self.makeTree(api: api, in: store, at: -122.40)
+        let accountOnly = try await Self.makeTree(api: api, in: store, at: -122.36)
 
         let january = Date(timeIntervalSince1970: 1_800_000_000)
         let june = january.addingTimeInterval(60 * 60 * 24 * 150)
@@ -393,7 +403,7 @@ struct FavoriteTests {
     func signInKeepsTheAccountsLaterWord() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         let january = Date(timeIntervalSince1970: 1_800_000_000)
         let june = january.addingTimeInterval(60 * 60 * 24 * 150)
@@ -422,7 +432,7 @@ struct FavoriteTests {
     func uniquenessIsPerOwner() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         let moment = Date(timeIntervalSince1970: 1_800_000_000)
 
         try await Self.toggle(
@@ -454,7 +464,7 @@ struct FavoriteTests {
     func tombstoneAndReplayGuardSurvive() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
         let moment = Date(timeIntervalSince1970: 1_800_000_000)
 
         let on = UUID()
@@ -510,7 +520,7 @@ struct FavoriteTests {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
-        let tree = try await Self.makeTree(api: api)
+        let tree = try await Self.makeTree(api: api, in: store)
 
         // Favorited while it was standing.
         let clientUUID = UUID()

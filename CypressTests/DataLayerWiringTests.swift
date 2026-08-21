@@ -72,13 +72,19 @@ struct DataLayerWiringTests {
     /// A tree to attach contributions to. No seed here, so it is a community add — which
     /// `LocalAPI.requireTree` accepts and an invented UUID does not.
     private static func makeTree(_ data: DataLayer) async throws -> Tree {
-        try await data.local.addTree(
+        let tree = try await data.local.addTree(
             TreeDraft(
                 coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
                 photoLocalPath: "/tmp/cypress-datalayer-wiring.jpg",
                 attribution: Attribution.anonymous(deviceID: data.deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This suite is not about that row, and every
+        // queue count below would otherwise be counting the fixture. See
+        // `OutboxTestSupport.discardFixtureRows`.
+        try await OutboxTestSupport.discardFixtureRows(in: data.store)
+        return tree
     }
 
     private static func enqueueVisit(_ data: DataLayer, tree: Tree) async throws -> UUID {

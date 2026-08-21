@@ -36,6 +36,11 @@ struct MeasurementAccuracyTests {
                 attribution: .anonymous(deviceID: deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This suite is not about that row, and every
+        // queue count below would otherwise be counting the fixture. See
+        // `OutboxTestSupport.discardFixtureRows`.
+        try await OutboxTestSupport.discardFixtureRows(in: store)
         let outbox = OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api))
         return Bench(store: store, api: api, outbox: outbox, tree: tree)
     }

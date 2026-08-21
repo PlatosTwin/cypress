@@ -494,15 +494,36 @@ public struct OutboxStore {
         let discarded = connection.changes
         _ = try discard.reset()
 
-        // The four append-only contribution kinds. `userID` is a top-level key on each of their
-        // payloads (`Visit`, `TreeObservation`, `TreeMeasurement`, `CareEvent` all flatten
-        // `Attribution` into `userID` + `deviceID`).
+        // The append-only contribution kinds, in **two families with two payload shapes**.
         //
+        // The four original ones flatten `Attribution` into top-level `userID` + `deviceID`
+        // (`Visit`, `TreeObservation`, `TreeMeasurement`, `CareEvent`). Spec §3.4's ten carry the
+        // `Attribution` as an object, so the account is at `$.attribution.userID`
+        // (`CommunityMutations.swift`).
+        //
+        // **Both families have to be named or a deletion under-deletes**, and the failure is R3's
+        // stated one: a signed-in contributor's queued species correction, photo withdrawal or
+        // hazard redirect would keep naming the account through the deletion and then drain to the
+        // service afterwards. A single `$.userID` predicate matches none of them — the key is not
+        // there — so the rows would be silently untouched, which is the shape of under-deletion that
+        // reads as success at every layer.
+        let contributions = """
+            (kind IN ('visit','observation','measurement','care_event')
+             OR kind IN ('add_tree','species_claim','species_correction',
+                         'wrong_species_report','never_existed_report',
+                         'species_review_dismissal','record_review_dismissal',
+                         'photo_vote','photo_withdrawal','hazard_redirect'))
+            """
+        // Either shape. `json_extract` answers NULL for a path a payload does not have, so exactly
+        // one half of this can match any given row and neither can match a device-owned one.
+        let mine = """
+            (json_extract(payload, '$.userID') = :user COLLATE NOCASE
+             OR json_extract(payload, '$.attribution.userID') = :user COLLATE NOCASE)
+            """
+
         // One statement or the other, chosen by the door, over exactly the same set of rows — so
         // there is no arrangement of the two in which a queued contribution is both anonymized and
         // discarded, and none in which it is neither.
-        let contributions = "kind IN ('visit','observation','measurement','care_event')"
-        let mine = "json_extract(payload, '$.userID') = :user COLLATE NOCASE"
 
         switch choice {
         case .leaveRecords:
@@ -521,9 +542,13 @@ public struct OutboxStore {
             try tombstone.run()
             _ = try tombstone.reset()
 
+            // Both keys, in one statement, because a row has one of them and `json_remove` is a
+            // no-op on a path that is not there. Naming only the one a kind "should" have would put
+            // the mapping from kind to payload shape in a second place, and the two would drift.
             let anonymize = try connection.cachedStatement("""
                 UPDATE outbox
-                   SET payload = json_remove(payload, '$.userID'), updated_at = :now
+                   SET payload = json_remove(json_remove(payload, '$.userID'), '$.attribution.userID'),
+                       updated_at = :now
                  WHERE \(contributions) AND \(mine)
                 """)
             _ = try anonymize.bind([":now": date, ":user": userID.uuidString])
