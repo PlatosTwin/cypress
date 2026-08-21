@@ -17,6 +17,11 @@ document originally raised (§5, old items 1–3) were put to the owner and rule
 inferred here. §0 records the rulings; §2, §3 and §4 below are updated to match. The rulings are
 also staged, unnumbered, at `docs/rulings-pending/nyc-obligations-2026-08-21.md`.
 
+**Notify obligation DISCHARGED 2026-08-21, same day.** The owner reports the notification to the
+City has been sent. Of the two obligations D12 gates the first NYC publish on, one remains live:
+the verbatim disclaimer (§4) must be on the city-downloads screen and the store listing before —
+or with — the first NYC pack, trial included. That copy lands with the s17/NYC publish round.
+
 ---
 
 ## 0. Owner rulings, 2026-08-21
