@@ -236,10 +236,144 @@ struct OutboxStampTests {
         #expect(newest.timeText.hasPrefix("✓ "))
     }
 
+    /// **The heading over those receipts stops saying `today` when they are not all from today.**
+    ///
+    /// The round that fixed the stamps left this half standing (PR #102 review): `syncedLabel` is
+    /// literally `Synced earlier today`, and the section it heads can span two calendar days for
+    /// most of any given day — 24 h of retention does that. So the shipped screen could draw
+    ///
+    ///     Synced earlier today
+    ///       Visit · …  ✓ Jan 14
+    ///       Visit · …  ✓ Jan 15
+    ///
+    /// which is the app contradicting itself in its own words, and is half of what the original
+    /// report was about: this file's own header names the heading as part of the defect and the
+    /// round then fixed only the stamps.
+    ///
+    /// **Asserted as a change, not as a string.** What matters is that the heading is not the same
+    /// answer for both lists — pinning `Recently synced` here would make this a copy test, and the
+    /// wording is the implementation's rather than the owner's (recorded in the pending ruling). The
+    /// one literal claim is the narrow one that actually failed: a spanning list's heading must not
+    /// be the `today` one.
+    @Test("the synced heading stops claiming today once its own list spans days")
+    func theSyncedHeadingFollowsItsList() async throws {
+        let clock = OutboxTestSupport.Clock(Self.anchor)
+        let store = try await CypressStore.inMemory()
+        let queue = OutboxQueue(
+            queue: store.queue,
+            apply: OutboxTestSupport.ScriptedTransport(script: .allSucceed),
+            now: clock.closure
+        )
+
+        try await Self.enqueueVisit(on: queue, at: clock.now)
+        _ = try await queue.drain()
+
+        let sameDay = Self.presentation(
+            try await queue.snapshot(treeNames: Self.treeNames, syncPhotosOnWifiOnly: true),
+            now: clock.now
+        )
+        #expect(
+            sameDay.syncedHeading == OutboxCopy.syncedLabel,
+            """
+            a synced list inside one day is headed \"\(sameDay.syncedHeading)\" — §4's own drawn \
+            heading is what a list that really is from earlier today must keep. Only the spanning \
+            case was supposed to move.
+            """
+        )
+
+        clock.advance(by: Self.day)
+        try await Self.enqueueVisit(on: queue, at: clock.now)
+        _ = try await queue.drain()
+
+        let spanning = Self.presentation(
+            try await queue.snapshot(treeNames: Self.treeNames, syncPhotosOnWifiOnly: true),
+            now: clock.now
+        )
+        #expect(spanning.syncedRows.count == 2, "both receipts must be present for this to span")
+        #expect(
+            spanning.syncedHeading != OutboxCopy.syncedLabel,
+            """
+            a synced list spanning two calendar days is still headed \
+            \"\(spanning.syncedHeading)\", over rows stamped \
+            \(spanning.syncedRows.map(\.timeText)) — the heading says today and the rows say \
+            otherwise, in the app's own words. That disagreement is what the field report was \
+            about; fixing the stamps alone moved it rather than closing it.
+            """
+        )
+    }
+
+    /// **The two sections are asked independently**, which is the judgement call in the rule and the
+    /// one part of it nothing asserted (PR #102 review).
+    ///
+    /// `OutboxCopy.stamp`'s doc argues carefully that the span is a property of the *list*, asked
+    /// once **per section** over that section's own dates. The tests above assert the rule *inside*
+    /// each section and assert the one-day control; none of them would notice a "simplification"
+    /// that asked the question once for the whole screen. That refactor is the likely one — it looks
+    /// tidier and it is wrong — and its signature is exactly this fixture: a queue that spans days
+    /// beside a synced list that does not.
+    ///
+    /// So: two failed items a day apart still waiting (the queue has no retention sweep, so it
+    /// really can), and one receipt that went today. The queue's rows must carry dates and the
+    /// synced row must still carry a clock time. One answer for the screen cannot produce both.
+    @Test("a spanning queue and a same-day synced list get different answers")
+    func theTwoSectionsAreAskedIndependently() async throws {
+        let clock = OutboxTestSupport.Clock(Self.anchor)
+        let store = try await CypressStore.inMemory()
+        let transport = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let queue = OutboxQueue(queue: store.queue, apply: transport, now: clock.closure)
+
+        // Two visits a day apart that will never send. `theseFail` names them, so no later drain
+        // can quietly apply them and collapse this fixture into one section.
+        let older = try await Self.enqueueVisit(on: queue, at: clock.now)
+        clock.advance(by: Self.day)
+        let newer = try await Self.enqueueVisit(on: queue, at: clock.now)
+        await transport.setScript(
+            .theseFail([older.clientUUID, newer.clientUUID], .forbidden)
+        )
+
+        // And one that sends, on the second day — so the synced list is inside a single day while
+        // the queue beside it spans two.
+        try await Self.enqueueVisit(on: queue, at: clock.now)
+        _ = try await queue.drain()
+
+        let screen = Self.presentation(
+            try await queue.snapshot(treeNames: Self.treeNames, syncPhotosOnWifiOnly: true),
+            now: clock.now
+        )
+
+        let queueRows = screen.queue
+        let syncedRows = screen.syncedRows
+        #expect(queueRows.count == 2, "the queue must hold both stuck items for this to span days")
+        #expect(syncedRows.count == 1, "exactly one receipt must have gone, and on one day")
+
+        for row in queueRows {
+            #expect(
+                !row.timeText.contains(":"),
+                """
+                a queue spanning two days stamped a row \"\(row.timeText)\" — a clock time. The \
+                queue's own dates span days, so its rows must carry dates whatever the synced list \
+                beside them is doing.
+                """
+            )
+        }
+        for row in syncedRows {
+            #expect(
+                row.timeText.contains(":"),
+                """
+                a synced list inside one day stamped a row \"\(row.timeText)\" — a date. It took \
+                the queue's answer instead of its own, which is the whole thing OutboxCopy.stamp's \
+                doc says must not happen: the span is asked once per SECTION, over that section's \
+                own dates, not once per screen.
+                """
+            )
+        }
+    }
+
     // MARK: - Support
 
-    private static func enqueueVisit(on queue: OutboxQueue, at moment: Date) async throws {
-        _ = try await queue.enqueue(
+    @discardableResult
+    private static func enqueueVisit(on queue: OutboxQueue, at moment: Date) async throws -> OutboxItem {
+        try await queue.enqueue(
             .visit(Visit(
                 treeID: treeID,
                 attribution: .anonymous(deviceID: deviceID),
