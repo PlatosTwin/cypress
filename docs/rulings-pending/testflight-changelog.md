@@ -23,18 +23,40 @@ every branch that touches it, and this repository routinely has four open at onc
 tags the commit each build shipped from, `build-N` (#196). So:
 
 > the notes for the build minted at `<at>` = the note files present at `<at>`, minus the note
-> files present at `<since>`, where `<since>` is the previous `build-N` tag.
+> files present at `<since>`, minus anything git reports as a rename of one of those, where
+> `<since>` is the newest `build-N` tag **strictly behind** `<at>`.
+
+"Strictly behind" is the whole of it, and it is not a refinement. The tag for the build being
+minted is created right after the upload — so that the backstop below has something to read — and
+the remediation for a job that dies in the twenty-minute processing wait is *Re-run failed jobs*.
+On that second attempt "the newest tag" points at the very commit being built: the boundary
+collapses, the changelog compiles to "No tester-visible changes in this build", and once that is
+published the real lines sit at both tags and can never be recovered by any later compile, because
+the backstop only stamps builds whose field is empty. **One false changelog would consume the
+lines permanently.** Walking past any tag on `<at>` settles that, two builds from one commit, and
+a tag somebody made by hand, all at once.
 
 `Tools/whats_new.py compile` is that sentence and little else. The consequences are the
 requirements rather than side effects of them:
 
-- **No line ships twice.** A file present at the previous tag is excluded whatever happened to it
-  since — editing a shipped note does not re-ship it.
+- **No line ships twice.** A note keeps its identity across an edit (its path does not change) and
+  across a rename (git reports the move, and the new path is subtracted too), so neither
+  re-announces a sentence testers have read. The one gap, stated rather than left to be
+  discovered: a rename that also *rewrites* the sentence falls below git's similarity threshold,
+  reads as a delete plus a new file, and ships again — defensibly, since a rewritten sentence is a
+  new statement. `docs/whats-new/README.md` tells authors to leave the filename alone when
+  rewording.
+- **A line can be withdrawn, by deleting its note before the build ships.** That is the retraction
+  mechanism and the only one: the compile reads the notes *present* at the commit being built, so
+  a deleted note contributes nothing. Deliberate rather than incidental, and every withdrawal is
+  printed to the release log — a sentence vanishing silently would be the same class of defect as
+  one appearing twice.
 - **Nothing is lost to a merge that minted no build.** A prose-only merge moves no tag (`plan`'s
   ships predicate), so its notes are still unshipped and are picked up by the next real build.
   They accumulate across as many skipped merges as it takes.
-- **A build's notes can be re-derived afterwards**, from `build-N` and `build-(N-1)` alone. That
-  is what lets the backstop below stamp a build the release job could not reach.
+- **A build's notes can be re-derived afterwards**, from `build-N` and its own boundary alone.
+  That is what lets the backstop below stamp a build the release job could not reach — and what
+  makes a **re-run** of a failed release job recompile the same set rather than a false empty one.
 - **No bot commit to main, no state file, no token that can write a ref.** Two people running the
   compile a week apart on the same pair of revisions get the same bytes.
 

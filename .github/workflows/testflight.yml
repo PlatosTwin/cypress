@@ -619,14 +619,19 @@ jobs:
           boot-simulator: "false"
 
       # ── What this build tells its testers ────────────────────────────────────────────
-      # Compiled FIRST, published last. Two reasons, and both are about ordering rather than
-      # convenience:
+      # Compiled FIRST, published last, so a malformed note fails here in ten seconds rather than
+      # after a forty-minute archive.
       #
-      #   1. The boundary is the previous build's tag, and this job creates the NEXT one at the
-      #      end. Compiling after "Tag the commit that shipped" would diff `build-N` against
-      #      HEAD — the same commit — and every build would ship an empty changelog. Reading the
-      #      tag before anything else makes that impossible rather than merely unlikely.
-      #   2. A malformed note fails here, in ten seconds, instead of after a forty-minute archive.
+      # **The boundary is NOT "the newest build tag", and this step does not pick it.** It says
+      # `--at` and lets `whats_new.py` resolve the newest tag *strictly behind* that commit. The
+      # difference is the whole of review F1: the tag for the build this job is minting is created
+      # right after the upload (so the backstop has something to read), and the documented
+      # remediation for a job that dies in the twenty-minute processing wait is *Re-run failed
+      # jobs*. On that second attempt the newest tag sits on the very commit being built — a
+      # boundary of a commit against itself, which compiles to "No tester-visible changes in this
+      # build" and, once published, makes the real lines unreachable forever. `resolve_since`
+      # walks past any tag on `--at`; the shell deliberately holds no opinion about which tag,
+      # because a shell one-liner is where the first version got it wrong.
       #
       # The compiled text is echoed into the job log, so the run itself records what the testers
       # were told — a claim about a build that outlives the App Store Connect UI's own history.
@@ -634,18 +639,21 @@ jobs:
         id: whats_new
         run: |
           set -euo pipefail
-          since="$(python3 Tools/whats_new.py latest-build-tag)"
+          since="$(python3 Tools/whats_new.py boundary-for "$GITHUB_SHA")"
           if [ -z "$since" ]; then
-            echo "::warning::no build-N tag in this repository, so every note ever written counts as unshipped. Expected exactly once, on the first build after this mechanism landed."
+            echo "::warning::no build-N tag strictly behind $GITHUB_SHA, so every note ever written counts as unshipped. Expected exactly once, on the first build after this mechanism landed."
           else
-            echo "the last build shipped from $since ($(git rev-parse --short "$since"))"
+            echo "measuring against $since ($(git rev-parse --short "$since")), the newest build tag strictly behind this commit"
           fi
+          # No `--since`: the resolution above is for the log, and `compile` repeats it itself so
+          # that the value it uses is the value it derived rather than one this shell passed in.
+          #
           # stdout silenced, and the file printed below instead: `compile` writes the notes to
           # both, and a release log that shows the same five lines twice is a log somebody skims.
-          # The commentary — which notes were found, which were internal, how many characters —
-          # goes to stderr and is kept.
+          # The commentary — which notes were found, which were internal, which were renamed or
+          # withdrawn, how many characters — goes to stderr and is kept.
           python3 Tools/whats_new.py compile \
-            --since "$since" --at "$GITHUB_SHA" \
+            --at "$GITHUB_SHA" \
             --out "$RUNNER_TEMP/whats-new.txt" > /dev/null
           echo "── what TestFlight will show ──────────────────────────────"
           cat "$RUNNER_TEMP/whats-new.txt"
@@ -948,8 +956,14 @@ jobs:
       # would be untrue at once: `build-N` would not say what shipped, and the release-note
       # backstop, which compiles a build's notes from `build-N` and `build-(N-1)`, would have
       # nothing to read for exactly the build that needs it most. Tagging here costs nothing and
-      # removes both. Nothing later in the job reads the tag — "Compile the release notes" reads
-      # the PREVIOUS one, and does so before the archive even starts.
+      # removes both.
+      #
+      # **What makes tagging early safe is not the ordering within this job — it is
+      # `resolve_since` (review F1).** A tag written here survives into the NEXT attempt if this
+      # one dies in the processing wait below, and "the newest build tag" would then be a tag on
+      # the commit that attempt is building. The compile step no longer asks that question: it
+      # asks for the newest tag strictly BEHIND the commit, so a tag on the commit itself is
+      # walked past. Without that, moving this step up would trade one failure for a worse one.
       #
       # Created through the API rather than `git push origin build-N`. A push whose ref carries a
       # change to `.github/workflows/**` is rejected for a GitHub App token without `workflows`
@@ -972,11 +986,30 @@ jobs:
                -f "ref=refs/tags/build-$n" -f "sha=${GITHUB_SHA}" >/dev/null; then
             echo "tagged ${GITHUB_SHA} as build-$n"
           else
-            # A re-run reaches an existing tag. That is not a release failure, and failing here
-            # would leave a shipped build looking unshipped.
-            echo "::warning::could not create tag build-$n (it may already exist)"
-            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-$n" --jq '.object.sha' \
-              | sed 's/^/build-'"$n"' already points at /'
+            # ── One cause is benign; the rest are not (review F7) ────────────────────────
+            # This branch used to downgrade EVERY failure to a warning while asserting one
+            # particular cause ("it may already exist"). A revoked permission, a 5xx, a rate
+            # limit — all took the same branch, the run stayed green, and the damage landed on
+            # the NEXT release: with no `build-N` tag, its boundary resolves to an older one and
+            # it re-ships the lines this build already published to testers. A silent tag
+            # failure is a duplicated changelog one build later, which is exactly the property
+            # this mechanism claims to have.
+            #
+            # So the readback is COMPARED rather than merely printed. It was already being
+            # fetched; it just was not being used for anything.
+            existing="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-$n" \
+                          --jq '.object.sha' 2>/dev/null || true)"
+            if [ "$existing" = "${GITHUB_SHA}" ]; then
+              # A re-run of this same job reaches its own tag. Genuinely fine: the tag says what
+              # it should say, and failing here would leave a shipped build looking unshipped.
+              echo "::warning::build-$n already exists and already points at ${GITHUB_SHA} — re-run of a job that had tagged. Nothing to do."
+            elif [ -n "$existing" ]; then
+              echo "::error::build-$n already exists but points at $existing, not ${GITHUB_SHA}. Two different commits claim the same build number; the release-note boundary is derived from these tags and cannot be trusted until this is resolved by hand."
+              exit 1
+            else
+              echo "::error::could not create tag build-$n, and no such tag exists. Refusing to continue: without it the next release measures its notes against an older tag and re-ships the lines this build just published."
+              exit 1
+            fi
           fi
 
       # ── One testable build, as asked ─────────────────────────────────────────────────

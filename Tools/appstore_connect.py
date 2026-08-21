@@ -353,6 +353,15 @@ def cmd_builds_missing_notes() -> None:
 
     For the backstop workflow. Only live builds: a build nobody can install any more is not worth
     a changelog, and expiring is what the release job does to all the others.
+
+    **`processingState` is the second filter** (review F8). A build that has uploaded but is still
+    `PROCESSING`, or that came out `INVALID` or `FAILED`, is not expired and has no
+    `betaBuildLocalizations` — so without this it reports as missing its notes, the backstop tries
+    to write to it, and a refusal from App Store Connect turns the scheduled job red on a transient
+    that fixes itself. This job's entire value is that a red from it means something, and an
+    hour-long processing window crossed by a twice-daily schedule is a small target that would be
+    hit eventually. Nothing is skipped forever: the next run finds the build `VALID` and stamps it,
+    which is what a backstop is.
     """
     bearer = token()
     missing = []
@@ -363,11 +372,18 @@ def cmd_builds_missing_notes() -> None:
         version = attributes.get("version")
         if not version:
             continue
+        state = attributes.get("processingState")
+        if state != "VALID":
+            # Named, not silent. "The backstop skipped it" and "the backstop never saw it" are the
+            # same output otherwise, and the first is fine while the second is a defect.
+            print(f"note: build {version} is {state!r}, not VALID — skipping until it processes",
+                  file=sys.stderr)
+            continue
         if not whats_new_of(beta_localizations(bearer, build["id"])).strip():
             missing.append(version)
     for version in missing:
         print(version)
-    print(f"{len(missing)} live build(s) with no release notes", file=sys.stderr)
+    print(f"{len(missing)} live processed build(s) with no release notes", file=sys.stderr)
 
 
 def cmd_status() -> None:

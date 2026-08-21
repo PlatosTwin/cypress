@@ -161,6 +161,29 @@ def test_check_accepts_the_escape_hatch() -> None:
               result.stderr.strip())
         check("...and is labelled as internal in the log", "internal:" in result.stdout)
 
+        # ── The anchoring, which review F4 found asserted in a comment and tested nowhere ──
+        # A real tester-voice line is free to use the word mid-sentence, and an unanchored
+        # `"internal:" in line` would silently drop it from the changelog with `check` green and
+        # `compile` exit 0. Mutating `startswith` to `in` used to leave all 39 checks passing.
+        repo.tag("build-80")
+        repo.write(NOTE + "mentions.md",
+                   "The sync queue now shows an internal: prefix on rows it could not send.\n")
+        repo.commit("a tester-visible line that happens to use the word")
+        compiled = run(repo, "compile", "--at", "HEAD")
+        check("a line that MENTIONS 'internal:' mid-sentence is still shipped",
+              "The sync queue now shows an internal: prefix" in compiled.stdout,
+              compiled.stdout.strip())
+
+        # CONTROL: the same probe over a line that genuinely STARTS with it must drop it, so the
+        # assertion above is about the anchor rather than about shipping everything.
+        repo.tag("build-81")
+        repo.write(NOTE + "hatch.md", "internal: a refactor; no tester-visible change.\n")
+        repo.commit("an actual escape-hatch line")
+        control = run(repo, "compile", "--at", "HEAD")
+        check("CONTROL: a line that starts with it is still dropped",
+              "a refactor; no tester-visible change" not in control.stdout,
+              control.stdout.strip())
+
 
 def test_check_rejects_an_edit_to_a_shipped_note() -> None:
     """The must-fail case that a naive `--name-only` would let through."""
@@ -447,18 +470,280 @@ def test_compile_refuses_a_since_it_cannot_see() -> None:
 
 
 def test_tag_helpers_do_not_match_lookalikes() -> None:
+    """The lookalike must OUTRANK every real tag, or this test cannot fail (review F3).
+
+    The first version of this fixture put `build-10-hotfix` beside a real `build-10`. Both
+    `re.fullmatch` and `re.match` then give the same answer — 10 either way — so weakening the
+    matcher could not move either assertion, and mutating `fullmatch` to `match` left the whole
+    suite green. That is the "guards green when the defect is present" class CLAUDE.md names as
+    this project's dominant test-suite defect, sitting inside the test written to prevent it.
+
+    `build-99-hotfix` fixes it in one fixture line: under `match` it parses as 99 and becomes the
+    newest tag, under `fullmatch` it is not a build tag at all. The two matchers now disagree,
+    which is the whole point of a lookalike fixture.
+
+    **Which assertion below actually kills the mutant, measured rather than assumed:** only the
+    `latest-build-tag` one. `resolve_since` rebuilds a tag NAME from the parsed number, so a
+    lookalike read as 99 becomes `build-99`, which does not exist, and `exists()` drops it — the
+    boundary is accidentally immune. That immunity is worth neither relying on nor deleting the
+    other two assertions for: they pin real behavior, and if the reconstruction ever became a
+    passthrough of the raw tag text they would become the guard. Said out loud because "these
+    three assertions cover it" would be three-quarters wrong.
+    """
     with tempfile.TemporaryDirectory() as directory:
         repo = Repo(directory)
+        repo.write("a.txt", "1\n")
+        repo.commit("nine")
         repo.tag("build-9")
+        repo.write("a.txt", "2\n")
+        repo.commit("ten")
         repo.tag("build-10")
-        repo.tag("build-10-hotfix")
+        # Numbered ABOVE every real tag, so a prefix match would pick it as the newest.
+        repo.tag("build-99-hotfix")
         repo.tag("build-x")
+        repo.write("a.txt", "3\n")
+        head = repo.commit("after build 10")
+
         latest = run(repo, "latest-build-tag").stdout.strip()
-        check("the newest build tag is compared numerically, not as text",
+        check("the newest build tag ignores a lookalike numbered above it (kills the mutant)",
               latest == "build-10", latest)
+        boundary = run(repo, "boundary-for", head).stdout.strip()
+        check("the boundary for a commit is the newest real tag behind it",
+              boundary == "build-10", boundary)
         previous = run(repo, "previous-build-tag", "10").stdout.strip()
-        check("the previous build tag skips lookalike tags",
+        check("the previous build tag walks back one real tag",
               previous == "build-9", previous)
+
+
+def test_check_refuses_a_rename_only_change() -> None:
+    """A defence that was load-bearing by accident until review F2 named it.
+
+    `--diff-filter=A` runs rename detection, so moving an existing note reports `R` and not `A`:
+    a pull request that only tidies filenames answers the check with nothing and is refused. That
+    is the right answer — moving somebody else's sentence is not writing your own — and it is
+    pinned here so a future `--no-renames` cannot quietly turn a tidy-up into a passing code
+    change.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write(NOTE + "alpha.md", "You can now filter the map by species.\n")
+        base = repo.commit("a note on main")
+
+        repo.branch("tidy-up")
+        repo.write("Cypress/A.swift", "//\n")
+        repo.git("mv", NOTE + "alpha.md", NOTE + "pr-c.md")
+        head = repo.commit("code, plus a rename of an existing note")
+        result = run(repo, "check", "--base", base, "--head", head)
+        check("a rename does not answer the check", result.returncode != 0,
+              f"exit {result.returncode}")
+
+        # CONTROL: a genuinely new file in the same commit does answer it, so the refusal is about
+        # the rename rather than about this fixture.
+        repo.write(NOTE + "pr-c-note.md", "You can now sort your favorites.\n")
+        head2 = repo.commit("and a real note")
+        control = run(repo, "check", "--base", base, "--head", head2)
+        check("CONTROL: a new note in the same change does", control.returncode == 0,
+              control.stderr.strip())
+
+
+def test_compile_does_not_re_ship_a_renamed_note() -> None:
+    """Review F2. The boundary is a set of paths, so a rename walks a shipped line back in."""
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write(NOTE + "alpha.md", "Trees you add now sync to the server.\n")
+        repo.commit("the note build 50 shipped")
+        repo.tag("build-50")
+
+        # The realistic shape: a tidy-up rename riding alongside a legitimate new note. A
+        # rename-ONLY change is already refused by `check` (test above).
+        repo.git("mv", NOTE + "alpha.md", NOTE + "pr-c.md")
+        repo.write(NOTE + "pr-c-new.md", "You can now filter the map by species.\n")
+        repo.commit("a housekeeping PR that renames and adds")
+
+        result = run(repo, "compile", "--at", "HEAD")
+        check("a renamed note does not ship its line a second time",
+              "Trees you add now sync to the server." not in result.stdout,
+              result.stdout.strip())
+        check("...while the new note in the same commit does ship",
+              "You can now filter the map by species." in result.stdout, result.stdout.strip())
+        check("...and the rename is reported, not silently swallowed",
+              "renamed (not re-shipped)" in result.stderr, result.stderr.strip())
+
+        # CONTROL: the same sentence in a genuinely NEW file must ship. Without this, "renames are
+        # excluded" and "that sentence is excluded" look identical.
+        with tempfile.TemporaryDirectory() as second:
+            fresh = Repo(second)
+            fresh.write(NOTE + "keep.md", "An unrelated shipped line.\n")
+            fresh.commit("build 50's note")
+            fresh.tag("build-50")
+            fresh.write(NOTE + "pr-c.md", "Trees you add now sync to the server.\n")
+            fresh.commit("a genuinely new note carrying that text")
+            control = run(fresh, "compile", "--at", "HEAD")
+            check("CONTROL: the same sentence in a genuinely new file does ship",
+                  "Trees you add now sync to the server." in control.stdout,
+                  control.stdout.strip())
+
+
+def test_compile_says_a_repeated_line_once() -> None:
+    """Review F5: `if line in seen` had no test — `if False` left the suite green.
+
+    Distinct from the tag-boundary exclusion, which never puts the same sentence in two files.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write("a.txt", "1\n")
+        repo.commit("base")
+        repo.tag("build-60")
+        repo.write(NOTE + "branch-one.md", "You can now sort your favorites.\n")
+        repo.commit("one branch says it")
+        repo.write(NOTE + "branch-two.md", "You can now sort your favorites.\n")
+        repo.commit("another branch says the same thing")
+
+        result = run(repo, "compile", "--at", "HEAD")
+        occurrences = result.stdout.count("You can now sort your favorites.")
+        check("two files carrying the same sentence produce one line",
+              occurrences == 1, f"appeared {occurrences} time(s): {result.stdout.strip()!r}")
+
+        # CONTROL: two DIFFERENT sentences must both survive, so the de-duplication is not simply
+        # dropping the second file.
+        repo.write(NOTE + "branch-three.md", "You can now rename a favorite list.\n")
+        repo.commit("a different sentence")
+        control = run(repo, "compile", "--at", "HEAD")
+        check("CONTROL: two different sentences both ship",
+              control.stdout.count("You can now sort your favorites.") == 1
+              and "You can now rename a favorite list." in control.stdout,
+              control.stdout.strip())
+
+
+def test_a_deleted_note_is_a_retraction_and_is_reported() -> None:
+    """Review F6. Deleting an unshipped note is how a line is taken back — pinned as deliberate.
+
+    The behavior already existed (the set difference does it); what was missing was a test saying
+    it is intended, and any sign of it in the release log.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write("a.txt", "1\n")
+        repo.commit("base")
+        repo.tag("build-70")
+        repo.write(NOTE + "cellular.md", "Photos now upload over cellular.\n")
+        repo.commit("a note")
+        repo.write(NOTE + "other.md", "You can now see a tree's planting date.\n")
+        repo.commit("another note")
+
+        # CONTROL FIRST: before the deletion the line is in the changelog. The same repository one
+        # commit later is the only thing that changes.
+        control = run(repo, "compile", "--at", "HEAD")
+        check("CONTROL: the line compiles before it is withdrawn",
+              "Photos now upload over cellular." in control.stdout, control.stdout.strip())
+
+        repo.remove(NOTE + "cellular.md")
+        repo.commit("withdraw the cellular note — the feature slipped")
+        after = run(repo, "compile", "--at", "HEAD")
+        check("a note deleted before its build does not ship",
+              "Photos now upload over cellular." not in after.stdout, after.stdout.strip())
+        check("...the other note is unaffected",
+              "You can now see a tree's planting date." in after.stdout, after.stdout.strip())
+        check("...and the withdrawal is named in the log, not silent",
+              "withdrawn (deleted before this build)" in after.stderr
+              and "cellular.md" in after.stderr, after.stderr.strip())
+
+
+# ---------------------------------------------------------------------------------------------
+# The re-run of a failed release job (review F1) — the scenario that made this round
+# ---------------------------------------------------------------------------------------------
+
+def test_a_re_run_recompiles_the_same_notes() -> None:
+    """Attempt 1 tags and dies in the processing wait; attempt 2 must say the same thing.
+
+    The tag for the build being minted is created right after the upload, before the twenty-minute
+    processing wait — so a job that times out there leaves `build-N` sitting on the commit the
+    re-run then builds. "The newest build tag" would be that tag, the boundary would be a commit
+    against itself, and the re-run would publish "No tester-visible changes in this build" over a
+    build that has plenty. The lines would then be present at both tags and unreachable forever,
+    and the backstop skips builds whose field is non-empty by design.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write(NOTE + "old.md", "An older shipped line.\n")
+        repo.commit("before build 43")
+        repo.tag("build-43")
+        repo.write(NOTE + "new.md", "You can now pinch to zoom a tree's photos.\n")
+        head = repo.commit("the commit build 44 is minted from")
+
+        # CONTROL: attempt 1, before its tag exists.
+        first = run(repo, "compile", "--at", head)
+        check("CONTROL: the first attempt compiles the real notes",
+              "You can now pinch to zoom a tree's photos." in first.stdout, first.stdout.strip())
+
+        # Attempt 1 uploaded and tagged, then died in the processing wait.
+        repo.tag("build-44")
+        second = run(repo, "compile", "--at", head)
+        check("a re-run compiles the SAME notes, not an empty changelog",
+              second.stdout == first.stdout,
+              f"first={first.stdout.strip()!r} second={second.stdout.strip()!r}")
+        check("...specifically, it does not claim there is nothing to see",
+              wn.NOTHING_VISIBLE not in second.stdout, second.stdout.strip())
+        check("...because the boundary walked past the tag on its own commit",
+              "since build-43" in second.stderr, second.stderr.strip())
+
+        # And the backstop must be able to re-derive it from either tag on that commit.
+        repo.tag("build-45")
+        for build in ("44", "45"):
+            derived = run(repo, "compile", "--for-build", build)
+            check(f"--for-build {build} recovers the same line",
+                  "You can now pinch to zoom a tree's photos." in derived.stdout,
+                  derived.stdout.strip())
+
+
+def test_an_explicit_since_equal_to_at_is_refused() -> None:
+    """A caller that names the boundary gets an error, not a silent walk-back.
+
+    `resolve_since` exists so the release job never has to ask; a caller who asks anyway, and asks
+    for a commit against itself, has a broken assumption and substituting a different revision
+    would hide it.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write(NOTE + "a.md", "A line.\n")
+        head = repo.commit("a note")
+        repo.tag("build-44")
+        result = run(repo, "compile", "--since", "build-44", "--at", head)
+        check("an explicit --since equal to --at is refused", result.returncode == 9,
+              f"exit {result.returncode}")
+        check("...rather than compiling an empty changelog",
+              wn.NOTHING_VISIBLE not in result.stdout, result.stdout.strip())
+
+        # CONTROL: omitting --since on the identical repository succeeds and finds the line.
+        control = run(repo, "compile", "--at", head)
+        check("CONTROL: omitting --since compiles the line", "A line." in control.stdout,
+              control.stdout.strip())
+
+
+def test_a_boundary_on_another_branch_is_not_used() -> None:
+    """`resolve_since` requires ancestry, not merely a smaller number."""
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write("a.txt", "1\n")
+        root = repo.commit("root")
+        repo.tag("build-10")
+        repo.branch("sideline")
+        repo.write(NOTE + "side.md", "A line only the sideline has.\n")
+        repo.commit("a note on a branch that never merged")
+        repo.tag("build-20")
+        repo.switch("main")
+        repo.write(NOTE + "main.md", "A line on main.\n")
+        head = repo.commit("a note on main")
+
+        boundary = run(repo, "boundary-for", head).stdout.strip()
+        check("a build tag on an unmerged branch is not this build's boundary",
+              boundary == "build-10", boundary)
+        result = run(repo, "compile", "--at", head)
+        check("...so the changelog is measured from the ancestor",
+              "A line on main." in result.stdout
+              and "A line only the sideline has." not in result.stdout, result.stdout.strip())
+        check("CONTROL: build-10 really is an ancestor, so the fixture is not vacuous",
+              repo.git("rev-parse", "build-10^{commit}") == root)
 
 
 def main() -> int:

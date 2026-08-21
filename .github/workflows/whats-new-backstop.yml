@@ -16,9 +16,15 @@
 # tags and the notes already on the build in App Store Connect are the whole of what it reads, and
 # the only thing it changes is that field. Run it twice and the second run finds nothing to do.
 #
-# COST. Ubuntu, no Xcode, four API reads and at most one write: about a minute. Six-hourly rather
-# than hourly because the case it covers is rare and never urgent — a build's notes appearing
-# within six hours of the build is the same day a tester sees either.
+# COST. Ubuntu, no Xcode, about a minute. Two API reads to find the app and its builds, then one
+# `betaBuildLocalizations` GET **per live build**, and at most one write per build stamped. Stated
+# that way rather than as a flat "four reads" because review F8 was right that four is the
+# happy-path number: after a successful release `expire-others` has left exactly one live build,
+# and the happy path is precisely the case this job does not exist for. When it has work to do
+# there are two or more live builds and the count grows with them. Still cheap; just not four.
+#
+# Twice daily rather than hourly because the case it covers is rare and never urgent — a build's
+# notes appearing within twelve hours of the build is the same day a tester sees either.
 name: TestFlight notes backstop
 
 on:

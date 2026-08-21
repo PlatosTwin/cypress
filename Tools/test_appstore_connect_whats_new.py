@@ -121,8 +121,10 @@ def note_file(text: str) -> str:
     return handle.name
 
 
-BUILD_44 = {"id": "b-44", "type": "builds", "attributes": {"version": "44", "expired": False}}
-BUILD_43 = {"id": "b-43", "type": "builds", "attributes": {"version": "43", "expired": True}}
+BUILD_44 = {"id": "b-44", "type": "builds",
+            "attributes": {"version": "44", "expired": False, "processingState": "VALID"}}
+BUILD_43 = {"id": "b-43", "type": "builds",
+            "attributes": {"version": "43", "expired": True, "processingState": "VALID"}}
 
 NOTES = "• You can now pinch to zoom a tree's photos."
 
@@ -199,10 +201,42 @@ def test_refuses_a_build_that_is_not_there() -> None:
     check("...naming the build", "44" in err, err.strip())
 
 
+def test_builds_missing_notes_skips_a_build_that_is_still_processing() -> None:
+    """Review F8. A `PROCESSING` build has no localizations, so it reads as missing its notes.
+
+    The backstop would then try to write to it, App Store Connect may refuse a write against a
+    build in that state, and a scheduled job goes red on a transient that fixes itself an hour
+    later. This job's whole value is that a red from it means something.
+    """
+    processing = {"id": "b-45", "attributes": {"version": "45", "expired": False,
+                                               "processingState": "PROCESSING"}}
+    invalid = {"id": "b-46", "attributes": {"version": "46", "expired": False,
+                                            "processingState": "INVALID"}}
+    fake = FakeASC([invalid, processing, BUILD_44], {})
+    code, out, err = with_fake(fake, asc.cmd_builds_missing_notes)
+    listed = out.split()
+    check("a build that is still PROCESSING is not listed", "45" not in listed, str(listed))
+    check("an INVALID build is not listed either", "46" not in listed, str(listed))
+    check("...and the skips are named rather than silent",
+          "'PROCESSING'" in err and "'INVALID'" in err, err.strip())
+    check("...while the VALID build with no notes still is",
+          code == 0 and listed == ["44"], f"{listed!r} {err.strip()}")
+
+    # CONTROL: flip the same two builds to VALID and they appear, so the filter is about the
+    # state and not about the fixture.
+    control_builds = [dict(b, attributes=dict(b["attributes"], processingState="VALID"))
+                      for b in (invalid, processing, BUILD_44)]
+    control = FakeASC(control_builds, {})
+    _, out2, _ = with_fake(control, asc.cmd_builds_missing_notes)
+    check("CONTROL: the same three builds all list once they are VALID",
+          sorted(out2.split()) == ["44", "45", "46"], str(out2.split()))
+
+
 def test_builds_missing_notes_lists_only_live_empty_builds() -> None:
     fake = FakeASC(
         [BUILD_44, BUILD_43,
-         {"id": "b-42", "attributes": {"version": "42", "expired": False}}],
+         {"id": "b-42", "attributes": {"version": "42", "expired": False,
+                                       "processingState": "VALID"}}],
         {"b-42": [{"id": "loc-42",
                    "attributes": {"locale": "en-US", "whatsNew": "already written"}}]})
     code, out, err = with_fake(fake, asc.cmd_builds_missing_notes)

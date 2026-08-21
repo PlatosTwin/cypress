@@ -3,10 +3,11 @@
 whats_new.py -- the TestFlight "What to Test" text, derived from git rather than maintained.
 
     check --base <rev> --head <rev>     does this diff carry its release note?
-    compile --since <rev> --at <rev>    the notes for the build being minted from <at>
+    compile --at <rev>                  the notes for the build being minted from <at>
     compile --for-build <N>             the notes build N shipped, read from its tag
-    latest-build-tag                    the newest `build-N` tag, or nothing
-    previous-build-tag <N>              the newest `build-N` tag below N, or nothing
+    boundary-for <rev>                  the build tag <rev>'s notes are measured against
+    latest-build-tag                    the newest `build-N` tag, or nothing (NOT a boundary)
+    previous-build-tag <N>              the build tag build-N's notes are measured against
 
 WHY THIS EXISTS. Every TestFlight build ships a changelog (owner ruling, 2026-08-21,
 `docs/rulings-pending/testflight-changelog.md`), compiled from one tester-voice line per pull
@@ -26,23 +27,35 @@ remember to move:
     the notes for a build minted at <at>
       = the note files present at <at>
       - the note files present at <since>
+      - the note files git reports as RENAMES of files present at <since>
 
-where `<since>` is the commit the LAST build was minted from. The release workflow already tags
-that commit `build-N` (`.github/workflows/testflight.yml`, "Tag the commit that shipped"), so the
-boundary already exists in the repo and this file just reads it. Nothing writes to main, nothing
-needs a token, and two people running `compile` a week apart on the same pair of revisions get the
-same bytes.
+where `<since>` is the commit the LAST build was minted from -- resolved by `resolve_since` as the
+newest `build-N` tag STRICTLY BEHIND `<at>`, never one sitting on `<at>` itself. The release
+workflow already tags that commit `build-N` (`.github/workflows/testflight.yml`, "Tag the commit
+that shipped"), so the boundary already exists in the repo and this file just reads it. Nothing
+writes to main, nothing needs a token, and two people running `compile` a week apart on the same
+pair of revisions get the same bytes.
 
-The consequences worth stating, because they are the requirements rather than side effects:
+The consequences worth stating, because they are the requirements rather than side effects. Each
+is now pinned by a test with a control -- an earlier version of this list asserted the first one
+while the code did something narrower, which is the shape CLAUDE.md means by "a confident comment
+is where bugs have survived here":
 
-  * **No line ships twice.** A file present at `<since>` is excluded whatever happened to it
-    since -- editing a shipped note does not re-ship it.
+  * **No line ships twice.** A note keeps its identity across an edit (its path is unchanged) and
+    across a rename (git reports the move), so neither re-announces a sentence testers have read.
+    The one gap, stated rather than hidden: a rename that also REWRITES the sentence falls below
+    git's similarity threshold, reports as delete-plus-add, and ships again -- defensibly, since a
+    rewritten sentence is a new statement. `docs/whats-new/README.md` says so to authors.
   * **Nothing is lost to a prose-only merge.** A merge that mints no build (see `plan`'s `scope`
     step) also moves no tag, so its notes are still unshipped and are picked up by the next real
     build. Notes accumulate across as many skipped merges as it takes.
+  * **A line can be withdrawn, by deleting its note before the build.** That is the retraction
+    mechanism and the only one; `compile` reports every withdrawal to stderr so it is visible in
+    the release log rather than only in a diff.
   * **A build can be re-derived after the fact.** `--for-build N` answers "what did build N say"
-    from `build-N` and `build-(N-1)` alone, which is what lets the backstop workflow stamp a build
-    the release job could not reach.
+    from `build-N` and its own boundary alone, which is what lets the backstop workflow stamp a
+    build the release job could not reach -- and what makes a re-run of a failed release job
+    recompile the same set instead of a false empty one.
 
 ── The escape hatch ───────────────────────────────────────────────────────────────────────────
 
@@ -140,13 +153,72 @@ def build_tags() -> list[int]:
 
 
 def latest_build_tag() -> str:
+    """The highest-numbered `build-N` tag in the repository, ancestry ignored.
+
+    **Not a boundary, and never to be used as one** — `resolve_since` is. This answers "what is the
+    newest build number this repository knows about", which is a different and much weaker
+    question: the tag it returns can be sitting on the commit being built, which is review F1.
+    """
     tags = build_tags()
     return f"build-{tags[-1]}" if tags else ""
 
 
+def same_commit(one: str, other: str) -> bool:
+    return bool(one) and bool(other) and git(
+        "rev-parse", f"{one}^{{commit}}", allow_failure=True) == git(
+        "rev-parse", f"{other}^{{commit}}", allow_failure=True)
+
+
+def is_strict_ancestor(candidate: str, descendant: str) -> bool:
+    """Is `candidate` an ancestor of `descendant`, and a DIFFERENT commit?
+
+    `git merge-base --is-ancestor` calls a commit its own ancestor, which is the one answer this
+    must not accept — see `resolve_since`.
+    """
+    if not exists(candidate) or not exists(descendant):
+        return False
+    if same_commit(candidate, descendant):
+        return False
+    finished = subprocess.run(
+        ("git", "merge-base", "--is-ancestor", candidate, descendant),
+        capture_output=True, text=True)
+    return finished.returncode == 0
+
+
+def resolve_since(at: str, below: int | None = None) -> str:
+    """The boundary for a build at `at`: the newest `build-N` tag STRICTLY BEHIND it.
+
+    ── Why "strictly behind" and not simply "the newest tag" (review F1) ───────────────────────
+    A release job that uploads and then dies in the twenty-minute processing wait leaves a
+    `build-N` tag **on the commit being built** — the tag is created right after the upload so the
+    backstop has something to read. The remediation for such a run is *Re-run failed jobs*, and on
+    the second attempt a naive "newest tag" hands back `build-N`, which points at `at` itself.
+    `compile` would diff a commit against itself, find nothing, and publish "No tester-visible
+    changes in this build" over a build that has plenty.
+
+    That is not merely a bad changelog, it is an unrecoverable one: the real notes would then be
+    present at BOTH tags, so no later compile and no `--for-build` could reach them again, and the
+    backstop only stamps builds whose field is empty. A single false changelog would consume the
+    lines permanently.
+
+    Walking back past any tag that sits on `at` settles the whole family at once — a re-run, two
+    builds minted from one commit, a tag somebody made by hand on HEAD. The same rule serves
+    `--for-build`, where `below` additionally refuses to look forward at a higher-numbered tag.
+
+    **Ancestry, not just a smaller number.** A `build-N` tag on some other branch is not this
+    build's predecessor, and diffing against it would ship an arbitrary set of notes.
+    """
+    for number in reversed(build_tags()):
+        if below is not None and number >= below:
+            continue
+        tag = f"build-{number}"
+        if is_strict_ancestor(tag, at):
+            return tag
+    return ""
+
+
 def previous_build_tag(before: int) -> str:
-    below = [n for n in build_tags() if n < before]
-    return f"build-{below[-1]}" if below else ""
+    return resolve_since(f"build-{before}", below=before)
 
 
 def notes_in_tree(rev: str) -> set[str]:
@@ -185,9 +257,69 @@ def added_between(base: str, head: str) -> list[str]:
 
     `--diff-filter=A` and not "changed": a branch must not answer the check by editing a note
     another branch already shipped.
+
+    **A rename reports as `R`, not `A`, and that is load-bearing rather than incidental** (review
+    F2). It means a pull request that only moves an existing note answers this check with nothing,
+    and is refused — which is the right answer, because moving somebody else's sentence is not
+    writing your own. `test_check_refuses_a_rename_only_change` pins it so a future `--find-renames`
+    flag cannot quietly turn a tidy-up into a passing code change.
     """
     listing = git("diff", "--name-only", "--diff-filter=A", base, head, "--", NOTES_DIR)
     return [p for p in listing.splitlines() if is_note_path(p)]
+
+
+def renamed_between(since: str, at: str) -> dict[str, str]:
+    """new path -> old path, for note files git considers renamed across `since..at`.
+
+    ── Why the boundary cannot be a set of paths alone (review F2) ─────────────────────────────
+    `compile` subtracts the note files present at `since` from those present at `at`. A rename
+    puts a path in the second set that is not in the first, so a note shipped by build 50 and
+    tidied into a new filename by build 53 **ships its line a second time** — and the whole claim
+    of this file is that a line ships exactly once. The line de-duplication does not catch it:
+    there is only one copy of the sentence in the build being compiled.
+
+    A rename-only pull request is already refused by `check` (see `added_between`), so the shape
+    that reaches here is the realistic one: a rename riding alongside a legitimate new note, which
+    is exactly what a housekeeping pull request looks like in a directory that gains a file per
+    merge forever.
+
+    Rename detection is git's, `-M`, on by default for `git diff` and named explicitly here so it
+    cannot be turned off by a config somewhere. A rename that also **rewrites** the sentence falls
+    below git's similarity threshold and reports as delete-plus-add, so it ships again — correct,
+    arguably, since a rewritten sentence is a new statement, and stated in
+    `docs/whats-new/README.md` rather than left to be discovered.
+    """
+    raw = git("diff", "-M", "--name-status", "--diff-filter=R", since, at, "--", NOTES_DIR,
+              allow_failure=True) if since else ""
+    moved: dict[str, str] = {}
+    for line in raw.splitlines():
+        fields = line.split("\t")
+        # `R097<TAB>old<TAB>new`. Anything else is not a rename record and is skipped rather than
+        # guessed at.
+        if len(fields) == 3 and fields[0].startswith("R"):
+            moved[fields[2]] = fields[1]
+    return moved
+
+
+def retracted(when: dict[str, int], present_at: set[str]) -> list[str]:
+    """Notes written since the boundary and then deleted before the build — retractions (F6).
+
+    **Deleting an unshipped note is how a line is taken back**, and it is the only way: nothing
+    else in this mechanism can withdraw a sentence once it is committed. The compile's set
+    difference already implements it — a file that is not present at `at` contributes nothing —
+    so this function does not change the outcome. It exists to make the outcome *visible*.
+
+    Silence is the objection review F6 raised, and it is a fair one: a housekeeping pull request
+    that prunes the directory would drop a real tester-facing line, exit 0, and leave the only
+    evidence in a diff nobody re-reads. So `compile` prints these to stderr beside the `internal:`
+    lines it drops, and the release log says which sentences were withdrawn.
+
+    Computed from data already gathered — the `git log --diff-filter=A` walk `added_when` does —
+    so it costs no extra call. Note that `git diff --diff-filter=D` would NOT answer this: a note
+    added and deleted entirely inside the range never existed at `since` and does not exist at
+    `at`, so it appears in no such diff at all. That is exactly the retraction case.
+    """
+    return sorted(set(when) - present_at)
 
 
 def added_when(since: str, at: str) -> dict[str, int]:
@@ -246,17 +378,57 @@ def read_lines(path: str, rev: str = "") -> list[str]:
 def is_internal(line: str) -> bool:
     """The escape hatch, matched at the start and case-insensitively.
 
-    Anchored: a line that merely mentions the word is a real note, and `in` would swallow it.
+    **Anchored, and tested rather than merely asserted here.** A tester-voice line is free to use
+    the word — "The sync queue now shows an internal: prefix on rows it could not send" is a real
+    note — and a containment test would swallow it, dropping a shipped feature from the changelog
+    with `check` still green and `compile` still exit 0. Review F4 mutated `startswith` to `in` and
+    the whole suite stayed green; `test_check_accepts_the_escape_hatch` now kills that mutant.
     """
     return line.lower().startswith("internal:")
 
 
 # ── compile ────────────────────────────────────────────────────────────────────────────────────
 
-def compile_notes(since: str, at: str) -> tuple[str, list[str], list[str]]:
-    """Returns (text, visible lines, internal lines) for the build minted at `at`."""
-    unshipped = sorted(notes_in_tree(at) - notes_in_tree(since))
+class Compiled:
+    """What one compile found. A record rather than a widening tuple — `compile_notes` now has
+    four things to say and a five-slot return is where a caller starts unpacking in the wrong
+    order."""
+
+    def __init__(self, text: str, visible: list[str], internal: list[str],
+                 withdrawn: list[str], moved: dict[str, str]) -> None:
+        self.text = text
+        self.visible = visible
+        self.internal = internal
+        self.withdrawn = withdrawn
+        self.moved = moved
+
+
+def compile_notes(since: str, at: str) -> Compiled:
+    """The changelog for the build minted at `at`, given that `since` is the last build's commit.
+
+    ── What "unshipped" means, exactly ────────────────────────────────────────────────────────
+    Three subtractions, and each is a separate claim about the mechanism:
+
+      * present at `at`, minus present at `since` — the boundary itself. A note that kept its
+        path is excluded whatever was done to its contents, so rewording a shipped line does not
+        re-announce it.
+      * minus anything git reports as a RENAME of a note that was present at `since` (review F2).
+        Without this a tidy-up that moves an old filename re-ships a sentence testers already
+        read, and "no line ships twice" — asserted in this module's own docstring, in the ruling
+        and in the pull request — would be false.
+      * files that were added since `since` and then deleted are simply absent from the first
+        set, which is the retraction path. It changes nothing here and is REPORTED, because a
+        withdrawn sentence disappearing silently is review F6.
+    """
+    present_at = notes_in_tree(at)
+    moved = renamed_between(since, at)
+    already = notes_in_tree(since)
+    # A renamed note is the same note. Subtracting its NEW path is what keeps its line from being
+    # published a second time under a different filename.
+    renamed_from_shipped = {new for new, old in moved.items() if old in already}
+    unshipped = sorted(present_at - already - renamed_from_shipped)
     when = added_when(since, at)
+    withdrawn = retracted(when, present_at)
     # Newest note first, so the thing a tester just got is the first thing they read. Ties broken
     # by path so two notes added in one merge -- which is every note added by the same PR -- come
     # out in the same order every time.
@@ -270,14 +442,16 @@ def compile_notes(since: str, at: str) -> tuple[str, list[str], list[str]]:
             if is_internal(line):
                 internal.append(f"{path}: {line}")
                 continue
-            # Two branches can independently describe the same shipped behavior. Saying it twice
-            # in one changelog is worse than saying it once.
+            # Two branches can independently describe the same shipped behavior — one file each,
+            # so nothing above catches it. Saying it twice in one changelog is worse than saying
+            # it once. Pinned by `test_compile_says_a_repeated_line_once`; without a test this is
+            # a comment, and review F5 showed the mutant surviving.
             if line in seen:
                 continue
             seen.add(line)
             visible.append(line)
 
-    return render(visible), visible, internal
+    return Compiled(render(visible), visible, internal, withdrawn, moved)
 
 
 def render(visible: list[str]) -> str:
@@ -326,12 +500,15 @@ def cmd_compile(arguments: list[str]) -> None:
             fail(f"usage: whats_new.py compile [--since <rev>] [--at <rev>] "
                  f"[--for-build <N>] [--out <path>]  (got {flag!r})", 2)
 
+    explicit_since = bool(since)
+
     if for_build:
         at = f"build-{for_build}"
         if not exists(at):
             fail(f"no tag {at} — cannot say what build {for_build} shipped without the commit "
                  "it shipped from", 5)
         since = previous_build_tag(for_build)
+        explicit_since = False
 
     if since and not exists(since):
         # Loudly, not by treating it as "the beginning of time": that would silently re-ship every
@@ -340,6 +517,22 @@ def cmd_compile(arguments: list[str]) -> None:
              "cause; the release job checks out with fetch-depth: 0 for exactly this.", 5)
     if not exists(at):
         fail(f"--at {at!r} is not a commit this checkout has", 5)
+
+    # ── The boundary, when the caller did not name one (review F1) ─────────────────────────────
+    # The release job says only `--at $GITHUB_SHA` and lets this decide, because the decision has a
+    # trap in it that a shell one-liner walked straight into: the newest `build-N` tag can be
+    # sitting on the very commit being built, after a re-run of a job that uploaded and then died
+    # in the processing wait. `resolve_since` walks back past it. See that function.
+    if not since:
+        since = resolve_since(at)
+
+    # An explicitly named boundary is still checked, and refused rather than quietly walked back:
+    # a caller that asked for a diff of a commit against itself has a broken assumption somewhere,
+    # and silently substituting a different revision would hide it.
+    if explicit_since and same_commit(since, at):
+        fail(f"--since {since!r} and --at {at!r} are the same commit, so there is nothing to "
+             "compile and the result would be a false \"no tester-visible changes\". Omit "
+             "--since and let the tool resolve the newest build tag strictly behind --at.", 9)
     if not notes_directory_exists(at):
         # Exit 8, and the number is load-bearing: the backstop treats it as "leave this build
         # alone", where every other failure is a red run. See `notes_directory_exists`.
@@ -347,18 +540,23 @@ def cmd_compile(arguments: list[str]) -> None:
              "mechanism and nothing here can say what it shipped. Refusing rather than "
              "publishing \"no tester-visible changes\", which for such a build is false.", 8)
 
-    text, visible, internal = compile_notes(since, at)
+    result = compile_notes(since, at)
 
     print(f"compiling notes for {at} since {since or '(no previous build tag)'}", file=sys.stderr)
-    for line in internal:
+    for line in result.internal:
         print(f"  internal (not shipped): {line}", file=sys.stderr)
-    print(f"  {len(visible)} tester-visible line(s), {len(text)} characters", file=sys.stderr)
+    for path, old in sorted(result.moved.items()):
+        print(f"  renamed (not re-shipped): {old} -> {path}", file=sys.stderr)
+    for path in result.withdrawn:
+        print(f"  withdrawn (deleted before this build): {path}", file=sys.stderr)
+    print(f"  {len(result.visible)} tester-visible line(s), {len(result.text)} characters",
+          file=sys.stderr)
 
     if out:
         with open(out, "w", encoding="utf-8") as handle:
-            handle.write(text)
+            handle.write(result.text)
         print(f"wrote {out}", file=sys.stderr)
-    print(text)
+    print(result.text)
 
 
 # ── check ──────────────────────────────────────────────────────────────────────────────────────
@@ -446,7 +644,8 @@ def cmd_check(arguments: list[str]) -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        fail("usage: whats_new.py {check|compile|latest-build-tag|previous-build-tag}", 2)
+        fail("usage: whats_new.py "
+             "{check|compile|boundary-for|latest-build-tag|previous-build-tag}", 2)
     command = sys.argv[1]
     if command == "compile":
         cmd_compile(sys.argv[2:])
@@ -454,6 +653,12 @@ def main() -> None:
         cmd_check(sys.argv[2:])
     elif command == "latest-build-tag":
         print(latest_build_tag())
+    elif command == "boundary-for":
+        if len(sys.argv) != 3:
+            fail("usage: whats_new.py boundary-for <rev>", 2)
+        if not exists(sys.argv[2]):
+            fail(f"{sys.argv[2]!r} is not a commit this checkout has", 5)
+        print(resolve_since(sys.argv[2]))
     elif command == "previous-build-tag":
         if len(sys.argv) != 3:
             fail("usage: whats_new.py previous-build-tag <N>", 2)

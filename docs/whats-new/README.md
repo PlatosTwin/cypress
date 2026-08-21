@@ -37,6 +37,27 @@ tester-visible effect. Write the reason instead, prefixed `internal:`
 That satisfies the check and is left out of the compiled notes. It is deliberately visible in the
 diff: claiming "no tester-visible change" is a judgement a reviewer should get to disagree with.
 
+## Taking a line back
+
+**Delete the file.** That is the retraction mechanism and the only one: the release job compiles
+the notes *present* at the commit it is building, so a note deleted before its build never reaches
+a tester. Do it whenever a feature slips out of a release, or a line turns out to overclaim. The
+compile prints `withdrawn (deleted before this build)` to the release log for each one, so the
+withdrawal is on the record rather than only in a diff nobody re-reads.
+
+Once a line has actually shipped, deleting its file does nothing — that build is out. Say the
+correction in a new note.
+
+## Renaming and rewording
+
+Renaming a note is safe: git reports the move and the line is not published a second time. So is
+editing one in place. **Doing both at once is not** — a rename that also rewrites the sentence
+falls below git's similarity threshold, reads as a delete plus a new file, and the sentence ships
+again. If you need to reword a note that has already shipped, leave its filename alone.
+
+A pull request that *only* renames notes is refused by the check, deliberately: moving somebody
+else's sentence is not writing your own.
+
 ## Prose-only pull requests
 
 A change to `docs/`, `graphify-out/` or a root `*.md` mints no build, so it needs no note. It may
