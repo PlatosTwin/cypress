@@ -239,6 +239,24 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
+**City-inventory disputes.** Owner ruling, 2026-08-21 (pending splice): city data must be
+disputable from the UI — the wrong-species and no-tree-here flags that community records already
+offer, extended to city rows. Disputes are stored app-side in the writable database; the city
+inventory itself stays read-only, and whether or how anything ever syncs back to a city's own
+dataset is explicitly deferred. This reverses the "community rows only" deferral recorded in
+`SpeciesClaim.swift`'s header — that header cites the missing override table and policy as the
+reason, and this ruling supplies the policy's first half. Needs the writable-schema migration seat
+after the §3.4 round's, and an offer-state change on the tree profile. Sequenced after §3.4
+lands; exact slot at scheduling.
+
+**Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
+user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
+itself — "This is that almanac's 'walk the nine' list, one tree at a time" (screen 14) and its
+kin — are holdovers from a demo-era voice and come out. The audit enumerates every candidate line
+with its screen and source location, then brings them to the owner as batched decision rounds
+(copy on mock-specified screens is constraint-21 territory); nothing is reworded silently. Not
+scheduled.
+
 **Seed inventory expansion beyond NYC.** Owner requests, 2026-08-21: add street trees to the data
 seed for **Oakland and Los Angeles**, and then also **Dallas, Phoenix, Philadelphia, San Antonio,
 San Diego, Jacksonville, Austin, Charlotte, Columbus, Seattle, Denver, and Nashville**. Each city
