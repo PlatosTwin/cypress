@@ -73,17 +73,34 @@ struct PhotoZoom: Equatable {
         return CGSize(width: image.width * ratio, height: image.height * ratio)
     }
 
+    /// An overflow smaller than this is no overflow. See `panLimit`.
+    ///
+    /// Half a point, which is under one device pixel on every screen this app runs on — so the
+    /// slack it discards is slack nothing could be drawn in.
+    private static let negligibleOverflow: CGFloat = 0.5
+
     /// How far, on each axis, the center of the photograph may travel from the center of the box.
     ///
     /// Exactly the overflow: the scaled picture is `content × scale`, the window onto it is `box`,
     /// and half of whatever the first exceeds the second by is how far it can slide before an edge
     /// comes into view. An axis with no overflow gets zero — a photograph narrower than the display
-    /// stays centered horizontally however far it is zoomed, because there is nothing off the side
+    /// stays centered on that axis however far it is zoomed, because there is nothing off the side
     /// to go and look at.
+    ///
+    /// **The `negligibleOverflow` floor is not decoration, and `ZoomTests` found it.** `fittedSize`
+    /// divides and multiplies, so a photograph fitted to exactly the width of the box comes back as
+    /// 392.999999999999 94 pt rather than 393 — and half of that discrepancy is a legal pan. The
+    /// visible consequence is nil and the semantic one is not: `isAtRest` went false after a pinch
+    /// out and back, so a picture that was exactly where it started reported that it was not, and
+    /// anything that came to key off that would have been keying off floating-point residue.
     static func panLimit(content: CGSize, scale: CGFloat, in box: CGSize) -> CGSize {
-        CGSize(
-            width: max(0, (content.width * scale - box.width) / 2),
-            height: max(0, (content.height * scale - box.height) / 2)
+        func limit(_ content: CGFloat, _ box: CGFloat) -> CGFloat {
+            let overflow = (content * scale - box) / 2
+            return overflow > negligibleOverflow ? overflow : 0
+        }
+        return CGSize(
+            width: limit(content.width, box.width),
+            height: limit(content.height, box.height)
         )
     }
 
