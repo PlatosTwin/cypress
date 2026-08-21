@@ -6,6 +6,8 @@ appstore_connect.py -- the App Store Connect questions CI has to ask, and nothin
     expire-others <build>  expire every OTHER build, leaving <build> the only one testable
     status                 print every build's real state, which the web UI summarizes lossily
     feedback               every word a tester or customer has sent about this app
+    set-whats-new <build> --file <path>   put that text in TestFlight's "What to Test"
+    builds-missing-notes   every live build whose "What to Test" is still empty
 
 WHY THIS EXISTS AT ALL. `xcrun altool` can upload but cannot answer either question, and both
 have bitten already: the repo's committed CURRENT_PROJECT_VERSION is 1 while App Store Connect
@@ -216,6 +218,156 @@ def cmd_expire_others(keep: str) -> None:
         print(f"expired build {version}")
         expired += 1
     print(f"kept build {keep_n}; expired {expired} other(s)")
+
+
+# ── TestFlight's "What to Test" ────────────────────────────────────────────────────────────────
+#
+# `xcrun altool` cannot set this field at all -- it uploads a binary and knows nothing about the
+# metadata hanging off it -- which is why the release workflow uploads with altool and then comes
+# back through the API. The text itself is compiled by `Tools/whats_new.py`; nothing here decides
+# what to say.
+#
+# The field lives on a `betaBuildLocalization`, one per locale, and a build starts with none. So
+# the write is "update the one that is there, or create it", and both halves have to exist.
+
+WHATS_NEW_LOCALE = "en-US"
+
+# App Store Connect's own ceiling. Checked here as well as in `whats_new.py` because this command
+# takes a file from whoever calls it: a 4001-character body comes back as a 409 whose message is
+# about the request, at the end of a forty-minute release job.
+WHATS_NEW_LIMIT = 4000
+
+
+def beta_localizations(bearer: str, build_id: str) -> list[dict]:
+    query = urllib.parse.urlencode({"limit": "50"})
+    return call("GET", f"/builds/{build_id}/betaBuildLocalizations?{query}",
+                bearer).get("data", [])
+
+
+def build_by_version(bearer: str, version: str) -> dict | None:
+    for build in all_builds(bearer, app_id(bearer)):
+        if build.get("attributes", {}).get("version") == version:
+            return build
+    return None
+
+
+def whats_new_of(localizations: list[dict]) -> str:
+    """The en-US text, or the only locale's text when there is exactly one and it is not en-US.
+
+    An app with one non-en-US localization is not this app, but reading "empty" off it and then
+    stamping a second locale would leave two changelogs disagreeing. Prefer the exact locale;
+    fall back to the singleton; otherwise report empty and let the write create en-US.
+    """
+    chosen = pick_localization(localizations)
+    if chosen is None:
+        return ""
+    return chosen.get("attributes", {}).get("whatsNew") or ""
+
+
+def pick_localization(localizations: list[dict]) -> dict | None:
+    for item in localizations:
+        if item.get("attributes", {}).get("locale") == WHATS_NEW_LOCALE:
+            return item
+    if len(localizations) == 1:
+        return localizations[0]
+    return None
+
+
+def cmd_set_whats_new(arguments: list[str]) -> None:
+    """Put the compiled notes on a build, then READ THEM BACK.
+
+    The read-back is not ceremony. A PATCH that 200s having stored something other than what was
+    sent -- truncated, or applied to a different locale than the one meant -- is indistinguishable
+    from success at the call site, and this project's whole verification discipline is that an
+    exit code is not evidence. The comparison is against the exact bytes sent.
+    """
+    if not arguments:
+        fail("usage: appstore_connect.py set-whats-new <build-number> --file <path>", 2)
+    version = arguments.pop(0)
+    path = ""
+    while arguments:
+        flag = arguments.pop(0)
+        if flag == "--file" and arguments:
+            path = arguments.pop(0)
+        else:
+            fail(f"usage: appstore_connect.py set-whats-new <build-number> --file <path>  "
+                 f"(got {flag!r})", 2)
+    if not path:
+        fail("set-whats-new needs --file <path>: the notes are compiled by "
+             "Tools/whats_new.py, never written here", 2)
+    try:
+        int(version)
+    except ValueError:
+        fail(f"build number must be an integer, got {version!r}", 2)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().strip()
+    except OSError as error:
+        fail(f"cannot read {path}: {error}", 4)
+        return
+    if not text:
+        # Never silently. The owner's ruling is that every build ships a changelog, and
+        # `whats_new.py` already has a sentence for "nothing tester-visible changed" -- an empty
+        # file here means the compile step went wrong, not that there is nothing to say.
+        fail(f"{path} is empty. Every build ships a changelog (see "
+             "docs/rulings-pending/testflight-changelog.md); an empty compile is a bug in "
+             "Tools/whats_new.py, not a build with nothing to say.", 2)
+    if len(text) > WHATS_NEW_LIMIT:
+        fail(f"{path} is {len(text)} characters; App Store Connect holds {WHATS_NEW_LIMIT}. "
+             "Tools/whats_new.py trims to that limit, so this file did not come from it.", 2)
+
+    bearer = token()
+    build = build_by_version(bearer, version)
+    if build is None:
+        fail(f"build {version} is not in App Store Connect", 6)
+        return
+    build_id = build["id"]
+
+    existing = pick_localization(beta_localizations(bearer, build_id))
+    if existing is None:
+        call("POST", "/betaBuildLocalizations", bearer,
+             {"data": {"type": "betaBuildLocalizations",
+                       "attributes": {"locale": WHATS_NEW_LOCALE, "whatsNew": text},
+                       "relationships": {"build": {"data": {"type": "builds",
+                                                            "id": build_id}}}}})
+        print(f"created the {WHATS_NEW_LOCALE} notes on build {version}")
+    else:
+        call("PATCH", f"/betaBuildLocalizations/{existing['id']}", bearer,
+             {"data": {"type": "betaBuildLocalizations", "id": existing["id"],
+                       "attributes": {"whatsNew": text}}})
+        print(f"updated the {existing.get('attributes', {}).get('locale')} notes "
+              f"on build {version}")
+
+    stored = whats_new_of(beta_localizations(bearer, build_id))
+    if stored.strip() != text:
+        fail("the write reported success but App Store Connect holds different text.\n"
+             f"--- sent ({len(text)} chars) ---\n{text}\n"
+             f"--- stored ({len(stored)} chars) ---\n{stored}", 7)
+    print(f"build {version} now carries {len(text)} characters of release notes:")
+    for line in text.splitlines():
+        print(f"  {line}")
+
+
+def cmd_builds_missing_notes() -> None:
+    """Every non-expired build with no "What to Test", newest first, one number per line.
+
+    For the backstop workflow. Only live builds: a build nobody can install any more is not worth
+    a changelog, and expiring is what the release job does to all the others.
+    """
+    bearer = token()
+    missing = []
+    for build in all_builds(bearer, app_id(bearer)):
+        attributes = build.get("attributes", {})
+        if attributes.get("expired"):
+            continue
+        version = attributes.get("version")
+        if not version:
+            continue
+        if not whats_new_of(beta_localizations(bearer, build["id"])).strip():
+            missing.append(version)
+    for version in missing:
+        print(version)
+    print(f"{len(missing)} live build(s) with no release notes", file=sys.stderr)
 
 
 def cmd_status() -> None:
@@ -629,6 +781,10 @@ def main() -> None:
         if len(sys.argv) != 3:
             fail("usage: appstore_connect.py expire-others <build-number>", 2)
         cmd_expire_others(sys.argv[2])
+    elif command == "set-whats-new":
+        cmd_set_whats_new(sys.argv[2:])
+    elif command == "builds-missing-notes":
+        cmd_builds_missing_notes()
     else:
         fail(f"unknown command {command!r}", 2)
 

@@ -1,0 +1,107 @@
+# Every TestFlight build ships a changelog — including the ones the release job could not finish.
+#
+# WHAT THIS IS FOR. `testflight.yml` writes "What to Test" as part of the release job, and it can
+# only do that once App Store Connect can see the build. Processing is asynchronous and Apple owes
+# nobody a schedule: the release job waits twenty minutes for the build to appear and then fails,
+# loudly and on purpose. But the build itself is fine — it finishes processing an hour later and
+# goes out to testers, carrying no notes, from a run that has already gone red and been read.
+#
+# That is the one gap in the release path, and this closes it. Nothing here duplicates the
+# compile: `Tools/whats_new.py compile --for-build N` re-derives build N's notes from `build-N`
+# and `build-(N-1)`, the same two tags the release job used, so a build stamped here says exactly
+# what it would have said an hour earlier. The tag is created immediately after the upload for
+# precisely this reason.
+#
+# IT WRITES NOTHING TO THE REPOSITORY. No commit, no marker file, no state of its own — the two
+# tags and the notes already on the build in App Store Connect are the whole of what it reads, and
+# the only thing it changes is that field. Run it twice and the second run finds nothing to do.
+#
+# COST. Ubuntu, no Xcode, four API reads and at most one write: about a minute. Six-hourly rather
+# than hourly because the case it covers is rare and never urgent — a build's notes appearing
+# within six hours of the build is the same day a tester sees either.
+name: TestFlight notes backstop
+
+on:
+  schedule:
+    # 06:10 and 18:10 UTC. Ten past, not on the hour: GitHub's scheduler queues everything asked
+    # for at :00 and runs it late, which for a job this small is most of its runtime.
+    - cron: '10 6,18 * * *'
+  workflow_dispatch:
+
+# Read-only against the repository. The one write this job performs is to App Store Connect,
+# through the API key, and nothing here needs a token that can change a ref.
+permissions:
+  contents: read
+
+concurrency:
+  group: whats-new-backstop
+  cancel-in-progress: false
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # `fetch-depth: 0` — this job's entire input is `build-N` and `build-(N-1)`, and a shallow
+      # clone has neither. `whats_new.py` refuses rather than guessing when a revision is missing,
+      # so a shallow clone here would be a red run rather than a wrong changelog; the depth is
+      # what makes it a green one.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Stamp any live build whose notes are empty
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # A venv for the reason asc-feedback.yml gives: the runner's Python is externally
+          # managed, and --break-system-packages trades the runner's toolchain for one command.
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
+
+          # `builds-missing-notes` prints one build number per line on stdout and its count on
+          # stderr, so the redirect below captures the list and nothing else.
+          "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py builds-missing-notes \
+            > "$RUNNER_TEMP/missing.txt"
+          echo "live builds with no release notes:"; sed 's/^/  /' "$RUNNER_TEMP/missing.txt"
+
+          if [ ! -s "$RUNNER_TEMP/missing.txt" ]; then
+            echo "nothing to do — every live build already carries its changelog"
+            exit 0
+          fi
+
+          # `while read` over a file, not `for n in $(...)`: CLAUDE.md's word-splitting family.
+          failed=0
+          while IFS= read -r n; do
+            [ -n "$n" ] || continue
+            echo "── build $n ──────────────────────────────────────────"
+            if ! git rev-parse --verify --quiet "build-$n^{commit}" >/dev/null; then
+              # Not an error, and deliberately not a silent skip either. A build with no tag was
+              # not minted by this pipeline — a hand upload, or a release whose tagging step was
+              # rejected — and this job cannot honestly say what is in it. Guessing would put a
+              # changelog belonging to some other build in front of testers.
+              echo "::warning::no tag build-$n, so this run cannot say what build $n contains. Left without notes on purpose rather than stamped with a guess."
+              continue
+            fi
+            if ! "$RUNNER_TEMP/venv/bin/python" Tools/whats_new.py compile \
+                   --for-build "$n" --out "$RUNNER_TEMP/whats-new-$n.txt"; then
+              echo "::error::could not compile the notes for build $n"
+              failed=1
+              continue
+            fi
+            if ! "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py set-whats-new \
+                   "$n" --file "$RUNNER_TEMP/whats-new-$n.txt"; then
+              echo "::error::could not publish the notes for build $n"
+              failed=1
+              continue
+            fi
+            echo "build $n stamped"
+          done < "$RUNNER_TEMP/missing.txt"
+
+          # One build failing must not hide the others' results, so the loop continues and the
+          # verdict is taken here. Red, not a warning: a live build with no changelog is the thing
+          # the ruling forbids, and this job is the last line that would notice.
+          [ "$failed" -eq 0 ] || { echo "at least one build could not be stamped — see the errors above"; exit 1; }
