@@ -18,12 +18,25 @@ import (
 // are the Swift property names — rather than a shape written to suit the handler. A test that
 // invents its own wire format proves the handler agrees with the test.
 
+// codeOf renders a per-item error code readably.
+//
+// `syncResult.Error` is a `*apierr.Code`, and `%v` on a pointer prints an address — which is what a
+// failing assertion here printed on its first run, so the red said "error = 0x14000123abc, want
+// validation_failed" and named neither the code it got nor the defect. A red-proof whose message
+// cannot be read is not a red-proof.
+func codeOf(code *apierr.Code) string {
+	if code == nil {
+		return "<none>"
+	}
+	return string(*code)
+}
+
 // communityKinds is the ten values 002 added, with a payload the client would actually send.
 //
 // Table-driven because the property under test is a property of the *set*: every one of them is
 // accepted and recorded. Listing them by hand in ten tests would let the eleventh be added with no
 // test, which is exactly how a kind ends up accepted by the CHECK and refused by the map.
-func communityKinds(tree, photo, flag uuid.UUID, device uuid.UUID) []struct {
+func communityKinds(tree, photo, flag uuid.UUID) []struct {
 	Kind    string
 	Payload string
 } {
@@ -39,7 +52,7 @@ func communityKinds(tree, photo, flag uuid.UUID, device uuid.UUID) []struct {
 		{"record_review_dismissal", `{"treeID":"` + tree.String() + `","flagID":"` + flag.String() + `"}`},
 		{"photo_vote", `{"treeID":"` + tree.String() + `","photoID":"` + photo.String() + `","vote":1}`},
 		{"photo_withdrawal", `{"treeID":"` + tree.String() + `","photoID":"` + photo.String() + `"}`},
-		{"hazard_redirect", `{"event":{"treeID":"` + tree.String() + `","category":"limb","shownAt":"2026-08-20T10:00:00Z"}}`},
+		{"hazard_redirect", `{"event":{"treeID":"` + tree.String() + `","category":"hanging_or_broken_limb","shownAt":"2026-08-20T10:00:00Z"}}`},
 	}
 }
 
@@ -48,11 +61,10 @@ func communityKinds(tree, photo, flag uuid.UUID, device uuid.UUID) []struct {
 // client's queue could not have held one anyway.
 func TestEveryCommunityKindIsAcceptedAndRecorded(t *testing.T) {
 	h := newHarness(t)
-	deviceUUID := uuid.New()
-	deviceToken := h.registerDeviceToken(t, deviceUUID)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
 	tree, photo, flag := uuid.New(), uuid.New(), uuid.New()
 
-	for _, kind := range communityKinds(tree, photo, flag, deviceUUID) {
+	for _, kind := range communityKinds(tree, photo, flag) {
 		key := uuid.New()
 		result := h.syncOne(t, deviceToken, map[string]any{
 			"client_uuid": key, "kind": kind.Kind, "tree_uuid": tree,
@@ -60,7 +72,7 @@ func TestEveryCommunityKindIsAcceptedAndRecorded(t *testing.T) {
 			"payload":     json.RawMessage(kind.Payload),
 		})
 		if result.Status != "applied" {
-			t.Fatalf("%s: status = %q (%v), want applied", kind.Kind, result.Status, result.Error)
+			t.Fatalf("%s: status = %q (%s), want applied", kind.Kind, result.Status, codeOf(result.Error))
 		}
 
 		var storedKind string
@@ -123,7 +135,7 @@ func TestAnUnknownKindIsStillRefused(t *testing.T) {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
 	if result.Error == nil || *result.Error != apierr.ValidationFailed {
-		t.Fatalf("error = %v, want validation_failed", result.Error)
+		t.Fatalf("error = %s, want validation_failed", codeOf(result.Error))
 	}
 }
 
@@ -154,7 +166,7 @@ func TestAddTreeThroughSyncPutsTheTreeOnTheMap(t *testing.T) {
 
 	result := h.syncOne(t, deviceToken, addTreeItem(tree, 37.3382, -121.8863))
 	if result.Status != "applied" {
-		t.Fatalf("status = %q (%v), want applied", result.Status, result.Error)
+		t.Fatalf("status = %q (%s), want applied", result.Status, codeOf(result.Error))
 	}
 
 	var lat, lon float64
@@ -227,7 +239,7 @@ func TestAddTreeDisagreeingWithItselfIsRefused(t *testing.T) {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
 	if result.Error == nil || *result.Error != apierr.ValidationFailed {
-		t.Fatalf("error = %v, want validation_failed", result.Error)
+		t.Fatalf("error = %s, want validation_failed", codeOf(result.Error))
 	}
 
 	for _, id := range []uuid.UUID{tree, other} {
@@ -264,7 +276,7 @@ func TestAddTreeThroughSyncStillRunsTheProximityDedupe(t *testing.T) {
 			"`POST /trees` exists to refuse", result.Status)
 	}
 	if result.Error == nil || *result.Error != apierr.Conflict {
-		t.Fatalf("error = %v, want conflict", result.Error)
+		t.Fatalf("error = %s, want conflict", codeOf(result.Error))
 	}
 	if result.Error.Retryable() {
 		t.Fatal("conflict must not be retryable; a retry cannot change this answer")
@@ -297,8 +309,8 @@ func TestReplayingAnAddTreeIsDuplicateNotAConflictWithItself(t *testing.T) {
 	}
 	second := h.syncOne(t, deviceToken, item)
 	if second.Status != "duplicate" {
-		t.Fatalf("status = %q (%v), want duplicate — the replay matched the row it created",
-			second.Status, second.Error)
+		t.Fatalf("status = %q (%s), want duplicate — the replay matched the row it created",
+			second.Status, codeOf(second.Error))
 	}
 }
 
@@ -349,7 +361,7 @@ func TestACommunityKindFromAnAccountIsRecordedAsTheAccounts(t *testing.T) {
 			uuid.New().String() + `","vote":-1}`),
 	})
 	if result.Status != "applied" {
-		t.Fatalf("status = %q (%v), want applied", result.Status, result.Error)
+		t.Fatalf("status = %q (%s), want applied", result.Status, codeOf(result.Error))
 	}
 
 	var userID *uuid.UUID
@@ -386,7 +398,7 @@ func TestACommunityKindFromAnotherAccountIsForbidden(t *testing.T) {
 		t.Fatalf("status = %q, want failed", result.Status)
 	}
 	if result.Error == nil || *result.Error != apierr.Forbidden {
-		t.Fatalf("error = %v, want forbidden", result.Error)
+		t.Fatalf("error = %s, want forbidden", codeOf(result.Error))
 	}
 }
 
