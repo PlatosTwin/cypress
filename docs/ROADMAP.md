@@ -247,7 +247,10 @@ trees: checkboxes for nature of issue (pin in wrong location; wrong species; wro
 and a notes field; plus a missing-tree defect for a tree that is on city property but absent from
 the city database, whose entry point cannot be a tree profile. Flagged trees get a small badge
 showing their flags, and the filters box gains a "trees with data issues" filter. Community trees:
-location and species disputes only. Disputes are stored app-side in the writable database; the
+location and species disputes only — and the existing community flagging view is itself not
+quality (owner, same day: bad copy throughout, and a flag cannot be retracted by its author),
+so the round gives community flagging a detailed design pass with owner decision rounds rather
+than inheriting the shipped flow. Disputes are stored app-side in the writable database; the
 city inventory stays read-only, and sync-back to the city is explicitly deferred. Reverses the
 "community rows only" deferral in `SpeciesClaim.swift`'s header. Needs the writable-schema
 migration seat after the §3.4 round's. Sequenced after §3.4 lands; exact slot at scheduling.
