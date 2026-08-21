@@ -59,6 +59,22 @@ on:
     # changed path to match, and the docs rule above quietly stops working — a deploy per doc
     # edit, and nothing anywhere saying why. It is generated output ABOUT the code, read by
     # nothing in the app, the suite or the build.
+    #
+    # **`docs/whats-new/` is inside `docs/**` and there is no separate entry for it, deliberately.**
+    # It holds the release notes (owner ruling 2026-08-21,
+    # `docs/rulings-pending/testflight-changelog.md`): one sentence per pull request for
+    # TestFlight's "What to Test", read by the `release` job and by nothing else — not the app, not
+    # the suite, not the archive. Prose, in every sense this list means by the word, so `docs/**`
+    # already covers it and a second entry would only be a second copy of the same fact.
+    #
+    # That containment is doing real work rather than saving a line. It is what makes a push
+    # carrying ONLY a note — which is what a prose merge's optional note is — skip the run instead
+    # of running the whole suite and then minting a build byte-identical to the last one, which is
+    # #212 and #31 arriving through the very mechanism meant to describe builds. **The notes
+    # directory must therefore stay under `docs/`.** `dist/whats-new/` was the first choice and is
+    # unusable for a different reason worth recording: `/dist/` is git-ignored in full (publisher
+    # output, `.gitignore`), so a note written there is never committed and the compile — which
+    # reads git history and nothing else — would find nothing.
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -138,6 +154,7 @@ jobs:
       shards: ${{ steps.read.outputs.shards }}
       ships: ${{ steps.scope.outputs.ships }}
       tests: ${{ steps.scope.outputs.tests }}
+      notes: ${{ steps.notes.outputs.state }}
     steps:
       # `fetch-depth: 0` because the ships decision below diffs against the previous tip, and a
       # shallow clone does not have it.
@@ -286,6 +303,65 @@ jobs:
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
             echo "shipping — these can affect the app:"; echo "$buildable" | sed 's/^/  /'
+          fi
+
+      # ── Does this pull request carry its release note? ────────────────────────────────
+      # Owner ruling, 2026-08-21: every TestFlight build ships a changelog, compiled from one
+      # tester-voice line per pull request, and CI refuses a code change that does not carry one.
+      # `docs/rulings-pending/testflight-changelog.md` has the ruling and the mechanism;
+      # `docs/whats-new/README.md` is what an author reads.
+      #
+      # **This step never fails the job, and that is deliberate.** `plan` dying takes `unit`, `ui`
+      # and `release` with it, and `gate` — reading a failed plan — would report "plan did not
+      # succeed", burying the one sentence the author needs. So the decision is published as an
+      # output, `gate` refuses on it, and the `::error::` below puts the instruction on the run's
+      # own summary page where it is the first thing visible. The suite still runs; an author gets
+      # the missing note and the test result in one round rather than two.
+      #
+      # **Pull requests only.** The check belongs where the required status check is. On a push it
+      # would be arguing with a merge that already happened, and on `workflow_dispatch` there is no
+      # diff to read — a manual run has no base. Both set `not-required`, which `gate` accepts and
+      # an unset value is not.
+      #
+      # `tests == 'true'` is the trigger, not `ships`: "a non-prose change" is the ruling's own
+      # scope. A test-only or workflow-only pull request runs the suite, mints no build, and still
+      # has to say what a tester will see — which for those is `internal:`, and saying so in the
+      # diff is the point of the escape hatch rather than a loophole in it.
+      - id: notes
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "state=not-required" >> "$GITHUB_OUTPUT"
+            echo "not a pull request — the release note is checked where the required status check is"
+            exit 0
+          fi
+          if [ "${{ steps.scope.outputs.tests }}" != "true" ]; then
+            echo "state=not-required" >> "$GITHUB_OUTPUT"
+            echo "prose-only change — no build is minted, so no release note is required (one is welcome anyway; it waits in docs/whats-new/ for the next build)"
+            exit 0
+          fi
+          # A branch name may contain slashes; a note filename must not, or the suggestion would
+          # name a subdirectory of the notes directory. Read from the environment (see this step's
+          # `env:`) rather than interpolated into the script — a branch name is attacker-
+          # controllable text, and a GitHub expression splices it into the shell SOURCE before the
+          # shell ever sees a quote. Note also that GitHub interpolates expressions anywhere in a
+          # `run:` block, comments included, so one written out here as an example would be
+          # evaluated; an empty one fails the whole file's validation and no checks appear at all.
+          suggestion="docs/whats-new/${HEAD_REF//\//-}.md"
+          # `github.sha` on a pull_request event is the MERGE commit, so base…merge is the net
+          # diff — the same pair `scope` reads above, and for the same reason.
+          if python3 Tools/whats_new.py check \
+               --base "${{ github.event.pull_request.base.sha }}" \
+               --head "${{ github.sha }}" \
+               --example "${suggestion#docs/whats-new/}"; then
+            echo "state=ok" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=missing" >> "$GITHUB_OUTPUT"
+            # One line, because an annotation is one line. The full instructions are in this step's
+            # log immediately above, printed by whats_new.py itself.
+            echo "::error::This change needs a release note. Add ${suggestion} containing one sentence a tester would read — for example \"You can now pinch to zoom a tree's photos.\" If nothing here is tester-visible, write \"internal: <why>\" instead. See docs/whats-new/README.md, and this job's log for the full message."
           fi
 
   # ── The unit suite, and the only place warnings are certified ─────────────────────────
@@ -441,11 +517,12 @@ jobs:
           set -euo pipefail
           plan_result="${{ needs.plan.result }}"
           tests="${{ needs.plan.outputs.tests }}"
+          notes="${{ needs.plan.outputs.notes }}"
           unit="${{ needs.unit.result }}"
           ui="${{ needs.ui.result }}"
-          echo "plan: $plan_result (tests=${tests:-<none>})"
-          echo "unit: $unit"
-          echo "ui:   $ui"
+          echo "plan:  $plan_result (tests=${tests:-<none>}, notes=${notes:-<none>})"
+          echo "unit:  $unit"
+          echo "ui:    $ui"
 
           # **plan is checked FIRST, and the order is the whole safety argument.** If plan dies,
           # `tests` is the empty string — which is not 'true', so unit and ui skip, and the
@@ -477,6 +554,26 @@ jobs:
             echo "prose-only change: the suite was skipped, and skipped for that reason"
           fi
 
+          # ── The release note ────────────────────────────────────────────────────────────
+          # Owner ruling, 2026-08-21: a code change cannot merge without one tester-voice line
+          # for TestFlight's "What to Test". `plan`'s `notes` step decides; this is where the
+          # decision is enforced, because this is the required status check.
+          #
+          # The `case` is not decoration. `needs.plan.outputs.notes` is the EMPTY STRING when the
+          # step did not run, was renamed, or crashed before writing its output — and an empty
+          # string is not 'missing', so a bare `[ "$notes" != "missing" ]` would report success
+          # exactly when the check stopped working. That is the same shape as the `tests` guard
+          # above and the same shape as every false green this file exists to prevent.
+          case "$notes" in
+            ok|missing|not-required) ;;
+            *) echo "::error::plan succeeded but published notes='${notes}' — expected ok, missing or not-required. The release-note check did not run, so nothing here knows whether this change carries its line."; exit 1 ;;
+          esac
+          if [ "$notes" = "missing" ]; then
+            echo "::error::This change needs a release note under docs/whats-new/ — see the 'plan' job's log for the exact file to add, and docs/whats-new/README.md for the rules. If nothing here is tester-visible, a line reading 'internal: <why>' satisfies this."
+            exit 1
+          fi
+          echo "release note: $notes"
+
   # ── Archive, upload, leave exactly one testable build ─────────────────────────────────
   # `needs` both, so a red anywhere stops the upload. GitHub skips a needs-job when any dependency
   # fails, and a skipped job is not a passed job — nothing here has to re-check that the tests were
@@ -507,12 +604,72 @@ jobs:
       # every step's environment except the import step's own `env:` block.
       HAS_PERSISTED_CERT: ${{ secrets.DIST_CERT_P12 != '' && secrets.DIST_CERT_P12_PASSWORD != '' }}
     steps:
+      # `fetch-depth: 0` — and it is the release notes that need it, not the archive. The notes
+      # for this build are "every note file added since the commit the LAST build shipped from",
+      # and the tag naming that commit is only reachable in a full clone.
+      #
+      # **The depth is load-bearing and only recently enforced** (review N1). It is not enough for
+      # the tag REF to be present: a shallow fetch brings the tag and its commit object across, so
+      # the object exists, but the parents do not — and `git merge-base --is-ancestor` answers a
+      # confident "no" past a graft point rather than failing. The boundary then looks absent
+      # instead of unreachable, which used to mean "first build ever", which means every note in
+      # the repository ships at once **and is consumed**, so the next build loses them too. Exit 0
+      # throughout, under a warning whose text reads like the expected first-build message.
+      #
+      # `whats_new.py` now refuses that case — tags exist, none is reachable, and none of them is
+      # merely sitting on this commit — so shortening this line is a red run rather than a silent
+      # wrong changelog. Do not shorten it anyway: the refusal is a backstop for a mistake, not a
+      # licence to make it.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # No simulator: this job archives for a device and never runs a test. Booting one costs
       # 2.5 minutes to sit idle.
       - uses: ./.github/actions/prepare
         with:
           boot-simulator: "false"
+
+      # ── What this build tells its testers ────────────────────────────────────────────
+      # Compiled FIRST, published last, so a malformed note fails here in ten seconds rather than
+      # after a forty-minute archive.
+      #
+      # **The boundary is NOT "the newest build tag", and this step does not pick it.** It says
+      # `--at` and lets `whats_new.py` resolve the newest tag *strictly behind* that commit. The
+      # difference is the whole of review F1: the tag for the build this job is minting is created
+      # right after the upload (so the backstop has something to read), and the documented
+      # remediation for a job that dies in the twenty-minute processing wait is *Re-run failed
+      # jobs*. On that second attempt the newest tag sits on the very commit being built — a
+      # boundary of a commit against itself, which compiles to "No tester-visible changes in this
+      # build" and, once published, makes the real lines unreachable forever. `resolve_since`
+      # walks past any tag on `--at`; the shell deliberately holds no opinion about which tag,
+      # because a shell one-liner is where the first version got it wrong.
+      #
+      # The compiled text is echoed into the job log, so the run itself records what the testers
+      # were told — a claim about a build that outlives the App Store Connect UI's own history.
+      - name: Compile the release notes
+        id: whats_new
+        run: |
+          set -euo pipefail
+          since="$(python3 Tools/whats_new.py boundary-for "$GITHUB_SHA")"
+          if [ -z "$since" ]; then
+            echo "::warning::no build-N tag strictly behind $GITHUB_SHA, so every note ever written counts as unshipped. Expected exactly once, on the first build after this mechanism landed."
+          else
+            echo "measuring against $since ($(git rev-parse --short "$since")), the newest build tag strictly behind this commit"
+          fi
+          # No `--since`: the resolution above is for the log, and `compile` repeats it itself so
+          # that the value it uses is the value it derived rather than one this shell passed in.
+          #
+          # stdout silenced, and the file printed below instead: `compile` writes the notes to
+          # both, and a release log that shows the same five lines twice is a log somebody skims.
+          # The commentary — which notes were found, which were internal, which were renamed or
+          # withdrawn, how many characters — goes to stderr and is kept.
+          python3 Tools/whats_new.py compile \
+            --at "$GITHUB_SHA" \
+            --out "$RUNNER_TEMP/whats-new.txt" > /dev/null
+          echo "── what TestFlight will show ──────────────────────────────"
+          cat "$RUNNER_TEMP/whats-new.txt"
+          echo ""
+          echo "───────────────────────────────────────────────────────────"
 
       # ── The build number ─────────────────────────────────────────────────────────────
       # Asked of App Store Connect, never read from the repo. The committed
@@ -799,31 +956,25 @@ jobs:
           xcrun altool --upload-app -f "$IPA" -t ios \
             --api-key "$ASC_KEY_ID" --api-issuer "$ASC_ISSUER_ID"
 
-      # ── One testable build, as asked ─────────────────────────────────────────────────
-      # Processing is asynchronous: the build is not in App Store Connect the moment the upload
-      # returns. appstore_connect.py REFUSES to expire anything if it cannot find the build it is
-      # meant to protect, so a slow processing run leaves the previous build testable rather than
-      # leaving none at all.
-      - name: Wait for processing, then expire every other build
-        env:
-          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          n=${{ steps.build_number.outputs.n }}
-          for i in $(seq 1 40); do
-            if "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py expire-others "$n"; then exit 0; fi
-            echo "build $n not visible yet (attempt $i/40); waiting 30s"
-            sleep 30
-          done
-          echo "build $n never appeared in App Store Connect within 20 minutes."
-          echo "The upload may still be processing. Nothing was expired."
-          exit 1
-
       # ── What shipped ─────────────────────────────────────────────────────────────────
       # #196: the repo could not previously answer this. A tag can — and it matters more now that
       # docs-only commits do not deploy, so main can be ahead of the newest build.
+      #
+      # **This step used to be the last one in the job, and moving it up here is deliberate.** The
+      # upload is the moment the commit ships; everything after it is bookkeeping against a build
+      # that already exists. Left at the end, a slow processing run — which fails the expiry step
+      # below after twenty minutes — would ship a build and record no tag for it, and two things
+      # would be untrue at once: `build-N` would not say what shipped, and the release-note
+      # backstop, which compiles a build's notes from `build-N` and `build-(N-1)`, would have
+      # nothing to read for exactly the build that needs it most. Tagging here costs nothing and
+      # removes both.
+      #
+      # **What makes tagging early safe is not the ordering within this job — it is
+      # `resolve_since` (review F1).** A tag written here survives into the NEXT attempt if this
+      # one dies in the processing wait below, and "the newest build tag" would then be a tag on
+      # the commit that attempt is building. The compile step no longer asks that question: it
+      # asks for the newest tag strictly BEHIND the commit, so a tag on the commit itself is
+      # walked past. Without that, moving this step up would trade one failure for a worse one.
       #
       # Created through the API rather than `git push origin build-N`. A push whose ref carries a
       # change to `.github/workflows/**` is rejected for a GitHub App token without `workflows`
@@ -846,12 +997,86 @@ jobs:
                -f "ref=refs/tags/build-$n" -f "sha=${GITHUB_SHA}" >/dev/null; then
             echo "tagged ${GITHUB_SHA} as build-$n"
           else
-            # A re-run reaches an existing tag. That is not a release failure, and failing here
-            # would leave a shipped build looking unshipped.
-            echo "::warning::could not create tag build-$n (it may already exist)"
-            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-$n" --jq '.object.sha' \
-              | sed 's/^/build-'"$n"' already points at /'
+            # ── One cause is benign; the rest are not (review F7) ────────────────────────
+            # This branch used to downgrade EVERY failure to a warning while asserting one
+            # particular cause ("it may already exist"). A revoked permission, a 5xx, a rate
+            # limit — all took the same branch, the run stayed green, and the damage landed on
+            # the NEXT release: with no `build-N` tag, its boundary resolves to an older one and
+            # it re-ships the lines this build already published to testers. A silent tag
+            # failure is a duplicated changelog one build later, which is exactly the property
+            # this mechanism claims to have.
+            #
+            # So the readback is COMPARED rather than merely printed. It was already being
+            # fetched; it just was not being used for anything.
+            existing="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-$n" \
+                          --jq '.object.sha' 2>/dev/null || true)"
+            if [ "$existing" = "${GITHUB_SHA}" ]; then
+              # A re-run of this same job reaches its own tag. Genuinely fine: the tag says what
+              # it should say, and failing here would leave a shipped build looking unshipped.
+              echo "::warning::build-$n already exists and already points at ${GITHUB_SHA} — re-run of a job that had tagged. Nothing to do."
+            elif [ -n "$existing" ]; then
+              echo "::error::build-$n already exists but points at $existing, not ${GITHUB_SHA}. Two different commits claim the same build number; the release-note boundary is derived from these tags and cannot be trusted until this is resolved by hand."
+              exit 1
+            else
+              echo "::error::could not create tag build-$n, and no such tag exists. Refusing to continue: without it the next release measures its notes against an older tag and re-ships the lines this build just published."
+              exit 1
+            fi
           fi
+
+      # ── One testable build, as asked ─────────────────────────────────────────────────
+      # Processing is asynchronous: the build is not in App Store Connect the moment the upload
+      # returns. appstore_connect.py REFUSES to expire anything if it cannot find the build it is
+      # meant to protect, so a slow processing run leaves the previous build testable rather than
+      # leaving none at all.
+      - name: Wait for processing, then expire every other build
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          n=${{ steps.build_number.outputs.n }}
+          for i in $(seq 1 40); do
+            if "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py expire-others "$n"; then exit 0; fi
+            echo "build $n not visible yet (attempt $i/40); waiting 30s"
+            sleep 30
+          done
+          echo "build $n never appeared in App Store Connect within 20 minutes."
+          echo "The upload may still be processing. Nothing was expired."
+          exit 1
+
+      # ── The changelog, onto the build ────────────────────────────────────────────────
+      # `xcrun altool` uploaded the binary and cannot touch this field at all — "What to Test" is
+      # a `betaBuildLocalization` hanging off the build, and only the API reaches it. So the
+      # upload happens above and the notes come back through the same key everything else here
+      # uses.
+      #
+      # **This step adds no new waiting, and that is the whole reason it sits here.** Processing
+      # is asynchronous and can outlast any runner's patience; the honest design would otherwise
+      # be a second bounded poll with a second way to time out. But the step above has ALREADY
+      # waited for this build to appear — `expire-others` refuses until it can see it — so by the
+      # time control reaches this line the build resource exists and the write is one round trip.
+      # A build still processing never gets here, because the step above failed first.
+      #
+      # Which leaves exactly one gap, and it is covered rather than argued away: a build that
+      # uploaded but processed too slowly fails the step above, ships to testers anyway once Apple
+      # finishes, and carries no notes. `.github/workflows/whats-new-backstop.yml` runs on a
+      # schedule, finds any live build whose notes are empty, and stamps it from that build's own
+      # tag. The release path is the fast one; the backstop is what makes "every build ships a
+      # changelog" true even when the fast path did not finish.
+      #
+      # Failing loudly here is deliberate. A build in TestFlight with no "What to Test" is the
+      # thing the ruling forbids, and a warning would leave it to nobody in particular.
+      - name: Publish the release notes to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/venv/bin/python" Tools/appstore_connect.py set-whats-new \
+            "${{ steps.build_number.outputs.n }}" --file "$RUNNER_TEMP/whats-new.txt"
+
 
       # ── Always remove the temporary signing keychain ─────────────────────────────────
       # `if: always()` so this runs whether Archive/Export/Tag above succeeded or died partway —
