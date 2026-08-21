@@ -1,4 +1,4 @@
-### R__: every TestFlight build ships a changelog, and CI will not let one merge without its line
+### Every TestFlight build ships a changelog, and CI will not let a code change merge without its line
 
 **Owner ruling, 2026-08-21.** Every build uploaded to TestFlight carries a "What to Test" —
 TestFlight's changelog field — compiled from **one tester-voice line per pull request**, in the
