@@ -205,6 +205,25 @@ public enum PhotoOwner: Hashable, Sendable {
         }
     }
 
+    /// Whether this installation may **remove** the photograph: the ownership question above, plus
+    /// the one `photos.taken_on_device` answers (`AppSchema` v16).
+    ///
+    /// `isOwned(by:)` is the narrower predicate and stays exactly what it was, because "whose is
+    /// this" is asked for other reasons than deletion. This is the deletion gate, and it is wider by
+    /// one arm for a reason the owner ruled on: a photograph taken on this phone and adopted by an
+    /// account — `claimDevice` sets `user_id` and clears `device_id`, E23 — became unreachable to
+    /// the person holding the phone the moment that account stopped being the one signed in, which
+    /// after E270 can be permanent. Provenance is the fact that survives it.
+    ///
+    /// **`.nobody` refuses whatever provenance says, and the order of these two lines is the
+    /// ruling.** The leaving door clears the column, so an anonymized row should not reach the
+    /// second half at all; refusing first means a row that somehow did — an older tombstone, a
+    /// future writer that forgets — is still refused. R3 and E157 are not a clause in an `||`.
+    public func permitsRemoval(by attribution: Attribution, takenOnDevice: UUID?) -> Bool {
+        if case .nobody = self { return false }
+        return isOwned(by: attribution) || takenOnDevice == attribution.deviceID
+    }
+
     /// What `POST /devices/claim` does to a photograph (D9): a device-owned one moves onto the
     /// account, an account-owned one is left alone so claiming twice cannot move a record between
     /// accounts, and an anonymized one stays anonymized — adoption is for work that has never been

@@ -30,6 +30,9 @@ struct PhotoDeletionTests {
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000B001")!
     private static let userID = UUID(uuidString: "0E000000-0000-4000-8000-00000000B002")!
     private static let strangerID = UUID(uuidString: "0E000000-0000-4000-8000-00000000B003")!
+    /// The installation a stranger's photograph would have come from (`AppSchema` v16). Not this
+    /// one, which is the whole of what makes such a row a stranger's.
+    private static let strangersDeviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000B004")!
     private static let moment = Date(timeIntervalSince1970: 1_800_000_000)
 
     private static func photoDirectory() -> URL {
@@ -191,9 +194,17 @@ struct PhotoDeletionTests {
             )
         )
         let photo = try #require(try await api.treeProfile(id: tree.id).photos.items.first).id
+        // **`taken_on_device` moves with the owner, and it has to** (`AppSchema` v16). This fixture
+        // makes a stranger's photograph by writing one here and then rewriting the owner, and since
+        // v16 that is no longer enough: the row would still say this installation took it, which is
+        // true — and is exactly the case the v16 gate admits, a photograph this phone wrote that an
+        // account has since adopted. A photograph that is genuinely somebody else's arrived from
+        // somebody else's installation, so the fixture says that too. Without this line the test
+        // asserts the opposite of its own name.
         try await store.queue.write { connection in
             try connection.execute("""
-                UPDATE photos SET user_id = '\(Self.strangerID.uuidString)', device_id = NULL
+                UPDATE photos SET user_id = '\(Self.strangerID.uuidString)', device_id = NULL,
+                                  taken_on_device = '\(Self.strangersDeviceID.uuidString)'
                  WHERE id = '\(photo.uuidString)'
                 """)
         }
@@ -205,6 +216,15 @@ struct PhotoDeletionTests {
 
     /// A photograph whose contributor deleted their account through the door that leaves the work in
     /// place. It belongs to nobody, and nobody includes whoever is holding the phone now.
+    ///
+    /// **The fixture nulls the owners and deliberately leaves `taken_on_device` set** — a row shape
+    /// neither shipping path produces any more, since both `AccountDeletion.anonymizeContributions`
+    /// and `LocalAPI.debugAnonymizePhoto` clear provenance in the same statement that clears the
+    /// name. That is not an oversight to be tidied away: it is the only place in the suite where the
+    /// *shipping delete path* meets a row that belongs to nobody and still claims this installation,
+    /// which is exactly the row `PhotoOwner.permitsRemoval` refuses on its first line before it ever
+    /// reads provenance (`AppSchema` v16). Correcting the fixture to match the leaving door would
+    /// delete that coverage silently, so the assertion below states the constraint instead.
     @Test("an anonymized photograph cannot be deleted by the next person on this phone")
     func anAnonymizedPhotographIsRefused() async throws {
         let (store, api, _) = try await Self.signedIn()
@@ -224,6 +244,13 @@ struct PhotoDeletionTests {
                 UPDATE photos SET user_id = NULL, device_id = NULL WHERE id = '\(photo.uuidString)'
                 """)
         }
+        // The row is ownerless *and* still says this phone took it — see the header. If this ever
+        // fails, the fixture has been aligned with the leaving door and the `.nobody`-first
+        // ordering has lost its only shipping-path test.
+        let provenance = try await store.queue.read { connection in
+            try ContributionStore().photoForDeletion(id: photo, connection: connection)?.takenOnDevice
+        }
+        #expect(provenance == Self.deviceID, "the fixture no longer claims this installation")
 
         await #expect(throws: APIError.forbidden) { _ = try await api.deletePhoto(id: photo) }
         #expect(FileManager.default.fileExists(atPath: file.path))

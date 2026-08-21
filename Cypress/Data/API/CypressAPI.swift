@@ -984,10 +984,22 @@ public struct TreeProfile: Hashable, Sendable {
     /// ERRATA E204/#222) is the reason this exists: it reads a *batch* of candidate trees this
     /// device may never have visited, so there is no single `TreeProfile` to hold an
     /// `ownPhotoIDs` set — ownership there comes from comparing the row's own `user_id`/
-    /// `device_id` columns to the caller's `Attribution` in SQL, the same comparison
-    /// `deletablePhotoIDs` already makes. Once "own" is known, the visibility question is this
-    /// one function, so a nearby row and the profile hero can never disagree about a
-    /// stranger's unmoderated photograph the way the hero and the browser once did.
+    /// `device_id` columns to the caller's `Attribution` in SQL. Once "own" is known, the
+    /// visibility question is this one function, so a nearby row and the profile hero can never
+    /// disagree about a stranger's unmoderated photograph the way the hero and the browser once
+    /// did.
+    ///
+    /// **That comparison is not `deletablePhotoIDs`', and since `AppSchema` v16 the two differ
+    /// deliberately** — this comment used to say they were the same and it is worth correcting
+    /// rather than deleting. Removal admits a third arm, `taken_on_device`, and refuses an
+    /// ownerless row first; "own" here stays the two owner arms, because being shown your own work
+    /// is a question about attribution and v16's column is provenance, which no query reads as
+    /// attribution. The consequence — a photograph v16 made deletable again, but whose owning
+    /// account can no longer be signed into, arrives here as `own: false` and so is judged by
+    /// `isPubliclyVisible`, is `.pending`, and is not drawn among the nearby heroes — predates v16
+    /// rather than following from it, and is an open question for the project owner: aligning the
+    /// two predicates would start drawing photographs on a shipped screen that are not drawn today,
+    /// which is not a change a refactor may make on its own authority.
     public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
         own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
     }

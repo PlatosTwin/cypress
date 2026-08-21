@@ -502,6 +502,7 @@ public actor LocalAPI: CypressAPI {
                 photo,
                 localPath: draft.photoLocalPath,
                 owner: PhotoOwner(attribution),
+                takenOnDevice: deviceID,
                 connection: connection
             )
         }
@@ -1482,6 +1483,7 @@ public actor LocalAPI: CypressAPI {
                 photo,
                 localPath: request.localPath,
                 owner: PhotoOwner(attribution),
+                takenOnDevice: deviceID,
                 connection: connection
             )
         }
@@ -1596,12 +1598,21 @@ public actor LocalAPI: CypressAPI {
     /// dimensions and its fuzzed coordinate, and what survives is a tombstone that cannot find a
     /// picture (`ContributionStore.deletePhoto` says what is left and why the row survives at all).
     ///
-    /// **Files first, on E136's ruling**, which is a ruling and not a detail: `FileManager` cannot
-    /// join a SQLite transaction, so one half is outside the atomic part and one of two failure
-    /// modes will happen. Files-first fails as a row pointing at bytes that are gone — visible,
-    /// retryable, cosmetic, and `photoData` already draws the placeholder for it. Rows-first fails as
-    /// a JPEG somebody asked to have destroyed, stranded in the container and unreachable by every
-    /// query that could find it again. A deletion path takes the loud failure.
+    /// **The row is claimed first and the bytes go inside the same transaction**, which is how
+    /// E136's ruling and the deletion gate are both kept. E136 is about which failure a deletion
+    /// path takes when `FileManager` cannot join a SQLite transaction: a row pointing at bytes that
+    /// are gone is visible, retryable and cosmetic — `photoData` already draws the placeholder for
+    /// it — while a JPEG somebody asked to have destroyed, stranded in the container and
+    /// unreachable by every query that could find it again, is the loud failure a deletion path
+    /// must not take. Removing the files *before* anything was written honored that, but it also
+    /// meant the SQL owner predicate — the second, independent gate on permission
+    /// (`ContributionStore.removalPredicate`) — was first evaluated after the picture was already
+    /// destroyed. In the exact case that gate exists for, Swift permits and SQL refuses, the row
+    /// was correctly saved, the photograph was not, and the caller was told `notFound`. So the
+    /// removal now happens inside `store.queue.write`, after the tombstone `UPDATE` has claimed the
+    /// row: a file that will not go throws, the transaction rolls back, and the photograph is left
+    /// exactly as it was. E136's accepted failure is still the only one available — a crash between
+    /// the last `removeItem` and the `COMMIT` leaves a row whose bytes are gone.
     ///
     /// ── The hero, which is derived and therefore cannot dangle ───────────────────────────────
     /// Nothing stores a hero id. `PhotoHero.choose` ranks the set it is handed and already excludes
@@ -1650,7 +1661,13 @@ public actor LocalAPI: CypressAPI {
             try contributions.photoForDeletion(id: id, connection: connection)
         }
         guard let subject else { throw APIError.notFound }
-        guard subject.owner.isOwned(by: who) else { throw APIError.forbidden }
+        // `permitsRemoval` and not `isOwned` (`AppSchema` v16): a photograph this installation wrote
+        // and an account has since adopted stays this installation's to unmake, which is what
+        // stopped being true when `claimDevice` cleared `device_id` and the account stopped being
+        // the one signed in. An anonymized row is still refused, by the rule's own first line.
+        guard subject.owner.permitsRemoval(by: who, takenOnDevice: subject.takenOnDevice) else {
+            throw APIError.forbidden
+        }
 
         // 2. Whether this is the last photograph of a tree that needed one to exist. Read before the
         //    delete, because afterwards the answer is the same for a tree that never had one.
@@ -1659,43 +1676,50 @@ public actor LocalAPI: CypressAPI {
             return try contributions.photos(treeID: subject.treeID, connection: connection).items.count == 1
         }
 
-        // 3. The bytes, before the rows. `lastPathComponent` on the storage key rather than the
-        //    stored string, the same directory-traversal guard `photoData` makes on the way in.
+        // 3. Which files this photograph's bytes are in. `lastPathComponent` on the storage key
+        //    rather than the stored string, the same directory-traversal guard `photoData` makes on
+        //    the way in. Nothing is removed yet — see 4.
         let manager = FileManager.default
-        var removedFiles = 0
         let files = [
             subject.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
             subject.localPath.map { URL(fileURLWithPath: $0) }
         ].compactMap { $0 }
-        for url in files where manager.fileExists(atPath: url.path) {
-            do {
-                try manager.removeItem(at: url)
-                removedFiles += 1
-            } catch {
-                // A file that will not go is the one failure this method must not swallow: the row
-                // would be tombstoned and the picture would still be on the disk, which is the
-                // outcome the whole ordering exists to prevent. Nothing has been written yet, so
-                // throwing here leaves the photograph exactly as it was and the person can try again.
-                throw APIError.serverError
-            }
-        }
 
-        // 4. The rows, in one transaction.
-        let counts = try await store.queue.write { connection -> ContributionStore.PhotoDeletionCounts in
+        // 4. The rows, then the bytes, in one transaction. The order inside it is the point: the
+        //    tombstone `UPDATE` carries the owner predicate, and until it has matched, this method
+        //    has no claim on the photograph that a second gate could still refuse. Removing the
+        //    files first meant a refusal by that gate arrived after the picture was gone.
+        let (counts, removedFiles) = try await store.queue.write { connection -> (ContributionStore.PhotoDeletionCounts, Int) in
             var counts = try contributions.deletePhoto(
                 id: id, attribution: who, at: moment, connection: connection
             )
+            // The predicate in the UPDATE matched nothing although the read said it would: either
+            // another deletion won the race, or the SQL gate refused what the Swift rule permitted.
+            // `notFound` rather than a success, because a success would be this call claiming to
+            // have done something it did not do — and thrown here, before a byte is touched, so
+            // neither answer costs the photograph.
+            guard counts.photos == 1 else { throw APIError.notFound }
             if let path = subject.localPath {
                 counts.stagedBinaries = try OutboxStore().discardStagedPhoto(
                     atPath: path, at: moment, connection: connection
                 )
             }
-            return counts
+            var removed = 0
+            for url in files where manager.fileExists(atPath: url.path) {
+                do {
+                    try manager.removeItem(at: url)
+                    removed += 1
+                } catch {
+                    // A file that will not go is the one failure this method must not swallow: the
+                    // row would be tombstoned and the picture would still be on the disk, which is
+                    // the outcome the whole ordering exists to prevent. Throwing rolls the
+                    // transaction back, so the photograph is left exactly as it was and the person
+                    // can try again. A file that is simply not there is skipped, not an error.
+                    throw APIError.serverError
+                }
+            }
+            return (counts, removed)
         }
-        // The predicate in the UPDATE matched nothing although the read said it would: another
-        // deletion won the race. Reported as `notFound` rather than as a success, because a success
-        // would be this call claiming to have done something it did not do.
-        guard counts.photos == 1 else { throw APIError.notFound }
 
         return PhotoDeletion(
             photoID: id,
@@ -2352,7 +2376,8 @@ public actor LocalAPI: CypressAPI {
             try data.write(to: destination, options: .atomic)
             try await store.queue.write { connection in
                 try contributions.insert(
-                    photo, localPath: nil, owner: PhotoOwner(attribution), connection: connection
+                    photo, localPath: nil, owner: PhotoOwner(attribution),
+                    takenOnDevice: deviceID, connection: connection
                 )
                 try contributions.markPhotoUploaded(
                     id: photo.id,
@@ -2383,7 +2408,8 @@ public actor LocalAPI: CypressAPI {
     public func debugAnonymizePhoto(id: UUID) async throws {
         try await store.queue.write { connection in
             let statement = try connection.cachedStatement("""
-                UPDATE photos SET user_id = NULL, device_id = NULL, updated_at = :now
+                UPDATE photos SET user_id = NULL, device_id = NULL, taken_on_device = NULL,
+                                  updated_at = :now
                  WHERE id = :id COLLATE NOCASE
                 """)
             _ = try statement.bind([":id": id.uuidString, ":now": now()])
