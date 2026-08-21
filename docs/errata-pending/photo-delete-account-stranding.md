@@ -225,5 +225,7 @@ either answer moves a screen: leave the two predicates deliberately different (d
 permission, `is_own` is about attribution-for-visibility, and provenance is not attribution), or put
 `is_own` on the same three-arm rule, which starts drawing photographs on the nearby section that
 are not drawn today. The doc comments on `heroPhotoIDs` and on `TreeProfile.isPhotoVisible` now say
-the two comparisons differ on purpose and point here; before v16 they both claimed the comparisons
-were the same, which is how this went unnoticed.
+the two comparisons differ on purpose and that the visibility consequence is the owner's to settle;
+before v16 they both claimed the comparisons were the same, which is how this went unnoticed.
+Neither cites this entry, because `PendingCitationGuardTests` refuses a comment that defers to a
+document with no number — when this is spliced, its number is what those two comments should gain.

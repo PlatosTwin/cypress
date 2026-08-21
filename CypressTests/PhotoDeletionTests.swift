@@ -223,9 +223,8 @@ struct PhotoDeletionTests {
     /// name. That is not an oversight to be tidied away: it is the only place in the suite where the
     /// *shipping delete path* meets a row that belongs to nobody and still claims this installation,
     /// which is exactly the row `PhotoOwner.permitsRemoval` refuses on its first line before it ever
-    /// reads provenance (`AppSchema` v16, and the pending erratum on photo-delete account
-    /// stranding). Correcting the fixture to match the leaving door would delete that coverage
-    /// silently, so the assertion below states the constraint instead.
+    /// reads provenance (`AppSchema` v16). Correcting the fixture to match the leaving door would
+    /// delete that coverage silently, so the assertion below states the constraint instead.
     @Test("an anonymized photograph cannot be deleted by the next person on this phone")
     func anAnonymizedPhotographIsRefused() async throws {
         let (store, api, _) = try await Self.signedIn()

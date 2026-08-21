@@ -997,8 +997,9 @@ public struct TreeProfile: Hashable, Sendable {
     /// attribution. The consequence — a photograph v16 made deletable again, but whose owning
     /// account can no longer be signed into, arrives here as `own: false` and so is judged by
     /// `isPubliclyVisible`, is `.pending`, and is not drawn among the nearby heroes — predates v16
-    /// and is recorded in the pending erratum on photo-delete account stranding for an owner
-    /// ruling. Aligning the two predicates would change what a screen draws.
+    /// rather than following from it, and is an open question for the project owner: aligning the
+    /// two predicates would start drawing photographs on a shipped screen that are not drawn today,
+    /// which is not a change a refactor may make on its own authority.
     public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
         own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
     }

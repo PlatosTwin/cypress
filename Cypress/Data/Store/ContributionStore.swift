@@ -470,9 +470,9 @@ public struct ContributionStore {
     /// here: a repaired, again-deletable photograph whose owning account can no longer be signed
     /// into is still `own: false`, so `isPhotoVisible` judges it by `isPubliclyVisible`, it is
     /// `.pending`, and the species-guide nearby heroes (07 §6) do not draw it. That is unchanged by
-    /// v16 rather than caused by it, and it is recorded in the pending erratum on photo-delete
-    /// account stranding for an owner ruling, because moving `is_own` onto the removal rule changes
-    /// what a screen draws.
+    /// v16 rather than caused by it, and it is an open question for the project owner rather than
+    /// something to quietly repair here: moving `is_own` onto the removal rule would start drawing
+    /// photographs on a shipped screen that are not drawn today.
     public func heroPhotoIDs(
         treeIDs: Set<UUID>,
         attribution: Attribution,
