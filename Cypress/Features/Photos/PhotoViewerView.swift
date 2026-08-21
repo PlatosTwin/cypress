@@ -73,12 +73,28 @@
 //  the treatment `Close` and the delete already wear here, rather than the translucent mono capsule
 //  that E173 recorded as unreadable as a control.
 //
-//  ── Why there is no pinch-to-zoom ────────────────────────────────────────────────────────
-//  Deliberate, and worth writing down because it is the obvious next thing to reach for. The report
-//  is that the photograph is *cut off*; showing it whole answers that completely. A zoom that had to
-//  be built would bring a gesture that fights the cover's own dismiss drag, a set of bounds nobody
-//  has specified, and a second reason for the image to be at the wrong scale. If somebody asks to
-//  look closer, that is a second report and it can have its own entry.
+//  ── Why there IS pinch-to-zoom, since 2026-08-21 ─────────────────────────────────────────
+//  What stood here said there was none, deliberately, and closed with: *"If somebody asks to look
+//  closer, that is a second report and it can have its own entry."* Somebody did, from TestFlight,
+//  and the owner ruled it in. The section is rewritten rather than deleted because it named three
+//  costs, and two of them turned out not to exist:
+//
+//  1. *"a gesture that fights the cover's own dismiss drag"* — **there is no such drag.** This
+//     screen is presented in `RootView`'s `fullScreenCover`, and a full-screen cover has no
+//     interactive dismissal; the drawn ✕ is the only way out and always has been. The concern was
+//     `.sheet`'s, written about a screen that is not one.
+//  2. *"a set of bounds nobody has specified"* — true, and it is specified here: `PhotoZoom`, one
+//     type, tested without rendering. The scale is clamped to `PhotoZoom.range` and the pan is
+//     clamped so the picture can never be dragged clear of the frame it is being looked at in.
+//  3. *"a second reason for the image to be at the wrong scale"* — this is the real one, and it is
+//     why the zoom is a transform over `PhotoFit` rather than a second way of sizing the image.
+//     `PhotoFit` still decides what "whole" means and still letterboxes; zoom scales what it drew.
+//     At rest the transform is identity and this screen is byte-for-byte what E142 shipped.
+//
+//  Double tap returns to rest. It is the gesture every photo viewer on the platform has for
+//  "undo whatever I just did to this picture", it needs no drawn control on a screen whose corners
+//  are all spoken for, and it is the only way back to rest that does not require pinching outward
+//  against the clamp.
 //
 
 import SwiftUI
@@ -105,6 +121,22 @@ struct PhotoViewerView: View {
     @State private var model: TreePhotosModel
 
     @Environment(PhotoImageStore.self) private var store: PhotoImageStore?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // ── The zoom's three pieces of state ────────────────────────────────────────────────────────
+    //
+    // `committed` is where the picture is between gestures; the two `@GestureState`s are what the
+    // fingers are currently adding to it. They are `@GestureState` rather than `@State` because that
+    // property wrapper resets itself when a gesture *ends or is cancelled* — a pinch interrupted by
+    // a phone call, or by the cover being dismissed under it, leaves nothing behind. The same thing
+    // written with `@State` and an `onEnded` has a path where the reset never runs.
+
+    /// Where the photograph is between gestures.
+    @State private var committed: PhotoZoom = .rest
+    /// The pinch in progress, as a multiplier on `committed.scale`. 1 when nothing is pinching.
+    @GestureState private var liveMagnification: CGFloat = 1
+    /// The drag in progress, as a translation on `committed.offset`. Zero when nothing is dragging.
+    @GestureState private var liveTranslation: CGSize = .zero
 
     init(
         photoID: UUID,
@@ -161,8 +193,7 @@ struct PhotoViewerView: View {
                 .accessibilityHidden(true)
 
             if let image = store?.viewerImage(photoID) {
-                PhotoFit(image: image, label: PhotoViewerPresentation.imageLabel(caption))
-                    .ignoresSafeArea()
+                zoomable(image)
             } else {
                 // The bytes are still arriving, or they are gone. Either way the screen says so in
                 // words rather than drawing a gradient that could be mistaken for a photograph —
@@ -181,6 +212,11 @@ struct PhotoViewerView: View {
         // The photograph is the largest thing `PhotoImageStore` ever holds and it is decoded for
         // this screen alone, so it is loaded when this screen appears and dropped when it goes.
         .task(id: photoID) { await store?.loadViewer(photoID) }
+        // A different photograph is a different picture to look at, not a continuation of the one
+        // that was being looked at closely. `@State` outlives a changed `let` when the view keeps
+        // its identity, so without this a second photograph could arrive already at 4× and panned
+        // to a corner of a frame that is not its own.
+        .onChange(of: photoID) { _, _ in committed = .rest }
         // Who owns this photograph is a separate read from its bytes, and it is what decides whether
         // the control above is drawn at all (ERRATA E173).
         .task { await model.load() }
@@ -226,6 +262,86 @@ struct PhotoViewerView: View {
                     .padding(CypressSpacing.gutter)
             }
         }
+    }
+
+    // MARK: - The photograph, and the zoom over it
+
+    /// `PhotoFit`'s letterboxed photograph with the viewer's transform on it.
+    ///
+    /// **The `GeometryReader` is the point.** Both clamps in `PhotoZoom` need two sizes — the box the
+    /// picture is drawn in and the size the picture was actually drawn at — and neither is knowable
+    /// from the image alone. `.ignoresSafeArea()` on the reader rather than on `PhotoFit` inside it,
+    /// so `proxy.size` is the whole display: that is the frame the reader is looking through, and a
+    /// pan limit measured against the safe-area box would stop the picture short of the edges of the
+    /// screen it is filling.
+    ///
+    /// The two gestures are `.simultaneously`, not `.exclusively`: a pinch that drifts is one
+    /// gesture to the hand making it, and a viewer that made you let go and start again to move what
+    /// you had just enlarged would be answering the report with a different annoyance.
+    private func zoomable(_ image: UIImage) -> some View {
+        GeometryReader { proxy in
+            let box = proxy.size
+            let content = PhotoZoom.fittedSize(image: image.size, in: box)
+            let zoom = current(content: content, in: box)
+
+            PhotoFit(image: image, label: PhotoViewerPresentation.imageLabel(caption))
+                .scaleEffect(zoom.scale)
+                .offset(zoom.offset)
+                // Both clamps are applied here as well as inside the gesture, because `scaleEffect`
+                // draws outside its own bounds: a photograph at 5× is five displays wide and would
+                // otherwise be painted over the caption, the ✕ and the delete — the controls this
+                // screen's whole geometry is arranged around (see `deleteControl`).
+                .clipped()
+                .gesture(
+                    magnify(content: content, in: box)
+                        .simultaneously(with: pan(content: content, in: box))
+                )
+                // Back to the whole frame — the gesture the platform has for this, and the only way
+                // back to rest that does not mean pinching outward against the clamp. Animated
+                // because a picture that teleports from 4× reads as a glitch rather than as an undo;
+                // `camera` is the app's curve for a thing settling into place across the whole
+                // screen, which is what this is, and it is honestly off under Reduce Motion, where a
+                // full-screen transform is precisely what the setting exists to suppress.
+                .onTapGesture(count: 2) {
+                    withAnimation(
+                        CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)
+                    ) {
+                        committed = .rest
+                    }
+                }
+        }
+        .ignoresSafeArea()
+    }
+
+    /// `committed` plus whatever the fingers are currently adding, clamped — what is drawn this
+    /// frame. Between gestures the two live values are their identities and this is `committed`.
+    private func current(content: CGSize, in box: CGSize) -> PhotoZoom {
+        committed
+            .scaled(to: committed.scale * liveMagnification, content: content, in: box)
+            .panned(by: liveTranslation, content: content, in: box)
+    }
+
+    private func magnify(content: CGSize, in box: CGSize) -> some Gesture {
+        MagnifyGesture()
+            .updating($liveMagnification) { value, state, _ in state = value.magnification }
+            .onEnded { value in
+                committed = committed.scaled(
+                    to: committed.scale * value.magnification,
+                    content: content,
+                    in: box
+                )
+            }
+    }
+
+    /// A `minimumDistance` of zero would take every touch on the photograph, including the first
+    /// half of the double tap above it; the default 10 pt leaves taps alone and still starts a pan
+    /// as soon as a thumb means one.
+    private func pan(content: CGSize, in box: CGSize) -> some Gesture {
+        DragGesture()
+            .updating($liveTranslation) { value, state, _ in state = value.translation }
+            .onEnded { value in
+                committed = committed.panned(by: value.translation, content: content, in: box)
+            }
     }
 
     // MARK: - Chrome

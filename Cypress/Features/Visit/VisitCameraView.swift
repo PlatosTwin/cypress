@@ -19,6 +19,8 @@ struct VisitCameraView: View {
     @State private var libraryItem: PhotosPickerItem?
     /// The capture whose flash has already been faded out. See `shutterFlash`.
     @State private var fadedCaptureTick = 0
+    /// Where the lens was when the current pinch began; `nil` between pinches. See `zoomPinch`.
+    @State private var zoomBase: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -192,6 +194,27 @@ struct VisitCameraView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **Pinch to zoom the lens** — TestFlight, ruled in on 2026-08-21. See
+        // `VisitCameraController.setZoom` for why this moves the *device* and not the preview.
+        //
+        // On the `ZStack` and not on `base`, so the gesture is live over the whole viewfinder
+        // including the ghost — the ghost is the thing being lined up against and it is exactly
+        // where the fingers will land. Before the overlays, so the ✕, the guidance pill and the
+        // shutter keep their own touches; a `.gesture` here composes with the controls above it
+        // rather than swallowing them.
+        //
+        // The whole thing is off unless there is a lens to move (`camera.isZoomable`, false on
+        // every simulator and on a refusal), and off once a frame has been taken, when the
+        // viewfinder is a still photograph and there is nothing left to aim.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        //
+        // `including:` rather than iOS 18's `isEnabled:` — this app is iOS 17+. `.subviews` hands
+        // every touch to the children and takes none here, which is what "off" means for a gesture.
+        .gesture(
+            zoomPinch,
+            including: model.camera.isZoomable && !model.hasSnapped ? .all : .subviews
+        )
         .overlay(alignment: .topLeading) { closeButton }
         .overlay(alignment: .top) { guidancePill }
         .overlay { framingCorners }
@@ -201,6 +224,30 @@ struct VisitCameraView: View {
         .overlay(alignment: .bottom) { bottomControls }
         .overlay(alignment: .bottomLeading) { ghostCaption }
         .overlay { shutterFlash }
+    }
+
+    /// The pinch that drives `AVCaptureDevice.videoZoomFactor`. See the call site on `viewfinder`,
+    /// and `VisitCameraController.setZoom` for what it reaches.
+    ///
+    /// `zoomBase` is where the lens was when the fingers landed, captured on the first change rather
+    /// than held in a `@GestureState`: the factor this multiplies is owned by the *device*, and
+    /// letting the gesture own a copy of it is how the preview and the lens get to disagree. The
+    /// controller stays the one place that knows where the lens is; this closure only ever asks.
+    private var zoomPinch: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                if zoomBase == nil { zoomBase = model.camera.zoomFactor }
+                model.camera.setZoom(
+                    VisitCameraZoom.factor(
+                        base: zoomBase ?? model.camera.zoomFactor,
+                        magnification: value.magnification,
+                        in: model.camera.zoomRange
+                    )
+                )
+            }
+            // Cleared on the way out, so the next pinch starts from wherever this one left the lens
+            // rather than from wherever the one before it began.
+            .onEnded { _ in zoomBase = nil }
     }
 
     /// czFlash — a sheet of white at `.9` alpha falling to nothing over `.35s`, fired when the
