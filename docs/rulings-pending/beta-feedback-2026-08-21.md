@@ -113,7 +113,7 @@ nothing — and none of that is drawn in SCREENS.md.
 Testers asked for trees in Marin County, Sausalito and Mill Valley. **Deferred, and reframed:** it
 is not a defect and it is not a feature request the app can answer on its own terms. It is an
 **inventory question for the distribution plan** — whether those jurisdictions publish a street
-tree inventory this project may ingest, under what licence, and whether a second and third city
+tree inventory this project may ingest, under what license, and whether a second and third city
 file is what the seed/city download path should be spending its budget on next. It goes to whoever
 owns the distribution plan, not to a UI round.
 
