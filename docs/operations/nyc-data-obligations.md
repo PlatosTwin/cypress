@@ -12,6 +12,32 @@ discharge's first step: a note the owner can send in their own words, and the ex
 product page must carry. **This document sends nothing and creates no account, filing, or
 public content.**
 
+**Updated 2026-08-21, same day, after an owner decision round.** The three open questions this
+document originally raised (§5, old items 1–3) were put to the owner and ruled on directly, not
+inferred here. §0 records the rulings; §2, §3 and §4 below are updated to match. The rulings are
+also staged, unnumbered, at `docs/rulings-pending/nyc-obligations-2026-08-21.md`.
+
+---
+
+## 0. Owner rulings, 2026-08-21
+
+Decided by the owner via a decision round, same day this document was first drafted. Full text
+in `docs/rulings-pending/nyc-obligations-2026-08-21.md`; summarized here so this document reads
+as settled rather than as its own first draft.
+
+| # | Question | Ruling |
+|---|---|---|
+| — | Which channel discharges "notify the City" (§2, old open question 2)? | **Both.** The same note goes through the NYC Open Data general contact form *and* the per-dataset Socrata contact route to Parks & Recreation. Neither is treated as sufficient alone. |
+| — | Where must the verbatim disclaimer (obligation B) actually render (§5, old open question 1)? | **Both.** The in-app city-downloads screen — the actual surface offering NYC packs, trial packs included per D12 — carries the verbatim text, *and* the TestFlight/App Store listing carries it too. The owner's ruling here **is** the constraint-21 sign-off for adding this copy to the city-downloads screen; it does not need a separate stop-and-ask when the in-app change is built. |
+| — | Does the manifest's machine-readable `attribution` array discharge obligation (B) on its own (§5, old open question 3)? | **No.** Human-visible text is required; the manifest field is supplementary, structured provenance, not a substitute — for trial packs as much as for a general release. |
+
+**What is and is not in this PR.** This document (drafts, sourcing, and the record of these
+rulings) is the whole of this docs-only PR. **The city-downloads-screen copy change itself is
+not built here** — it lands with the s17/NYC seed-schema and publish round (design proposal
+§6.3), because that is the round that gives the screen NYC packs to show a disclaimer next to
+in the first place. Sequencing: the screen change must land no later than the same round that
+first publishes an NYC pack to the bucket, trial/beta included (D12) — see §4 and §5 item 4.
+
 ---
 
 ## 1. The obligation, grounded in the terms — quoted verbatim, fetched twice
@@ -74,7 +100,7 @@ no additional agency-specific terms were found linked from either dataset page.
 
 ---
 
-## 2. Open question — the terms' own "notify the City" link is dead
+## 2. The terms' own "notify the City" link is dead — and the owner's ruling on routing
 
 The terms page's obligation (A) is a hyperlink: `<a href="../../html/contact/contact.shtml">Notify
 the City</a>`. Resolved against the terms page's own path, that is
@@ -100,21 +126,30 @@ from NYC Open Data's current site. What exists instead, checked 2026-08-21:
   material found by this search; it is **not** used in the draft below because it was not
   verified. **Do not send to it.**
 
-**This is presented as an open question, not resolved here**: the terms require notifying
-"the City" through a link that no longer works, and NYC Open Data's site does not name a
-specific successor channel for exactly this obligation. The draft note in §3 is destination-
-agnostic prose the owner can paste into whichever channel they choose to use — the two
-reachable candidates are the NYC Open Data "Contact Us" form
-(`https://opendata.cityofnewyork.us/engage/`) and Parks & Recreation's per-dataset contact
-route on the two Socrata dataset pages. **The owner should pick the destination**; this
-document does not.
+**Resolved by the owner, 2026-08-21 (§0):** since no single channel is confirmed as the terms'
+intended successor to its own dead link, use both of the reachable candidates rather than
+picking one — send the same note through:
+
+1. the NYC Open Data general contact form, `https://opendata.cityofnewyork.us/engage/`; and
+2. the per-dataset "Contact Dataset Owner" route on each of the two Socrata dataset pages
+   (Forestry Tree Points `hn5i-inap` and Forestry Planting Spaces `82zj-84is`), which routes to
+   Parks & Recreation / DPR, the submitting agency for both.
+
+Because the Socrata contact feature is per-dataset, route 2 is two submissions, not one — once
+against each dataset page. **Total: three submissions of the same note text, across two
+distinct channels.** §3's draft is written to be sent through all three without modification.
+`opendata@cityofnewyork.us` remains unverified and is still not used.
 
 ---
 
 ## 3. Draft — notify-the-City note
 
-**For the owner to review, adapt, and send themselves, through whichever channel is chosen
-per §2. Not sent by this task.**
+**For the owner to review, adapt, and send themselves — through all three of §2's routes (the
+NYC Open Data contact form, and the Contact Dataset Owner form on each of the two dataset
+pages), per the 2026-08-21 ruling. Not sent by this task.** The same text works unmodified
+across all three; where a destination form has its own required fields (e.g. a subject line or
+a category picker) the owner fills those in per form, but the body below does not need to
+change per channel.
 
 > Subject: New York City street-tree data used in the Cypress app
 >
@@ -154,7 +189,10 @@ per §2. Not sent by this task.**
 **Notes for the owner:**
 - The "[owner name]" and any organization name are left blank deliberately — filling them in
   is not this task's call.
-- Nothing about the destination address is filled in; see §2.
+- Destinations are decided (§2, §0): both the general contact form and both datasets' Contact
+  Dataset Owner forms. Submitting into three separate web forms is a hands-on action only the
+  owner can take — this task does not have, and should not be given, credentials or a browser
+  session authenticated as the owner for any of them.
 - The datasets, join, and transformation described match what the seed build actually does —
   cross-checked against `Tools/fetch_nyc_trees.py`'s docstring and
   `docs/investigations/nyc-ingest.md` (the NYC ingest round's own record) before drafting this
@@ -180,62 +218,66 @@ datasets, which agency) without altering the required wording itself.
 > Forestry Tree Points and Forestry Planting Spaces datasets (NYC Open Data), used under the
 > NYC.gov Data Mine Terms of Use.
 
-### Where it must appear
+### Where it must appear — resolved by the owner, 2026-08-21 (§0)
 
 Per the terms' own wording, the disclaimer goes **"at the site where the application can be
 accessed or downloaded."** D12 makes this bind **before the first NYC publish, trial and beta
 packs included** — the obligation attaches "the moment NYC data is served from the bucket,
-not only when it is drawn" (design proposal §11, item 8), so:
+not only when it is drawn" (design proposal §11, item 8). The owner ruled on two concrete
+surfaces rather than leaving the phrase to be interpreted later:
 
-1. **Every download surface that offers an NYC pack** — whole-city or any of the five borough
-   packs — must show or link to this text before or alongside the download, for every release
-   channel the app currently ships through (TestFlight now; the App Store product page
-   whenever the app goes public). This is the literal reading of "the site where the
-   application can be accessed or downloaded" and it is unambiguous.
-2. It must be present **the first time any NYC pack is published to the bucket**, per D12 —
-   including a trial/beta-only pack gated behind `BetaCapability` or an equivalent flag. A
-   pack that is reachable only by testers is still "accessed," and D12's ruling text is
-   explicit that "trial or beta pack" does not exempt it.
-3. The manifest itself already has a carrier for this: `city-publishing.md` documents a
-   per-city `attribution` array — "`inventory`, `name`, `url`, optional `snapshot_on`,
-   `license`" — captioned "R36 binding consequence (b): the attribution obligation travels
-   with the published data." The NYC entry in that array is where the *machine-readable*
-   attribution belongs; §5 below is an open question about whether that satisfies obligation
-   (B) on its own or whether a *human-readable* surface (an App Store / TestFlight listing,
-   or an in-app screen) is also required.
+1. **The in-app city-downloads screen** — `Cypress/Features/Cities` (`CityDownloadsModel`,
+   `CityDownloadsPresentation` in the design proposal's own §3 vocabulary) is the actual
+   surface that offers an NYC pack for download, whole-city or per-borough, trial packs
+   included. The verbatim block from above renders there. **This ruling is itself the
+   constraint-21 sign-off** for adding disclaimer copy to that screen — CLAUDE.md's "a screen
+   or state not in the mocks is a stop-and-ask" is satisfied by this decision round; whoever
+   builds the screen change does not need to re-raise it as a fresh stop-and-ask.
+2. **The TestFlight/App Store listing text** — wherever the app itself is currently
+   distributed (TestFlight today per `docs/ERRATA.md` E254; the App Store product page once
+   the app is public) also carries the block, satisfying the terms' literal "accessed or
+   downloaded" reading at the level of the *app*, not only the *data pack*.
+3. **Human-visible text is required on both surfaces above; the manifest's `attribution` array
+   does not discharge the obligation by itself, for trial packs either** (§0's third ruling).
+   `city-publishing.md`'s per-city `attribution` array — "`inventory`, `name`, `url`, optional
+   `snapshot_on`, `license`," captioned "R36 binding consequence (b)" — stays in place as
+   supplementary, machine-readable provenance. It is not a substitute for 1 and 2.
+
+**Sequencing, stated once and not repeated:** none of the in-app screen work is part of this
+docs-only PR. It lands with the s17/NYC seed-schema and publish round (design proposal §6.3),
+and it must be live in that same round — the round cannot publish an NYC pack, trial or beta,
+without the city-downloads-screen copy from item 1 already shipped, and without item 2's
+listing text already in place wherever that round's build is distributed.
 
 ---
 
-## 5. Open questions for the owner
+## 5. Open questions — three resolved 2026-08-21, one still open
 
-1. **Where does "the site where the application can be accessed or downloaded" resolve to,
-   concretely, for Cypress today?** The repo does not currently define a "product page" as an
-   app screen or a maintained web page — `docs/distilled/SCREENS.md` has no About/data-
-   sources/attribution screen in the mocks, and per CLAUDE.md constraint 21 a screen not in
-   the mocks is its own stop-and-ask. The literal reading of the terms points at the
-   TestFlight public listing (Cypress currently ships only via TestFlight — `docs/ERRATA.md`
-   E254) and, later, the App Store Connect product page description — both external to the
-   app, neither requiring new mock work. Whether the owner also wants an in-app surface (e.g.
-   a future "data sources" or "about" screen) is a product decision this document does not
-   make.
-2. **Which channel discharges "notify the City,"** given the terms page's own link is dead
-   and no specific email/form for this exact obligation could be found? §2 lists the two best
-   candidates found (NYC Open Data's general contact form; the per-dataset Socrata contact
-   route to Parks & Recreation). Recommend the owner pick one and, if it bounces or goes
-   unanswered, treat the notification as attempted and documented — the terms do not state
-   what happens if the City's own contact channel is unreachable.
-3. **Does the manifest's machine-readable `attribution` array (per `city-publishing.md`)
-   satisfy obligation (B) by itself, or does the boxed text also need to render as visible
-   text somewhere a human reads it before downloading?** The terms say "include," which reads
-   as human-visible; a JSON field a server returns is not obviously "included at the site."
-   Recommend treating §4's rendered block as the actual discharge and the manifest field as
-   a secondary, structured record — the design proposal's D12 ruling did not adjudicate this
-   distinction, and neither does this document.
-4. **Timing against the ingest's own gate.** D20 already blocks the first NYC publish (trial
-   and beta included) on species coverage reaching 90% of rows. D12 adds a second,
-   independent gate — this document is that gate's input, not its close. The publish should
-   wait on **both** D20's coverage threshold and the owner's sign-off that §3 has been sent
-   and §4 is live wherever NYC packs are offered.
+Questions 1–3 below were open when this document was first drafted; the owner ruled on all
+three the same day (§0). Kept here, marked resolved, so the reasoning that led to each ruling
+stays attached to its answer rather than disappearing once the question closes.
+
+1. **RESOLVED — where does "the site where the application can be accessed or downloaded"
+   resolve to, concretely, for Cypress?** *Was open because the repo does not define a
+   "product page" as an app screen or a maintained web page — `docs/distilled/SCREENS.md` has
+   no About/data-sources/attribution screen in the mocks, and CLAUDE.md constraint 21 makes a
+   screen not in the mocks its own stop-and-ask.* **Ruled: both** the in-app city-downloads
+   screen and the TestFlight/App Store listing (§4). The ruling is also the constraint-21
+   sign-off for the screen addition.
+2. **RESOLVED — which channel discharges "notify the City"?** *Was open because the terms
+   page's own link is dead and no specific email/form for this exact obligation could be
+   found.* **Ruled: both reachable candidates, not a single pick** — the general NYC Open Data
+   contact form and each dataset's Contact Dataset Owner route (§2, §3).
+3. **RESOLVED — does the manifest's `attribution` array satisfy obligation (B) alone?** **Ruled:
+   no.** Human-visible text is required on both surfaces in item 1; the array stays
+   supplementary provenance, for trial packs as much as for a general release.
+4. **Still open — timing against the ingest's own gate.** D20 already blocks the first NYC
+   publish (trial and beta included) on species coverage reaching 90% of rows. D12 adds a
+   second, independent gate, and §0/§4 now add a third concrete precondition — the
+   city-downloads-screen copy and the listing text must both be live. This document is those
+   gates' input, not their close. The publish should wait on **all three**: D20's coverage
+   threshold, the notify-the-City note actually sent through all three routes in §2/§3, and
+   the disclaimer text actually live on both surfaces in §4 — not merely drafted here.
 
 ---
 
@@ -266,3 +308,5 @@ not only when it is drawn" (design proposal §11, item 8), so:
 - `docs/investigations/city-publishing.md` — the manifest's `attribution` array field.
 - `docs/ERRATA.md` E254 — confirms the app's only current distribution channel is TestFlight
   (informs open question 1).
+- `docs/rulings-pending/nyc-obligations-2026-08-21.md` — the three 2026-08-21 rulings recorded
+  in §0 above, staged unnumbered for the orchestrator to splice.
