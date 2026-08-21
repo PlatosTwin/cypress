@@ -19,6 +19,15 @@ struct MapTreeCard: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// The placeholder bar's height, on the type ramp the title itself rides.
+    ///
+    /// `relativeTo: .headline` because that is `CypressFont.listNameSerif`'s own `relativeTo:`, so
+    /// the bar and the name it stands in for scale together by construction rather than by two
+    /// numbers agreeing. See `MapLayout.cardTitlePlaceholderHeight` for what the old fixed `21` got
+    /// wrong, and `MapCardPlaceholderTests` for the guard.
+    @ScaledMetric(relativeTo: .headline) private var titlePlaceholderHeight =
+        MapLayout.cardTitlePlaceholderHeight
+
     let subject: MapCardSubject
     /// The user's fix, when there is one. Its absence is the "map without location" state, and it
     /// costs the card exactly one clause.
@@ -110,11 +119,20 @@ struct MapTreeCard: View {
     /// A bar and not a word. Every string that could stand here is either a claim about the tree
     /// ("Unidentified", the defect) or a word about the app rather than the tree ("Loading"), and
     /// this card's whole job is to answer *which tree is this*. A bar answers "not yet" without
-    /// answering the question wrongly, and it holds the row's height so nothing under it moves when
-    /// the name arrives. The width is a name's worth of card and nothing is derived from it.
+    /// answering the question wrongly. The width is a name's worth of card and nothing is derived
+    /// from it.
+    ///
+    /// **It stands one line of the title tall, which is not the same as "nothing moves"** (PR #102
+    /// review). The bar rides `listNameSerif`'s own ramp — see `titlePlaceholderHeight` — so it is
+    /// the height of the line it is standing in for at whatever size the reader is running. What it
+    /// cannot hold is a name that takes the *second* line `.lineLimit(2)` allows at accessibility
+    /// sizes. On the glass at the default size nothing under the card moves at all, and the bar is
+    /// not why: the row is sized by the thumbnail beside the title, which absorbs the difference
+    /// (the card's white surface measured 769.0 → 850.7 pt both before and after the profile read
+    /// landed).
     ///
     /// `surfaceSkeleton` is the app's existing token for exactly this — the blocks drawn where a
-    /// screen's content will be, behind sheets 09 and 10 — so this is the same grey the reader has
+    /// screen's content will be, behind sheets 09 and 10 — so this is the same gray the reader has
     /// already been taught means *content, shortly*, rather than a sixth one.
     ///
     /// Hidden from VoiceOver: the card's own `accessibilityLabel` already says this in words, and a
@@ -124,7 +142,7 @@ struct MapTreeCard: View {
             .fill(CypressColor.surfaceSkeleton)
             .frame(
                 width: MapLayout.cardTitlePlaceholderWidth,
-                height: MapLayout.cardTitlePlaceholderHeight
+                height: titlePlaceholderHeight
             )
             .accessibilityHidden(true)
     }

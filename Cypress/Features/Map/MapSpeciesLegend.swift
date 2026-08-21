@@ -93,6 +93,27 @@ struct MapSpeciesLegend: View {
     /// way to know is there is a fourth filter the reader does not have.
     var maxHeight: CGFloat?
 
+    /// **The trailing strip this legend must not draw into**, in points — 0 for every caller that
+    /// does not put a control there.
+    ///
+    /// Screen 01 passes `MapLayout.compassColumnReserved`, because MapKit's compass takes the map's
+    /// top-**trailing** ornament slot and the legend's band is what hangs below the chip row on the
+    /// same side. The compass is drawn by MapKit *under* this chrome, so a chip that reaches the
+    /// trailing edge does not merely crowd the compass — it covers it and takes its taps, which is
+    /// PR #102's blocking finding: a tap aimed at "put me back to north" applied a species filter
+    /// instead.
+    ///
+    /// **A trailing reserve rather than a vertical one, and that is the whole reason this is
+    /// affordable.** Every vertical slot on this screen is already spoken for — `MapLayout`'s own
+    /// arithmetic leaves exactly `chipRowTop` between the two reserved blocks at every screen,
+    /// inset, palette size and type size the app supports, so there is nowhere to put a 44 pt
+    /// control without taking those points off the legend's ceiling or the notice's floor. Width
+    /// costs nothing: `MapLayout.legendNaturalHeight` already bounds the legend at *one chip per
+    /// line*, so a narrower column can push the drawn legend toward that bound but never past it,
+    /// and every reservation built on it is unchanged. Guarded by
+    /// `AX5ReflowTests.theLegendNeverDrawsIntoTheCompassColumn`.
+    var trailingReserve: CGFloat = 0
+
     var body: some View {
         if !named.isEmpty {
             if let maxHeight {
@@ -141,6 +162,9 @@ struct MapSpeciesLegend: View {
                 .cypressHitArea()
             }
         }
+        // The compass's column, kept clear by narrowing the row rather than by moving anything.
+        // See `trailingReserve`.
+        .padding(.trailing, trailingReserve)
     }
 
     private func chip(_ entry: MapSpeciesPalette.Entry) -> some View {
@@ -232,6 +256,27 @@ struct FlowRow: Layout {
     var spacing: CGFloat
     var lineSpacing: CGFloat
 
+    /// **What a subview is allowed to measure, given the column it has to live in** (PR #102).
+    ///
+    /// Every measurement here was `sizeThatFits(.unspecified)` — the subview's *ideal* size, asked
+    /// for with no constraint — and the ideal was then both wrapped against and placed at. For a
+    /// chip narrower than the row those are the same number. For one wider than the row they are
+    /// not, and the row placed it at its ideal anyway: measured on an iPhone 16 Pro Max at AX5, a
+    /// `Sycamore, London Plane` chip drew **446 pt wide inside a 408 pt column on a 440 pt screen**,
+    /// off the trailing edge of the phone. `lines(_:within:)` could not wrap out of it either —
+    /// a single subview is never moved to a line of its own, so the overflow had nothing to break
+    /// against.
+    ///
+    /// Clamping the *proposal* is what fixes it rather than clipping the result: the chip's label is
+    /// `.lineLimit(1)`, so a narrower proposal truncates the name and leaves the height alone. That
+    /// last part is load-bearing — `MapLayout.legendChipHeightAX5` is a bound on a one-line chip,
+    /// and a fix that let a name wrap instead would have broken every reservation built on it.
+    private func measure(_ subview: Subviews.Element, within width: CGFloat) -> CGSize {
+        let ideal = subview.sizeThatFits(.unspecified)
+        guard width.isFinite, ideal.width > width else { return ideal }
+        return subview.sizeThatFits(ProposedViewSize(width: width, height: ideal.height))
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         let rows = lines(subviews, within: width)
@@ -252,7 +297,7 @@ struct FlowRow: Layout {
         for row in lines(subviews, within: bounds.width) {
             var x = bounds.minX
             for index in row.indices {
-                let size = subviews[index].sizeThatFits(.unspecified)
+                let size = measure(subviews[index], within: bounds.width)
                 subviews[index].place(
                     at: CGPoint(x: x, y: y + (row.height - size.height) / 2),
                     proposal: ProposedViewSize(size)
@@ -273,7 +318,7 @@ struct FlowRow: Layout {
         var rows: [Line] = []
         var current = Line()
         for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
+            let size = measure(subviews[index], within: width)
             let next = current.indices.isEmpty ? size.width : current.width + spacing + size.width
             if !current.indices.isEmpty, next > width {
                 rows.append(current)

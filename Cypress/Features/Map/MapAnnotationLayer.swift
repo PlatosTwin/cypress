@@ -363,6 +363,11 @@ enum MapPinImage {
 final class AimableMapView: MKMapView {
     var onFirstLayout: (() -> Void)?
 
+    /// The last value `MapAnnotationLayer.applyCompass` wrote into `layoutMargins.top`, and the only
+    /// record of it: the getter reports the safe-area-adjusted margin instead, so it cannot be asked
+    /// what was set. See `applyCompass` for why the guard needs this rather than the getter.
+    var lastCompassMarginTop: CGFloat?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard onFirstLayout != nil, !bounds.isEmpty else { return }
@@ -391,8 +396,10 @@ struct MapAnnotationLayer: UIViewRepresentable {
     var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
-    /// Where MapKit's compass is allowed to start, or `nil` for no compass at all. See the compass
-    /// block in `makeUIView`, and `MapKitBasemap.compassTopInset` for which screens get one.
+    /// Where the compass's top edge belongs, **in screen coordinates**, or `nil` for no compass at
+    /// all. Not a layout margin: `applyCompass` subtracts the map's own safe-area top on the way to
+    /// one, because `insetsLayoutMarginsFromSafeArea` adds it straight back. See the compass block
+    /// in `makeUIView`, and `MapKitBasemap.compassTopInset` for which screens get one.
     var compassTopInset: CGFloat?
 
     var onCameraChange: (BoundingBox, Int) -> Void
@@ -412,15 +419,58 @@ struct MapAnnotationLayer: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    /// Turns the compass on or off and puts it where `compassTopInset` says. See the compass block
-    /// in `makeUIView` for the ruling and for how the inset is arrived at.
+    /// Turns the compass on or off and puts its top edge at the **screen** y `compassTopInset`
+    /// names. See the compass block in `makeUIView` for the ruling and for how that y is arrived at.
     ///
-    /// `layoutMargins` is written only when it differs: it is a layout input, and rewriting it on
-    /// every camera pass would dirty the map's layout sixty times a second during a pan.
+    /// ── **The safe area is added, not maxed — so it is subtracted here** (PR #102) ──────────────
+    ///
+    /// `MKMapView.insetsLayoutMarginsFromSafeArea` is `true`, and what that does to `layoutMargins`
+    /// is **add** the view's own safe-area inset to the value you set, not take the larger of the
+    /// two. Probed on an `MKMapView` in a window with a real safe area: written `(top: 211)` against
+    /// a `safeAreaInsets.top` of 113 reads back as `(top: 324)`, and 211 + 113 = 324.
+    ///
+    /// This map is `MapCanvas`'s `.ignoresSafeArea` basemap, so its own safe-area top *is* the
+    /// screen's, and the margin that lands the compass at screen y `top` is `top − safeAreaTop`.
+    /// Writing `top` unsubtracted — which is what this did until PR #102 — put the compass a whole
+    /// safe-area-top lower than the chrome it was aimed under: 168 + 62 ≈ 235 measured on an iPhone
+    /// 16 Pro Max at the default size, against the 168 intended.
+    ///
+    /// **Read off this same view rather than handed in, and that is deliberate.** The number wanted
+    /// here is not "the screen's safe area" but "whatever this view is about to add back", and the
+    /// only authority on that is the view. E243's warning is against *baking* an inset into a
+    /// constant, which is the opposite move. Before the map is in a hierarchy the inset reads 0 and
+    /// the margin is the full y; `updateUIView` runs after layout and corrects it, and the compass
+    /// is hidden at north until the reader rotates the map in any case.
+    ///
+    /// **`insetsLayoutMarginsFromSafeArea` stays on**, though turning it off would make the write
+    /// literal. It is also what gives the Legal attribution its bottom safe-area inset — the probe
+    /// reads a bottom margin of 34 after writing 0 — so switching it off to simplify this line
+    /// would push the attribution into the home indicator. Zeroing `left`/`right`/`bottom` is
+    /// harmless for the same reason and was verified: `MKMapView`'s own defaults are already
+    /// `(0, 0, 0, 0)` and the safe area is re-added on top, so writing zeros changes nothing but
+    /// the top.
+    ///
+    /// ── **The write-guard is against what was last written** (PR #102) ──────────────────────────
+    ///
+    /// This compared `mapView.layoutMargins != margins`, and that guard could never fire: the getter
+    /// returns the safe-area-adjusted margins, so on any map with a safe area it reads
+    /// `(written + safeTop, 0, 34, 0)` against a `margins` of `(written, 0, 0, 0)` and the two are
+    /// unequal every time. `applyCompass` is called from `updateUIView`, so the write the comment
+    /// claimed to be preventing happened on every camera pass instead. Comparing against the value
+    /// this actually last wrote — `AimableMapView.lastCompassMarginTop` — is what makes the claim
+    /// true, and it is the only comparison available: there is no getter that reports it back.
+    ///
+    /// **Not read/modify/write**, for the same additive reason. `mapView.layoutMargins` *reads*
+    /// `(written + safeTop, 0, 34, 0)`, so writing that struct back would hand the safe area in as
+    /// a literal and have it added a second time on the next pass — the bottom margin compounding
+    /// 34 → 68 → 102. The other three edges are written as the zeros MapKit already has them at.
     private func applyCompass(to mapView: MKMapView) {
         mapView.showsCompass = compassTopInset != nil
-        let margins = UIEdgeInsets(top: compassTopInset ?? 0, left: 0, bottom: 0, right: 0)
-        if mapView.layoutMargins != margins { mapView.layoutMargins = margins }
+        guard let compassTopInset, let mapView = mapView as? AimableMapView else { return }
+        let marginTop = max(0, compassTopInset - mapView.safeAreaInsets.top)
+        guard mapView.lastCompassMarginTop != marginTop else { return }
+        mapView.lastCompassMarginTop = marginTop
+        mapView.layoutMargins = UIEdgeInsets(top: marginTop, left: 0, bottom: 0, right: 0)
     }
 
     /// Whether this map view has an area to aim a camera at. See `AimableMapView` and E168.
@@ -469,12 +519,24 @@ struct MapAnnotationLayer: UIViewRepresentable {
         // control if it is behind the search bar.
         //
         // `layoutMargins` is what `MKMapView` lays its ornaments out against, so the compass is
-        // pushed to just under the chip row: `topOrnamentInset`, which screen 01 supplies as
-        // `MapLayout.topChromeReserved(topInset:isAccessibilitySize:)` — the *same* sum
-        // `MapLocationNotice` uses, and by construction the y of the chip row's own bottom edge.
-        // Reusing it rather than adding numbers here is the point: the chrome moves at accessibility
+        // pushed to just under the chip row: `compassTopInset`, which screen 01 supplies as
+        // `MapLayout.compassTop(topInset:isAccessibilitySize:)` — by construction the y of the chip
+        // row's own bottom edge, built from the same terms `MapLocationNotice`'s budget is. Reusing
+        // them rather than adding numbers here is the point: the chrome moves at accessibility
         // sizes, and a second hand-built total would move with it for exactly as long as somebody
         // remembered to update both.
+        //
+        // **That y is a screen coordinate and the layout margin is not** — `applyCompass` does the
+        // conversion, because `insetsLayoutMarginsFromSafeArea` adds the safe area to whatever is
+        // written. Read that function before changing anything here; PR #102's blocking finding was
+        // the two being conflated.
+        //
+        // ── What keeps the legend off it ─────────────────────────────────────────────────────────
+        // The species legend hangs below the chip row on this same trailing side and is drawn *over*
+        // this map, so a chip long enough to reach the trailing edge covers the compass and takes
+        // its taps. It is held out of a `MapLayout.compassColumnReserved` strip instead
+        // (`MapSpeciesLegend.trailingReserve`), which costs no vertical budget — there is none to
+        // spend. `MapLayout`'s compass block carries the sweep that establishes that.
         //
         // The two one-tree screens (16's pin adjust, the pin-set map) draw this same basemap and are
         // **not** in the ruling, so they pass `nil` and get no compass. See

@@ -228,11 +228,43 @@ enum MapLayout {
     /// the tap and the profile read landing. **NOT SPECIFIED** — see that property for why the card
     /// draws a bar there rather than a word.
     ///
-    /// The height is `CypressFont.listNameSerif`'s drawn line (17.5pt serif), so the row is the height it
-    /// will be once the name arrives and nothing under the card moves when it does. The width is a
-    /// street-tree name's worth of bar, short of the badge that sits beside it.
+    /// The width is a street-tree name's worth of bar, short of the badge that sits beside it. It is
+    /// deliberately *not* scaled: nothing is derived from it, and a bar that grew with the type ramp
+    /// would only reach the badge sooner.
     static let cardTitlePlaceholderWidth: CGFloat = 132
-    static let cardTitlePlaceholderHeight: CGFloat = 21
+
+    /// The bar's height — **`CypressFont.listNameSerif`'s drawn line at the reader's own type size**.
+    ///
+    /// **This was a fixed `21` and it was wrong at every size** (PR #102 review). The doc claimed 21
+    /// was "`CypressFont.listNameSerif`'s drawn line (17.5pt serif)"; measured through
+    /// `UIFontMetrics`, that line is **24.68 pt** at the default content size — 21 is `17.5 × 1.2`,
+    /// a guess at a line height rather than a measurement of one. Worse, the constant was static
+    /// while the title it stands in for is `relativeTo: .headline` and reaches **67.18 pt at AX5**,
+    /// where `MapTreeCard` also gives the title `.lineLimit(2)`. The bar was a fifth of the row it
+    /// claimed to be holding open.
+    ///
+    /// The number here is the face's **unscaled** drawn line, measured rather than derived from a
+    /// multiplier: the 17.5 pt `SourceSerif4-SemiBold` draws **23.9925** pt of line, rounded to the
+    /// hundredth. Scaling it is the use site's job (below). For reference, the ramp it rides
+    /// measures 24.68 pt at `.large`, 31.53 at `.xxxLarge`, 43.87 at `.accessibility1` and 67.18 at
+    /// `.accessibility5`.
+    ///
+    /// **What this does and does not buy.** It makes the bar the height of *one* line of the title
+    /// at the reader's size, which is the claim the old doc made and did not keep. It is not a
+    /// promise that nothing under the card moves: a name that takes the second line
+    /// `.lineLimit(2)` allows is taller than one line at any size, and on the glass at the default
+    /// size the row is sized by the thumbnail beside the title anyway — the card's white surface
+    /// measured 769.0 → 850.7 pt in both the awaiting and the resolved frame, unchanged, because
+    /// the 3.7 pt the title moved was inside the thumbnail's own height. The bar holding a
+    /// title-sized row is the honest claim; "nothing moves" was not.
+    ///
+    /// **The scaling itself lives at the use site**, as `@ScaledMetric(relativeTo: .headline)` on
+    /// `MapTreeCard.titlePlaceholderHeight` — `.headline` because that is `listNameSerif`'s own
+    /// `relativeTo:`, so the bar rides the exact ramp the title does. This constant is that
+    /// metric's base value and the only number written down. Guarded by
+    /// `MapCardPlaceholderTests`, which measures the bar against a real styled `Text` at both ends
+    /// of the ramp rather than against a table of expected points.
+    static let cardTitlePlaceholderHeight: CGFloat = 23.99
 
     /// A tapped pin grows a little so the card and the pin read as one selection. **NOT SPECIFIED**
     /// in SCREENS.md — 01 draws no selected pin — so it is deliberately the smallest change that
@@ -792,6 +824,78 @@ enum MapLayout {
                 namedSpecies: namedSpecies,
                 isAccessibilitySize: isAccessibilitySize
             )
+    }
+
+    // MARK: MapKit's compass, and why its room is bought sideways (PR #102)
+    //
+    // The owner ruled a MapKit-native compass onto screen 01 on 2026-08-21 (see the compass block in
+    // `MapAnnotationLayer.makeUIView`). MapKit draws it in the map's top-**trailing** ornament slot,
+    // under all of this screen's chrome, and PR #102's review found it covered by a species legend
+    // chip at AX5 — illegible, untappable, and taking the tap for itself: aiming at "put me back to
+    // north" applied a species filter and removed most of the pins.
+    //
+    // ── There is no vertical room, and that is provable rather than felt ─────────────────────────
+    //
+    // The obvious repair is to push the compass below the legend, the way `topChromeBottom` above
+    // exists to allow. **It does not fit, at any size, on any screen.** `chromeSlackBelowChipRow`
+    // subtracts `chipRowTop` precisely so the two reserved blocks come to rest a rhythm apart, and
+    // that subtraction is exact: sweeping the six supported screen heights against the four
+    // supported insets, both type buckets and every palette size — 48 combinations — the gap between
+    // `topChromeBottom` and the bottom block's own top edge is **12.0 pt in every one of them**, and
+    // 12 is `chipRowTop`. There is no 44 pt hole between the blocks because the arithmetic was
+    // written to leave exactly one gap and no more.
+    //
+    // Taking the points from an occupant instead was measured and rejected: reserving
+    // `compassSize + chipRowTop` out of `chromeSlackBelowChipRow` drives `chromeBudgetShortfall`
+    // to 5–47 pt on a 667 pt screen at AX5 — turning `theChromeBudgetCanHouseBothOccupants` red on
+    // a screen the app supports — and costs the legend real chips on every shipping phone at AX5
+    // (932 pt at a 62 pt inset: 264 pt of legend down to 181).
+    //
+    // ── So the room is bought sideways, and sideways is free ─────────────────────────────────────
+    //
+    // `legendNaturalHeight` bounds the legend at **one chip per line** already, so narrowing the
+    // legend's column can push the drawn legend toward that bound and can never push it past:
+    // every vertical reservation on this screen is arithmetically unchanged by a trailing reserve.
+    // `MapSpeciesLegend.trailingReserve` is that reserve, and the compass keeps the y the ruling
+    // always intended for it — the chip row's own bottom edge.
+    //
+    // The enabling half was a real defect of the legend's own, found by the same review: `FlowRow`
+    // measured every chip at its *ideal* width and placed it there, so a `Sycamore, London Plane`
+    // chip at AX5 drew 446 pt wide inside a 408 pt column on a 440 pt screen — off the trailing edge
+    // of the phone. A trailing reserve on a row that overflows its column buys nothing, so
+    // `FlowRow.measure(_:within:)` clamps the proposal first. See `docs/errata-pending/`.
+
+    /// MapKit's compass ornament, measured off the glass: **44 × 44 pt**, drawn about 5 pt in from
+    /// the map's trailing edge (iPhone 16 Pro Max, x 391–435 on a 440 pt screen). A fixed control —
+    /// it carries no Dynamic-Type text, so unlike every other reservation in this file it does not
+    /// need two buckets.
+    static let compassSize: CGFloat = CypressSpacing.minTapTarget
+
+    /// **The trailing strip on screen 01 that belongs to the compass**, and which
+    /// `MapSpeciesLegend` is therefore not given.
+    ///
+    /// The compass plus the same 12 pt rhythm every other gap on this screen uses, which leaves
+    /// about 7 pt of visible air between the nearest chip and the compass once MapKit's own ~5 pt
+    /// trailing offset is counted. Guarded by
+    /// `AX5ReflowTests.theLegendNeverDrawsIntoTheCompassColumn`.
+    static let compassColumnReserved: CGFloat = compassSize + chipRowTop
+
+    /// **Where the compass's top edge belongs, in screen coordinates** — the chip row's own bottom
+    /// edge, which is what the ruling's call site always said it was.
+    ///
+    /// This is `topChromeReserved` and not `topChromeBottom`: the legend hangs below the chip row on
+    /// the same side, but it is held out of the compass's column horizontally
+    /// (`compassColumnReserved`) rather than stepped over vertically, for the reason the block above
+    /// gives. So the compass sits immediately under the chip row at every type size, and the only
+    /// thing it must clear is the row it hangs from.
+    ///
+    /// **Screen coordinates, not a layout margin.** `MKMapView.insetsLayoutMarginsFromSafeArea` is
+    /// `true`, so the map *adds* its own safe-area top to whatever is written into `layoutMargins`.
+    /// Converting this y into that margin is `MapAnnotationLayer.applyCompass`'s job and is done
+    /// there, once, against the same view's own safe area — see that function. Handing a screen y
+    /// out of `MapLayout` keeps this file in the one coordinate space all its other terms are in.
+    static func compassTop(topInset: CGFloat, isAccessibilitySize: Bool) -> CGFloat {
+        topChromeReserved(topInset: topInset, isAccessibilitySize: isAccessibilitySize)
     }
 
     /// The height `MapLocationNotice` may take in the bottom slot before it must scroll instead

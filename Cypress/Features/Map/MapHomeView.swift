@@ -309,11 +309,17 @@ struct MapHomeView: View {
             userHeadingDegrees: location.headingDegrees,
             selectedPinID: model.selectedPinID,
             // MapKit's compass takes the top-trailing ornament slot, which on this screen is under
-            // the search bar (task: the owner's compass ruling of 2026-08-21; see
-            // `MapAnnotationLayer.makeUIView`). This is the y of the chip row's own bottom edge, and
-            // it is the same sum `MapLocationNotice`'s budget is built from rather than a second
-            // hand-added total that would drift from the chrome it is clearing.
-            compassTopInset: MapLayout.topChromeReserved(
+            // the search bar (the owner's compass ruling of 2026-08-21; see
+            // `MapAnnotationLayer.makeUIView`). This is the y of the chip row's own bottom edge, in
+            // **screen** coordinates — `MapAnnotationLayer.applyCompass` converts it to the map's
+            // layout margin, which is not the same number because `insetsLayoutMarginsFromSafeArea`
+            // adds the safe area back.
+            //
+            // The legend hangs below the chip row on this same side and is kept out of the
+            // compass's column by `MapSpeciesLegend.trailingReserve` below, rather than by stepping
+            // the compass over it — there is no vertical room to step into. See `MapLayout`'s
+            // compass block for the sweep that establishes that.
+            compassTopInset: MapLayout.compassTop(
                 topInset: topInset,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             ),
@@ -449,7 +455,12 @@ struct MapHomeView: View {
                             topInset: topInset,
                             namedSpecies: MapSpeciesLegend.named(in: model.speciesPalette).count,
                             isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
-                        )
+                        ),
+                        // MapKit draws its compass in this same trailing column, underneath this
+                        // chrome, so a chip that reaches the trailing edge covers it and takes its
+                        // taps (PR #102's blocking finding). The room is bought sideways because
+                        // there is none vertically — `MapLayout`'s compass block has the sweep.
+                        trailingReserve: MapLayout.compassColumnReserved
                     )
                     .accessibilitySortPriority(1)
                 }
