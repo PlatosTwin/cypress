@@ -541,6 +541,8 @@ public struct ContributionStore {
     /// A screen that only read `storage_key` would show nothing for the seconds or minutes between
     /// the shutter and the drain — which is precisely when somebody is looking at the tree they just
     /// photographed. Hence both.
+    ///
+    /// See `treeID(ofPhoto:connection:)` below for the narrower read a queued vote needs.
     public func photoBinaryLocation(
         id: UUID,
         connection: SQLiteConnection
@@ -554,6 +556,25 @@ public struct ContributionStore {
             (storageKey: try row.stringIfPresent("storage_key"),
              localPath: try row.stringIfPresent("local_path"))
         }
+    }
+
+    /// The tree a live photograph is on, or nil when there is no such photograph.
+    ///
+    /// It exists because a queued mutation has to name a tree: `POST /sync` requires `tree_uuid` on
+    /// every item, and a vote's subject is a photograph. The join is one this device can make and
+    /// the service cannot, so `LocalAPI.setPhotoVote` makes it before the row is written rather than
+    /// queueing an item the service would have to refuse.
+    ///
+    /// **The same `deleted_at IS NULL` narrowing `photoBinaryLocation` carries**, so this answers
+    /// nil for exactly the photographs that read answers nil for — which is what lets it stand in
+    /// for that call's existence check rather than add a second, subtly different one.
+    public func treeID(ofPhoto id: UUID, connection: SQLiteConnection) throws -> UUID? {
+        let statement = try connection.cachedStatement("""
+            SELECT tree_uuid FROM photos WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.uuid("tree_uuid") }
     }
 
     // MARK: - Deleting one photograph (AppSchema v12)
@@ -818,7 +839,15 @@ public struct ContributionStore {
 
     /// Takes a vote back. No tombstone: an un-vote is the absence of a judgment, and a missing row
     /// and a zero score are the same fact (`AppSchema` v8).
-    public func clearPhotoVote(photoID: UUID, owner: FavoriteOwner, connection: SQLiteConnection) throws {
+    /// - Returns: whether a vote was actually removed.
+    ///
+    /// **False means there was nothing to take back**, which is a different fact from "the vote is
+    /// now absent" and the two used to be one answer. `LocalAPI.setPhotoVote` reads it to decide
+    /// whether the act is worth queueing: a clear against a photograph this owner never voted on
+    /// changes nothing, and a `photo_vote` contribution recording a withdrawal that never happened
+    /// is a record of an act nobody performed.
+    @discardableResult
+    public func clearPhotoVote(photoID: UUID, owner: FavoriteOwner, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
             DELETE FROM photo_votes
              WHERE photo_id = :photo COLLATE NOCASE
@@ -831,7 +860,10 @@ public struct ContributionStore {
             ":device": owner.deviceID?.uuidString
         ])
         try statement.run()
+        // Read before `reset`, which is where `sqlite3_changes` is still this statement's.
+        let removed = connection.changes > 0
         _ = try statement.reset()
+        return removed
     }
 
     /// Every photograph of this tree that anybody has voted on, with the total and this owner's own.

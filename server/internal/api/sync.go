@@ -59,9 +59,82 @@ type favoritePayload struct {
 	IsFavorite *bool `json:"isFavorite"`
 }
 
+// addTreePayload is the shape of `TreeAddition` as the client encodes it
+// (`Cypress/Data/Outbox/CommunityMutations.swift`: keys stay the Swift property names).
+//
+// **`treeID` is the tree's id and `clientUUID` is the item's**, and they are different values on
+// purpose — the client's `LocalAPI.addTree` mints a `Tree` and stores `TreeDraft.clientUUID` beside
+// it, and every later record about the tree keys on the tree id. The handler checks `treeID`
+// against the item's own `tree_uuid` and refuses a disagreement rather than picking one, because
+// the wrong choice gives a community tree two identities — the defect `community_trees` in
+// `001_initial.sql` records having already been fixed once.
+//
+// `clientUUID` is present in the payload and deliberately not read: the envelope's `client_uuid` is
+// the key this service dedupes on and a second copy is a second place for one fact to be wrong.
+type addTreePayload struct {
+	TreeID      uuid.UUID  `json:"treeID"`
+	Coordinate  wireLatLon `json:"coordinate"`
+	Address     *string    `json:"address"`
+	Placement   string     `json:"placement"`
+	SpeciesID   *uuid.UUID `json:"speciesID"`
+	LandContext *string    `json:"landContext"`
+}
+
+// wireLatLon is `Coordinate` as the client's `JSONEncoder` writes it.
+type wireLatLon struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+// syncKinds is every kind this service accepts on `POST /sync`.
+//
+// The first six are BUILD-PLAN §4's. The ten after them are spec §3.4's nine mutations — the
+// review-dismissal pair is one entry in that list and two kinds here, for the reason
+// `002_community_mutation_kinds.sql` gives.
+//
+// **A kind in this map is accepted, recorded, and — for nine of the ten — not materialized.** That
+// is not a shortfall against the older kinds: five of the six above have no materialized table
+// either, and `contributions` is the record. `add_tree` is the exception and says why in
+// `store.Mutation.CommunityTree`.
+//
+// The other nine are not one group and the reason differs:
+//
+//   - **Eight of them this service could not materialize if it wanted to.** A species claim or
+//     correction needs an assertion chain with a supersession order and the two-armed authority
+//     RULINGS R45 carries; the two reports and the two dismissals need review flags with a status
+//     and an author's arm; a photo vote needs a per-photograph tally. None of those tables exists
+//     here and none of those rules is one this service can evaluate — ARCHITECTURE §8 makes the
+//     moderation surface a web deliverable. Recording the act and refusing to guess at its effect is
+//     the honest half; guessing would move somebody's species on an unadjudicated say-so.
+//
+//   - **`photo_withdrawal` is different, and the earlier version of this comment said otherwise.**
+//     This service has all three pieces already: the `photos` table (`001_initial.sql`, read by
+//     `store.PhotosForTree` into every `GET /trees/{id}`), the store method
+//     `Store.DeletePhotoByContributor(ctx, id, owner)` — which takes exactly the `owner` this
+//     handler holds — and the route `DELETE /photos/{id}` (`photos.go`), whose header cites RULINGS
+//     R72 ruling 5 and ERRATA E147: "the person who took it has to be able to take it back."
+//     Wiring it here would be one branch beside `insertCommunityTree`.
+//
+//     **It is deferred because there is nothing here yet to withdraw.** No photograph reaches this
+//     service in the shipping build: `OutboxSendSink` carries no photo method, and the apply sink's
+//     `uploadPhoto` is `APIOutboxTransport` over `LocalAPI`, which moves the file inside the app
+//     container. A withdrawal sent today would name bytes this service has never held. Wiring the
+//     upload and wiring this deletion are one round and it is not this one.
+//
+//     **The round that wires photo upload must wire `DeletePhotoByContributor` in the same change**,
+//     because the moment uploads work this path is wrong *and tells the contributor otherwise*: the
+//     row drains, reaches `done`, and screen 17 reads "Photo removed" as sent while
+//     `GET /photos/{id}` keeps serving the bytes to every other device. That is this project's
+//     signature failure applied to a deletion. Recorded in
+//     `docs/errata-pending/outbox-kind-vocabulary-drift.md`; no test asserts anything about a
+//     `photo_withdrawal` reaching this service today, in either direction.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,
+	"add_tree": true, "species_claim": true, "species_correction": true,
+	"wrong_species_report": true, "never_existed_report": true,
+	"species_review_dismissal": true, "record_review_dismissal": true,
+	"photo_vote": true, "photo_withdrawal": true, "hazard_redirect": true,
 }
 
 // maxSyncBatch caps one request. A drain sends what is due, and a phone that has been in a drawer
@@ -206,18 +279,82 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		}
 	}
 
+	// ── `add_tree` is the one kind that materializes, and the one that can be refused ──────────
+	//
+	// The key is looked up **first**, exactly as `POST /trees` does it and for the same reason
+	// stated there: the dedupe is "10 m, any species", so a byte-identical replay after a flap
+	// matches the row it created moments ago at zero metres, and answering `conflict` to that is a
+	// terminal failure over a success. A tree this service already holds skips the proximity query
+	// outright.
+	//
+	// A trip against **somebody else's** tree is `conflict`: non-retryable, so the item fails on the
+	// spot instead of spending 48 h on an answer only a person can give, and screen 17 shows it.
+	// The candidate list `POST /trees` returns beside the code has nowhere to travel in a per-item
+	// verdict, so this refusal is the bare code — see the round's PR for the open question.
+	var addition *store.NewCommunityTree
+	if item.Kind == "add_tree" {
+		var payload addTreePayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.TreeID != item.TreeUUID {
+			return failed(apierr.ValidationFailed, "That item disagrees with itself about which tree it adds.")
+		}
+		lat, lon := payload.Coordinate.Latitude, payload.Coordinate.Longitude
+		if lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+			return failed(apierr.ValidationFailed, "That location is not on the map.")
+		}
+		placement := payload.Placement
+		if placement == "" {
+			placement = defaultTreePlacement
+		}
+		if !treePlacements[placement] {
+			return failed(apierr.ValidationFailed, "That placement is not one this service accepts.")
+		}
+		if payload.LandContext != nil && !landContexts[*payload.LandContext] {
+			return failed(apierr.ValidationFailed, "That land context is not one this service accepts.")
+		}
+
+		existing, err := s.Store.CommunityTreeExists(r.Context(), item.TreeUUID)
+		if err != nil {
+			s.Log.Error("looking up a community tree", "tree_uuid", item.TreeUUID, "cause", err)
+			return failed(apierr.ServerError, "Something went wrong on our end.")
+		}
+		if !existing {
+			candidates, err := s.Store.TreesWithin(r.Context(), lat, lon, store.ProximityDedupeRadiusM)
+			if err != nil {
+				s.Log.Error("running the proximity dedupe", "tree_uuid", item.TreeUUID, "cause", err)
+				return failed(apierr.ServerError, "Something went wrong on our end.")
+			}
+			if len(candidates) > 0 {
+				return failed(apierr.Conflict, "There is already a tree recorded here.")
+			}
+		}
+
+		addition = &store.NewCommunityTree{
+			ID:          item.TreeUUID,
+			Lat:         lat,
+			Lon:         lon,
+			Address:     payload.Address,
+			SpeciesID:   payload.SpeciesID,
+			Placement:   placement,
+			LandContext: payload.LandContext,
+		}
+	}
+
 	occurredAt := item.OccurredAt
 	if occurredAt.IsZero() {
 		occurredAt = s.Store.Now()
 	}
 
 	outcome, err := s.Store.Apply(r.Context(), store.Mutation{
-		ClientUUID: item.ClientUUID,
-		Kind:       item.Kind,
-		TreeUUID:   item.TreeUUID,
-		Payload:    item.Payload,
-		OccurredAt: occurredAt,
-		IsFavorite: isFavorite,
+		ClientUUID:    item.ClientUUID,
+		Kind:          item.Kind,
+		TreeUUID:      item.TreeUUID,
+		Payload:       item.Payload,
+		OccurredAt:    occurredAt,
+		IsFavorite:    isFavorite,
+		CommunityTree: addition,
 	}, owner)
 
 	switch {

@@ -109,6 +109,11 @@ struct RemoteAccessTests {
                 attribution: Attribution.anonymous(deviceID: data.deviceID)
             )
         )
+        // `addTree` is one of spec §3.4's nine and now queues an `add_tree` row of its own,
+        // in the transaction that adds the tree. This test is not about that row, and the
+        // counts below would otherwise be counting the fixture.
+        try await OutboxTestSupport.discardFixtureRows(in: data.store)
+
         _ = try await data.outbox.enqueue(
             .visit(Visit(
                 treeID: tree.id,

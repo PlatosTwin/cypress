@@ -505,6 +505,26 @@ public actor LocalAPI: CypressAPI {
                 takenOnDevice: deviceID,
                 connection: connection
             )
+            // Spec §3.4: the mutation is queued in the transaction that performed it, so the tree
+            // and the row that will send it land together or not at all. The photograph is *not*
+            // attached to the row — it is ingested above, and `OutboxSendSink` carries no binary.
+            try Self.queueAppliedMutation(
+                .addTree(
+                    TreeAddition(
+                        clientUUID: draft.clientUUID,
+                        treeID: tree.id,
+                        attribution: attribution,
+                        coordinate: draft.coordinate,
+                        address: draft.address,
+                        placement: draft.placement,
+                        speciesID: draft.speciesID,
+                        landContext: draft.landContext,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
         }
         return tree
     }
@@ -536,7 +556,8 @@ public actor LocalAPI: CypressAPI {
         }
         guard subject.speciesCurrentID == nil else { throw APIError.conflict }
 
-        let owner = ContributionOwner(attribution)
+        let mine = attribution
+        let owner = ContributionOwner(mine)
         try await store.queue.write { connection in
             guard try communityTrees.claimSpecies(
                 treeID: treeID, speciesID: speciesID, at: moment, connection: connection
@@ -559,6 +580,20 @@ public actor LocalAPI: CypressAPI {
                     createdAt: moment,
                     updatedAt: moment
                 ),
+                connection: connection
+            )
+            // Spec §3.4, in the same transaction as the claim — see `addTree`.
+            try Self.queueAppliedMutation(
+                .speciesClaim(
+                    SpeciesStatement(
+                        clientUUID: UUID(),
+                        treeID: treeID,
+                        speciesID: speciesID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
                 connection: connection
             )
         }
@@ -656,6 +691,22 @@ public actor LocalAPI: CypressAPI {
             for flag in openFlags {
                 try contributions.confirmReviewFlag(id: flag.id, at: moment, connection: connection)
             }
+            // Spec §3.4, in the same transaction as the supersession — see `addTree`. A separate
+            // kind from `speciesClaim` because the two acts mean different things; see
+            // `SpeciesStatement`.
+            try Self.queueAppliedMutation(
+                .speciesCorrection(
+                    SpeciesStatement(
+                        clientUUID: UUID(),
+                        treeID: treeID,
+                        speciesID: speciesID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
         }
 
         return try await treeProfile(id: treeID).tree
@@ -705,6 +756,21 @@ public actor LocalAPI: CypressAPI {
         )
         try await store.queue.write { connection in
             try contributions.insert(flag, connection: connection)
+            // Spec §3.4, in the same transaction as the flag — see `addTree`.
+            try Self.queueAppliedMutation(
+                .wrongSpeciesReport(
+                    ReviewReport(
+                        clientUUID: UUID(),
+                        flagID: flag.id,
+                        treeID: treeID,
+                        kind: flag.kind,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
         }
     }
 
@@ -736,6 +802,23 @@ public actor LocalAPI: CypressAPI {
 
         try await store.queue.write { connection in
             try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
+            // Spec §3.4, in the same transaction as the dismissal — see `addTree`. Which arm of the
+            // gate above allowed it (a lead, or the author of the disputed claim) is decided here
+            // and not restated on the wire: the service holds no assertion chain and no role, so it
+            // could not re-derive the answer and must not appear to.
+            try Self.queueAppliedMutation(
+                .speciesReviewDismissal(
+                    ReviewDismissal(
+                        clientUUID: UUID(),
+                        flagID: flagID,
+                        treeID: flag.treeID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
         }
     }
 
@@ -795,6 +878,7 @@ public actor LocalAPI: CypressAPI {
     /// write by somebody looking at the open report on their own screen.
     public func flagNeverExisted(treeID: UUID) async throws {
         let moment = now()
+        let mine = attribution
         let raiser = userID
 
         try await store.queue.read { (connection: SQLiteConnection) -> Void in
@@ -822,6 +906,21 @@ public actor LocalAPI: CypressAPI {
         )
         try await store.queue.write { connection in
             try contributions.insert(flag, connection: connection)
+            // Spec §3.4, in the same transaction as the flag — see `addTree`.
+            try Self.queueAppliedMutation(
+                .neverExistedReport(
+                    ReviewReport(
+                        clientUUID: UUID(),
+                        flagID: flag.id,
+                        treeID: treeID,
+                        kind: flag.kind,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
         }
     }
 
@@ -868,6 +967,7 @@ public actor LocalAPI: CypressAPI {
     public func dismissRecordReview(flagID: UUID) async throws {
         guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
         let moment = now()
+        let mine = attribution
         try await store.queue.write { connection in
             guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
                   flag.deletedAt == nil else {
@@ -877,6 +977,21 @@ public actor LocalAPI: CypressAPI {
             guard flag.status == .open else { throw APIError.conflict }
 
             try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
+            // Spec §3.4, in the same transaction as the dismissal — see `addTree`. Lead-only, and
+            // the gate is above, on this device; see `ReviewDismissal`.
+            try Self.queueAppliedMutation(
+                .recordReviewDismissal(
+                    ReviewDismissal(
+                        clientUUID: UUID(),
+                        flagID: flagID,
+                        treeID: flag.treeID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
         }
     }
 
@@ -1386,8 +1501,53 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// Writes the queue row for one of spec §3.4's nine, **inside the transaction that performed
+    /// the mutation**.
+    ///
+    /// ── Why the row is written here and not by a caller ────────────────────────────────────────
+    ///
+    /// Because it has to be in the same transaction, and this is the only layer that has one.
+    /// `RoutedAPI` could enqueue after `local.addTree(_:)` returned, and a process that died in
+    /// between would leave a tree on the phone that no drain would ever send — recoverable only by
+    /// a sweep of pre-existing rows, which is the one thing the outbox is permanently forbidden to
+    /// do. In here the two writes are one write.
+    ///
+    /// `at:` is the **row's** clock, not the mutation's. They are usually the same reading and they
+    /// are not the same fact: `occurredAt` comes off the payload (a hazard sheet shown yesterday and
+    /// logged today is dated yesterday), while `createdAt` starts the 48 h retry window and must
+    /// therefore be now. Passing the mutation's time here would open a queue row that had already
+    /// been expiring for a day.
+    ///
+    /// Failure is **not** swallowed. A row that cannot be queued rolls the mutation back with it,
+    /// which is the honest answer: the alternative is telling somebody their correction saved while
+    /// silently deciding it will never leave the phone, which is the defect this whole round is
+    /// about.
+    private static func queueAppliedMutation(
+        _ payload: OutboxPayload,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        try OutboxStore().enqueueLocallyApplied(
+            try payload.makeItem(createdAt: date), connection: connection
+        )
+    }
+
     private func apply(_ payload: OutboxPayload) async throws -> ContributionStore.WriteOutcome {
-        try await store.queue.write { connection -> ContributionStore.WriteOutcome in
+        // ── §3.4's nine are refused here, and the refusal is the safe direction ────────────────
+        //
+        // These rows are written by `queueAppliedMutation` above, from inside the transaction that
+        // already performed the mutation, so they are born `local_applied = 1` and `OutboxQueue`
+        // never offers them to the apply sink. Applying one would not be a repeat of a no-op: it
+        // would be a second species correction on a chain that has already moved, a second flag on a
+        // tree that already carries one, a second withdrawal of a photograph that is gone.
+        //
+        // `validationFailed` is non-retryable, so a row that somehow reached here fails on the spot
+        // and says so on screen 17 rather than burning 48 h — visible, which is what this project
+        // asks of a failure, and not applied, which is what correctness asks. Pinned by
+        // `CommunityOutboxKindTests`, because an unreachable arm nothing exercises is an arm that
+        // will be reached by the next change.
+        guard !payload.isAppliedBeforeItIsQueued else { throw APIError.validationFailed }
+        return try await store.queue.write { connection -> ContributionStore.WriteOutcome in
             switch payload {
             case let .visit(visit):
                 try requireTree(visit.treeID, connection: connection)
@@ -1445,6 +1605,14 @@ public actor LocalAPI: CypressAPI {
                     at: toggle.occurredAt,
                     connection: connection
                 )
+
+            // Refused above, before the transaction is opened. The arm is written closed rather
+            // than as a `default:` so that the eleventh kind cannot inherit a silent answer here —
+            // ERRATA E125 is what an inherited silent answer costs.
+            case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
+                 .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
+                 .photoVote, .photoWithdrawal, .hazardRedirect:
+                throw APIError.validationFailed
             }
         }
     }
@@ -1704,6 +1872,24 @@ public actor LocalAPI: CypressAPI {
                     atPath: path, at: moment, connection: connection
                 )
             }
+            // Spec §3.4, and **after** the tombstone `UPDATE` has matched, which is the whole of
+            // PR #94's ordering: until `counts.photos == 1` this method has no claim on the
+            // photograph, and queueing a withdrawal it might still be refused would be the row
+            // asserting something the gates had not yet allowed. Before the bytes, for the same
+            // reason the tombstone is: a file that will not go throws and rolls this back with it.
+            try Self.queueAppliedMutation(
+                .photoWithdrawal(
+                    PhotoWithdrawal(
+                        clientUUID: UUID(),
+                        photoID: id,
+                        treeID: subject.treeID,
+                        attribution: who,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
             var removed = 0
             for url in files where manager.fileExists(atPath: url.path) {
                 do {
@@ -1738,19 +1924,61 @@ public actor LocalAPI: CypressAPI {
     /// counted twice.
     public func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {
         let moment = now()
-        let owner = FavoriteOwner(attribution)
+        let mine = attribution
+        let owner = FavoriteOwner(mine)
         try await store.queue.write { connection in
             // Voting on a photograph that is not there is `notFound`, not a silent success. The
             // insert's own `SELECT FROM photos` would already write nothing, but "wrote nothing" and
             // "there was nothing to write about" have to reach the caller as different answers.
-            guard try contributions.photoBinaryLocation(id: photoID, connection: connection) != nil else {
+            //
+            // The read is `treeID(ofPhoto:)` rather than `photoBinaryLocation` because a queued item
+            // has to name a tree and this is the same row under the same `deleted_at IS NULL`
+            // narrowing — one read answering both questions rather than two that could drift.
+            guard let treeID = try contributions.treeID(ofPhoto: photoID, connection: connection) else {
                 throw APIError.notFound
             }
-            guard let vote else {
-                return try contributions.clearPhotoVote(photoID: photoID, owner: owner, connection: connection)
+            // ── Queued only when the vote actually moved ───────────────────────────────────
+            //
+            // A clear against a photograph this owner never voted on removes nothing. Queueing it
+            // anyway would record a withdrawal of a vote that never existed — an act nobody
+            // performed, sent to a service that will one day count these. It is harmless while
+            // nothing materializes tallies and it will not be once something does, which is the
+            // wrong moment to discover it.
+            //
+            // **Setting a vote always queues, including a re-affirmation of the same value**, and
+            // that asymmetry is deliberate rather than an oversight. The clear can tell the two
+            // cases apart in SQL — the `DELETE` matched nothing — while the upsert cannot without a
+            // second read, and a person tapping the thumb they already gave has made a decision,
+            // not triggered a no-op the code invented. Inventing the read to suppress it would be
+            // spending a statement to discard a real act.
+            let changed: Bool
+            if let vote {
+                try contributions.setPhotoVote(
+                    photoID: photoID, owner: owner, vote: vote, at: moment, connection: connection
+                )
+                changed = true
+            } else {
+                changed = try contributions.clearPhotoVote(
+                    photoID: photoID, owner: owner, connection: connection
+                )
             }
-            try contributions.setPhotoVote(
-                photoID: photoID, owner: owner, vote: vote, at: moment, connection: connection
+            guard changed else { return }
+            // Spec §3.4, in the same transaction as the vote — see `addTree`. `vote` travels as it
+            // arrived, nil included: nil is the withdrawal, not the absence of a decision, and
+            // `PhotoVoteCast` writes the key explicitly so no decoder can read the two as one.
+            try Self.queueAppliedMutation(
+                .photoVote(
+                    PhotoVoteCast(
+                        clientUUID: UUID(),
+                        photoID: photoID,
+                        treeID: treeID,
+                        vote: vote,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
             )
         }
     }
@@ -2678,8 +2906,20 @@ public actor LocalAPI: CypressAPI {
     // MARK: - Reports and export
 
     public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
+        let mine = attribution
         try await store.queue.write { connection in
             try contributions.log(event, connection: connection)
+            // Spec §3.4, in the same transaction as the log line — see `addTree`. `occurredAt` is
+            // the moment the sheet was shown (`HazardRedirectEvent.shownAt`) and never this call's
+            // clock: the two differ whenever the log is written after the fact, and the first is the
+            // one the report is about.
+            try Self.queueAppliedMutation(
+                .hazardRedirect(
+                    HazardRedirectReport(clientUUID: UUID(), event: event, attribution: mine)
+                ),
+                at: now(),
+                connection: connection
+            )
         }
     }
 
