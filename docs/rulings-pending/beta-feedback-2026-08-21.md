@@ -128,3 +128,11 @@ owns the distribution plan, not to a UI round.
 - The copy for screen 18's two new controls is **open**, and the round that closes it is a copy
   decision, not a design one.
 - Nothing here authorizes a schema migration, and none was taken.
+
+---
+
+## Addendum, 2026-08-21 — the copy decision closed
+
+The owner chose the implemented draft in a decision round: **`Back to the map`** and
+**`Back to this tree`**, with `Next nearest` unchanged. Screen 18's copy is no longer open; a
+later change to these strings is a new decision, not a continuation of this one.
