@@ -22,11 +22,20 @@
 -- dedupe reads that table, and a tree recorded only as a contribution is a tree the next
 -- contributor standing under it would be invited to add again.
 --
--- Materializing the rest needs tables this service does not have and rules it cannot evaluate: a
--- species assertion chain with a supersession order, review flags with a status and an author's
--- arm, per-photograph vote tallies. Those are ARCHITECTURE §8's moderation deliverable, and
+-- Materializing **eight** of the rest needs tables this service does not have and rules it cannot
+-- evaluate: a species assertion chain with a supersession order, review flags with a status and an
+-- author's arm, per-photograph vote tallies. Those are ARCHITECTURE §8's moderation deliverable, and
 -- inventing a half of one here — a `species_id` moved on somebody's unadjudicated say-so — would be
 -- this service deciding a question the design has not answered.
+--
+-- **`photo_withdrawal` is the ninth and its reason is a different one**, stated here because the
+-- sentence above was written over it once already. This service can perform that deletion: `photos`
+-- is in 001, `Store.DeletePhotoByContributor` takes the owner the sync handler already holds, and
+-- `DELETE /photos/{id}` exists. It is deferred because **no photograph reaches this service yet** —
+-- the outbox's send sink carries no photo method — so a withdrawal would name bytes nothing here
+-- has ever held. The round that wires photo upload wires this deletion with it; see the long note
+-- in `sync.go` beside `syncKinds`, and
+-- `docs/errata-pending/outbox-kind-vocabulary-drift.md`.
 --
 -- ── Dropped and re-added, and the new constraint gets a new name ──────────────────────────────
 --

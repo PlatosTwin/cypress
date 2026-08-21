@@ -66,6 +66,14 @@ public struct OutboxStore {
     /// **This is not a backfill and must never become one.** It writes one row for one mutation at
     /// the moment that mutation happens. Nothing sweeps rows that already exist into the queue; see
     /// `AppSchema` v17.
+    ///
+    /// **The `Bool` says whether a row was written, and every caller today discards it, on an
+    /// invariant worth stating rather than assuming**: the `ON CONFLICT(client_uuid) DO NOTHING`
+    /// arm cannot fire for these ten. Nine mint a fresh `UUID()` at the call site, and `addTree`
+    /// reuses `TreeDraft.clientUUID`, which `community_trees.client_uuid TEXT NOT NULL UNIQUE` has
+    /// already refused in the same transaction if it is a repeat. A future kind that keys on
+    /// something a caller can hand in twice inherits a silent drop instead — so it reads this
+    /// result, or it does not use this method.
     @discardableResult
     public func enqueueLocallyApplied(_ item: OutboxItem, connection: SQLiteConnection) throws -> Bool {
         try enqueue(item, locallyApplied: true, connection: connection)

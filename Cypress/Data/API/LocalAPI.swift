@@ -1937,13 +1937,32 @@ public actor LocalAPI: CypressAPI {
             guard let treeID = try contributions.treeID(ofPhoto: photoID, connection: connection) else {
                 throw APIError.notFound
             }
+            // ── Queued only when the vote actually moved ───────────────────────────────────
+            //
+            // A clear against a photograph this owner never voted on removes nothing. Queueing it
+            // anyway would record a withdrawal of a vote that never existed — an act nobody
+            // performed, sent to a service that will one day count these. It is harmless while
+            // nothing materializes tallies and it will not be once something does, which is the
+            // wrong moment to discover it.
+            //
+            // **Setting a vote always queues, including a re-affirmation of the same value**, and
+            // that asymmetry is deliberate rather than an oversight. The clear can tell the two
+            // cases apart in SQL — the `DELETE` matched nothing — while the upsert cannot without a
+            // second read, and a person tapping the thumb they already gave has made a decision,
+            // not triggered a no-op the code invented. Inventing the read to suppress it would be
+            // spending a statement to discard a real act.
+            let changed: Bool
             if let vote {
                 try contributions.setPhotoVote(
                     photoID: photoID, owner: owner, vote: vote, at: moment, connection: connection
                 )
+                changed = true
             } else {
-                try contributions.clearPhotoVote(photoID: photoID, owner: owner, connection: connection)
+                changed = try contributions.clearPhotoVote(
+                    photoID: photoID, owner: owner, connection: connection
+                )
             }
+            guard changed else { return }
             // Spec §3.4, in the same transaction as the vote — see `addTree`. `vote` travels as it
             // arrived, nil included: nil is the withdrawal, not the absence of a decision, and
             // `PhotoVoteCast` writes the key explicitly so no decoder can read the two as one.

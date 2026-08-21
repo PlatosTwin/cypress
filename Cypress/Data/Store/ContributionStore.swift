@@ -839,7 +839,15 @@ public struct ContributionStore {
 
     /// Takes a vote back. No tombstone: an un-vote is the absence of a judgment, and a missing row
     /// and a zero score are the same fact (`AppSchema` v8).
-    public func clearPhotoVote(photoID: UUID, owner: FavoriteOwner, connection: SQLiteConnection) throws {
+    /// - Returns: whether a vote was actually removed.
+    ///
+    /// **False means there was nothing to take back**, which is a different fact from "the vote is
+    /// now absent" and the two used to be one answer. `LocalAPI.setPhotoVote` reads it to decide
+    /// whether the act is worth queueing: a clear against a photograph this owner never voted on
+    /// changes nothing, and a `photo_vote` contribution recording a withdrawal that never happened
+    /// is a record of an act nobody performed.
+    @discardableResult
+    public func clearPhotoVote(photoID: UUID, owner: FavoriteOwner, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
             DELETE FROM photo_votes
              WHERE photo_id = :photo COLLATE NOCASE
@@ -852,7 +860,10 @@ public struct ContributionStore {
             ":device": owner.deviceID?.uuidString
         ])
         try statement.run()
+        // Read before `reset`, which is where `sqlite3_changes` is still this statement's.
+        let removed = connection.changes > 0
         _ = try statement.reset()
+        return removed
     }
 
     /// Every photograph of this tree that anybody has voted on, with the total and this owner's own.

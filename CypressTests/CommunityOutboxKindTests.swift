@@ -42,15 +42,42 @@ struct CommunityOutboxKindTests {
     /// Written through `addTree` rather than into the table, because a tree inserted behind the API
     /// would not exercise the writer this suite is about — and because `LocalAPI.requireTree`
     /// refuses an invented UUID.
-    private static func makeTree(api: LocalAPI, path: String) async throws -> Tree {
+    private static func makeTree(
+        api: LocalAPI,
+        path: String,
+        at coordinate: Coordinate = offshore
+    ) async throws -> Tree {
         FileManager.default.createFile(atPath: path, contents: Data([0xFF, 0xD8, 0xFF, 0xD9]))
         return try await api.addTree(
             TreeDraft(
-                coordinate: offshore,
+                coordinate: coordinate,
                 photoLocalPath: path,
                 attribution: attribution
             )
         )
+    }
+
+    /// Makes every `INSERT INTO outbox` fail, and nothing else.
+    ///
+    /// A trigger rather than dropping the table: the table stays readable, so a mutation that
+    /// touches the queue for any *other* reason still behaves normally
+    /// (`LocalAPI.deletePhoto` calls `OutboxStore.discardStagedPhoto`), and the failure lands on
+    /// exactly the statement under test with a message that says so.
+    private static func refuseEveryEnqueue(in store: CypressStore) async throws {
+        try await store.queue.write { connection in
+            try connection.execute("""
+                CREATE TRIGGER cypress_test_refuse_outbox BEFORE INSERT ON outbox
+                BEGIN SELECT RAISE(ABORT, 'the queue refused this row'); END;
+                """)
+        }
+    }
+
+    private static func scalar(_ sql: String, in store: CypressStore) async throws -> Int {
+        try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare(sql)
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.int("n") } ?? -1
+        }
     }
 
     private static func rows(_ store: CypressStore) async throws -> [OutboxStore.Record] {
@@ -447,6 +474,121 @@ struct CommunityOutboxKindTests {
             verdict.error == .validationFailed,
             "a retryable code would burn 48 h on an answer that will not change; got \(String(describing: verdict.error))"
         )
+    }
+
+    // MARK: - 3b. The other direction: an enqueue that fails takes the mutation with it
+
+    /// **The direction the design claim is actually about, which nothing else here could see.**
+    ///
+    /// `aRefusedMutationQueuesNothing` and `aRefusedClaimQueuesNothing` prove *mutation refused ⇒ no
+    /// row*. The header on `LocalAPI.queueAppliedMutation` claims the converse — that the row and
+    /// the mutation are one write, so a failure to queue rolls the mutation back. That is true by
+    /// construction today (`DatabaseQueue.write` is `connection.transaction`, which rolls back on any
+    /// throw), and **a change that destroyed it would leave this suite green**: moving a
+    /// `queueAppliedMutation` call into a second transaction is observationally identical in every
+    /// happy path. This project's dominant defect is a guard that stays green while the defect is
+    /// present, and that is exactly this shape.
+    ///
+    /// **The control is load-bearing.** Without it, "no flag was written" passes for the wrong
+    /// reason the day `flagWrongSpecies` starts refusing for a domain reason — a missing head, an
+    /// already-open report — and the test would certify a rollback that never happened. So the same
+    /// mutation runs first with the queue healthy and is asserted to write its flag, and the thrown
+    /// error is checked to be the trigger's, not the boundary's.
+    @Test("an enqueue that fails rolls the mutation back with it")
+    func aFailedEnqueueRollsTheMutationBack() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let (species, _) = try await Self.twoSpecies(api)
+
+        // ── The control: the identical mutation, with the queue working. ──────────────────────
+        let control = try await Self.makeTree(
+            api: api, path: NSTemporaryDirectory() + "cypress-s34-atomic-control.jpg"
+        )
+        _ = try await api.claimSpecies(treeID: control.id, speciesID: species)
+        let stranger = LocalAPI(store: store, deviceID: Self.otherDeviceID)
+        try await stranger.flagWrongSpecies(treeID: control.id)
+        let controlFlags = try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM review_flags WHERE tree_uuid = '\(control.id.uuidString)'",
+            in: store
+        )
+        // Without this the assertion below passes the day `flagWrongSpecies` starts refusing for a
+        // domain reason, certifying a rollback that never happened.
+        #expect(controlFlags == 1, "fixture: with the queue healthy the mutation wrote \(controlFlags) flags")
+
+        // A second tree, far enough away that its own 10 m dedupe does not refuse it.
+        let subject = try await Self.makeTree(
+            api: api,
+            path: NSTemporaryDirectory() + "cypress-s34-atomic-subject.jpg",
+            at: Coordinate(latitude: Self.offshore.latitude + 0.01, longitude: Self.offshore.longitude)
+        )
+        _ = try await api.claimSpecies(treeID: subject.id, speciesID: species)
+
+        // ── Now the queue refuses everything. ─────────────────────────────────────────────────
+        try await Self.refuseEveryEnqueue(in: store)
+
+        var thrown: (any Error)?
+        do {
+            try await stranger.flagWrongSpecies(treeID: subject.id)
+        } catch {
+            thrown = error
+        }
+        let failure = try #require(thrown, "the mutation succeeded although its queue row could not be written")
+        #expect(failure is SQLiteError,
+                "the refusal came from the boundary, not the enqueue, so it proves nothing: \(failure)")
+
+        let survivingFlags = try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM review_flags WHERE tree_uuid = '\(subject.id.uuidString)'",
+            in: store
+        )
+        #expect(survivingFlags == 0,
+                "\(survivingFlags) flags survived an enqueue that failed; the row and the mutation are two writes")
+
+        // The same, on a second mutation shape and a second table — the hazard log, which has no
+        // boundary refusal of its own and so can only fail at the enqueue.
+        do {
+            try await api.logHazardRedirect(
+                HazardRedirectEvent(treeID: subject.id, category: .hangingOrBrokenLimb)
+            )
+            Issue.record("the hazard redirect was logged although its queue row could not be written")
+        } catch {
+            #expect(error is SQLiteError, "the hazard log failed for some other reason: \(error)")
+        }
+        let survivingLines = try await Self.scalar("SELECT COUNT(*) AS n FROM hazard_redirects", in: store)
+        #expect(survivingLines == 0,
+                "\(survivingLines) hazard log lines survived an enqueue that failed")
+    }
+
+    /// A clear against a photograph this owner never voted on queues nothing.
+    ///
+    /// Withdrawing a vote that was never cast is not an act, and a `photo_vote` contribution saying
+    /// it happened is a record of something nobody did. Harmless while nothing counts these and not
+    /// harmless once something does — which is the wrong moment to find out.
+    @Test("clearing a vote nobody cast queues nothing, and clearing a real one queues the withdrawal")
+    func aNoOpVoteClearQueuesNothing() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await Self.makeTree(api: api, path: NSTemporaryDirectory() + "cypress-s34-noop.jpg")
+        let photo = try #require(try await api.treeProfile(id: tree.id).photos.items.first?.id)
+
+        try await api.setPhotoVote(photoID: photo, vote: nil)
+        #expect(
+            try await Self.rows(store, ofKind: .photoVote).isEmpty,
+            "a clear against a photograph nobody voted on queued a withdrawal of a vote that never existed"
+        )
+
+        // The control, and it is what stops the guard above passing by clearing never queueing at
+        // all: a clear that really does remove a vote is still an act, and still queues.
+        try await api.setPhotoVote(photoID: photo, vote: .up)
+        try await api.setPhotoVote(photoID: photo, vote: nil)
+        let votes = try await Self.rows(store, ofKind: .photoVote)
+        #expect(votes.count == 2, "a real vote and its withdrawal queued \(votes.count) rows")
+        let decoded: [PhotoVote?] = try votes.map { record in
+            guard case let .photoVote(cast) = try OutboxPayload.decode(
+                kind: record.item.kind, from: record.item.payload
+            ) else { return nil }
+            return cast.vote
+        }
+        #expect(decoded == [.up, nil], "the withdrawal of a real vote did not travel: \(decoded)")
     }
 
     // MARK: - 4b. Account deletion reaches these rows

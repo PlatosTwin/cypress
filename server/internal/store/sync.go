@@ -45,6 +45,11 @@ type Mutation struct {
 	// `community_trees`, and a tree that existed only as a contribution is a tree the next
 	// contributor standing under it would be invited to add again.
 	//
+	// Eight of those nine are recorded because this service *could not* materialize them; the ninth,
+	// `photo_withdrawal`, is recorded because there is nothing here yet to withdraw. The difference
+	// matters to whoever adds the next branch beside this field, and it is spelled out beside
+	// `syncKinds` in `internal/api/sync.go`.
+	//
 	// It travels inside the mutation so the two rows land in **one transaction**. Calling `AddTree`
 	// beside `Apply` would leave a window in which the tree is on the map and the contribution that
 	// says who added it is not, or the reverse — and the reverse is the one that matters, because

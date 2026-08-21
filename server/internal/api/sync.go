@@ -95,11 +95,39 @@ type wireLatLon struct {
 // **A kind in this map is accepted, recorded, and — for nine of the ten — not materialized.** That
 // is not a shortfall against the older kinds: five of the six above have no materialized table
 // either, and `contributions` is the record. `add_tree` is the exception and says why in
-// `store.Mutation.CommunityTree`. What the other nine would need is an assertion chain with a
-// supersession order, review flags with a status, and per-photograph tallies — tables this service
-// does not have and moderation rules it cannot evaluate (ARCHITECTURE §8 makes that a web
-// deliverable). Recording the act and refusing to guess at its effect is the honest half; guessing
-// would move somebody's species on an unadjudicated say-so.
+// `store.Mutation.CommunityTree`.
+//
+// The other nine are not one group and the reason differs:
+//
+//   - **Eight of them this service could not materialize if it wanted to.** A species claim or
+//     correction needs an assertion chain with a supersession order and the two-armed authority
+//     RULINGS R45 carries; the two reports and the two dismissals need review flags with a status
+//     and an author's arm; a photo vote needs a per-photograph tally. None of those tables exists
+//     here and none of those rules is one this service can evaluate — ARCHITECTURE §8 makes the
+//     moderation surface a web deliverable. Recording the act and refusing to guess at its effect is
+//     the honest half; guessing would move somebody's species on an unadjudicated say-so.
+//
+//   - **`photo_withdrawal` is different, and the earlier version of this comment said otherwise.**
+//     This service has all three pieces already: the `photos` table (`001_initial.sql`, read by
+//     `store.PhotosForTree` into every `GET /trees/{id}`), the store method
+//     `Store.DeletePhotoByContributor(ctx, id, owner)` — which takes exactly the `owner` this
+//     handler holds — and the route `DELETE /photos/{id}` (`photos.go`), whose header cites RULINGS
+//     R72 ruling 5 and ERRATA E147: "the person who took it has to be able to take it back."
+//     Wiring it here would be one branch beside `insertCommunityTree`.
+//
+//     **It is deferred because there is nothing here yet to withdraw.** No photograph reaches this
+//     service in the shipping build: `OutboxSendSink` carries no photo method, and the apply sink's
+//     `uploadPhoto` is `APIOutboxTransport` over `LocalAPI`, which moves the file inside the app
+//     container. A withdrawal sent today would name bytes this service has never held. Wiring the
+//     upload and wiring this deletion are one round and it is not this one.
+//
+//     **The round that wires photo upload must wire `DeletePhotoByContributor` in the same change**,
+//     because the moment uploads work this path is wrong *and tells the contributor otherwise*: the
+//     row drains, reaches `done`, and screen 17 reads "Photo removed" as sent while
+//     `GET /photos/{id}` keeps serving the bytes to every other device. That is this project's
+//     signature failure applied to a deletion. Recorded in
+//     `docs/errata-pending/outbox-kind-vocabulary-drift.md`; no test asserts anything about a
+//     `photo_withdrawal` reaching this service today, in either direction.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,
