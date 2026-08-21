@@ -117,16 +117,21 @@ struct VisitCameraView: View {
         // layout does not move: nothing about where the content sits changes, only what is drawn
         // behind it.
         //
-        // ── Measured, both ways, on iPhone 16 Pro ────────────────────────────────────────────
-        // Screen 04 opened from a tree's photo CTA, sampled at the middle of the bottom strip:
+        // ── Measured, both ways, on iPhone 16 Pro (402 pt) ───────────────────────────────────
+        // Screen 04 opened from a tree's photo CTA, **note field focused**, sampled off
+        // `xcrun simctl io … screenshot` at the middle of the ground the keyboard stands on. The
+        // keyboard is translucent and composites over whatever is under it, so it reports the
+        // ground's color rather than its own:
         //
-        //     before   rgb(255, 255, 255)      the host's own white, and the report's own word
-        //     after    rgb(21, 29, 21)         `Dark.bgCamera` (#10160F) as the display renders it
+        //     before   rgb(105, 105, 105)      the host's own light ground, read through the
+        //                                      keyboard — the report's word for it is "white"
+        //     after    rgb( 46,  49,  46)      the same keyboard over `Dark.bgCamera` (#10160F)
         //
-        // With the field focused the same ground reads through the keyboard, which is translucent
-        // and composites over whatever it is standing on: rgb(105, 105, 105) before, rgb(46, 49, 46)
-        // after. That is why the report describes white *behind and around* the keyboard — the
-        // keyboard itself was being tinted by the same unpainted ground the strip was showing.
+        // **Only the focused state moves, and an earlier draft of this block said otherwise.** It
+        // claimed the *unfocused* bottom strip went rgb(255, 255, 255) → rgb(21, 29, 21). Sampled on
+        // both builds it is rgb(21, 29, 21) either way: with no keyboard up the tray already reaches
+        // the bottom of the display, so there is no unpainted ground left to see. The defect is the
+        // keyboard's safe area and nothing else, which is exactly what the report described.
         // ══════════════════════════════════════════════════════════════════════════════════════
         .background(CypressColor.Dark.bgCamera.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
