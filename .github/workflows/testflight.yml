@@ -640,9 +640,13 @@ jobs:
           else
             echo "the last build shipped from $since ($(git rev-parse --short "$since"))"
           fi
+          # stdout silenced, and the file printed below instead: `compile` writes the notes to
+          # both, and a release log that shows the same five lines twice is a log somebody skims.
+          # The commentary — which notes were found, which were internal, how many characters —
+          # goes to stderr and is kept.
           python3 Tools/whats_new.py compile \
             --since "$since" --at "$GITHUB_SHA" \
-            --out "$RUNNER_TEMP/whats-new.txt"
+            --out "$RUNNER_TEMP/whats-new.txt" > /dev/null
           echo "── what TestFlight will show ──────────────────────────────"
           cat "$RUNNER_TEMP/whats-new.txt"
           echo ""
