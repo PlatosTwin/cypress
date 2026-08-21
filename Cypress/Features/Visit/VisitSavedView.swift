@@ -27,9 +27,14 @@ struct VisitSavedView: View {
     // **THE THREE FUNCTIONS THIS SCREEN OFFERS — the owner's ruling of 2026-08-21.**
     //
     // Screen 18 drew `Next nearest`, `Done for today` and `See it on the tree's timeline`. The owner
-    // ruled the set: **next nearest, back to the map, back to this tree**, and ruled the functions
-    // only — the strings below are this file's draft and may be replaced without any of this
-    // changing.
+    // ruled the set: **next nearest, back to the map, back to this tree**.
+    //
+    // **The copy is closed as well, as of 2026-08-21.** The functions were ruled first and the
+    // strings below were this file's draft for a day; the owner then chose that draft in a decision
+    // round, so `Next nearest`, `Back to the map` and `Back to this tree` are final. Changing any of
+    // them is a new decision, not a continuation of this one. Guarded by
+    // `VisitSavedControlSetTests`, which asserts the *set* — how many secondary controls there are
+    // and where each one goes — and deliberately not the words.
     //
     // Two of the three already existed under names that described the *mood* of leaving rather than
     // the place being left for, and that is the whole of what was wrong with them. `Done for today`
@@ -275,10 +280,11 @@ struct VisitSavedView: View {
 
 /// Screen 18's two secondary controls, as ruled on 2026-08-21.
 ///
-/// **The owner ruled the functions and not these strings** — see the block above `onNextTree` for
-/// what was ruled and what the two controls used to say. Both are drafts, and both are written to
-/// R2's rule: a control is named for where it goes, not for what the person pressing it has decided
-/// about their morning.
+/// **Owner-final, not drafts.** The functions were ruled first and these strings were this file's
+/// proposal; the owner then chose them in a decision round the same day, closing the copy. Both are
+/// written to R2's rule — a control is named for where it goes, not for what the person pressing it
+/// has decided about their morning — and see the block above `onNextTree` for what the two controls
+/// used to say and why that was wrong.
 enum VisitSavedCopy {
     /// Screen 01. PROTOTYPE-FLOW's own label for this action was `Done for today · back to the map`
     /// and the app shipped the first half of it; this is the second half, which is the half that

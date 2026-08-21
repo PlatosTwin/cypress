@@ -140,9 +140,25 @@ final class VisitCameraController {
         session.commitConfiguration()
         self.session = session
         self.device = device
-        // A fresh session opens at the device's own floor, which is 1 on every wide-angle camera
-        // and is read rather than assumed — `zoomFactor` is what the pinch multiplies, and starting
-        // it anywhere but where the hardware is would make the first pinch jump.
+        // `zoomFactor` is what the pinch multiplies, so it starts at wherever the lens actually is:
+        // read, never assumed, because starting it anywhere else would make the first pinch jump.
+        //
+        // **What that read returns is not known, and this comment used to claim it was 1** (PR #102
+        // review). `AVCaptureDevice` instances are process-wide and `videoZoomFactor` is a property
+        // of the *device*, not of this session — and `stop()` clears `self.device` and sets
+        // `zoomFactor = 1` without ever writing `device.videoZoomFactor` back. So the likely
+        // behaviour on the phone is that the viewfinder reopens at whatever zoom the previous visit
+        // left the lens at, which this line would then faithfully report. What this line guarantees
+        // is that the app's number matches the lens's; it guarantees nothing about what that number
+        // is.
+        //
+        // Unanswerable here — `AVCaptureDevice.default(...)` is nil on every simulator, so this
+        // whole path returns before reaching this line. It joins the zoom block's list of what
+        // needs the physical phone, along with the product question nobody has decided: whether
+        // carrying the zoom across trees is right (a volunteer working one street wants the same
+        // framing) or whether screen 04 should reset it (its budget is ten seconds, and a
+        // mystery-zoomed viewfinder costs some of them). One line either way, currently decided by
+        // accident.
         zoomFactor = device.videoZoomFactor
         availability = .running
 
@@ -251,6 +267,13 @@ final class VisitCameraController {
 /// function that returns early on the only machine the unit suite has (`VisitCameraSessionTests`
 /// records the same fact about the session). The clamp is the part that can be wrong in a way a
 /// person would notice, so the clamp is the part that is testable.
+///
+/// **What is left waiting for the physical phone**, so that the list is written down rather than
+/// implied by what has no test (PR #102 review):
+/// 1. the clamp's effect on the actual lens — `setZoom` returns early here, so nothing has watched
+///    `videoZoomFactor` move;
+/// 2. **what a reopened session's `videoZoomFactor` reads**, which decides whether the zoom carries
+///    across trees. See `start()`, where the old comment asserted an answer nobody had checked.
 enum VisitCameraZoom {
 
     /// `proposed`, held inside `range`.

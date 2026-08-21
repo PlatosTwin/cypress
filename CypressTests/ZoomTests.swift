@@ -64,8 +64,11 @@ struct ZoomTests {
     /// A 3:4 picture on a 393 × 852 phone is **wider** than it is tall relative to the display: it
     /// meets the sides first and letterboxes top and bottom, so at 1.2× it has grown past the sides
     /// and is still 223 pt short of the top and bottom. The letterboxed axis is the vertical one.
-    /// Clamping against the box rather than against the drawn picture would have granted 100 pt of
-    /// vertical slack here, and every point of it would have dragged bar into view.
+    /// Clamping against the box rather than against the drawn picture would have granted **85.2 pt**
+    /// of vertical slack here — `(852 × 1.2 − 852) / 2` — and every point of it would have dragged
+    /// bar into view. (This comment and the one on the assertion below both said 100; 85.2 is what
+    /// this test's own red-proof prints when the clamp is broken, and what `PhotoZoom`'s header has
+    /// always said at "85 pt, measured".)
     @Test("the letterboxed axis stays centered, however far the photograph is zoomed")
     func aLetterboxedAxisStaysCentered() {
         let content = PhotoZoom.fittedSize(image: Self.portrait, in: Self.box)
@@ -78,7 +81,7 @@ struct ZoomTests {
         // quietly turning the two assertions below into a different test.
         #expect(content.height * 1.2 < Self.box.height, "the fixture stopped being letterboxed")
         #expect(content.width * 1.2 > Self.box.width, "the fixture stopped overflowing the sides")
-        // Had the clamp used the box, this would be up to 100 pt of bar.
+        // Had the clamp used the box, this would be 85.2 pt of bar.
         #expect(dragged.offset.height == 0, "dragged the letterbox into view")
         #expect(dragged.offset.width > 0, "could not be dragged along the axis that does overflow")
     }

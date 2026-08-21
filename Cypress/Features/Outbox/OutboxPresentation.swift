@@ -227,17 +227,38 @@ struct OutboxPresentation {
     /// The receipts, newest first.
     ///
     /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it, so this section
-    /// is exactly what its heading claims and cannot quietly become a week.
-    var syncedRows: [SyncedRow] {
-        let items = snapshot.items
+    /// can never become a week — **but 24 h of retention spans two calendar days for most of the
+    /// day**, and this line used to argue from the first fact that the section "is exactly what its
+    /// heading claims". It is not: the two-day case is precisely the one that flips the stamps to
+    /// dates, and it is common rather than exotic (PR #102 review). The heading asks the same
+    /// question and answers it the same way — see `syncedHeading`.
+    private var syncedItems: [OutboxItemSnapshot] {
+        snapshot.items
             .filter { $0.state == .done }
             // Newest receipt first, as §4 lists them — and by when each one *went*, which is not the
             // FIFO order the queue drained in once a retry has reordered anything.
             .sorted { $0.updatedAt > $1.updatedAt }
-        // This section's own span, and not the queue's. They are two lists under two headings, and
-        // the question `stamp` answers — "can a reader tell these rows apart by their stamps" — is
-        // asked of the rows a reader is looking at. See `OutboxCopy.stamp`.
-        let spansDays = OutboxCopy.spansMoreThanOneDay(items.map(\.updatedAt), calendar: calendar)
+    }
+
+    /// This section's own span, and not the queue's. They are two lists under two headings, and the
+    /// question `stamp` answers — "can a reader tell these rows apart by their stamps" — is asked of
+    /// the rows a reader is looking at. See `OutboxCopy.stamp`.
+    private var syncedSpansDays: Bool {
+        OutboxCopy.spansMoreThanOneDay(syncedItems.map(\.updatedAt), calendar: calendar)
+    }
+
+    /// §4's heading, for the list actually under it.
+    ///
+    /// One `spansDays` answer drives the heading and every stamp beneath it, so the screen cannot
+    /// say `Synced earlier today` over a row stamped `Jan 14` — which it could, and which is what
+    /// the original report was half about. See `OutboxCopy.syncedLabel(spansDays:)`.
+    var syncedHeading: String {
+        OutboxCopy.syncedLabel(spansDays: syncedSpansDays)
+    }
+
+    var syncedRows: [SyncedRow] {
+        let items = syncedItems
+        let spansDays = syncedSpansDays
         return items.map { item in
             SyncedRow(
                 id: item.id,
@@ -412,8 +433,28 @@ enum OutboxCopy {
     static let wifiTitle = "Sync photos on wifi only"
     static let wifiSubtitle = "Notes and numbers sync on any connection"
 
-    /// §4's micro-label, verbatim.
+    /// §4's micro-label, verbatim — **for the list it is true of.**
     static let syncedLabel = "Synced earlier today"
+
+    /// The same label for a synced list that reaches back past today.
+    ///
+    /// **NOT SPECIFIED**, and the implementation's choice — see the pending ruling of 2026-08-21.
+    /// The owner ruled the *stamps*, in response to a report that the stamps and this heading
+    /// disagreed; fixing only the stamps left the screen able to draw `Synced earlier today` over a
+    /// row stamped `Jan 14`, which is the same contradiction from the other side (PR #102 review).
+    ///
+    /// It says less rather than saying something new: `Recently synced` makes no claim about a day,
+    /// which is the only thing wrong with the other string here. That is the move §5's summary line
+    /// already made when it replaced the mock's `this week` with `today` — a heading may only name a
+    /// window the app can actually answer for.
+    static let syncedSpanningLabel = "Recently synced"
+
+    /// Which of the two the section's own list has earned. Asked with the same `spansDays` the
+    /// stamps in it are asked with, so the heading and the rows under it cannot disagree — which is
+    /// the whole point, and was the defect.
+    static func syncedLabel(spansDays: Bool) -> String {
+        spansDays ? syncedSpanningLabel : syncedLabel
+    }
 
     /// §4's trailing stamp — `✓ 9:56 am`, or `✓ Aug 19` on a list that spans days. See `stamp`.
     static func syncedStamp(

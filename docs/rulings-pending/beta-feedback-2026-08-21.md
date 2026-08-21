@@ -72,8 +72,9 @@ smear to a record. If the owner wants a different number it is one constant.
 **Ruled:** the visit-saved screen's control set is **next nearest, back to the map, back to this
 tree**. This replaces `Next nearest` / `Done for today` / `See it on the tree's timeline`.
 
-**The functions are ruled and the copy is not.** The strings shipped in this round are the
-implementation's draft (`VisitSavedCopy`) and may be replaced without touching anything else.
+**The functions were ruled first and the copy was closed the same day** — see the addendum at the
+foot of this entry. The strings shipped in this round (`VisitSavedCopy`) were the implementation's
+draft; the owner chose them, so they are final.
 
 Two of the three functions already existed under labels that named the mood of leaving rather than
 the place being left for. `Done for today` called `goToMap()`, so a person who wanted the map for a
@@ -125,9 +126,27 @@ owns the distribution plan, not to a UI round.
   commit messages: both reversed a decision that was argued in a code comment, and a reader who
   finds the old reasoning in the history needs to be able to see that it was overruled on purpose
   and by whom.
-- The copy for screen 18's two new controls is **open**, and the round that closes it is a copy
-  decision, not a design one.
+- The copy for screen 18's two new controls was open when this entry was first written and was
+  **closed the same day** — see the addendum below. It is recorded that way rather than edited out
+  because two of the review round's arguments were made while it was still open.
 - Nothing here authorizes a schema migration, and none was taken.
+
+### Two things the implementation chose, which are NOT SPECIFIED and replaceable
+
+Recorded here so that a later reader can tell a chosen number from a ruled one, the way 5's
+`preferredMaxZoom` already is.
+
+- **The synced section's heading when its list spans days.** Ruling 3 is about the row stamps, and
+  fixing them left `Synced earlier today` standing over rows stamped with two different dates —
+  the app contradicting itself in its own words, which is half of what the original report was
+  about. The heading now asks the same `spansDays` question the stamps do and says `Recently
+  synced` when the answer is yes. The wording is the implementation's, on the same precedent §5's
+  summary line already set (the mock's `this week` became `today` because a week is not a window
+  this app can answer for). If the owner wants different words it is one string.
+- **The compass's room on screen 01.** 6b ruled the compass in and said nothing about where it
+  sits, which turned out to matter: at accessibility sizes a species legend chip covered it and
+  took its taps. The legend now keeps a trailing column clear for it. That costs the legend width
+  rather than height, which is why it was affordable — see `MapLayout`'s compass block.
 
 ---
 

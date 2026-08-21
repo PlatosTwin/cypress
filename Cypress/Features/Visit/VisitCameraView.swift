@@ -20,7 +20,11 @@ struct VisitCameraView: View {
     /// The capture whose flash has already been faded out. See `shutterFlash`.
     @State private var fadedCaptureTick = 0
     /// Where the lens was when the current pinch began; `nil` between pinches. See `zoomPinch`.
-    @State private var zoomBase: CGFloat?
+    ///
+    /// `@GestureState`, so "between pinches" is enforced by the property wrapper rather than by an
+    /// `onEnded` that a cancelled gesture can skip — the same argument `PhotoViewerView` makes for
+    /// its own two, in this same round.
+    @GestureState private var zoomBase: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -245,14 +249,32 @@ struct VisitCameraView: View {
     /// The pinch that drives `AVCaptureDevice.videoZoomFactor`. See the call site on `viewfinder`,
     /// and `VisitCameraController.setZoom` for what it reaches.
     ///
-    /// `zoomBase` is where the lens was when the fingers landed, captured on the first change rather
-    /// than held in a `@GestureState`: the factor this multiplies is owned by the *device*, and
-    /// letting the gesture own a copy of it is how the preview and the lens get to disagree. The
-    /// controller stays the one place that knows where the lens is; this closure only ever asks.
+    /// `zoomBase` is where the lens was when the fingers landed, asked for once on the first update
+    /// of each pinch. The controller stays the one place that knows where the lens *is*; this
+    /// closure only ever reads it, and only at the start.
+    ///
+    /// **`@GestureState` rather than `@State` and an `onEnded`** (PR #102 review). This was the
+    /// second, and `PhotoViewerView` — added in the same round — had already written down why that
+    /// is the wrong choice: `@GestureState` resets itself when a gesture ends *or is cancelled*, so
+    /// a pinch interrupted by a phone call or by the screen going away under it leaves nothing
+    /// behind, while the `@State` version has a path where the reset never runs. The consequence
+    /// here was mild — a stale base makes the next pinch multiply from where an older one started,
+    /// a jump rather than a wrong state, and `setZoom` re-clamps — but the round argued both sides
+    /// of one question in two files, and this was the side with the extra path.
+    ///
+    /// The `?? model.camera.zoomFactor` is not defensive noise: it is the same value `updating`
+    /// captures, so the first update of a pinch reads the lens correctly whichever of the two
+    /// callbacks SwiftUI runs first.
+    ///
+    /// Untested on the glass, and it cannot be: `isZoomable` is false on every simulator
+    /// (`AVCaptureDevice.default(...)` is nil), so the gesture never arms. See
+    /// `VisitCameraController`'s zoom block for what else on this path is waiting for the phone.
     private var zoomPinch: some Gesture {
         MagnifyGesture()
+            .updating($zoomBase) { _, base, _ in
+                if base == nil { base = model.camera.zoomFactor }
+            }
             .onChanged { value in
-                if zoomBase == nil { zoomBase = model.camera.zoomFactor }
                 model.camera.setZoom(
                     VisitCameraZoom.factor(
                         base: zoomBase ?? model.camera.zoomFactor,
@@ -261,9 +283,6 @@ struct VisitCameraView: View {
                     )
                 )
             }
-            // Cleared on the way out, so the next pinch starts from wherever this one left the lens
-            // rather than from wherever the one before it began.
-            .onEnded { _ in zoomBase = nil }
     }
 
     /// czFlash — a sheet of white at `.9` alpha falling to nothing over `.35s`, fired when the
