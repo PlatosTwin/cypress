@@ -301,7 +301,25 @@ def renamed_between(since: str, at: str) -> dict[str, str]:
     return moved
 
 
-def retracted(when: dict[str, int], present_at: set[str]) -> list[str]:
+def deleted_in_range(since: str, at: str) -> set[str]:
+    """Note paths that a commit in `since..at` actually DELETED.
+
+    A separate pass from `added_when`, and it has to be, because `--diff-filter=A` and
+    `--diff-filter=D` disagree about a rename in a way that matters here: git reports the move as
+    `R`, so the old path appears in NEITHER filter. Probed rather than assumed — a rename inside
+    the window prints nothing under `D` while a real deletion prints its path.
+
+    That is what separates "this sentence was withdrawn" from "this file was renamed", and the
+    first version of `retracted` conflated them.
+    """
+    if not since:
+        return set()
+    raw = git("log", "--diff-filter=D", "--format=", "--name-only",
+              f"{since}..{at}", "--", NOTES_DIR, allow_failure=True)
+    return {p.strip() for p in raw.splitlines() if p.strip() and is_note_path(p.strip())}
+
+
+def retracted(when: dict[str, int], present_at: set[str], deleted: set[str]) -> list[str]:
     """Notes written since the boundary and then deleted before the build — retractions (F6).
 
     **Deleting an unshipped note is how a line is taken back**, and it is the only way: nothing
@@ -314,12 +332,21 @@ def retracted(when: dict[str, int], present_at: set[str]) -> list[str]:
     evidence in a diff nobody re-reads. So `compile` prints these to stderr beside the `internal:`
     lines it drops, and the release log says which sentences were withdrawn.
 
-    Computed from data already gathered — the `git log --diff-filter=A` walk `added_when` does —
-    so it costs no extra call. Note that `git diff --diff-filter=D` would NOT answer this: a note
-    added and deleted entirely inside the range never existed at `since` and does not exist at
-    `at`, so it appears in no such diff at all. That is exactly the retraction case.
+    Two conditions, and both are needed:
+
+      * **added inside the window and not present at the end** — a note that existed at `since`
+        and was tidied away later was already shipped, so removing it retracts nothing;
+      * **and actually deleted by some commit**. Without this second test a note RENAMED inside
+        the window reports as withdrawn, because git files the move as `R` and the old path shows
+        up under `--diff-filter=A` from its original commit while never appearing at `at`. The
+        line ships perfectly well under its new filename; only the report would be wrong. A false
+        "withdrawn" in a release log is exactly the kind of line a later reader believes.
+
+    Note that `git diff <since> <at> --diff-filter=D` would answer neither: a note added and
+    deleted entirely inside the range never existed at `since` and does not exist at `at`, so it
+    is in no such diff at all. It has to be `git log` over the range.
     """
-    return sorted(set(when) - present_at)
+    return sorted((set(when) - present_at) & deleted)
 
 
 def added_when(since: str, at: str) -> dict[str, int]:
@@ -428,7 +455,7 @@ def compile_notes(since: str, at: str) -> Compiled:
     renamed_from_shipped = {new for new, old in moved.items() if old in already}
     unshipped = sorted(present_at - already - renamed_from_shipped)
     when = added_when(since, at)
-    withdrawn = retracted(when, present_at)
+    withdrawn = retracted(when, present_at, deleted_in_range(since, at))
     # Newest note first, so the thing a tester just got is the first thing they read. Ties broken
     # by path so two notes added in one merge -- which is every note added by the same PR -- come
     # out in the same order every time.

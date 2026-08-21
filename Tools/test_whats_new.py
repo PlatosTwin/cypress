@@ -648,6 +648,20 @@ def test_a_deleted_note_is_a_retraction_and_is_reported() -> None:
               "withdrawn (deleted before this build)" in after.stderr
               and "cellular.md" in after.stderr, after.stderr.strip())
 
+        # CONTROL: a note RENAMED inside the same window must NOT be reported as withdrawn. Its
+        # old path is absent at `at` and was added inside the window, so the first two conditions
+        # alone would report it — and the line ships perfectly well under the new filename. A
+        # false "withdrawn" in a release log is a line a later reader believes.
+        repo.git("mv", NOTE + "other.md", NOTE + "planting-date.md")
+        repo.commit("rename a note inside the same window")
+        renamed = run(repo, "compile", "--at", "HEAD")
+        check("CONTROL: a rename inside the window is not called a withdrawal",
+              "withdrawn (deleted before this build): " + NOTE + "other.md"
+              not in renamed.stderr, renamed.stderr.strip())
+        check("...and its line still ships, under the new filename",
+              "You can now see a tree's planting date." in renamed.stdout,
+              renamed.stdout.strip())
+
 
 # ---------------------------------------------------------------------------------------------
 # The re-run of a failed release job (review F1) — the scenario that made this round
