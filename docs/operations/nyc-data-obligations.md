@@ -4,10 +4,11 @@
 `docs/design-proposals/2026-08-14-city-data-distribution.md` ("NYC notify-the-City +
 disclaimer") requires both obligations **settled before the first NYC publish — including
 any trial or beta pack**; first bytes out of the bucket bind the obligation. The owner has
-already accepted both obligations (`docs/investigations/nyc-ingest.md` §13: *"The owner has
-accepted both obligations"*), but nothing in the repo discharges them yet
-(`Tools/fetch_nyc_trees.py`'s docstring, verbatim: *"That obligation is not discharged by
-this script and is not discharged by anything in the repo yet"*). This document is that
+already accepted both obligations (docs/investigations/nyc-ingest.md, branch `feat/nyc-ingest`,
+not on `main`, §13: *"The owner has accepted both obligations"*), but nothing in the repo
+discharges them yet (Tools/fetch_nyc_trees.py's docstring, same branch, verbatim: *"That
+obligation is not discharged by this script and is not discharged by anything in the repo
+yet"*). This document is that
 discharge's first step: a note the owner can send in their own words, and the exact text the
 product page must carry. **This document sends nothing and creates no account, filing, or
 public content.**
@@ -199,9 +200,9 @@ change per channel.
   owner can take — this task does not have, and should not be given, credentials or a browser
   session authenticated as the owner for any of them.
 - The datasets, join, and transformation described match what the seed build actually does —
-  cross-checked against `Tools/fetch_nyc_trees.py`'s docstring and
-  `docs/investigations/nyc-ingest.md` (the NYC ingest round's own record) before drafting this
-  paragraph, not invented for the note.
+  cross-checked against Tools/fetch_nyc_trees.py's docstring and docs/investigations/nyc-ingest.md
+  (both on branch `feat/nyc-ingest`, not on `main` — the NYC ingest round's own record) before
+  drafting this paragraph, not invented for the note.
 
 ---
 
@@ -305,9 +306,10 @@ stays attached to its answer rather than disappearing once the question closes.
   obligations (NYC's verbatim disclaimer is the first)") and R37 (manifest contract).
 - `docs/investigations/nyc-street-trees.md` §2 — the original terms finding, same quote, same
   URL, from the 2026-08-01 survey.
-- `docs/investigations/nyc-ingest.md` §13 — "the owner has accepted both obligations,"
-  "neither is discharged by this repo yet."
-- `Tools/fetch_nyc_trees.py` docstring (branch `feat/nyc-ingest`) — same statement, in code.
+- docs/investigations/nyc-ingest.md (branch `feat/nyc-ingest`, not on `main`) §13 — "the owner
+  has accepted both obligations," "neither is discharged by this repo yet."
+- Tools/fetch_nyc_trees.py docstring (branch `feat/nyc-ingest`, not on `main`) — same statement,
+  in code.
 - `Tools/build_seed.py` (branch `feat/nyc-ingest`) — `inventory_nyc_tree_points_licence` seed_meta
   key: `"NYC Open Data / Data Mine terms; notification + verbatim disclaimer required"`.
 - `docs/investigations/city-publishing.md` — the manifest's `attribution` array field.
