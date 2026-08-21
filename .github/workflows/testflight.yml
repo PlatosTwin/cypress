@@ -606,9 +606,20 @@ jobs:
     steps:
       # `fetch-depth: 0` — and it is the release notes that need it, not the archive. The notes
       # for this build are "every note file added since the commit the LAST build shipped from",
-      # and the tag naming that commit is only present in a full clone. A shallow one would make
-      # `whats_new.py compile` refuse (loudly, by design) rather than silently re-ship the whole
-      # history.
+      # and the tag naming that commit is only reachable in a full clone.
+      #
+      # **The depth is load-bearing and only recently enforced** (review N1). It is not enough for
+      # the tag REF to be present: a shallow fetch brings the tag and its commit object across, so
+      # the object exists, but the parents do not — and `git merge-base --is-ancestor` answers a
+      # confident "no" past a graft point rather than failing. The boundary then looks absent
+      # instead of unreachable, which used to mean "first build ever", which means every note in
+      # the repository ships at once **and is consumed**, so the next build loses them too. Exit 0
+      # throughout, under a warning whose text reads like the expected first-build message.
+      #
+      # `whats_new.py` now refuses that case — tags exist, none is reachable, and none of them is
+      # merely sitting on this commit — so shortening this line is a red run rather than a silent
+      # wrong changelog. Do not shorten it anyway: the refusal is a backstop for a mistake, not a
+      # licence to make it.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

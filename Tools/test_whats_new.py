@@ -59,6 +59,9 @@ class Repo:
 
     def __init__(self, directory: str) -> None:
         self.dir = directory
+        # Created if absent, so a test can put two repositories side by side inside one temporary
+        # directory — which the shallow-clone fixture needs (an origin to clone from).
+        os.makedirs(directory, exist_ok=True)
         self.clock = 1_760_000_000
         self.git("init", "--quiet", "--initial-branch=main")
         self.git("config", "user.email", "t@example.com")
@@ -422,6 +425,42 @@ def test_compile_for_build_reads_the_pair_of_tags() -> None:
               missing.returncode != 0, f"exit {missing.returncode}")
 
 
+def test_for_build_on_the_very_first_build_is_not_refused() -> None:
+    """`--for-build` resolves its own boundary, and an empty answer from it is FINAL.
+
+    The backstop re-deriving the first build ever, some time after a later build has shipped. Its
+    boundary is legitimately empty — nothing was ever released before it — and the N1 refusal must
+    not fire. It very nearly did: the block that resolves an unnamed boundary ran a second time,
+    this time without `below`, so the LATER tag came back into scope, was not an ancestor of the
+    first build, and counted as unexplained. One flag apart from a backstop that refuses to stamp
+    the one build most likely to need it.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write(NOTE + "first.md", "The very first line.\n")
+        repo.commit("everything up to build 44")
+        repo.tag("build-44")
+        repo.write(NOTE + "later.md", "A later line.\n")
+        repo.commit("what build 45 added")
+        repo.tag("build-45")
+
+        first = run(repo, "compile", "--for-build", "44")
+        check("the first build ever compiles rather than being refused",
+              first.returncode == 0 and "The very first line." in first.stdout,
+              f"exit {first.returncode} {(first.stdout + first.stderr).strip()!r}")
+        check("...and does not reach forward into a later build's notes",
+              "A later line." not in first.stdout, first.stdout.strip())
+
+        # CONTROL: the later build still measures against build-44, so `below` is doing its job
+        # rather than being ignored altogether.
+        later = run(repo, "compile", "--for-build", "45")
+        check("CONTROL: the later build measures from build-44",
+              later.returncode == 0
+              and "A later line." in later.stdout
+              and "The very first line." not in later.stdout,
+              later.stdout.strip())
+
+
 def test_compile_refuses_a_build_that_predates_the_mechanism() -> None:
     """Builds 1-43. The failure this guards is a LIE, not an error.
 
@@ -732,6 +771,83 @@ def test_an_explicit_since_equal_to_at_is_refused() -> None:
         control = run(repo, "compile", "--at", head)
         check("CONTROL: omitting --since compiles the line", "A line." in control.stdout,
               control.stdout.strip())
+
+
+def test_a_shallow_clone_is_refused_not_read_as_the_first_build_ever() -> None:
+    """Review N1, reproduced with the reviewer's own probe as the fixture.
+
+    An empty boundary means "the beginning of time", and there are two ways to get one. No build
+    tags at all is the genuine first build and must still work. Tags that exist but do not resolve
+    is a shallow clone — `git merge-base --is-ancestor` answers a confident exit 1 past a graft
+    point rather than failing — and treating THAT as the first build re-ships every note in the
+    repository at exit 0, under a warning whose text reads like the expected first-build message.
+    Worse than a duplicated changelog: those notes then count as shipped, so the next build loses
+    them too.
+
+    A real `git clone --depth 1` over `file://`, then the tags fetched in, because that is the
+    shape CI would produce. Measured before the fix: control 1 line, shallow 2 lines, exit 0 both.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        origin = Repo(os.path.join(directory, "origin"))
+        origin.write(NOTE + "old.md", "An older shipped line.\n")
+        origin.commit("the note build 50 shipped")
+        origin.tag("build-50")
+        origin.write("b.txt", "b\n")
+        origin.commit("a commit in between, so the tag is behind the graft")
+        origin.write(NOTE + "new.md", "A new line.\n")
+        origin.commit("the note this build should ship")
+
+        # CONTROL FIRST: the full history answers correctly. Without this, "the shallow clone was
+        # refused" and "this fixture is refused whatever its depth" are the same output.
+        full = run(origin, "compile", "--at", "HEAD")
+        check("CONTROL: a full clone resolves the boundary and ships one line",
+              full.returncode == 0
+              and "A new line." in full.stdout
+              and "An older shipped line." not in full.stdout,
+              f"exit {full.returncode} {full.stdout.strip()!r}")
+
+        shallow_dir = os.path.join(directory, "shallow")
+        subprocess.run(("git", "clone", "--quiet", "--depth", "1",
+                        "file://" + origin.dir, shallow_dir),
+                       capture_output=True, text=True, check=True)
+        shallow = Repo.__new__(Repo)
+        shallow.dir = shallow_dir
+        # The tags come in, their commit objects with them — which is why `exists()` is satisfied
+        # and the old `--since` guard would not have fired even if it were reachable. Only the
+        # ANCESTRY is unknowable.
+        shallow.git("fetch", "--quiet", "--depth", "1", "origin", "refs/tags/*:refs/tags/*")
+
+        check("the fixture really is shallow, and really does carry the tag",
+              shallow.git("rev-parse", "--is-shallow-repository") == "true"
+              and "build-50" in shallow.git("tag", "--list"),
+              shallow.git("tag", "--list"))
+        probe = subprocess.run(("git", "merge-base", "--is-ancestor", "build-50", "HEAD"),
+                               cwd=shallow_dir, capture_output=True, text=True)
+        check("...and git answers a confident 'no' rather than failing, which is the whole trap",
+              probe.returncode == 1, f"exit {probe.returncode}")
+
+        result = run(shallow, "compile", "--at", "HEAD")
+        check("a shallow clone is refused", result.returncode == 5, f"exit {result.returncode}")
+        check("...rather than re-shipping an already-published line",
+              "An older shipped line." not in result.stdout, result.stdout.strip())
+        check("...and the message names the cause and the consequence",
+              "shallow" in result.stderr.lower() and "first build ever" in result.stderr,
+              result.stderr.strip())
+
+        boundary = run(shallow, "boundary-for", "HEAD")
+        check("...as is the boundary lookup the release step runs first",
+              boundary.returncode == 5, f"exit {boundary.returncode}")
+
+        # CONTROL 2: the genuine first build — no build tags at all — must still compile and ship
+        # everything. That is the case the empty boundary legitimately means, and refusing it
+        # would break the first release after this mechanism lands.
+        virgin = Repo(os.path.join(directory, "virgin"))
+        virgin.write(NOTE + "a.md", "The very first line.\n")
+        virgin.commit("a note, and no build has ever shipped")
+        first = run(virgin, "compile", "--at", "HEAD")
+        check("CONTROL: a genuine first build (no build tags) still ships everything",
+              first.returncode == 0 and "The very first line." in first.stdout,
+              f"exit {first.returncode} {first.stdout.strip()!r}")
 
 
 def test_a_boundary_on_another_branch_is_not_used() -> None:

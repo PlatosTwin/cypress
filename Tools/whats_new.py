@@ -169,15 +169,23 @@ def same_commit(one: str, other: str) -> bool:
         "rev-parse", f"{other}^{{commit}}", allow_failure=True)
 
 
-def is_strict_ancestor(candidate: str, descendant: str) -> bool:
-    """Is `candidate` an ancestor of `descendant`, and a DIFFERENT commit?
+def is_ancestor(candidate: str, descendant: str) -> bool:
+    """git's own relation, verbatim — which calls a commit its own ancestor.
 
-    `git merge-base --is-ancestor` calls a commit its own ancestor, which is the one answer this
-    must not accept — see `resolve_since`.
+    **Deliberately NOT "strict"**, and it used to be. The strictness lived here AND in
+    `survey_build_tags`, its only caller, and a duplicated guard is a guard with a dead copy: with
+    two of them, removing either one changes nothing and no test can tell. Mutation found it —
+    deleting the check here left the suite green. So the strictness is stated exactly once, in
+    `survey_build_tags`, where it also has to classify WHY a tag was skipped.
+
+    **This `False` is not the whole truth, and the caller has to know that** (review N1). Past a
+    shallow clone's graft point git does not error — it answers a confident exit 1 — so "genuinely
+    not an ancestor" and "this history is too short to tell" arrive as the same value. There is no
+    honest way to separate them here: the tag's commit object is present (it was fetched), so
+    `exists` is satisfied, and the parents simply are not. `resolve_since_or_refuse` resolves the
+    ambiguity by asking a different question — whether any tag was skipped for no known reason.
     """
     if not exists(candidate) or not exists(descendant):
-        return False
-    if same_commit(candidate, descendant):
         return False
     finished = subprocess.run(
         ("git", "merge-base", "--is-ancestor", candidate, descendant),
@@ -207,13 +215,99 @@ def resolve_since(at: str, below: int | None = None) -> str:
 
     **Ancestry, not just a smaller number.** A `build-N` tag on some other branch is not this
     build's predecessor, and diffing against it would ship an arbitrary set of notes.
+
+    **Highest-numbered, not nearest** (review N2). The two are the same thing only because build
+    numbers increase with history — `next-build-number` is `max(uploaded) + 1`, so a later build
+    always outranks an earlier one. That reliance is stated rather than assumed: if a build number
+    ever went backwards, "newest" here would have to become a walk of the commit graph.
+
+    **An empty return is ambiguous and callers must not read it as "first build ever"** — see
+    `resolve_since_or_refuse`, which is what the two real callers use.
     """
+    return survey_build_tags(at, below)[0]
+
+
+def survey_build_tags(at: str, below: int | None = None) -> tuple[str, list[int]]:
+    """One walk, two answers: the boundary, and the tags skipped for a reason nobody can explain.
+
+    Returns `(boundary, unexplained)`. A tag is skipped for an EXPLAINED reason when it is out of
+    range for `below`, when its ref has no commit object, or when it sits on `at` itself — that
+    last being the whole of review F1, and a case we understand completely. What is left over is
+    "git says this is not an ancestor", which is ambiguous: a genuine sideline tag, or a history
+    too shallow to know (review N1). Those are the numbers in `unexplained`.
+
+    Newest-first with an early return, so the common case costs a handful of `git` calls and only
+    the already-doomed case walks every tag. Older tags need no verdict once a boundary is found:
+    the boundary is what the caller asked for, and nothing behind it is being consulted.
+    """
+    unexplained: list[int] = []
     for number in reversed(build_tags()):
         if below is not None and number >= below:
             continue
         tag = f"build-{number}"
-        if is_strict_ancestor(tag, at):
-            return tag
+        if not exists(tag):
+            continue
+        # The strictness, stated once and only here (see `is_ancestor`). A tag ON `at` is review
+        # F1's case: skipped, and skipped for a reason we understand completely, so it must not
+        # count towards the refusal below.
+        if same_commit(tag, at):
+            continue
+        if is_ancestor(tag, at):
+            return tag, []
+        unexplained.append(number)
+    return "", sorted(unexplained)
+
+
+def resolve_since_or_refuse(at: str, below: int | None = None) -> str:
+    """`resolve_since`, but an unexplained empty answer is a red rather than a silent catastrophe.
+
+    ── The two ways to get nothing back, and why only one of them is fine (review N1) ──────────
+    An empty boundary means "compile everything ever written", because `notes_in_tree("")` is the
+    beginning of time. There are exactly two ways to reach it:
+
+      * **there are no `build-N` tags at all** — genuinely the first build after this mechanism
+        landed, and shipping every note is the correct answer. Expected exactly once.
+      * **tags exist but none resolved as an ancestor** — and the overwhelmingly likely cause is a
+        shallow clone. `git merge-base --is-ancestor` does not error past a graft point; it
+        answers a confident exit 1, so `is_strict_ancestor` says False for a tag that really is an
+        ancestor. Measured, control first:
+
+            CONTROL full clone:  boundary build-50 | 1 line
+            shallow clone:       boundary ''       | 2 lines, including build 50's shipped line
+
+        Exit 0 in both cases, and in the workflow the only signal was a `::warning::` whose text
+        reads like the expected first-build message. **Worse than a duplicated changelog**: those
+        notes then count as shipped for every future boundary, so the next build loses them too.
+
+    The two are distinguishable without a new git call, because in the shallow case the tags are
+    right there — it is only the ancestry that is unknowable. So: nothing resolved AND tags exist
+    → refuse. `git rev-parse --is-shallow-repository` would also work; the tag test is preferred
+    because it costs nothing extra and also catches a rewritten or grafted history that is not
+    flagged shallow.
+
+    **This replaces a guard that a refactor had quietly disarmed.** `cmd_compile`'s
+    `if since and not exists(since)` still calls itself the shallow-clone defence, and was, while
+    the release step passed `--since`. The F1 fix correctly stopped passing it, and the guard
+    became unreachable on the only path that matters without its comment noticing.
+    """
+    since, unexplained = survey_build_tags(at, below)
+    if since:
+        return since
+    if unexplained:
+        named = ", ".join(f"build-{n}" for n in unexplained[-5:])
+        more = f" and {len(unexplained) - 5} more" if len(unexplained) > 5 else ""
+        fail(f"{len(unexplained)} build-N tag(s) exist ({named}{more}) that git reports as NOT "
+             f"ancestors of {at!r}, and no other tag resolved as the boundary.\n"
+             "A shallow clone is the usual cause: `git merge-base --is-ancestor` answers a "
+             "confident 'no' past a graft point rather than failing, so a boundary that is merely "
+             "out of reach looks absent. The other possibility is that every build tag is on an "
+             "unmerged branch, which is equally not something to guess past.\n"
+             "Refusing rather than treating this as 'first build ever' — that would re-ship every "
+             "note in the repository AND consume them, so the next build would lose them too. "
+             "Every job that compiles notes checks out with fetch-depth: 0 for exactly this.", 5)
+    # Genuinely nothing behind this commit: no build tags at all, or the only ones sit on `at`
+    # itself (the first build, re-run after it tagged). "The beginning of time" is the right
+    # answer, and the caller's warning text says so.
     return ""
 
 
@@ -528,20 +622,35 @@ def cmd_compile(arguments: list[str]) -> None:
                  f"[--for-build <N>] [--out <path>]  (got {flag!r})", 2)
 
     explicit_since = bool(since)
+    # `--for-build` resolves its own boundary, and an empty result from it is a FINAL answer, not
+    # an unanswered question. Without this flag the block further down re-resolves — this time
+    # without `below` — and the tag for the very build being described becomes a candidate again.
+    # For the first build ever that turned a legitimate empty boundary into a refusal.
+    resolved = False
 
     if for_build:
         at = f"build-{for_build}"
         if not exists(at):
             fail(f"no tag {at} — cannot say what build {for_build} shipped without the commit "
                  "it shipped from", 5)
-        since = previous_build_tag(for_build)
+        # `resolve_since_or_refuse`, not `previous_build_tag`: the backstop runs this path, and
+        # an unexplained empty boundary there re-ships every note in the repository just as
+        # readily as it would on the release path (review N1).
+        since = resolve_since_or_refuse(at, below=for_build)
         explicit_since = False
+        resolved = True
 
+    # Reachable only for an EXPLICIT `--since`, and the comment used to claim otherwise. Until the
+    # F1 fix the release step passed `--since` and this was the shallow-clone defence; when that
+    # step correctly stopped passing it, the guard went unreachable on the one path that matters
+    # and its comment did not notice (review N1). The real defence now lives in
+    # `resolve_since_or_refuse`. This stays because an explicit `--since` naming a revision the
+    # checkout does not have is still worth refusing, and it is no longer the thing standing
+    # between a shallow clone and a re-shipped changelog.
     if since and not exists(since):
-        # Loudly, not by treating it as "the beginning of time": that would silently re-ship every
-        # note the app has ever carried.
-        fail(f"--since {since!r} is not a commit this checkout has. A shallow clone is the usual "
-             "cause; the release job checks out with fetch-depth: 0 for exactly this.", 5)
+        fail(f"--since {since!r} is not a commit this checkout has. Nothing is inferred from "
+             "that: an absent boundary would mean 'the beginning of time' and re-ship every "
+             "note the app has ever carried.", 5)
     if not exists(at):
         fail(f"--at {at!r} is not a commit this checkout has", 5)
 
@@ -550,8 +659,12 @@ def cmd_compile(arguments: list[str]) -> None:
     # trap in it that a shell one-liner walked straight into: the newest `build-N` tag can be
     # sitting on the very commit being built, after a re-run of a job that uploaded and then died
     # in the processing wait. `resolve_since` walks back past it. See that function.
-    if not since:
-        since = resolve_since(at)
+    #
+    # `_or_refuse` because the OTHER way this comes back empty — tags exist but none is reachable —
+    # is a shallow clone, and treating that as "first build ever" ships and then consumes every
+    # note in the repository (review N1).
+    if not since and not resolved:
+        since = resolve_since_or_refuse(at)
 
     # An explicitly named boundary is still checked, and refused rather than quietly walked back:
     # a caller that asked for a diff of a commit against itself has a broken assumption somewhere,
@@ -685,7 +798,11 @@ def main() -> None:
             fail("usage: whats_new.py boundary-for <rev>", 2)
         if not exists(sys.argv[2]):
             fail(f"{sys.argv[2]!r} is not a commit this checkout has", 5)
-        print(resolve_since(sys.argv[2]))
+        # `_or_refuse` here too, so the release step's log line is the FIRST thing to go red on a
+        # shallow clone rather than printing an empty boundary and letting the compile below say
+        # it (review N1). Under `set -euo pipefail` the step aborts on this exit with the whole
+        # message in front of whoever is reading the run.
+        print(resolve_since_or_refuse(sys.argv[2]))
     elif command == "previous-build-tag":
         if len(sys.argv) != 3:
             fail("usage: whats_new.py previous-build-tag <N>", 2)

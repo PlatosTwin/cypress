@@ -26,6 +26,15 @@ tags the commit each build shipped from, `build-N` (#196). So:
 > files present at `<since>`, minus anything git reports as a rename of one of those, where
 > `<since>` is the newest `build-N` tag **strictly behind** `<at>`.
 
+**An absent boundary is never inferred.** It legitimately means "the first build ever", and
+shipping every note in the repository is then the right answer — but that is also exactly what a
+**shallow clone** looks like, because `git merge-base --is-ancestor` answers a confident "no" past
+a graft point rather than failing. Getting it wrong that way is worse than a duplicated changelog:
+the notes ship *and* count as shipped, so the next build loses them too. So the compile refuses
+whenever a build tag exists that it cannot explain having skipped — one that is neither out of
+range, nor missing its commit object, nor merely sitting on the commit being built. Only a genuine
+absence of reachable tags takes the first-build path.
+
 "Strictly behind" is the whole of it, and it is not a refinement. The tag for the build being
 minted is created right after the upload — so that the backstop below has something to read — and
 the remediation for a job that dies in the twenty-minute processing wait is *Re-run failed jobs*.
