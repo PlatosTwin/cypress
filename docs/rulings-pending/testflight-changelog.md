@@ -91,7 +91,16 @@ The one gap is a build that uploads and then processes slowly: the expiry step f
 reaches testers anyway, and it carries no notes.
 `.github/workflows/whats-new-backstop.yml` runs twice a day, finds any live build with an empty
 "What to Test", and stamps it from that build's own tag. It writes nothing to the repository, and
-a build with no tag is left alone with a warning rather than stamped with a guess.
+it leaves a build alone — with a warning — in two cases rather than guessing:
+
+- **no `build-N` tag**, so the build was not minted by this pipeline and nothing can say what is
+  in it;
+- **no `docs/whats-new/` at `build-N`**, so the build predates this mechanism. That case is worth
+  spelling out because it is a lie rather than an error: a commit with no notes directory has an
+  empty unshipped set, an empty set compiles to *"No tester-visible changes in this build"*, and
+  for build 43 — which shipped the whole community-contribution sync — that sentence is false.
+  Builds 1 to 43 are all of them. `whats_new.py compile` exits 8 there specifically, which is the
+  one status the backstop treats as "leave it blank"; everything else is a red run.
 
 #### Voice
 

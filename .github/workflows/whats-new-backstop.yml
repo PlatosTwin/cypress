@@ -86,9 +86,24 @@ jobs:
               echo "::warning::no tag build-$n, so this run cannot say what build $n contains. Left without notes on purpose rather than stamped with a guess."
               continue
             fi
-            if ! "$RUNNER_TEMP/venv/bin/python" Tools/whats_new.py compile \
-                   --for-build "$n" --out "$RUNNER_TEMP/whats-new-$n.txt"; then
-              echo "::error::could not compile the notes for build $n"
+            # Exit 8 is `whats_new.py`'s one non-error refusal: the notes directory did not exist
+            # at that build's commit, so the build predates the mechanism. Builds 1-43 are all of
+            # them, and they must be left blank rather than stamped — the compiled text for a
+            # commit with no notes directory is "No tester-visible changes in this build", which
+            # for build 43 (which shipped the community-contribution sync) is simply false. A
+            # backstop that writes a falsehood is worse than one that writes nothing.
+            #
+            # `set -e` would kill the loop on the non-zero exit, so the call is guarded and the
+            # code read explicitly.
+            compile_status=0
+            "$RUNNER_TEMP/venv/bin/python" Tools/whats_new.py compile \
+              --for-build "$n" --out "$RUNNER_TEMP/whats-new-$n.txt" || compile_status=$?
+            if [ "$compile_status" -eq 8 ]; then
+              echo "::notice::build $n predates the release-note mechanism (no docs/whats-new/ at build-$n). Left blank on purpose."
+              continue
+            fi
+            if [ "$compile_status" -ne 0 ]; then
+              echo "::error::could not compile the notes for build $n (exit $compile_status)"
               failed=1
               continue
             fi

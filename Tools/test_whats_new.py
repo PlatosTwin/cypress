@@ -399,6 +399,40 @@ def test_compile_for_build_reads_the_pair_of_tags() -> None:
               missing.returncode != 0, f"exit {missing.returncode}")
 
 
+def test_compile_refuses_a_build_that_predates_the_mechanism() -> None:
+    """Builds 1-43. The failure this guards is a LIE, not an error.
+
+    With no notes directory the unshipped set is empty, and an empty set renders as "No
+    tester-visible changes in this build" — which for build 43, which shipped the whole
+    community-contribution sync, is false. The backstop would have stamped it.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Repo(directory)
+        repo.write("Cypress/A.swift", "//\n")
+        repo.commit("a build from before any of this existed")
+        repo.tag("build-43")
+        result = run(repo, "compile", "--for-build", "43")
+        check("a commit with no notes directory is refused", result.returncode == 8,
+              f"exit {result.returncode}")
+        check("...rather than described as having no tester-visible changes",
+              wn.NOTHING_VISIBLE not in result.stdout, result.stdout.strip())
+        check("...and the exit code is the one the backstop skips on, not a generic error",
+              result.returncode == 8 and "predates" in result.stderr)
+
+        # CONTROL: once the directory exists, an empty unshipped set IS the honest answer, and the
+        # same probe must let it through. Without this the guard could be refusing everything.
+        repo.write(NOTE + "one.md", "A line.\n")
+        repo.commit("the mechanism lands")
+        repo.tag("build-44")
+        repo.write("Cypress/B.swift", "//\n")
+        repo.commit("a later build with nothing new to say")
+        repo.tag("build-45")
+        control = run(repo, "compile", "--for-build", "45")
+        check("CONTROL: a build with the directory present and nothing new says so",
+              control.returncode == 0 and control.stdout.strip() == wn.NOTHING_VISIBLE,
+              f"exit {control.returncode} {control.stdout.strip()}")
+
+
 def test_compile_refuses_a_since_it_cannot_see() -> None:
     """The silent-catastrophe case: an unreachable `--since` must not mean "ship everything"."""
     with tempfile.TemporaryDirectory() as directory:

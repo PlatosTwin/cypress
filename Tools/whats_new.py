@@ -157,6 +157,23 @@ def notes_in_tree(rev: str) -> set[str]:
     return {p for p in listing.splitlines() if is_note_path(p)}
 
 
+def notes_directory_exists(rev: str) -> bool:
+    """Did `docs/whats-new/` exist at `rev` at all?
+
+    **The difference between "this build changed nothing a tester can see" and "this build predates
+    the mechanism that would have said so" is invisible in the compiled output** — both produce an
+    empty set of unshipped notes, and `render` then says "No tester-visible changes in this build".
+    For build 43 that sentence is simply false: it shipped the community-contribution sync and had
+    no notes because there was nowhere to write one.
+
+    So the question is asked separately, and the callers that could publish a falsehood refuse.
+    Cheap: one `ls-tree` of the directory, which is empty exactly when the directory is absent.
+    """
+    if not rev:
+        return False
+    return bool(git("ls-tree", "-r", "--name-only", rev, "--", NOTES_DIR, allow_failure=True))
+
+
 def is_note_path(path: str) -> bool:
     if not path.startswith(NOTES_DIR) or not path.endswith(".md"):
         return False
@@ -323,6 +340,12 @@ def cmd_compile(arguments: list[str]) -> None:
              "cause; the release job checks out with fetch-depth: 0 for exactly this.", 5)
     if not exists(at):
         fail(f"--at {at!r} is not a commit this checkout has", 5)
+    if not notes_directory_exists(at):
+        # Exit 8, and the number is load-bearing: the backstop treats it as "leave this build
+        # alone", where every other failure is a red run. See `notes_directory_exists`.
+        fail(f"{NOTES_DIR} does not exist at {at}, so this commit predates the release-note "
+             "mechanism and nothing here can say what it shipped. Refusing rather than "
+             "publishing \"no tester-visible changes\", which for such a build is false.", 8)
 
     text, visible, internal = compile_notes(since, at)
 
