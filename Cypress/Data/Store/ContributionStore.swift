@@ -541,6 +541,8 @@ public struct ContributionStore {
     /// A screen that only read `storage_key` would show nothing for the seconds or minutes between
     /// the shutter and the drain — which is precisely when somebody is looking at the tree they just
     /// photographed. Hence both.
+    ///
+    /// See `treeID(ofPhoto:connection:)` below for the narrower read a queued vote needs.
     public func photoBinaryLocation(
         id: UUID,
         connection: SQLiteConnection
@@ -554,6 +556,25 @@ public struct ContributionStore {
             (storageKey: try row.stringIfPresent("storage_key"),
              localPath: try row.stringIfPresent("local_path"))
         }
+    }
+
+    /// The tree a live photograph is on, or nil when there is no such photograph.
+    ///
+    /// It exists because a queued mutation has to name a tree: `POST /sync` requires `tree_uuid` on
+    /// every item, and a vote's subject is a photograph. The join is one this device can make and
+    /// the service cannot, so `LocalAPI.setPhotoVote` makes it before the row is written rather than
+    /// queueing an item the service would have to refuse.
+    ///
+    /// **The same `deleted_at IS NULL` narrowing `photoBinaryLocation` carries**, so this answers
+    /// nil for exactly the photographs that read answers nil for — which is what lets it stand in
+    /// for that call's existence check rather than add a second, subtly different one.
+    public func treeID(ofPhoto id: UUID, connection: SQLiteConnection) throws -> UUID? {
+        let statement = try connection.cachedStatement("""
+            SELECT tree_uuid FROM photos WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.uuid("tree_uuid") }
     }
 
     // MARK: - Deleting one photograph (AppSchema v12)

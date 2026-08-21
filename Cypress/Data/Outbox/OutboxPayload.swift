@@ -58,6 +58,21 @@ public enum OutboxPayload: Sendable, Hashable {
     /// arrives at the API owned by the device rather than by nobody.
     case privateReminder(PrivateReminder)
 
+    // ── Spec §3.4's nine, in ten cases ─────────────────────────────────────────────────────────
+    //
+    // See `OutboxItem.Kind` for why nine mutations are ten cases, and `CommunityMutations.swift`
+    // for each payload's own argument.
+    case addTree(TreeAddition)
+    case speciesClaim(SpeciesStatement)
+    case speciesCorrection(SpeciesStatement)
+    case wrongSpeciesReport(ReviewReport)
+    case neverExistedReport(ReviewReport)
+    case speciesReviewDismissal(ReviewDismissal)
+    case recordReviewDismissal(ReviewDismissal)
+    case photoVote(PhotoVoteCast)
+    case photoWithdrawal(PhotoWithdrawal)
+    case hazardRedirect(HazardRedirectReport)
+
     public var kind: OutboxItem.Kind {
         switch self {
         case .visit: return .visit
@@ -66,6 +81,36 @@ public enum OutboxPayload: Sendable, Hashable {
         case .careEvent: return .careEvent
         case .favoriteToggle: return .favoriteToggle
         case .privateReminder: return .privateReminder
+        case .addTree: return .addTree
+        case .speciesClaim: return .speciesClaim
+        case .speciesCorrection: return .speciesCorrection
+        case .wrongSpeciesReport: return .wrongSpeciesReport
+        case .neverExistedReport: return .neverExistedReport
+        case .speciesReviewDismissal: return .speciesReviewDismissal
+        case .recordReviewDismissal: return .recordReviewDismissal
+        case .photoVote: return .photoVote
+        case .photoWithdrawal: return .photoWithdrawal
+        case .hazardRedirect: return .hazardRedirect
+        }
+    }
+
+    /// True for spec §3.4's nine: the mutations `LocalAPI` performs directly and enqueues from
+    /// **inside** the transaction that performed them.
+    ///
+    /// The distinction is not decoration. For the six original kinds the drain *is* the local commit
+    /// — `OutboxQueue`'s apply sink runs `LocalAPI.sync` → `apply(_:)`, and nothing has touched this
+    /// device's tables before it does. For these ten the local write already happened, in one
+    /// transaction with the row, so the row is born `local_applied = 1` and a drain owes only the
+    /// send. `LocalAPI.apply(_:)` refuses them for exactly that reason: re-applying one would be a
+    /// second correction, a second flag, a second withdrawal.
+    public var isAppliedBeforeItIsQueued: Bool {
+        switch self {
+        case .visit, .observation, .measurement, .careEvent, .favoriteToggle, .privateReminder:
+            return false
+        case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport, .neverExistedReport,
+             .speciesReviewDismissal, .recordReviewDismissal, .photoVote, .photoWithdrawal,
+             .hazardRedirect:
+            return true
         }
     }
 
@@ -80,6 +125,16 @@ public enum OutboxPayload: Sendable, Hashable {
         // The reminder's own id. Minted on device before the save and never reused, which is what
         // an idempotency key has to be; see `PrivateReminder`.
         case let .privateReminder(value): return value.id
+        case let .addTree(value): return value.clientUUID
+        case let .speciesClaim(value): return value.clientUUID
+        case let .speciesCorrection(value): return value.clientUUID
+        case let .wrongSpeciesReport(value): return value.clientUUID
+        case let .neverExistedReport(value): return value.clientUUID
+        case let .speciesReviewDismissal(value): return value.clientUUID
+        case let .recordReviewDismissal(value): return value.clientUUID
+        case let .photoVote(value): return value.clientUUID
+        case let .photoWithdrawal(value): return value.clientUUID
+        case let .hazardRedirect(value): return value.clientUUID
         }
     }
 
@@ -92,6 +147,20 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .careEvent(value): return value.treeID
         case let .favoriteToggle(value): return value.treeID
         case let .privateReminder(value): return value.treeID
+        // `TreeAddition.treeID` and not its `clientUUID`: the two are different facts on this side
+        // and the type's header says which is which.
+        case let .addTree(value): return value.treeID
+        case let .speciesClaim(value): return value.treeID
+        case let .speciesCorrection(value): return value.treeID
+        case let .wrongSpeciesReport(value): return value.treeID
+        case let .neverExistedReport(value): return value.treeID
+        case let .speciesReviewDismissal(value): return value.treeID
+        case let .recordReviewDismissal(value): return value.treeID
+        // Resolved on device from the photograph's row. Every `POST /sync` item names a tree, and a
+        // vote's subject is a photograph — this is the join the service cannot make for itself.
+        case let .photoVote(value): return value.treeID
+        case let .photoWithdrawal(value): return value.treeID
+        case let .hazardRedirect(value): return value.event.treeID
         }
     }
 
@@ -113,6 +182,17 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .careEvent(value): return value.capturedAt
         case let .favoriteToggle(value): return value.occurredAt
         case let .privateReminder(value): return value.createdAt
+        case let .addTree(value): return value.occurredAt
+        case let .speciesClaim(value): return value.occurredAt
+        case let .speciesCorrection(value): return value.occurredAt
+        case let .wrongSpeciesReport(value): return value.occurredAt
+        case let .neverExistedReport(value): return value.occurredAt
+        case let .speciesReviewDismissal(value): return value.occurredAt
+        case let .recordReviewDismissal(value): return value.occurredAt
+        case let .photoVote(value): return value.occurredAt
+        case let .photoWithdrawal(value): return value.occurredAt
+        // The moment the sheet was shown, which is the fact the report is about.
+        case let .hazardRedirect(value): return value.event.shownAt
         }
     }
 
@@ -134,6 +214,16 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .careEvent(value): return value.attribution.userID
         case let .favoriteToggle(value): return value.owner.userID
         case let .privateReminder(value): return value.owner.userID
+        case let .addTree(value): return value.attribution.userID
+        case let .speciesClaim(value): return value.attribution.userID
+        case let .speciesCorrection(value): return value.attribution.userID
+        case let .wrongSpeciesReport(value): return value.attribution.userID
+        case let .neverExistedReport(value): return value.attribution.userID
+        case let .speciesReviewDismissal(value): return value.attribution.userID
+        case let .recordReviewDismissal(value): return value.attribution.userID
+        case let .photoVote(value): return value.attribution.userID
+        case let .photoWithdrawal(value): return value.attribution.userID
+        case let .hazardRedirect(value): return value.attribution.userID
         }
     }
 
@@ -147,6 +237,24 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .careEvent(value): return value.attribution.deviceID
         case let .favoriteToggle(value): return value.owner.deviceID
         case let .privateReminder(value): return value.owner.deviceID
+        // ── The nine send **both** ids when there is an account, and that is deliberate ─────────
+        //
+        // `Attribution.deviceID` is non-optional, so a signed-in contributor's item names the
+        // account *and* the installation that performed the act — exactly as a `Visit` does, and
+        // for the same reason: these records are attributed to a person through an account and to a
+        // device through D9's anonymous first saves, and `claimDevice` needs the second to adopt
+        // the first. The service's ownership gate reads `user_id` on the account branch and
+        // `device_id` on the anonymous one, so neither field is a second answer to one question.
+        case let .addTree(value): return value.attribution.deviceID
+        case let .speciesClaim(value): return value.attribution.deviceID
+        case let .speciesCorrection(value): return value.attribution.deviceID
+        case let .wrongSpeciesReport(value): return value.attribution.deviceID
+        case let .neverExistedReport(value): return value.attribution.deviceID
+        case let .speciesReviewDismissal(value): return value.attribution.deviceID
+        case let .recordReviewDismissal(value): return value.attribution.deviceID
+        case let .photoVote(value): return value.attribution.deviceID
+        case let .photoWithdrawal(value): return value.attribution.deviceID
+        case let .hazardRedirect(value): return value.attribution.deviceID
         }
     }
 
@@ -186,6 +294,16 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .careEvent(value): return try encoder.encode(value)
         case let .favoriteToggle(value): return try encoder.encode(value)
         case let .privateReminder(value): return try encoder.encode(value)
+        case let .addTree(value): return try encoder.encode(value)
+        case let .speciesClaim(value): return try encoder.encode(value)
+        case let .speciesCorrection(value): return try encoder.encode(value)
+        case let .wrongSpeciesReport(value): return try encoder.encode(value)
+        case let .neverExistedReport(value): return try encoder.encode(value)
+        case let .speciesReviewDismissal(value): return try encoder.encode(value)
+        case let .recordReviewDismissal(value): return try encoder.encode(value)
+        case let .photoVote(value): return try encoder.encode(value)
+        case let .photoWithdrawal(value): return try encoder.encode(value)
+        case let .hazardRedirect(value): return try encoder.encode(value)
         }
     }
 
@@ -198,6 +316,23 @@ public enum OutboxPayload: Sendable, Hashable {
         case .careEvent: return .careEvent(try decoder.decode(CareEvent.self, from: data))
         case .favoriteToggle: return .favoriteToggle(try decoder.decode(FavoriteToggle.self, from: data))
         case .privateReminder: return .privateReminder(try decoder.decode(PrivateReminder.self, from: data))
+        case .addTree: return .addTree(try decoder.decode(TreeAddition.self, from: data))
+        case .speciesClaim: return .speciesClaim(try decoder.decode(SpeciesStatement.self, from: data))
+        case .speciesCorrection:
+            return .speciesCorrection(try decoder.decode(SpeciesStatement.self, from: data))
+        case .wrongSpeciesReport:
+            return .wrongSpeciesReport(try decoder.decode(ReviewReport.self, from: data))
+        case .neverExistedReport:
+            return .neverExistedReport(try decoder.decode(ReviewReport.self, from: data))
+        case .speciesReviewDismissal:
+            return .speciesReviewDismissal(try decoder.decode(ReviewDismissal.self, from: data))
+        case .recordReviewDismissal:
+            return .recordReviewDismissal(try decoder.decode(ReviewDismissal.self, from: data))
+        case .photoVote: return .photoVote(try decoder.decode(PhotoVoteCast.self, from: data))
+        case .photoWithdrawal:
+            return .photoWithdrawal(try decoder.decode(PhotoWithdrawal.self, from: data))
+        case .hazardRedirect:
+            return .hazardRedirect(try decoder.decode(HazardRedirectReport.self, from: data))
         }
     }
 

@@ -46,7 +46,8 @@ public enum AppSchema {
         Migration(version: 13, name: "anonymized means anonymous, permanently", sql: v13),
         Migration(version: 14, name: "a species claim can be corrected, and the correction keeps it", migrate: applyV14),
         Migration(version: 15, name: "applying a mutation locally and sending it are two facts", migrate: applyV15),
-        Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16)
+        Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16),
+        Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17)
     ]
 
     /// The version a freshly migrated database reports.
@@ -1619,6 +1620,96 @@ public enum AppSchema {
             UPDATE photos
                SET taken_on_device = (SELECT value FROM app_state WHERE key = 'device_uuid')
              WHERE NOT (user_id IS NULL AND device_id IS NULL);
+            """)
+    }
+
+    // MARK: - v17
+
+    /// `outbox.kind` learns spec §3.4's nine mutations, so they can stop being written to this phone
+    /// and nowhere else.
+    ///
+    /// **What was wrong, and it is a live loss rather than a latent one.** `RoutedAPI` routes
+    /// `addTree`, `claimSpecies`, `correctSpecies`, `flagWrongSpecies`, `flagNeverExisted`,
+    /// `setPhotoVote`, `deletePhoto`, `logHazardRedirect` and the two review dismissals to `local`,
+    /// and its own comment says why: "they have no queue behind them at all". That was a scope
+    /// statement while nothing had a server to reach. Since #158's wiring round wired a send sink it
+    /// is a signed-in contributor's work reaching their phone and no account, with every layer
+    /// reporting success — which is the shape of failure this project keeps paying for.
+    ///
+    /// A row cannot be queued for a kind the `CHECK` refuses, and SQLite cannot widen a `CHECK` in
+    /// place, so this is the twelve-step rebuild v4 and v15 already perform on this table. The copy
+    /// is column for column and carries `seq`, so FIFO order, retry counts, error text, the 48 h
+    /// window and the photo lists all come across untouched — v15's paragraph on what copying `seq`
+    /// does and does not buy applies verbatim and is not repeated.
+    ///
+    /// ── **Nothing is enqueued by this migration, and that is the ruling, not a scope note** ────
+    ///
+    /// The widened vocabulary is a permission to write *future* rows. Every mutation of these nine
+    /// that this device has already performed stays exactly where it is: applied locally, in the
+    /// tables, unqueued, for ever. There is no sweep, no backfill, no `INSERT … SELECT` from
+    /// `community_trees` or `review_flags` or `photo_votes` into this table, and there must never be
+    /// one — the owner ruled it, and the reason is that a phone carrying local test data would
+    /// silently publish all of it the first time a build with a send sink drained. The
+    /// `INSERT … SELECT` below reads `outbox` and only `outbox`.
+    ///
+    /// **Idempotent by guard, for the reason v3 gives.** The guard reads the stored `CREATE TABLE`
+    /// text rather than a column list, because what changed here is a `CHECK` and
+    /// `pragma_table_info` cannot see one (`outboxDefinition`).
+    private static func applyV17(_ connection: SQLiteConnection) throws {
+        let existing = try outboxDefinition(connection: connection)
+        guard !existing.contains("'add_tree'") else { return }
+        try connection.execute("""
+            CREATE TABLE outbox_community_kinds (
+                seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                TEXT NOT NULL UNIQUE,
+                kind              TEXT NOT NULL CHECK (kind IN (
+                                      'visit','observation','measurement','care_event',
+                                      'favorite_toggle','private_reminder',
+                                      -- Spec §3.4's nine, in ten values: the review-dismissal pair
+                                      -- is one mutation in that list and two seams here
+                                      -- (`ReviewFlag.Kind.Resolution`, ERRATA E170).
+                                      'add_tree','species_claim','species_correction',
+                                      'wrong_species_report','never_existed_report',
+                                      'species_review_dismissal','record_review_dismissal',
+                                      'photo_vote','photo_withdrawal','hazard_redirect')),
+                client_uuid       TEXT NOT NULL UNIQUE,
+                payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                photo_paths       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(photo_paths)),
+                state             TEXT NOT NULL DEFAULT 'pending'
+                                  CHECK (state IN ('pending','uploading','failed','done')),
+                fail_count        INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error        TEXT,
+                last_error_code   TEXT,
+                -- v15's two sinks, unchanged. The ten new kinds are born with `local_applied = 1`
+                -- because `LocalAPI` writes the row inside the transaction that performs the
+                -- mutation, so a drain owes them the send and nothing else. See
+                -- `OutboxPayload.isAppliedBeforeItIsQueued`.
+                local_applied     INTEGER NOT NULL DEFAULT 0 CHECK (local_applied IN (0,1)),
+                remote_sent       INTEGER NOT NULL DEFAULT 0 CHECK (remote_sent IN (0,1)),
+                window_started_at TEXT NOT NULL,
+                next_attempt_at   TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                CHECK (state <> 'done' OR (local_applied = 1 AND json_array_length(photo_paths) = 0)),
+                -- Apply is first and unconditional (RULINGS R72 §1). A row that claims to
+                -- have been sent without having been applied is a lost contribution.
+                CHECK (remote_sent = 0 OR local_applied = 1)
+            );
+
+            INSERT INTO outbox_community_kinds
+                (seq, id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                 last_error, last_error_code, local_applied, remote_sent, window_started_at,
+                 next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                   last_error, last_error_code, local_applied, remote_sent, window_started_at,
+                   next_attempt_at, created_at, updated_at
+              FROM outbox;
+
+            DROP TABLE outbox;
+            ALTER TABLE outbox_community_kinds RENAME TO outbox;
+
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
+            CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
             """)
     }
 

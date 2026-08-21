@@ -38,6 +38,45 @@ public struct OutboxStore {
     /// this is `ON CONFLICT DO NOTHING` on the unique `client_uuid` rather than a plain INSERT.
     @discardableResult
     public func enqueue(_ item: OutboxItem, connection: SQLiteConnection) throws -> Bool {
+        try enqueue(item, locallyApplied: false, connection: connection)
+    }
+
+    /// Enqueues a mutation this device has **already committed**, from inside the transaction that
+    /// committed it (spec §3.4's nine).
+    ///
+    /// ── Why these rows are born `local_applied = 1` ────────────────────────────────────────────
+    ///
+    /// For the six original kinds the drain *is* the local commit: nothing has touched this device's
+    /// tables when the row is written, `OutboxQueue`'s apply sink runs `LocalAPI.sync`, and that
+    /// call is what puts the visit on the tree (ERRATA E261 §2). §3.4's nine are the other shape.
+    /// `LocalAPI.addTree` runs a proximity dedupe, strips a photograph's metadata, mints a tree and
+    /// returns it; `deletePhoto` tombstones a row behind two ownership gates and then removes files;
+    /// `correctSpecies` supersedes an assertion chain. Each is performed **first**, because the
+    /// caller needs the answer, and each writes its queue row inside its own transaction — so either
+    /// both happened or neither did, and there is no window in which the mutation is committed and
+    /// the row that would send it is not.
+    ///
+    /// Marking them applied is a statement of fact rather than an optimization: the mutation is on
+    /// this device by the time the row exists. `OutboxQueue.drain` already skips the apply half for
+    /// such a row (`live.filter { !$0.locallyApplied }`), so what is left is the send, which is the
+    /// half that was missing. Leaving them at 0 would offer them to the apply sink, and applying one
+    /// a second time is a second correction, a second flag, a second withdrawal —
+    /// `LocalAPI.apply(_:)` refuses them outright for that reason.
+    ///
+    /// **This is not a backfill and must never become one.** It writes one row for one mutation at
+    /// the moment that mutation happens. Nothing sweeps rows that already exist into the queue; see
+    /// `AppSchema` v17.
+    @discardableResult
+    public func enqueueLocallyApplied(_ item: OutboxItem, connection: SQLiteConnection) throws -> Bool {
+        try enqueue(item, locallyApplied: true, connection: connection)
+    }
+
+    @discardableResult
+    private func enqueue(
+        _ item: OutboxItem,
+        locallyApplied: Bool,
+        connection: SQLiteConnection
+    ) throws -> Bool {
         let statement = try connection.cachedStatement("""
             INSERT INTO outbox
                 (id, kind, client_uuid, payload, photo_paths, state, fail_count,
@@ -45,11 +84,12 @@ public struct OutboxStore {
                  next_attempt_at, created_at, updated_at)
             VALUES
                 (:id, :kind, :client, :payload, :photos, :state, :failCount,
-                 :lastError, :lastErrorCode, 0, 0, :created,
+                 :lastError, :lastErrorCode, :localApplied, 0, :created,
                  NULL, :created, :updated)
             ON CONFLICT(client_uuid) DO NOTHING
             """)
         _ = try statement.bind([
+            ":localApplied": locallyApplied ? 1 : 0,
             ":id": item.id,
             ":kind": item.kind.rawValue,
             ":client": item.clientUUID,
