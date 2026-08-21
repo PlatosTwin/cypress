@@ -36,6 +36,20 @@ type Mutation struct {
 	// IsFavorite is read only for kind `favorite_toggle`, which carries state rather than a verb
 	// so replaying it is idempotent.
 	IsFavorite bool
+	// CommunityTree is set only for kind `add_tree`, and it is what makes that one of spec §3.4's
+	// ten different from the other nine.
+	//
+	// Nine of them are recorded and not materialized, which is the contract five of the six older
+	// kinds already have: the `contributions` row *is* the record. A tree cannot be, because a tree
+	// has to be **findable** — `TreesWithin` is the 10 m proximity dedupe, it reads
+	// `community_trees`, and a tree that existed only as a contribution is a tree the next
+	// contributor standing under it would be invited to add again.
+	//
+	// It travels inside the mutation so the two rows land in **one transaction**. Calling `AddTree`
+	// beside `Apply` would leave a window in which the tree is on the map and the contribution that
+	// says who added it is not, or the reverse — and the reverse is the one that matters, because
+	// a retry would then hit the contribution dedupe and never insert the tree.
+	CommunityTree *NewCommunityTree
 }
 
 // ApplyOutcome is what happened to one mutation.
@@ -104,6 +118,9 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		if mutation.Kind == "favorite_toggle" {
 			return upsertFavorite(ctx, tx, mutation, owner, now)
 		}
+		if mutation.CommunityTree != nil {
+			return insertCommunityTree(ctx, tx, *mutation.CommunityTree, owner, now)
+		}
 		return nil
 	})
 	return outcome, err
@@ -135,6 +152,35 @@ func upsertFavorite(ctx context.Context, tx pgx.Tx, mutation Mutation, owner Own
 		 WHERE excluded.occurred_at > favorites.occurred_at
 	`, uuid.New(), mutation.TreeUUID, owner.UserID, owner.DeviceID,
 		mutation.ClientUUID, mutation.IsFavorite, mutation.OccurredAt, now)
+	return err
+}
+
+// insertCommunityTree materializes an `add_tree` item, in the transaction that recorded it.
+//
+// `ON CONFLICT (id) DO NOTHING` and no reported outcome: the contribution insert above has already
+// decided whether this item is new, on the key that decides it everywhere else. A tree that is
+// already here is one this device sent before under a different `client_uuid` — the same act queued
+// twice — and re-inserting it must not fail the item, but must not overwrite it either. Whoever got
+// here first is the row.
+//
+// The statement is `AddTree`'s, run on this transaction's connection rather than the pool's. It is
+// written out instead of calling that method because `AddTree` takes a `*Store` and a context and
+// would open its own connection, which is exactly the second transaction this is here to avoid.
+func insertCommunityTree(
+	ctx context.Context,
+	tx pgx.Tx,
+	tree NewCommunityTree,
+	owner Owner,
+	now time.Time,
+) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO community_trees
+		    (id, lat, lon, address, species_id, placement, land_context,
+		     user_id, device_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+		ON CONFLICT (id) DO NOTHING
+	`, tree.ID, tree.Lat, tree.Lon, tree.Address, tree.SpeciesID, tree.Placement, tree.LandContext,
+		owner.UserID, owner.DeviceID, now)
 	return err
 }
 
