@@ -119,10 +119,15 @@ struct MapKitBasemap: View {
     var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
-    /// How far down MapKit's own top-trailing ornament — the compass — must start, so it clears the
-    /// chrome drawn over this map. Zero on the two one-tree screens, which draw none. See
-    /// `MapAnnotationLayer.makeUIView`'s compass block.
-    var topOrnamentInset: CGFloat = 0
+    /// Whether this map draws MapKit's compass, and how far down its top-trailing slot has to start
+    /// to clear the chrome over it.
+    ///
+    /// **`nil` means no compass, and that is the default.** The owner's ruling of 2026-08-21 is about
+    /// screen 01 — the map a morning is conducted from. Screen 16's pin adjust and the pin-set map
+    /// draw this same basemap about *one tree*, they are not in the ruling, and a control appearing
+    /// on a screen nobody specified it for is the stop-and-ask DECISIONS constraint 21 names. They
+    /// rotate too, so if the compass belongs there it is a second ruling and one argument here.
+    var compassTopInset: CGFloat?
 
     var onCameraChange: (BoundingBox, Int) -> Void
     var onSelectPin: (TreePin) -> Void
@@ -149,7 +154,7 @@ struct MapKitBasemap: View {
             userCoordinate: userCoordinate,
             userHeadingDegrees: userHeadingDegrees,
             selectedPinID: selectedPinID,
-            topOrnamentInset: topOrnamentInset,
+            compassTopInset: compassTopInset,
             onCameraChange: onCameraChange,
             onSelectPin: onSelectPin,
             onSelectCluster: onSelectCluster,

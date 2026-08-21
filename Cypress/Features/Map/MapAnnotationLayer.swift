@@ -391,8 +391,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
     var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
-    /// Where MapKit's compass is allowed to start. See the compass block in `makeUIView`.
-    var topOrnamentInset: CGFloat = 0
+    /// Where MapKit's compass is allowed to start, or `nil` for no compass at all. See the compass
+    /// block in `makeUIView`, and `MapKitBasemap.compassTopInset` for which screens get one.
+    var compassTopInset: CGFloat?
 
     var onCameraChange: (BoundingBox, Int) -> Void
     var onSelectPin: (TreePin) -> Void
@@ -410,6 +411,17 @@ struct MapAnnotationLayer: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    /// Turns the compass on or off and puts it where `compassTopInset` says. See the compass block
+    /// in `makeUIView` for the ruling and for how the inset is arrived at.
+    ///
+    /// `layoutMargins` is written only when it differs: it is a layout input, and rewriting it on
+    /// every camera pass would dirty the map's layout sixty times a second during a pan.
+    private func applyCompass(to mapView: MKMapView) {
+        mapView.showsCompass = compassTopInset != nil
+        let margins = UIEdgeInsets(top: compassTopInset ?? 0, left: 0, bottom: 0, right: 0)
+        if mapView.layoutMargins != margins { mapView.layoutMargins = margins }
+    }
 
     /// Whether this map view has an area to aim a camera at. See `AimableMapView` and E168.
     static func canAim(_ mapView: MKMapView) -> Bool { !mapView.bounds.isEmpty }
@@ -464,16 +476,16 @@ struct MapAnnotationLayer: UIViewRepresentable {
         // sizes, and a second hand-built total would move with it for exactly as long as somebody
         // remembered to update both.
         //
-        // The two one-tree screens (16's pin adjust, the pin-set map) pass 0 and draw no chrome to
-        // clear. See `MapKitBasemap.topOrnamentInset`.
+        // The two one-tree screens (16's pin adjust, the pin-set map) draw this same basemap and are
+        // **not** in the ruling, so they pass `nil` and get no compass. See
+        // `MapKitBasemap.compassTopInset`.
         //
         // The scale bar stays off. Nothing ruled it and the original reasoning still holds for it:
         // it answers a question nobody on this screen is asking, and it is not the undo for a
         // gesture the map already allows.
         // ══════════════════════════════════════════════════════════════════════════════════════
-        mapView.showsCompass = true
         mapView.showsScale = false
-        mapView.layoutMargins = UIEdgeInsets(top: topOrnamentInset, left: 0, bottom: 0, right: 0)
+        applyCompass(to: mapView)
         // **Not `showsUserLocation`.** That would have `MKMapView` open a second `CLLocationManager`
         // of its own, beside `MapLocationProvider`'s — two GPS sessions for one dot, which is the
         // duplication this same round of work just finished removing from the app. The dot is drawn
@@ -559,12 +571,10 @@ struct MapAnnotationLayer: UIViewRepresentable {
             context.coordinator.refreshAllMarkerImages(on: mapView)
         }
 
-        // Here as well as in `makeUIView`, because the number moves: it is built from the safe-area
+        // Here as well as in `makeUIView`, because the inset moves: it is built from the safe-area
         // inset and the type size, and both can change under a live map — a rotation, a reader
-        // turning the ramp up in Settings and coming back. Written only when it differs, so an
-        // ordinary camera pass does not dirty the map's layout.
-        let margins = UIEdgeInsets(top: topOrnamentInset, left: 0, bottom: 0, right: 0)
-        if mapView.layoutMargins != margins { mapView.layoutMargins = margins }
+        // turning the ramp up in Settings and coming back.
+        applyCompass(to: mapView)
 
         context.coordinator.applyCameraIfChanged(position, to: mapView)
         context.coordinator.sync(

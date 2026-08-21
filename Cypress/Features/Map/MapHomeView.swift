@@ -313,7 +313,7 @@ struct MapHomeView: View {
             // `MapAnnotationLayer.makeUIView`). This is the y of the chip row's own bottom edge, and
             // it is the same sum `MapLocationNotice`'s budget is built from rather than a second
             // hand-added total that would drift from the chrome it is clearing.
-            topOrnamentInset: MapLayout.topChromeReserved(
+            compassTopInset: MapLayout.topChromeReserved(
                 topInset: topInset,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             ),
