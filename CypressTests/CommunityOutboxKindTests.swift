@@ -328,9 +328,12 @@ struct CommunityOutboxKindTests {
 
     /// The mutation and its row are one transaction, so a refusal leaves neither.
     ///
-    /// `deletePhoto` is the sharpest case and the one PR #94 hardened: the row is queued **after**
-    /// the tombstone `UPDATE` has matched under `ContributionStore.removalPredicate`, so a
-    /// photograph another installation took is refused with nothing queued about it.
+    /// **What this proves and what it does not.** The refusal it exercises is
+    /// `PhotoOwner.permitsRemoval(by:takenOnDevice:)`, which throws before the transaction opens —
+    /// so what is measured is that nothing is queued ahead of the gates. PR #94's second gate, the
+    /// owner predicate inside the tombstone `UPDATE` (`ContributionStore.removalPredicate`), is not
+    /// reachable from here without racing two deletions; the row is queued after that `UPDATE` has
+    /// matched, and `LocalAPI.deletePhoto` states the ordering at the line that does it.
     @Test("a refused deletion queues nothing")
     func aRefusedMutationQueuesNothing() async throws {
         let store = try await CypressStore.inMemory()
