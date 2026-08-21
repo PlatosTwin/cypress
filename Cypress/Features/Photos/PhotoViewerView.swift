@@ -302,13 +302,24 @@ struct PhotoViewerView: View {
                 // `camera` is the app's curve for a thing settling into place across the whole
                 // screen, which is what this is, and it is honestly off under Reduce Motion, where a
                 // full-screen transform is precisely what the setting exists to suppress.
-                .onTapGesture(count: 2) {
-                    withAnimation(
-                        CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)
-                    ) {
-                        committed = .rest
+                //
+                // **`highPriorityGesture`, not `onTapGesture`.** Two `.gesture()`s on one view are
+                // resolved by attachment order, and the pan above is attached first, so it wins a
+                // contested touch — and a `DragGesture` holds a touch while it waits to see whether
+                // `minimumDistance` will be crossed. A double tap crosses nothing, so it should
+                // arrive; whether it *does* is a question about SwiftUI's resolution rather than
+                // about this screen, and the answer is not worth depending on. Given priority, the
+                // tap is decided first and the drag sees what is left. There is no single-tap
+                // handler here for it to delay.
+                .highPriorityGesture(
+                    TapGesture(count: 2).onEnded {
+                        withAnimation(
+                            CypressMotion.resolved(CypressMotion.camera, reduceMotion: reduceMotion)
+                        ) {
+                            committed = .rest
+                        }
                     }
-                }
+                )
         }
         .ignoresSafeArea()
     }

@@ -116,6 +116,17 @@ struct VisitCameraView: View {
         // while the content it sits behind goes on respecting every inset it respected before. The
         // layout does not move: nothing about where the content sits changes, only what is drawn
         // behind it.
+        //
+        // ── Measured, both ways, on iPhone 16 Pro ────────────────────────────────────────────
+        // Screen 04 opened from a tree's photo CTA, sampled at the middle of the bottom strip:
+        //
+        //     before   rgb(255, 255, 255)      the host's own white, and the report's own word
+        //     after    rgb(21, 29, 21)         `Dark.bgCamera` (#10160F) as the display renders it
+        //
+        // With the field focused the same ground reads through the keyboard, which is translucent
+        // and composites over whatever it is standing on: rgb(105, 105, 105) before, rgb(46, 49, 46)
+        // after. That is why the report describes white *behind and around* the keyboard — the
+        // keyboard itself was being tinted by the same unpainted ground the strip was showing.
         // ══════════════════════════════════════════════════════════════════════════════════════
         .background(CypressColor.Dark.bgCamera.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)

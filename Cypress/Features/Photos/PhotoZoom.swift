@@ -9,16 +9,22 @@
 //  a panned picture back into the frame in the same gesture, or the reader lets go and finds a
 //  whole-frame photograph sitting half off the display with nothing left to drag it back with. Kept
 //  as two independent `@State`s, that coupling is a rule that lives in whichever `onChanged` closure
-//  happened to be written last. Kept here it is one function, and `PhotoZoomTests` can walk it
-//  without rendering anything.
+//  happened to be written last. Kept here it is one function, and `ZoomTests` can walk it without
+//  rendering anything.
 //
 //  ── What "clamped" means, exactly ────────────────────────────────────────────────────────
 //  The pan limit is computed from the **drawn** photograph and not from the box it is drawn in.
-//  `PhotoFit` letterboxes: a portrait photograph on a portrait phone is short of the sides, so at
-//  1.6× it may have grown taller than the display while still being narrower than it, and it has no
-//  business sliding sideways. Clamping against the box would have allowed exactly that — the amount
-//  of slack would have been right for a photograph that filled the box and wrong for every other
-//  one, which is the shape of defect ERRATA E125 records on the other two photo components.
+//  `PhotoFit` letterboxes, and **which axis it letterboxes is measured rather than assumed** — the
+//  first draft of this header guessed the wrong one and `ZoomTests` said so. A 3:4 phone photograph
+//  on a 393 × 852 pt phone is *wider* than the display in proportion, not narrower: it meets the
+//  sides first and leaves 328 pt of bar split top and bottom. So at 1.2× it has grown past both
+//  sides while still falling 223 pt short of the top and the bottom, and it has no business sliding
+//  vertically.
+//
+//  Clamping against the box would have granted that slide — 85 pt of it, measured — and every point
+//  of it drags bar into view. The amount of slack the box gives is right for a photograph that fills
+//  it and wrong for every other one, which is the shape of defect ERRATA E125 records on the other
+//  two photo components.
 //
 
 import CoreGraphics
@@ -83,9 +89,9 @@ struct PhotoZoom: Equatable {
     ///
     /// Exactly the overflow: the scaled picture is `content × scale`, the window onto it is `box`,
     /// and half of whatever the first exceeds the second by is how far it can slide before an edge
-    /// comes into view. An axis with no overflow gets zero — a photograph narrower than the display
-    /// stays centered on that axis however far it is zoomed, because there is nothing off the side
-    /// to go and look at.
+    /// comes into view. An axis with no overflow gets zero — an axis the photograph does not fill
+    /// stays centered however far it is zoomed, because there is nothing off that edge to go and
+    /// look at except the letterbox.
     ///
     /// **The `negligibleOverflow` floor is not decoration, and `ZoomTests` found it.** `fittedSize`
     /// divides and multiplies, so a photograph fitted to exactly the width of the box comes back as

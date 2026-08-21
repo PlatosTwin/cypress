@@ -391,6 +391,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
     var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
+    /// Where MapKit's compass is allowed to start. See the compass block in `makeUIView`.
+    var topOrnamentInset: CGFloat = 0
+
     var onCameraChange: (BoundingBox, Int) -> Void
     var onSelectPin: (TreePin) -> Void
     var onSelectCluster: (TreeCluster) -> Void
@@ -446,12 +449,31 @@ struct MapAnnotationLayer: UIViewRepresentable {
         // mock: no glyph of ours is involved, so R57's no-SF-Symbols policy is not in question and
         // there is no bespoke control to specify.
         //
+        // ── Where it sits, and how that was found out ────────────────────────────────────────
+        // Turning the flag on and looking: the compass takes MapKit's top-**trailing** ornament
+        // slot, and on screen 01 that slot is underneath `SearchBar`. Photographed on an iPhone 16
+        // Pro with the map rotated — the needle came up inside the search field, clipped by it, with
+        // the field's own glass over the top. A control that says "tap to return to north" is not a
+        // control if it is behind the search bar.
+        //
+        // `layoutMargins` is what `MKMapView` lays its ornaments out against, so the compass is
+        // pushed to just under the chip row: `topOrnamentInset`, which screen 01 supplies as
+        // `MapLayout.topChromeReserved(topInset:isAccessibilitySize:)` — the *same* sum
+        // `MapLocationNotice` uses, and by construction the y of the chip row's own bottom edge.
+        // Reusing it rather than adding numbers here is the point: the chrome moves at accessibility
+        // sizes, and a second hand-built total would move with it for exactly as long as somebody
+        // remembered to update both.
+        //
+        // The two one-tree screens (16's pin adjust, the pin-set map) pass 0 and draw no chrome to
+        // clear. See `MapKitBasemap.topOrnamentInset`.
+        //
         // The scale bar stays off. Nothing ruled it and the original reasoning still holds for it:
         // it answers a question nobody on this screen is asking, and it is not the undo for a
         // gesture the map already allows.
         // ══════════════════════════════════════════════════════════════════════════════════════
         mapView.showsCompass = true
         mapView.showsScale = false
+        mapView.layoutMargins = UIEdgeInsets(top: topOrnamentInset, left: 0, bottom: 0, right: 0)
         // **Not `showsUserLocation`.** That would have `MKMapView` open a second `CLLocationManager`
         // of its own, beside `MapLocationProvider`'s — two GPS sessions for one dot, which is the
         // duplication this same round of work just finished removing from the app. The dot is drawn
@@ -536,6 +558,13 @@ struct MapAnnotationLayer: UIViewRepresentable {
             context.coordinator.installWash(on: mapView, isDark: isDark)
             context.coordinator.refreshAllMarkerImages(on: mapView)
         }
+
+        // Here as well as in `makeUIView`, because the number moves: it is built from the safe-area
+        // inset and the type size, and both can change under a live map — a rotation, a reader
+        // turning the ramp up in Settings and coming back. Written only when it differs, so an
+        // ordinary camera pass does not dirty the map's layout.
+        let margins = UIEdgeInsets(top: topOrnamentInset, left: 0, bottom: 0, right: 0)
+        if mapView.layoutMargins != margins { mapView.layoutMargins = margins }
 
         context.coordinator.applyCameraIfChanged(position, to: mapView)
         context.coordinator.sync(

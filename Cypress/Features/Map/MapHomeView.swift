@@ -128,7 +128,7 @@ struct MapHomeView: View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 MapCanvas(
-                    basemap: { basemap },
+                    basemap: { basemap(topInset: proxy.safeAreaInsets.top) },
                     overlay: {
                         chrome(
                             topInset: proxy.safeAreaInsets.top,
@@ -294,7 +294,11 @@ struct MapHomeView: View {
 
     // MARK: - Basemap
 
-    private var basemap: some View {
+    /// - Parameter topInset: the safe area above this map, which is the first term of the compass's
+    ///   own inset. Handed in rather than read off the `MKMapView`, for the reason
+    ///   `MapLayout.topChromeReserved` gives about baked-in safe areas: the live number is the only
+    ///   correct one, and this proxy is where the screen already reads it.
+    private func basemap(topInset: CGFloat) -> some View {
         MapKitBasemap(
             position: $position,
             region: $region,
@@ -304,6 +308,15 @@ struct MapHomeView: View {
             userCoordinate: location.availability.coordinate,
             userHeadingDegrees: location.headingDegrees,
             selectedPinID: model.selectedPinID,
+            // MapKit's compass takes the top-trailing ornament slot, which on this screen is under
+            // the search bar (task: the owner's compass ruling of 2026-08-21; see
+            // `MapAnnotationLayer.makeUIView`). This is the y of the chip row's own bottom edge, and
+            // it is the same sum `MapLocationNotice`'s budget is built from rather than a second
+            // hand-added total that would drift from the chrome it is clearing.
+            topOrnamentInset: MapLayout.topChromeReserved(
+                topInset: topInset,
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            ),
             onCameraChange: { bounds, zoom in
                 model.cameraDidChange(bounds: bounds, zoom: zoom)
             },

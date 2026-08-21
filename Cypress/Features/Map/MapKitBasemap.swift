@@ -119,6 +119,11 @@ struct MapKitBasemap: View {
     var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
+    /// How far down MapKit's own top-trailing ornament — the compass — must start, so it clears the
+    /// chrome drawn over this map. Zero on the two one-tree screens, which draw none. See
+    /// `MapAnnotationLayer.makeUIView`'s compass block.
+    var topOrnamentInset: CGFloat = 0
+
     var onCameraChange: (BoundingBox, Int) -> Void
     var onSelectPin: (TreePin) -> Void
     var onSelectCluster: (TreeCluster) -> Void
@@ -144,6 +149,7 @@ struct MapKitBasemap: View {
             userCoordinate: userCoordinate,
             userHeadingDegrees: userHeadingDegrees,
             selectedPinID: selectedPinID,
+            topOrnamentInset: topOrnamentInset,
             onCameraChange: onCameraChange,
             onSelectPin: onSelectPin,
             onSelectCluster: onSelectCluster,
