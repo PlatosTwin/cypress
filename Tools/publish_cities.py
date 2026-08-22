@@ -147,15 +147,64 @@ from datetime import datetime, timezone
 # `id_spaces`/`inventories` above and for the same reason: a city file that
 # carried another city's civic facts would be claiming an authority it does
 # not have.
-SEED_SCHEMA_VERSION = 16
+#
+# 17 (the s17 round) adds `dim_region` -- the unit a pack is published in --
+# and `trees.region_id`, a NOT NULL foreign key into it. `build_city_file`
+# below narrows on THAT column instead of `id_space`, which is the whole
+# reason the generation exists: RULING D1 makes New York's published unit the
+# borough, and `id_space` cannot express a unit smaller than a city. San
+# Francisco and San Jose are one `city`-level region each and publish
+# unchanged in meaning (RULING D2: one shape everywhere, no NYC-only concept).
+SEED_SCHEMA_VERSION = 17
 
 # Manifest envelope format, for the app-side parser (#157). Bump on any change
 # that would break a reader of the previous shape; additive keys do not bump it.
-MANIFEST_FORMAT = 1
+#
+# 2 (the s17 round) is such a change, and R37.4's additive tolerance does NOT
+# cover it: the UNIT'S MEANING changes. A format-1 reader shown a format-2
+# manifest would install a borough believing it was a city -- it would read
+# `id`, `display_name` and `tree_count` successfully and be wrong about all
+# three. That is what a format bump is for.
+MANIFEST_FORMAT = 2
 
-# Display names are civic facts, entered by hand on purpose: a city id with no
+# The format-1 envelope, still published beside it. See `MANIFEST_V1_NAME`.
+LEGACY_MANIFEST_FORMAT = 1
+
+# RULING D8 -- DUAL-PUBLISH FOR ONE RELEASE CYCLE, AND WHY THE OLD NAME IS THE
+# OLD FORMAT RATHER THAN THE NEW ONE.
+#
+# `CityManifest.decode` refuses an unknown format outright, before reading
+# anything else. That is correct -- guessing at a future format's meaning is how
+# a reader silently mis-installs a file -- but it means the day format 2
+# publishes at the path every shipped build already fetches, EVERY UNUPDATED
+# INSTALL loses the whole Cities screen at once and shows "Couldn't check what's
+# available." That is a self-inflicted outage on readers who did nothing.
+#
+# So `manifest.json` -- the path every existing build hard-codes -- keeps its
+# format-1 shape and lists whole-city packs only, and format 2 publishes beside
+# it under a new name that only a build that understands it asks for. An old
+# install therefore keeps a working screen; the s17 files it lists are refused
+# per-city as `needsNewerApp`, which is a truthful sentence about one city
+# rather than a dead screen.
+#
+# The window is one release cycle, at which point the format-1 object stops
+# being written. It costs a few kilobytes.
+MANIFEST_V2_NAME = "manifest-v2.json"
+MANIFEST_V1_NAME = "manifest.json"
+
+# Display names are civic facts, entered by hand on purpose: an id with no
 # entry here fails the run loudly rather than shipping an invented or derived
 # name (DECISIONS constraint 15 is about botanical/civic content invention).
+#
+# KEYED BY PACK ID SINCE s17, AND A PARENT CITY NEEDS ITS OWN ENTRY TOO. For a
+# one-region city the two are one key -- `sf` is both the pack and the city, and
+# this table is unchanged. New York will need six: one per borough pack, plus
+# `us-ny-nyc` for the `region.parent_city_display_name` every borough entry
+# carries.
+#
+# The agreement between these names and the seed's own `dim_region.display_name`
+# is now CHECKED at publish (see `main`), which is what the note below asks for
+# and previously only requested.
 #
 # DUPLICATION WITH THE SEED'S dim_city (task #237), evaluated and left alone.
 # `Tools/build_seed.py`'s `DIM_CITY` now carries the same two display names
@@ -174,12 +223,44 @@ DISPLAY_NAMES = {
     "us-ca-sj": "San Jose",
 }
 
-# seed_meta keys that state a city's ship coverage. The v14-era ingest writes
-# per-city ad-hoc key names; map them here until build_seed.py standardizes on
-# coverage_<id_space>. Absent key means full coverage.
+# seed_meta keys that state a city's ship coverage. The v14-era ingest wrote
+# per-city ad-hoc key names; these are those names, kept as a FALLBACK for files
+# built before the s17 round. Absent key means full coverage.
+#
+# **THE STANDARDISED KEY IS `coverage_<id_space>` AND IT IS PREFERRED** --
+# `Tools/build_seed.py` writes it as of s17, which is what R37's trailing clause
+# asked for ("when a third city lands, `build_seed.py` should write
+# `coverage_<id_space>` keys and the publisher's `COVERAGE_KEYS` shim retires").
+#
+# THIS SHIM WAS ALSO A LIVE DIVERGENCE, AND THAT IS THE DEFECT THIS ROUND CLOSES.
+# `SeedCities.coverage` on the Swift side already preferred `coverage_<id_space>`
+# and fell back to this table; this publisher read this table and ONLY this
+# table. The two agreed about San Jose for exactly one reason -- nothing had ever
+# written the standardised key -- so the first build that wrote it would have had
+# the app's bundled row and the published manifest stating different coverage for
+# the same city, with no error anywhere and nothing comparing them. `coverage_for`
+# below now reads the two keys in the same order the app does, and
+# `Tools/test_publish_cities.py` pins the orders together rather than trusting
+# this comment.
 COVERAGE_KEYS = {
     "us-ca-sj": "sj_ship_extent",
 }
+
+
+def coverage_for(space: str, fused_meta: dict[str, str]) -> str:
+    """This city's shipped extent, or `"full"`.
+
+    Two keys, in the order `SeedCities.coverage` reads them: the standardised
+    `coverage_<id_space>` first, the legacy per-city name second. Keeping the
+    orders identical is the point -- see `COVERAGE_KEYS` above.
+    """
+    for key in [f"coverage_{space}"] + (
+        [COVERAGE_KEYS[space]] if space in COVERAGE_KEYS else []
+    ):
+        value = fused_meta.get(key)
+        if value:
+            return value
+    return "full"
 
 
 def fail(msg: str, code: int = 1) -> None:
@@ -218,36 +299,66 @@ def content_rev_for(space: str, fused_meta: dict[str, str]) -> str:
     return max(dates)
 
 
-def build_city_file(src: str, dest: str, space: str) -> dict:
-    """Copy the fused seed to dest, narrow it to one city, verify, and measure.
+def build_city_file(src: str, dest: str, region: dict) -> dict:
+    """Copy the fused seed to dest, narrow it to one region, verify, and measure.
 
     Returns the measured facts for the manifest entry. Any failed check exits.
+
+    ── s17: THIS NARROWS ON `region_id`, NOT ON `id_space` ──────────────────────
+    The two are the same cut for a one-region city and are not the same cut for
+    New York, which is the entire reason the generation exists. `region` is a
+    row of `dim_region` as a dict: `id` (the rowid `trees.region_id` holds),
+    `pack_id` (the published identity), `id_space` (the space it sits in).
+
+    The id-space deletes below are kept and are NOT redundant: a pack must carry
+    exactly its own region's rows AND exactly its own city's vocabulary, and
+    narrowing on region alone would leave another city's `id_spaces` and
+    `inventories` rows in the file. Every borough of New York is in one id space,
+    so for NYC the region delete is the narrow one and the space delete is a
+    no-op; for a hypothetical region spanning spaces they would disagree, and the
+    per-region count check below is what would catch it.
     """
+    space = region["id_space"]
+    region_id = region["id"]
+    pack = region["pack_id"]
     shutil.copyfile(src, dest)
     con = sqlite3.connect(dest)
     try:
         cur = con.cursor()
 
-        # Refuse to sever a lineage link across id spaces. None exist today
-        # (a site's replacement stands in the same city); if one ever does,
+        # Refuse to sever a lineage link across regions. None exist today
+        # (a site's replacement stands in the same place); if one ever does,
         # deleting silently would corrupt provenance.
+        #
+        # KEYED ON REGION SINCE s17, WHICH IS STRICTLY STRONGER. The old check
+        # asked whether a link crossed an ID SPACE, and every borough of New York
+        # is in one id space -- so a Queens tree whose predecessor stood in
+        # Brooklyn would have passed it and then been severed by the delete
+        # below, silently, on the first NYC publish. A cut is a cut at whatever
+        # granularity the cut is made, and this is now made per region.
         (cross,) = cur.execute(
             "SELECT COUNT(*) FROM trees t JOIN trees p ON p.id = t.site_lineage "
-            "WHERE t.id_space = ? AND p.id_space != ?", (space, space)).fetchone()
+            "WHERE t.region_id = ? AND p.region_id != ?", (region_id, region_id)).fetchone()
         if cross:
-            fail(f"{space}: {cross} site_lineage links cross id spaces; "
+            fail(f"{pack}: {cross} site_lineage links cross regions; "
                  "splitting would sever provenance -- stop and report")
 
         cur.execute("DELETE FROM species_assertions WHERE tree_id IN "
-                    "(SELECT id FROM trees WHERE id_space != ?)", (space,))
+                    "(SELECT id FROM trees WHERE region_id != ?)", (region_id,))
         cur.execute("DELETE FROM trees_rtree WHERE id IN "
-                    "(SELECT id FROM trees WHERE id_space != ?)", (space,))
-        cur.execute("DELETE FROM trees WHERE id_space != ?", (space,))
+                    "(SELECT id FROM trees WHERE region_id != ?)", (region_id,))
+        cur.execute("DELETE FROM trees WHERE region_id != ?", (region_id,))
         cur.execute("DELETE FROM neighborhoods WHERE id NOT IN "
                     "(SELECT neighborhood_id FROM trees "
                     " WHERE neighborhood_id IS NOT NULL)")
         cur.execute("DELETE FROM inventories WHERE id_space != ?", (space,))
         cur.execute("DELETE FROM id_spaces WHERE id != ?", (space,))
+        # dim_region narrowed to this pack's own row, the same reason and the
+        # same shape as dim_city below: a pack carrying another region's civic
+        # facts would be claiming an authority it does not have. BEFORE the
+        # dim_city delete, because dim_region.city_id references it and the
+        # subquery there reads the surviving id_spaces row.
+        cur.execute("DELETE FROM dim_region WHERE id != ?", (region_id,))
         # dim_city AFTER id_spaces: narrowed to the one row the surviving
         # id_spaces row still references (task #237), the same reason
         # inventories/id_spaces above are narrowed to this city alone. The
@@ -264,17 +375,24 @@ def build_city_file(src: str, dest: str, space: str) -> dict:
         rev = content_rev_for(space, fused_meta)
         (count,) = cur.execute("SELECT COUNT(*) FROM trees").fetchone()
         if count == 0:
-            fail(f"{space}: zero trees survived the split")
+            fail(f"{pack}: zero trees survived the split")
 
-        # The two receipt keys that name THIS FILE, rewritten to the truth
-        # about it; everything else in seed_meta stays the fused build receipt.
+        # The receipt keys that name THIS FILE, rewritten to the truth about it;
+        # everything else in seed_meta stays the fused build receipt.
         rewrites = {
             "id_spaces_in_file": space,
             "rows_kept": str(count),
             "trees_snapshot_on": rev,
         }
         additions = {
+            # `publish_city_id` keeps its name and its meaning -- the ID SPACE,
+            # i.e. the city -- and `publish_pack_id` is the new, finer fact. They
+            # are the same string for a one-region city and differ for a borough,
+            # which is exactly why the existing key could not simply be
+            # repurposed: something reading it expects a city.
             "publish_city_id": space,
+            "publish_pack_id": pack,
+            "publish_region_level": region["level"],
             "publish_schema_version": str(SEED_SCHEMA_VERSION),
             "publish_content_rev": rev,
             "publish_generator": "Tools/publish_cities.py",
@@ -293,33 +411,41 @@ def build_city_file(src: str, dest: str, space: str) -> dict:
         # ---- verify the artifact we just produced, not the plan for it ----
         fk = cur.execute("PRAGMA foreign_key_check").fetchall()
         if fk:
-            fail(f"{space}: foreign_key_check reported {len(fk)} violations, "
+            fail(f"{pack}: foreign_key_check reported {len(fk)} violations, "
                  f"first: {fk[0]!r}")
         (integrity,) = cur.execute("PRAGMA integrity_check").fetchone()
         if integrity != "ok":
-            fail(f"{space}: integrity_check said {integrity!r}")
+            fail(f"{pack}: integrity_check said {integrity!r}")
         (foreign_rows,) = cur.execute(
             "SELECT COUNT(*) FROM trees WHERE id_space != ?", (space,)).fetchone()
         if foreign_rows:
-            fail(f"{space}: {foreign_rows} foreign-space trees survived")
+            fail(f"{pack}: {foreign_rows} foreign-space trees survived")
+        # The region cut, asserted on the artifact. Strictly finer than the
+        # id-space check above and the one that means anything for a borough:
+        # every NYC pack passes the space check by construction.
+        (foreign_region_rows,) = cur.execute(
+            "SELECT COUNT(*) FROM trees WHERE region_id != ?", (region_id,)).fetchone()
+        if foreign_region_rows:
+            fail(f"{pack}: {foreign_region_rows} trees from another region survived")
+        (regions_left,) = cur.execute("SELECT COUNT(*) FROM dim_region").fetchone()
+        if regions_left != 1:
+            fail(f"{pack}: {regions_left} dim_region rows survived, expected exactly 1")
         (rtree_count,) = cur.execute("SELECT COUNT(*) FROM trees_rtree").fetchone()
         if rtree_count != count:
-            fail(f"{space}: rtree has {rtree_count} entries for {count} trees")
+            fail(f"{pack}: rtree has {rtree_count} entries for {count} trees")
         (orphan_assertions,) = cur.execute(
             "SELECT COUNT(*) FROM species_assertions sa "
             "LEFT JOIN trees t ON t.id = sa.tree_id WHERE t.id IS NULL").fetchone()
         if orphan_assertions:
-            fail(f"{space}: {orphan_assertions} orphaned species_assertions")
+            fail(f"{pack}: {orphan_assertions} orphaned species_assertions")
 
         bbox = cur.execute(
             "SELECT MIN(lat), MAX(lat), MIN(lon), MAX(lon) FROM trees").fetchone()
     finally:
         con.close()
 
-    coverage = "full"
-    cov_key = COVERAGE_KEYS.get(space)
-    if cov_key and fused_meta.get(cov_key):
-        coverage = fused_meta[cov_key]
+    # One lookup, in the app's own key order -- see `coverage_for`.
+    coverage = coverage_for(space, fused_meta)
 
     return {
         "tree_count": count,
@@ -374,24 +500,90 @@ def main() -> None:
              "Tools/setup_worktree.sh first", 3)
 
     src_con = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True)
+
+    # THE FILE MUST BE A GENERATION THIS PUBLISHER WRITES. `dim_region` is what
+    # s17 added and what everything below narrows on; an s16 seed has no such
+    # table, and reaching the first query with a helpful message beats an
+    # `OperationalError: no such table` three frames down.
+    have_tables = {r[0] for r in src_con.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "dim_region" not in have_tables:
+        fail(f"{args.db} has no dim_region table, so it is a pre-s17 seed and this "
+             f"publisher writes s{SEED_SCHEMA_VERSION}. Rebuild it with "
+             f"Tools/build_seed.py.", 3)
+
     spaces = [r[0] for r in src_con.execute(
         "SELECT DISTINCT id_space FROM trees ORDER BY id_space")]
     declared = {r[0] for r in src_con.execute("SELECT id FROM id_spaces")}
     if not set(spaces) <= declared:
         fail(f"trees carry id_spaces {set(spaces) - declared} not declared "
              "in id_spaces", 3)
+
+    # ---- the regions this file holds, which are the packs it will publish ----
+    # Ordered by `id`, which is `dim_region`'s rowid and therefore the order
+    # `Tools/build_seed.py` inserted them in. RULINGS R43 §2 makes the
+    # publisher's order the display order, so this is a decision and not an
+    # accident: regions appear as their city registered them.
+    #
+    # Joined through `id_spaces` rather than read off the region row, because
+    # `dim_region.city_id` names a CITY and this publisher narrows and attributes
+    # per ID SPACE. The two are one-to-one today; the join is what keeps this
+    # correct rather than lucky if they ever are not.
+    regions = [
+        {"id": rid, "pack_id": pack, "display_name": name, "level": level,
+         "id_space": space}
+        for rid, pack, name, level, space in src_con.execute(
+            "SELECT r.id, r.pack_id, r.display_name, r.level, s.id "
+            "FROM dim_region r JOIN id_spaces s ON s.city_id = r.city_id "
+            "ORDER BY r.id")
+    ]
+    if not regions:
+        fail("dim_region is empty; the seed declares no publishable unit", 3)
+
     fused_counts = dict(src_con.execute(
-        "SELECT id_space, COUNT(*) FROM trees GROUP BY id_space"))
+        "SELECT region_id, COUNT(*) FROM trees GROUP BY region_id"))
     (fused_total,) = src_con.execute("SELECT COUNT(*) FROM trees").fetchone()
     fused_meta_src = meta(src_con)
     # Hashed once, up front: it is both the manifest's source_seed receipt and (R60) the
     # build_id inside every version string, and those two must never disagree.
     source_seed_sha = sha256_of(args.db)
 
-    missing = [s for s in spaces if s not in DISPLAY_NAMES]
+    # EVERY REGION THAT HOLDS ROWS MUST BE PUBLISHED, AND EVERY PUBLISHED REGION
+    # MUST HOLD ROWS. `trees.region_id` is NOT NULL, so a row cannot be in no
+    # region -- but a region the seed registered and then put nothing in would
+    # publish as an empty pack, and a region holding rows that this loop skipped
+    # would drop them silently. The total check further down catches the second;
+    # this catches both, by name, before anything is written.
+    region_ids = {r["id"] for r in regions}
+    orphan_counts = {rid: n for rid, n in fused_counts.items() if rid not in region_ids}
+    if orphan_counts:
+        fail(f"{sum(orphan_counts.values())} trees carry region_id(s) "
+             f"{sorted(orphan_counts)} that dim_region does not declare", 3)
+    empty = [r["pack_id"] for r in regions if not fused_counts.get(r["id"])]
+    if empty:
+        fail(f"region(s) {empty} are declared but hold no trees; an empty pack is "
+             f"a download that buys a reader nothing", 3)
+
+    missing = [r["pack_id"] for r in regions if r["pack_id"] not in DISPLAY_NAMES]
     if missing:
-        fail(f"no display name for id_space(s) {missing}; add them to "
+        fail(f"no display name for pack(s) {missing}; add them to "
              "DISPLAY_NAMES -- names are entered, never derived", 3)
+
+    # THE DUPLICATION `DISPLAY_NAMES` DELIBERATELY KEEPS, NOW CHECKED RATHER THAN
+    # ASKED FOR. Its comment says the two hand-entered copies are separately
+    # owned by design and that "if this drifts, the fix is to keep both
+    # hand-entries in sync". That instruction had no instrument behind it: a
+    # drift produced a manifest naming a pack one thing and the file inside it
+    # naming itself another, and nothing looked. Independence of ownership does
+    # not require silence about disagreement.
+    drifted = [
+        f"{r['pack_id']}: manifest {DISPLAY_NAMES[r['pack_id']]!r} vs "
+        f"dim_region {r['display_name']!r}"
+        for r in regions if DISPLAY_NAMES[r["pack_id"]] != r["display_name"]
+    ]
+    if drifted:
+        fail("DISPLAY_NAMES disagrees with the seed's own dim_region.display_name -- "
+             + "; ".join(drifted), 3)
 
     cities_dir = os.path.join(args.out, "cities")
     if os.path.isdir(cities_dir):
@@ -403,29 +595,50 @@ def main() -> None:
     build_id = source_seed_sha[:8]
 
     entries = []
-    for space in spaces:
+    for region in regions:
+        pack = region["pack_id"]
+        space = region["id_space"]
         rev_preview = content_rev_for(space, fused_meta_src)
         version = f"s{SEED_SCHEMA_VERSION}-r{rev_preview}-{build_id}"
-        rel_path = f"cities/{space}/{version}/{space}.sqlite"
+        # PATHS ARE KEYED ON THE PACK, NOT THE ID SPACE. Identical for a
+        # one-region city -- `cities/sf/...` is byte for byte the path it has
+        # always been, which is what R37.2's immutability requires of this change
+        # -- and the only shape that can hold five boroughs of one space.
+        rel_path = f"cities/{pack}/{version}/{pack}.sqlite"
         dest = os.path.join(args.out, rel_path)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
 
         print(f"building {rel_path} ...")
-        facts = build_city_file(args.db, dest, space)
+        facts = build_city_file(args.db, dest, region)
         if facts["content_rev"] != rev_preview:
-            fail(f"{space}: content_rev drifted during the build")
-        if facts["tree_count"] != fused_counts[space]:
-            fail(f"{space}: split kept {facts['tree_count']} trees but the fused "
-                 f"seed holds {fused_counts[space]} for this space")
+            fail(f"{pack}: content_rev drifted during the build")
+        if facts["tree_count"] != fused_counts[region["id"]]:
+            fail(f"{pack}: split kept {facts['tree_count']} trees but the fused "
+                 f"seed holds {fused_counts[region['id']]} for this region")
 
         size = os.path.getsize(dest)
         digest = sha256_of(dest)
         print(f"  {facts['tree_count']:>7} trees  {size / 1e6:7.1f} MB  sha256 {digest[:16]}...")
 
         entries.append({
-            "id": space,
-            "display_name": DISPLAY_NAMES[space],
+            "id": pack,
+            "display_name": DISPLAY_NAMES[pack],
             "coverage": facts["coverage"],
+            # ---- format 2's addition: the entry's region identity ----------
+            # A pack is no longer necessarily a city, so an entry has to say what
+            # it is. Three facts, exactly as §6.3 scopes them: the level, the
+            # parent city, and the bbox the entry already carried.
+            #
+            # `parent_city` is the ID SPACE, which is what `publish_city_id`
+            # inside the file says and what the app's install/attach path already
+            # speaks. For a one-region city it equals `id`; for a borough it does
+            # not, and a reader that wants to know which city a pack belongs to
+            # has no other way to ask.
+            "region": {
+                "level": region["level"],
+                "parent_city": space,
+                "parent_city_display_name": DISPLAY_NAMES[space],
+            },
             "bbox": facts["bbox"],
             "centroid": facts["centroid"],
             "tree_count": facts["tree_count"],
@@ -440,7 +653,7 @@ def main() -> None:
 
     total_split = sum(e["tree_count"] for e in entries)
     if total_split != fused_total:
-        fail(f"per-city counts sum to {total_split}, fused seed holds {fused_total}")
+        fail(f"per-region counts sum to {total_split}, fused seed holds {fused_total}")
 
     # ── The fused seed itself, published as a build input (task #196) ──────────────────
     # The per-city files above are what the APP downloads at runtime. This is what a
@@ -467,8 +680,7 @@ def main() -> None:
              "describe the file beside it")
     print(f"          {seed_bytes / 1e6:7.1f} MB  sha256 {seed_copy_sha[:16]}...")
 
-    manifest = {
-        "manifest_format": MANIFEST_FORMAT,
+    envelope = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "generator": "Tools/publish_cities.py",
         "base_url_hint": args.base_url,
@@ -480,34 +692,73 @@ def main() -> None:
             "path": seed_rel,
             "bytes": seed_bytes,
         },
-        "cities": entries,
     }
-    manifest_path = os.path.join(args.out, "manifest.json")
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2, sort_keys=False)
-        f.write("\n")
 
-    # ---- verify the manifest against the files it describes ----
-    with open(manifest_path) as f:
-        readback = json.load(f)
-    for entry in readback["cities"]:
-        path = os.path.join(args.out, entry["path"])
-        if sha256_of(path) != entry["sha256"]:
-            fail(f"{entry['id']}: manifest sha256 does not match the file")
-        if os.path.getsize(path) != entry["bytes"]:
-            fail(f"{entry['id']}: manifest byte size does not match the file")
+    manifest = {"manifest_format": MANIFEST_FORMAT, **envelope, "cities": entries}
 
-    upload_sh = write_upload_sh(args.out, entries, seed_rel)
+    # ---- RULING D8's second object: the format-1 manifest, whole cities only --
+    # `city`-level packs and nothing else. A format-1 reader has no concept of a
+    # region, so listing a borough to it would be handing it something it would
+    # confidently mis-describe -- it would draw "Queens" as a city with its own
+    # civic identity. Filtering is the whole of what makes the old format still
+    # TRUE rather than merely still parseable.
+    #
+    # The entries are otherwise unchanged, `region` key included: a format-1
+    # reader ignores keys it does not know (R37.4), so carrying it costs nothing
+    # and removing it would mean maintaining two entry shapes.
+    legacy_entries = [e for e in entries if e["region"]["level"] == "city"]
+    if not legacy_entries:
+        fail("no city-level pack to publish in the format-1 manifest; RULING D8 "
+             "requires unupdated installs keep a working catalogue")
+    legacy_manifest = {
+        "manifest_format": LEGACY_MANIFEST_FORMAT, **envelope, "cities": legacy_entries,
+    }
 
-    print(f"\nmanifest: {manifest_path}")
+    manifest_path = os.path.join(args.out, MANIFEST_V2_NAME)
+    legacy_path = os.path.join(args.out, MANIFEST_V1_NAME)
+    for path, doc in ((manifest_path, manifest), (legacy_path, legacy_manifest)):
+        with open(path, "w") as f:
+            json.dump(doc, f, indent=2, sort_keys=False)
+            f.write("\n")
+
+    # ---- verify each manifest against the files it describes ----
+    # Both of them, read back off disk. The format-1 object is a smaller list of
+    # the same entries, and "it is a subset so it must be fine" is exactly the
+    # reasoning that stops being true the day the filter above gains a condition.
+    for path in (manifest_path, legacy_path):
+        with open(path) as f:
+            readback = json.load(f)
+        name = os.path.basename(path)
+        for entry in readback["cities"]:
+            full = os.path.join(args.out, entry["path"])
+            if sha256_of(full) != entry["sha256"]:
+                fail(f"{name}: {entry['id']}: manifest sha256 does not match the file")
+            if os.path.getsize(full) != entry["bytes"]:
+                fail(f"{name}: {entry['id']}: manifest byte size does not match the file")
+
+    # Uploads every pack, not just the ones the format-1 list names -- the
+    # objects have to exist before either manifest names them.
+    upload_sh = write_upload_sh(args.out, entries, seed_rel,
+                                manifests=(MANIFEST_V2_NAME, MANIFEST_V1_NAME))
+
+    print(f"\nmanifest: {manifest_path}  (format {MANIFEST_FORMAT}, "
+          f"{len(entries)} pack(s))")
+    print(f"          {legacy_path}  (format {LEGACY_MANIFEST_FORMAT}, "
+          f"{len(legacy_entries)} whole-city pack(s), RULING D8)")
     print(f"upload:   {upload_sh}  (run only with the CYPRESS_TIGRIS_PROFILE / "
           "cypress-tigris AWS profile configured)")
     print("OK")
 
 
-def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str) -> str:
+def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,
+                    manifests: tuple = (MANIFEST_V2_NAME, MANIFEST_V1_NAME)) -> str:
     """Write dist/upload.sh. Pulled out of main() so it can be exercised (and
-    red-proofed -- #248) against synthetic entries without rebuilding the seed."""
+    red-proofed -- #248) against synthetic entries without rebuilding the seed.
+
+    `manifests` is every manifest object to upload and verify. RULING D8 puts two
+    of them in the bucket for one release cycle; both are mutable objects that
+    must land AFTER the immutable files they name, which is the ordering below.
+    """
     upload_sh = os.path.join(out_dir, "upload.sh")
     with open(upload_sh, "w") as f:
         f.write("#!/bin/sh\n")
@@ -569,16 +820,22 @@ def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str) -> str:
                     f'--endpoint-url "$ENDPOINT" --profile "$PROFILE"\n')
         f.write(f'aws s3 cp "{seed_rel}" "$BUCKET/{seed_rel}" '
                 f'--endpoint-url "$ENDPOINT" --profile "$PROFILE"\n')
-        f.write('aws s3 cp manifest.json "$BUCKET/manifest.json" '
-                '--endpoint-url "$ENDPOINT" --profile "$PROFILE" '
-                '--content-type application/json\n')
+        # LAST, and in this order. R37.2: files upload before the manifest that
+        # names them. With two manifests the newest format goes first, so the
+        # window in which a format-2 reader can see a catalogue that a format-1
+        # reader cannot is the shorter of the two possible windows.
+        for name in manifests:
+            f.write(f'aws s3 cp {name} "$BUCKET/{name}" '
+                    '--endpoint-url "$ENDPOINT" --profile "$PROFILE" '
+                    '--content-type application/json\n')
         f.write("# Verify anonymous READ (GET, not HEAD: Tigris has returned\n")
         f.write("# HEAD 200 alongside GET 403). One-byte range GETs on the\n")
         f.write("# public domain; -f fails the script on any non-2xx.\n")
         for entry in entries:
             f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{entry["path"]}"\n')
         f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{seed_rel}"\n')
-        f.write('curl -fsS "$PUBLIC/manifest.json" | cmp - manifest.json\n')
+        for name in manifests:
+            f.write(f'curl -fsS "$PUBLIC/{name}" | cmp - {name}\n')
         f.write('echo "anonymous GET verified on $PUBLIC"\n')
     os.chmod(upload_sh, 0o755)
     return upload_sh

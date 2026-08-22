@@ -159,13 +159,24 @@ struct CityDownloadTests {
         #expect(sj.coverage == "downtown")
     }
 
+    /// **The future moved, and this test moved with it.** Format 2 was the future when this was
+    /// written; the s17 round shipped it, and `CityManifest.knownFormats` now reads 1 and 2 for
+    /// RULING D8's dual-publish window. So the specimen is 3 — a format genuinely nobody has
+    /// written — and the rule it pins is unchanged: an unknown format is refused at the door,
+    /// before anything else is read, because guessing at a format's meaning is how a reader
+    /// silently mis-installs a file.
     @Test("a manifest from the future is refused at the door")
     func manifestRefusesUnknownFormat() throws {
         let future = Self.manifestJSON.replacingOccurrences(
-            of: "\"manifest_format\": 1", with: "\"manifest_format\": 2"
+            of: "\"manifest_format\": 1", with: "\"manifest_format\": 3"
         )
-        #expect(throws: CityManifest.DecodeError.unknownFormat(2)) {
+        #expect(throws: CityManifest.DecodeError.unknownFormat(3)) {
             _ = try CityManifest.decode(Data(future.utf8))
+        }
+        // The control: the format this fixture actually carries is still accepted, so the test
+        // above proves a refusal rather than a decoder that refuses everything.
+        #expect(throws: Never.self) {
+            _ = try CityManifest.decode(Data(Self.manifestJSON.utf8))
         }
     }
 
@@ -190,7 +201,10 @@ struct CityDownloadTests {
         let firstURL = try #require(first.url)
         let secondURL = try #require(second.url)
 
-        #expect(firstURL.path == "/manifest.json", "the request stopped naming the manifest: \(firstURL)")
+        #expect(
+            firstURL.path == "/\(CityDownloader.manifestName)",
+            "the request stopped naming the manifest: \(firstURL)"
+        )
 
         let items = URLComponents(url: firstURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let buster = items.first { $0.name == "cb" }?.value
@@ -217,7 +231,7 @@ struct CityDownloadTests {
         let request = CityDownloader.manifestRequest(base: base)
         let url = try #require(request.url)
 
-        #expect(url == base.appendingPathComponent("manifest.json"))
+        #expect(url == base.appendingPathComponent(CityDownloader.manifestName))
         #expect(url.query == nil, "a query was appended to a file URL, which names no file: \(url)")
     }
 

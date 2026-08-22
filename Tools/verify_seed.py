@@ -80,6 +80,47 @@ def inventory_row_counts(conn) -> tuple[dict, dict, list]:
     return actual, claimed, declared
 
 
+def inventory_completeness(conn) -> list[tuple]:
+    """What each inventory PUBLISHES against what this file KEPT (check 1d, s17).
+
+    `rows_from_<inventory>` says what shipped. What the source says it holds was
+    recorded under two ad-hoc names -- `trees_source_feature_count`, which is
+    global and so could only ever describe one inventory, and
+    `sj_source_feature_count`, prefixed by hand -- so completeness was a question
+    that could be asked of one inventory at a time and never uniformly. s17
+    standardises it as `inventory_<id>_source_feature_count`, the same shape as
+    the name/url/date triple beside it.
+
+    **A shortfall is REPORTED, never failed.** Shipping fewer rows than a source
+    publishes is the ordinary case and usually deliberate: San Jose ships a
+    downtown window out of 344,879 records, and San Francisco's build drops rows
+    with no coordinates. The number that matters is that the file can SAY so.
+    A silent gap is the defect; a stated one is a decision.
+
+    Absent key means the source publishes no count -- which is a different fact
+    from a count of zero and is reported as such.
+
+    Returns (inventory, published, kept, pct) per inventory that states a count.
+    """
+    meta = dict(conn.execute("SELECT key, value FROM seed_meta"))
+    actual = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT inventory_source, COUNT(*) FROM trees GROUP BY inventory_source"
+        )
+    }
+    out = []
+    for inventory in [r[0] for r in conn.execute("SELECT id FROM inventories ORDER BY id")]:
+        stated = meta.get(f"inventory_{inventory}_source_feature_count")
+        if stated is None or not stated.strip():
+            continue
+        published = int(stated)
+        kept = actual.get(inventory, 0)
+        pct = 100.0 * kept / published if published else 0.0
+        out.append((inventory, published, kept, pct))
+    return out
+
+
 def neighborhood_coverage(conn) -> tuple[list, list, bool]:
     """Check 13, per id space. Returns (rows, below_threshold, collapsed).
 
@@ -227,6 +268,25 @@ def main() -> int:
         "1c. seed_meta.rows_kept is the file's own total",
         kept is not None and int(kept) == trees,
         f"rows_kept={kept} vs {trees:,} rows in trees",
+    )
+
+    # 1d. Per-inventory completeness (s17). Reported, not failed -- see
+    # `inventory_completeness`. The check that CAN fail is that an inventory
+    # stating a count states a coherent one.
+    completeness = inventory_completeness(conn)
+    silent = [inv for inv in declared_inv
+              if inv not in {row[0] for row in completeness}]
+    c.check(
+        "1d. every inventory stating a source feature count states a coherent one",
+        all(published > 0 and kept <= published
+            for _, published, kept, _ in completeness),
+        "; ".join(
+            f"{inv}: kept {kept:,} of {published:,} published ({pct:.2f}%)"
+            for inv, published, kept, pct in completeness
+        )
+        + (f"; NO SOURCE COUNT STATED for {silent} (the source does not publish one, "
+           f"or this build did not record it)" if silent else "")
+        or "no inventory in this file states a source feature count",
     )
 
     # ----------------------------------------------------------------- 2 bbox

@@ -180,6 +180,49 @@ CREATE TABLE dim_city (
     CHECK (urban_forestry_url <> '')
 );
 
+-- --------------------------------------------------------------- dim_region --
+-- THE UNIT A PACK IS PUBLISHED IN (seed generation 17). Hand-entered in
+-- `Tools/build_seed.py`'s REGIONS; see the block comment there for why each
+-- column is entered rather than derived.
+--
+-- This table is what makes 16 -> 17 a generation. Until it, the published unit
+-- was the id space and `Tools/publish_cities.py` narrowed on `trees.id_space`.
+-- RULING D1 makes New York's unit the borough, so the publisher needs something
+-- finer to narrow on, and a borough needs a place to keep its own name that is
+-- not `city_raw` -- whose column family renders as "Cared for by ...", making
+-- *Cared for by Queens* a falsehood the app would ship.
+--
+-- Same shape and same reason as `dim_city` at s16: a pack that carried another
+-- region's civic facts would be claiming an authority it does not have, so
+-- `publish_cities.py` narrows this table to the one row the pack is for.
+CREATE TABLE dim_region (
+    id            INTEGER PRIMARY KEY,
+    -- FROZEN PER REGION, AND IT IS DISTRIBUTION IDENTITY. Simultaneously the
+    -- manifest entry's `id`, the `<id>` in R37.2's immutable object path
+    -- `cities/<id>/<version>/<id>.sqlite`, and the install key on device.
+    -- Changing one orphans every installed copy of that pack. NOT
+    -- `dim_city.slug` (`sf` here is `us-ca-sf` there) and NOT `id_spaces.id`,
+    -- though a one-region city's pack_id and id space currently agree.
+    pack_id       TEXT NOT NULL UNIQUE,
+    -- Civic content, entered (DECISIONS constraint 15). Names the PACK, which
+    -- for New York is a borough and not the city the tree is in.
+    display_name  TEXT NOT NULL,
+    -- What kind of unit this is. RULING D2: one shape everywhere, so a
+    -- one-region city is `city` rather than a special case. `extent` is
+    -- reserved for a published unit that is neither -- a named sub-city window
+    -- that is not a civic division. NOTE THAT LEVEL IS NOT COVERAGE: San Jose
+    -- is level `city` with coverage `downtown`, because it is a whole city of
+    -- which part shipped.
+    level         TEXT NOT NULL,
+    -- The city this region belongs to. A borough's civic facts (state, county,
+    -- urban forestry page) are its city's; only the name and the extent are
+    -- its own.
+    city_id       INTEGER NOT NULL REFERENCES dim_city(id),
+    CHECK (pack_id <> ''),
+    CHECK (display_name <> ''),
+    CHECK (level IN ('city','borough','extent'))
+);
+
 -- ----------------------------------------------------- id spaces, inventories --
 -- THE SEED DECLARES ITS OWN VOCABULARY INSTEAD OF THE SCHEMA ENUMERATING IT.
 --
@@ -354,6 +397,18 @@ CREATE TABLE trees (
     -- claim about the file rather than about the record, and for 12,260 of
     -- them it would be the wrong inventory's name.
     inventory_source   TEXT NOT NULL REFERENCES inventories(id),
+    -- WHICH PUBLISHED REGION THIS ROW SHIPS IN (seed generation 17). NOT NULL
+    -- on purpose: `Tools/publish_cities.py` narrows packs on this column, so a
+    -- NULL would be a row that silently appears in no pack at all -- present in
+    -- the fused seed, absent from every file a reader can download, and visible
+    -- to nobody. The publisher's per-region counts must sum to the fused total,
+    -- and this constraint is what makes that arithmetic closeable.
+    --
+    -- An INTEGER join key rather than the region's name, for the reason the
+    -- identity model above gives: New York is ~898,000 rows and a TEXT borough
+    -- on each of them is tens of megabytes of repeated string in the payload
+    -- and in every index that copies it.
+    region_id          INTEGER NOT NULL REFERENCES dim_region(id),
     lat                REAL NOT NULL,
     lon                REAL NOT NULL,
     address            TEXT,
@@ -403,6 +458,9 @@ CREATE INDEX idx_trees_lat_lon ON trees(lat, lon, id);
 CREATE INDEX idx_trees_species_current ON trees(species_current);
 CREATE INDEX idx_trees_neighborhood ON trees(neighborhood_id);
 CREATE INDEX idx_trees_status ON trees(status);
+-- The publisher's narrowing scan (s17): one DELETE per pack over this column,
+-- and the per-region counts it checks the split against.
+CREATE INDEX idx_trees_region ON trees(region_id);
 -- The almanac's two neighbourhood-scoped planting reads (screen 12): the elder
 -- is a MIN over this within one neighbourhood, and the recent-planting window is
 -- a range scan over it. Both are ordered by date inside one neighbourhood, so the
@@ -462,10 +520,19 @@ CREATE TABLE species_map (
     confidence      REAL NOT NULL,
     is_stub         INTEGER NOT NULL,      -- 1 = fell through to the stub path
     is_placeholder  INTEGER NOT NULL,      -- 1 = vacant-site placeholder, no species
-    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine").
-    -- A tree stands at the site, so it is NOT a placeholder and its status is
-    -- `alive`; it simply carries no species. Provenance is a queryable column
-    -- rather than a comment (DECISIONS constraint 13).
+    -- 1 = the string names no taxon ("Shrub", "Privet", "To Be Determine",
+    -- "Stump"). EVERY COLUMN IN THIS TABLE IS A CLAIM ABOUT THE STRING, AND
+    -- THIS ONE SAYS NOTHING ABOUT THE STATUS OF ANY ROW CARRYING IT. The string
+    -- resolves to no species; whether a tree stands at a given site is
+    -- `trees.status`, and the two are independent.
+    --
+    -- This sentence used to read "a tree stands at the site, so its status is
+    -- `alive`", which was true of every such string while San Francisco was the
+    -- only source -- its five non-taxon strings sit on `alive` rows alone -- and
+    -- is false now. San Jose's `Stump` names no taxon on all of its rows and its
+    -- vacancy flag calls most of them empty. Do not infer a status from this
+    -- column. Provenance is a queryable column rather than a comment (DECISIONS
+    -- constraint 13).
     is_non_taxon    INTEGER NOT NULL DEFAULT 0,
     tree_count      INTEGER NOT NULL,
     CHECK (species_id IS NULL OR (is_placeholder = 0 AND is_non_taxon = 0))

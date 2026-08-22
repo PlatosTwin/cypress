@@ -159,6 +159,42 @@ class KindBasis:
 
 
 # ---------------------------------------------------------------------------
+# Condition -- how the thing at the site is doing (s17)
+# ---------------------------------------------------------------------------
+
+# WHAT THIS IS FOR, AND WHY IT IS NOT A `kind`. `kind` says what the record
+# DESCRIBES -- a tree, an empty planting site, a shrub. `condition` says how the
+# thing described is DOING. They are independent: a standing dead tree is a
+# `KIND_TREE` (something woody stands there, it occupies the site, it is drawn
+# on the map) whose condition is `dead`. Modelling it as a fourth `kind` was
+# considered and rejected in the s17 round, because every `kind` consumer would
+# then have to remember that one of the four is really a tree; the seed's
+# `trees.status` already has the value (`dead_reported`, RULINGS R19) and needed
+# only something to derive it from.
+#
+# **The seed schema was never the thing in the way.** `trees.status` has
+# permitted `alive | declining | dead_reported | removed | vacant_site` since
+# before the contract existed. What was missing is this field and a status
+# lookup that reads it: `build_seed.STATUS_FOR_KIND` was keyed on `kind` ALONE,
+# so no adapter could cause a row to ship as anything but `alive` or
+# `vacant_site` no matter what its source said. `feat/nyc-ingest` found this and
+# deliberately left it here rather than take a schema decision in a data round;
+# `Tools/build_seed.status_for_record` is the successor lookup.
+#
+# THIS IS THE SOURCE'S CLAIM, NORMALISED -- never an inference. A source that
+# publishes no condition leaves it `None`, and `None` is NOT "alive": it is "no
+# claim", and it maps to `alive` only because that is what the seed has always
+# shipped for a listed tree. San Francisco and San Jose publish no condition
+# field at all, so both stay `None` and NOT ONE of their rows moves -- verified
+# by rebuild, see `docs/errata-pending/s17-region-generation.md`.
+CONDITION_ALIVE = "alive"
+CONDITION_DECLINING = "declining"
+CONDITION_DEAD = "dead"
+CONDITION_REMOVED = "removed"
+CONDITIONS = (CONDITION_ALIVE, CONDITION_DECLINING, CONDITION_DEAD, CONDITION_REMOVED)
+
+
+# ---------------------------------------------------------------------------
 # Id spaces and inventories
 # ---------------------------------------------------------------------------
 
@@ -364,6 +400,40 @@ class InventoryRecord:
     lat: float
     lon: float
 
+    # ---- condition (s17) ------------------------------------------------
+    #: How the thing at this site is doing, in the contract's vocabulary
+    #: (`CONDITIONS`). **`None` means the source made no claim**, which is not
+    #: the same as `CONDITION_ALIVE` and must never be spelled as it -- see the
+    #: block comment above `CONDITION_ALIVE`. `Tools/build_seed.status_for_record`
+    #: turns `(kind, condition)` into the seed's `trees.status`.
+    condition: Optional[str] = None
+    #: The source's own condition text, verbatim, for the build's own reporting
+    #: and for the same reason `species_text` exists: the normalisation above is
+    #: the adapter's judgement, and a reader auditing it needs the input to it.
+    #: Never parsed downstream.
+    condition_text: Optional[str] = None
+
+    # ---- region (s17) ---------------------------------------------------
+    #: **The region this record sits in, named in the SOURCE's own vocabulary**
+    #: -- NYC Parks writes `"Queens"`, so an adapter passes `"Queens"`, not a
+    #: pack id and not a slug. `Tools/build_seed.REGIONS` is the hand-entered
+    #: table that maps `(id_space, this string)` onto a `dim_region` row, and
+    #: that table is where the published pack's frozen identity lives.
+    #:
+    #: The seam is deliberate and it is the reason this is not a pack id. Civic
+    #: naming is entered, never derived (DECISIONS constraint 15), and an adapter
+    #: reads a source -- it is the wrong layer to be inventing an identity that
+    #: R37.2 then freezes into an immutable object path forever. An adapter that
+    #: passed `"us-ny-nyc-queens"` would be minting distribution identity out of
+    #: a data file.
+    #:
+    #: `None` means "the id space's sole region", which is what San Francisco and
+    #: San Jose are and what every one-region city under manifest format 2 is
+    #: (RULING D2: one shape everywhere, no NYC-only concept). An id space with
+    #: more than one region whose record leaves this `None` fails the build
+    #: loudly rather than landing in an arbitrary pack.
+    region: Optional[str] = None
+
     # ---- identity -------------------------------------------------------
     #: The source's own id, verbatim, as a string. `None` when the source
     #: publishes no id for this record -- then identity falls back to the
@@ -521,6 +591,40 @@ class InventoryRecord:
         for key, value in self.city_record.items():
             if value is not None and isinstance(value, str) and not value.strip():
                 problems.append(f"city_record[{key!r}] is blank; absent must be None")
+
+        # ---- condition (s17) ---------------------------------------------
+        if self.condition is not None and self.condition not in CONDITIONS:
+            problems.append(f"condition {self.condition!r} is not one of {CONDITIONS}")
+        # An empty planting site has nothing standing in it to be in a
+        # condition. This is the `kind`/`condition` independence stated as a
+        # rule: the pair that cannot mean anything is the one that is forbidden,
+        # and forbidding it here is what keeps `status_for_record` total.
+        if self.kind == KIND_PLANTING_SITE and self.condition is not None:
+            problems.append(
+                f"kind is {KIND_PLANTING_SITE} but the record states a condition "
+                f"({self.condition!r}); an empty site has nothing in it to be in a condition, "
+                f"and a source that means 'a dead tree stands here' means {KIND_TREE!r} "
+                f"with condition {CONDITION_DEAD!r}"
+            )
+        if self.condition_text is not None and not self.condition_text.strip():
+            problems.append("condition_text is blank; absent must be None, not an empty string")
+        # The reverse of `species_confidence` with no name to be confident about:
+        # a normalised value with no source text behind it is an inference
+        # wearing a claim's clothes, and #94 is the whole reason this contract
+        # counts those instead of allowing them silently.
+        if self.condition is not None and self.condition_text is None:
+            problems.append(
+                f"condition {self.condition!r} with no condition_text it was normalised from; "
+                f"a condition is the source's claim, so the source's own words must travel "
+                f"with it"
+            )
+
+        # ---- region (s17) ------------------------------------------------
+        if self.region is not None and not self.region.strip():
+            problems.append(
+                "region is blank; a record in the id space's sole region passes None, "
+                "not an empty string that looks like a named one"
+            )
 
         if inventory is not None and self.kind_basis == KindBasis.INFERRED_FROM_ABSENT_SPECIES:
             if self.kind != KIND_PLANTING_SITE:

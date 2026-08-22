@@ -13,15 +13,70 @@ import Foundation
 public struct CityManifest: Equatable, Sendable {
 
     /// The envelope format this reader understands. `Tools/publish_cities.py MANIFEST_FORMAT`.
-    public static let knownFormat = 1
+    ///
+    /// **The newest, not the only** — see `knownFormats`. Kept as the name the rest of the app
+    /// and its tests already use for "what this build writes and prefers".
+    public static let knownFormat = 2
+
+    /// **Every** envelope format this build reads, which is more than one during RULING D8's
+    /// dual-publish window.
+    ///
+    /// Format 1 is still accepted, and that is a deliberate softening of the original rule rather
+    /// than a hole in it. The rule that matters — *never guess at a format you do not know* — is
+    /// unchanged: an unknown format is still refused outright, before anything else is read. What
+    /// changed is that 1 is no longer unknown. A build that refused it would break itself against
+    /// the format-1 object still sitting in the bucket for the whole transition window, and would
+    /// break every test fixture written before this round, in exchange for nothing.
+    ///
+    /// What a format-1 manifest costs a format-2 reader is exactly one thing: `region` is absent,
+    /// so `City.region` is nil and every entry is a whole city. That is the truth about a
+    /// format-1 manifest — the publisher only ever lists `city`-level packs in one — so the nil
+    /// is not a missing value to be defaulted, it is the answer.
+    public static let knownFormats: Set<Int> = [1, 2]
 
     public let format: Int
     /// Cities in manifest order — the publisher's order is the display order (RULINGS R43 §2).
     public let cities: [City]
 
+    /// What kind of unit one published pack is, and which city it belongs to (`manifest_format`
+    /// 2). Absent from a format-1 manifest, where every entry is a whole city by construction.
+    public struct Region: Equatable, Sendable, Decodable {
+        /// `city`, `borough`, or `extent`. **A string, deliberately not an enum**: this is the
+        /// publisher's vocabulary, it may gain a member without a format bump (R37.4 covers an
+        /// additive value the same way it covers an additive key), and a non-exhaustive Swift
+        /// enum would turn that into a decode failure that takes the whole catalog offline. A
+        /// reader that does not recognize a level shows the pack by the names it carries, which
+        /// is the same thing it does today.
+        public let level: String
+        /// The id space of the city this pack belongs to (`sf`, `us-ny-nyc`). Equal to the
+        /// entry's own `id` for a one-region city; different for a borough, and that difference
+        /// is the only way to ask which city a borough is part of.
+        public let parentCity: String
+        /// The parent city's reader-facing name — a civic fact entered at publish, never derived
+        /// on device, the same rule as `City.displayName`.
+        public let parentCityDisplayName: String
+
+        public init(level: String, parentCity: String, parentCityDisplayName: String) {
+            self.level = level
+            self.parentCity = parentCity
+            self.parentCityDisplayName = parentCityDisplayName
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case level
+            case parentCity = "parent_city"
+            case parentCityDisplayName = "parent_city_display_name"
+        }
+    }
+
     /// One published city file, as the manifest describes it.
     public struct City: Equatable, Sendable, Decodable {
-        /// The id space (`sf`, `us-ca-sj`) — doubles as the path component and the install key.
+        /// The published pack's id (`sf`, `us-ca-sj`, and a borough under format 2) — doubles as
+        /// the path component and the install key.
+        ///
+        /// **Was the id space and now is the pack id**, which is the same string for every pack
+        /// published so far and stops being so when a city publishes more than one region. The
+        /// id space is still available, as `region?.parentCity`.
         public let id: String
         /// A civic fact entered by hand at publish (`DISPLAY_NAMES`), never derived on device.
         public let displayName: String
@@ -60,6 +115,14 @@ public struct CityManifest: Equatable, Sendable {
         public let bbox: BoundingBox?
         /// The city file's centroid, as the publisher measured it. See `bbox`.
         public let centroid: Coordinate?
+        /// What kind of unit this pack is and which city it belongs to (`manifest_format` 2).
+        ///
+        /// Optional for the same reason `contentRev` is, and one more. A format-1 manifest does
+        /// not carry the key at all — and *nil is the correct answer there*, not a gap: the
+        /// publisher lists only whole-city packs in a format-1 manifest, so "no region stated"
+        /// and "this is a whole city" are the same fact. A caller that needs the distinction has
+        /// `CityManifest.format`.
+        public let region: Region?
         /// Relative to the app's configured base URL, never to `base_url_hint`.
         public let path: String
         public let bytes: Int64
@@ -78,6 +141,7 @@ public struct CityManifest: Equatable, Sendable {
             contentRev: String? = nil,
             bbox: BoundingBox? = nil,
             centroid: Coordinate? = nil,
+            region: Region? = nil,
             path: String,
             bytes: Int64,
             sha256: String
@@ -91,6 +155,7 @@ public struct CityManifest: Equatable, Sendable {
             self.contentRev = contentRev
             self.bbox = bbox
             self.centroid = centroid
+            self.region = region
             self.path = path
             self.bytes = bytes
             self.sha256 = sha256
@@ -108,6 +173,7 @@ public struct CityManifest: Equatable, Sendable {
                 contentRev: try container.decodeIfPresent(String.self, forKey: .contentRev),
                 bbox: try container.decodeIfPresent(BoundingBoxJSON.self, forKey: .bbox)?.value,
                 centroid: try container.decodeIfPresent(CentroidJSON.self, forKey: .centroid)?.value,
+                region: try container.decodeIfPresent(Region.self, forKey: .region),
                 path: try container.decode(String.self, forKey: .path),
                 bytes: try container.decode(Int64.self, forKey: .bytes),
                 sha256: try container.decode(String.self, forKey: .sha256)
@@ -124,6 +190,7 @@ public struct CityManifest: Equatable, Sendable {
             case contentRev = "content_rev"
             case bbox
             case centroid
+            case region
             case path
             case bytes
             case sha256
@@ -170,7 +237,9 @@ public struct CityManifest: Equatable, Sendable {
         public var description: String {
             switch self {
             case let .unknownFormat(format):
-                return "manifest_format \(format), but this build reads format \(CityManifest.knownFormat)"
+                let known = CityManifest.knownFormats.sorted()
+                    .map(String.init).joined(separator: ", ")
+                return "manifest_format \(format), but this build reads format(s) \(known)"
             case let .malformed(detail):
                 return "manifest did not decode: \(detail)"
             }
@@ -185,7 +254,7 @@ public struct CityManifest: Equatable, Sendable {
         } catch {
             throw DecodeError.malformed(String(describing: error))
         }
-        guard envelope.manifestFormat == knownFormat else {
+        guard knownFormats.contains(envelope.manifestFormat) else {
             throw DecodeError.unknownFormat(envelope.manifestFormat)
         }
         return CityManifest(format: envelope.manifestFormat, cities: envelope.cities)

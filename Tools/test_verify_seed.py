@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from verify_seed import (  # noqa: E402
     duplicate_external_refs,
+    inventory_completeness,
     inventory_row_counts,
     neighborhood_coverage,
 )
@@ -200,6 +201,79 @@ def test_an_undeclared_inventory_is_visible():
 # ---------------------------------------------------------------------------
 # Check 13: neighborhood coverage is per city, because polygons are
 # ---------------------------------------------------------------------------
+# Check 1d -- per-inventory completeness (s17)
+# ---------------------------------------------------------------------------
+
+
+def test_completeness_is_stated_per_inventory():
+    """FAILS IF: completeness goes back to a single global feature count.
+
+    `trees_source_feature_count` was one key for the whole file, so with two
+    inventories it described one of them and said nothing about the other --
+    and with New York's two more, in a third id space, it does not extend at
+    all. The standardised key is per inventory, and this asserts that TWO
+    inventories can each state their own number and be read apart.
+    """
+    conn = seed(
+        [("sf", "1", "sf_city"), ("sf", "2", "sf_city"),
+         ("us-ca-sj", "1", "sj_street_tree")],
+        inventories=[("sf_city", "sf"), ("sj_street_tree", "us-ca-sj")],
+        meta=[("inventory_sf_city_source_feature_count", "4"),
+              ("inventory_sj_street_tree_source_feature_count", "100")],
+    )
+    rows = {inv: (published, kept) for inv, published, kept, _ in
+            inventory_completeness(conn)}
+    check(rows == {"sf_city": (4, 2), "sj_street_tree": (100, 1)},
+          f"per-inventory completeness read as {rows}, expected each inventory's own pair")
+    pct = {inv: round(p, 1) for inv, _, _, p in inventory_completeness(conn)}
+    check(pct == {"sf_city": 50.0, "sj_street_tree": 1.0},
+          f"completeness percentages wrong: {pct}")
+
+
+def test_an_inventory_that_states_no_count_is_absent_not_zero():
+    """FAILS IF: a source that publishes no feature count reads as publishing 0.
+
+    "The source does not say" and "the source says none" are different facts.
+    Reporting the first as the second would show a 100%-complete inventory for
+    every source that simply has no such field -- a reassuring number with
+    nothing behind it, which is worse than no number.
+    """
+    conn = seed(
+        [("sf", "1", "sf_city")],
+        inventories=[("sf_city", "sf")],
+        meta=[],
+    )
+    check(inventory_completeness(conn) == [],
+          "an inventory stating no source count appeared in the completeness report anyway")
+    # And the calibration: the same fixture WITH the key does appear.
+    conn2 = seed(
+        [("sf", "1", "sf_city")],
+        inventories=[("sf_city", "sf")],
+        meta=[("inventory_sf_city_source_feature_count", "10")],
+    )
+    check([r[0] for r in inventory_completeness(conn2)] == ["sf_city"],
+          "an inventory that DOES state a source count was not reported")
+
+
+def test_a_shortfall_is_visible_rather_than_hidden():
+    """FAILS IF: a file that ships a fraction of its source stops saying so.
+
+    San Jose ships a downtown window out of 344,879 records. That is a decision,
+    not a defect, and the point of the check is that the number is IN the file
+    -- a silent gap is the thing this closes.
+    """
+    conn = seed(
+        [("us-ca-sj", "1", "sj_street_tree")],
+        inventories=[("sj_street_tree", "us-ca-sj")],
+        meta=[("inventory_sj_street_tree_source_feature_count", "344879")],
+    )
+    (_, published, kept, pct), = inventory_completeness(conn)
+    check(published == 344879 and kept == 1,
+          f"the shortfall did not survive to the report: {published} published, {kept} kept")
+    check(pct < 1.0, f"a 1-of-344,879 file reported {pct}% complete")
+
+
+# ---------------------------------------------------------------------------
 
 
 def test_a_city_with_no_polygons_is_reported_not_failed():
@@ -261,6 +335,9 @@ def main() -> int:
         test_a_non_sf_seed_reports_its_own_inventories,
         test_a_seed_that_lost_rows_disagrees_with_its_own_claim,
         test_an_undeclared_inventory_is_visible,
+        test_completeness_is_stated_per_inventory,
+        test_an_inventory_that_states_no_count_is_absent_not_zero,
+        test_a_shortfall_is_visible_rather_than_hidden,
         test_a_city_with_no_polygons_is_reported_not_failed,
         test_a_city_that_has_polygons_is_still_held_to_the_threshold,
         test_a_total_stamping_collapse_is_caught,

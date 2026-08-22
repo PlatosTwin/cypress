@@ -78,7 +78,19 @@ public enum SeedDatabase {
     /// `hasCivicShortNames` was written to find, so the read layer must ask each flag
     /// independently rather than assume 16 implies 15's shape — see `SeedSchema.hasDimCity` and
     /// `TreeQueries.treeSQL()`.
-    public static let newestKnownSchemaVersion = 16
+    /// **17** (the s17 round) adds `dim_region` — the unit a pack is *published* in — and
+    /// `trees.region_id`, a NOT NULL foreign key into it. RULING D1 makes New York's published
+    /// unit the borough, and `id_space` cannot express a unit smaller than a city, so
+    /// `Tools/publish_cities.py` narrows on the new column instead. San Francisco and San Jose
+    /// are one `city`-level region each and publish unchanged in meaning (RULING D2).
+    ///
+    /// **A pure addition, the way 15 was and 16 was not.** Nothing is dropped and no existing
+    /// column moves, so an s16 file still opens, still attaches, still searches and still names
+    /// its city — the read layer asks `hasRegions` and falls back to what s16 shipped. The
+    /// standing-dead change that rides this generation (RULING D17) needed no schema change at
+    /// all: `trees.status` has permitted `dead_reported` since long before it, and what was
+    /// missing was a Python contract field, not a column.
+    public static let newestKnownSchemaVersion = 17
 
     // MARK: - Locating
 
@@ -217,6 +229,24 @@ public struct SeedSchema: Equatable, Sendable {
     /// the read layer falls back to `hasCivicShortNames`'s `id_spaces.short_name` for a v15 file,
     /// and to nil for anything older — see `TreeQueries.treeSQL()`.
     public let hasDimCity: Bool
+    /// Whether `dim_region` and `trees.region_id` are present — the s17 seed pass, the unit a
+    /// pack is *published* in (RULING D1's borough, RULING D2's one-region city).
+    ///
+    /// **Both together or neither**, the same shape `hasIdSpace` uses and for the same reason:
+    /// the column and the table it points at are one generation and are meaningless apart. A
+    /// `region_id` with no `dim_region` to join is an integer naming nothing; a `dim_region`
+    /// with no column pointing at it describes a partition no row is in.
+    ///
+    /// A seed or city file built before this pass is still readable and still correct: every row
+    /// in it belongs to the one region its id space is, which is exactly what an s16 file's
+    /// `dim_city` already says. The read layer falls back to the city, never to a fabricated
+    /// region — see the note on `SeedCities.coverage`.
+    ///
+    /// **This flag is about the FILE, not about the manifest.** `CityManifest.knownFormats` is a
+    /// separate version space (the envelope) and moves independently; the app can be reading an
+    /// s17 borough pack listed by a format-2 manifest and an s16 bundle at the same time, which
+    /// is R37.3 restated for a third space.
+    public let hasRegions: Bool
     /// Whether the identity model is the current INTEGER-PK one.
     public var usesIntegerPrimaryKeys: Bool { treeIdentityColumn == "uuid" }
 
@@ -264,7 +294,10 @@ public struct SeedSchema: Equatable, Sendable {
             hasSpeciesTrigrams: try connection.tableExists("species_trigrams", in: schema),
             hasCivicShortNames: try connection.columnNames(ofTable: "id_spaces", in: schema)
                 .contains("short_name"),
-            hasDimCity: try connection.tableExists("dim_city", in: schema)
+            hasDimCity: try connection.tableExists("dim_city", in: schema),
+            // Both together or none — see the property's own note.
+            hasRegions: try treeColumns.contains("region_id")
+                && connection.tableExists("dim_region", in: schema)
         )
     }
 }
