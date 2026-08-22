@@ -1404,10 +1404,19 @@ public enum DataGates {
             // defect — which is why it is named `sj_rows_outside_ship_window` and not folded in
             // with the drops. It still has to appear on this side of the arithmetic, or the books
             // balance only by not mentioning 292,091 rows.
+            //
+            // **A fourth pass once New York is in the file**, and adding it here is the same
+            // conscious act the bbox table above demands. Left out, this gate reported the s17 seed
+            // as reading 492,490 rows and accounting for 1,391,133 — a shortfall of exactly
+            // 898,643, which is New York's whole contribution. That is the gate working: it is
+            // written so a city cannot arrive unaccounted for, and the arithmetic balances to the
+            // row again the moment its pass is named. New York drops nothing — `nyc_rows_read` and
+            // `nyc_rows_shipped` are both 898,643 — so it adds a term on this side only.
             let spineRead = meta["source_rows"].flatMap(Int.init) ?? -1
             let read = spineRead
                 + (meta["export_vacant_rows_read"].flatMap(Int.init) ?? 0)
                 + (meta["sj_rows_read"].flatMap(Int.init) ?? 0)
+                + (meta["nyc_rows_read"].flatMap(Int.init) ?? 0)
             let dropped = [
                 "dropped_no_coords", "dropped_out_of_bbox", "dropped_dupe_treeid",
                 // Read, validated, and deliberately not shipped. See above.
