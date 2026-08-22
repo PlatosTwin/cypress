@@ -1,6 +1,11 @@
 import Foundation
 
-/// The published city catalog — `manifest.json` at the bucket root, decoded.
+/// The published city catalog at the bucket root, decoded.
+///
+/// **Two objects since s17, not one.** `manifest-v2.json` is the format-2 catalog this build asks
+/// for and the only one that lists sub-city packs; `manifest.json` keeps its format-1 shape for
+/// RULING D8's transition window so an unupdated install still has a working Cities screen.
+/// `CityDownloader` picks between them; this type decodes either.
 ///
 /// The contract is R37's (see RULINGS R43 for the app side): versioned
 /// per-city SQLite files at immutable paths `cities/<id>/<version>/<id>.sqlite`, described by one
@@ -12,17 +17,22 @@ import Foundation
 /// (compression, for one) without bumping the format.
 public struct CityManifest: Equatable, Sendable {
 
-    /// The envelope format this reader understands. `Tools/publish_cities.py MANIFEST_FORMAT`.
+    /// The newest envelope format this build understands — the counterpart of
+    /// `Tools/publish_cities.py MANIFEST_FORMAT`, which is the format the *publisher* writes.
     ///
-    /// **The newest, not the only** — see `knownFormats`. Kept as the name the rest of the app
-    /// and its tests already use for "what this build writes and prefers".
+    /// **The newest, not the only** — see `knownFormats`. Nothing on this side writes a manifest,
+    /// so this is "the format this reader prefers and asks for first"
+    /// (`CityDownloader.manifestName`), never "the format this build emits".
     public static let knownFormat = 2
 
     /// **Every** envelope format this build reads, which is more than one during RULING D8's
     /// dual-publish window.
     ///
     /// Format 1 is still accepted, and that is a deliberate softening of the original rule rather
-    /// than a hole in it. The rule that matters — *never guess at a format you do not know* — is
+    /// than a hole in it. **Note that R37.4 does not license this**: R37.4 reserves the right to
+    /// add *keys* without bumping the format, which is why `region` needed no bump on top of the
+    /// one the unit's changed meaning already required. Reading two formats is a separate
+    /// decision, taken for the dual-publish window RULING D8 sets. The rule that matters — *never guess at a format you do not know* — is
     /// unchanged: an unknown format is still refused outright, before anything else is read. What
     /// changed is that 1 is no longer unknown. A build that refused it would break itself against
     /// the format-1 object still sitting in the bucket for the whole transition window, and would
@@ -46,7 +56,9 @@ public struct CityManifest: Equatable, Sendable {
         /// additive value the same way it covers an additive key), and a non-exhaustive Swift
         /// enum would turn that into a decode failure that takes the whole catalog offline. A
         /// reader that does not recognize a level shows the pack by the names it carries, which
-        /// is the same thing it does today.
+        /// is the same thing it does today. (R37.4 reserves additive *keys*; reading an
+        /// unrecognized *value* the same tolerant way is this layer's own choice, not R37.4's
+        /// wording.)
         public let level: String
         /// The id space of the city this pack belongs to (`sf`, `us-ny-nyc`). Equal to the
         /// entry's own `id` for a one-region city; different for a borough, and that difference
@@ -246,7 +258,8 @@ public struct CityManifest: Equatable, Sendable {
         }
     }
 
-    /// Decodes `manifest.json` bytes, refusing unknown formats before looking at anything else.
+    /// Decodes a catalog's bytes — either published object — refusing unknown formats before
+    /// looking at anything else.
     public static func decode(_ data: Data) throws -> CityManifest {
         let envelope: Envelope
         do {

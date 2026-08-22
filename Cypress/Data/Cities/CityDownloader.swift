@@ -52,7 +52,7 @@ public struct CityDownloader: Sendable {
 
     // MARK: - Manifest
 
-    /// The request for `<base>/manifest.json`, built so no cache anywhere can answer it.
+    /// The request for `<base>/<name>`, built so no cache anywhere can answer it.
     ///
     /// **The manifest is the one file whose freshness is load-bearing** (#199). Every city file
     /// lives at an immutable versioned path and is verified by sha256, so a stale *city* is
@@ -132,11 +132,41 @@ public struct CityDownloader: Sendable {
     /// Whether an error means "that object is not published", the one condition the manifest
     /// fallback above acts on.
     ///
-    /// Two shapes because the two transports report absence differently and both are real: the
-    /// bucket answers `404`, and a `file://` base — which is how every unit test serves a fixture
-    /// — throws `URLError` instead of producing a response to check.
+    /// Three shapes, because the transports report absence differently and all three are real.
+    ///
+    /// **`404`** is the ordinary answer.
+    ///
+    /// **`403` is the same fact on this bucket, and leaving it out made the fallback dead code on
+    /// the only host the app actually talks to.** This file's own header records the measurement:
+    /// *"Tigris has served HEAD 200 beside GET 403 on the same key"*. An S3-compatible store
+    /// answers `403` rather than `404` for a key the caller may not enumerate, so on the public
+    /// domain a manifest that has simply never been published can arrive as `403` — and a fallback
+    /// that only watched for `404` would never fire, which is precisely the transition it exists
+    /// to cover.
+    ///
+    /// **Why this does not mask a genuine authorization failure**, which is the real objection and
+    /// deserves an answer rather than a shrug:
+    ///
+    /// 1. *There is nothing to authorize.* Every request from this type is anonymous — the app
+    ///    holds no bucket credential and sends none (`defaultBaseURL` is the public domain, and
+    ///    R37.4 forbids reading a host out of the manifest). For an unauthenticated reader `403`
+    ///    and `404` carry the same information: you cannot have this object. There is no
+    ///    credential that could be wrong, so there is no auth failure to mask.
+    /// 2. *A real lockout still surfaces.* If the bucket were misconfigured to private, **every**
+    ///    object would answer `403`, including the legacy manifest this falls back to — so the
+    ///    second fetch fails too and its error propagates. The fallback retries once; it never
+    ///    swallows. The failure a reader sees is the legacy path's, which is the correct and more
+    ///    informative one, because that is the object every shipped build depends on.
+    /// 3. *It is scoped to the manifest.* `downloadCity` does not consult this; a `403` on a city
+    ///    file is a hard failure there, as it should be — that object's absence is not a
+    ///    recoverable transitional state, it is a manifest that lied.
+    ///
+    /// **`URLError` / Cocoa file errors** cover the `file://` base every unit test serves fixtures
+    /// from, which throws instead of producing a response to check.
     static func isNotFound(_ error: any Error) -> Bool {
-        if case DownloadError.unacceptableStatus(404) = error { return true }
+        if case let DownloadError.unacceptableStatus(code) = error {
+            return code == 404 || code == 403
+        }
         if let urlError = error as? URLError {
             return urlError.code == .fileDoesNotExist || urlError.code == .resourceUnavailable
         }

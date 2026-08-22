@@ -350,6 +350,107 @@ struct RegionGenerationTests {
         }
     }
 
+    // MARK: - The fallback over real HTTP, not over file://
+
+    /// **Every fallback test above serves `file://`, and that is not the transport this runs on.**
+    /// A file URL reports absence as a thrown `URLError`; the bucket reports it as a *status code*
+    /// on a perfectly good response, which is a different branch of `isNotFound` entirely. Review
+    /// finding F2: the status branch had no test at all, and it was wrong.
+    ///
+    /// These drive `URLSession` through a stub protocol so the status code is the thing under
+    /// test.
+    @Test(
+        "a status that means 'not published' falls back; one that does not, propagates",
+        arguments: [
+            (status: 404, shouldFallBack: true),
+            // THE ONE THAT WAS BROKEN. This file's header records Tigris serving HEAD 200 beside
+            // GET 403 on the same key, so an unpublished manifest can arrive as 403 on the only
+            // host the app talks to — and a fallback that watched 404 alone was dead code there.
+            (status: 403, shouldFallBack: true),
+            // Facts about *this fetch*, not about the object's existence. Retrying these against
+            // the legacy path would turn one honest error into a confusing second one and quietly
+            // downgrade a reader to the whole-cities-only catalog on a transient blip.
+            (status: 500, shouldFallBack: false),
+            (status: 503, shouldFallBack: false),
+            (status: 418, shouldFallBack: false),
+        ]
+    )
+    func fallbackFiresOnAbsenceOnly(status: Int, shouldFallBack: Bool) async throws {
+        let base = URL(string: "https://stub.invalid/\(UUID().uuidString)")!
+        StubManifestProtocol.park(
+            base.appendingPathComponent(CityDownloader.manifestName), status: status)
+        StubManifestProtocol.park(
+            base.appendingPathComponent(CityDownloader.legacyManifestName),
+            status: 200, body: Data(Self.manifestJSON(format: 1).utf8))
+
+        let downloader = CityDownloader(baseURL: base, session: StubManifestProtocol.session())
+        if shouldFallBack {
+            let manifest = try await downloader.fetchManifest()
+            #expect(
+                manifest.format == 1,
+                "status \(status) should have fallen through to the format-1 manifest"
+            )
+        } else {
+            await #expect(throws: (any Error).self) {
+                _ = try await downloader.fetchManifest()
+            }
+        }
+    }
+
+    /// The predicate itself, at the level the network hands it over. Separated from the fetch test
+    /// because a `403` reaching `isNotFound` and a `403` producing a fallback are two claims, and
+    /// only one of them survives if `checkStatus` ever stops producing `unacceptableStatus`.
+    @Test("isNotFound reads absence from the status, and reads nothing else as absence")
+    func isNotFoundReadsTheStatus() {
+        #expect(CityDownloader.isNotFound(CityDownloader.DownloadError.unacceptableStatus(404)))
+        #expect(CityDownloader.isNotFound(CityDownloader.DownloadError.unacceptableStatus(403)))
+        for code in [400, 401, 429, 500, 502, 503] {
+            #expect(
+                !CityDownloader.isNotFound(CityDownloader.DownloadError.unacceptableStatus(code)),
+                "status \(code) was read as 'not published'; it is a fact about the fetch"
+            )
+        }
+        // Not every DownloadError is an absence — a checksum mismatch is the opposite of one.
+        #expect(!CityDownloader.isNotFound(
+            CityDownloader.DownloadError.checksumMismatch(expected: "a", got: "b")))
+        #expect(!CityDownloader.isNotFound(
+            CityDownloader.DownloadError.sizeMismatch(expected: 1, got: 2)))
+    }
+
+    /// **A bucket locked down entirely still fails, and fails with the legacy path's error.** This
+    /// is the argument that makes treating `403` as absence safe: the fallback retries once, it
+    /// never swallows. If it did swallow, this would hang or return an empty catalog.
+    @Test("a 403 on both manifests propagates rather than yielding an empty catalog")
+    func aTotalLockoutStillFails() async throws {
+        let base = URL(string: "https://stub.invalid/\(UUID().uuidString)")!
+        StubManifestProtocol.park(
+            base.appendingPathComponent(CityDownloader.manifestName), status: 403)
+        StubManifestProtocol.park(
+            base.appendingPathComponent(CityDownloader.legacyManifestName), status: 403)
+
+        let downloader = CityDownloader(baseURL: base, session: StubManifestProtocol.session())
+        await #expect(throws: CityDownloader.DownloadError.unacceptableStatus(403)) {
+            _ = try await downloader.fetchManifest()
+        }
+    }
+
+    /// A 200 that is not a manifest is a fact about the object, not about its absence.
+    @Test("a malformed body served over HTTP propagates rather than falling back")
+    func aMalformedHTTPBodyDoesNotFallBack() async throws {
+        let base = URL(string: "https://stub.invalid/\(UUID().uuidString)")!
+        StubManifestProtocol.park(
+            base.appendingPathComponent(CityDownloader.manifestName),
+            status: 200, body: Data("{ not json".utf8))
+        StubManifestProtocol.park(
+            base.appendingPathComponent(CityDownloader.legacyManifestName),
+            status: 200, body: Data(Self.manifestJSON(format: 1).utf8))
+
+        let downloader = CityDownloader(baseURL: base, session: StubManifestProtocol.session())
+        await #expect(throws: (any Error).self) {
+            _ = try await downloader.fetchManifest()
+        }
+    }
+
     // MARK: - Fixture
 
     private static let sfTreeID = UUID(uuidString: "00000000-0000-4000-8000-0000000CAFE1")!
@@ -489,4 +590,84 @@ struct RegionGenerationTests {
         }
         """
     }
+}
+
+/// A `URLProtocol` that answers a parked status and body for a URL — the transport the manifest
+/// fallback actually runs on.
+///
+/// **Why not `file://` like the rest of this suite.** A file URL reports a missing object by
+/// *throwing*, so it exercises `isNotFound`'s `URLError` branch and never its status branch. The
+/// bucket reports absence as a status code on a successful response, and that branch had no test
+/// at all before review finding F2 — which is how a `403` that this file's own header documents
+/// went unhandled.
+///
+/// **Nothing clears the parked table**, deliberately, and for the reason `RemoteAPITests`'
+/// `StubStorageProtocol` records at length: Swift Testing runs suites in parallel, and a shared
+/// `reset()` landing between another suite's `park` and its fetch wipes the answer and produces a
+/// `URLError(.unsupportedURL)` that looks like a network fault. Every base URL here carries a
+/// fresh `UUID`, so entries cannot collide and none needs clearing.
+final class StubManifestProtocol: URLProtocol {
+
+    struct Answer: Sendable {
+        let status: Int
+        let body: Data
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var answers: [String: Answer] = [:]
+
+    static func park(_ url: URL, status: Int = 200, body: Data = Data()) {
+        lock.lock(); defer { lock.unlock() }
+        if answers[url.absoluteString] != nil {
+            Issue.record("""
+                \(url.absoluteString) was already parked. Nothing clears this table between \
+                tests — every base URL is expected to carry a fresh UUID — so a second park over \
+                a live one takes the first test's answer away. Give this URL its own UUID.
+                """)
+        }
+        answers[url.absoluteString] = Answer(status: status, body: body)
+    }
+
+    /// A session that routes through this protocol and nothing else.
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubManifestProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "stub.invalid"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        // The manifest request carries a `cb` cache-buster query; park by path, match by path.
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.query = nil
+        let key = components?.url?.absoluteString ?? url.absoluteString
+
+        Self.lock.lock()
+        let answer = Self.answers[key]
+        Self.lock.unlock()
+
+        guard let answer else {
+            // Not "a 404" — an unparked URL is a test-authoring mistake, and answering it with a
+            // plausible status would let a test pass on an answer nobody wrote.
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        let response = HTTPURLResponse(
+            url: url, statusCode: answer.status, httpVersion: "HTTP/1.1", headerFields: nil
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: answer.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

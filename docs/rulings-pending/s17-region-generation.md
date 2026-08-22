@@ -47,11 +47,36 @@ that R37.2 then freezes into an immutable object path forever — an adapter tha
 `"us-ny-nyc-queens"` would be deriving distribution identity from upstream's spelling habits, which
 is the same class of mistake as `trees.inventory_source`'s old closed CHECK (ERRATA E169).
 
-The practical consequence, which is the point: `feat/nyc-ingest` already emits the five bare
-borough names and **needs no change** to satisfy this contract.
+The practical consequence: `feat/nyc-ingest`'s **adapter** already emits the five bare borough
+names, so the values it produces satisfy this contract as they stand.
 
-`region=None` means "the id space's sole region". A space with more than one region and a record
-naming none is a **stop**, not a guess.
+**But "the ingest needs no rework" was too strong, and adversarial review (finding F6) measured
+two things the NYC round must still do.** Both fail loudly at merge — neither can ship quietly —
+and the NYC round's brief inherits this list:
+
+1. **Register New York in `Tools/build_seed.REGIONS`.** It holds `['sf', 'us-ca-sj']` today. An
+   ingest contributing rows in `us-ny-nyc` hits, before any tree is written:
+
+       no dim_region row registered for id space(s) ['us-ny-nyc'] in REGIONS
+       -- a published unit's identity is entered, never derived
+
+   That is the constraint-15 gate doing its job: the five `pack_id`s and the five display names
+   are civic/distribution identity and must be entered by a human, once, and then frozen.
+
+2. **Every NYC record must name its region.** The `(space, None)` key — "this id space's sole
+   region" — is registered only when a space has exactly one, so with five boroughs `sole` is
+   `False` and `None` resolves to nothing. Any record arriving with `region=None` hits:
+
+       no dim_region row for N row(s) in id space 'us-ny-nyc' naming region None
+
+   This is deliberate rather than incidental: a space with several regions and a record naming
+   none has no defensible default, and guessing would put trees in an arbitrary pack. It is also
+   exactly what RULING D18's point-in-polygon orphan assignment exists to satisfy — the ~22,995
+   trees with no planting space must arrive carrying a borough, and this is the check that
+   enforces it rather than trusting the ingest to have done it.
+
+`region=None` therefore means "the id space's sole region", and a space with more than one region
+and a record naming none is a **stop**, not a guess.
 
 ---
 
@@ -124,3 +149,31 @@ planting site in a condition — in both `InventoryRecord.validate` and `status_
 `None` is "the source made no claim" and is **not** `alive`. It maps to `alive` only because that
 is what the seed has always shipped for a listed tree, and stating the two separately is what lets
 a future source distinguish "we asked and it is alive" from "nobody asked".
+
+---
+
+### R??? — Coverage stays keyed on the id space, and the state that would force the move is refused
+
+Raised by adversarial review of the s17 PR (finding F9): pack identity moved to the region, and
+`coverage` did not. Decided rather than left to be noticed.
+
+**Coverage describes how much of a CITY's inventory a publish shipped.** San Jose's `downtown` says
+the seed holds the central window and not the rest of San Jose — a fact about the city's corpus,
+not about any one pack. Every pack cut from that corpus inherits it, which is why the key is the
+city's and each of its packs reports the same value.
+
+**Kept on the id space, not moved to the region.** For New York a per-region key would state the
+same fact five times: every borough pack ships all of its borough, so each is `full` and the fact
+they share is that `us-ny-nyc` is fully covered. Five copies of one fact is five chances to
+disagree, plus a second hand-maintained table for `SeedCities` to mirror — which is the exact shape
+of the divergence this round just closed (see the coverage-key erratum). R37's own trailing clause
+names `coverage_<id_space>`, and this keeps it.
+
+**The state one key cannot describe, refused rather than guessed.** Several regions in one id space
+*and* a coverage that is not `full`. Then "how much of this pack shipped" has no single answer and
+every entry would repeat a value true of none of them. `Tools/publish_cities.py` fails on exactly
+that pair, naming the move as the fix — so the divergence cannot ship quietly, and whoever first
+needs per-region coverage meets the decision with the seed in front of them.
+
+Both directions red-proved: removing the guard lets the ambiguous seed publish; broadening it to
+any partial coverage refuses San Jose's live shape.

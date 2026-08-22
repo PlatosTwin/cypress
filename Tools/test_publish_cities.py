@@ -192,7 +192,7 @@ class Result:
         self.stderr = stderr
 
 
-def run_publisher(db: str, out: str) -> Result:
+def run_publisher(db: str, out: str, names: dict | None = None) -> Result:
     """Run `publish_cities.main()` in this process, with the fixture's names.
 
     In-process rather than as a subprocess for one reason that matters: the
@@ -203,22 +203,41 @@ def run_publisher(db: str, out: str) -> Result:
     were all the same guard.
     """
     argv = sys.argv
-    names = dict(publish_cities.DISPLAY_NAMES)
+    saved = dict(publish_cities.DISPLAY_NAMES)
     out_buf, err_buf = io.StringIO(), io.StringIO()
     code = 0
     try:
         publish_cities.DISPLAY_NAMES.clear()
-        publish_cities.DISPLAY_NAMES.update(FIXTURE_DISPLAY_NAMES)
+        publish_cities.DISPLAY_NAMES.update(
+            FIXTURE_DISPLAY_NAMES if names is None else names)
         sys.argv = ["publish_cities.py", "--db", db, "--out", out]
         with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
             publish_cities.main()
     except SystemExit as exit_:
         code = exit_.code if isinstance(exit_.code, int) else 1
+    except BaseException as error:
+        # AN UNCAUGHT EXCEPTION IS A FAILURE MODE IN ITS OWN RIGHT AND MUST NOT
+        # LOOK LIKE A `fail()`. F1 was exactly this: a `KeyError` escaping the
+        # build loop after two packs were on disk. Recorded with its type so a
+        # test can tell "refused, with a diagnosis" from "crashed part-way".
+        code = 70
+        err_buf.write(f"UNCAUGHT {type(error).__name__}: {error}")
     finally:
         sys.argv = argv
         publish_cities.DISPLAY_NAMES.clear()
-        publish_cities.DISPLAY_NAMES.update(names)
+        publish_cities.DISPLAY_NAMES.update(saved)
     return Result(code, out_buf.getvalue(), err_buf.getvalue())
+
+
+def packs_written(out: str) -> list[str]:
+    """Every .sqlite pack under `out`. The measure that makes "before anything
+    is written" checkable rather than asserted."""
+    found = []
+    for root, _, files in os.walk(out):
+        for name in files:
+            if name.endswith(".sqlite") and "/seed/" not in os.path.join(root, name):
+                found.append(os.path.relpath(os.path.join(root, name), out))
+    return sorted(found)
 
 
 # --------------------------------------------------------------------------
@@ -390,6 +409,55 @@ finally:
     shutil.rmtree(workdir, ignore_errors=True)
 
 # --------------------------------------------------------------------------
+# 3i. THE DISPLAY-NAME GUARD COVERS BOTH KINDS OF KEY (review finding F1)
+# --------------------------------------------------------------------------
+# `FIXTURE_DISPLAY_NAMES` above registers `us-ny-nyc` as well as the boroughs,
+# which is what a correct registration looks like -- and it is therefore exactly
+# the wrong fixture for asking whether the guard NOTICES a missing one. The
+# fixture supplied the key, so the suite could not see this class at all.
+#
+# Fails if: the guard goes back to checking pack ids alone. Measured before the
+# fix: `KeyError: 'us-ny-nyc'` escaping the build loop as an uncaught traceback
+# AFTER two packs were already on disk.
+
+workdir = tempfile.mkdtemp(prefix="test-publish-f1-")
+try:
+    db = os.path.join(workdir, "seed.sqlite")
+    out = os.path.join(workdir, "dist")
+    build_fixture(db)
+    # Every PACK registered; the PARENT CITY deliberately withheld.
+    result = run_publisher(db, out, names={
+        "sf": "San Francisco",
+        "us-ny-nyc-queens": "Queens",
+        "us-ny-nyc-bronx": "Bronx",
+    })
+    check(result.returncode != 0,
+          "the publisher accepted a run whose parent city has no display name; "
+          "`parent_city_display_name` would index DISPLAY_NAMES[space] and raise")
+    check("UNCAUGHT" not in result.stderr,
+          f"the publisher CRASHED rather than refusing: {result.stderr.strip()[:200]}")
+    check("us-ny-nyc" in result.stderr and "display name" in result.stderr,
+          f"the refusal does not name the missing key: {result.stderr.strip()[:200]}")
+    # THE HALF THAT MAKES THIS A GUARD RATHER THAN A LATE ERROR.
+    written = packs_written(out)
+    check(written == [],
+          f"{len(written)} pack(s) were written before the run refused: {written}. A guard "
+          f"that fires after files are on disk leaves a half-populated output tree, and "
+          f"R37.2's paths are supposed to be written once.")
+
+    # The calibration: the SAME fixture with the parent city registered publishes
+    # fine, so the check above is about the missing name and not about the shape.
+    out2 = os.path.join(workdir, "dist2")
+    ok = run_publisher(db, out2)
+    check(ok.returncode == 0,
+          f"the control run failed, so the F1 test proves nothing: {ok.stderr[:200]}")
+    check(len(packs_written(out2)) == 3,
+          f"the control run wrote {packs_written(out2)}, expected three packs")
+finally:
+    shutil.rmtree(workdir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 # 4. THE RED SIDE. Each of these must make the publisher FAIL.
 # --------------------------------------------------------------------------
 # A publisher that only ever succeeds is a publisher whose checks nobody has
@@ -416,6 +484,46 @@ def expect_failure(label: str, mutate, expect_in_stderr: str = "") -> None:
                   f"{expect_in_stderr!r} in stderr, got: {result.stderr.strip()[:400]}")
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def orphan_region_city(con):
+    """A region whose dim_city has no id_spaces row (review finding F4).
+
+    The region still HAS trees, and those trees' `id_space` is perfectly legal --
+    so nothing is wrong with any tree. Under the inner join this replaced, the
+    region was dropped and the orphan check then reported
+    `trees carry region_id(s) [3] that dim_region does not declare`, which is a
+    false statement: dim_region declares it.
+    """
+    con.execute("INSERT INTO dim_city VALUES (3,'us-ny-si','Staten Island City','NY',"
+                "'Richmond','https://example.invalid/si')")
+    con.execute("UPDATE dim_region SET city_id = 3 WHERE pack_id = 'us-ny-nyc-bronx'")
+
+
+def orphan_region_city_no_trees(con):
+    """The same drop, with the region holding no trees.
+
+    This is the half that did not fail at all: exit 0, and `us-ny-nyc-bronx`
+    simply never published. A region the seed declares vanished from the
+    catalogue with no error anywhere.
+    """
+    orphan_region_city(con)
+    con.execute("DELETE FROM species_assertions")
+    con.execute("DELETE FROM trees_rtree WHERE id IN "
+                "(SELECT id FROM trees WHERE region_id = 3)")
+    con.execute("DELETE FROM trees WHERE region_id = 3")
+
+
+def partial_coverage_across_several_regions(con):
+    """A city with two regions that ships only part of itself (finding F9).
+
+    `coverage` is stated per ID SPACE and every pack of that city inherits it,
+    which is exact while a partial city has ONE region and while a multi-region
+    city ships all of each. This is both at once: "how much of this pack
+    shipped" then has no single answer, and publishing would put one value on
+    packs it is true of none of.
+    """
+    con.execute("INSERT INTO seed_meta(key,value) VALUES ('coverage_us-ny-nyc','downtown')")
 
 
 def drop_dim_region(con):
@@ -456,11 +564,77 @@ def two_id_spaces_on_one_city(con):
 expect_failure("no dim_region at all (a pre-s17 seed)", drop_dim_region, "pre-s17 seed")
 expect_failure("one city carrying two id spaces (the join multiplies)",
                two_id_spaces_on_one_city, "resolve to several id spaces")
+# F4, both directions. The message assertion is the point of the first: it used
+# to be a FALSE statement about the data, so "it failed" was not good enough.
+expect_failure("a region whose city has no id_spaces row, holding trees",
+               orphan_region_city, "no id_spaces row points at")
+expect_failure("a region whose city has no id_spaces row, holding NO trees",
+               orphan_region_city_no_trees, "no id_spaces row points at")
+# F9: the divergence is deliberate, and this is the state it cannot describe.
+expect_failure("several regions in one id space AND partial coverage",
+               partial_coverage_across_several_regions,
+               "coverage is stated per id space and cannot describe these")
 expect_failure("a region declared but holding no trees", region_with_no_trees, "hold no trees")
 expect_failure("dim_region.display_name drifted from DISPLAY_NAMES", drift_display_name,
                "DISPLAY_NAMES disagrees")
 expect_failure("a site_lineage link crossing two regions of one id space",
                sever_lineage_across_regions, "cross regions")
+
+# --------------------------------------------------------------------------
+# 4b. F9's CONTROL: partial coverage on a ONE-region city is legal
+# --------------------------------------------------------------------------
+# The guard above must refuse an ambiguous state, not partial coverage as such.
+# San Jose ships `downtown` out of one city-level region today and that is the
+# live, correct case -- a guard that also refused it would break the shipping
+# publisher. This is what separates the two.
+
+workdir = tempfile.mkdtemp(prefix="test-publish-f9ok-")
+try:
+    db = os.path.join(workdir, "seed.sqlite")
+    out = os.path.join(workdir, "dist")
+    build_fixture(db, meta_extra={"coverage_sf": "downtown"})
+    result = run_publisher(db, out)
+    check(result.returncode == 0,
+          f"partial coverage on a ONE-region city was refused; that is San Jose's live shape: "
+          f"{result.stderr.strip()[:220]}")
+    if result.returncode == 0:
+        with open(os.path.join(out, MANIFEST_V2_NAME)) as fh:
+            doc = json.load(fh)
+        sf = next(c for c in doc["cities"] if c["id"] == "sf")
+        check(sf["coverage"] == "downtown",
+              f"the one-region city's coverage did not reach its entry: {sf['coverage']!r}")
+finally:
+    shutil.rmtree(workdir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+# 5. THE F4 MESSAGE MUST BE TRUE, NOT MERELY PRESENT
+# --------------------------------------------------------------------------
+# `expect_failure` above proves the run refuses. This proves it refuses for the
+# right reason and does NOT emit the old false sentence -- a test that only
+# checked "non-zero exit" would have passed against the defect.
+
+workdir = tempfile.mkdtemp(prefix="test-publish-f4-")
+try:
+    db = os.path.join(workdir, "seed.sqlite")
+    out = os.path.join(workdir, "dist")
+    build_fixture(db)
+    con = sqlite3.connect(db)
+    con.executescript("PRAGMA foreign_keys=OFF;")
+    orphan_region_city(con)
+    con.commit()
+    con.close()
+    result = run_publisher(db, out)
+    check("dim_region does not declare" not in result.stderr,
+          f"the publisher still blames the trees for a region the join dropped -- dim_region "
+          f"DOES declare it: {result.stderr.strip()[:220]}")
+    check("The regions ARE declared" in result.stderr,
+          f"the refusal does not say which side the fault is on: "
+          f"{result.stderr.strip()[:220]}")
+    check(packs_written(out) == [],
+          f"packs were written before the region resolution failed: {packs_written(out)}")
+finally:
+    shutil.rmtree(workdir, ignore_errors=True)
 
 # --------------------------------------------------------------------------
 

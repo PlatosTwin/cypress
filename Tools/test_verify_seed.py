@@ -31,6 +31,7 @@ from verify_seed import (  # noqa: E402
     inventory_completeness,
     inventory_row_counts,
     neighborhood_coverage,
+    region_integrity,
 )
 
 FAILURES: list[str] = []
@@ -201,6 +202,110 @@ def test_an_undeclared_inventory_is_visible():
 # ---------------------------------------------------------------------------
 # Check 13: neighborhood coverage is per city, because polygons are
 # ---------------------------------------------------------------------------
+# Check 1r -- the region dimension (s17)
+# ---------------------------------------------------------------------------
+# The fixture carries `dim_region` and `trees.region_id` WITHOUT the real
+# schema's NOT NULL and FK, for the same reason the trees fixture drops UNIQUE:
+# the specimens under test are rows the shipped schema refuses, and a check
+# nobody has watched go red is a check nobody knows the direction of.
+
+REGION_FIXTURE_SCHEMA = """
+CREATE TABLE dim_region (id INTEGER PRIMARY KEY, pack_id TEXT NOT NULL);
+CREATE TABLE trees (
+    id               INTEGER PRIMARY KEY,
+    id_space         TEXT NOT NULL,
+    external_ref     TEXT,
+    inventory_source TEXT NOT NULL,
+    neighborhood_id  INTEGER,
+    region_id        INTEGER
+);
+CREATE TABLE inventories (id TEXT PRIMARY KEY, id_space TEXT NOT NULL);
+CREATE TABLE seed_meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE neighborhoods (id INTEGER PRIMARY KEY);
+"""
+
+
+def region_seed(regions, assignments) -> sqlite3.Connection:
+    """`regions` is (id, pack_id); `assignments` is (region_id or None, count)."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(REGION_FIXTURE_SCHEMA)
+    conn.executemany("INSERT INTO dim_region (id, pack_id) VALUES (?, ?)", regions)
+    for region_id, count in assignments:
+        conn.executemany(
+            "INSERT INTO trees (id_space, external_ref, inventory_source, region_id) "
+            "VALUES ('sf', NULL, 'sf_city', ?)",
+            [(region_id,) for _ in range(count)],
+        )
+    return conn
+
+
+def test_a_healthy_region_dimension_reports_no_faults():
+    """FAILS IF: check 1r reports a fault on a correct file.
+
+    The control for the three below. Counts are deliberately distinct so a
+    check that mixed up two regions could not agree by luck.
+    """
+    conn = region_seed([(1, "sf"), (2, "us-ca-sj")], [(1, 5), (2, 3)])
+    r = region_integrity(conn)
+    check(r["dangling"] == {}, f"a healthy file reported dangling regions: {r['dangling']}")
+    check(r["null_region"] == 0, f"a healthy file reported {r['null_region']} region-less rows")
+    check(r["unused"] == [], f"a healthy file reported unused regions: {r['unused']}")
+    check(r["per_region"] == {"sf": 5, "us-ca-sj": 3},
+          f"per-region counts wrong: {r['per_region']}")
+    check(r["total_in_regions"] == 8, f"region total wrong: {r['total_in_regions']}")
+
+
+def test_a_tree_pointing_at_an_undeclared_region_is_caught():
+    """FAILS IF: 1r-a stops comparing region_id against dim_region.
+
+    The row is in no published pack: the publisher narrows on `region_id`, and
+    a value no `dim_region` row declares matches no pack's DELETE. Present in
+    the seed, absent from every file a reader can download.
+    """
+    conn = region_seed([(1, "sf")], [(1, 4), (9, 2)])
+    r = region_integrity(conn)
+    check(r["dangling"] == {9: 2},
+          f"a tree pointing at undeclared region 9 was not caught: {r['dangling']}")
+
+
+def test_a_region_less_tree_is_caught():
+    """FAILS IF: 1r-a stops looking for NULL region_id.
+
+    `trees.region_id` is NOT NULL in the shipped schema, so this is meant to be
+    unconstructible -- which is why the fixture drops the constraint. A seed
+    from an older generator has neither the column nor the constraint, and the
+    check must notice rather than assume the schema held.
+    """
+    conn = region_seed([(1, "sf")], [(1, 3), (None, 2)])
+    r = region_integrity(conn)
+    check(r["null_region"] == 2,
+          f"region-less rows were not counted: {r['null_region']}")
+
+
+def test_a_declared_but_empty_region_is_caught():
+    """FAILS IF: 1r-b stops looking for regions nothing points at.
+
+    It would publish as an empty pack -- a download that buys a reader nothing,
+    which the publisher refuses. Better found here than at publish time.
+    """
+    conn = region_seed([(1, "sf"), (2, "us-ca-sj"), (3, "ghost")], [(1, 2), (2, 2)])
+    r = region_integrity(conn)
+    check(r["unused"] == ["ghost"], f"an empty declared region was not caught: {r['unused']}")
+
+
+def test_a_pre_s17_file_is_skipped_not_failed():
+    """FAILS IF: the region check starts failing every s16 file.
+
+    The canonical seed on this tree is s16 and must keep verifying. An empty
+    result means "this file has no region dimension", which is a correct
+    description of an s16 file and not a fault in it.
+    """
+    conn = seed([("sf", "1", "sf_city")], inventories=[("sf_city", "sf")])
+    check(region_integrity(conn) == {},
+          "a pre-s17 file was not skipped by the region check")
+
+
+# ---------------------------------------------------------------------------
 # Check 1d -- per-inventory completeness (s17)
 # ---------------------------------------------------------------------------
 
@@ -335,6 +440,11 @@ def main() -> int:
         test_a_non_sf_seed_reports_its_own_inventories,
         test_a_seed_that_lost_rows_disagrees_with_its_own_claim,
         test_an_undeclared_inventory_is_visible,
+        test_a_healthy_region_dimension_reports_no_faults,
+        test_a_tree_pointing_at_an_undeclared_region_is_caught,
+        test_a_region_less_tree_is_caught,
+        test_a_declared_but_empty_region_is_caught,
+        test_a_pre_s17_file_is_skipped_not_failed,
         test_completeness_is_stated_per_inventory,
         test_an_inventory_that_states_no_count_is_absent_not_zero,
         test_a_shortfall_is_visible_rather_than_hidden,

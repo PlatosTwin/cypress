@@ -189,6 +189,19 @@ LEGACY_MANIFEST_FORMAT = 1
 #
 # The window is one release cycle, at which point the format-1 object stops
 # being written. It costs a few kilobytes.
+#
+# R37.2 SAYS "ONLY manifest.json IS EVER REWRITTEN IN PLACE", AND THERE ARE NOW
+# TWO SUCH OBJECTS. Worth stating plainly rather than letting the ruling quietly
+# become inaccurate: the property R37.2 is protecting is that every object
+# holding DATA is write-once and hash-verified, and that the mutable surface is
+# small, enumerable, and carries no bytes a reader trusts without checking. That
+# still holds -- both manifests are catalogues, neither is content-addressed by
+# anything, and every file either one names is still immutable and still verified
+# by sha256 before a byte is kept. What changed is the count, from one to two,
+# for one release cycle.
+#
+# The ordering rule that follows from it is unchanged and is why `upload.sh`
+# writes both manifests LAST: files upload before the manifest that names them.
 MANIFEST_V2_NAME = "manifest-v2.json"
 MANIFEST_V1_NAME = "manifest.json"
 
@@ -253,6 +266,30 @@ def coverage_for(space: str, fused_meta: dict[str, str]) -> str:
     Two keys, in the order `SeedCities.coverage` reads them: the standardised
     `coverage_<id_space>` first, the legacy per-city name second. Keeping the
     orders identical is the point -- see `COVERAGE_KEYS` above.
+
+    ── COVERAGE IS KEYED ON THE ID SPACE WHILE IDENTITY MOVED TO THE PACK ──────
+    A deliberate divergence, raised by adversarial review (finding F9) and
+    decided here rather than left to be noticed later.
+
+    **What coverage means: how much of a CITY's inventory this publish shipped.**
+    San Jose's `downtown` says the seed holds the central window and not the rest
+    of San Jose. That is a fact about the city's corpus, not about any one pack,
+    and every pack cut from that corpus inherits it -- which is why the key is
+    the city's and each of its packs reports the same value.
+
+    **Why not move it to the region.** For New York it would say the same thing
+    five times: every borough pack ships all of its borough, so each is `full`
+    and the fact they share is `us-ny-nyc` is fully covered. A per-region key
+    would be five copies of one fact, five chances to disagree, and a second
+    hand-maintained table for `SeedCities` to mirror -- the exact shape of the
+    divergence this round just closed.
+
+    **The condition that forces the move, stated so it is recognisable.** The day
+    a city publishes SEVERAL regions and ships less than all of at least one of
+    them, one key cannot describe them: `us-ca-sj` shipping `downtown` complete
+    plus `north` partial has no single answer. That state is refused rather than
+    guessed -- see the ambiguity check in `main` -- so it cannot ship quietly,
+    and the refusal is what will make the move deliberate when it is needed.
     """
     for key in [f"coverage_{space}"] + (
         [COVERAGE_KEYS[space]] if space in COVERAGE_KEYS else []
@@ -333,9 +370,26 @@ def build_city_file(src: str, dest: str, region: dict) -> dict:
         # KEYED ON REGION SINCE s17, WHICH IS STRICTLY STRONGER. The old check
         # asked whether a link crossed an ID SPACE, and every borough of New York
         # is in one id space -- so a Queens tree whose predecessor stood in
-        # Brooklyn would have passed it and then been severed by the delete
-        # below, silently, on the first NYC publish. A cut is a cut at whatever
-        # granularity the cut is made, and this is now made per region.
+        # Brooklyn passed it, and the delete below then severed the link.
+        #
+        # WHAT THAT COST WAS A DIAGNOSIS, NOT THE DATA. Review finding F3
+        # corrected an earlier claim here that the severing was silent. It is
+        # not: the severed link leaves `site_lineage` pointing at a deleted row,
+        # and the `PRAGMA foreign_key_check` in this function's own verification
+        # pass catches it and refuses the publish. Measured on the pre-fix code:
+        #
+        #   FAIL: us-ny-nyc-queens: foreign_key_check reported 1 violations,
+        #         first: ('trees', 4, 'trees', 0)
+        #
+        # exit 1, nothing published. So the artifact was never in danger -- what
+        # was missing is a message that says which tree and which link, instead
+        # of a rowid pair the reader has to go and resolve by hand. Post-fix the
+        # same seed gives `1 site_lineage links cross regions; splitting would
+        # sever provenance -- stop and report`, before any delete runs.
+        #
+        # A cut is a cut at whatever granularity the cut is made, and this is now
+        # made per region -- which is also the check that would still be needed
+        # if the FK ever stopped covering it.
         (cross,) = cur.execute(
             "SELECT COUNT(*) FROM trees t JOIN trees p ON p.id = t.site_lineage "
             "WHERE t.region_id = ? AND p.region_id != ?", (region_id, region_id)).fetchone()
@@ -529,33 +583,69 @@ def main() -> None:
     # `dim_region.city_id` names a CITY and this publisher narrows and attributes
     # per ID SPACE. The two are one-to-one today; the join is what keeps this
     # correct rather than lucky if they ever are not.
-    regions = [
-        {"id": rid, "pack_id": pack, "display_name": name, "level": level,
-         "id_space": space}
-        for rid, pack, name, level, space in src_con.execute(
-            "SELECT r.id, r.pack_id, r.display_name, r.level, s.id "
-            "FROM dim_region r JOIN id_spaces s ON s.city_id = r.city_id "
-            "ORDER BY r.id")
-    ]
-    if not regions:
+    # ── dim_region IS READ WHOLE, THEN RESOLVED. NOT AN INNER JOIN. ──────────
+    # This was `FROM dim_region r JOIN id_spaces s ON s.city_id = r.city_id`, and
+    # an inner join here DROPS a region whose city has no `id_spaces` row instead
+    # of reporting it (review finding F4). Both directions of that drop were
+    # measured, and both are worse than a crash:
+    #
+    #   * the region HAS trees -> the orphan check below fired with
+    #     `1 trees carry region_id(s) [3] that dim_region does not declare`,
+    #     which is A FALSE STATEMENT ABOUT THE DATA. dim_region declares it
+    #     perfectly well; the join dropped it. Anyone reading that message goes
+    #     looking for a bad `region_id` on a tree and finds nothing wrong.
+    #   * the region has NO trees -> exit 0, and the pack simply never publishes.
+    #     A region the seed declares vanishes from the catalogue with no error
+    #     anywhere, which is the silent-omission class this whole round is about.
+    #
+    # So the table is the authority for WHAT EXISTS, and the id space is looked
+    # up afterwards where a failure to find one can be named.
+    declared_regions = list(src_con.execute(
+        "SELECT id, pack_id, display_name, level, city_id FROM dim_region ORDER BY id"))
+    if not declared_regions:
         fail("dim_region is empty; the seed declares no publishable unit", 3)
 
-    # THE JOIN ABOVE MULTIPLIES IF A CITY EVER HAS TWO ID SPACES, and it must not
-    # be left to fail downstream. `dim_region.city_id` names a city while this
-    # publisher narrows and attributes per id space; the two are one-to-one today
-    # and nothing in the schema says they must stay that way. A second space on
-    # one city would yield the same region twice -- two packs at one `pack_id`,
-    # the second overwriting the first's object at an immutable path R37.2
-    # promises is written once.
+    # city_id -> every id space in that city. A list, not a scalar: a city with
+    # two id spaces is the ambiguity the guard below refuses, and collapsing it
+    # here would hide it.
+    spaces_by_city: dict = {}
+    for space_id, city_id in src_con.execute("SELECT id, city_id FROM id_spaces"):
+        spaces_by_city.setdefault(city_id, []).append(space_id)
+
+    unresolved = [
+        (pack, city_id) for _, pack, _, _, city_id in declared_regions
+        if not spaces_by_city.get(city_id)
+    ]
+    if unresolved:
+        fail(f"region(s) {[p for p, _ in unresolved]} name a dim_city "
+             f"{sorted({c for _, c in unresolved})} that no id_spaces row points at, so this "
+             f"publisher cannot tell which numbering their trees are drawn from. The regions "
+             f"ARE declared -- this is not a bad region_id on a tree -- and publishing "
+             f"without them would drop packs the seed declares.", 3)
+
+    regions = [
+        {"id": rid, "pack_id": pack, "display_name": name, "level": level,
+         "id_space": spaces_by_city[city_id][0], "city_id": city_id}
+        for rid, pack, name, level, city_id in declared_regions
+    ]
+
+    # A CITY WITH TWO ID SPACES HAS NO SINGLE ANSWER, so refuse rather than pick.
+    # `dim_region.city_id` names a city while this publisher narrows and
+    # attributes per id space; they are one-to-one today and nothing in the
+    # schema says they must stay that way.
     #
-    # It would eventually fail: the per-region counts would double and
-    # `total_split != fused_total` fires further down. But that message says the
-    # split lost rows, which is the wrong diagnosis for a duplicated parent, and
-    # by then two files have already been written. Named here instead.
-    seen_regions: dict = {}
-    for region in regions:
-        seen_regions.setdefault(region["id"], []).append(region["id_space"])
-    doubled = {rid: spaces for rid, spaces in seen_regions.items() if len(spaces) > 1}
+    # Under the inner join this used to build, a second space MULTIPLIED the
+    # region -- two packs at one `pack_id`, the second overwriting the first's
+    # object at an immutable path R37.2 promises is written once. The resolution
+    # above takes `spaces_by_city[...][0]`, which cannot multiply, so the hazard
+    # is now silent selection rather than duplication: it would publish a pack
+    # attributed to whichever space sorted first. Both are wrong and this refuses
+    # both. Kept as an explicit check rather than left to the count arithmetic,
+    # which fires late and blames the split for losing rows.
+    doubled = {
+        region["pack_id"]: sorted(spaces_by_city[region["city_id"]])
+        for region in regions if len(spaces_by_city[region["city_id"]]) > 1
+    }
     if doubled:
         fail(f"region(s) {sorted(doubled)} resolve to several id spaces {doubled} -- a region "
              f"belongs to one city and this publisher narrows per id space, so a city with two "
@@ -586,10 +676,61 @@ def main() -> None:
         fail(f"region(s) {empty} are declared but hold no trees; an empty pack is "
              f"a download that buys a reader nothing", 3)
 
-    missing = [r["pack_id"] for r in regions if r["pack_id"] not in DISPLAY_NAMES]
+    # EVERY NAME THIS RUN WILL INDEX, CHECKED BEFORE A SINGLE PACK IS WRITTEN.
+    #
+    # TWO KINDS OF KEY, AND CHECKING ONLY ONE OF THEM WAS A REVIEW FINDING (F1).
+    # Before s17 this guard read `[s for s in spaces if s not in DISPLAY_NAMES]`
+    # -- it checked ID SPACES, because an id space was the only thing a pack
+    # could be. The s17 rewrite changed it to check PACK IDS and dropped the id
+    # space half, but `parent_city_display_name` in the entry below still indexes
+    # `DISPLAY_NAMES[space]`. Measured on a fixture whose boroughs are all
+    # registered and whose parent city is not: `KeyError: 'us-ny-nyc'`, raised
+    # from inside the build loop **after two packs had already been written to
+    # disk** -- an uncaught traceback rather than a `fail()`, so no diagnosis and
+    # a half-populated output tree.
+    #
+    # A guard that runs before the loop is worth nothing if it does not cover
+    # every key the loop will index. Both sets are collected from the data and
+    # checked together, so adding a third kind of name to an entry cannot quietly
+    # escape this.
+    needed_names = {r["pack_id"] for r in regions} | {r["id_space"] for r in regions}
+    # F9's ambiguity, refused rather than guessed. `coverage` describes how much
+    # of a CITY shipped and every pack of that city inherits it, which is exact
+    # while a partial city has ONE region and while a multi-region city ships all
+    # of each. The state it cannot describe is both at once: several regions in
+    # one id space AND a coverage that is not `full`. Then "how much of this pack
+    # shipped" has no single answer and the entries would all repeat a value that
+    # is true of none of them.
+    #
+    # This is the trigger for moving coverage onto `dim_region`, and it is a stop
+    # rather than a default so that the move is made deliberately by whoever
+    # first needs it -- with the seed in front of them -- instead of being
+    # discovered afterwards in a manifest that quietly mis-described five packs.
+    regions_per_space: dict = {}
+    for region in regions:
+        regions_per_space.setdefault(region["id_space"], []).append(region["pack_id"])
+    ambiguous = {
+        space: sorted(packs) for space, packs in regions_per_space.items()
+        if len(packs) > 1 and coverage_for(space, fused_meta_src) != "full"
+    }
+    if ambiguous:
+        detail = "; ".join(
+            f"{space} ships {coverage_for(space, fused_meta_src)!r} across packs {packs}"
+            for space, packs in sorted(ambiguous.items())
+        )
+        fail(f"coverage is stated per id space and cannot describe these: {detail}. Every pack "
+             f"of a city inherits its coverage, which is exact only while a partial city has one "
+             f"region. This seed has several AND ships part of the city, so one value would be "
+             f"true of no pack. Move coverage onto dim_region -- see `coverage_for` -- rather "
+             f"than publishing a number that describes none of them.", 3)
+
+    missing = sorted(name for name in needed_names if name not in DISPLAY_NAMES)
     if missing:
-        fail(f"no display name for pack(s) {missing}; add them to "
-             "DISPLAY_NAMES -- names are entered, never derived", 3)
+        packs = sorted(r["pack_id"] for r in regions)
+        fail(f"no display name for {missing}; add them to DISPLAY_NAMES -- names are "
+             f"entered, never derived. NOTE that a pack's PARENT CITY needs an entry of "
+             f"its own as well as the pack: this run publishes packs {packs} whose parent "
+             f"id space(s) are {sorted({r['id_space'] for r in regions})}", 3)
 
     # THE DUPLICATION `DISPLAY_NAMES` DELIBERATELY KEEPS, NOW CHECKED RATHER THAN
     # ASKED FOR. Its comment says the two hand-entered copies are separately
@@ -622,10 +763,18 @@ def main() -> None:
         space = region["id_space"]
         rev_preview = content_rev_for(space, fused_meta_src)
         version = f"s{SEED_SCHEMA_VERSION}-r{rev_preview}-{build_id}"
-        # PATHS ARE KEYED ON THE PACK, NOT THE ID SPACE. Identical for a
-        # one-region city -- `cities/sf/...` is byte for byte the path it has
-        # always been, which is what R37.2's immutability requires of this change
-        # -- and the only shape that can hold five boroughs of one space.
+        # PATHS ARE KEYED ON THE PACK, NOT THE ID SPACE, and this is the only
+        # shape that can hold five boroughs of one id space.
+        #
+        # For a one-region city the PACK SEGMENT is unchanged -- `cities/sf/...`
+        # is the same `sf` it has always been, and that is the part R37.2's
+        # immutability is about, because it is the install key and the directory
+        # every existing object already sits under. The VERSION segment does
+        # move, from `s16-...` to `s17-...`: a generation bump is a new version
+        # and therefore a new immutable path BY DESIGN, which is exactly what
+        # R37.2 provides for. So the path is not byte-identical and is not
+        # supposed to be; what must not change is the id under which a reader
+        # already has this city installed.
         rel_path = f"cities/{pack}/{version}/{pack}.sqlite"
         dest = os.path.join(args.out, rel_path)
         os.makedirs(os.path.dirname(dest), exist_ok=True)

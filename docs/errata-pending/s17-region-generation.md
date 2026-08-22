@@ -26,6 +26,11 @@ contributing space; `publish_cities.coverage_for` reads the two keys **in the sa
 does**; and `Tools/test_publish_cities.py` pins that order with a fixture where the two keys carry
 *different* values, which is what makes the preference observable rather than assumed.
 
+**Coverage stays keyed on the id space while pack identity moved to the region** — a deliberate
+divergence taken in the same round, with the one state a per-city key cannot describe (several
+regions in one space shipping less than all of the city) refused by the publisher rather than
+guessed. The reasoning is in `coverage_for`'s own docstring and in this round's pending rulings.
+
 Red-proved: reversing the two keys' order in `coverage_for` fails
 `Tools/test_publish_cities.py` with "coverage_for did not prefer the standardised
 coverage_<id_space> key over the legacy one".
@@ -40,16 +45,31 @@ replacement stands in the same city)", which was true and is the wrong granulari
 became.
 
 RULING D1 makes the published unit the borough. All five New York boroughs are in one id space
-(`us-ny-nyc`), so a Queens tree whose predecessor stood in Brooklyn would have **passed** the
-id-space check and then been severed by the per-region delete — silently, on the first NYC publish,
-with the provenance link the check exists to protect gone from both packs.
+(`us-ny-nyc`), so a Queens tree whose predecessor stood in Brooklyn **passed** the id-space check
+and the per-region delete then severed the link.
 
-A cut is a cut at whatever granularity the cut is made. The check is now keyed on `region_id`,
-which is strictly stronger: it still catches every cross-space link (those cross regions too) and
-additionally catches the cross-borough case that motivated it.
+**The severity, corrected.** An earlier draft of this entry said the severing was *silent*. It is
+not, and the correction is owed to adversarial review (finding F3), which measured it rather than
+reasoning about it. A severed link leaves `site_lineage` pointing at a deleted row, and
+`build_city_file`'s own `PRAGMA foreign_key_check` catches exactly that and refuses the publish:
 
-Red-proved: `Tools/test_publish_cities.py` builds a fixture with a Queens tree whose
-`site_lineage` points into the Bronx and asserts the publisher exits non-zero with "cross regions".
+    FAIL: us-ny-nyc-queens: foreign_key_check reported 1 violations,
+          first: ('trees', 4, 'trees', 0)
+
+exit 1, nothing published. **So no corrupt pack could ever have shipped, and no provenance was
+ever at risk.** What the wrong granularity cost is a *diagnosis*: the operator gets a rowid pair to
+resolve by hand instead of a sentence naming the cause. Post-fix, the same seed fails before any
+delete runs, with `1 site_lineage links cross regions; splitting would sever provenance -- stop and
+report`.
+
+Recorded as a real defect at its real severity: a guard checking the wrong granularity, caught
+downstream by a coarser net. The repair is worth making — a check that fires before the delete, and
+that would still be needed if the FK ever stopped covering this — but it is not the data-loss
+finding the first draft described.
+
+Red-proved: `Tools/test_publish_cities.py` builds a fixture with a Queens tree whose `site_lineage`
+points into the Bronx and asserts the publisher exits non-zero **with the "cross regions" message**,
+which is the part that distinguishes the fix from the pre-existing net.
 
 ---
 
@@ -158,3 +178,53 @@ Cities screen shows the same cities as the online one. It is implemented
 `BundledCityTests.aCityCanNeverOccupyTwoRows`.
 
 Recorded so the next round does not re-derive the same negative. Nothing was changed for it.
+
+---
+
+### E??? — DEBT, not fixed here: `deadNotice` will tell a reader a community reviewer confirmed a city's own record
+
+**Found by adversarial review of the s17 PR (finding F7). Recorded rather than repaired, and the
+reason for that is stated below.**
+
+`TreeProfilePresentation.deadNotice` fires on the status alone:
+
+```swift
+guard tree.status == .deadReported else { return nil }
+return Self.deadNoticeText   // "Reported dead, and a community reviewer confirmed it. …"
+```
+
+It asks *what* the status is and never *who said so*. Every `dead_reported` row that has ever
+existed came from the community path, so the sentence has been true for every row ever shipped.
+
+**s17 makes it false.** `build_seed.status_for_record` now maps a source-stated
+`CONDITION_DEAD` onto `dead_reported`, and NYC Parks publishes `TPCondition = Dead` on 10,635
+rows. The moment those ship, a reader opening one of them is told that *a community reviewer
+confirmed it* about a record no community member has ever seen. Nobody reported it and no reviewer
+agreed; the City wrote it down.
+
+That is precisely the test RULING D17 applies to *Cared for by Queens* — a sentence the app would
+be stating as fact on the strength of a column that does not mean what the sentence says — and it
+fails it the same way.
+
+**Why this round records it instead of fixing it.**
+
+- **Nothing is wrong on `main` today, and nothing s17 publishes changes that.** No shipped source
+  produces `dead_reported`: San Francisco and San Jose publish no condition field, so every row
+  stays `condition = None` and the copy stays true. Verified by rebuild — 198,625 uuids joined
+  against the shipped seed, **0 status changes**. The defect is armed by s17 and fired by the NYC
+  ingest, which is a later round.
+- **The repair needs copy, and copy is not this author's to invent.** `deadNoticeText`'s own
+  doc-comment says **NOT SPECIFIED — SCREENS.md draws no confirmed-dead profile**. A
+  provenance-aware variant needs a second sentence for the city-record case, and DECISIONS
+  constraint 21 makes an unmocked state a stop-and-ask. Writing it here would be inventing civic
+  copy to close a ticket.
+
+**What the repair looks like, so the next round does not re-derive it.** The row already knows its
+own provenance — `trees.inventory_source` and `verification_state` (`city_record` vs the community
+values) are both present and both already read by this layer. The notice needs to branch on that
+rather than on the status alone, and the city-record branch needs its own approved sentence. The
+existing sentence stays correct for the community path and should not be touched.
+
+**Owed before the first NYC publish**, alongside RULING D12's notify-the-City obligation and D20's
+species gate — it is in the same family: a claim the app makes on a reader's behalf that the data
+does not support.

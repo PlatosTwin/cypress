@@ -121,6 +121,60 @@ def inventory_completeness(conn) -> list[tuple]:
     return out
 
 
+def region_integrity(conn) -> dict:
+    """The s17 region dimension, checked against the rows that point at it.
+
+    Four facts, because four different things can go wrong and only one of them
+    is what `PRAGMA foreign_key_check` already covers:
+
+      `declared`     rows in `dim_region`.
+      `referenced`   distinct `region_id` values `trees` actually uses. A region
+                     declared and never used publishes as an empty pack; a
+                     `region_id` used and never declared is a row that lands in
+                     no pack at all.
+      `dangling`     `region_id` values with no `dim_region` row. The FK covers
+                     this in a file built with `PRAGMA foreign_keys = ON`, and
+                     it is checked ANYWAY: the publisher's narrowing runs
+                     DELETEs on a connection that never enables the pragma
+                     (`build_city_file` says so), so a published pack's
+                     referential integrity is asserted by check 9 after the
+                     fact rather than enforced during it.
+      `null_region`  rows with no region. `trees.region_id` is NOT NULL, so this
+                     should be structurally impossible -- which is exactly why
+                     it is worth one query. A seed built by an older generator,
+                     or a hand-patched file, has neither the column nor the
+                     constraint, and this is the check that notices instead of
+                     assuming.
+
+    `per_region` pairs each declared region with its row count, for the report
+    and for the sum check the caller makes against `rows_kept`.
+
+    Returns {} for a pre-s17 file, which is not a failure -- the seed on this
+    tree is s16 as this is written and must keep verifying.
+    """
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(trees)")}
+    if "dim_region" not in tables or "region_id" not in columns:
+        return {}
+
+    declared = {
+        rid: pack for rid, pack in conn.execute("SELECT id, pack_id FROM dim_region")
+    }
+    used = dict(conn.execute(
+        "SELECT region_id, COUNT(*) FROM trees GROUP BY region_id"))
+    return {
+        "declared": declared,
+        "per_region": {declared.get(rid, f"<undeclared {rid}>"): n
+                       for rid, n in sorted(used.items(), key=lambda kv: (kv[0] is None, kv[0]))},
+        "unused": sorted(pack for rid, pack in declared.items() if rid not in used),
+        "dangling": {rid: n for rid, n in used.items()
+                     if rid is not None and rid not in declared},
+        "null_region": used.get(None, 0),
+        "total_in_regions": sum(n for rid, n in used.items() if rid is not None),
+    }
+
+
 def neighborhood_coverage(conn) -> tuple[list, list, bool]:
     """Check 13, per id space. Returns (rows, below_threshold, collapsed).
 
@@ -269,6 +323,39 @@ def main() -> int:
         kept is not None and int(kept) == trees,
         f"rows_kept={kept} vs {trees:,} rows in trees",
     )
+
+    # ---- 1r. the region dimension (s17) ---------------------------------
+    # Skipped entirely on a pre-s17 file, which is not a failure: the canonical
+    # seed is s16 as this is written and must keep verifying.
+    regions = region_integrity(conn)
+    if regions:
+        c.check(
+            "1r-a. every region_id a tree carries is declared in dim_region",
+            not regions["dangling"] and regions["null_region"] == 0,
+            (f"{sum(regions['dangling'].values()):,} row(s) point at undeclared region id(s) "
+             f"{sorted(regions['dangling'])}; " if regions["dangling"] else "")
+            + (f"{regions['null_region']:,} row(s) carry NO region and would land in no "
+               f"published pack; " if regions["null_region"] else "")
+            + f"{len(regions['declared'])} region(s) declared",
+        )
+        # A declared-but-empty region is a pack the publisher refuses to build
+        # (an empty download buys a reader nothing), so it is a real stop rather
+        # than a tidiness note -- better found here than at publish time.
+        c.check(
+            "1r-b. every declared region holds rows",
+            not regions["unused"],
+            f"declared but empty: {regions['unused']}" if regions["unused"]
+            else ", ".join(f"{pack}={n:,}" for pack, n in regions["per_region"].items()),
+        )
+        # THE ARITHMETIC THAT CLOSES. Per-region counts must sum to the file's
+        # own total, which is what makes "the packs sum to the seed" checkable
+        # before the publisher ever runs -- and `rows_kept` is the same number
+        # check 1c already tied to the row count.
+        c.check(
+            "1r-c. per-region counts sum to the file's own row total",
+            regions["total_in_regions"] == trees,
+            f"regions hold {regions['total_in_regions']:,}, trees holds {trees:,}",
+        )
 
     # 1d. Per-inventory completeness (s17). Reported, not failed -- see
     # `inventory_completeness`. The check that CAN fail is that an inventory

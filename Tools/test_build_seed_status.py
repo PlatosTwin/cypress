@@ -39,7 +39,13 @@ from inventory_contract import (  # noqa: E402
     InventoryRecord,
     KindBasis,
 )
-from build_seed import STATUS_FOR_CONDITION, status_for_record  # noqa: E402
+from build_seed import (  # noqa: E402
+    REGION_ROW_INDEX,
+    REGIONS,
+    STATUS_FOR_CONDITION,
+    TREE_COLUMNS,
+    status_for_record,
+)
 
 FAILURES: list[str] = []
 PASSED = 0
@@ -186,6 +192,65 @@ check(record(region="Queens").validate() == [],
       "a record naming its region was rejected")
 check(any("region is blank" in p for p in record(region="  ").validate()),
       "a blank region was accepted")
+
+# --------------------------------------------------------------------------
+# 6. The region placeholder's index is DERIVED, not written twice (F5a)
+# --------------------------------------------------------------------------
+# Fails if: `REGION_ROW_INDEX` becomes a literal again. It and the INSERT column
+# list were two hand-written facts that had to agree, and an off-by-one writes
+# region ids into `lat` -- which SQLite accepts silently, both being numbers.
+
+check(TREE_COLUMNS[REGION_ROW_INDEX] == "region_id",
+      f"REGION_ROW_INDEX points at {TREE_COLUMNS[REGION_ROW_INDEX]!r}, not 'region_id'")
+check(TREE_COLUMNS.count("region_id") == 1,
+      "region_id appears more than once in TREE_COLUMNS, so .index() is ambiguous")
+check(len(TREE_COLUMNS) == len(set(TREE_COLUMNS)),
+      "TREE_COLUMNS holds a duplicate column name")
+
+# --------------------------------------------------------------------------
+# 7. dim_region's INSERTION ORDER is load-bearing, on purpose (F5b)
+# --------------------------------------------------------------------------
+# `dim_region.id` is the table's rowid and it is what `trees.region_id` STORES.
+# A rebuild that inserted the same regions in a different order would produce a
+# seed with different `region_id` values in every row -- different bytes for the
+# same data, which breaks R60's determinism argument (the build_id is a hash of
+# the file) and therefore the immutable-path promise built on it.
+#
+# `build_seed` iterates `spaces`, which is `sorted({...})`, and then REGIONS'
+# own declared order within each space. Both halves are pinned here so that
+# neither can be "tidied" into something order-independent-looking.
+#
+# Fails if: REGIONS becomes an unordered container, or a space's regions are
+# reordered without someone deciding to.
+check(list(REGIONS) == sorted(REGIONS),
+      f"REGIONS' top-level keys {list(REGIONS)} are not in sorted order; build_seed iterates "
+      f"`sorted(spaces)`, so a reader comparing the two would be misled")
+for _space, _entries in REGIONS.items():
+    check(isinstance(_entries, list),
+          f"REGIONS[{_space!r}] is a {type(_entries).__name__}, not a list -- rowid assignment "
+          f"follows this container's iteration order and it must be an ordered one")
+    _packs = [e["pack_id"] for e in _entries]
+    check(len(_packs) == len(set(_packs)),
+          f"REGIONS[{_space!r}] declares a duplicate pack_id: {_packs}")
+
+# The exact order today, written out. Not a tautology: it is the statement a
+# future reordering has to be deliberate enough to edit.
+check([(s, [e["pack_id"] for e in es]) for s, es in REGIONS.items()]
+      == [("sf", ["sf"]), ("us-ca-sj", ["us-ca-sj"])],
+      f"REGIONS' declared order changed to "
+      f"{[(s, [e['pack_id'] for e in es]) for s, es in REGIONS.items()]}. Every existing seed's "
+      f"trees.region_id values were assigned from the old order -- confirm this reordering is "
+      f"intended and that the seed is being rebuilt, then update this line.")
+
+# Every registered region carries the three entered facts, with a legal level.
+for _space, _entries in REGIONS.items():
+    for _e in _entries:
+        check(set(_e) == {"pack_id", "display_name", "level", "source_names"},
+              f"REGIONS[{_space!r}] entry has keys {sorted(_e)}; the insert reads exactly four")
+        check(_e["level"] in ("city", "borough", "extent"),
+              f"REGIONS[{_space!r}] declares level {_e['level']!r}")
+        check(bool(_e["pack_id"]) and bool(_e["display_name"]),
+              f"REGIONS[{_space!r}] has a blank pack_id or display_name")
 
 # --------------------------------------------------------------------------
 

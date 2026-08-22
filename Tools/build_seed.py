@@ -406,11 +406,33 @@ STATUS_FOR_KIND_WITHOUT_CONDITION = {
 }
 
 
-#: Where the region placeholder sits in a `tree_rows` row, and therefore the one
-#: number `resolve_region_ids` and the INSERT column list must agree on. Asserted
-#: against the INSERT at flush time rather than trusted -- an off-by-one here
-#: would write region ids into `lat`, which SQLite would accept.
-REGION_ROW_INDEX = 6
+# THE `trees` INSERT COLUMN LIST, DECLARED ONCE (review finding F5a).
+#
+# It used to be built inside `flush` while `REGION_ROW_INDEX` was a hand-written
+# `6` up here, which made the two a pair of literals that had to be kept in step
+# by care. That is the shape this file's own comments warn about: an off-by-one
+# writes region ids into `lat`, and SQLite accepts it silently because both are
+# numbers. Now there is ONE list and the index is DERIVED from it, so they cannot
+# disagree -- `emit` cannot put the placeholder somewhere the INSERT does not
+# expect it, because there is no second place to put it.
+#
+# Rows stay LISTS, deliberately, and this was measured rather than assumed: at
+# New York's ~898,000 rows a dict per row costs about 3.9x the memory and 5.9x
+# the build time, against 1.7 microseconds paid once for the `.index()` below.
+# The derived index plus the assertion in `flush` buys the same safety for
+# nothing.
+TREE_COLUMNS: tuple = (
+    "id", "uuid", "id_space", "external_ref", "source", "inventory_source",
+    "region_id", "lat", "lon", "address", "site_type", "neighborhood_id",
+    "status", "species_current", "planted_year", "planted_on",
+    "dbh_city_cm_min", "dbh_city_cm_max", "site_lineage", "verification_state",
+    *(name for name, _ in CITY_RECORD_COLUMNS),
+    "city_raw", "created_at", "updated_at", "deleted_at",
+)
+
+#: Where the region placeholder sits in a `tree_rows` row. DERIVED from
+#: `TREE_COLUMNS`, never written down twice.
+REGION_ROW_INDEX = TREE_COLUMNS.index("region_id")
 
 
 def resolve_region_ids(tree_rows: list, region_id_by_key: dict) -> None:
@@ -2982,36 +3004,22 @@ def flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows) -> None:
             for sp in species_by_key.values()
         ],
     )
-    city_columns = ",".join(name for name, _ in CITY_RECORD_COLUMNS)
-    # 24, not 23: `region_id` joined the column list in the s17 pass, as
-    # `id_space` did in v14.
-    tree_columns = (
-        "id,uuid,id_space,external_ref,source,inventory_source,region_id,lat,lon,"
-        "address,site_type,neighborhood_id,status,species_current,planted_year,"
-        "planted_on,dbh_city_cm_min,dbh_city_cm_max,site_lineage,verification_state,"
-        f"{city_columns},city_raw,created_at,updated_at,deleted_at"
-    )
-    placeholders = ",".join("?" * (24 + len(CITY_RECORD_COLUMNS)))
+    placeholders = ",".join("?" * len(TREE_COLUMNS))
 
-    # THE ONE NUMBER TWO PLACES HAVE TO AGREE ON, CHECKED RATHER THAN TRUSTED.
-    # `emit` writes the region placeholder at REGION_ROW_INDEX and
-    # `resolve_region_ids` rewrites it there; if that index and this column list
-    # ever drift apart, SQLite will not complain -- `region_id` and `lat` are
-    # both numbers, so a shifted row inserts cleanly and ships nonsense. This
-    # asserts the column list itself rather than a comment about it.
-    _names = tree_columns.split(",")
-    if _names[REGION_ROW_INDEX] != "region_id":
-        die(
-            f"REGION_ROW_INDEX is {REGION_ROW_INDEX}, which is column "
-            f"{_names[REGION_ROW_INDEX]!r} in this INSERT, not 'region_id'. The row builder "
-            f"in `emit` and this column list have drifted apart."
-        )
-    if len(_names) != 24 + len(CITY_RECORD_COLUMNS):
-        die(f"tree INSERT names {len(_names)} columns but binds "
-            f"{24 + len(CITY_RECORD_COLUMNS)} placeholders")
+    # THE INDEX IS DERIVED FROM THIS LIST (see TREE_COLUMNS), so it cannot drift
+    # from it. The assertion stays anyway, and cheaply: it now catches the OTHER
+    # half of the pair -- a row whose length does not match the column list,
+    # which is what a mis-built row in `emit` looks like. SQLite would report
+    # that one itself, but not before `executemany` has partially run.
+    if TREE_COLUMNS[REGION_ROW_INDEX] != "region_id":
+        die(f"REGION_ROW_INDEX resolves to {TREE_COLUMNS[REGION_ROW_INDEX]!r}, not 'region_id'")
+    bad = next((i for i, row in enumerate(tree_rows) if len(row) != len(TREE_COLUMNS)), None)
+    if bad is not None:
+        die(f"tree row {bad} has {len(tree_rows[bad])} values for {len(TREE_COLUMNS)} "
+            f"columns; `emit` and TREE_COLUMNS have drifted apart")
 
     conn.executemany(
-        f"INSERT INTO trees({tree_columns}) VALUES({placeholders})",
+        f"INSERT INTO trees({','.join(TREE_COLUMNS)}) VALUES({placeholders})",
         tree_rows,
     )
     conn.executemany(
