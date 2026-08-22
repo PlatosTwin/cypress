@@ -7855,3 +7855,11 @@ and that an anonymized row is still not.
 `is_own` — the SQL in `ContributionStore.heroPhotoIDs`, whose doc comment and
 `TreeProfile.isPhotoVisible`'s now cite this ruling as the settled answer rather than describing a
 question nobody had answered.
+
+**Built — PR #107, and this section is now history rather than a plan.** The round did not add a
+fourth hand-written copy of the comparison: `heroPhotoIDs(treeIDs:attribution:)` *calls*
+`ContributionStore.removalPredicate()`, the same string the three removal sites use, wrapped in
+`COALESCE(…, 0)` because a SELECT column must resolve the NULL a `WHERE` can leave alone. The
+convergence this ruling describes is therefore structural — one predicate, four callers — rather
+than two statements kept in step by hand. The tests run in both directions the cost section asks
+for, and one more pins the two rules admitting a single staged row.

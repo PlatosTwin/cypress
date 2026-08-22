@@ -164,18 +164,26 @@
 #
 #   VERIFY-OK: Executed 1 test, with 0 failures (0 unexpected) in 5.634 (5.639) seconds
 #
-# PLACED ON SHARD 3, and here the arithmetic is not a coin flip for once. The two candidates are the
-# two lowest totals this file states — Shard 3 at 344.8s in the CI table, gained nothing since, and
-# Shard 1 at 348.5s after `AppleSignInUITests`. What matters is the MAXIMUM across shards, since the
-# gate is as slow as its slowest:
+# PLACED ON SHARD 3. **Shard 1's total here is 361.8-363.4s, NOT the 348.5s two paragraphs up** —
+# that figure adds `AppleSignInUITests` at 15.9s, and the three paragraphs above it exist to withdraw
+# 15.9s in favour of 29.2s (16e) / 30.8s (16 Pro) measured on the tree that carries both #91 and #88.
+# Citing 348.5s reads past this file's own retraction; corrected in PR #107 review. So the two
+# candidate lines are Shard 3 at 344.8s and Shard 1 at 361.8-363.4s, and what matters is the MAXIMUM
+# across shards, since the gate is as slow as its slowest:
 #
-#   this class on Shard 3:  max(348.5, 344.8 + 5.6 = 350.4)  = 350.4s
-#   this class on Shard 1:  max(344.8, 348.5 + 5.6 = 354.1)  = 354.1s
+#   this class on Shard 3:  max(361.8, 344.8 + 5.6 = 350.4)  = 361.8s   <- placed here
+#   this class on Shard 1:  max(344.8, 361.8 + 5.6 = 367.4)  = 367.4s
 #
-# Shard 3 wins, and neither arrangement reaches Shard 4's 362.6s — which was already the pace-setter
-# before `RemoteGateComplaintUITests` grew a third method. **So the gate's longest TESTS do not move
-# at all**, on any of these placements. That conclusion survives this class costing four times what
-# it was measured at, which is the property `ReadingOrderAccessibilityTests`' 5.6s margin lacked.
+# Shard 1 already sets the pace on the file's own corrected numbers, so adding this class to Shard 3
+# **does not move the gate's longest TESTS at all** — a stronger conclusion than the retracted
+# figure gave, and one that survives this class costing several times what it was measured at.
+#
+# COROBORATED BY LIVE DATA, and only this narrow claim is: PR #107's two full runs put Shard 1 at
+# 18m49s and 20m22s against Shard 3's 19m6s and 17m15s, so Shard 1 setting the pace is observed and
+# not only derived. **Nothing else here should be read as current.** That same live data refutes the
+# CI table above by a wide margin, and the run-to-run noise on one unchanged shard (+93s) is many
+# times every number this paragraph reasons with — re-measuring the table is a ticket of its own,
+# deliberately not attempted from this branch.
 #
 # One launch and one existence check is all it is: the difference R82 makes to the picture is a
 # thumbnail's pixels, and no test in this target can see those (the hero is `.accessibilityHidden`).

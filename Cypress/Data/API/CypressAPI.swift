@@ -1009,9 +1009,15 @@ public struct TreeProfile: Hashable, Sendable {
     /// row in `main.photos` was written by this installation, so it has already been answering by
     /// provenance since before there was a column for it.
     ///
-    /// **`.nobody` still refuses**, on both sides. R3 and ERRATA E157 — the leaving door's promise
-    /// — are untouched by R82; the ownerless refusal leads in both predicates so that provenance
-    /// can never re-attribute a photograph somebody asked to be unlinked from.
+    /// **`.nobody` still refuses in the two predicates that share the rule** — `heroPhotoIDs`'
+    /// `is_own` and the removal gate, which since R82 are one string. R3 and ERRATA E157 — the
+    /// leaving door's promise — are untouched; the ownerless refusal leads in that rule so that
+    /// provenance can never re-attribute a photograph somebody asked to be unlinked from.
+    ///
+    /// **Not `ownPhotoIDs`, which is a different producer and deliberately does not refuse.** It is
+    /// every live row in `main.photos`, anonymized rows included, so an anonymized photograph is
+    /// still *shown* to the person holding the phone — with the sentence task #131 added, and with
+    /// no delete. Shown-and-not-deletable is the ruled outcome there, not a leak of this refusal.
     public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
         own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
     }

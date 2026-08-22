@@ -727,7 +727,29 @@ enum DebugDeepLink {
     /// paragraph on (`testTreeProfile` anchors on the title a tree with nothing on it shows). The
     /// five taken trees are asked for by name rather than recomputed, so this cannot drift out of
     /// agreement with them.
+    ///
+    /// **It refuses without a pinned fix, and that refusal is the other half of the same argument.**
+    /// This helper resolves against `center`; the *running app* draws 07 §6 from its own fix, and
+    /// `SpeciesView` draws no nearby section at all when that fix is nil. So a launch with no
+    /// `CYPRESS_LOCATION` would stage the row correctly, open the guide, and show a page with no
+    /// section on it — success reported, nothing photographed, and the empty screen reading as a
+    /// defect in the ruling rather than a missing environment variable. Closing the silent failure
+    /// from the tree side and leaving it open from the location side would be closing half of it.
+    ///
+    /// A pinned fix specifically, not any fix: an offscreen simulator reports `notDetermined` and
+    /// stays there, and a device that has a real fix has it somewhere this seam did not choose. The
+    /// same argument `Standalone` makes for the pin screen and `DeepLinkHarness.pin` makes for the
+    /// map — a harness that depends on device state inherits whatever the last launch left.
     private static func strandedHeroSubject(_ api: LocalAPI) async throws -> (species: UUID, tree: UUID) {
+        guard case .pinned(.located) = DebugLocationOverride.requested() else {
+            throw Failure(
+                screen: "strandedPhotoHero",
+                reason: "this case needs a pinned fix — 07 §6 draws the two nearest trees of the "
+                    + "species within \(Int(SpeciesGuideLimits.nearbyRadiusM)) m of the app's own "
+                    + "location, and draws no section at all without one. Relaunch with "
+                    + "\(DebugLocationOverride.environmentKey)=\(center.latitude),\(center.longitude)"
+            )
+        }
         let reserved: Set<UUID> = [
             try await standingTree(api),
             try await photographedTree(api),
