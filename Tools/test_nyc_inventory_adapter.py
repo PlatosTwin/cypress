@@ -28,13 +28,18 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from build_seed import status_for_record  # noqa: E402
+from build_seed import status_for_record  # noqa: E402
 from inventory_adapters import (  # noqa: E402
+    NYC_CONDITIONS,
     NYC_DBH_CEILING_IN,
     NYC_MAX_SNAP_METRES,
     BoroughResolver,
     NYCTreePointAdapter,
 )
 from inventory_contract import (  # noqa: E402
+    CONDITION_ALIVE,
+    CONDITION_DEAD,
     ID_SPACES,
     IDENTITY_SEPARATOR,
     INVENTORIES,
@@ -297,10 +302,20 @@ def test_a_standing_dead_tree_is_still_a_tree_and_is_counted():
     check(bool(records), "the fixture lost its standing-dead rows")
     for record in records:
         check(record.kind == KIND_TREE, f"a standing dead tree became {record.kind!r}")
-    check(a.stats["standing_dead_mapped_to_alive"] == len(records),
-          f"standing_dead_mapped_to_alive is {a.stats['standing_dead_mapped_to_alive']}, "
-          f"but the fixture holds {len(records)} such rows; the build receipt would "
-          f"understate a known information loss")
+    check(a.stats["standing_dead"] == len(records),
+          f"standing_dead is {a.stats['standing_dead']}, but the fixture holds "
+          f"{len(records)} such rows; the build receipt would understate how many "
+          f"trees this file calls dead")
+    # s17: they no longer ship as `alive`. This is the half the old name was an
+    # apology for, and it is the assertion that would go red if the condition
+    # wiring were removed while the counter stayed.
+    for record in records:
+        check(record.condition == CONDITION_DEAD,
+              f"a standing dead tree carries condition {record.condition!r}, so "
+              f"status_for_record would ship it as `alive` -- the pre-s17 defect")
+        check(record.condition_text is not None,
+              "a standing dead tree carries no condition_text, so the City's own "
+              "word for the claim did not travel with it")
 
 
 def test_structure_and_condition_reach_city_record_losslessly():
@@ -741,6 +756,106 @@ def test_the_stats_account_for_every_row():
              + a.stats["kind_inferred_from_absent_species"])
     check(kinds <= a.stats["source_rows"],
           f"the kind branches counted {kinds} of {a.stats['source_rows']} rows: {a.stats}")
+
+
+# ---------------------------------------------------------------------------
+# TPCondition -> the contract's condition (s17's seam, wired by the NYC publish
+# round)
+# ---------------------------------------------------------------------------
+
+
+def test_every_tpcondition_maps_the_way_nyc_conditions_says():
+    """The mapping applied, per row, against the table rather than against a guess.
+
+    Reads the expectation out of `NYC_CONDITIONS` so that the table is the single
+    statement of the rule -- but see the test below, which pins the two entries
+    that are DECISIONS and would otherwise be free to change under this one.
+    """
+    _, pairs = run()
+    for record, row in pairs:
+        stated = (row.get("tpcondition") or "").strip().lower()
+        if record.kind != KIND_TREE:
+            check(record.condition is None,
+                  f"a {record.kind!r} carries condition {record.condition!r}; only a tree "
+                  f"may, and a dead STUMP must not become a standing dead tree")
+            continue
+        expected = NYC_CONDITIONS.get(stated) if stated else None
+        check(record.condition == expected,
+              f"TPCondition {row.get('tpcondition')!r} became condition "
+              f"{record.condition!r}, not {expected!r}")
+        check((record.condition_text is not None) == (record.condition is not None),
+              f"condition {record.condition!r} and condition_text "
+              f"{record.condition_text!r} disagree about whether a claim was made")
+
+
+def test_dead_is_the_only_value_that_moves_a_row():
+    """The two entries in NYC_CONDITIONS that are decisions, pinned as decisions.
+
+    The test above reads its expectation from the table, so it would follow the
+    table anywhere. These two would not: `Dead` -> `dead_reported` is what s17
+    was built for, and `Poor`/`Critical` -> `alive` rather than `declining` is a
+    deliberate refusal to ship a status no source has ever produced on 22,992
+    New York trees off an adapter author's reading. Changing either is an owner
+    decision, and this is the line that makes it one.
+    """
+    check(NYC_CONDITIONS["dead"] == CONDITION_DEAD,
+          f"NYC_CONDITIONS['dead'] is {NYC_CONDITIONS['dead']!r}; a standing dead tree "
+          f"would ship as `alive` again, which is the pre-s17 defect")
+    for value in ("poor", "critical"):
+        check(NYC_CONDITIONS[value] == CONDITION_ALIVE,
+              f"NYC_CONDITIONS[{value!r}] is {NYC_CONDITIONS[value]!r}. Mapping it to "
+              f"`declining` puts 22,992 rows into a status no published pack has ever "
+              f"carried -- an owner decision, not this table's")
+    check(NYC_CONDITIONS["unknown"] is None,
+          "NYC's `Unknown` must be `no claim`, not a claim of health")
+
+
+def test_the_status_a_dead_row_actually_ships_as():
+    """The end of the chain, across the module boundary the table cannot see.
+
+    `NYC_CONDITIONS` could be perfect and `status_for_record` could still send
+    these rows somewhere else. This is the only check in this file that says what
+    lands in `trees.status`.
+    """
+    _, pairs = run()
+    dead = by_case(pairs, "full/STANDING DEAD")
+    check(bool(dead), "the fixture lost its standing-dead rows")
+    for record in dead:
+        status = status_for_record(record.kind, record.condition)
+        check(status == "dead_reported",
+              f"a standing dead tree ships as {status!r}, not 'dead_reported'")
+    for record, row in pairs:
+        if record in dead:
+            continue
+        status = status_for_record(record.kind, record.condition)
+        check(status != "dead_reported",
+              f"a row NYC rates {row.get('tpcondition')!r} ships as 'dead_reported'")
+
+
+def test_an_unpublished_tpcondition_stops_the_run():
+    """A value outside NYC's closed scale is a stop, not a silent `None`.
+
+    The failure mode this refuses: NYC adds a rating, every row carrying it
+    quietly loses its condition claim, and the build reports nothing.
+    """
+    rows, spaces = load()
+    mutated = [dict(row) for row in rows]
+    changed = 0
+    for row in mutated:
+        if (row.get("tpstructure") or "").strip().lower() == "full":
+            row["tpcondition"] = "Moribund"
+            changed += 1
+    check(changed > 0, "the fixture has no Full rows, so this test proves nothing")
+
+    a = NYCTreePointAdapter(mutated, spaces, HORIZON, borough_resolver=_resolver())
+    try:
+        list(a.records())
+    except ValueError as error:
+        check("Moribund" in str(error) and "NYC_CONDITIONS" in str(error),
+              f"the refusal does not name the value or where to map it: {error}")
+    else:
+        check(False, "an unpublished TPCondition was accepted; those rows shipped with "
+                     "no condition claim and nothing said so")
 
 
 # ---------------------------------------------------------------------------

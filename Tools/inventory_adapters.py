@@ -54,6 +54,8 @@ import re
 from typing import Iterator, Optional
 
 from inventory_contract import (
+    CONDITION_ALIVE,
+    CONDITION_DEAD,
     KIND_NOT_A_TREE,
     KIND_PLANTING_SITE,
     KIND_TREE,
@@ -1053,12 +1055,56 @@ NYC_DBH_CEILING_IN = 400.0
 #: resolution. A tree point whose structure is `Full` has a trunk by definition.
 NYC_DBH_ZERO_MEANS_UNRECORDED = True
 
-# WHICH `TPStructure` DESCRIBES A TREE. **PROVISIONAL -- see the block comment on
-# `NYCTreePointAdapter.classify`.** NYC splits what the contract's `kind` wants in
-# one field across two vocabularies, and this mapping is the half that is settled:
-# it is about the STRUCTURE at the site, not about whether it is alive.
+# WHICH `TPStructure` DESCRIBES A TREE. NYC splits what the contract's `kind`
+# wants in one field across two vocabularies, and this is the STRUCTURE half: it
+# is about what stands at the site, not about whether it is alive.
+#
+# It used to be marked PROVISIONAL, pending the condition half. s17 built that
+# half (`InventoryRecord.condition`, `build_seed.status_for_record`) and
+# `NYC_CONDITIONS` below is it, so the qualifier is gone rather than inherited.
 NYC_STRUCTURE_IS_TREE = {"full"}
 NYC_STRUCTURE_IS_NOT_A_TREE = {"stump", "stump - uprooted", "shaft", "retired"}
+
+# WHICH `TPCondition` MEANS WHAT, in the contract's four-value vocabulary.
+#
+# NYC's own values, with their whole-dataset counts (all 1,121,106 rows,
+# 2026-08-14, `docs/investigations/nyc-ingest.md` §10):
+#
+#     Excellent 110,469   Good 471,986   Fair 321,548   Poor 49,041
+#     Critical    6,852   Dead 128,067   Unknown 33,132
+#
+# ── `Dead` is the one that moves rows, and it is the reason s17 exists ────────
+# `TPStructure='Full'` with `TPCondition='Dead'` is 10,635 rows: a standing dead
+# tree, trunk and species and location intact. Before s17 no adapter could ship
+# one as anything but `alive`, so all 10,635 said the City had called them
+# living. `status_for_record(KIND_TREE, 'dead')` is `dead_reported`, which is
+# what RULINGS R19 defines for exactly this — still standing, not removed.
+#
+# ── EVERY OTHER STANDING VALUE IS `alive`, AND `declining` IS DELIBERATELY NOT
+#    USED ──────────────────────────────────────────────────────────────────────
+# `Poor` and `Critical` are 22,992 `Full` rows, and mapping them to the
+# contract's `declining` would be the obvious reading. It is **not taken here.**
+# `declining` is a status no source has ever produced, so it would be shipped to
+# readers for the first time on 22,992 New York trees, on an adapter author's
+# reading of two words in someone else's rating scale — while `Dead` is a
+# mapping the City itself makes unambiguous and R19 already defines a badge for.
+# The two are not the same kind of decision and this file only makes the second.
+# The City's own word survives on every row regardless: `TPCondition` rides into
+# `city_record['permit_notes']` verbatim, and `condition_text` carries it to the
+# build's receipt. Raised for the owner rather than decided here.
+#
+# ── `Unknown`, blank and absent are `None` ───────────────────────────────────
+# `None` in the contract means "the source made no claim", which is precisely
+# what `Unknown` is, and it maps where every SF and San Jose row already maps.
+NYC_CONDITIONS = {
+    "excellent": CONDITION_ALIVE,
+    "good": CONDITION_ALIVE,
+    "fair": CONDITION_ALIVE,
+    "poor": CONDITION_ALIVE,
+    "critical": CONDITION_ALIVE,
+    "dead": CONDITION_DEAD,
+    "unknown": None,
+}
 
 
 #: How far outside every borough polygon a tree may sit and still be snapped to
@@ -1252,7 +1298,13 @@ class NYCTreePointAdapter:
             "kind_from_structure_not_a_tree": 0,
             "kind_inferred_from_absent_species": 0,
             # The provisional half, counted so the schema round has its size.
-            "standing_dead_mapped_to_alive": 0,
+            # Renamed from `standing_dead_mapped_to_alive`, which stopped being
+            # true the moment this adapter started setting `condition`: these
+            # rows now ship as `dead_reported`, not as `alive`.
+            "standing_dead": 0,
+            "condition_stated": 0,
+            "condition_not_stated": 0,
+            "condition_on_a_non_tree_ignored": 0,
             # The source's own noise.
             "dbh_zero_sentinel": 0,
             "dbh_over_ceiling": 0,
@@ -1386,37 +1438,42 @@ class NYCTreePointAdapter:
     def classify(self, structure, scientific_name):
         """One row's `(kind, kind_basis, scientific_name)`, and why.
 
-        ================== THE PROVISIONAL PART, READ THIS ======================
+        ============ THE PART THAT WAS PROVISIONAL, AND NO LONGER IS ===========
         NYC states a record's structure (`TPStructure`) and its physical condition
-        (`TPCondition`) in TWO fields, and the contract's `kind` is one field. This
-        method uses ONLY `TPStructure`, and that is the whole of the compromise:
+        (`TPCondition`) in TWO fields. This method uses ONLY `TPStructure`, which
+        used to be a compromise and is now a division of labour: `_condition_for`
+        reads the other field, and the pair reaches the seed as `(kind,
+        condition)` rather than as `kind` alone.
+
+        The case it was written about:
 
             TPStructure='Full' + TPCondition='Dead'   10,635 rows, 2026-08-14
 
-        is a STANDING DEAD TREE. It has a trunk, a species and a location, so it is
-        `KIND_TREE` by every reasonable reading -- and `build_seed.STATUS_FOR_KIND`
-        turns every `KIND_TREE` into `status='alive'`, which says something about
-        those 10,635 trees that NYC Parks did not say.
+        is a STANDING DEAD TREE. It has a trunk, a species and a location, so it
+        is `KIND_TREE` by every reasonable reading -- and before s17
+        `build_seed.STATUS_FOR_KIND` turned every `KIND_TREE` into
+        `status='alive'`, which said something about those 10,635 trees that NYC
+        Parks did not say. `trees.status` had permitted `dead_reported` all along
+        (RULINGS R19, `StatusBadge.swift`: still standing over a pavement, not a
+        second way of saying `removed`); what was missing was a field on
+        `InventoryRecord` and a lookup keyed on more than `kind`.
 
-        **THE SEED SCHEMA IS NOT THE THING IN THE WAY, AND THE SURVEY WAS WRONG
-        ABOUT THIS.** `trees.status` already permits `dead_reported`, whose own
-        documentation (Cypress/DesignSystem/Components/StatusBadge.swift, RULINGS
-        R19) defines it as a tree that "is still standing over a pavement" and is
-        "not a second way of saying `removed`" -- precisely this case, already
-        drawn, already badged, already reachable in the app.
+        **RULING D17 took that decision and s17 built it** --
+        `InventoryRecord.condition` and `build_seed.status_for_record(kind,
+        condition)` -- and this round wires this adapter to it. The 10,635 now
+        ship as `dead_reported`. `stats['standing_dead']` counts them; it was
+        called `standing_dead_mapped_to_alive` and that name stopped being true
+        the day the wiring landed.
 
-        What is actually missing is one field on `InventoryRecord` and one lookup:
-        `build_seed.STATUS_FOR_KIND` is keyed on `kind` ALONE, so no adapter can
-        cause a row to ship as anything but `alive`, `vacant_site` or `alive`.
-        That is a change to this contract in Python, NOT a database migration, and
-        it is not made here because it moves San Francisco's and San Jose's rows
-        too and this round is forbidden to touch either.
+        `TPStructure` and `TPCondition` are still carried verbatim into
+        `city_record` (`plant_type` and `permit_notes`), so the City's own words
+        remain on every row whatever this mapping does with them.
 
-        Until it is made, NOTHING IS LOST: `TPStructure` and `TPCondition` are
-        carried verbatim into `city_record` (`plant_type` and `permit_notes`), so
-        every one of the 10,635 is recoverable from the seed by a later pass, and
-        `stats['standing_dead_mapped_to_alive']` reports the size of the claim in
-        the build receipt rather than leaving it to be rediscovered.
+        **The debt this creates is recorded, not fixed here.**
+        `TreeProfilePresentation.deadNotice` gates on status alone and tells the
+        reader a community reviewer confirmed the death. No reviewer confirmed
+        these. That is PR #108's finding F7, it is in the errata, and it is a UI
+        question rather than an ingest one.
         ========================================================================
         """
         key = (structure or "").strip().lower()
@@ -1442,6 +1499,53 @@ class NYCTreePointAdapter:
         # purpose so the build receipt carries its size.
         self.stats["kind_inferred_from_absent_species"] += 1
         return KIND_PLANTING_SITE, KindBasis.INFERRED_FROM_ABSENT_SPECIES, None
+
+    # ------------------------------------------------------------- condition
+
+    def _condition_for(self, kind, raw):
+        """`(condition, condition_text)` for one row. s17's seam; NYC_CONDITIONS is the map.
+
+        **Only a `KIND_TREE` carries a condition, and the two reasons are different.**
+        A `KIND_PLANTING_SITE` is refused by `InventoryRecord.validate` outright --
+        an empty site has nothing in it to be in a condition. A `KIND_NOT_A_TREE`
+        is *allowed* to carry one and is deliberately not given one here: a stump
+        in `Dead` condition would become `dead_reported`, and R19 defines that
+        badge as a tree still STANDING. `--nyc-structures all` is the run where
+        that matters, and it must not quietly turn 32,445 dead stumps into
+        standing dead trees.
+
+        `condition_text` is the City's word, unnormalised, and it is required
+        whenever `condition` is set (the contract refuses a condition with no
+        text it was normalised from). An unrecognised value is a stop rather
+        than a silent `None`: NYC's rating scale is closed and published, so a
+        value outside it means the scale changed and the mapping above needs a
+        human, which is the same argument `REGIONS` makes for a new region.
+        """
+        text = _clean(raw)
+        if kind != KIND_TREE:
+            if text is not None:
+                self.stats["condition_on_a_non_tree_ignored"] += 1
+            return None, None
+        if text is None:
+            self.stats["condition_not_stated"] += 1
+            return None, None
+        key = text.strip().lower()
+        if key not in NYC_CONDITIONS:
+            raise ValueError(
+                f"TPCondition {text!r} is not one of NYC's published values "
+                f"{sorted(NYC_CONDITIONS)}. The rating scale is closed, so a new value "
+                f"means it changed -- map it deliberately in NYC_CONDITIONS rather than "
+                f"letting this row ship with no condition claim."
+            )
+        condition = NYC_CONDITIONS[key]
+        if condition is None:
+            # `Unknown`, mapped to "the source made no claim". The text is
+            # dropped with it: the contract refuses `condition_text` without a
+            # `condition`, and `permit_notes` already carries the word.
+            self.stats["condition_not_stated"] += 1
+            return None, None
+        self.stats["condition_stated"] += 1
+        return condition, text
 
     # ---------------------------------------------------------------- borough
 
@@ -1571,9 +1675,9 @@ class NYCTreePointAdapter:
 
             kind, basis, scientific = self.classify(row.get("tpstructure"), scientific)
 
-            if (structure_key == "full"
-                    and (row.get("tpcondition") or "").strip().lower() == "dead"):
-                self.stats["standing_dead_mapped_to_alive"] += 1
+            condition, condition_text = self._condition_for(kind, row.get("tpcondition"))
+            if kind == KIND_TREE and condition == CONDITION_DEAD:
+                self.stats["standing_dead"] += 1
 
             dbh_in = self.parse_dbh(row.get("dbh"))
             if dbh_in is not None and kind != KIND_TREE:
@@ -1687,6 +1791,11 @@ class NYCTreePointAdapter:
                 # layer to mint a distribution identity R37.2 then freezes into
                 # an object path forever, so this one never does.
                 region=borough,
+                # s17's condition seam. See `NYC_CONDITIONS` for why `Dead` is
+                # the only value that moves a row and why `declining` is not
+                # used; `condition_text` carries the City's own word either way.
+                condition=condition,
+                condition_text=condition_text,
                 address=address,
                 site_type=_clean((space or {}).get("pssite")),
                 planted_on=self.parse_planted_date(row.get("planteddate")),

@@ -3057,11 +3057,16 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             "nyc_structures": nyc_structures,
             "nyc_joined_to_planting_space": str(stats.get("nyc_joined_to_planting_space", 0)),
             "nyc_no_planting_space_match": str(stats.get("nyc_no_planting_space_match", 0)),
-            # The size of a KNOWN, NAMED information loss: a standing dead tree
-            # ships as `alive` because STATUS_FOR_KIND is keyed on kind alone.
-            # TPStructure and TPCondition are in city_record, so it is recoverable.
-            "nyc_standing_dead_mapped_to_alive":
-                str(stats.get("nyc_standing_dead_mapped_to_alive", 0)),
+            # How many rows this file ships as `dead_reported` -- a `Full`
+            # structure NYC rates `Dead`, standing over a pavement (R19). It was
+            # `nyc_standing_dead_mapped_to_alive` and it counted an information
+            # LOSS; s17's condition seam closed that, so the key now counts a
+            # fact about the file rather than an apology for it.
+            "nyc_standing_dead": str(stats.get("nyc_standing_dead", 0)),
+            # How many NYC rows carry a condition claim at all, and how many
+            # leave it to `None`. `Unknown` (33,132 whole-dataset) is the second.
+            "nyc_condition_stated": str(stats.get("nyc_condition_stated", 0)),
+            "nyc_condition_not_stated": str(stats.get("nyc_condition_not_stated", 0)),
             # The borough rides on the record in `trees.city_raw`, ALWAYS -- not
             # only under --with-city-raw, and not merely as a build-time filter.
             # The distribution design makes a borough the published unit.
