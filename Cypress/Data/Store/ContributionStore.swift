@@ -459,21 +459,36 @@ public struct ContributionStore {
     /// `TreeProfile.isPhotoVisible`, E215's own rule, rather than a second predicate restated here
     /// that could drift from it.
     ///
-    /// **`is_own` is not `deletablePhotoIDs`' predicate, and since `AppSchema` v16 it is not even
-    /// the same shape** — worth saying plainly, because this comment used to claim they were one.
-    /// Removal now has three arms and a leading ownerless refusal: `taken_on_device` admits a
-    /// photograph this installation wrote and an account has since adopted. This column still keeps
-    /// the two owner arms and no provenance term. The consequence is ERRATA **E277**: a repaired,
-    /// again-deletable photograph whose owning account can no longer be signed into is still
-    /// `own: false`, so `isPhotoVisible` judges it by `isPubliclyVisible`, it is `.pending`, and the
-    /// species-guide nearby heroes (07 §6) do not draw it at all.
+    /// **`is_own` and `deletablePhotoIDs`' predicate ask the same question and are now the same
+    /// string — RULINGS R82.** They diverged for one release: `AppSchema` v16 gave removal a third
+    /// arm, `taken_on_device`, so a photograph this installation wrote and an account has since
+    /// adopted stays this installation's to unmake, and this column was left on the two owner arms
+    /// alone. ERRATA **E277** is what that cost: a repaired, again-deletable photograph whose
+    /// owning account can no longer be signed into came back `own: false`, `isPhotoVisible` judged
+    /// it by `isPubliclyVisible`, it was `.pending`, and the species-guide nearby heroes (07 §6)
+    /// did not draw it at all — the app would delete a photograph for you that it would not show
+    /// you. The owner ruled on 2026-08-22 that provenance counts here too: being shown your own
+    /// photograph and being allowed to unmake it are the same claim about who took it.
     ///
-    /// **The owner ruled on 2026-08-22 that the two should converge — RULINGS R82, provenance
-    /// counts.** Being shown your own photograph and being allowed to unmake it are the same claim
-    /// about who took it. The provenance arm belongs in this SQL and is a follow-up round's to add;
-    /// an anonymized row must still come back `own: false`, since the leaving door NULLs
-    /// `taken_on_device` in the same `UPDATE` that takes the name off. Until that round lands this
-    /// column answers as written above, and the difference is a recorded gap rather than a design.
+    /// So this statement **calls `removalPredicate()`** rather than restating it. Convergence that
+    /// has to be maintained by hand is not convergence: a fourth copy of the rule would drift the
+    /// way that function's own comment says three copies drift, and it would drift silently, since
+    /// nothing compares the two strings. Sharing makes the agreement structural — the arms below
+    /// are described here because they are what the shared rule says, not because this statement
+    /// says them.
+    ///
+    /// **The leading ownerless refusal is load-bearing, not a restatement of the `COALESCE`.**
+    /// R82 leaves R3 and ERRATA E157 — the leaving door's promise — untouched: an anonymized
+    /// photograph is nobody's, and `PhotoOwner.permitsRemoval(by:takenOnDevice:)` refuses one on
+    /// its first line *before* it reads provenance. The shipping door
+    /// (`AccountDeletion.anonymizeContributions`) sets `taken_on_device = NULL` in the same
+    /// `UPDATE` that takes the name off, so a correctly anonymized row has no provenance left to
+    /// admit and would fall out `own: false` from the three arms alone. The refusal is here for the
+    /// row that reaches this statement anyway — an older tombstone, a future writer that forgets
+    /// one of the three columns — because without it such a row would be `own: true`, judged by
+    /// `isVisibleToItsContributor`, and drawn to a stranger *unmoderated*. R3 and E157 are not a
+    /// clause in an `||`, which is the reasoning `permitsRemoval`'s own comment states for the
+    /// identical ordering. `is_own` gains an arm, not an exception.
     public func heroPhotoIDs(
         treeIDs: Set<UUID>,
         attribution: Attribution,
@@ -481,19 +496,25 @@ public struct ContributionStore {
     ) throws -> [UUID: UUID] {
         guard !treeIDs.isEmpty else { return [:] }
 
-        // `COALESCE(…, 0)`: an ownerless row (both columns NULL, the state an account deletion's
-        // leaving door produces — `photos`' CHECK, AppSchema v12) makes `device_id = :device`
-        // compare NULL to a value, which SQL's three-valued logic resolves to NULL rather than
-        // false, and `OR` with a NULL operand is NULL unless the other side is already true.
-        // `row.bool(_:)` throws on NULL; treating an ownerless row as not-own (falls to
-        // `isPubliclyVisible`) is also the safe reading — nobody currently asking is its owner.
+        // **`removalPredicate()` itself, called rather than restated** (RULINGS R82). The doc comment
+        // above says this column and the removal gate are the same question with the same shape; a
+        // hand-written fourth copy of that shape would be the drift `removalPredicate`'s own comment
+        // exists to prevent — "three copies of a permission rule is how one of them drifts" — and it
+        // would drift silently, because nothing compares the two strings. Sharing the string makes
+        // the agreement structural: a change to the rule reaches the hero read and the three
+        // removal sites together, and the tests on both sides go red together.
+        //
+        // **What the wrapper is for, and why it is needed here and not there.** The three removal
+        // sites use this predicate in a `WHERE`, where SQL's three-valued logic already does the
+        // right thing: a NULL row simply fails to match. This one is a *SELECT column* that
+        // `row.bool("is_own")` reads back, and `row.bool(_:)` throws on NULL — so the NULL any arm
+        // can produce by comparing a NULL column to a value has to be resolved before it leaves the
+        // statement. `COALESCE(…, 0)` resolves it to not-own, which is also the safe reading:
+        // `isPhotoVisible` then judges the row by `isPubliclyVisible`, and nobody currently asking
+        // has shown they are its owner. That is the whole of the difference between the two uses.
         let photoStatement = try connection.cachedStatement("""
             SELECT *,
-                   COALESCE(
-                       (:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
-                        OR device_id = :device COLLATE NOCASE,
-                       0
-                   ) AS is_own
+                   COALESCE(\(Self.removalPredicate()), 0) AS is_own
               FROM photos
              WHERE deleted_at IS NULL
                AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
@@ -694,7 +715,16 @@ public struct ContributionStore {
     }
 
     /// `PhotoOwner.permitsRemoval(by:takenOnDevice:)` as SQL, in one place because it is written in
-    /// three: the set that draws the control, the vote delete, and the tombstone `UPDATE`.
+    /// four: the set that draws the control, the vote delete, the tombstone `UPDATE`, and —
+    /// since RULINGS **R82** — `heroPhotoIDs(treeIDs:attribution:)`' `is_own` column.
+    ///
+    /// **The fourth caller is not a removal, and that is the point.** R82 ruled that being shown
+    /// your own photograph and being allowed to unmake it are the same claim about who took it, so
+    /// the visibility read asks this same question. It wraps the result in `COALESCE(…, 0)` because
+    /// it selects the predicate as a *column* rather than filtering on it in a `WHERE`, and
+    /// `row.bool(_:)` throws on the NULL three-valued logic can produce; see that statement. Nothing
+    /// else about the rule changes at that call site, which is what makes it a caller rather than a
+    /// fifth copy.
     ///
     /// **Three copies of a permission rule is how one of them drifts**, and the two in
     /// `deletePhoto` have to agree exactly or a deletion tombstones the photograph and leaves the

@@ -22,6 +22,15 @@ import Testing
 ///    migration, loses it at the leaving door, and stays undeletable by everybody for ever;
 /// 4. **provenance is not ownership** — it is not a third way to own a photograph, and a
 ///    photograph that is genuinely somebody else's is still refused.
+///
+/// **RULINGS R82 adds a fifth, on the other consumer of the same comparison.** v16 admitted
+/// provenance into the deletion gate and left `ContributionStore.heroPhotoIDs(treeIDs:attribution:)`
+/// on the two owner arms, so the repaired photograph was deletable and *invisible*: `own: false`,
+/// judged by `isPubliclyVisible`, `.pending`, and never drawn in the species guide's nearby heroes
+/// (07 §6). The owner ruled on 2026-08-22 that the two predicates converge. So:
+///
+/// 5. **a photograph this installation took is drawn among its own heroes**, whatever account holds
+///    it — and one from another installation, or from behind the leaving door, still is not.
 @Suite("Photo provenance")
 struct PhotoProvenanceTests {
 
@@ -357,5 +366,249 @@ struct PhotoProvenanceTests {
         }
         #expect(try #require(subject).owner == .user(Self.userID))
         #expect(try #require(subject).takenOnDevice == Self.deviceID)
+    }
+
+    // MARK: - What the species guide draws (RULINGS R82)
+    //
+    // The second consumer of the comparison, and the one v16 did not follow. Every photograph
+    // planted below is `.pending` on purpose and `plant` asserts it: `PhotoHero` and the moderation
+    // gate would draw an `.approved` row whatever `is_own` said, so an `.approved` fixture here
+    // would pass against the two-arm SQL as happily as against the three-arm one. `.pending` is the
+    // only state in which the arm being tested is what decides.
+    //
+    // The tree ids are bare `UUID()`s rather than added trees — `heroPhotoIDs(treeIDs:)` reads
+    // `photos` alone and never joins `trees`, the same fixture shape `PhotoHeroTests` §4c uses.
+
+    /// Plants one `.pending` photograph and returns its id, checking on the way out that the row
+    /// really has the owner and provenance the caller asked for — a fixture that quietly failed to
+    /// set `taken_on_device` would make every expectation below pass for the wrong reason.
+    @discardableResult
+    private static func plant(
+        on treeID: UUID,
+        owner: PhotoOwner,
+        takenOnDevice: UUID,
+        moderationState: ModerationState = .pending,
+        in store: CypressStore
+    ) async throws -> UUID {
+        let photo = Photo(
+            treeID: treeID, shotType: .leaf, moderationState: moderationState,
+            capturedAt: moment, createdAt: moment, updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                photo, localPath: nil, owner: owner, takenOnDevice: takenOnDevice, connection: connection
+            )
+        }
+        let written = try await store.queue.read { connection in
+            try ContributionStore().photoForDeletion(id: photo.id, connection: connection)
+        }
+        #expect(try #require(written).owner == owner, "the fixture did not write the owner it asked for")
+        #expect(
+            try #require(written).takenOnDevice == takenOnDevice,
+            "the fixture did not write the provenance it asked for"
+        )
+        return photo.id
+    }
+
+    private static func heroes(
+        of treeIDs: Set<UUID>, in store: CypressStore, for api: LocalAPI
+    ) async throws -> [UUID: UUID] {
+        let who = await api.attribution
+        return try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: treeIDs, attribution: who, connection: connection)
+        }
+    }
+
+    /// **ERRATA E277's row, on the screen this time.** A photograph this phone took, moved onto an
+    /// account by `claimDevice` and stranded there by E270, is `own: true` and is drawn — the state
+    /// v16 made deletable and left invisible.
+    ///
+    /// The control is the next test: an identical row differing only in `taken_on_device`.
+    @Test("a photograph this installation took is drawn among its own heroes, whatever account holds it")
+    func aRepairedPhotographIsDrawnAmongItsOwnHeroes() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.api(store)
+        let tree = UUID()
+
+        // Signed out — the state the report came from — and the row belongs to an account this
+        // installation is not and cannot become. Only provenance can admit it.
+        let stranded = try await Self.plant(
+            on: tree, owner: .user(Self.strangerID), takenOnDevice: Self.deviceID, in: store
+        )
+        #expect(await api.attribution.userID == nil, "the fixture signed in, so the account arm could answer")
+
+        #expect(
+            try await Self.heroes(of: [tree], in: store, for: api)[tree] == stranded,
+            "a photograph this phone took was not drawn on its own screen — ERRATA E277, the visibility half"
+        )
+    }
+
+    /// The control, and the arm's boundary. Identical to the row above in every column but
+    /// `taken_on_device`, which names another installation: still `own: false`, still judged by
+    /// `isPubliclyVisible`, still `.pending`, still not drawn. Then the same row `.approved`, which
+    /// is drawn — so what excludes it is moderation and not a blanket refusal of strangers (R82:
+    /// "moderation is not repealed").
+    @Test("a photograph from another installation is unchanged — provenance is not a way in for strangers")
+    func aPhotographFromAnotherInstallationIsStillNotDrawn() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.api(store)
+        let pendingTree = UUID()
+        let approvedTree = UUID()
+
+        try await Self.plant(
+            on: pendingTree, owner: .user(Self.strangerID), takenOnDevice: Self.otherDeviceID, in: store
+        )
+        let approved = try await Self.plant(
+            on: approvedTree, owner: .user(Self.strangerID), takenOnDevice: Self.otherDeviceID,
+            moderationState: .approved, in: store
+        )
+
+        let drawn = try await Self.heroes(of: [pendingTree, approvedTree], in: store, for: api)
+        #expect(
+            drawn[pendingTree] == nil,
+            "an unmoderated photograph from somebody else's installation reached the nearby section"
+        )
+        #expect(
+            drawn[approvedTree] == approved,
+            "the exclusion is refusing every stranger rather than every unmoderated stranger"
+        )
+    }
+
+    /// **R3 and ERRATA E157 through the shipping door.** The leaving door clears the owner and the
+    /// provenance in one `UPDATE`, so the row it produces has nothing either predicate can admit —
+    /// it stays undeletable (asserted in `theLeavingDoorClearsProvenance`) and it stays undrawn.
+    ///
+    /// **The middle assertion is the one that discriminates, and it is here deliberately.** "Not
+    /// drawn" is true of this row twice over — the leading ownerless refusal returns a definite
+    /// `FALSE` (so the `COALESCE` default never even fires) *and* all three columns are NULL — so
+    /// the last expectation alone survives the removal of either guard, and survives the door
+    /// forgetting a column too, since `deleteAccount` ends the session and leaves no attribution
+    /// for any arm to match. Asserting the row's own end state is what makes this test notice a
+    /// leaving-door regression rather than merely restating what the session's absence guarantees.
+    @Test("a photograph behind the leaving door is still not drawn among this phone's heroes")
+    func theLeavingDoorsRowIsNotDrawn() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.api(store, userID: Self.userID)
+        let (treeID, photoID, _) = try await Self.treeWithAPhotograph(api)
+
+        #expect(
+            try await Self.heroes(of: [treeID], in: store, for: api)[treeID] == photoID,
+            "the fixture's photograph was not drawn before the door, so the assertion after it proves nothing"
+        )
+
+        _ = try await api.deleteAccount(.leaveRecords)
+
+        let row = try await store.queue.read { connection in
+            try ContributionStore().photoForDeletion(id: photoID, connection: connection)
+        }
+        #expect(try #require(row).owner == .nobody, "the door left an owner on the row")
+        #expect(try #require(row).takenOnDevice == nil, "the door left the phone's claim on it")
+        #expect(
+            try await Self.heroes(of: [treeID], in: store, for: api)[treeID] == nil,
+            "an anonymized photograph was drawn as this installation's own"
+        )
+    }
+
+    /// **The ownerless refusal, on the row the door does not produce.** Owner `.nobody` *and*
+    /// `taken_on_device` still naming this phone — an older tombstone, or a future writer that
+    /// forgets one of the three columns. The test above cannot reach this state, because the door
+    /// clears both columns; without the leading `NOT (user_id IS NULL AND device_id IS NULL)` in
+    /// `heroPhotoIDs`' SQL this row comes back `own: true`, is judged by `isVisibleToItsContributor`
+    /// rather than `isPubliclyVisible`, and is drawn **unmoderated**. This is the expectation that
+    /// distinguishes the two implementations; the leaving-door test above passes under either.
+    ///
+    /// The deletion half of exactly this row is `anOwnerlessRowIsRefusedWhateverTheProvenanceSays`.
+    @Test("an ownerless photograph is not drawn even when the row still claims this installation")
+    func anOwnerlessRowIsNotDrawnWhateverTheProvenanceSays() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.api(store)
+        let tree = UUID()
+
+        try await Self.plant(on: tree, owner: .nobody, takenOnDevice: Self.deviceID, in: store)
+
+        #expect(
+            try await Self.heroes(of: [tree], in: store, for: api)[tree] == nil,
+            "a photograph that belongs to nobody was drawn as this installation's own, unmoderated — R3, ERRATA E157"
+        )
+    }
+
+    /// **The staging seam, and the two rules agreeing on one row.** `LocalAPI.debugStrandPhoto` is
+    /// what `DebugDeepLink.strandedPhotoHero` writes with, so a screenshot taken through that case is
+    /// only worth looking at if the seam really produces E277's row. This asserts the row it writes,
+    /// then asks both consumers of the comparison about it: the species guide draws it (RULINGS R82)
+    /// **and** the trash is still offered on it (`AppSchema` v16, E277's first half).
+    ///
+    /// The two expectations are the convergence stated as a test. Before v16 both were false; between
+    /// v16 and R82 exactly one was; if either goes false again the predicates have drifted apart,
+    /// which is the defect E277 reports.
+    @Test("the staging seam writes E277's row, and both rules admit it")
+    func theStrandingSeamProducesARowBothRulesAdmit() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.api(store)
+        let (treeID, photoID, _) = try await Self.treeWithAPhotograph(api)
+
+        try await api.debugStrandPhoto(id: photoID, underAccount: Self.strangerID)
+
+        // The row the seam claims to write: a stranger's account, no device, provenance intact.
+        let row = try await store.queue.read { connection in
+            try ContributionStore().photoForDeletion(id: photoID, connection: connection)
+        }
+        #expect(try #require(row).owner == .user(Self.strangerID), "the seam did not move the photograph")
+        #expect(
+            try #require(row).takenOnDevice == Self.deviceID,
+            "the seam cleared provenance, which stages the anonymized row instead of E277's"
+        )
+        #expect(await api.attribution.userID == nil, "the fixture signed in, so the account arm could answer")
+
+        // Visibility (R82) and removal (v16), on the one row.
+        #expect(
+            try await Self.heroes(of: [treeID], in: store, for: api)[treeID] == photoID,
+            "the species guide would draw no hero for the row the deep-link case stages"
+        )
+        #expect(
+            try await Self.deletableIDs(treeID: treeID, in: store, for: api).contains(photoID),
+            "the trash is gone from the row the guide now draws — the two rules have drifted apart again"
+        )
+    }
+
+    /// **The three arms are a disjunction, not a sequence.** Each row below is admitted by exactly
+    /// one arm and contradicted by the other two, so an implementation that let any arm shadow
+    /// another — or that read provenance only when the owner columns were absent — draws fewer than
+    /// three. The fourth row satisfies none and must not be drawn, which is what keeps the first
+    /// three from passing against a predicate that simply says yes.
+    @Test("each arm admits a photograph on its own, and no arm depends on another")
+    func theOwnerArmsAndProvenanceAnswerIndependently() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.api(store, userID: Self.userID)
+
+        // The account arm alone: this account owns it, another installation took it.
+        let byAccount = UUID()
+        let accountPhoto = try await Self.plant(
+            on: byAccount, owner: .user(Self.userID), takenOnDevice: Self.otherDeviceID, in: store
+        )
+        // The device arm alone: this device owns it, another installation took it. A contradictory
+        // row by construction, and the point — the arm must answer without consulting provenance.
+        let byDevice = UUID()
+        let devicePhoto = try await Self.plant(
+            on: byDevice, owner: .device(Self.deviceID), takenOnDevice: Self.otherDeviceID, in: store
+        )
+        // The provenance arm alone: a stranger's account, this installation's camera. E277's row.
+        let byProvenance = UUID()
+        let provenancePhoto = try await Self.plant(
+            on: byProvenance, owner: .user(Self.strangerID), takenOnDevice: Self.deviceID, in: store
+        )
+        // None of the three.
+        let byNothing = UUID()
+        try await Self.plant(
+            on: byNothing, owner: .user(Self.strangerID), takenOnDevice: Self.otherDeviceID, in: store
+        )
+
+        let drawn = try await Self.heroes(
+            of: [byAccount, byDevice, byProvenance, byNothing], in: store, for: api
+        )
+        #expect(drawn[byAccount] == accountPhoto, "the account arm stopped answering on its own")
+        #expect(drawn[byDevice] == devicePhoto, "the device arm stopped answering on its own")
+        #expect(drawn[byProvenance] == provenancePhoto, "the provenance arm did not answer on its own")
+        #expect(drawn[byNothing] == nil, "a photograph matching no arm was drawn")
     }
 }

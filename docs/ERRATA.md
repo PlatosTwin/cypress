@@ -22078,6 +22078,13 @@ follow-up round of its own and is deliberately not part of the change that splic
 what changed here is that the two doc comments now cite E277 and R82 instead of describing a
 question nobody had answered.
 
+**Closed by PR #107.** That follow-up round landed and this entry describes a repair that is now
+whole. `heroPhotoIDs(treeIDs:attribution:)` no longer restates the comparison at all — it calls
+`ContributionStore.removalPredicate()`, so the visibility read and the three removal sites are one
+string and cannot drift apart again, which is the failure this entry reports in its first half. The
+stranded photograph is drawn among its own heroes and still carries its trash; the anonymized row
+is refused by both, unchanged.
+
 ### E278 — The `outbox.kind` vocabulary is written out by hand in six places, and one of them under-deleted
 
 Found while landing spec §3.4's nine mutations into the queue (the round that adds `AppSchema` v17

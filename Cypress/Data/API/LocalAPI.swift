@@ -2657,6 +2657,40 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// Test seam (RULINGS **R82**, ERRATA **E277**): strand one photograph under an account this
+    /// installation is not and cannot become, while leaving its provenance intact.
+    ///
+    /// **The state the app can produce but a simulator cannot be walked into.** `claimDevice` moves a
+    /// device-owned photograph onto an account and clears `device_id` (E23); E270 then made an
+    /// account minted in the local-account era impossible to sign into again. The row that leaves
+    /// behind — somebody else's `user_id`, no `device_id`, and `taken_on_device` still naming this
+    /// phone — is the one E277 was reported from, and reaching it for real needs an account that can
+    /// no longer be authenticated. So this writes the end state on one named row.
+    ///
+    /// **Provenance is deliberately left alone, and that is the whole difference from
+    /// `debugAnonymizePhoto` above.** That seam clears all three columns because it reproduces the
+    /// leaving door; this one clears none of them, because a photograph this installation took does
+    /// not stop having been taken here when an account adopts it. The two seams produce the two rows
+    /// R82 rules on opposite sides of: this one is drawn among its own heroes and is deletable, the
+    /// anonymized one is neither.
+    ///
+    /// Like `debugAnonymizePhoto` it writes no `anonymized_contributions` tombstone, for the reason
+    /// that seam gives — and here there is a second: this row is not anonymized at all. It has an
+    /// owner; the owner is simply unreachable.
+    public func debugStrandPhoto(id: UUID, underAccount userID: UUID) async throws {
+        try await store.queue.write { connection in
+            let statement = try connection.cachedStatement("""
+                UPDATE photos SET user_id = :user, device_id = NULL, updated_at = :now
+                 WHERE id = :id COLLATE NOCASE
+                """)
+            _ = try statement.bind([
+                ":id": id.uuidString, ":user": userID.uuidString, ":now": now()
+            ])
+            try statement.run()
+            _ = try statement.reset()
+        }
+    }
+
     /// Takes one tree back to having never been photographed — rows, votes and bytes.
     ///
     /// The files go first and the rows second, because the reverse order loses the filenames: a
