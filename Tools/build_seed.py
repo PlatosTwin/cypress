@@ -2951,8 +2951,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # the arithmetic over both passes: rows read = rows shipped + rows
             # dropped, with nothing unexplained on either side.
             "export_vacant_rows_read": str(stats["export_vacant_rows"]),
+            # A RESIDUAL, and it used to be a silently wrong one: it subtracted
+            # the two inventories that existed when it was written, so New York's
+            # 898,643 rows landed in San Francisco's count (measured on the first
+            # three-city build: 1,032,349 claimed against 133,706 real rows).
+            # `verify_seed` check 1b caught it. The subtraction is corrected here
+            # AND the shape is made loud below -- see `check_rows_from`, which
+            # refuses a build whose per-inventory claims do not name exactly the
+            # inventories the file holds rows from and sum to its own total.
             "rows_from_sf_city":
-                str(stats["kept"] - stats["export_vacant_carried"] - stats["sj_kept"]),
+                str(stats["kept"] - stats["export_vacant_carried"] - stats["sj_kept"]
+                    - stats["nyc_kept"]),
             "rows_from_sf_datasf": str(stats["export_vacant_carried"]),
             "export_vacant_sites_excluded_city_lists_tree":
                 str(stats["export_vacant_city_lists_tree"]),
@@ -2991,7 +3000,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # is the dataset's own last update, which is what SEED_EPOCH is set to
             # (ERRATA E1). Stated rather than left to be inferred from `generated_at`.
             "trees_snapshot_on": NOW[:10],
-            "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"]),
+            "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"] - stats["nyc_kept"]),
             "inventory_sf_datasf_name": INVENTORIES["sf_datasf"].name,
             "inventory_sf_datasf_url": INVENTORIES["sf_datasf"].url,
             "inventory_sf_datasf_snapshot_on": NOW[:10],
@@ -3053,6 +3062,10 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                                                  "notification + verbatim disclaimer required",
             "nyc_rows_read": str(stats["nyc_source_rows"]),
             "nyc_rows_shipped": str(stats["nyc_kept"]),
+            # The `rows_from_<inventory>` claim `verify_seed` check 1b reads. It
+            # was absent until this round, which is why San Francisco's residual
+            # was swallowing it.
+            "rows_from_nyc_tree_points": str(stats["nyc_kept"]),
             "nyc_borough": nyc_borough or "(whole city)",
             "nyc_structures": nyc_structures,
             "nyc_joined_to_planting_space": str(stats.get("nyc_joined_to_planting_space", 0)),
@@ -3156,6 +3169,45 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             str(sj_meta["server_feature_count"])
 
     source_meta = {**source_meta, **coverage_keys, **completeness_keys}
+
+    # ---- The guard the residual above needs, and the reason it exists --------
+    #
+    # `rows_from_<inventory>` is assembled from per-source counters, one of which
+    # is a RESIDUAL (`rows_from_sf_city` = everything not attributed elsewhere).
+    # A residual is fine while every other contributor is subtracted from it and
+    # silently wrong the moment one is not -- which is exactly what happened when
+    # New York arrived: 898,643 rows were attributed to San Francisco's city
+    # layer, seed_meta claimed 1,032,349 rows for an inventory holding 133,706,
+    # and nothing in this file objected. `verify_seed` check 1b found it, on the
+    # first three-city build, at the end of the pipeline.
+    #
+    # Two facts close it here instead, both read off `contributing` -- which is
+    # built from the records actually emitted, not from a list maintained by
+    # hand:
+    #
+    #   * every inventory this file holds rows from has a claim, and
+    #   * the claims sum to the file's own `rows_kept`.
+    #
+    # A new city therefore cannot inflate an old city's number: it either brings
+    # its own key or it stops the build here, naming itself. The `verify_seed`
+    # check stays -- it reads the WRITTEN FILE where this reads the build's own
+    # counters, so the two disagree if the emit dropped rows, which is a
+    # different failure and the one 1b is really for.
+    claimed = {key[len("rows_from_"):]: int(value)
+               for key, value in source_meta.items() if key.startswith("rows_from_")}
+    missing = [inv for inv in contributing if inv not in claimed]
+    stray = sorted(inv for inv, n in claimed.items() if inv not in contributing and n)
+    if missing or stray:
+        die(f"seed_meta's rows_from_* claims do not describe this build: "
+            + (f"no claim for {missing!r}, which contributed rows; " if missing else "")
+            + (f"a nonzero claim for {stray!r}, which contributed none; " if stray else "")
+            + f"contributing={contributing!r}. Add a rows_from_<inventory> key rather "
+            f"than letting another inventory's residual absorb the rows.")
+    total_claimed = sum(claimed.get(inv, 0) for inv in contributing)
+    if total_claimed != stats["kept"]:
+        die(f"seed_meta's rows_from_* claims sum to {total_claimed:,} but the file holds "
+            f"{stats['kept']:,} rows. One of the per-inventory counters is wrong; the "
+            f"residual (rows_from_sf_city) is the one that hides such an error.")
 
     meta = {
         "generator": "Tools/build_seed.py",
