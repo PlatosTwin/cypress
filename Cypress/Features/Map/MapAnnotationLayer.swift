@@ -433,19 +433,28 @@ struct MapAnnotationLayer: UIViewRepresentable {
     /// measured at 287 there. `MapLayout.compassTop` is that sum and is what every guard asserts
     /// against; this function writes the margin and nothing else.
     ///
-    /// **The obvious repair — subtract the safe area here — was built, and it broke the map.**
-    /// `layoutMargins` on an `MKMapView` is not an ornament-placement knob: it is the map's own
-    /// content inset, and moving it moves what the camera considers its center. Subtracting the
-    /// inset (effective top 230 → 168) turned
-    /// `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` red **four times
-    /// out of four** — "panning the map did not move the camera off the reader", with the pan probe
-    /// showing the drag had reached the map (`panBegan=3 panEnded=3`) and the camera settled back
-    /// on the reader. A control at `origin/main` passed on the same simulator minutes later, and
-    /// restoring this one line to the unsubtracted value turned it green again. Two runs isolated
-    /// it to the value rather than to the write-guard below.
+    /// **The obvious repair — subtract the safe area here — is not available, and the reason is what
+    /// `layoutMargins` is.** On an `MKMapView` it is not an ornament-placement knob: it is the map's
+    /// own content inset, and moving it moves what the camera treats as its centre. Subtracting the
+    /// inset takes the effective top from 230 to 168 and therefore moves the map itself, for every
+    /// reader, on every device — which is the reason this line is written as it is.
+    ///
+    /// **What the tests said about it, both ways.** On a 402 pt iPhone 16 Pro the subtraction turned
+    /// `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` red **4 runs out
+    /// of 4** — "panning the map did not move the camera off the reader", with #241's pan probe
+    /// showing the drag *had* reached the map (`panBegan=3 panEnded=3`) and the camera settling back
+    /// on the reader; a control worktree at `origin/main` passed on that same simulator minutes
+    /// later, and restoring this one line turned it green. Two further runs isolated it to the value
+    /// rather than to the write-guard below. On a 440 pt iPhone 16 Pro Max, PR #102's verifier
+    /// applied the same subtraction to the same head, confirmed the compass moved 61 pt, and saw
+    /// that test go **green 3 runs out of 3**.
+    ///
+    /// Both are true. The pan guard is width-dependent evidence of a width-independent change, so it
+    /// is recorded here as evidence and not as the argument — a green run on one phone is not a
+    /// licence to subtract.
     ///
     /// So the double-count the PR #102 review found is **kept, and is no longer load-bearing** —
-    /// which was the real finding. It used to be the only thing holding the compass off the legend,
+    /// which was the real finding, and the part that did not depend on any of the runs above. It used to be the only thing holding the compass off the legend,
     /// by 5 accidental points; the clearance is now horizontal and exact
     /// (`MapSpeciesLegend.trailingReserve`), and this number is free to be what the *map* wants:
     /// "the top of this view is under chrome". What is not allowed is for it to be accidental, and

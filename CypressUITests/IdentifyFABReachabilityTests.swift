@@ -208,6 +208,14 @@ final class IdentifyFABReachabilityTests: XCTestCase {
     /// is `MapSpeciesLegend.trailingReserve`'s. Fixing the second without the first buys nothing —
     /// a reserve on a row that overflows its column is not a reserve — so both are named here.
     ///
+    /// **Where this bites, and where it cannot** (PR #102 verification). The column assertion goes
+    /// red on widths where the legend actually reaches the compass's column — measured on a 402 pt
+    /// iPhone 16 Pro, where removing `MapSpeciesLegend.trailingReserve` takes the legend's `maxX`
+    /// from 330 to 373.67 against a column starting at 346. On a 440 pt iPhone 16 Pro Max the legend
+    /// frame is byte-identical with and without the reserve, so **a red-proof attempted only there
+    /// will look like a dead assertion and it is not one**. Check it at 402 pt before concluding
+    /// this test does nothing.
+    ///
     /// **Asserted as arithmetic against the screen's own trailing edge, not against the compass.**
     /// MapKit's compass is not a child of the map element in the accessibility tree — the map's
     /// subtree dump is a leaf — so there is no handle to read a rectangle from, and the two-rectangle

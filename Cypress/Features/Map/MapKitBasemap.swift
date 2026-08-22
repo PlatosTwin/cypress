@@ -872,13 +872,24 @@ enum MapLayout {
     // iPhone 16 Pro Max at AX5, against 287 measured off the reviewer's screenshot — MapKit's own
     // ~6 pt.
     //
-    // **The sum is left standing rather than cancelled, and that is a measurement rather than a
-    // preference.** Subtracting the safe area here — the obvious repair, and the one the review
-    // asked for — moves the map's *content inset*, because that is what `layoutMargins` is on an
-    // `MKMapView`. It turned `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack`
-    // red four times out of four, with the pan probe showing the drag reaching the map and the
-    // camera settling back on the reader; a control at `origin/main` passed on the same simulator,
-    // and restoring the unsubtracted value turned it green. See `MapAnnotationLayer.applyCompass`.
+    // **The sum is left standing rather than cancelled, and the reason is what `layoutMargins`
+    // *is*.** On an `MKMapView` it is not an ornament-placement knob: it is the map's own content
+    // inset, and moving it moves what the camera treats as its centre. Subtracting the safe area
+    // here — the obvious repair, and the one PR #102's review asked for — shrinks the effective top
+    // from 230 to 168 and therefore moves the map, for every reader, whether or not any given test
+    // notices. That is the reason; the test results below are evidence about it, and they are
+    // narrower than the effect.
+    //
+    // **The evidence is width-dependent, and both measurements belong on the record.** On a 402 pt
+    // iPhone 16 Pro the subtraction turned
+    // `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` red **4 runs out
+    // of 4** — the pan probe showing the drag reaching the map and the camera settling back on the
+    // reader — while a control worktree at `origin/main` passed on that same simulator, and
+    // restoring the unsubtracted value turned it green again. On a 440 pt iPhone 16 Pro Max the
+    // verifier applied the same subtraction to this same head, confirmed the compass moved 61 pt,
+    // and that test went **green 3 runs out of 3**. So the pan guard catches this on some widths
+    // and not others; it is not the definition of the problem, and a future reader should not
+    // conclude from a green Pro Max run that the subtraction is safe.
     //
     // What the review was actually right about is that the double-count must not be **load-bearing
     // or unnoticed**, and it is neither now: the compass's clearance from the legend is horizontal
@@ -952,20 +963,30 @@ enum MapLayout {
             + chipRowTop
     }
 
-    /// **Where the compass's top edge belongs, in screen coordinates** — the chip row's own bottom
-    /// edge, which is what the ruling's call site always said it was. `nil` where the screen cannot
-    /// afford the control at all.
+    /// **Where the compass's top edge actually lands, in screen coordinates** — a whole safe-area
+    /// top *below* the chip row's bottom edge, not at it. `nil` where the screen cannot afford the
+    /// control at all.
     ///
-    /// This is `topChromeReserved` and not `topChromeBottom`: the legend hangs below the chip row on
-    /// the same side, but it is held out of the compass's column horizontally
+    /// **That distinction is the correction PR #102's review was about, and this doc had it wrong
+    /// too.** `compassLayoutMargin` is the chip row's bottom edge (`topChromeReserved`, 168 pt at a
+    /// 62 pt inset on a 402 pt phone at the default size) and it is what gets *written*. UIKit then
+    /// adds the map's own safe-area top on the way to the effective margin
+    /// (`insetsLayoutMarginsFromSafeArea`), so the compass draws at 230 — measured at 234 on a
+    /// verifier's Pro Max and 236 on mine, against a chip row bottom of 168. Writing "the chip row's
+    /// own bottom edge" here, as the ruling's call site and an earlier version of this comment both
+    /// did, is out by exactly `topInset`.
+    ///
+    /// This is built from `topChromeReserved` and not `topChromeBottom`: the legend hangs below the
+    /// chip row on the same side, but it is held out of the compass's column horizontally
     /// (`compassColumnReserved`) rather than stepped over vertically. The notice is what the
     /// reserved band above keeps off it.
     ///
-    /// **Screen coordinates, not a layout margin.** `MKMapView.insetsLayoutMarginsFromSafeArea` is
-    /// `true`, so the map *adds* its own safe-area top to whatever is written into `layoutMargins`.
-    /// Converting this y into that margin is `MapAnnotationLayer.applyCompass`'s job and is done
-    /// there, once, against the same view's own safe area — see that function. Handing a screen y
-    /// out of `MapLayout` keeps this file in the one coordinate space all its other terms are in.
+    /// **Guarded against UIKit rather than against itself.** The `+ topInset` below is the whole
+    /// claim, and an assertion written in terms of `compassLayoutMargin` cannot test it — the
+    /// sweep's old "the compass starts below the chip row" reduced to `topInset >= 0` and stayed
+    /// green with the term deleted. `AX5ReflowTests.theCompassTopIsWhatUIKitActuallyProduces` puts a
+    /// real `MKMapView` in a window with a real safe area, writes `compassLayoutMargin`, and asserts
+    /// UIKit's own readback equals this function.
     static func compassTop(
         screenHeight: CGFloat,
         topInset: CGFloat,

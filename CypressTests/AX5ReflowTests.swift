@@ -22,6 +22,7 @@
 //
 
 #if DEBUG
+import MapKit
 import SwiftUI
 import Testing
 import UIKit
@@ -1094,19 +1095,16 @@ struct AX5ReflowTests {
                             topInset: topInset,
                             isAccessibilitySize: isAccessibilitySize
                         ) else { continue }
-                        let chipRowBottom = MapLayout.topChromeReserved(
-                            topInset: topInset,
-                            isAccessibilitySize: isAccessibilitySize
-                        )
-                        #expect(
-                            top >= chipRowBottom,
-                            """
-                            the compass starts at y \(top), above the filter chip row's bottom edge \
-                            at \(chipRowBottom) — it would be drawn under the chip row, which is \
-                            the state the owner's ruling was implemented out of (the needle came \
-                            up inside the search field).
-                            """
-                        )
+                        // **There is deliberately no "the compass clears the chip row" assertion
+                        // here, and its absence is the finding.** One stood here and it was a
+                        // tautology: `compassTop` is *defined* as the chip row's bottom edge plus
+                        // `topInset`, so `top >= chipRowBottom` reduces to `topInset >= 0` and is
+                        // true of any arithmetic at all. PR #102's verifier deleted the `+ topInset`
+                        // term from `compassTop` and watched 1604 unit tests and the UI guard stay
+                        // green on it. Nothing written in terms of `compassLayoutMargin` can test
+                        // that term; `theCompassTopIsWhatUIKitActuallyProduces` asserts it against
+                        // UIKit's own readback instead. What is left below is the assertion that is
+                        // *not* definitional, because `noticeMaxHeight` is an independent quantity.
 
                         let notice = MapLayout.noticeMaxHeight(
                             screenHeight: screenHeight,
@@ -1133,6 +1131,77 @@ struct AX5ReflowTests {
                     }
                 }
             }
+        }
+    }
+
+    /// **`compassTop`'s `+ topInset` asserted against UIKit, because nothing else can assert it.**
+    ///
+    /// The compass's real y is the written margin *plus the safe area UIKit adds back*, and that
+    /// second term is the whole of what PR #102's review corrected. It is also the one term this
+    /// file cannot check by arithmetic: every other quantity here is built from
+    /// `compassLayoutMargin`, so an assertion in those terms is an identity. The verifier proved it
+    /// — deleting `+ topInset` from `compassTop` left 1604 unit tests and the UI guard green.
+    ///
+    /// So the authority is UIKit. A real `MKMapView` goes into a window with a real safe area, the
+    /// margin this app would write is written, and `layoutMargins.top` is read back. That readback
+    /// is the effective inset MapKit lays the compass against, and it must equal `compassTop`.
+    ///
+    /// **The safe area is forced rather than inherited.** A hosted view picks up whichever inset the
+    /// running simulator has (47 on a 16e, 54 on a 16 Pro, 62 here — E243's whole lesson), and an
+    /// inset of 0 would make this vacuous in exactly the direction that hides the defect.
+    /// `additionalSafeAreaInsets` pins it, and the pin is asserted before anything is built on it.
+    @Test("MapLayout.compassTop equals the inset UIKit actually produces")
+    func theCompassTopIsWhatUIKitActuallyProduces() {
+        let forcedInset: CGFloat = 62
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let controller = UIViewController()
+        controller.view = map
+        controller.additionalSafeAreaInsets = UIEdgeInsets(
+            top: forcedInset, left: 0, bottom: 0, right: 0
+        )
+        let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: 402, height: 874))
+        window.rootViewController = controller
+        window.isHidden = false
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        map.setNeedsLayout()
+        map.layoutIfNeeded()
+
+        let safeTop = map.safeAreaInsets.top
+        #expect(
+            safeTop >= forcedInset,
+            """
+            the map's safe-area top is \(safeTop), under the \(forcedInset) pt this test pins with             additionalSafeAreaInsets. With no safe area there is nothing for UIKit to add and every             assertion below passes for the wrong reason.
+            """
+        )
+
+        for isAccessibilitySize in [true, false] {
+            let written = MapLayout.compassLayoutMargin(
+                topInset: safeTop, isAccessibilitySize: isAccessibilitySize
+            )
+            map.layoutMargins = UIEdgeInsets(top: written, left: 0, bottom: 0, right: 0)
+            map.setNeedsLayout()
+            map.layoutIfNeeded()
+            let effective = map.layoutMargins.top
+
+            #expect(
+                effective > written,
+                """
+                writing \(written) into MKMapView.layoutMargins read back as \(effective) — UIKit                 did not add the safe area at all, so insetsLayoutMarginsFromSafeArea is no longer                 doing what every comment on this feature says it does, and MapLayout.compassTop's                 `+ topInset` is now wrong in the other direction.
+                """
+            )
+
+            let predicted = MapLayout.compassTop(
+                screenHeight: 874, topInset: safeTop, isAccessibilitySize: isAccessibilitySize
+            )
+            #expect(
+                predicted == effective,
+                """
+                at isAccessibilitySize=\(isAccessibilitySize): MapLayout.compassTop says the                 compass sits at \(predicted as Any), and MKMapView lays it against \(effective) —                 the margin this app writes (\(written)) plus the \(safeTop) pt safe area UIKit                 adds back. The two must be the same number or every clearance computed from                 compassTop is measuring a place the control is not (PR #102).
+                """
+            )
         }
     }
 
