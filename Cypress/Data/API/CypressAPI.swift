@@ -989,21 +989,35 @@ public struct TreeProfile: Hashable, Sendable {
     /// disagree about a stranger's unmoderated photograph the way the hero and the browser once
     /// did.
     ///
-    /// **That comparison is not `deletablePhotoIDs`', and since `AppSchema` v16 the two differ** —
-    /// this comment used to say they were the same and it is worth correcting rather than deleting.
-    /// Removal admits a third arm, `taken_on_device`, and refuses an ownerless row first; "own"
-    /// here is still the two owner arms. The consequence is ERRATA **E277**: a photograph v16 made
-    /// deletable again, but whose owning account can no longer be signed into, arrives here as
-    /// `own: false`, is judged by `isPubliclyVisible`, is `.pending`, and is not drawn among the
-    /// nearby heroes at all.
+    /// **What "own" now means, and why this function did not change to say it — RULINGS R82.**
+    /// The comparison that produces `own` and the one behind `deletablePhotoIDs` are the same
+    /// question, and since 2026-08-22 they have the same shape: an ownerless refusal, then the two
+    /// owner arms, then `taken_on_device`. They differed for one release — `AppSchema` v16 gave
+    /// removal the provenance arm and left this side on the owner arms alone — and ERRATA **E277**
+    /// is what that cost: a photograph v16 made deletable again, but whose owning account can no
+    /// longer be signed into (E270), arrived here as `own: false`, was judged by
+    /// `isPubliclyVisible`, was `.pending`, and was not drawn among the nearby heroes at all. The
+    /// owner ruled that provenance counts here too, on the same reasoning that made the photograph
+    /// deletable: being shown your own photograph and being allowed to unmake it are one claim
+    /// about who took it.
     ///
-    /// **The owner settled it on 2026-08-22 and the difference is no longer deliberate: RULINGS
-    /// R82, provenance counts here too.** A photograph taken on this installation is drawn among
-    /// its own heroes whatever account holds it, on the same reasoning that made it deletable.
-    /// `is_own` gains the provenance arm in a follow-up round of its own — in
-    /// `ContributionStore.heroPhotoIDs`' SQL, which is this function's *input* rather than this
-    /// function: `isPhotoVisible` is a pure two-branch read of `own` and does not change.
-    /// `.nobody` keeps refusing, and until that round lands `own` is still computed the old way.
+    /// That repair landed in this function's *input*, not in this function.
+    /// `ContributionStore.heroPhotoIDs(treeIDs:attribution:)`' SQL grew the arm; `isPhotoVisible`
+    /// is a pure two-branch read of `own` and is unchanged, which is the point of taking `own` as a
+    /// parameter — the ownership rule can move without the visibility rule being restated. The
+    /// other producer of `own`, `LocalAPI.treeProfile`'s `ownPhotoIDs`, needed nothing: every live
+    /// row in `main.photos` was written by this installation, so it has already been answering by
+    /// provenance since before there was a column for it.
+    ///
+    /// **`.nobody` still refuses in the two predicates that share the rule** — `heroPhotoIDs`'
+    /// `is_own` and the removal gate, which since R82 are one string. R3 and ERRATA E157 — the
+    /// leaving door's promise — are untouched; the ownerless refusal leads in that rule so that
+    /// provenance can never re-attribute a photograph somebody asked to be unlinked from.
+    ///
+    /// **Not `ownPhotoIDs`, which is a different producer and deliberately does not refuse.** It is
+    /// every live row in `main.photos`, anonymized rows included, so an anonymized photograph is
+    /// still *shown* to the person holding the phone — with the sentence task #131 added, and with
+    /// no delete. Shown-and-not-deletable is the ruled outcome there, not a leak of this refusal.
     public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
         own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
     }
