@@ -18,13 +18,14 @@ Everything below was fetched on **2026-07-21**.
 
 | Source | What we took | Licence position | Ships? |
 |---|---|---|---|
-| GBIF Backbone Taxonomy | `family` for 569 of 577 species | CC BY 4.0, explicit | **Yes**, with attribution |
-| Cal Poly SelecTree (UFEI) | `leaf_retention` for 480 species directly plus 19 by genus uniformity; morphology facts behind `id_tips` | **No published reuse licence.** Facts are uncopyrightable; the prose and photos are not | **Yes for the scalar facts**, no prose or images. Written permission recommended before launch |
+| GBIF Backbone Taxonomy | `family` for 569 of 577 species, plus 481 of the 503 in `nyc_species.yaml` | CC BY 4.0, explicit | **Yes**, with attribution |
+| Cal Poly SelecTree (UFEI) | `leaf_retention` for 480 species directly plus 19 by genus uniformity, plus 374 of the 503 in `nyc_species.yaml`; morphology facts behind `id_tips` | **No published reuse licence.** Facts are uncopyrightable; the prose and photos are not | **Yes for the scalar facts**, no prose or images. Written permission recommended before launch |
 | NC State Extension Plant Toolbox | `leaf_retention` for 12 species; morphology facts behind `id_tips` for 18 of the top 40 | © NC State University, no open licence found | **Yes for the facts**, no verbatim prose. Permission recommended |
 | SF Public Works 2024 Recommended Street Tree List | all `care_notes` | City and County of San Francisco publication | **Yes.** Short factual quotations, attributed |
 | Friends of the Urban Forest Tree Care FAQ | watering guidance (cited, currently unused in the shipped rows) | No published reuse licence | Attribute; ask before quoting at length |
 | iNaturalist observation annotations | `bloom_months`, `fruit_months`, `fall_color_months` | Underlying observations default to **CC BY-NC**. See §7, this is the one real risk | **Conditionally.** See the flag below |
 | DataSF Street Tree List | the species strings and frequencies themselves | Public open data, already the seed | Yes |
+| NYC Parks Forestry Tree Points | the species strings and frequencies behind `nyc_species.yaml`, and the common names it carries | Public open data (NYC Data Mine terms; notify + disclaimer) | Yes |
 | USA National Phenology Network | nothing. Evaluated and rejected | n/a | n/a |
 
 **The one licence flag that matters.** iNaturalist's default content licence is CC BY-NC, and

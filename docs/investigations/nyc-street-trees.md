@@ -11,6 +11,27 @@ whose id spaces have no relationship to San Francisco's or San Jose's.
 under `Fixtures/raw/nyc/`. No seed rebuild happened and none of NYC's ~899k current tree points were
 downloaded — only metadata and small samples, per the brief's hard limit.
 
+> ### Correction, 2026-08-14 — four figures below are wrong
+>
+> Added by the ingest round (`docs/investigations/nyc-ingest.md`), which measured a full extract of
+> both datasets. **The survey's reasoning and its recommendation stand; four numbers do not.** They
+> are corrected here and left in place below, struck through where they appear, rather than silently
+> rewritten — a survey whose numbers change without a record is a survey nobody can date.
+>
+> | §  | the survey says | measured 2026-08-14 | what happened |
+> |---|---|---|---|
+> | §4 (twice) | the seed's **738**-species corpus | **731** | never 738; `count(*)`, `count(DISTINCT scientific_name)` and `seed_meta.species_count` all say 731, and `Tools/validate_species.py` prints it |
+> | §3 box | merged undated share ≈ **86.6%** | **85.24%** | an arithmetic slip, not drift: the survey's *own* inputs give 85.24% |
+> | §3 box | **160,440** undated in the seed | **160,441** | off by one |
+> | §1.1 / §3 | `TPStructure` has five values | **six** | `TPStructure` is NULL on 11 of 1,121,106 rows |
+>
+> Two further things the survey could not have known, both now measured and both consequential:
+> **`Forestry Planting Spaces` publishes 6,864 whole-row duplicates**, and its `GlobalID` — the join
+> key — is therefore not unique as published; and **§6's "the schema has no slot for a standing dead
+> tree" is wrong**: `trees.status` already permits `dead_reported`, which is documented as a tree
+> "still standing over a pavement" (RULINGS R19). The real gap is in `InventoryRecord` and
+> `STATUS_FOR_KIND`, which is a contract change and not a migration.
+
 **Verdict up front: the live ForMS `Forestry Tree Points` layer (`hn5i-inap`) is NYC Parks' real,
 maintained inventory; the famous 2015 Street Tree Census (`uvpi-gqnh`) is a ten-year-old snapshot
 NYC Parks itself now points users away from.** Both are publicly redistributable. Neither is a small
@@ -99,7 +120,7 @@ schema gap. It is two live Socrata datasets that must both be fetched and joined
 `PlantingSpaceGlobalID`/`GlobalID`, which is more moving parts than San Francisco's build (one static
 CSV plus one ArcGIS layer) or San Jose's (one layer, self-contained).
 
-**`Forestry Planting Spaces` row count: 1,091,709**, with **945,458 `Populated`** — close to but not
+**`Forestry Planting Spaces` row count: 1,091,709**, of which **only 1,084,845 are distinct records — 6,864 are whole-row duplicates** (found 2026-08-14; the join key is not unique as published), with **945,458 `Populated`** — close to but not
 identical to Tree Points' 899,094 `Full`, which is expected (a `Populated` planting space transitions
 to occupied slightly out of step with its tree point's `TPStructure`, and reconciling the two counts
 is an ingest-time question, not a survey one).
@@ -155,7 +176,7 @@ it is one packed field, not three).
 | `site_type` | `Forestry Planting Spaces.pssite` (`Street`/`Park`) | via the join; not on Tree Points itself |
 | `planted_on` | `PlantedDate` | **populated on 123,798 of 899,094 `Full` rows — 13.77%.** See boxed note below; this is the single most consequential number in this document. |
 | `dbh_in` | `DBH` | numeric, inches, range 0–2,427 in the metadata's stated range (2,427 in is almost certainly a data-entry error worth an adapter-level sanity bound, not investigated further here) |
-| status/condition | `TPCondition` (`Excellent`/`Good`/`Fair`/`Poor`/`Dead`/`Critical`/`Unknown`) and `TPStructure` (`Full`/`Retired`/`Stump`/`Shaft`/`Stump - Uprooted`) | **two separate vocabularies where the contract's `kind` wants one.** `TPStructure='Full'` with `TPCondition='Dead'` is a standing dead tree (10,441 of them) — `kind=tree`, alive-or-not is a `status`/`condition` question the contract does not yet carry (see §6). `TPStructure` other than `Full` is this source's own vacancy-and-beyond concept — richer than San Jose's binary `VACANTSITE`, because it also distinguishes a stump from a bare planting space (that distinction lives in `Forestry Planting Spaces.psstatus`, not here) and a retired record from either. |
+| status/condition | `TPCondition` (`Excellent`/`Good`/`Fair`/`Poor`/`Dead`/`Critical`/`Unknown`) and `TPStructure` (`Full`/`Retired`/`Stump`/`Shaft`/`Stump - Uprooted`, **and NULL on 11 rows** — corrected 2026-08-14) | **two separate vocabularies where the contract's `kind` wants one.** `TPStructure='Full'` with `TPCondition='Dead'` is a standing dead tree (10,441 of them) — `kind=tree`, alive-or-not is a `status`/`condition` question the contract does not yet carry (see §6). `TPStructure` other than `Full` is this source's own vacancy-and-beyond concept — richer than San Jose's binary `VACANTSITE`, because it also distinguishes a stump from a bare planting space (that distinction lives in `Forestry Planting Spaces.psstatus`, not here) and a retired record from either. |
 | land context / caretaker | `Forestry Planting Spaces.jurisdiction` (DPR vs. other), `.pssite`, `.overheadutilities` | via the join; nothing on Tree Points itself carries an owner-type field the way San Jose's `OWNEDBY` does |
 | `city_record` passthrough candidates | `RiskRating`/`RiskRatingDate` (455,298/455,295 null — a risk-assessment field with no equivalent anywhere in the current seed), `StumpDiameter` (427,701 non-null, only meaningful off `Full`/`Stump` rows) | not required, worth carrying as passthrough |
 
@@ -164,9 +185,9 @@ it is one packed field, not three).
 > moves them (`MapFilter.swift:429`, `:438`, `:445`):** `PlantedDate` is populated on **123,798 of
 > 899,094** currently-standing (`TPStructure='Full'`) NYC tree points — **13.77%**. That sits between
 > San Jose's 0.42% and San Francisco's 26.03%. Folded into a merged seed at face value —
-> `(160,440 undated in the current 198,625-row seed) + (899,094 - 123,798 undated in NYC)` over
+> `(~~160,440~~ 160,441 undated in the current 198,625-row seed) + (899,094 - 123,798 undated in NYC)` over
 > `(198,625 + 899,094)` total — the seed-wide undated share would move from **80.78%** to
-> **≈86.6%**, i.e. `MapFilter.undatedShareOfSeed` and its "About 4 in 5 trees" copy would both need
+> ~~**≈86.6%**~~ **85.24%** (corrected 2026-08-14; the survey's own inputs give 85.24%), i.e. `MapFilter.undatedShareOfSeed` and its "About 4 in 5 trees" copy would both need
 > re-measuring and re-asserting, exactly as `undatedShareOfSeed`'s own comment predicts happens on
 > every city added. **The 2015 Census carries no planting-date field at all — 0% by construction, not
 > by non-response** — so if the census were ever used instead of or alongside Tree Points, its
@@ -197,12 +218,12 @@ vocabulary).
 (5 rows `Alive` with a null `spc_latin`) — smaller, because it is a coarser identification standard
 (no cultivar detail) from a decade-old volunteer census.
 
-**Overlap against the seed's existing 738-species corpus, measured by exact string match against
+**Overlap against the seed's existing ~~738~~ **731**-species corpus (corrected 2026-08-14), measured by exact string match against
 `species.scientific_name` in `Fixtures/seed/cypress-seed.sqlite`:** of the census's 132 distinct
 `spc_latin` values, **77 match a seed species exactly and 55 do not** (`Acer griseum`, `Amelanchier`,
 `Carpinus japonica`, `Chamaecyparis thyoides`, `Cornus mas`, `Crataegus`, and so on — the full list is
 in this survey's working output, not reproduced here). That is a **42% new-species rate** against a
-738-species corpus using the cleaner of the two sources' species fields — before Tree Points' larger
+~~738~~ 731-species corpus using the cleaner of the two sources' species fields — before Tree Points' larger
 and messier 620-value set is even folded in. San Jose's adapter needed a 383-line `sj_species_map.csv`
 for 618 distinct strings against the same corpus; a Tree Points mapping file should be expected to be
 of the same order or larger, plus the packed-string-splitting work San Jose's adapter never needed.
@@ -267,7 +288,10 @@ reached for every pair of California sources that shared no stated numbering.
 
   * **A tree's `kind` and its physical state are two different facts here, and the contract's `kind`
     vocabulary (`tree` / `planting_site` / `not_a_tree`) does not have a slot for "standing dead
-    tree" versus "removed."** San Jose's `Stump` rows collapsed cleanly to `not_a_tree`. NYC's
+    tree" versus "removed."** *(Corrected 2026-08-14: the CONTRACT lacks the slot, but the SEED
+    SCHEMA does not — `trees.status` already permits `dead_reported`, defined as a tree "still
+    standing over a pavement" and settled by RULINGS R19. What is missing is a condition field on
+    `InventoryRecord` and a `STATUS_FOR_KIND` that reads it — a contract change, not a migration.)* San Jose's `Stump` rows collapsed cleanly to `not_a_tree`. NYC's
     `TPStructure='Full'` + `TPCondition='Dead'` (10,441 rows) is a tree that is still `kind=tree` by
     every reasonable reading — it has a trunk, a species, a location — but is not alive, which is a
     `trees.status`-shaped fact the current schema conflates with vacancy the same way #94 originally
