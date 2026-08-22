@@ -459,21 +459,33 @@ public struct ContributionStore {
     /// `TreeProfile.isPhotoVisible`, E215's own rule, rather than a second predicate restated here
     /// that could drift from it.
     ///
-    /// **`is_own` is not `deletablePhotoIDs`' predicate, and since `AppSchema` v16 it is not even
-    /// the same shape** — worth saying plainly, because this comment used to claim they were one.
-    /// Removal now has three arms and a leading ownerless refusal: `taken_on_device` admits a
-    /// photograph this installation wrote and an account has since adopted. This column still keeps
-    /// the two owner arms and no provenance term. The consequence is ERRATA **E277**: a repaired,
-    /// again-deletable photograph whose owning account can no longer be signed into is still
-    /// `own: false`, so `isPhotoVisible` judges it by `isPubliclyVisible`, it is `.pending`, and the
-    /// species-guide nearby heroes (07 §6) do not draw it at all.
+    /// **`is_own` and `deletablePhotoIDs`' predicate ask the same question and now have the same
+    /// shape — RULINGS R82.** They diverged for one release: `AppSchema` v16 gave removal a third
+    /// arm, `taken_on_device`, so a photograph this installation wrote and an account has since
+    /// adopted stays this installation's to unmake, and this column was left on the two owner arms
+    /// alone. ERRATA **E277** is what that cost: a repaired, again-deletable photograph whose
+    /// owning account can no longer be signed into came back `own: false`, `isPhotoVisible` judged
+    /// it by `isPubliclyVisible`, it was `.pending`, and the species-guide nearby heroes (07 §6)
+    /// did not draw it at all — the app would delete a photograph for you that it would not show
+    /// you. The owner ruled on 2026-08-22 that provenance counts here too: being shown your own
+    /// photograph and being allowed to unmake it are the same claim about who took it.
     ///
-    /// **The owner ruled on 2026-08-22 that the two should converge — RULINGS R82, provenance
-    /// counts.** Being shown your own photograph and being allowed to unmake it are the same claim
-    /// about who took it. The provenance arm belongs in this SQL and is a follow-up round's to add;
-    /// an anonymized row must still come back `own: false`, since the leaving door NULLs
-    /// `taken_on_device` in the same `UPDATE` that takes the name off. Until that round lands this
-    /// column answers as written above, and the difference is a recorded gap rather than a design.
+    /// So this is `removalPredicate()`'s shape, arm for arm, and deliberately so — the two are read
+    /// together and drift between them is the defect E277 reports. Both lead with the ownerless
+    /// refusal and only then read the three arms.
+    ///
+    /// **The leading ownerless refusal is load-bearing, not a restatement of the `COALESCE`.**
+    /// R82 leaves R3 and ERRATA E157 — the leaving door's promise — untouched: an anonymized
+    /// photograph is nobody's, and `PhotoOwner.permitsRemoval(by:takenOnDevice:)` refuses one on
+    /// its first line *before* it reads provenance. The shipping door
+    /// (`AccountDeletion.anonymizeContributions`) sets `taken_on_device = NULL` in the same
+    /// `UPDATE` that takes the name off, so a correctly anonymized row has no provenance left to
+    /// admit and would fall out `own: false` from the three arms alone. The refusal is here for the
+    /// row that reaches this statement anyway — an older tombstone, a future writer that forgets
+    /// one of the three columns — because without it such a row would be `own: true`, judged by
+    /// `isVisibleToItsContributor`, and drawn to a stranger *unmoderated*. R3 and E157 are not a
+    /// clause in an `||`, which is the reasoning `permitsRemoval`'s own comment states for the
+    /// identical ordering. `is_own` gains an arm, not an exception.
     public func heroPhotoIDs(
         treeIDs: Set<UUID>,
         attribution: Attribution,
@@ -481,17 +493,22 @@ public struct ContributionStore {
     ) throws -> [UUID: UUID] {
         guard !treeIDs.isEmpty else { return [:] }
 
-        // `COALESCE(…, 0)`: an ownerless row (both columns NULL, the state an account deletion's
-        // leaving door produces — `photos`' CHECK, AppSchema v12) makes `device_id = :device`
-        // compare NULL to a value, which SQL's three-valued logic resolves to NULL rather than
-        // false, and `OR` with a NULL operand is NULL unless the other side is already true.
-        // `row.bool(_:)` throws on NULL; treating an ownerless row as not-own (falls to
-        // `isPubliclyVisible`) is also the safe reading — nobody currently asking is its owner.
+        // `COALESCE(…, 0)`: any of the three arms can compare a NULL column to a value, which SQL's
+        // three-valued logic resolves to NULL rather than false, and `OR` with a NULL operand is
+        // NULL unless another side is already true. `row.bool(_:)` throws on NULL; treating such a
+        // row as not-own (falls to `isPubliclyVisible`) is also the safe reading — nobody currently
+        // asking has shown they are its owner.
+        //
+        // The third arm is R82's: `taken_on_device` admits a photograph written on this
+        // installation whatever account holds it now, which is the E277 row `claimDevice` moved
+        // onto an account that E270 made impossible to sign into again.
         let photoStatement = try connection.cachedStatement("""
             SELECT *,
                    COALESCE(
-                       (:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
-                        OR device_id = :device COLLATE NOCASE,
+                       NOT (user_id IS NULL AND device_id IS NULL)
+                        AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                             OR device_id = :device COLLATE NOCASE
+                             OR taken_on_device = :device COLLATE NOCASE),
                        0
                    ) AS is_own
               FROM photos
