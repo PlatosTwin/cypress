@@ -224,6 +224,14 @@ struct ModerationTests {
         #expect(presentation.deadNotice != nil)
         #expect(presentation.quadActions.contains(.report), "REPORT is the point of keeping the profile")
         #expect(presentation.quadActions.contains(.care))
+
+        // **The whole plumbing of finding F7, end to end.** `DeadNoticeProvenanceTests` asserts which
+        // sentence each provenance selects; this asserts that a real `confirmReview` — the only path
+        // in shipping code that writes `tree_status_overrides` — is what reaches the presentation as
+        // `.communityReview`. Without this, every arm of that suite could be correct over a value
+        // nothing sets, which is the shape of guard this project keeps producing.
+        #expect(profile.statusProvenance == .communityReview)
+        #expect(try #require(presentation.deadNotice).text.contains("community reviewer"))
     }
 
     /// A confirmed removal still becomes a memorial. The generalization must not have flattened the

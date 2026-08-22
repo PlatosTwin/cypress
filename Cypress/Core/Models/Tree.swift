@@ -66,6 +66,38 @@ public enum TreeStatus: String, Codable, Sendable, Hashable, CaseIterable {
     }
 }
 
+/// **Who says a record holds the status it holds** — the question `trees.status` alone cannot answer.
+///
+/// A `TreeStatus` read off a profile is the end of a short pipeline: the publishing inventory states
+/// one, and a local `tree_status_overrides` row may then replace it (E124-B, E170). Both ends can
+/// produce the *same* case, and until this type existed nothing downstream could tell them apart.
+///
+/// **`deadReported` is why that mattered enough to be a type.** The status was defined as the outcome
+/// of the community review pipeline, and the tree profile's notice said so in as many words. Seed
+/// generation s17 made `dead_reported` reachable from a city import — `build_seed.status_for_record`
+/// maps a source-stated `Dead` condition onto it — and NYC Parks publishes that condition on 10,635
+/// rows. Every one of them would have been described to a reader as something a community reviewer
+/// confirmed, about a record no community member has ever seen. Provenance had to become a value the
+/// screen could switch on rather than a fact it inferred from the status.
+///
+/// Deliberately *not* derived from `TreeSource`. A city-import row reaches `deadReported` by **either**
+/// path — the inventory can publish it, and a reviewer on this device can confirm a reported death on
+/// an inventory row that shipped `alive` — so "is this a city row" is a different question from "who
+/// said it was dead", and answering the second with the first is the defect one layer down.
+public enum TreeStatusProvenance: String, Codable, Sendable, Hashable, CaseIterable {
+    /// The status the record itself carries: the publishing inventory's own value for a `city_import`
+    /// row, or what the contributor added for a community one. Nothing on this device changed it.
+    ///
+    /// The default everywhere, and the safe direction: it attributes the status to nobody in
+    /// particular, so a caller that cannot answer the question cannot accidentally credit a
+    /// community reviewer who does not exist.
+    case record
+    /// A local `tree_status_overrides` row put it here — a community reviewer on this device
+    /// confirmed a reported change (E124-B, E170). The only path that writes one is `confirmReview`,
+    /// plus the debug seam that exists to emulate it.
+    case communityReview
+}
+
 /// `trees.source` (BUILD-PLAN §4).
 ///
 /// Community-added trees stay in a visually distinct layer and never render as part of the official
