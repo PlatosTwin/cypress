@@ -732,6 +732,76 @@ REGIONS: dict[str, list[dict]] = {
             "source_names": (),
         },
     ],
+    # ── New York City: five borough-level regions in one id space ────────────
+    # RULING D1 makes the borough the published unit, which is the reason
+    # `dim_region` exists at all. This is the first id space with more than one
+    # region, so it is also the first place where the two consequences below are
+    # load-bearing rather than theoretical.
+    #
+    # `pack_id` IS FROZEN HERE AND NOW. Each becomes `cities/<id>/<version>/…`
+    # under R37.2's write-once path rule and the install key on every reader's
+    # device, so these five strings can never change once a byte is published.
+    # They follow the shape `us-ca-sj` already set: the id space, then the unit.
+    #
+    # `source_names` holds NYC's OWN word for each borough, and it is a tuple
+    # because two independent producers must both land on this row:
+    #   * Forestry Planting Spaces' `boroughcode` column, for a tree point that
+    #     joined a planting space; and
+    #   * `Fixtures/nyc_survey/borough_boundaries.geojson`'s `boroname`, which
+    #     `BoroughResolver` returns for the ~22,995 that joined none (D18).
+    # Measured, not assumed: both vocabularies are the same five bare,
+    # title-case strings, so ONE name per row is correct and a second spelling
+    # would be an invention. `NYCTreePointAdapter._borough_for` returns exactly
+    # one of these and `InventoryRecord.region` carries it here unchanged.
+    #
+    # `display_name` is civic content (DECISIONS constraint 15) and is taken
+    # from the City's own boundary file's `boroname`, not composed: that is why
+    # this table says "Bronx" rather than "The Bronx" -- the City writes
+    # "Bronx" in both of the two vocabularies above, and preferring the
+    # colloquially-correct article here would be this file inventing a civic
+    # name it was not given.
+    #
+    # NOTE THAT `(us-ny-nyc, None)` IS NOT REGISTERED, and that is the point.
+    # `sole` is False for a space with five regions, so a record arriving with
+    # `region=None` finds no key and `resolve_region_ids` stops with the count.
+    # That stop is what ENFORCES D18's point-in-polygon orphan assignment rather
+    # than trusting the ingest to have run it; see the block comment there.
+    "us-ny-nyc": [
+        {
+            "pack_id": "us-ny-nyc-manhattan",
+            "display_name": "Manhattan",
+            "level": "borough",
+            "source_names": ("Manhattan",),
+        },
+        {
+            "pack_id": "us-ny-nyc-brooklyn",
+            "display_name": "Brooklyn",
+            "level": "borough",
+            "source_names": ("Brooklyn",),
+        },
+        {
+            "pack_id": "us-ny-nyc-queens",
+            "display_name": "Queens",
+            "level": "borough",
+            "source_names": ("Queens",),
+        },
+        {
+            "pack_id": "us-ny-nyc-bronx",
+            "display_name": "Bronx",
+            "level": "borough",
+            "source_names": ("Bronx",),
+        },
+        {
+            # `-si`, not `-staten-island`, following the only precedent the repo
+            # has: `Tools/test_publish_cities.py`'s fixture, written by the s17
+            # round and reviewed with it. Flagged for confirmation before the
+            # first publish freezes it -- see this round's PR body.
+            "pack_id": "us-ny-nyc-si",
+            "display_name": "Staten Island",
+            "level": "borough",
+            "source_names": ("Staten Island",),
+        },
+    ],
 }
 
 

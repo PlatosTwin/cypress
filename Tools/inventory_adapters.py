@@ -1615,19 +1615,29 @@ class NYCTreePointAdapter:
             # Planting Spaces. If it does not ride along on the record here,
             # recovering it later means re-fetching 1.09 million rows.
             #
-            # IT GOES IN `raw_json` AND NOT IN `city_record`, and that is a
-            # deliberate refusal rather than an oversight. `city_record` is keyed
-            # by SEED COLUMN NAME and the seed has no region column; the only two
-            # unused columns are `caretaker` and `care_assistant`, and
-            # `CityRecordPresentation` renders `caretaker` on the tree profile
-            # under the label "Cared for by". A Queens tree reading "Cared for by
-            # Queens" is a visible falsehood shipped to a user, which is a worse
-            # outcome than the one this avoids. `raw_json` is the contract's OWN
-            # designated home for "columns nothing maps", it reaches
-            # `trees.city_raw` unconditionally, and it costs ~30 bytes a row.
+            # IT NOW GOES IN `InventoryRecord.region`. When this adapter was
+            # written the seed had no region column, so the borough was parked in
+            # `raw_json` with a comment naming a real column as "the honest
+            # destination ... a SCHEMA question, so it is named here and not
+            # taken". RULING D17 took it and s17 built it: `dim_region` plus a
+            # NOT NULL `trees.region_id`, resolved through
+            # `build_seed.REGIONS[(id_space, this string)]`. That is this field.
             #
-            # A real `trees.region` / borough column is the honest destination and
-            # it is a SCHEMA question, so it is named here and not taken.
+            # It is still NOT in `city_record`, for the original reason, which
+            # s17 did not retire: `city_record` is keyed by SEED COLUMN NAME, and
+            # the only unused columns there are `caretaker` and `care_assistant`,
+            # which `CityRecordPresentation` renders on the tree profile under
+            # "Cared for by". *Cared for by Queens* is a falsehood shipped to a
+            # reader. `region` is a separate seam that renders as pack identity,
+            # never as a caretaker.
+            #
+            # `raw["boroughcode"]`/`raw["boroughsource"]` STAY, and the duplication
+            # is deliberate: `region` is the machine-readable seam a pack is cut
+            # on and it is normalised through REGIONS, while `boroughsource`
+            # records WHICH of D18's three routes placed this tree (stated by the
+            # planting space, contained by a polygon, or snapped to the nearest
+            # within NYC_MAX_SNAP_METRES). Dropping it would erase the only
+            # per-row evidence that the orphan assignment ran, at ~30 bytes a row.
             raw = {}
             borough, borough_source = self._borough_for(float(lat), float(lon), space)
             if borough:
@@ -1670,6 +1680,13 @@ class NYCTreePointAdapter:
                 # `None` here means this tree point matched no planting space, so
                 # those facts are genuinely absent rather than joined.
                 attributes_from="nyc_planting_spaces" if space is not None else None,
+                # NYC's own word for the borough -- `boroughcode` from the
+                # planting space, or `boroname` from the boundary file for a
+                # tree point that joined none. `build_seed.REGIONS` maps it onto
+                # the frozen pack id; an adapter reading a data file is the wrong
+                # layer to mint a distribution identity R37.2 then freezes into
+                # an object path forever, so this one never does.
+                region=borough,
                 address=address,
                 site_type=_clean((space or {}).get("pssite")),
                 planted_on=self.parse_planted_date(row.get("planteddate")),

@@ -234,6 +234,24 @@ MANIFEST_V1_NAME = "manifest.json"
 DISPLAY_NAMES = {
     "sf": "San Francisco",
     "us-ca-sj": "San Jose",
+    # New York's six, which is the count the note above predicted: five borough
+    # PACK ids, plus the parent CITY id space `us-ny-nyc`, which is never a pack
+    # and is here only because every borough entry carries
+    # `region.parent_city_display_name` and that line indexes this table by
+    # `id_space`. Removing the parent entry is what F1 of PR #108 caught, and the
+    # guard in `main` now refuses the run before a pack is written rather than
+    # raising `KeyError` with two packs already on disk.
+    #
+    # The five borough names agree with `build_seed.REGIONS`' `display_name`, and
+    # that agreement is CHECKED at publish rather than maintained by care -- see
+    # the drift check below. Both tables take the name from the City's own
+    # boundary file (`boroname`), which is why this reads "Bronx".
+    "us-ny-nyc": "New York City",
+    "us-ny-nyc-manhattan": "Manhattan",
+    "us-ny-nyc-brooklyn": "Brooklyn",
+    "us-ny-nyc-queens": "Queens",
+    "us-ny-nyc-bronx": "Bronx",
+    "us-ny-nyc-si": "Staten Island",
 }
 
 # seed_meta keys that state a city's ship coverage. The v14-era ingest wrote
