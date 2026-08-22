@@ -993,9 +993,21 @@ public enum DataGates {
         // enforces it. A gate that rejected the correct outcome is a gate that would have been
         // "fixed" by widening it to hold both cities, which is how a bbox check stops catching
         // state-plane leakage and null island at all.
+        //
+        // **New York arrived, and this table is the conscious act the check above demands.** The
+        // `unboxed` assertion below is not a formality: when the s17 seed landed it reported all
+        // 898,643 New York rows as unchecked, which is the gate working. What it is NOT is evidence
+        // of a data gap — the rows carry good coordinates, `Tools/build_seed.py` already holds
+        // `NYC_BBOX` and `accepts()` already rejected against it at ingest (`dropped_out_of_bbox`
+        // is 0), and the seed carries no per-region box for this to have read instead: `dim_region`
+        // has no bbox column, and the manifest's per-borough boxes are computed at publish time.
+        // The three boxes below are `Tools/build_seed.py`'s `BBOX_BY_ID_SPACE` verbatim, which is
+        // where SF's and San Jose's came from too; copying the seed's own observed min/max instead
+        // would make this check compare the data against itself and stop catching anything.
         let boxes: [(space: String, minLat: Double, maxLat: Double, minLon: Double, maxLon: Double)] = [
             ("sf", 37.69, 37.85, -122.54, -122.33),
-            ("us-ca-sj", 37.10, 37.50, -122.10, -121.65)
+            ("us-ca-sj", 37.10, 37.50, -122.10, -121.65),
+            ("us-ny-nyc", 40.45, 40.95, -74.30, -73.65)
         ]
         if schema.hasIdSpace {
             for box in boxes {

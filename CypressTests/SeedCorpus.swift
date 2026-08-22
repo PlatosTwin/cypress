@@ -8,8 +8,8 @@ import Testing
 /// A dozen suites pin exact counts against the seed and they are right to. Those literals are what
 /// catch a `.strip()` that starts eating values or a join that quietly widens; "greater than zero"
 /// would catch none of it. But they were written when there was one possible seed, and there are
-/// now three corpora, named by `seed_meta.trees_source` and by whether San Jose's rows are in the
-/// file:
+/// now four corpora, named by `seed_meta.trees_source` and by which cities' rows are in the file
+/// (`seed_meta.id_spaces_in_file`):
 ///
 /// - `sf_datasf` — the open-data export `tkzw-k3nq`, 195,309 records. What shipped before #91,
 ///                 still buildable with `Tools/build_seed.py --source datasf`, and still required
@@ -18,7 +18,10 @@ import Testing
 ///                 export's 12,260 vacant planting sites, which that layer has no category for.
 ///                 145,837 records. What shipped between #91 and #129.
 /// - `sf_city` **with `us-ca-sj` in `id_spaces_in_file`** — the same, fused with central San Jose.
-///                 198,625 records. **What ships.**
+///                 198,625 records. What shipped between #129 and the s17 publish.
+/// - `sf_city` **with `us-ca-sj` and `us-ny-nyc`** — the same again, fused with all five boroughs of
+///                 New York City. 1,097,382 records. **What ships**, and what `Tools/fetch_seed.sh`
+///                 resolves from the live manifest.
 ///
 /// **`sf_city` / `sf_datasf` are the v14 vocabulary.** The column values were bare `city` and
 /// `datasf` before that pass renamed them (`InventoryContractTests` documents the rename), and
@@ -129,6 +132,27 @@ struct SeedCorpus: Sendable {
     /// the budget has to cope with, so it moves with the corpus.
     let densestScreenfulFloor: Int
 
+    /// Rows of **this corpus's own tree source** (`inventory_source = seed_meta.trees_source`)
+    /// carrying no DBH bucket — the discriminator `InventoryContractTests` uses to prove the
+    /// source's `DBH = 0` sentinel was not read as a measurement. Both spellings of that test's
+    /// literals lived in the test body until the s17 publish re-read San Francisco's layer and moved
+    /// one of them, which is the lesson this type exists for: it is a fact about one snapshot of one
+    /// inventory, not about the code.
+    let cityRowsWithNoDBHBucket: Int
+
+    /// The share of rows carrying no planting year, and the share that are vacant planting sites.
+    ///
+    /// **Bands rather than pins, because they are arguments rather than measurements.** The first
+    /// sized `MapFilter`'s decade buckets (E175, E176); the second is the premise task #179 argues
+    /// from. Both are whole-corpus properties, so both move when a city lands — which is why they
+    /// are keyed here now instead of sitting as magic numbers in `MapFilterTests`, where a new city
+    /// made them false-red with nothing to say about which corpus they had been true of.
+    ///
+    /// `nil` where nobody has measured the band for that corpus, on the same rule as `datedTrees`:
+    /// the suite skips the assertion rather than checking a figure whose provenance is a document.
+    let undatedShareBand: ClosedRange<Double>?
+    let vacantShareBand: ClosedRange<Double>?
+
     /// Whether the running corpus publishes a given DataSF column, and can therefore support a
     /// control that reads it.
     func publishes(_ column: String) -> Bool { !absentColumns.contains(column) }
@@ -153,10 +177,12 @@ struct SeedCorpus: Sendable {
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty })
-        switch (source, spaces.contains("us-ca-sj")) {
-        case ("sf_city", false), ("city", false): return .city(absentColumns: absent)
-        case ("sf_city", true), ("city", true): return .cityWithSanJose(absentColumns: absent)
-        case ("sf_datasf", _), ("datasf", _): return .dataSF(absentColumns: absent)
+        switch (source, spaces.contains("us-ca-sj"), spaces.contains("us-ny-nyc")) {
+        case ("sf_city", false, false), ("city", false, false): return .city(absentColumns: absent)
+        case ("sf_city", true, false), ("city", true, false): return .cityWithSanJose(absentColumns: absent)
+        case ("sf_city", true, true), ("city", true, true):
+            return .cityWithSanJoseAndNewYork(absentColumns: absent)
+        case ("sf_datasf", _, _), ("datasf", _, _): return .dataSF(absentColumns: absent)
         default:
             Issue.record("seed_meta.trees_source is '\(source)', which no corpus is pinned for")
             return .dataSF(absentColumns: absent)
@@ -229,7 +255,15 @@ struct SeedCorpus: Sendable {
             // the ingest minted beside `Lophostemon confertus`, which was already in this mix — so
             // the mix lost a name for a plant it still carries, not a plant.
             sunsetSpeciesInMix: 200,
-            densestScreenfulFloor: 4_000
+            densestScreenfulFloor: 4_000,
+            cityRowsWithNoDBHBucket: 9_019,
+            // The `sf` id space's own shares, measured on seed 4f6ebaaa (2026-08-22) at 0.73987 /
+            // 0.08503 and on the previous shipped file at 0.73970 / 0.08512 — this corpus is that
+            // space alone. NOTE it sits BELOW the 0.75 the fused corpus's band starts at: San
+            // Francisco was never the four-in-five, San Jose's 99.6%-undated rows are what carried
+            // the fused figure over that line.
+            undatedShareBand: 0.70...0.78,
+            vacantShareBand: 0.06...0.11
         )
     }
 
@@ -305,7 +339,97 @@ struct SeedCorpus: Sendable {
             // the ingest minted beside `Lophostemon confertus`, which was already in this mix — so
             // the mix lost a name for a plant it still carries, not a plant.
             sunsetSpeciesInMix: 200,
-            densestScreenfulFloor: 4_000
+            densestScreenfulFloor: 4_000,
+            cityRowsWithNoDBHBucket: 9_019,
+            // Unchanged from what `MapFilterTests` carried as literals while this was the shipped
+            // corpus; measured on that file at 0.80776 undated / 0.12184 vacant.
+            undatedShareBand: 0.75...0.85,
+            vacantShareBand: 0.08...0.18
+        )
+    }
+
+    /// **San Francisco and central San Jose as above, plus all five boroughs of New York City.**
+    /// What ships after the s17 publish, measured from **seed `4f6ebaaa` on 2026-08-22** — the file
+    /// `Tools/fetch_seed.sh` resolves from the live manifest (706,535,424 bytes, sha256
+    /// `4f6ebaaad8c94bde…`), which is what CI's `unit` job builds against.
+    ///
+    /// **Every number below was counted from that file, and each query was calibrated first by
+    /// reproducing `cityWithSanJose`'s shipped literal from the previous seed.** None was copied out
+    /// of a failure message: a failing expectation prints the reading of the instrument under
+    /// suspicion, which is the one number in the room that has not been checked.
+    ///
+    /// ── What moved, and why it is not all New York ────────────────────────────────────────────
+    /// **The s17 publish re-read San Francisco and San Jose too** (`inventory_sf_city_snapshot_on`
+    /// and `inventory_sj_street_tree_snapshot_on` are both 2026-08-22, against 2026-07-31 before).
+    /// So this is not the previous corpus plus a third city: `sf` went 145,837 → 145,964 and
+    /// `us-ca-sj` went 52,788 → 52,775, which is why several counts here are *lower* than
+    /// `cityWithSanJose`'s — `plotSizesRefused` 70,180 → 70,153, `landContextStreet` 137,204 →
+    /// 137,192, `datedVacantSites` 9,237 → 9,235. A reading that assumed a new city can only add
+    /// would have called those three impossible and gone looking for the wrong defect.
+    ///
+    /// **New York ships no vacant planting sites at all** — 898,643 rows, zero `vacant_site` — which
+    /// is why `vacantSites` barely moves while `trees` grows 5.5×, and why `vacantShareBand` drops
+    /// from an eighth of the map to a fiftieth. See that field.
+    ///
+    /// `landContextDeclinedForeignVocabulary` is now 951,418: R24 refuses to read San Francisco's
+    /// `qLegalStatus` vocabulary against any other publisher's, so every San Jose **and** every New
+    /// York row is declined outright, and 52,775 + 898,643 is exactly that figure.
+    static func cityWithSanJoseAndNewYork(absentColumns: Set<String>) -> SeedCorpus {
+        SeedCorpus(
+            source: "sf_city",
+            absentColumns: absentColumns,
+            trees: 1_097_382,
+            species: 1_198,
+            vacantSites: 24_205,
+            // All six agree with the seed's own receipt (`seed_meta.city_<column>_rows`), which is
+            // an independent witness to the same count rather than a second reading of mine.
+            cityColumnRows: [
+                "legal_status": 333_962,
+                "caretaker": 195_093,
+                "care_assistant": 10_595,
+                "plant_type": 1_096_267,
+                "plot_size": 167_831,
+                "permit_notes": 976_706
+            ],
+            distinctPlotSizes: 660,
+            plotSizesShown: 97_678,
+            plotSizesRefused: 70_153,
+            landContextStreet: 137_192,
+            landContextPrivate: 4_596,
+            landContextOtherPublic: 459,
+            landContextCityPark: 71,
+            landContextUnplaced: 955_064,
+            landContextDeclinedForeignVocabulary: 951_418,
+            neighborhoodsWithNoVacantSite: 0,
+            vacantSitesWithNoNeighborhood: 11_793,
+            // 4,411 rows are alive with no species; the receipt counts 185 not-a-tree records, and
+            // 4,411 − 185 is the trees whose source said a tree is there without saying which.
+            treesOfUnknownSpecies: 4_226,
+            datedVacantSites: 9_235,
+            // Every row carrying a `planted_year`, vacant sites included — the definition the field
+            // states and the one that reproduces `cityWithSanJose`'s 38,184 on the previous file.
+            datedTrees: 161_914,
+            // UNCHANGED, and measured rather than assumed: the seed's `neighborhoods` table is San
+            // Francisco's 41 Analysis Neighborhoods, so New York's rows carry a NULL
+            // `neighborhood_id` and are invisible to every neighborhood-scoped surface, exactly as
+            // San Jose's are.
+            sunsetVacantSites: 1_436,
+            sunsetTreesWithSpecies: 9_504,
+            sunsetTreesLeftJoined: 9_512,
+            sunsetSpeciesInMix: 200,
+            densestScreenfulFloor: 4_000,
+            cityRowsWithNoDBHBucket: 9_177,
+            // 0.85245 undated on this file. Still "most rows", and slightly more so than the fused
+            // California corpus: New York states a planting year on 123,723 of its 898,643 rows.
+            undatedShareBand: 0.82...0.88,
+            // 0.02206, against 0.12184 before. **This is a product finding, not a stale number.**
+            // Task #179's premise — that vacant planting sites are a large minority of the map —
+            // now holds only inside San Francisco (0.08503 of the `sf` space); New York publishes
+            // no vacant sites at all, so nationally they are a fiftieth of the map. Pinned here as
+            // a band rather than widened in the test, so the figure is attached to the corpus it is
+            // true of and the next city has to state its own. Raised for adjudication in the PR
+            // that measured it rather than settled here.
+            vacantShareBand: 0.015...0.030
         )
     }
 
@@ -346,7 +470,12 @@ struct SeedCorpus: Sendable {
             sunsetTreesWithSpecies: 11_026,
             sunsetTreesLeftJoined: 11_078,
             sunsetSpeciesInMix: 215,
-            densestScreenfulFloor: 5_000
+            densestScreenfulFloor: 5_000,
+            cityRowsWithNoDBHBucket: 44_584,
+            // Never measured: this repo ships no DataSF-built seed to count, and the band that used
+            // to be asserted against this corpus was the fused corpus's. See the fields.
+            undatedShareBand: nil,
+            vacantShareBand: nil
         )
     }
 }

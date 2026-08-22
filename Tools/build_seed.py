@@ -2685,12 +2685,16 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # compares against a literal. `WHERE plant_type = 'Tree'` used to drop three
     # rows spelled `tree`; the seed contract now fails if any such pair returns.
     stats["case_normalised_values"] = 0
-    column_index = {name: index for index, name in enumerate(
-        ["id", "uuid", "id_space", "external_ref", "source", "inventory_source", "lat", "lon", "address", "site_type",
-         "neighborhood_id", "status", "species_current", "planted_year", "planted_on",
-         "dbh_city_cm_min", "dbh_city_cm_max", "site_lineage", "verification_state"]
-        + [name for name, _ in CITY_RECORD_COLUMNS]
-    )}
+    # DERIVED FROM `TREE_COLUMNS`, and it has to be. This was a second hand-written
+    # copy of the row layout, and it silently went one column out of step the moment
+    # `region_id` was inserted at index 6 for the s17 pass: the fold then read
+    # `address` where it meant `site_type` and `verification_state` where it meant
+    # `legal_status`, matched nothing, and reported `case_normalised_values = 0`
+    # while the seed still held 'Tree'/'tree' and 'Park Strip'/'Park strip'. The
+    # published s17 seed carries exactly that, and the #95 seed-contract gate is
+    # what caught it. `TREE_COLUMNS`'s own comment already says why there must be
+    # one list -- this pass was the place that had not been brought onto it.
+    column_index = {name: index for index, name in enumerate(TREE_COLUMNS)}
     for column in NORMALISED_SEED_COLUMNS:
         mapping = {k: v for k, v in canonical_case_map(case_counts[column]).items() if k != v}
         if not mapping:

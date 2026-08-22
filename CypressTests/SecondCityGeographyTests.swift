@@ -193,53 +193,63 @@ struct SecondCityGeographyTests {
     /// **The fourth member of the family, and the one where naming the reader's city is also wrong.**
     ///
     /// `SpeciesQueries.cityTreeCount` carries no id-space predicate: it is `COUNT(*)` over the
-    /// whole attached inventory, and the built-in bundle is fused across `sf` and `us-ca-sj`. So
-    /// the card labeled `In San Francisco` was printing a two-city number — for Crape Myrtle, 97
-    /// San Francisco trees and 3,649 San Jose ones under San Francisco's name alone.
+    /// whole attached inventory, and the built-in bundle is fused across `sf`, `us-ca-sj` and
+    /// `us-ny-nyc`. So the card labeled `In San Francisco` was printing a multi-city number — for
+    /// Crape Myrtle, 97 San Francisco trees and 3,649 San Jose ones under San Francisco's name
+    /// alone.
     ///
     /// The test asserts the fact first and the copy second, in that order deliberately: **because
-    /// the number provably spans two cities, no city name can label it**, which is why the fix is
-    /// not "say San Jose to a San Jose reader". The probe species is resolved at runtime as one the
-    /// seed holds in both spaces, so the assertion is about the read rather than about one row.
-    @Test("the whole-inventory count spans both cities, and its label names neither")
+    /// the number provably spans more than one city, no city name can label it**, which is why the
+    /// fix is not "say San Jose to a San Jose reader". The probe species is resolved at runtime as
+    /// one the seed holds in at least two spaces, so the assertion is about the read rather than
+    /// about one row.
+    ///
+    /// **The per-space sum is taken over every space in the file rather than over a written-down
+    /// pair, and that is what the s17 publish corrected here.** The probe used to add `sf` and
+    /// `us-ca-sj` only, so when New York's 898,643 rows landed the card's honest whole-inventory
+    /// count stopped matching a sum that had quietly become partial — the test would have read as
+    /// "the card over-counts" when what had actually happened is that the test under-counted.
+    @Test("the whole-inventory count spans more than one city, and its label names none of them")
     func theCountCardNamesThePopulationItCounted() async throws {
         let store = try await Self.store()
 
-        let probe = try await store.queue.read { connection -> (uuid: UUID, sf: Int, sj: Int)? in
+        let probe = try await store.queue.read { connection -> (uuid: UUID, total: Int, spaces: Int)? in
             let statement = try connection.prepare("""
                 SELECT s.uuid AS species_uuid,
-                       SUM(CASE WHEN t.id_space = 'sf' THEN 1 ELSE 0 END) AS sf_count,
-                       SUM(CASE WHEN t.id_space = 'us-ca-sj' THEN 1 ELSE 0 END) AS sj_count
+                       COUNT(*) AS total_count,
+                       COUNT(DISTINCT t.id_space) AS space_count
                   FROM \(Self.seed).trees t
                   JOIN \(Self.seed).species s ON s.id = t.species_current
                  WHERE t.deleted_at IS NULL
                  GROUP BY s.uuid
-                HAVING sf_count > 0 AND sj_count > 0
-                 ORDER BY sj_count DESC LIMIT 1
+                HAVING space_count > 1
+                 ORDER BY space_count DESC, total_count DESC LIMIT 1
                 """)
             defer { statement.finalize() }
             return try statement.fetchOne { row in
-                (uuid: try row.uuid("species_uuid"), sf: try row.int("sf_count"), sj: try row.int("sj_count"))
+                (uuid: try row.uuid("species_uuid"),
+                 total: try row.int("total_count"),
+                 spaces: try row.int("space_count"))
             }
         }
-        let species = try #require(probe, "no species stands in both cities; the probe cannot fire")
+        let species = try #require(probe, "no species stands in more than one city; the probe cannot fire")
 
         let guide = try await Self.api(store).speciesGuide(id: species.uuid, near: nil)
         let counted = try #require(guide.cityTreeCount)
 
-        // 1 · the number is both cities' trees, which is what makes any single city name a lie.
+        // 1 · the number is every city's trees, which is what makes any single city name a lie.
         #expect(
-            counted == species.sf + species.sj,
-            "the card's count is not the whole attached inventory: \(counted) != \(species.sf) + \(species.sj)"
+            counted == species.total,
+            "the card's count is not the whole attached inventory: \(counted) != \(species.total)"
         )
-        #expect(species.sf > 0 && species.sj > 0, "the probe stopped spanning two cities")
+        #expect(species.spaces > 1, "the probe stopped spanning more than one city")
 
         // 2 · so the label names the inventory it counted, and no city in it. Markers rather than a
         //     fixed string, so swapping one hardcoded city for another cannot satisfy this.
         for marker in ["San Francisco", "San Jose", "SF", "DataSF"] {
             #expect(
                 !SpeciesCopy.cityCountLabel.contains(marker),
-                "07 §5's count card says \(marker) over a number counting \(species.sf + species.sj) trees in two cities"
+                "07 §5's count card says \(marker) over a number counting \(species.total) trees in \(species.spaces) cities"
             )
         }
     }

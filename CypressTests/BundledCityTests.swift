@@ -86,31 +86,40 @@ struct BundledCityTests {
     /// coverage word the manifest gets from the same keys.
     ///
     /// **The literals are the shipped seed's build receipt, not a preference.** They come from
-    /// `seed_meta` (`inventory_sf_city_snapshot_on` 2026-07-31, `inventory_sf_datasf_snapshot_on`
-    /// 2026-07-20, `inventory_sj_street_tree_snapshot_on` 2026-07-31, `sj_ship_extent` downtown)
-    /// and from `dim_city`, and the dates are exactly the `r2026-07-31` in both published version
+    /// `seed_meta` (`inventory_sf_city_snapshot_on` 2026-08-22, `inventory_sf_datasf_snapshot_on`
+    /// 2026-07-20, `inventory_sj_street_tree_snapshot_on` 2026-08-22,
+    /// `inventory_nyc_tree_points_snapshot_on` 2026-08-22, and the `coverage_<space>` keys) and from
+    /// `dim_city`, and the dates are exactly the `r2026-08-22` in all three published version
     /// strings. A seed rebuild that moves a snapshot date moves this assertion with it; that is the
-    /// assertion doing its job.
+    /// assertion doing its job — and it did it here, on seed 4f6ebaaa.
+    ///
+    /// **Two of these changed for reasons other than New York arriving**, and both are the receipt
+    /// telling the truth. The dates moved because the s17 publish re-read San Francisco's and San
+    /// Jose's layers on the same day it first read New York's. And `sf`'s coverage moved from `nil`
+    /// to `full` because that publish is the first to write a `coverage_sf` key at all — the
+    /// previous file stated San Jose's extent and left San Francisco's to be inferred from absence.
     @Test("the shipped bundle names its cities, dates them, and states their coverage")
     func bundledSeedNamesItsCities() throws {
         let url = try #require(Self.seedURL, "no seed database; set CYPRESS_SEED_PATH")
         let cities = SeedCities.read(fileAt: url)
 
-        #expect(cities.map(\.id) == ["sf", "us-ca-sj"])
-        #expect(cities.map(\.displayName) == ["San Francisco", "San Jose"])
+        // Ordered by `id_spaces.id`, which is what `SeedCities.read` sorts on.
+        #expect(cities.map(\.id) == ["sf", "us-ca-sj", "us-ny-nyc"])
+        #expect(cities.map(\.displayName) == ["San Francisco", "San Jose", "New York City"])
         #expect(
-            cities.map(\.contentRev) == ["2026-07-31", "2026-07-31"],
+            cities.map(\.contentRev) == ["2026-08-22", "2026-08-22", "2026-08-22"],
             """
             the bundle's derived record dates are \(cities.map(\.contentRev)); the publisher's rule \
-            over this seed's seed_meta says 2026-07-31 for both spaces, which is the r-segment of \
-            both published version strings
+            over this seed's seed_meta says 2026-08-22 for all three spaces, which is the r-segment \
+            of every published version string
             """
         )
         #expect(
-            cities.map(\.coverage) == [nil, "downtown"],
+            cities.map(\.coverage) == ["full", "downtown", "full"],
             """
             the bundle's derived coverage is \(cities.map(\.coverage)); the live manifest says \
-            "full" for sf and "downtown" for us-ca-sj, from seed_meta.sj_ship_extent
+            "full" for sf, "downtown" for us-ca-sj and "full" for us-ny-nyc, from the \
+            seed_meta.coverage_<space> keys
             """
         )
     }
