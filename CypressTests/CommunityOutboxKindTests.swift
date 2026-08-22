@@ -63,11 +63,15 @@ struct CommunityOutboxKindTests {
     /// touches the queue for any *other* reason still behaves normally
     /// (`LocalAPI.deletePhoto` calls `OutboxStore.discardStagedPhoto`), and the failure lands on
     /// exactly the statement under test with a message that says so.
+    /// What the trigger below raises, so the test that reads the message back and the trigger that
+    /// writes it cannot drift apart into a guard that asserts a string nothing produces.
+    static let enqueueRefusalMessage = "the queue refused this row"
+
     private static func refuseEveryEnqueue(in store: CypressStore) async throws {
         try await store.queue.write { connection in
             try connection.execute("""
                 CREATE TRIGGER cypress_test_refuse_outbox BEFORE INSERT ON outbox
-                BEGIN SELECT RAISE(ABORT, 'the queue refused this row'); END;
+                BEGIN SELECT RAISE(ABORT, '\(enqueueRefusalMessage)'); END;
                 """)
         }
     }
@@ -533,8 +537,23 @@ struct CommunityOutboxKindTests {
             thrown = error
         }
         let failure = try #require(thrown, "the mutation succeeded although its queue row could not be written")
-        #expect(failure is SQLiteError,
-                "the refusal came from the boundary, not the enqueue, so it proves nothing: \(failure)")
+        let sqlite = try #require(
+            failure as? SQLiteError,
+            "the refusal came from the boundary, not the enqueue, so it proves nothing: \(failure)"
+        )
+        // **The type alone does not identify the thrower.** `SQLiteError` is what every statement in
+        // this path raises, so a constraint this fixture did not install — or a later refusal
+        // somewhere else in `flagWrongSpecies` — satisfies `is SQLiteError` perfectly while proving
+        // nothing about the enqueue. The trigger names itself, so the assertion reads that name
+        // (PR #103 review).
+        #expect(
+            sqlite.message.contains(Self.enqueueRefusalMessage),
+            """
+            the enqueue was not what refused: expected sqlite3 to report \
+            "\(Self.enqueueRefusalMessage)", the message this test's own trigger raises, and got \
+            "\(sqlite.message)". A rollback proved against somebody else's failure is not a proof.
+            """
+        )
 
         let survivingFlags = try await Self.scalar(
             "SELECT COUNT(*) AS n FROM review_flags WHERE tree_uuid = '\(subject.id.uuidString)'",

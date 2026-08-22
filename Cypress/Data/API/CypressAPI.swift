@@ -989,17 +989,19 @@ public struct TreeProfile: Hashable, Sendable {
     /// disagree about a stranger's unmoderated photograph the way the hero and the browser once
     /// did.
     ///
-    /// **That comparison is not `deletablePhotoIDs`', and since `AppSchema` v16 the two differ
-    /// deliberately** — this comment used to say they were the same and it is worth correcting
-    /// rather than deleting. Removal admits a third arm, `taken_on_device`, and refuses an
-    /// ownerless row first; "own" here stays the two owner arms, because being shown your own work
-    /// is a question about attribution and v16's column is provenance, which no query reads as
-    /// attribution. The consequence — a photograph v16 made deletable again, but whose owning
-    /// account can no longer be signed into, arrives here as `own: false` and so is judged by
-    /// `isPubliclyVisible`, is `.pending`, and is not drawn among the nearby heroes — predates v16
-    /// rather than following from it, and is an open question for the project owner: aligning the
-    /// two predicates would start drawing photographs on a shipped screen that are not drawn today,
-    /// which is not a change a refactor may make on its own authority.
+    /// **That comparison is not `deletablePhotoIDs`', and since `AppSchema` v16 the two differ** —
+    /// this comment used to say they were the same and it is worth correcting rather than deleting.
+    /// Removal admits a third arm, `taken_on_device`, and refuses an ownerless row first; "own"
+    /// here is still the two owner arms. The consequence is ERRATA **E277**: a photograph v16 made
+    /// deletable again, but whose owning account can no longer be signed into, arrives here as
+    /// `own: false`, is judged by `isPubliclyVisible`, is `.pending`, and is not drawn among the
+    /// nearby heroes at all.
+    ///
+    /// **The owner settled it on 2026-08-22 and the difference is no longer deliberate: RULINGS
+    /// R82, provenance counts here too.** A photograph taken on this installation is drawn among
+    /// its own heroes whatever account holds it, on the same reasoning that made it deletable.
+    /// `is_own` gains the provenance arm in a follow-up round of its own — `.nobody` keeps
+    /// refusing, and until that round lands this function still answers the old way.
     public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
         own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
     }

@@ -125,9 +125,8 @@ type wireLatLon struct {
 //     because the moment uploads work this path is wrong *and tells the contributor otherwise*: the
 //     row drains, reaches `done`, and screen 17 reads "Photo removed" as sent while
 //     `GET /photos/{id}` keeps serving the bytes to every other device. That is this project's
-//     signature failure applied to a deletion. Recorded in
-//     `docs/errata-pending/outbox-kind-vocabulary-drift.md`; no test asserts anything about a
-//     `photo_withdrawal` reaching this service today, in either direction.
+//     signature failure applied to a deletion. Recorded as ERRATA **E280**; no test asserts
+//     anything about a `photo_withdrawal` reaching this service today, in either direction.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,

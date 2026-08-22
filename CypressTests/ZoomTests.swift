@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// The two zooms the owner ruled in on 2026-08-21, as arithmetic.
+/// The two zooms the owner ruled in on 2026-08-21 (RULINGS R80, items 4 and 5), as arithmetic.
 ///
 /// Both were reported from TestFlight and both are gestures, which is the hard thing to test: a
 /// pinch cannot be synthesized in the unit suite, and the one this suite could reach — screen 04's —

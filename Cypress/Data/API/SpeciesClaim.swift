@@ -24,6 +24,16 @@
 //     decision than this. `.forbidden` says so rather than failing silently — and the same refusal
 //     covers `correctSpecies` and `flagWrongSpecies`, for the same reason.
 //
+//     **That larger decision has since been taken, and it went the other way for *disputing*
+//     (RULINGS R79).** City rows become disputable from the UI: the dispute is a row in the app's
+//     writable database referencing the city tree, never a write to the attached file, so the
+//     inventory stays read-only and the refusal above stands exactly as written for `claimSpecies`
+//     and `correctSpecies`. What changes is `flagWrongSpecies`' half of it — a city row stops
+//     answering `.unavailable`, and the surface it gets is richer than this boolean pair (checked
+//     issue kinds, per-field suggested values, free text). Sync-back to the city's own dataset is
+//     explicitly deferred. None of that is built here; R79's round owns it, and this paragraph is
+//     the pointer so that whoever reads this refusal next does not read it as still open.
+//
 //  2. **First claim wins; a second `claimSpecies` is `.conflict`, not an overwrite.** Replacing an
 //     existing claim is a *correction*, and it goes through the verb that keeps a history and asks
 //     who is making it. `tree_names` keeps the same rule in the same words — "one active name per

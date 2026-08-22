@@ -34,9 +34,9 @@ and is unchanged.
 
 ## Decisions, 2026-08-14
 
-Each ruled by the owner on 2026-08-14, presented as explicit choices with the trade-offs stated. A
-rulings-pending entry from this round (under `docs/rulings-pending/`, unnumbered until the
-orchestrator splices it) carries the ones with lasting consequence.
+Each ruled by the owner on 2026-08-14, presented as explicit choices with the trade-offs stated.
+RULINGS **R76** carries the ones with lasting consequence; D12's two obligations were settled
+separately on 2026-08-21, as RULINGS **R78**.
 
 | # | Decision | Ruling |
 |---|---|---|

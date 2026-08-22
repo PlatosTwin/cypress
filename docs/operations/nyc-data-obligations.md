@@ -16,7 +16,7 @@ public content.**
 **Updated 2026-08-21, same day, after an owner decision round.** The three open questions this
 document originally raised (§5, old items 1–3) were put to the owner and ruled on directly, not
 inferred here. §0 records the rulings; §2, §3 and §4 below are updated to match. The rulings are
-also staged, unnumbered, at `docs/rulings-pending/nyc-obligations-2026-08-21.md`.
+RULINGS **R78**, cited as R78 rulings 1–3.
 
 **Notify obligation DISCHARGED 2026-08-21, same day.** The owner reports the notification to the
 City has been sent. Of the two obligations D12 gates the first NYC publish on, one remains live:
@@ -28,8 +28,8 @@ or with — the first NYC pack, trial included. That copy lands with the s17/NYC
 ## 0. Owner rulings, 2026-08-21
 
 Decided by the owner via a decision round, same day this document was first drafted. Full text
-in `docs/rulings-pending/nyc-obligations-2026-08-21.md`; summarized here so this document reads
-as settled rather than as its own first draft.
+in RULINGS **R78**; summarized here so this document reads as settled rather than as its own
+first draft.
 
 | # | Question | Ruling |
 |---|---|---|
@@ -315,5 +315,4 @@ stays attached to its answer rather than disappearing once the question closes.
 - `docs/investigations/city-publishing.md` — the manifest's `attribution` array field.
 - `docs/ERRATA.md` E254 — confirms the app's only current distribution channel is TestFlight
   (informs open question 1).
-- `docs/rulings-pending/nyc-obligations-2026-08-21.md` — the three 2026-08-21 rulings recorded
-  in §0 above, staged unnumbered for the orchestrator to splice.
+- `docs/RULINGS.md` R78 — the three 2026-08-21 rulings recorded in §0 above.

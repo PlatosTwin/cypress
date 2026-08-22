@@ -524,13 +524,13 @@ struct MapAnnotationLayer: UIViewRepresentable {
         // a map that turns and does not say which way is north can be left pointing somewhere a
         // reader did not choose with nothing on screen to undo it. TestFlight found exactly that.
         //
-        // The owner ruled on 2026-08-21: a MapKit-native compass, visible only when the camera is
-        // off north, and tapping it returns to north. That is `MKMapView`'s own default behavior for
-        // this property — `MKCompassButton` fades itself in on rotation, fades out at a heading of
-        // zero, and its tap animates the camera back — so honoring the ruling is turning the flag on
-        // and drawing nothing. It is also the reason the ruling can be honored at all without a
-        // mock: no glyph of ours is involved, so R57's no-SF-Symbols policy is not in question and
-        // there is no bespoke control to specify.
+        // The owner ruled on 2026-08-21 (RULINGS R80, item 6b): a MapKit-native compass, visible
+        // only when the camera is off north, and tapping it returns to north. That is `MKMapView`'s
+        // own default behavior for this property — `MKCompassButton` fades itself in on rotation,
+        // fades out at a heading of zero, and its tap animates the camera back — so honoring the
+        // ruling is turning the flag on and drawing nothing. It is also the reason the ruling can
+        // be honored at all without a mock: no glyph of ours is involved, so R57's no-SF-Symbols
+        // policy is not in question and there is no bespoke control to specify.
         //
         // ── Where it sits, and how that was found out ────────────────────────────────────────
         // Turning the flag on and looking: the compass takes MapKit's top-**trailing** ornament

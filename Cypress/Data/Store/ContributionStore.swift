@@ -460,19 +460,20 @@ public struct ContributionStore {
     /// that could drift from it.
     ///
     /// **`is_own` is not `deletablePhotoIDs`' predicate, and since `AppSchema` v16 it is not even
-    /// the same shape** — the two comparisons differ on purpose, which is worth saying plainly
-    /// because this comment used to claim they were one. Removal now has three arms and a leading
-    /// ownerless refusal: `taken_on_device` admits a photograph this installation wrote and an
-    /// account has since adopted. This column keeps the two owner arms and no provenance term,
-    /// because it answers a different question — who is being *shown* their own work, which is
-    /// attribution — and provenance is deliberately not attribution (v16's header: no query reads
-    /// that column to decide whose a photograph is). The consequence is real and is not settled
-    /// here: a repaired, again-deletable photograph whose owning account can no longer be signed
-    /// into is still `own: false`, so `isPhotoVisible` judges it by `isPubliclyVisible`, it is
-    /// `.pending`, and the species-guide nearby heroes (07 §6) do not draw it. That is unchanged by
-    /// v16 rather than caused by it, and it is an open question for the project owner rather than
-    /// something to quietly repair here: moving `is_own` onto the removal rule would start drawing
-    /// photographs on a shipped screen that are not drawn today.
+    /// the same shape** — worth saying plainly, because this comment used to claim they were one.
+    /// Removal now has three arms and a leading ownerless refusal: `taken_on_device` admits a
+    /// photograph this installation wrote and an account has since adopted. This column still keeps
+    /// the two owner arms and no provenance term. The consequence is ERRATA **E277**: a repaired,
+    /// again-deletable photograph whose owning account can no longer be signed into is still
+    /// `own: false`, so `isPhotoVisible` judges it by `isPubliclyVisible`, it is `.pending`, and the
+    /// species-guide nearby heroes (07 §6) do not draw it at all.
+    ///
+    /// **The owner ruled on 2026-08-22 that the two should converge — RULINGS R82, provenance
+    /// counts.** Being shown your own photograph and being allowed to unmake it are the same claim
+    /// about who took it. The provenance arm belongs in this SQL and is a follow-up round's to add;
+    /// an anonymized row must still come back `own: false`, since the leaving door NULLs
+    /// `taken_on_device` in the same `UPDATE` that takes the name off. Until that round lands this
+    /// column answers as written above, and the difference is a recorded gap rather than a design.
     public func heroPhotoIDs(
         treeIDs: Set<UUID>,
         attribution: Attribution,

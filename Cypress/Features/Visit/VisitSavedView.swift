@@ -24,15 +24,16 @@ struct VisitSavedView: View {
     private let onLink: AccountAskLink?
 
     // ══════════════════════════════════════════════════════════════════════════════════════════════
-    // **THE THREE FUNCTIONS THIS SCREEN OFFERS — the owner's ruling of 2026-08-21.**
+    // **THE THREE FUNCTIONS THIS SCREEN OFFERS — the owner's ruling of 2026-08-21
+    // (RULINGS R80, item 6a).**
     //
     // Screen 18 drew `Next nearest`, `Done for today` and `See it on the tree's timeline`. The owner
     // ruled the set: **next nearest, back to the map, back to this tree**.
     //
-    // **The copy is closed as well, as of 2026-08-21.** The functions were ruled first and the
-    // strings below were this file's draft for a day; the owner then chose that draft in a decision
-    // round, so `Next nearest`, `Back to the map` and `Back to this tree` are final. Changing any of
-    // them is a new decision, not a continuation of this one. Guarded by
+    // **The copy is closed as well, as of 2026-08-21 (R80's addendum).** The functions were ruled
+    // first and the strings below were this file's draft for a day; the owner then chose that draft
+    // in a decision round, so `Next nearest`, `Back to the map` and `Back to this tree` are final.
+    // Changing any of them is a new decision, not a continuation of this one. Guarded by
     // `VisitSavedControlSetTests`, which asserts the *set* — how many secondary controls there are
     // and where each one goes — and deliberately not the words.
     //
@@ -278,7 +279,7 @@ struct VisitSavedView: View {
 
 // MARK: - Copy
 
-/// Screen 18's two secondary controls, as ruled on 2026-08-21.
+/// Screen 18's two secondary controls, as ruled on 2026-08-21 (RULINGS R80, item 6a).
 ///
 /// **Owner-final, not drafts.** The functions were ruled first and these strings were this file's
 /// proposal; the owner then chose them in a decision round the same day, closing the copy. Both are

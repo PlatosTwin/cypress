@@ -112,8 +112,9 @@ struct VisitFlowView: View {
     /// before rather than silently doing nothing.
     ///
     /// **It was `onDone`, for a control that said "Done for today".** The destination has not moved —
-    /// it was `goToMap()` then and it is `goToMap()` now — and the owner's ruling of 2026-08-21 is
-    /// that the control names the map rather than the end of a morning. See `VisitSavedView`.
+    /// it was `goToMap()` then and it is `goToMap()` now — and the owner's ruling of 2026-08-21
+    /// (RULINGS R80, item 6a) is that the control names the map rather than the end of a morning.
+    /// See `VisitSavedView`.
     var onBackToMap: (() -> Void)?
     /// Screen 18's "back to this tree" (screen 03), and where a tree this flow has just added goes.
     var onOpenTree: (UUID) -> Void = { _ in }

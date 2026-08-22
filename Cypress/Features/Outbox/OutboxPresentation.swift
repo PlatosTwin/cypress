@@ -493,9 +493,10 @@ enum OutboxCopy {
     ///
     /// Reported from the field: the synced receipts read `1:49 pm` on a list whose rows were taken
     /// on different days, so two stamps an hour apart on the screen were a day apart in fact, and
-    /// nothing drawn said so. **The owner ruled it on 2026-08-21**: show the date instead of the
-    /// time once the list spans more than one day, otherwise the time. This function is that rule,
-    /// and `spansDays` is the question its caller has already answered about the whole list.
+    /// nothing drawn said so. **The owner ruled it on 2026-08-21 (RULINGS R80, item 3)**: show the
+    /// date instead of the time once the list spans more than one day, otherwise the time. This
+    /// function is that rule, and `spansDays` is the question its caller has already answered about
+    /// the whole list.
     ///
     /// It is a property of the *list* and not of the row, which is what makes it right. A per-row
     /// "is this today" test would print `Aug 19` beside `1:49 pm` and leave the reader comparing two

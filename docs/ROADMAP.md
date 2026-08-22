@@ -239,8 +239,8 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
-**City-inventory disputes.** Owner ruling, 2026-08-21, refined the same day (both pending
-splice — full spec in `docs/rulings-pending/city-inventory-disputes.md`): city data must be
+**City-inventory disputes.** Owner ruling, 2026-08-21, refined the same day (both in RULINGS
+**R79**, which carries the full spec): city data must be
 disputable from the UI, and city-tree disputes are richer than the community-tree flags. City
 trees: checkboxes for nature of issue (pin in wrong location; wrong species; wrong other metadata
 — e.g. a clearly wrong planted year, or a recorded tree whose plot is empty), suggested values,

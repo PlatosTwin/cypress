@@ -34,8 +34,7 @@
 -- `DELETE /photos/{id}` exists. It is deferred because **no photograph reaches this service yet** —
 -- the outbox's send sink carries no photo method — so a withdrawal would name bytes nothing here
 -- has ever held. The round that wires photo upload wires this deletion with it; see the long note
--- in `sync.go` beside `syncKinds`, and
--- `docs/errata-pending/outbox-kind-vocabulary-drift.md`.
+-- in `sync.go` beside `syncKinds`, and ERRATA E280.
 --
 -- ── Dropped and re-added, and the new constraint gets a new name ──────────────────────────────
 --

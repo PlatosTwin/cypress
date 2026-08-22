@@ -373,7 +373,8 @@ struct RootView: View {
                 // volunteer morning is conducted from, so this lands there rather than on whichever
                 // screen happened to be underneath. **This closure has not changed**; the control
                 // that calls it used to say "Done for today", and the owner's ruling of 2026-08-21
-                // renamed the function to the place it goes (see `VisitSavedView`).
+                // (RULINGS R80, item 6a) renamed the function to the place it goes (see
+                // `VisitSavedView`).
                 onBackToMap: { router.goToMap() },
                 onOpenTree: { id in
                     router.sheet = nil

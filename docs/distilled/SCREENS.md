@@ -1374,9 +1374,8 @@ in-progress/uploading state, swipe-to-delete.
    > move:** `Done for today` already called `goToMap()`, and the timeline link already pushed the
    > tree's page. Both were renamed for where they go rather than for what the reader has decided
    > about their morning (R2). `Route done · see your grove` is not a fourth control — it is the
-   > primary CTA's other state. See the ruling in `docs/RULINGS.md` once the orchestrator splices
-   > this branch's pending entry (`docs/rulings-pending/beta-feedback-2026-08-21.md`) under its real
-   > number at merge.
+   > primary CTA's other state. The ruling is RULINGS **R80**, item 6a, and its addendum is where
+   > the copy was closed.
 5. **Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
    `Ten check-ins in a row is the real volunteer morning. The save answers the only question that matters: which tree is next.`
 
