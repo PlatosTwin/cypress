@@ -235,8 +235,24 @@ for _space, _entries in REGIONS.items():
 
 # The exact order today, written out. Not a tautology: it is the statement a
 # future reordering has to be deliberate enough to edit.
+#
+# UPDATED BY THE NYC PUBLISH ROUND, and the reason it was safe to update is not
+# "the round needed it". `build_seed` iterates `sorted(spaces)` -- the spaces
+# THIS BUILD contributes -- and `us-ny-nyc` sorts after both existing keys, so
+# appending it cannot move a rowid any existing seed already assigned:
+#
+#   SF only        -> sf=1                        (unchanged)
+#   SF + SJ        -> sf=1, us-ca-sj=2            (unchanged)
+#   SF + SJ + NYC  -> sf=1, us-ca-sj=2, then the five boroughs 3..7
+#
+# The check below turns that argument into a measurement rather than leaving it
+# as reasoning in a comment. An INSERTION anywhere but the end, or a reorder
+# within a space, is still the breaking edit this line exists to catch.
 check([(s, [e["pack_id"] for e in es]) for s, es in REGIONS.items()]
-      == [("sf", ["sf"]), ("us-ca-sj", ["us-ca-sj"])],
+      == [("sf", ["sf"]),
+          ("us-ca-sj", ["us-ca-sj"]),
+          ("us-ny-nyc", ["us-ny-nyc-manhattan", "us-ny-nyc-brooklyn", "us-ny-nyc-queens",
+                         "us-ny-nyc-bronx", "us-ny-nyc-si"])],
       f"REGIONS' declared order changed to "
       f"{[(s, [e['pack_id'] for e in es]) for s, es in REGIONS.items()]}. Every existing seed's "
       f"trees.region_id values were assigned from the old order -- confirm this reordering is "
@@ -251,6 +267,58 @@ for _space, _entries in REGIONS.items():
               f"REGIONS[{_space!r}] declares level {_e['level']!r}")
         check(bool(_e["pack_id"]) and bool(_e["display_name"]),
               f"REGIONS[{_space!r}] has a blank pack_id or display_name")
+
+# --------------------------------------------------------------------------
+# 7b. Adding a city must not renumber the cities already published (F5b)
+# --------------------------------------------------------------------------
+# The rowid a region gets is its 1-based position in the flattening of REGIONS
+# over `sorted(spaces)` -- `build_seed` INSERTs in exactly that order and takes
+# `cur.lastrowid`. So the whole of "a new space did not move an old region's
+# rowid" is the statement that a SMALLER space set's flattening is a PREFIX of a
+# LARGER one's.
+#
+# Checked against REGIONS itself rather than against a copied-out list of ids:
+# a list of expected ids would have to be edited by the same hand that broke the
+# order, and would then agree with it.
+#
+# FIRST DRAFT OF THIS CHECK WAS VACUOUS AND IS RECORDED SO IT IS NOT REWRITTEN.
+# It asserted that a smaller space set's flattening is a PREFIX of a larger
+# one's, over the hardcoded chain {sf} -> {sf,sj} -> {sf,sj,nyc}. Red-proved by
+# moving `us-ny-nyc` to the front of REGIONS -- and it stayed GREEN, because
+# both this helper and `build_seed` read `sorted(spaces)` and index REGIONS by
+# key, so the dict's own key order cannot reach either of them. Two other checks
+# went red on that edit and the prefix line contributed nothing. What is below
+# is the statement that actually breaks.
+
+
+def _packs_in_rowid_order(spaces):
+    """The pack ids in the order `build_seed` INSERTs them for these spaces."""
+    return [e["pack_id"] for s in sorted(spaces) for e in REGIONS[s]]
+
+
+# Determinism: the same input twice gives the same answer, and it is not the
+# accident of a set's iteration order. (F5b asked for exactly this.)
+check(_packs_in_rowid_order({"sf", "us-ca-sj", "us-ny-nyc"})
+      == _packs_in_rowid_order({"us-ny-nyc", "us-ca-sj", "sf"}),
+      "the rowid order depends on how the space set was spelled, not on sorting it")
+
+# THE PUBLISHED ROWIDS, PINNED AS THE FACTS THEY ARE. `sf` and `us-ca-sj` are
+# already inside downloaded packs on readers' devices as `dim_region.id` 1 and 2
+# with `trees.region_id` pointing at them. Those two numbers are therefore not
+# free any more, in ANY build, and this is the line that says so.
+#
+# It is not the prefix line rewritten: it fails on the two edits that would
+# really move them -- a new id space sorting before `sf`, and a second region
+# inserted into `sf` -- neither of which the prefix form over a hardcoded chain
+# could see. Red-proved both ways, messages verbatim in the PR body.
+_full = _packs_in_rowid_order(set(REGIONS))
+for _pack, _rowid in (("sf", 1), ("us-ca-sj", 2)):
+    check(_pack in _full and _full.index(_pack) + 1 == _rowid,
+          f"{_pack!r} is registered at dim_region rowid "
+          f"{_full.index(_pack) + 1 if _pack in _full else 'nowhere'}, not {_rowid}. Packs "
+          f"already downloaded carry {_rowid} in every trees.region_id; a full build "
+          f"registering it elsewhere republishes that city with different bytes for the "
+          f"same data. Registration order is {_full}.")
 
 # --------------------------------------------------------------------------
 
