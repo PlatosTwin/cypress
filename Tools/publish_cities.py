@@ -540,6 +540,28 @@ def main() -> None:
     if not regions:
         fail("dim_region is empty; the seed declares no publishable unit", 3)
 
+    # THE JOIN ABOVE MULTIPLIES IF A CITY EVER HAS TWO ID SPACES, and it must not
+    # be left to fail downstream. `dim_region.city_id` names a city while this
+    # publisher narrows and attributes per id space; the two are one-to-one today
+    # and nothing in the schema says they must stay that way. A second space on
+    # one city would yield the same region twice -- two packs at one `pack_id`,
+    # the second overwriting the first's object at an immutable path R37.2
+    # promises is written once.
+    #
+    # It would eventually fail: the per-region counts would double and
+    # `total_split != fused_total` fires further down. But that message says the
+    # split lost rows, which is the wrong diagnosis for a duplicated parent, and
+    # by then two files have already been written. Named here instead.
+    seen_regions: dict = {}
+    for region in regions:
+        seen_regions.setdefault(region["id"], []).append(region["id_space"])
+    doubled = {rid: spaces for rid, spaces in seen_regions.items() if len(spaces) > 1}
+    if doubled:
+        fail(f"region(s) {sorted(doubled)} resolve to several id spaces {doubled} -- a region "
+             f"belongs to one city and this publisher narrows per id space, so a city with two "
+             f"spaces has no single answer. Stop and report: this needs a decision, not a "
+             f"default.", 3)
+
     fused_counts = dict(src_con.execute(
         "SELECT region_id, COUNT(*) FROM trees GROUP BY region_id"))
     (fused_total,) = src_con.execute("SELECT COUNT(*) FROM trees").fetchone()

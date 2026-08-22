@@ -443,7 +443,19 @@ def sever_lineage_across_regions(con):
                 "WHERE region_id = 2)")
 
 
+def two_id_spaces_on_one_city(con):
+    # A second id space on New York. `dim_region.city_id` names a CITY while the
+    # publisher narrows per ID SPACE, so each NYC borough now resolves to two
+    # spaces -- the region-to-space join multiplies, and without the guard two
+    # packs would be written at one pack_id, the second overwriting the first at
+    # an immutable path.
+    con.execute("INSERT INTO id_spaces(id,identity_prefix,note,city_id) "
+                "VALUES ('us-ny-nyc-alt','us-ny-nyc-alt:','fixture',2)")
+
+
 expect_failure("no dim_region at all (a pre-s17 seed)", drop_dim_region, "pre-s17 seed")
+expect_failure("one city carrying two id spaces (the join multiplies)",
+               two_id_spaces_on_one_city, "resolve to several id spaces")
 expect_failure("a region declared but holding no trees", region_with_no_trees, "hold no trees")
 expect_failure("dim_region.display_name drifted from DISPLAY_NAMES", drift_display_name,
                "DISPLAY_NAMES disagrees")
