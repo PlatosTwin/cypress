@@ -1574,8 +1574,8 @@ public enum AppSchema {
     /// it to name a *person*, which is what over-attributed. This uses it to name a *machine*, which
     /// is the thing it actually establishes.
     ///
-    /// **Not the backfill the owner ruled against on 2026-08-15**, which is worth saying because the
-    /// word is the same and the ruling is a week old. That one is about *sync*: pre-sync-path rows
+    /// **Not the backfill the owner ruled against on 2026-08-15 (RULINGS R77)**, which is worth
+    /// saying because the word is the same. That one is about *sync*: pre-sync-path rows
     /// and pre-existing photo binaries stay on the device permanently, nothing is re-enqueued, and
     /// no future send path sweeps them up. This writes one local column in the app's own database,
     /// enqueues nothing, uploads nothing, and leaves the outbox untouched.

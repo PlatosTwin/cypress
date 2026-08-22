@@ -378,9 +378,10 @@ enum YouCopy {
     /// save stays on this phone"* was true while `LocalAPI` was the only writer. #158's wiring round
     /// gave `DataLayer.boot` a send sink over `RemoteAPI`, so check-ins and notes leave the phone
     /// under a device credential with no account anywhere (D9) — which is the same falsehood the
-    /// owner ruled out of `AccountCopy.storageBody` on 2026-08-14, in a card one section up this
-    /// same screen. That ruling quoted and replaced *that* sentence and said nothing about this one,
-    /// so this one stands, wrong, written up unnumbered for the errata rather than rewritten by
+    /// owner ruled out of the card one section up this same screen on 2026-08-14 (RULINGS **R74**,
+    /// ruling 2; `AccountCopy.signedInBody` was replaced by `AccountCopy.storageBody`).
+    /// That ruling quoted and replaced *that* sentence and said nothing about this one,
+    /// so this one stands, wrong, written up as ERRATA **E271 §4a** rather than rewritten by
     /// whoever noticed (DECISIONS constraint 21). The rest of it — attribution is opt-in, it is off,
     /// nothing in the app can turn it on — is still true and is the half E100 is about.
     static let privacyBody =

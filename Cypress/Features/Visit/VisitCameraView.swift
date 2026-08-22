@@ -215,7 +215,7 @@ struct VisitCameraView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         // ══════════════════════════════════════════════════════════════════════════════════════
-        // **Pinch to zoom the lens** — TestFlight, ruled in on 2026-08-21. See
+        // **Pinch to zoom the lens** — TestFlight, ruled in on 2026-08-21 (RULINGS R80, item 5). See
         // `VisitCameraController.setZoom` for why this moves the *device* and not the preview.
         //
         // On the `ZStack` and not on `base`, so the gesture is live over the whole viewfinder

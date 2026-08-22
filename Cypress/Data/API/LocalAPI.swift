@@ -1012,6 +1012,14 @@ public actor LocalAPI: CypressAPI {
     ///
     /// A city row is `.unavailable` rather than `.reportable`, matching what `flagNeverExisted`
     /// would do with the tap: a control that exists only to be refused is worse than no control.
+    ///
+    /// **RULINGS R79 reverses that for city rows, and the round that builds it changes this
+    /// function.** City-inventory data became disputable on 2026-08-21 — stored app-side, the
+    /// attached file still read-only — and "a recorded tree whose plot is empty" is named in the
+    /// ruling as one of the issue kinds. So a city row stops answering `.unavailable` here; it does
+    /// not simply become `.reportable`, because R79's city surface is a checkbox set with suggested
+    /// values and notes rather than this boolean. Unchanged until that round lands, deliberately —
+    /// see `SpeciesClaim.swift`'s header for the same note on the species half.
     private func recordDefectOffer(
         tree: Tree,
         connection: SQLiteConnection
@@ -1780,7 +1788,10 @@ public actor LocalAPI: CypressAPI {
     /// removal now happens inside `store.queue.write`, after the tombstone `UPDATE` has claimed the
     /// row: a file that will not go throws, the transaction rolls back, and the photograph is left
     /// exactly as it was. E136's accepted failure is still the only one available — a crash between
-    /// the last `removeItem` and the `COMMIT` leaves a row whose bytes are gone.
+    /// the last `removeItem` and the `COMMIT` leaves a row whose bytes are gone. That ordering
+    /// widens the `DatabaseQueue` write transaction to cover file removal, and it is a widening
+    /// taken on purpose: the critical section now holds for as long as `FileManager` takes on a
+    /// handful of files, and atomicity between the tombstone and the bytes is what it buys.
     ///
     /// ── The hero, which is derived and therefore cannot dangle ───────────────────────────────
     /// Nothing stores a hero id. `PhotoHero.choose` ranks the set it is handed and already excludes

@@ -309,9 +309,8 @@ def cmd_set_whats_new(arguments: list[str]) -> None:
         # Never silently. The owner's ruling is that every build ships a changelog, and
         # `whats_new.py` already has a sentence for "nothing tester-visible changed" -- an empty
         # file here means the compile step went wrong, not that there is nothing to say.
-        fail(f"{path} is empty. Every build ships a changelog (see "
-             "docs/rulings-pending/testflight-changelog.md); an empty compile is a bug in "
-             "Tools/whats_new.py, not a build with nothing to say.", 2)
+        fail(f"{path} is empty. Every build ships a changelog (RULINGS R81); an empty compile "
+             "is a bug in Tools/whats_new.py, not a build with nothing to say.", 2)
     if len(text) > WHATS_NEW_LIMIT:
         fail(f"{path} is {len(text)} characters; App Store Connect holds {WHATS_NEW_LIMIT}. "
              "Tools/whats_new.py trims to that limit, so this file did not come from it.", 2)

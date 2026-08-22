@@ -9,9 +9,8 @@ whats_new.py -- the TestFlight "What to Test" text, derived from git rather than
     latest-build-tag                    the newest `build-N` tag, or nothing (NOT a boundary)
     previous-build-tag <N>              the build tag build-N's notes are measured against
 
-WHY THIS EXISTS. Every TestFlight build ships a changelog (owner ruling, 2026-08-21,
-`docs/rulings-pending/testflight-changelog.md`), compiled from one tester-voice line per pull
-request. `xcrun altool` cannot set that field at all, so the release workflow sets it through the
+WHY THIS EXISTS. Every TestFlight build ships a changelog (owner ruling, 2026-08-21, RULINGS
+R81), compiled from one tester-voice line per pull request. `xcrun altool` cannot set that field at all, so the release workflow sets it through the
 App Store Connect API -- and the question this file answers is the harder half: **which lines
 belong to THIS build and not to the last one.**
 

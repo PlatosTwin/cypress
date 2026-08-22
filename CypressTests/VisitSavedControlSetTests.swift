@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// **Screen 18's control set, as the owner ruled it on 2026-08-21** — next nearest, back to the map,
-/// back to this tree.
+/// **Screen 18's control set, as the owner ruled it on 2026-08-21 (RULINGS R80, item 6a)** — next
+/// nearest, back to the map, back to this tree.
 ///
 /// ── Why this suite exists, and why it did not before ──────────────────────────────────────────
 /// PR #102's finisher declined a test here on the grounds that "the screen-18 strings are explicitly
@@ -52,6 +52,7 @@ struct VisitSavedControlSetTests {
             actions == ["onBackToMap", "onBackToTree", "onLink", "onNextTree", "onRouteComplete"],
             """
             screen 18's action surface is \(actions). The owner ruled the control set on 2026-08-21 \
+            (RULINGS R80, item 6a) \
             — next nearest, back to the map, back to this tree — with onRouteComplete as the \
             primary CTA's other state (not a fourth control) and onLink as screen 15's sign-in \
             hand-off (not a control of this screen's at all). A name added or removed here is a \

@@ -170,7 +170,8 @@ final class VisitCameraController {
     // MARK: - Zoom
 
     // ══════════════════════════════════════════════════════════════════════════════════════════════
-    // **Pinch to zoom on the viewfinder** — reported from TestFlight, ruled in on 2026-08-21.
+    // **Pinch to zoom on the viewfinder** — reported from TestFlight, ruled in on 2026-08-21
+    // (RULINGS R80, item 5).
     //
     // Screen 04's own words are "line the crown up against last month's crown", and a street tree is
     // photographed from the pavement it is planted in: the crown of a mature plane is sixty feet up

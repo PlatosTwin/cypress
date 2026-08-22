@@ -73,7 +73,7 @@
 //  the treatment `Close` and the delete already wear here, rather than the translucent mono capsule
 //  that E173 recorded as unreadable as a control.
 //
-//  ── Why there IS pinch-to-zoom, since 2026-08-21 ─────────────────────────────────────────
+//  ── Why there IS pinch-to-zoom, since 2026-08-21 (RULINGS R80, item 4) ───────────────────
 //  What stood here said there was none, deliberately, and closed with: *"If somebody asks to look
 //  closer, that is a second report and it can have its own entry."* Somebody did, from TestFlight,
 //  and the owner ruled it in. The section is rewritten rather than deleted because it named three

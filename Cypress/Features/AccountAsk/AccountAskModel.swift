@@ -105,8 +105,9 @@ final class AccountAskModel {
     /// when nothing did; invent a fourth sentence, which DECISIONS constraint 21 forbids and this
     /// round has no drawn state for; or draw the screen the mock draws, unchanged, which is what a
     /// dismissed system sheet leaves behind on every other iOS app. The third invents nothing and
-    /// says nothing false, so it is what happens. Written up for the errata and unnumbered as this
-    /// is written, so there is no number to cite yet.
+    /// says nothing false, so it is what happens. Written up as ERRATA **E270 §2**, which records
+    /// the same three answers in the same order — and records them "rather than merely done", so a
+    /// later reader finds the reasoning instead of an unexplained empty `catch`.
     @discardableResult
     func link(_ provider: AccountAskProvider) async -> Bool {
         guard !isLinking else { return false }

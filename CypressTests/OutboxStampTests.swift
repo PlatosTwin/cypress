@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// Screen 17's trailing stamps, and the owner's ruling of 2026-08-21 about when they stop being
-/// clock times.
+/// Screen 17's trailing stamps, and the owner's ruling of 2026-08-21 (RULINGS R80, item 3) about
+/// when they stop being clock times.
 ///
 /// ── **The report** ────────────────────────────────────────────────────────────────────────────
 /// From TestFlight: the synced receipts read `1:49 pm` on a list whose rows had gone on different

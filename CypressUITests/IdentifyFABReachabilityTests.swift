@@ -194,13 +194,13 @@ final class IdentifyFABReachabilityTests: XCTestCase {
 
     /// **The species legend keeps out of MapKit's compass column, and inside the phone** (PR #102).
     ///
-    /// The owner ruled a compass onto screen 01 on 2026-08-21. MapKit draws it in the map's
-    /// top-**trailing** ornament slot, *underneath* this chrome, and the legend hangs down the same
-    /// side — so a chip long enough to reach the trailing edge does not crowd the compass, it covers
-    /// it and takes its taps. Measured on an iPhone 16 Pro Max at AX5 before the fix: the legend
-    /// reported `(16.0, 230.0, 446.0, 262.67)` — **446 pt wide on a 440 pt screen**, running to
-    /// x 462 — against a compass at x 391–435. A tap aimed at "put me back to north" selected
-    /// `Sycamore, London Plane` and narrowed the map to London planes instead.
+    /// The owner ruled a compass onto screen 01 on 2026-08-21 (RULINGS R80, item 6b). MapKit draws
+    /// it in the map's top-**trailing** ornament slot, *underneath* this chrome, and the legend
+    /// hangs down the same side — so a chip long enough to reach the trailing edge does not crowd
+    /// the compass, it covers it and takes its taps. Measured on an iPhone 16 Pro Max at AX5 before
+    /// the fix: the legend reported `(16.0, 230.0, 446.0, 262.67)` — **446 pt wide on a 440 pt
+    /// screen**, running to x 462 — against a compass at x 391–435. A tap aimed at "put me back to
+    /// north" selected `Sycamore, London Plane` and narrowed the map to London planes instead.
     ///
     /// **Two assertions, because there were two defects and either can return alone.** The legend
     /// running past the screen is `FlowRow`'s: it measured every chip at its *ideal* width and placed

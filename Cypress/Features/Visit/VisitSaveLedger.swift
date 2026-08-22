@@ -136,8 +136,10 @@ final class VisitSaveLedger {
     /// **anonymous, and sent** — is not one of the four the mocks enumerate, and writing a fifth
     /// sentence for it is inventing copy (DECISIONS constraint 21).
     ///
-    /// So this is a stop-and-ask, raised in #158's wiring round and unnumbered as this is written.
-    /// Cite the erratum it becomes, by number, rather than this paragraph.
+    /// So this is a stop-and-ask, raised in #158's wiring round as ERRATA **E268 §1**, which opens
+    /// by naming this file and this property. Still open: ERRATA **E271 §4b** records that the copy
+    /// round of 2026-08-14 ruled the card one screen over and deliberately did not generalize onto
+    /// this sentence.
     var storageLine: String {
         isAskResolved
             ? "Saving to this phone only. You can add an account any time."

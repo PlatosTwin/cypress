@@ -61,10 +61,9 @@ on:
     # nothing in the app, the suite or the build.
     #
     # **`docs/whats-new/` is inside `docs/**` and there is no separate entry for it, deliberately.**
-    # It holds the release notes (owner ruling 2026-08-21,
-    # `docs/rulings-pending/testflight-changelog.md`): one sentence per pull request for
-    # TestFlight's "What to Test", read by the `release` job and by nothing else — not the app, not
-    # the suite, not the archive. Prose, in every sense this list means by the word, so `docs/**`
+    # It holds the release notes (owner ruling 2026-08-21, RULINGS R81): one sentence per pull
+    # request for TestFlight's "What to Test", read by the `release` job and by nothing else — not
+    # the app, not the suite, not the archive. Prose, in every sense this list means, so `docs/**`
     # already covers it and a second entry would only be a second copy of the same fact.
     #
     # That containment is doing real work rather than saving a line. It is what makes a push
@@ -308,8 +307,8 @@ jobs:
       # ── Does this pull request carry its release note? ────────────────────────────────
       # Owner ruling, 2026-08-21: every TestFlight build ships a changelog, compiled from one
       # tester-voice line per pull request, and CI refuses a code change that does not carry one.
-      # `docs/rulings-pending/testflight-changelog.md` has the ruling and the mechanism;
-      # `docs/whats-new/README.md` is what an author reads.
+      # RULINGS R81 has the ruling and the mechanism; `docs/whats-new/README.md` is what an
+      # author reads.
       #
       # **This step never fails the job, and that is deliberate.** `plan` dying takes `unit`, `ui`
       # and `release` with it, and `gate` — reading a failed plan — would report "plan did not
@@ -555,9 +554,9 @@ jobs:
           fi
 
           # ── The release note ────────────────────────────────────────────────────────────
-          # Owner ruling, 2026-08-21: a code change cannot merge without one tester-voice line
-          # for TestFlight's "What to Test". `plan`'s `notes` step decides; this is where the
-          # decision is enforced, because this is the required status check.
+          # Owner ruling, 2026-08-21 (RULINGS R81): a code change cannot merge without one
+          # tester-voice line for TestFlight's "What to Test". `plan`'s `notes` step decides;
+          # this is where the decision is enforced, because this is the required status check.
           #
           # The `case` is not decoration. `needs.plan.outputs.notes` is the EMPTY STRING when the
           # step did not run, was renamed, or crashed before writing its output — and an empty

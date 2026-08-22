@@ -322,7 +322,7 @@ struct MapHomeView: View {
             userHeadingDegrees: location.headingDegrees,
             selectedPinID: model.selectedPinID,
             // MapKit's compass takes the top-trailing ornament slot, which on this screen is under
-            // the search bar (the owner's compass ruling of 2026-08-21; see
+            // the search bar (the owner's compass ruling of 2026-08-21, RULINGS R80 item 6b; see
             // `MapAnnotationLayer.makeUIView`). This is the y of the chip row's own bottom edge, in
             // **screen** coordinates — `MapAnnotationLayer.applyCompass` converts it to the map's
             // layout margin, which is not the same number because `insetsLayoutMarginsFromSafeArea`
