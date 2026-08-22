@@ -149,7 +149,10 @@ conflicts with convenience, the rule wins.
   is `SeedDatabase.newestKnownSchemaVersion` (R37's `s<schema_version>`); the *manifest envelope*
   format is `CityManifest.knownFormat` / `MANIFEST_FORMAT` (in
   `Cypress/Data/Cities/CityManifest.swift` and `Tools/publish_cities.py`), whose decoder refuses an
-  unknown format outright. They are unrelated and they advance independently. **Read all three from
+  unknown format outright — and note that the app reads a **set** of formats
+  (`CityManifest.knownFormats`) while the publisher writes one, because a format bump is
+  dual-published for a release cycle rather than cut over (D8); "the format" is therefore two
+  questions, *what does this build write* and *what will it read*. They are unrelated and they advance independently. **Read all three from
   the code, never from this file** — and note that the numbers have been struck from this bullet on
   purpose, because it has now gone stale twice: once claiming the writable one was 13 after v14
   landed, and once claiming the two "genuinely collide at 14" after the published one had moved to

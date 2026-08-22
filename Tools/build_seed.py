@@ -141,6 +141,7 @@ import time
 import urllib.request
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 try:
     import yaml
@@ -327,6 +328,11 @@ def load_san_jose_layer(raw_dir: str):
 # The names are re-exported because `Tools/validate_species.py` imports two of
 # them from here and because the schema comments below still cite them.
 from inventory_contract import (  # noqa: E402
+    CONDITION_ALIVE,
+    CONDITION_DEAD,
+    CONDITION_DECLINING,
+    CONDITION_REMOVED,
+    CONDITIONS,
     KIND_NOT_A_TREE,
     KIND_PLANTING_SITE,
     KIND_TREE,
@@ -351,7 +357,7 @@ from inventory_adapters import (  # noqa: E402
     parse_qspecies,
 )
 
-# WHICH `trees.status` A CONTRACT KIND BECOMES. The one place the seed's own
+# WHICH `trees.status` A CONTRACT RECORD BECOMES. The one place the seed's own
 # vocabulary meets the contract's, and therefore the one place task #94 has to
 # change.
 #
@@ -364,11 +370,124 @@ from inventory_adapters import (  # noqa: E402
 # a dict rather than an `if`: the fact has somewhere to be, the seed cannot yet
 # hold it, and that mismatch is visible in one line instead of being absent from
 # the code entirely.
-STATUS_FOR_KIND = {
+#
+# ── s17: THIS USED TO BE `STATUS_FOR_KIND`, A DICT KEYED ON `kind` ALONE ───────
+# That shape was itself a defect, and `feat/nyc-ingest` is what found it: keyed
+# on `kind`, NO ADAPTER COULD EVER SHIP A ROW AS ANYTHING BUT `alive` OR
+# `vacant_site`. NYC Parks publishes `TPCondition`, 10,635 of its rows are a
+# `Full` structure in `Dead` condition -- a tree still standing over a pavement,
+# which is exactly what RULINGS R19 defines `dead_reported` to mean -- and the
+# ingest had nowhere to put it but a free-text `permit_notes` string.
+#
+# The survey (`docs/investigations/nyc-street-trees.md` §6) recorded this as a
+# missing seed value and was WRONG about it; the branch's own correction block
+# says so. `trees.status` has permitted `dead_reported` since before any of this.
+# The gap was here, in the lookup, and closing it is a Python contract change
+# rather than a migration -- which is why RULING D17 could keep the s17
+# generation's identity resting on the region column instead.
+#
+# `condition is None` -- no claim -- maps exactly where `kind` alone used to,
+# so San Francisco and San Jose, whose sources publish no condition field, do
+# not move a single row. That is asserted, not assumed: see
+# `Tools/test_build_seed_status.py` and the rebuild receipt in the PR body.
+STATUS_FOR_CONDITION = {
+    CONDITION_ALIVE: "alive",
+    CONDITION_DECLINING: "declining",
+    CONDITION_DEAD: "dead_reported",
+    CONDITION_REMOVED: "removed",
+}
+
+#: What a record with no condition claim becomes, per kind -- the pre-s17
+#: behaviour, preserved exactly.
+STATUS_FOR_KIND_WITHOUT_CONDITION = {
     KIND_TREE: "alive",
     KIND_PLANTING_SITE: "vacant_site",
     KIND_NOT_A_TREE: "alive",
 }
+
+
+# THE `trees` INSERT COLUMN LIST, DECLARED ONCE (review finding F5a).
+#
+# It used to be built inside `flush` while `REGION_ROW_INDEX` was a hand-written
+# `6` up here, which made the two a pair of literals that had to be kept in step
+# by care. That is the shape this file's own comments warn about: an off-by-one
+# writes region ids into `lat`, and SQLite accepts it silently because both are
+# numbers. Now there is ONE list and the index is DERIVED from it, so they cannot
+# disagree -- `emit` cannot put the placeholder somewhere the INSERT does not
+# expect it, because there is no second place to put it.
+#
+# Rows stay LISTS, deliberately, and this was measured rather than assumed: at
+# New York's ~898,000 rows a dict per row costs about 3.9x the memory and 5.9x
+# the build time, against 1.7 microseconds paid once for the `.index()` below.
+# The derived index plus the assertion in `flush` buys the same safety for
+# nothing.
+TREE_COLUMNS: tuple = (
+    "id", "uuid", "id_space", "external_ref", "source", "inventory_source",
+    "region_id", "lat", "lon", "address", "site_type", "neighborhood_id",
+    "status", "species_current", "planted_year", "planted_on",
+    "dbh_city_cm_min", "dbh_city_cm_max", "site_lineage", "verification_state",
+    *(name for name, _ in CITY_RECORD_COLUMNS),
+    "city_raw", "created_at", "updated_at", "deleted_at",
+)
+
+#: Where the region placeholder sits in a `tree_rows` row. DERIVED from
+#: `TREE_COLUMNS`, never written down twice.
+REGION_ROW_INDEX = TREE_COLUMNS.index("region_id")
+
+
+def resolve_region_ids(tree_rows: list, region_id_by_key: dict) -> None:
+    """Rewrite each row's `(id_space, source region name)` to a `dim_region.id`.
+
+    In place, because `tree_rows` holds ~200,000 lists and the
+    case-normalisation pass already rewrites columns inside them the same way.
+
+    Fails loudly on a key it cannot place. That is the whole reason this is a
+    lookup with a raise instead of a `.get(..., None)`: `trees.region_id` is NOT
+    NULL precisely so a row cannot end up in no pack, and silently defaulting
+    here would reintroduce exactly what the constraint forbids.
+    """
+    unplaceable: dict = {}
+    for row in tree_rows:
+        key = row[REGION_ROW_INDEX]
+        region_id = region_id_by_key.get(key)
+        if region_id is None:
+            unplaceable[key] = unplaceable.get(key, 0) + 1
+            continue
+        row[REGION_ROW_INDEX] = region_id
+    if unplaceable:
+        detail = "; ".join(
+            f"{count:,} row(s) in id space {space!r} naming region {name!r}"
+            for (space, name), count in sorted(unplaceable.items(), key=lambda kv: str(kv[0]))
+        )
+        die(
+            f"no dim_region row for {detail}. A region is entered in REGIONS, never derived "
+            f"(DECISIONS constraint 15) -- and a `None` region resolves to the id space's SOLE "
+            f"region, so this also fires when a space has several and an adapter did not say "
+            f"which. Shipping these rows would put them in no published pack at all."
+        )
+
+
+def status_for_record(kind: str, condition: Optional[str]) -> str:
+    """The seed's `trees.status` for one contract record.
+
+    Total over `KINDS x (CONDITIONS + {None})`; the one combination that cannot
+    mean anything -- a planting site in a condition -- is refused by
+    `InventoryRecord.validate` before it can reach here, and refused again below
+    so this function is not merely correct by someone else's care.
+    """
+    if kind == KIND_PLANTING_SITE:
+        if condition is not None:
+            raise ValueError(
+                f"planting site with condition {condition!r}: an empty site has nothing in "
+                f"it to be in a condition. The contract forbids this pair; reaching it here "
+                f"means a record bypassed InventoryRecord.validate"
+            )
+        return STATUS_FOR_KIND_WITHOUT_CONDITION[KIND_PLANTING_SITE]
+    if condition is None:
+        return STATUS_FOR_KIND_WITHOUT_CONDITION[kind]
+    if condition not in STATUS_FOR_CONDITION:
+        raise ValueError(f"condition {condition!r} is not one of {CONDITIONS}")
+    return STATUS_FOR_CONDITION[condition]
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +533,79 @@ DIM_CITY: dict[str, dict[str, str]] = {
             "transportation/forestry"
         ),
     },
+}
+
+
+# ---------------------------------------------------------------------------
+# dim_region (s17) -- the unit a pack is published in
+# ---------------------------------------------------------------------------
+# WHY THIS TABLE EXISTS AT ALL, WHICH IS THE WHOLE OF WHAT MAKES 16 -> 17 A
+# GENERATION. `Tools/publish_cities.py` has always narrowed the fused seed on
+# `id_space` and shipped the result as a city. RULING D1 makes New York's
+# published unit the BOROUGH, so the publisher needs something finer than
+# `id_space` to narrow on, and a borough needs somewhere to keep its own name.
+#
+# It could not ride `trees.city_raw`. That column's family renders on the tree
+# profile through `CityRecordPresentation`, whose `caretaker` label reads
+# "Cared for by ..." -- and *Cared for by Queens* is a sentence the app would be
+# shipping to a reader as fact. `feat/nyc-ingest` reached exactly this wall,
+# carried borough in `raw_json` as a deliberate placeholder, and named a real
+# `trees.region` column as the honest destination without taking the decision
+# (RULING D17 then took it). This is that column.
+#
+# ── The three columns, and why each is entered rather than derived ────────────
+# `pack_id` IS FROZEN AND IT IS DISTRIBUTION IDENTITY, NOT CIVIC CONTENT. It is
+# simultaneously the manifest entry's `id`, the `<id>` in R37.2's immutable
+# object path `cities/<id>/<version>/<id>.sqlite`, and the install key on a
+# reader's device. `sf` and `us-ca-sj` are frozen at the values the format-1
+# manifest has already published: changing either orphans every installed copy
+# and breaks paths that R37.2 promises never move. **A new region's pack_id is
+# chosen once, here, by a human, and never again.** This is why
+# `InventoryRecord.region` carries the source's own word instead -- an adapter
+# reading a data file is the wrong layer to be minting a permanent identity.
+#
+# `display_name` is civic content and is entered (DECISIONS constraint 15). For
+# a one-region city it repeats `DIM_CITY[space]["display_name"]`, and it repeats
+# it rather than joining to it because the two answer different questions: one
+# names the city a tree is in, the other names the pack a reader downloaded, and
+# NYC is about to make them different strings for the same row.
+#
+# `level` is the vocabulary RULING D2 requires -- one shape everywhere, no
+# NYC-only concept. San Francisco is a `city`-level region of itself; that is
+# not a special case, it is the general case with one member.
+#
+# `source_names` maps what an adapter passes as `InventoryRecord.region` onto
+# this row. Empty tuple means "this id space's sole region", which is what a
+# record's `region=None` resolves to.
+REGION_LEVELS = ("city", "borough", "extent")
+
+REGIONS: dict[str, list[dict]] = {
+    "sf": [
+        {
+            "pack_id": "sf",
+            "display_name": "San Francisco",
+            "level": "city",
+            "source_names": (),
+        },
+    ],
+    "us-ca-sj": [
+        {
+            # FROZEN as `us-ca-sj` -- the published path and install key, not the
+            # `us-ca-sj` slug in DIM_CITY that happens to read the same. They are
+            # separate facts that currently agree; `sf` is the pair that does not
+            # (pack `sf`, slug `us-ca-sf`), which is why they are separate columns.
+            "pack_id": "us-ca-sj",
+            "display_name": "San Jose",
+            # `city`, not `extent`, and the distinction is worth stating because
+            # San Jose ships only its downtown window. LEVEL DESCRIBES THE UNIT,
+            # COVERAGE DESCRIBES HOW MUCH OF IT SHIPPED -- they are different
+            # facts and conflating them is what the `coverage` key is for. San
+            # Jose is a whole city of which part shipped, and its manifest entry
+            # says exactly that: level `city`, coverage `downtown`.
+            "level": "city",
+            "source_names": (),
+        },
+    ],
 }
 
 
@@ -795,6 +987,49 @@ CREATE TABLE dim_city (
     CHECK (urban_forestry_url <> '')
 );
 
+-- --------------------------------------------------------------- dim_region --
+-- THE UNIT A PACK IS PUBLISHED IN (seed generation 17). Hand-entered in
+-- `Tools/build_seed.py`'s REGIONS; see the block comment there for why each
+-- column is entered rather than derived.
+--
+-- This table is what makes 16 -> 17 a generation. Until it, the published unit
+-- was the id space and `Tools/publish_cities.py` narrowed on `trees.id_space`.
+-- RULING D1 makes New York's unit the borough, so the publisher needs something
+-- finer to narrow on, and a borough needs a place to keep its own name that is
+-- not `city_raw` -- whose column family renders as "Cared for by ...", making
+-- *Cared for by Queens* a falsehood the app would ship.
+--
+-- Same shape and same reason as `dim_city` at s16: a pack that carried another
+-- region's civic facts would be claiming an authority it does not have, so
+-- `publish_cities.py` narrows this table to the one row the pack is for.
+CREATE TABLE dim_region (
+    id            INTEGER PRIMARY KEY,
+    -- FROZEN PER REGION, AND IT IS DISTRIBUTION IDENTITY. Simultaneously the
+    -- manifest entry's `id`, the `<id>` in R37.2's immutable object path
+    -- `cities/<id>/<version>/<id>.sqlite`, and the install key on device.
+    -- Changing one orphans every installed copy of that pack. NOT
+    -- `dim_city.slug` (`sf` here is `us-ca-sf` there) and NOT `id_spaces.id`,
+    -- though a one-region city's pack_id and id space currently agree.
+    pack_id       TEXT NOT NULL UNIQUE,
+    -- Civic content, entered (DECISIONS constraint 15). Names the PACK, which
+    -- for New York is a borough and not the city the tree is in.
+    display_name  TEXT NOT NULL,
+    -- What kind of unit this is. RULING D2: one shape everywhere, so a
+    -- one-region city is `city` rather than a special case. `extent` is
+    -- reserved for a published unit that is neither -- a named sub-city window
+    -- that is not a civic division. NOTE THAT LEVEL IS NOT COVERAGE: San Jose
+    -- is level `city` with coverage `downtown`, because it is a whole city of
+    -- which part shipped.
+    level         TEXT NOT NULL,
+    -- The city this region belongs to. A borough's civic facts (state, county,
+    -- urban forestry page) are its city's; only the name and the extent are
+    -- its own.
+    city_id       INTEGER NOT NULL REFERENCES dim_city(id),
+    CHECK (pack_id <> ''),
+    CHECK (display_name <> ''),
+    CHECK (level IN ('city','borough','extent'))
+);
+
 -- ----------------------------------------------------- id spaces, inventories --
 -- THE SEED DECLARES ITS OWN VOCABULARY INSTEAD OF THE SCHEMA ENUMERATING IT.
 --
@@ -969,6 +1204,18 @@ CREATE TABLE trees (
     -- claim about the file rather than about the record, and for 12,260 of
     -- them it would be the wrong inventory's name.
     inventory_source   TEXT NOT NULL REFERENCES inventories(id),
+    -- WHICH PUBLISHED REGION THIS ROW SHIPS IN (seed generation 17). NOT NULL
+    -- on purpose: `Tools/publish_cities.py` narrows packs on this column, so a
+    -- NULL would be a row that silently appears in no pack at all -- present in
+    -- the fused seed, absent from every file a reader can download, and visible
+    -- to nobody. The publisher's per-region counts must sum to the fused total,
+    -- and this constraint is what makes that arithmetic closeable.
+    --
+    -- An INTEGER join key rather than the region's name, for the reason the
+    -- identity model above gives: New York is ~898,000 rows and a TEXT borough
+    -- on each of them is tens of megabytes of repeated string in the payload
+    -- and in every index that copies it.
+    region_id          INTEGER NOT NULL REFERENCES dim_region(id),
     lat                REAL NOT NULL,
     lon                REAL NOT NULL,
     address            TEXT,
@@ -1018,6 +1265,9 @@ CREATE INDEX idx_trees_lat_lon ON trees(lat, lon, id);
 CREATE INDEX idx_trees_species_current ON trees(species_current);
 CREATE INDEX idx_trees_neighborhood ON trees(neighborhood_id);
 CREATE INDEX idx_trees_status ON trees(status);
+-- The publisher's narrowing scan (s17): one DELETE per pack over this column,
+-- and the per-region counts it checks the split against.
+CREATE INDEX idx_trees_region ON trees(region_id);
 -- The almanac's two neighbourhood-scoped planting reads (screen 12): the elder
 -- is a MIN over this within one neighbourhood, and the recent-planting window is
 -- a range scan over it. Both are ordered by date inside one neighbourhood, so the
@@ -1593,8 +1843,31 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         "dropped_out_of_bbox": 0,
         "dropped_dupe_treeid": 0,
         "kept": 0,
-        "vacant_site": 0,
-        "alive": 0,
+        # ── One counter per value `trees.status` may hold (s17) ──────────────
+        # Every member of the CHECK constraint's vocabulary is declared here,
+        # including the ones no current source produces, so a status that starts
+        # appearing shows up as a number moving off zero rather than as a
+        # KeyError in a build nobody is watching.
+        #
+        # These REPLACE the bare `alive` and `vacant_site` counters. Renaming
+        # them was the point rather than a tidy-up: `alive` was incremented by an
+        # `else`, so its name and its meaning ("everything that is not a vacant
+        # site") only agreed while two statuses existed. One name per value keeps
+        # them agreeing as the vocabulary grows.
+        "status_alive": 0,
+        "status_declining": 0,
+        "status_dead_reported": 0,
+        "status_removed": 0,
+        "status_vacant_site": 0,
+        # How many records arrived with a condition claim at all, and what it
+        # said. `condition_stated` is the size of what s17 made representable:
+        # while `STATUS_FOR_KIND` was keyed on `kind`, this number could only
+        # ever have been zero.
+        "condition_stated": 0,
+        "condition_alive": 0,
+        "condition_declining": 0,
+        "condition_dead": 0,
+        "condition_removed": 0,
         "assertions": 0,
         "stub_rows": 0,
         "parsed_rows": 0,
@@ -1796,17 +2069,25 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             else:
                 stats["parsed_rows"] += 1
 
-        # ---- what the record IS. One lookup, so #94 has one place to change.
-        status = STATUS_FOR_KIND[record.kind]
+        # ---- what the record IS, and how it is DOING. One lookup, so #94 has
+        # one place to change; two arguments since s17, so a source that
+        # publishes a condition can reach `declining` / `dead_reported` instead
+        # of being flattened to `alive` (see `status_for_record`).
+        status = status_for_record(record.kind, record.condition)
         if record.kind == KIND_PLANTING_SITE:
             if record.kind_basis == KindBasis.INFERRED_FROM_ABSENT_SPECIES:
                 stats["planting_sites_inferred_from_absent_species"] += 1
             else:
                 stats["planting_sites_stated_by_source"] += 1
-        if status == "vacant_site":
-            stats["vacant_site"] += 1
-        else:
-            stats["alive"] += 1
+        # Counted per status rather than per branch. `stats["alive"]` used to be
+        # incremented by an `else` on "is it a vacant site", and that stopped
+        # being a correct reading of it the moment a condition could produce
+        # `declining` or `dead_reported`: the `else` would have counted standing
+        # dead trees as living ones, in the build receipt, silently.
+        stats["status_" + status] += 1
+        if record.condition is not None:
+            stats["condition_stated"] += 1
+            stats["condition_" + record.condition] += 1
 
         planted_year = record.planted_on.year if record.planted_on else None
         planted_on = record.planted_on.isoformat() if record.planted_on else None
@@ -1853,6 +2134,14 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                 external_ref,
                 "city_import",
                 record.inventory,
+                # A PLACEHOLDER, REWRITTEN TO A dim_region.id BEFORE THE FLUSH.
+                # It cannot be the real key yet: `dim_region`'s rowids are not
+                # assigned until the contributing spaces are known, which is
+                # after the whole source has been read. `resolve_region_ids`
+                # below does the rewrite and fails loudly on anything it cannot
+                # place -- the same shape the case-normalisation pass uses to
+                # rewrite columns inside these rows.
+                (record_space.id, record.region),
                 record.lat,
                 record.lon,
                 record.address,
@@ -2109,6 +2398,51 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             for s in spaces
         ],
     )
+
+    # ---- dim_region (s17), and the key every tree row is about to resolve ----
+    # After `dim_city` because `dim_region.city_id` is a foreign key into it and
+    # `PRAGMA foreign_keys = ON`; before the flush because
+    # `trees.region_id` is a foreign key into THIS and is NOT NULL.
+    #
+    # Registered in `spaces`' sorted order and, within a space, in REGIONS'
+    # declared order -- the same determinism `dim_city` above relies on, for the
+    # same reason: these rowids are `trees.region_id`'s values and a rebuild
+    # must reproduce them.
+    missing_regions = [s for s in spaces if s not in REGIONS]
+    if missing_regions:
+        die(
+            f"no dim_region row registered for id space(s) {missing_regions!r} in "
+            f"REGIONS -- a published unit's identity is entered, never derived"
+        )
+    region_id_by_key: dict = {}
+    region_rows = []
+    for s in spaces:
+        entries = REGIONS[s]
+        sole = len(entries) == 1
+        for entry in entries:
+            if entry["level"] not in REGION_LEVELS:
+                die(f"region {entry['pack_id']!r} has level {entry['level']!r}, "
+                    f"not one of {REGION_LEVELS}")
+            cur = conn.execute(
+                "INSERT INTO dim_region(pack_id,display_name,level,city_id) VALUES(?,?,?,?)",
+                (entry["pack_id"], entry["display_name"], entry["level"],
+                 city_id_by_space[s]),
+            )
+            region_id = cur.lastrowid
+            # `None` -- "the id space's sole region" -- is registered only when
+            # the space HAS exactly one. A space with several and a record that
+            # named none is a stop, not a guess: `resolve_region_ids` finds no
+            # key and dies with the count.
+            if sole:
+                region_id_by_key[(s, None)] = region_id
+            for source_name in entry["source_names"]:
+                region_id_by_key[(s, source_name)] = region_id
+            region_rows.append((s, entry["pack_id"], entry["level"]))
+    conn.commit()
+    log("regions: " + ", ".join(
+        f"{pack} ({level}) in {space}" for space, pack, level in region_rows))
+
+    resolve_region_ids(tree_rows, region_id_by_key)
     conn.executemany(
         "INSERT INTO inventories(id,id_space,name,url) VALUES(?,?,?,?)",
         [(i, INVENTORIES[i].id_space, INVENTORIES[i].name, INVENTORIES[i].url)
@@ -2275,6 +2609,11 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # inside the app or outside it, could tell. It is a date the *source* was read,
     # never a clock reading at build time, so rebuilding this seed in 2030 from the
     # same cache still says 2026.
+    #
+    # Which of San Francisco's two inventories this build read, as the REGISTRY
+    # describes it. `sf_inventory` above is the id; this is the whole record, and
+    # it is what the `trees_source*` keys below are written from.
+    sf_inv = INVENTORIES[sf_inventory]
     if source == "city":
         source_meta = {
             # The inventory id, which is now `sf_city` and used to be `city`
@@ -2283,16 +2622,27 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # `inventory_<id>_*` below is built from, and those three agreeing is
             # what lets `InventorySource(id:seedMeta:)` resolve a row's
             # provenance without knowing any city's name in advance.
-            "trees_source": "sf_city",
-            "trees_source_name": "SF Public Works street tree inventory",
-            "trees_source_url": CITY_LAYER_SERVICE,
+            #
+            # READ FROM THE REGISTRY, NOT WRITTEN AGAIN HERE (s17). These three
+            # keys were literals -- `"sf_city"`, the name spelled out a second
+            # time, and a module constant for the url -- while
+            # `INVENTORIES["sf_city"]` already held all three, and the comment
+            # directly above was asserting that they agree. That is a comment
+            # claiming an invariant nothing enforced, on a value the seed's own
+            # provenance resolution depends on: rename the inventory in the
+            # registry and this key kept the old string, silently, in every
+            # published file. The registry is the one source now, so the
+            # comment's claim is true by construction rather than by care.
+            "trees_source": sf_inv.id,
+            "trees_source_name": sf_inv.name,
+            "trees_source_url": sf_inv.url,
             "trees_source_map_url": CITY_LAYER_MAP_URL,
             "trees_snapshot_on": city_meta["extracted_on"],
             "trees_source_last_edit_on": str(city_meta.get("server_last_edit_date") or ""),
             "trees_source_feature_count": str(city_meta.get("server_feature_count") or ""),
             # Which trees exist is the city's answer; these seven columns are the
             # export's, for the records both list. See `load_datasf_attributes`.
-            "attributes_source": "sf_datasf",
+            "attributes_source": INVENTORIES["sf_datasf"].id,
             "attributes_dataset_id": TREES_DATASET_ID,
             "attributes_snapshot_on": NOW[:10],
             "attributes_columns": ",".join(ENRICHED_COLUMNS),
@@ -2301,7 +2651,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # The vacant planting sites, which are the export's rows and not the
             # layer's -- it has no such category. `trees.inventory_source` says
             # which inventory each row came from; these are the totals.
-            "sites_source": "sf_datasf",
+            "sites_source": INVENTORIES["sf_datasf"].id,
             # The second pass's own row accounting, so the seed contract can close
             # the arithmetic over both passes: rows read = rows shipped + rows
             # dropped, with nothing unexplained on either side.
@@ -2318,8 +2668,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # The app resolves a row's provenance line through these, so a seed
             # built from two inventories can say which one each record came from
             # instead of putting one name over all of them.
-            "inventory_sf_city_name": "SF Public Works street tree inventory",
-            "inventory_sf_city_url": CITY_LAYER_SERVICE,
+            "inventory_sf_city_name": INVENTORIES["sf_city"].name,
+            "inventory_sf_city_url": INVENTORIES["sf_city"].url,
             "inventory_sf_city_snapshot_on": city_meta["extracted_on"],
             # Which numbering scheme this inventory's ids -- and therefore its
             # uuids -- are drawn from. Both of San Francisco's are `sf`, on
@@ -2328,8 +2678,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # CITY declares its own space, and a seed holding rows from two
             # spaces is a seed whose uuids were derived two ways.
             "inventory_sf_city_id_space": INVENTORIES["sf_city"].id_space,
-            "inventory_sf_datasf_name": "DataSF Street Tree List",
-            "inventory_sf_datasf_url": TREES_CSV_URL,
+            "inventory_sf_datasf_name": INVENTORIES["sf_datasf"].name,
+            "inventory_sf_datasf_url": INVENTORIES["sf_datasf"].url,
             "inventory_sf_datasf_snapshot_on": NOW[:10],
             "inventory_sf_datasf_id_space": INVENTORIES["sf_datasf"].id_space,
             # Nothing is unavailable outright: the two state-plane coordinates are
@@ -2338,17 +2688,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         }
     else:
         source_meta = {
-            "trees_source": "sf_datasf",
-            "trees_source_name": "DataSF Street Tree List",
+            "trees_source": sf_inv.id,
+            "trees_source_name": sf_inv.name,
             "trees_dataset_id": TREES_DATASET_ID,
-            "trees_source_url": TREES_CSV_URL,
+            "trees_source_url": sf_inv.url,
             # The DataSF export publishes no per-row as-of date; the snapshot date
             # is the dataset's own last update, which is what SEED_EPOCH is set to
             # (ERRATA E1). Stated rather than left to be inferred from `generated_at`.
             "trees_snapshot_on": NOW[:10],
             "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"]),
-            "inventory_sf_datasf_name": "DataSF Street Tree List",
-            "inventory_sf_datasf_url": TREES_CSV_URL,
+            "inventory_sf_datasf_name": INVENTORIES["sf_datasf"].name,
+            "inventory_sf_datasf_url": INVENTORIES["sf_datasf"].url,
             "inventory_sf_datasf_snapshot_on": NOW[:10],
             "inventory_sf_datasf_id_space": INVENTORIES["sf_datasf"].id_space,
             "columns_absent_from_source": "",
@@ -2395,6 +2745,68 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         }
     source_meta = {**source_meta, **sj_meta_keys}
 
+    # ---- coverage, standardised (s17) -----------------------------------
+    # WHAT R37'S TRAILING CLAUSE ASKED FOR, PAID NOW. It reads: "manifest
+    # `coverage` currently maps the ad-hoc `seed_meta.sj_ship_extent` key by
+    # hand; when a third city lands, `build_seed.py` should write
+    # `coverage_<id_space>` keys and the publisher's `COVERAGE_KEYS` shim
+    # retires." New York is that third city and this is that round.
+    #
+    # THE DIVERGENCE THIS CLOSES WAS LIVE AND SILENT. `SeedCities.coverage`
+    # (Swift) already preferred `coverage_<id_space>` and fell back to the
+    # legacy per-city name; `Tools/publish_cities.py` read the legacy name and
+    # ONLY the legacy name. So the bundled row and the published manifest agreed
+    # about San Jose purely because nothing had ever written the standardised
+    # key -- the day anything did, the app's own bundle and the catalogue would
+    # have disagreed about how much of a city a reader had, with no error
+    # anywhere. The publisher now prefers the same key in the same order as the
+    # app, and `Tools/test_publish_cities.py` pins the two orders together.
+    #
+    # Absent still means full; the key is written explicitly anyway, because
+    # "nobody stated it" and "somebody measured it and it was all of it" are
+    # different facts and only one of them survives a source changing shape.
+    coverage_keys = {}
+    for space in spaces:
+        if space == "us-ca-sj":
+            # `sj_extent` is this build's own flag and is the honest answer for
+            # it: `downtown` ships the SJ_SHIP_WINDOW box, `full` ships the
+            # whole corpus. `none` contributes no rows and no space here.
+            coverage_keys[f"coverage_{space}"] = (
+                "full" if sj_extent == "full" else sj_extent
+            )
+        else:
+            coverage_keys[f"coverage_{space}"] = "full"
+
+    # ---- per-inventory completeness, standardised (s17) ------------------
+    # `rows_from_<inventory>` has always said what SHIPPED. What the source says
+    # it PUBLISHES was recorded under two ad-hoc, differently-shaped names --
+    # `trees_source_feature_count` (San Francisco's, and global, so it could only
+    # ever describe one inventory) and `sj_source_feature_count` (San Jose's,
+    # prefixed by hand) -- so "did we ship all of it" was a question that could
+    # be asked of one inventory at a time and never uniformly. With New York
+    # about to add two more inventories in a third space, the ad-hoc shape does
+    # not extend.
+    #
+    # Same `inventory_<id>_*` shape as the name/url/date triple beside it, keyed
+    # by the same identifier `trees.inventory_source` stores. Written ONLY where
+    # the source actually publishes a count: an absent key means the source does
+    # not say, which is a different fact from a count of zero and must not be
+    # spelled as one. `Tools/verify_seed.py` check 1d reads these.
+    #
+    # BOTH LEGACY KEYS ARE KEPT. `Cypress/Data/Tests/DataGates.swift` reads
+    # `trees_source_feature_count` today; retiring it here would break a gate in
+    # the same change that adds a generation, and the two facts are not in
+    # conflict -- the new key is the general form of the old one.
+    completeness_keys = {}
+    if source == "city" and city_meta.get("server_feature_count"):
+        completeness_keys["inventory_sf_city_source_feature_count"] = \
+            str(city_meta["server_feature_count"])
+    if sj_rows is not None and sj_meta.get("server_feature_count"):
+        completeness_keys["inventory_sj_street_tree_source_feature_count"] = \
+            str(sj_meta["server_feature_count"])
+
+    source_meta = {**source_meta, **coverage_keys, **completeness_keys}
+
     meta = {
         "generator": "Tools/build_seed.py",
         "generated_at": NOW,
@@ -2412,7 +2824,16 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         "dropped_no_coords": str(stats["dropped_no_coords"]),
         "dropped_out_of_bbox": str(stats["dropped_out_of_bbox"]),
         "dropped_dupe_treeid": str(stats["dropped_dupe_treeid"]),
-        "vacant_site_rows": str(stats["vacant_site"]),
+        "vacant_site_rows": str(stats["status_vacant_site"]),
+        # One receipt key per status the file actually holds (s17). The seed has
+        # always stated how many vacant sites it carries; it could not state how
+        # many standing dead trees it carries, because until `status_for_record`
+        # it could not hold one.
+        "rows_status_alive": str(stats["status_alive"]),
+        "rows_status_declining": str(stats["status_declining"]),
+        "rows_status_dead_reported": str(stats["status_dead_reported"]),
+        "rows_status_removed": str(stats["status_removed"]),
+        "rows_with_condition_stated": str(stats["condition_stated"]),
         "non_taxon_rows": str(stats["non_taxon_rows"]),
         # ---- what the ingest contract made countable ------------------------
         # These three are not new facts about the corpus. They are the same rows
@@ -2519,8 +2940,20 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         print(f"    from city layer      "
               f"{stats['kept'] - stats['export_vacant_carried'] - stats['sj_kept']:,}")
         print(f"    from datasf export   {stats['export_vacant_carried']:,}")
-    print(f"    status=alive         {stats['alive']:,}")
-    print(f"    status=vacant_site   {stats['vacant_site']:,}")
+    # Every status the build produced, in the CHECK constraint's own order, and
+    # only the ones that happened. A zero line for `dead_reported` would read as
+    # a claim that the sources were asked and said none; they were not asked,
+    # because neither SF nor SJ publishes a condition at all.
+    for _status in ("alive", "declining", "dead_reported", "removed", "vacant_site"):
+        _n = stats[f"status_{_status}"]
+        if _n:
+            print(f"    status={_status:<14} {_n:,}")
+    if stats["condition_stated"]:
+        print(f"    condition stated     {stats['condition_stated']:,}  "
+              f"(alive {stats['condition_alive']:,}, "
+              f"declining {stats['condition_declining']:,}, "
+              f"dead {stats['condition_dead']:,}, "
+              f"removed {stats['condition_removed']:,})")
     print(f"      the source says so {stats['planting_sites_stated_by_source']:,}")
     print(f"      WE INFERRED IT     {stats['planting_sites_inferred_from_absent_species']:,}"
           f"  (blank or 'Tree' species field -- #94)")
@@ -2571,15 +3004,22 @@ def flush(conn, species_by_key, tree_rows, rtree_rows, assertion_rows) -> None:
             for sp in species_by_key.values()
         ],
     )
-    city_columns = ",".join(name for name, _ in CITY_RECORD_COLUMNS)
-    # 23, not 22: `id_space` joined the column list in the v14 pass.
-    placeholders = ",".join("?" * (23 + len(CITY_RECORD_COLUMNS)))
+    placeholders = ",".join("?" * len(TREE_COLUMNS))
+
+    # THE INDEX IS DERIVED FROM THIS LIST (see TREE_COLUMNS), so it cannot drift
+    # from it. The assertion stays anyway, and cheaply: it now catches the OTHER
+    # half of the pair -- a row whose length does not match the column list,
+    # which is what a mis-built row in `emit` looks like. SQLite would report
+    # that one itself, but not before `executemany` has partially run.
+    if TREE_COLUMNS[REGION_ROW_INDEX] != "region_id":
+        die(f"REGION_ROW_INDEX resolves to {TREE_COLUMNS[REGION_ROW_INDEX]!r}, not 'region_id'")
+    bad = next((i for i, row in enumerate(tree_rows) if len(row) != len(TREE_COLUMNS)), None)
+    if bad is not None:
+        die(f"tree row {bad} has {len(tree_rows[bad])} values for {len(TREE_COLUMNS)} "
+            f"columns; `emit` and TREE_COLUMNS have drifted apart")
+
     conn.executemany(
-        "INSERT INTO trees(id,uuid,id_space,external_ref,source,inventory_source,lat,lon,address,site_type,"
-        "neighborhood_id,status,species_current,planted_year,planted_on,"
-        "dbh_city_cm_min,dbh_city_cm_max,site_lineage,verification_state,"
-        f"{city_columns},city_raw,"
-        f"created_at,updated_at,deleted_at) VALUES({placeholders})",
+        f"INSERT INTO trees({','.join(TREE_COLUMNS)}) VALUES({placeholders})",
         tree_rows,
     )
     conn.executemany(

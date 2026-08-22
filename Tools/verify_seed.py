@@ -80,6 +80,101 @@ def inventory_row_counts(conn) -> tuple[dict, dict, list]:
     return actual, claimed, declared
 
 
+def inventory_completeness(conn) -> list[tuple]:
+    """What each inventory PUBLISHES against what this file KEPT (check 1d, s17).
+
+    `rows_from_<inventory>` says what shipped. What the source says it holds was
+    recorded under two ad-hoc names -- `trees_source_feature_count`, which is
+    global and so could only ever describe one inventory, and
+    `sj_source_feature_count`, prefixed by hand -- so completeness was a question
+    that could be asked of one inventory at a time and never uniformly. s17
+    standardises it as `inventory_<id>_source_feature_count`, the same shape as
+    the name/url/date triple beside it.
+
+    **A shortfall is REPORTED, never failed.** Shipping fewer rows than a source
+    publishes is the ordinary case and usually deliberate: San Jose ships a
+    downtown window out of 344,879 records, and San Francisco's build drops rows
+    with no coordinates. The number that matters is that the file can SAY so.
+    A silent gap is the defect; a stated one is a decision.
+
+    Absent key means the source publishes no count -- which is a different fact
+    from a count of zero and is reported as such.
+
+    Returns (inventory, published, kept, pct) per inventory that states a count.
+    """
+    meta = dict(conn.execute("SELECT key, value FROM seed_meta"))
+    actual = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT inventory_source, COUNT(*) FROM trees GROUP BY inventory_source"
+        )
+    }
+    out = []
+    for inventory in [r[0] for r in conn.execute("SELECT id FROM inventories ORDER BY id")]:
+        stated = meta.get(f"inventory_{inventory}_source_feature_count")
+        if stated is None or not stated.strip():
+            continue
+        published = int(stated)
+        kept = actual.get(inventory, 0)
+        pct = 100.0 * kept / published if published else 0.0
+        out.append((inventory, published, kept, pct))
+    return out
+
+
+def region_integrity(conn) -> dict:
+    """The s17 region dimension, checked against the rows that point at it.
+
+    Four facts, because four different things can go wrong and only one of them
+    is what `PRAGMA foreign_key_check` already covers:
+
+      `declared`     rows in `dim_region`.
+      `referenced`   distinct `region_id` values `trees` actually uses. A region
+                     declared and never used publishes as an empty pack; a
+                     `region_id` used and never declared is a row that lands in
+                     no pack at all.
+      `dangling`     `region_id` values with no `dim_region` row. The FK covers
+                     this in a file built with `PRAGMA foreign_keys = ON`, and
+                     it is checked ANYWAY: the publisher's narrowing runs
+                     DELETEs on a connection that never enables the pragma
+                     (`build_city_file` says so), so a published pack's
+                     referential integrity is asserted by check 9 after the
+                     fact rather than enforced during it.
+      `null_region`  rows with no region. `trees.region_id` is NOT NULL, so this
+                     should be structurally impossible -- which is exactly why
+                     it is worth one query. A seed built by an older generator,
+                     or a hand-patched file, has neither the column nor the
+                     constraint, and this is the check that notices instead of
+                     assuming.
+
+    `per_region` pairs each declared region with its row count, for the report
+    and for the sum check the caller makes against `rows_kept`.
+
+    Returns {} for a pre-s17 file, which is not a failure -- the seed on this
+    tree is s16 as this is written and must keep verifying.
+    """
+    tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(trees)")}
+    if "dim_region" not in tables or "region_id" not in columns:
+        return {}
+
+    declared = {
+        rid: pack for rid, pack in conn.execute("SELECT id, pack_id FROM dim_region")
+    }
+    used = dict(conn.execute(
+        "SELECT region_id, COUNT(*) FROM trees GROUP BY region_id"))
+    return {
+        "declared": declared,
+        "per_region": {declared.get(rid, f"<undeclared {rid}>"): n
+                       for rid, n in sorted(used.items(), key=lambda kv: (kv[0] is None, kv[0]))},
+        "unused": sorted(pack for rid, pack in declared.items() if rid not in used),
+        "dangling": {rid: n for rid, n in used.items()
+                     if rid is not None and rid not in declared},
+        "null_region": used.get(None, 0),
+        "total_in_regions": sum(n for rid, n in used.items() if rid is not None),
+    }
+
+
 def neighborhood_coverage(conn) -> tuple[list, list, bool]:
     """Check 13, per id space. Returns (rows, below_threshold, collapsed).
 
@@ -227,6 +322,58 @@ def main() -> int:
         "1c. seed_meta.rows_kept is the file's own total",
         kept is not None and int(kept) == trees,
         f"rows_kept={kept} vs {trees:,} rows in trees",
+    )
+
+    # ---- 1r. the region dimension (s17) ---------------------------------
+    # Skipped entirely on a pre-s17 file, which is not a failure: the canonical
+    # seed is s16 as this is written and must keep verifying.
+    regions = region_integrity(conn)
+    if regions:
+        c.check(
+            "1r-a. every region_id a tree carries is declared in dim_region",
+            not regions["dangling"] and regions["null_region"] == 0,
+            (f"{sum(regions['dangling'].values()):,} row(s) point at undeclared region id(s) "
+             f"{sorted(regions['dangling'])}; " if regions["dangling"] else "")
+            + (f"{regions['null_region']:,} row(s) carry NO region and would land in no "
+               f"published pack; " if regions["null_region"] else "")
+            + f"{len(regions['declared'])} region(s) declared",
+        )
+        # A declared-but-empty region is a pack the publisher refuses to build
+        # (an empty download buys a reader nothing), so it is a real stop rather
+        # than a tidiness note -- better found here than at publish time.
+        c.check(
+            "1r-b. every declared region holds rows",
+            not regions["unused"],
+            f"declared but empty: {regions['unused']}" if regions["unused"]
+            else ", ".join(f"{pack}={n:,}" for pack, n in regions["per_region"].items()),
+        )
+        # THE ARITHMETIC THAT CLOSES. Per-region counts must sum to the file's
+        # own total, which is what makes "the packs sum to the seed" checkable
+        # before the publisher ever runs -- and `rows_kept` is the same number
+        # check 1c already tied to the row count.
+        c.check(
+            "1r-c. per-region counts sum to the file's own row total",
+            regions["total_in_regions"] == trees,
+            f"regions hold {regions['total_in_regions']:,}, trees holds {trees:,}",
+        )
+
+    # 1d. Per-inventory completeness (s17). Reported, not failed -- see
+    # `inventory_completeness`. The check that CAN fail is that an inventory
+    # stating a count states a coherent one.
+    completeness = inventory_completeness(conn)
+    silent = [inv for inv in declared_inv
+              if inv not in {row[0] for row in completeness}]
+    c.check(
+        "1d. every inventory stating a source feature count states a coherent one",
+        all(published > 0 and kept <= published
+            for _, published, kept, _ in completeness),
+        "; ".join(
+            f"{inv}: kept {kept:,} of {published:,} published ({pct:.2f}%)"
+            for inv, published, kept, pct in completeness
+        )
+        + (f"; NO SOURCE COUNT STATED for {silent} (the source does not publish one, "
+           f"or this build did not record it)" if silent else "")
+        or "no inventory in this file states a source feature count",
     )
 
     # ----------------------------------------------------------------- 2 bbox
