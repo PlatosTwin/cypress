@@ -422,33 +422,43 @@ struct MapAnnotationLayer: UIViewRepresentable {
     /// Turns the compass on or off and puts its top edge at the **screen** y `compassTopInset`
     /// names. See the compass block in `makeUIView` for the ruling and for how that y is arrived at.
     ///
-    /// ── **The safe area is added, not maxed — so it is subtracted here** (PR #102) ──────────────
+    /// ── **The safe area is added, not maxed — and it is deliberately left added** (PR #102) ─────
     ///
     /// `MKMapView.insetsLayoutMarginsFromSafeArea` is `true`, and what that does to `layoutMargins`
-    /// is **add** the view's own safe-area inset to the value you set, not take the larger of the
-    /// two. Probed on an `MKMapView` in a window with a real safe area: written `(top: 211)` against
-    /// a `safeAreaInsets.top` of 113 reads back as `(top: 324)`, and 211 + 113 = 324.
+    /// is **add** the view's own safe-area inset to the value set, not take the larger of the two.
+    /// Probed on an `MKMapView` in a window with a real safe area: written `(top: 211)` against a
+    /// `safeAreaInsets.top` of 113 reads back as `(top: 324)`, and 211 + 113 = 324. So the compass's
+    /// real screen y is `compassTopInset + safeAreaTop`, not `compassTopInset` — 168 + 62 = 230 on
+    /// an iPhone 16 Pro Max at the default size, and 219 + 62 = 281 at AX5, against a compass
+    /// measured at 287 there. `MapLayout.compassTop` is that sum and is what every guard asserts
+    /// against; this function writes the margin and nothing else.
     ///
-    /// This map is `MapCanvas`'s `.ignoresSafeArea` basemap, so its own safe-area top *is* the
-    /// screen's, and the margin that lands the compass at screen y `top` is `top − safeAreaTop`.
-    /// Writing `top` unsubtracted — which is what this did until PR #102 — put the compass a whole
-    /// safe-area-top lower than the chrome it was aimed under: 168 + 62 ≈ 235 measured on an iPhone
-    /// 16 Pro Max at the default size, against the 168 intended.
+    /// **The obvious repair — subtract the safe area here — was built, and it broke the map.**
+    /// `layoutMargins` on an `MKMapView` is not an ornament-placement knob: it is the map's own
+    /// content inset, and moving it moves what the camera considers its center. Subtracting the
+    /// inset (effective top 230 → 168) turned
+    /// `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` red **four times
+    /// out of four** — "panning the map did not move the camera off the reader", with the pan probe
+    /// showing the drag had reached the map (`panBegan=3 panEnded=3`) and the camera settled back
+    /// on the reader. A control at `origin/main` passed on the same simulator minutes later, and
+    /// restoring this one line to the unsubtracted value turned it green again. Two runs isolated
+    /// it to the value rather than to the write-guard below.
     ///
-    /// **Read off this same view rather than handed in, and that is deliberate.** The number wanted
-    /// here is not "the screen's safe area" but "whatever this view is about to add back", and the
-    /// only authority on that is the view. E243's warning is against *baking* an inset into a
-    /// constant, which is the opposite move. Before the map is in a hierarchy the inset reads 0 and
-    /// the margin is the full y; `updateUIView` runs after layout and corrects it, and the compass
-    /// is hidden at north until the reader rotates the map in any case.
+    /// So the double-count the PR #102 review found is **kept, and is no longer load-bearing** —
+    /// which was the real finding. It used to be the only thing holding the compass off the legend,
+    /// by 5 accidental points; the clearance is now horizontal and exact
+    /// (`MapSpeciesLegend.trailingReserve`), and this number is free to be what the *map* wants:
+    /// "the top of this view is under chrome". What is not allowed is for it to be accidental, and
+    /// it is not — `MapLayout.compassTop` carries the sum, and
+    /// `AX5ReflowTests.theCompassFitsBetweenTheTwoBlocks` sweeps the resulting rectangle against
+    /// the bottom chrome on every screen and inset the app runs.
     ///
-    /// **`insetsLayoutMarginsFromSafeArea` stays on**, though turning it off would make the write
-    /// literal. It is also what gives the Legal attribution its bottom safe-area inset — the probe
-    /// reads a bottom margin of 34 after writing 0 — so switching it off to simplify this line
-    /// would push the attribution into the home indicator. Zeroing `left`/`right`/`bottom` is
-    /// harmless for the same reason and was verified: `MKMapView`'s own defaults are already
-    /// `(0, 0, 0, 0)` and the safe area is re-added on top, so writing zeros changes nothing but
-    /// the top.
+    /// **`insetsLayoutMarginsFromSafeArea` stays on**, and turning it off would not have helped:
+    /// it would make the write literal at the cost of the same effective change the pan test
+    /// refuses, and it is also what gives the Legal attribution its bottom safe-area inset — the
+    /// probe reads a bottom margin of 34 after writing 0. Zeroing `left`/`right`/`bottom` is
+    /// harmless and was verified: `MKMapView`'s own defaults are already `(0, 0, 0, 0)` and the
+    /// safe area is re-added on top, so writing zeros changes nothing but the top.
     ///
     /// ── **The write-guard is against what was last written** (PR #102) ──────────────────────────
     ///
@@ -467,7 +477,9 @@ struct MapAnnotationLayer: UIViewRepresentable {
     private func applyCompass(to mapView: MKMapView) {
         mapView.showsCompass = compassTopInset != nil
         guard let compassTopInset, let mapView = mapView as? AimableMapView else { return }
-        let marginTop = max(0, compassTopInset - mapView.safeAreaInsets.top)
+        // Written as given. The safe area UIKit adds on top is accounted for in
+        // `MapLayout.compassTop`, not cancelled here — see above.
+        let marginTop = compassTopInset
         guard mapView.lastCompassMarginTop != marginTop else { return }
         mapView.lastCompassMarginTop = marginTop
         mapView.layoutMargins = UIEdgeInsets(top: marginTop, left: 0, bottom: 0, right: 0)

@@ -332,8 +332,14 @@ struct MapHomeView: View {
             // compass's column by `MapSpeciesLegend.trailingReserve` below, rather than by stepping
             // the compass over it — there is no vertical room to step into. See `MapLayout`'s
             // compass block for the sweep that establishes that.
+            // **The margin to write, not the compass's screen y** — UIKit adds the map's own safe
+            // area to it, and `MapLayout.compassTop` is that sum. `nil` where the screen cannot
+            // seat the control without eating the location notice's floor.
             compassTopInset: MapLayout.compassTop(
                 screenHeight: screenHeight,
+                topInset: topInset,
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            ) == nil ? nil : MapLayout.compassLayoutMargin(
                 topInset: topInset,
                 isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
             ),

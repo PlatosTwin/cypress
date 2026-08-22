@@ -1145,11 +1145,10 @@ struct AX5ReflowTests {
     /// than on the answer under test.
     ///
     /// So the exemption is named exactly: **every screen and inset this app runs gets a compass, at
-    /// both ends of the type ramp, except a 667 pt screen at AX5 with a notched inset** — a pairing
-    /// the sweep crosses deliberately and no shipping phone is. It is asserted as an expected `nil`
-    /// rather than skipped, so a change that quietly *restored* it fails here too and gets read: the
-    /// only way to seat a compass there is out of `noticeFloor`, and that is the location notice's
-    /// `Settings` button.
+    /// both ends of the type ramp, except the 667 pt iPhone SE at an accessibility size.** It is
+    /// asserted as an expected `nil` rather than skipped, so a change that quietly *restored* it
+    /// fails here too and gets read: the only way to seat a compass there is out of `noticeFloor`,
+    /// and that is the location notice's `Settings` button.
     @Test("every supported screen gets a compass, except the one that provably cannot house it")
     func theCompassIsDrawnWhereverItFits() {
         for screenHeight in Self.supportedScreenHeights {
@@ -1160,10 +1159,11 @@ struct AX5ReflowTests {
                         topInset: topInset,
                         isAccessibilitySize: isAccessibilitySize
                     )
-                    // A 667 pt screen at AX5 *paired with a notched inset* — a combination the
-                    // sweep crosses on purpose and no shipping phone is. The real iPhone SE
-                    // reports a 20 pt inset and keeps its compass at every size.
-                    let expectedAbsent = screenHeight == 667 && isAccessibilitySize && topInset >= 47
+                    // The 667 pt iPhone SE at an accessibility size, and nothing else. The
+                    // compass's band sits `topInset` lower than the written margin (UIKit adds the
+                    // safe area), and on the shortest screen that leaves less than the location
+                    // notice's floor underneath it.
+                    let expectedAbsent = screenHeight == 667 && isAccessibilitySize
                     #expect(
                         (top == nil) == expectedAbsent,
                         """
