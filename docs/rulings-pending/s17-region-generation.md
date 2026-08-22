@@ -114,14 +114,45 @@ something it would confidently mis-describe as a city with its own civic identit
 **And the reverse direction, which D8 does not cover.** D8 protects an old install against a new
 bucket; nothing protects a new *build* against an old bucket, which is the ordinary state of the
 world between shipping this round and running the next publish. `CityDownloader.fetchManifest`
-therefore falls back to `manifest.json` — **on absence and on nothing else.** A 404 or a missing
-file means the publisher has not run yet and is recoverable; a 500, a timeout or a manifest that
-does not decode are facts about that fetch, and retrying them elsewhere would turn one honest error
-into a confusing second one and silently downgrade a reader to the whole-cities-only catalog on a
-transient blip.
+therefore falls back to `manifest.json` — **on absence and on nothing else.** Absence means a `404`
+**or a `403`** (see below); a 500, a timeout or a manifest that does not decode are facts about that
+fetch, and retrying them elsewhere would turn one honest error into a confusing second one and
+silently downgrade a reader to the whole-cities-only catalog on a transient blip.
+
+**`403` counts as absence, and that is a judgement call rather than a reading of HTTP.** It is
+recorded here because it is the kind of decision that looks like a bug to the next person who finds
+it, and a source comment is not where a reader looks for the reasoning.
+
+- **The measurement that forces it.** `CityDownloader`'s own header records it: *Tigris has served
+  `HEAD 200` beside `GET 403` on the same key.* An S3-compatible store answers `403` rather than
+  `404` for a key the caller may not enumerate, so on the public domain — the only host the app
+  talks to — a manifest that has simply never been published can arrive as `403`. A fallback
+  watching `404` alone was therefore dead code exactly where it was needed, which is what
+  adversarial review found.
+- **Why it cannot mask an authorization failure.** *There is nothing to authorize.* Every request
+  from this type is anonymous: the app holds no bucket credential, sends none, and R37.4 forbids
+  reading a host out of the manifest. For an unauthenticated reader `403` and `404` carry the same
+  information — you cannot have this object. There is no credential that could be wrong, so there
+  is no auth failure to be masked.
+- **A real lockout still surfaces, because the fallback retries once and never swallows.** If the
+  bucket were misconfigured to private, *every* object answers `403`, including the legacy manifest
+  this falls back to — so the second fetch fails too and **its** error propagates. The reader sees
+  the legacy path's failure, which is the more informative one, because that is the object every
+  shipped build depends on.
+- **Scope.** Only the manifest consults this. `downloadCity` does not: a `403` on a city file stays
+  a hard failure, because that object's absence is not a recoverable transitional state — it is a
+  manifest that lied.
 
 `CityManifest.knownFormats` becomes `{1, 2}`. The rule that did not soften: an unknown format is
 still refused at the door.
+
+**Deliberately UNSCHEDULED, and named so it is not mistaken for an oversight:** retiring the
+format-1 object and the `level == "city"` filter that keeps it honest has **no date and no ticket**.
+D8 sets the window at "one release cycle" without fixing when it starts, and the honest trigger is
+the first NYC publish — the moment the format-1 catalogue starts omitting real packs rather than
+merely describing whole cities. That is an owner decision about TestFlight adoption, not an
+author's, and it is being carried to the owner separately. Until it is taken, both objects publish
+and both are verified on every run.
 
 ---
 
