@@ -73,7 +73,8 @@ struct OutboxPresentation {
         /// cannot print a number without its C12 badge (D7). It follows `detail` and precedes the
         /// time, which is the order §2 draws: `DBH 31 cm, tape · upload failed twice`.
         let quantity: Quantity?
-        /// `11:42 am`, carrying §2's `·` separator when something precedes it on the line.
+        /// `11:42 am` — or `Aug 19` once this list spans days (`OutboxCopy.stamp`) — carrying §2's
+        /// `·` separator when something precedes it on the line.
         let timeText: String
         /// `OutboxFailureReason`'s sentence, or nil when there is nothing to explain.
         let reason: String?
@@ -92,7 +93,7 @@ struct OutboxPresentation {
         let id: UUID
         /// `Visit · Ginkgo on Noriega`.
         let title: String
-        /// `✓ 9:56 am`.
+        /// `✓ 9:56 am`, or `✓ Aug 19` once this section spans days (`OutboxCopy.stamp`).
         let timeText: String
     }
 
@@ -136,15 +137,23 @@ struct OutboxPresentation {
     /// FIFO is the order the queue drains in, so it is the order the screen shows: a row above
     /// another row will be attempted before it.
     var queue: [Row] {
-        snapshot.items
-            .filter { $0.state != .done }
-            .map(row(for:))
+        let items = snapshot.items.filter { $0.state != .done }
+        // Asked once for the whole list, not once per row: it is a property of the *list* (see
+        // `OutboxCopy.stamp`), and a per-row call would walk every row for every row.
+        let spansDays = OutboxCopy.spansMoreThanOneDay(items.map(\.createdAt), calendar: calendar)
+        return items.map { row(for: $0, spansDays: spansDays) }
     }
 
-    private func row(for item: OutboxItemSnapshot) -> Row {
+    private func row(for item: OutboxItemSnapshot, spansDays: Bool) -> Row {
         let detail = OutboxCopy.detail(for: item)
         let quantity = measurementQuantity(item)
-        let time = OutboxCopy.timeStamp(item.createdAt, calendar: calendar, locale: locale)
+        let time = OutboxCopy.stamp(
+            item.createdAt,
+            spansDays: spansDays,
+            now: now,
+            calendar: calendar,
+            locale: locale
+        )
         return Row(
             id: item.id,
             title: OutboxCopy.title(kind: item.kind, treeName: item.treeName),
@@ -218,22 +227,53 @@ struct OutboxPresentation {
     /// The receipts, newest first.
     ///
     /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it, so this section
-    /// is exactly what its heading claims and cannot quietly become a week.
-    var syncedRows: [SyncedRow] {
+    /// can never become a week — **but 24 h of retention spans two calendar days for most of the
+    /// day**, and this line used to argue from the first fact that the section "is exactly what its
+    /// heading claims". It is not: the two-day case is precisely the one that flips the stamps to
+    /// dates, and it is common rather than exotic (PR #102 review). The heading asks the same
+    /// question and answers it the same way — see `syncedHeading`.
+    private var syncedItems: [OutboxItemSnapshot] {
         snapshot.items
             .filter { $0.state == .done }
             // Newest receipt first, as §4 lists them — and by when each one *went*, which is not the
             // FIFO order the queue drained in once a retry has reordered anything.
             .sorted { $0.updatedAt > $1.updatedAt }
-            .map { item in
-                SyncedRow(
-                    id: item.id,
-                    title: OutboxCopy.title(kind: item.kind, treeName: item.treeName),
-                    // `updatedAt`, not `capturedAt`: the receipt stamps when it went, and an item
-                    // that waited out a dead zone went at a different hour than it was taken.
-                    timeText: OutboxCopy.syncedStamp(item.updatedAt, calendar: calendar, locale: locale)
+    }
+
+    /// This section's own span, and not the queue's. They are two lists under two headings, and the
+    /// question `stamp` answers — "can a reader tell these rows apart by their stamps" — is asked of
+    /// the rows a reader is looking at. See `OutboxCopy.stamp`.
+    private var syncedSpansDays: Bool {
+        OutboxCopy.spansMoreThanOneDay(syncedItems.map(\.updatedAt), calendar: calendar)
+    }
+
+    /// §4's heading, for the list actually under it.
+    ///
+    /// One `spansDays` answer drives the heading and every stamp beneath it, so the screen cannot
+    /// say `Synced earlier today` over a row stamped `Jan 14` — which it could, and which is what
+    /// the original report was half about. See `OutboxCopy.syncedLabel(spansDays:)`.
+    var syncedHeading: String {
+        OutboxCopy.syncedLabel(spansDays: syncedSpansDays)
+    }
+
+    var syncedRows: [SyncedRow] {
+        let items = syncedItems
+        let spansDays = syncedSpansDays
+        return items.map { item in
+            SyncedRow(
+                id: item.id,
+                title: OutboxCopy.title(kind: item.kind, treeName: item.treeName),
+                // `updatedAt`, not `capturedAt`: the receipt stamps when it went, and an item
+                // that waited out a dead zone went at a different hour than it was taken.
+                timeText: OutboxCopy.syncedStamp(
+                    item.updatedAt,
+                    spansDays: spansDays,
+                    now: now,
+                    calendar: calendar,
+                    locale: locale
                 )
-            }
+            )
+        }
     }
 
     // MARK: - §5 Summary line
@@ -393,12 +433,39 @@ enum OutboxCopy {
     static let wifiTitle = "Sync photos on wifi only"
     static let wifiSubtitle = "Notes and numbers sync on any connection"
 
-    /// §4's micro-label, verbatim.
+    /// §4's micro-label, verbatim — **for the list it is true of.**
     static let syncedLabel = "Synced earlier today"
 
-    /// §4's trailing stamp — `✓ 9:56 am`.
-    static func syncedStamp(_ date: Date, calendar: Calendar, locale: Locale) -> String {
-        "✓ " + timeStamp(date, calendar: calendar, locale: locale)
+    /// The same label for a synced list that reaches back past today.
+    ///
+    /// **NOT SPECIFIED**, and the implementation's choice — recorded in `docs/RULINGS.md` once
+    /// the orchestrator splices this branch's pending entry under its real number at merge.
+    /// The owner ruled the *stamps*, in response to a report that the stamps and this heading
+    /// disagreed; fixing only the stamps left the screen able to draw `Synced earlier today` over a
+    /// row stamped `Jan 14`, which is the same contradiction from the other side (PR #102 review).
+    ///
+    /// It says less rather than saying something new: `Recently synced` makes no claim about a day,
+    /// which is the only thing wrong with the other string here. That is the move §5's summary line
+    /// already made when it replaced the mock's `this week` with `today` — a heading may only name a
+    /// window the app can actually answer for.
+    static let syncedSpanningLabel = "Recently synced"
+
+    /// Which of the two the section's own list has earned. Asked with the same `spansDays` the
+    /// stamps in it are asked with, so the heading and the rows under it cannot disagree — which is
+    /// the whole point, and was the defect.
+    static func syncedLabel(spansDays: Bool) -> String {
+        spansDays ? syncedSpanningLabel : syncedLabel
+    }
+
+    /// §4's trailing stamp — `✓ 9:56 am`, or `✓ Aug 19` on a list that spans days. See `stamp`.
+    static func syncedStamp(
+        _ date: Date,
+        spansDays: Bool,
+        now: Date,
+        calendar: Calendar,
+        locale: Locale
+    ) -> String {
+        "✓ " + stamp(date, spansDays: spansDays, now: now, calendar: calendar, locale: locale)
     }
 
     /// §5's summary, with the mock's own words and its own window replaced by the one the store
@@ -419,6 +486,54 @@ enum OutboxCopy {
     /// The retry control's label, from §2's drawn state word.
     static let retryAction = "Retry"
 
+    /// What a row's trailing stamp says: `11:42 am`, or `Aug 19` once the list it is in spans more
+    /// than one day.
+    ///
+    /// ── **The report, and the rule** ──────────────────────────────────────────────────────────
+    ///
+    /// Reported from the field: the synced receipts read `1:49 pm` on a list whose rows were taken
+    /// on different days, so two stamps an hour apart on the screen were a day apart in fact, and
+    /// nothing drawn said so. **The owner ruled it on 2026-08-21**: show the date instead of the
+    /// time once the list spans more than one day, otherwise the time. This function is that rule,
+    /// and `spansDays` is the question its caller has already answered about the whole list.
+    ///
+    /// It is a property of the *list* and not of the row, which is what makes it right. A per-row
+    /// "is this today" test would print `Aug 19` beside `1:49 pm` and leave the reader comparing two
+    /// kinds of thing; one answer for one list means every stamp in it is the same kind of fact and
+    /// they can be read against each other. `OutboxPresentation` asks it once per section, over that
+    /// section's own dates.
+    ///
+    /// ── **Why the year appears and usually does not** ─────────────────────────────────────────
+    ///
+    /// `Aug 19` is unambiguous inside a list that cannot reach back a year, and the synced section
+    /// cannot: `OutboxQueue.completedRetention` sweeps it at 24 h. The **queue** has no such sweep —
+    /// a terminally failed row waits for a tap and waits as long as it takes — so a queue really can
+    /// hold two rows whose `Aug 19`s are twelve months apart. A stamp carries its year when it is
+    /// not in `now`'s year, which costs nothing in the ordinary case and stops the one case where
+    /// the rule would replace an ambiguity with a different ambiguity.
+    static func stamp(
+        _ date: Date,
+        spansDays: Bool,
+        now: Date,
+        calendar: Calendar,
+        locale: Locale
+    ) -> String {
+        guard spansDays else { return timeStamp(date, calendar: calendar, locale: locale) }
+        return dateStamp(date, now: now, calendar: calendar, locale: locale)
+    }
+
+    /// Whether these dates fall on more than one calendar day, in the reader's own calendar and
+    /// time zone. An empty list and a one-row list both span one day and take the time.
+    ///
+    /// The set is of `startOfDay`, not of a day-of-year number: two dates eleven months apart can
+    /// share a day-of-month, and a `dateComponents` difference of "1 day" is a duration rather than
+    /// a boundary crossing — 11 pm and 1 am are two hours apart and two days.
+    static func spansMoreThanOneDay(_ dates: [Date], calendar: Calendar) -> Bool {
+        guard let first = dates.first else { return false }
+        let day = calendar.startOfDay(for: first)
+        return dates.contains { calendar.startOfDay(for: $0) != day }
+    }
+
     /// `11:42 am`. Lower case, as §2 writes it.
     static func timeStamp(_ date: Date, calendar: Calendar, locale: Locale) -> String {
         let formatter = DateFormatter()
@@ -427,6 +542,22 @@ enum OutboxCopy {
         formatter.locale = locale
         formatter.setLocalizedDateFormatFromTemplate("jmm")
         return formatter.string(from: date).lowercased(with: locale)
+    }
+
+    /// `Aug 19`, or `Aug 19, 2025` outside `now`'s year. See `stamp` for both halves of that.
+    ///
+    /// **Not lower-cased**, unlike `timeStamp` beside it. That call exists because §2 draws `11:42
+    /// am` rather than `11:42 AM` — it is fixing the *meridiem*, which is the only thing in a time
+    /// that a formatter capitalizes against the mock. A month is a proper noun in English and
+    /// `aug 19` is a misspelling, not a house style.
+    static func dateStamp(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = locale
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        formatter.setLocalizedDateFormatFromTemplate(sameYear ? "MMMd" : "yMMMd")
+        return formatter.string(from: date)
     }
 }
 

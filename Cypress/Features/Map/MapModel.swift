@@ -994,17 +994,45 @@ struct MapCardSubject: Identifiable, Equatable {
     var isVacantSite: Bool { pin.status == .vacantSite }
 
     /// The active name if the tree has one, else the species common name — "the species common name
-    /// is the fallback display everywhere" (D15).
+    /// is the fallback display everywhere" (D15) — and **`nil` until the profile read lands**.
     ///
     /// A vacant site takes neither, and it must not fall through to `Unidentified`: that word means
     /// "a tree whose species nobody has resolved", and 12,518 pins used to carry it while having no
     /// tree to identify. It is named for what it is instead.
-    var title: String {
+    ///
+    /// ── **Why this is optional, and what it was before (build 37, from the field)** ──────────────
+    ///
+    /// > *first tree tapped after app open shows "Unidentified · 25 m N" for about a second, then
+    /// > corrects to the right species*
+    ///
+    /// This property used to end in `return "Unidentified"`, with no case for *not knowing yet*.
+    /// `select(_:)` builds the card synchronously from the pin and starts the profile read beside it,
+    /// so between the tap and the read landing `profile` is `nil` — and every one of the three
+    /// clauses above reads off `profile`. The fall-through then answered a question the app had not
+    /// asked the database yet, in the one word that is a *claim about the species*: the reader was
+    /// told this tree is unidentified, and then told something else.
+    ///
+    /// It reads as a cold-path defect because that is when the read is slow enough to see. The first
+    /// `treeProfile(id:)` of a launch pays for the seed connection and its statement cache, and it
+    /// queues behind whatever viewport fetch the map is still finishing; by the third tap the same
+    /// path answers inside a frame and the wrong word is drawn too briefly to catch. **The race is
+    /// not the defect** — a card that appears instantly is the design, and `select(_:)`'s own comment
+    /// says so. The defect is that "still reading" and "read, and there is no species" were the same
+    /// value. They are two values now, and `MapTreeCard` draws the first as a placeholder.
+    ///
+    /// A vacant site still answers from the pin, unresolved or not (`isVacantSite`, ERRATA E107) —
+    /// that fact needs no read, which is the whole reason it is taken off the pin.
+    var title: String? {
         if isVacantSite { return SiteCopy.cardTitle }
-        if let name = profile?.activeName, name.isDisplayable { return name.name }
-        if let common = profile?.species?.commonName, !common.isEmpty { return common }
+        guard let profile else { return nil }
+        if let name = profile.activeName, name.isDisplayable { return name.name }
+        if let common = profile.species?.commonName, !common.isEmpty { return common }
         return "Unidentified"
     }
+
+    /// Whether the card can name this pin yet. The inverse of `title == nil`, named for what the
+    /// card does with it so a call site reads as a sentence rather than as a nil check.
+    var isAwaitingIdentity: Bool { title == nil }
 
     /// `nil` where there is no species, and also where the ingest never read a scientific name and
     /// `species.scientificName` holds DataSF's raw source string instead

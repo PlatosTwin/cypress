@@ -23,15 +23,41 @@ struct VisitSavedView: View {
     /// not this screen's — the same boundary that keeps `api` here rather than reached for.
     private let onLink: AccountAskLink?
 
+    // ══════════════════════════════════════════════════════════════════════════════════════════════
+    // **THE THREE FUNCTIONS THIS SCREEN OFFERS — the owner's ruling of 2026-08-21.**
+    //
+    // Screen 18 drew `Next nearest`, `Done for today` and `See it on the tree's timeline`. The owner
+    // ruled the set: **next nearest, back to the map, back to this tree**.
+    //
+    // **The copy is closed as well, as of 2026-08-21.** The functions were ruled first and the
+    // strings below were this file's draft for a day; the owner then chose that draft in a decision
+    // round, so `Next nearest`, `Back to the map` and `Back to this tree` are final. Changing any of
+    // them is a new decision, not a continuation of this one. Guarded by
+    // `VisitSavedControlSetTests`, which asserts the *set* — how many secondary controls there are
+    // and where each one goes — and deliberately not the words.
+    //
+    // Two of the three already existed under names that described the *mood* of leaving rather than
+    // the place being left for, and that is the whole of what was wrong with them. `Done for today`
+    // called `goToMap()` (see `RootView`), so a person who was not done — who wanted the map for a
+    // moment — had to declare an end to their morning to reach it. `See it on the tree's timeline`
+    // pushes `Route.treeProfile`, which is the tree's page: the timeline is one band on it, and the
+    // label promised the band. Both now say where they go, which is R2's rule for naming a control.
+    //
+    // **`onRouteComplete` is not a fourth function and is untouched.** It is the primary CTA's other
+    // state — when the route is finished there is no next nearest, and PROTOTYPE-FLOW §1.6 rule 5
+    // sends that button to the grove. One control, two labels, and the ruling replaced the *set of
+    // three controls*.
+    // ══════════════════════════════════════════════════════════════════════════════════════════════
+
     /// Advance to the next tree — straight to its camera, per PROTOTYPE-FLOW's `nextAction`.
     let onNextTree: (VisitCandidate) -> Void
     /// "Route done · see your grove". The grove is screen 08 and not this feature's; the container
     /// decides where that goes.
     let onRouteComplete: () -> Void
-    /// "Done for today".
-    let onDone: () -> Void
-    /// "See it on the tree's timeline" — screen 03, another feature's.
-    let onOpenTimeline: (UUID) -> Void
+    /// Back to the map — screen 01, where the FAB that starts this flow lives.
+    let onBackToMap: () -> Void
+    /// Back to this tree — screen 03, another feature's.
+    let onBackToTree: (UUID) -> Void
 
     init(
         receipt: VisitSaveReceipt,
@@ -43,8 +69,8 @@ struct VisitSavedView: View {
         onLink: AccountAskLink? = nil,
         onNextTree: @escaping (VisitCandidate) -> Void,
         onRouteComplete: @escaping () -> Void,
-        onDone: @escaping () -> Void,
-        onOpenTimeline: @escaping (UUID) -> Void
+        onBackToMap: @escaping () -> Void,
+        onBackToTree: @escaping (UUID) -> Void
     ) {
         _model = State(wrappedValue: VisitSavedModel(
             receipt: receipt,
@@ -58,8 +84,8 @@ struct VisitSavedView: View {
         self.onLink = onLink
         self.onNextTree = onNextTree
         self.onRouteComplete = onRouteComplete
-        self.onDone = onDone
-        self.onOpenTimeline = onOpenTimeline
+        self.onBackToMap = onBackToMap
+        self.onBackToTree = onBackToTree
     }
 
     var body: some View {
@@ -219,12 +245,12 @@ struct VisitSavedView: View {
 
     private var secondaryActions: some View {
         VStack(spacing: VisitMetrics.Saved.secondaryTop) {
-            SecondaryOutlineButton("Done for today") { onDone() }
+            SecondaryOutlineButton(VisitSavedCopy.backToMap) { onBackToMap() }
 
             Button {
-                onOpenTimeline(model.receipt.visit.treeID)
+                onBackToTree(model.receipt.visit.treeID)
             } label: {
-                Text("See it on the tree's timeline")
+                Text(VisitSavedCopy.backToTree)
                     .font(CypressFont.body135Bold)
                     .foregroundStyle(CypressColor.ctaFill)
                     .frame(maxWidth: .infinity)
@@ -248,6 +274,27 @@ struct VisitSavedView: View {
         .padding(.top, VisitMetrics.Saved.footnoteTop)
         .padding(.bottom, CypressSpacing.bottomFootnote)
     }
+}
+
+// MARK: - Copy
+
+/// Screen 18's two secondary controls, as ruled on 2026-08-21.
+///
+/// **Owner-final, not drafts.** The functions were ruled first and these strings were this file's
+/// proposal; the owner then chose them in a decision round the same day, closing the copy. Both are
+/// written to R2's rule — a control is named for where it goes, not for what the person pressing it
+/// has decided about their morning — and see the block above `onNextTree` for what the two controls
+/// used to say and why that was wrong.
+enum VisitSavedCopy {
+    /// Screen 01. PROTOTYPE-FLOW's own label for this action was `Done for today · back to the map`
+    /// and the app shipped the first half of it; this is the second half, which is the half that
+    /// names a place.
+    static let backToMap = "Back to the map"
+
+    /// Screen 03 — the tree's page, of which the timeline is one band. The previous label named the
+    /// band, and a reader who pressed it arrived at a page with a hero, a species, measurements and
+    /// care on it.
+    static let backToTree = "Back to this tree"
 }
 
 // MARK: - The mini route map

@@ -22,6 +22,7 @@
 //
 
 #if DEBUG
+import MapKit
 import SwiftUI
 import Testing
 import UIKit
@@ -1066,6 +1067,327 @@ struct AX5ReflowTests {
         }
     }
 
+    // MARK: - MapKit's compass (PR #102)
+
+    /// **The compass sits under the chip row and clears the bottom block, at every size the app
+    /// runs.**
+    ///
+    /// It is a fixed 44 pt control in the map's top-trailing ornament slot, aimed at
+    /// `MapLayout.compassTop` — the chip row's own bottom edge. The legend hangs below that on the
+    /// same side and is held out of the compass's *column* rather than stepped over vertically
+    /// (`MapSpeciesLegend.trailingReserve`), so the only vertical claim to check is that the control
+    /// fits between the row it hangs from and the bottom-anchored block, on every screen and inset.
+    ///
+    /// Swept rather than spot-checked, for the reason every other reservation here is: a compass
+    /// that clears on a 440 pt phone and lands in the notice on a 667 pt one is a control that is
+    /// reachable on the reviewer's device and not on a reader's.
+    @Test("MapKit's compass clears the chip row above it and the bottom chrome below it")
+    func theCompassFitsBetweenTheTwoBlocks() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                for namedSpecies in 0...MapSpeciesSlot.allCases.count {
+                    for isAccessibilitySize in [true, false] {
+                        // `nil` is a screen that cannot afford the control at all, which is a
+                        // decision rather than a failure — see `MapLayout.compassIsAffordable`.
+                        // There is nothing to clear, so there is nothing to assert.
+                        guard let top = MapLayout.compassTop(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            isAccessibilitySize: isAccessibilitySize
+                        ) else { continue }
+                        // **There is deliberately no "the compass clears the chip row" assertion
+                        // here, and its absence is the finding.** One stood here and it was a
+                        // tautology: `compassTop` is *defined* as the chip row's bottom edge plus
+                        // `topInset`, so `top >= chipRowBottom` reduces to `topInset >= 0` and is
+                        // true of any arithmetic at all. PR #102's verifier deleted the `+ topInset`
+                        // term from `compassTop` and watched 1604 unit tests and the UI guard stay
+                        // green on it. Nothing written in terms of `compassLayoutMargin` can test
+                        // that term; `theCompassTopIsWhatUIKitActuallyProduces` asserts it against
+                        // UIKit's own readback instead. What is left below is the assertion that is
+                        // *not* definitional, because `noticeMaxHeight` is an independent quantity.
+
+                        let notice = MapLayout.noticeMaxHeight(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            namedSpecies: namedSpecies,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        let bottomBlockTop = screenHeight
+                            - MapLayout.bottomSlotReservedAbove(
+                                isAccessibilitySize: isAccessibilitySize
+                            )
+                            - notice
+                        #expect(
+                            top + MapLayout.compassSize <= bottomBlockTop,
+                            """
+                            on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
+                            \(namedSpecies) legend chip(s), isAccessibilitySize=\
+                            \(isAccessibilitySize): the compass occupies y \(top)–\
+                            \(top + MapLayout.compassSize) and the bottom chrome begins at \
+                            \(bottomBlockTop). The compass is drawn by MapKit *under* the chrome, \
+                            so an overlap is the control covered, not crowded.
+                            """
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// **`compassTop`'s `+ topInset` asserted against UIKit, because nothing else can assert it.**
+    ///
+    /// The compass's real y is the written margin *plus the safe area UIKit adds back*, and that
+    /// second term is the whole of what PR #102's review corrected. It is also the one term this
+    /// file cannot check by arithmetic: every other quantity here is built from
+    /// `compassLayoutMargin`, so an assertion in those terms is an identity. The verifier proved it
+    /// — deleting `+ topInset` from `compassTop` left 1604 unit tests and the UI guard green.
+    ///
+    /// So the authority is UIKit. A real `MKMapView` goes into a window with a real safe area, the
+    /// margin this app would write is written, and `layoutMargins.top` is read back. That readback
+    /// is the effective inset MapKit lays the compass against, and it must equal `compassTop`.
+    ///
+    /// **The safe area is forced rather than inherited.** A hosted view picks up whichever inset the
+    /// running simulator has (47 on a 16e, 54 on a 16 Pro, 62 here — E243's whole lesson), and an
+    /// inset of 0 would make this vacuous in exactly the direction that hides the defect.
+    /// `additionalSafeAreaInsets` pins it, and the pin is asserted before anything is built on it.
+    @Test("MapLayout.compassTop equals the inset UIKit actually produces")
+    func theCompassTopIsWhatUIKitActuallyProduces() {
+        let forcedInset: CGFloat = 62
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        let controller = UIViewController()
+        controller.view = map
+        controller.additionalSafeAreaInsets = UIEdgeInsets(
+            top: forcedInset, left: 0, bottom: 0, right: 0
+        )
+        let window = UIWindow(frame: CGRect(x: -2_000, y: 0, width: 402, height: 874))
+        window.rootViewController = controller
+        window.isHidden = false
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        map.setNeedsLayout()
+        map.layoutIfNeeded()
+
+        let safeTop = map.safeAreaInsets.top
+        #expect(
+            safeTop >= forcedInset,
+            """
+            the map's safe-area top is \(safeTop), under the \(forcedInset) pt this test pins with             additionalSafeAreaInsets. With no safe area there is nothing for UIKit to add and every             assertion below passes for the wrong reason.
+            """
+        )
+
+        for isAccessibilitySize in [true, false] {
+            let written = MapLayout.compassLayoutMargin(
+                topInset: safeTop, isAccessibilitySize: isAccessibilitySize
+            )
+            map.layoutMargins = UIEdgeInsets(top: written, left: 0, bottom: 0, right: 0)
+            map.setNeedsLayout()
+            map.layoutIfNeeded()
+            let effective = map.layoutMargins.top
+
+            #expect(
+                effective > written,
+                """
+                writing \(written) into MKMapView.layoutMargins read back as \(effective) — UIKit                 did not add the safe area at all, so insetsLayoutMarginsFromSafeArea is no longer                 doing what every comment on this feature says it does, and MapLayout.compassTop's                 `+ topInset` is now wrong in the other direction.
+                """
+            )
+
+            let predicted = MapLayout.compassTop(
+                screenHeight: 874, topInset: safeTop, isAccessibilitySize: isAccessibilitySize
+            )
+            #expect(
+                predicted == effective,
+                """
+                at isAccessibilitySize=\(isAccessibilitySize): MapLayout.compassTop says the                 compass sits at \(predicted as Any), and MKMapView lays it against \(effective) —                 the margin this app writes (\(written)) plus the \(safeTop) pt safe area UIKit                 adds back. The two must be the same number or every clearance computed from                 compassTop is measuring a place the control is not (PR #102).
+                """
+            )
+        }
+    }
+
+    /// **The exemption above is narrow, and this is what stops it swallowing the guard.**
+    ///
+    /// `theCompassFitsBetweenTheTwoBlocks` skips the screens that cannot afford a compass, and an
+    /// affordability rule that quietly returned `false` everywhere would make that whole sweep
+    /// vacuous while staying green — this project's own dominant guard failure, and the reason
+    /// `theLegendCeilingAlwaysCutsAChipAtAX5` gates its exemption on the room the screen had rather
+    /// than on the answer under test.
+    ///
+    /// So the exemption is named exactly: **every screen and inset this app runs gets a compass, at
+    /// both ends of the type ramp, except the 667 pt iPhone SE at an accessibility size.** It is
+    /// asserted as an expected `nil` rather than skipped, so a change that quietly *restored* it
+    /// fails here too and gets read: the only way to seat a compass there is out of `noticeFloor`,
+    /// and that is the location notice's `Settings` button.
+    @Test("every supported screen gets a compass, except the one that provably cannot house it")
+    func theCompassIsDrawnWhereverItFits() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                for isAccessibilitySize in [true, false] {
+                    let top = MapLayout.compassTop(
+                        screenHeight: screenHeight,
+                        topInset: topInset,
+                        isAccessibilitySize: isAccessibilitySize
+                    )
+                    // The 667 pt iPhone SE at an accessibility size, and nothing else. The
+                    // compass's band sits `topInset` lower than the written margin (UIKit adds the
+                    // safe area), and on the shortest screen that leaves less than the location
+                    // notice's floor underneath it.
+                    let expectedAbsent = screenHeight == 667 && isAccessibilitySize
+                    #expect(
+                        (top == nil) == expectedAbsent,
+                        """
+                        on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
+                        isAccessibilitySize=\(isAccessibilitySize): compassTop is \
+                        \(top.map(String.init(describing:)) ?? "nil") where \
+                        \(expectedAbsent ? "nil" : "a value") was expected. If a compass has just \
+                        been withdrawn from a phone that had one, screen 01 has lost the only undo \
+                        for a rotation on that device; if one has appeared on the 667 pt screen at \
+                        AX5, MapLayout.chromeBudgetShortfall is about to go positive and the \
+                        location notice's Settings button is what pays for it.
+                        """
+                    )
+                }
+            }
+        }
+    }
+
+    /// **Seating the compass never pushes the notice below its own floor.**
+    ///
+    /// The cap is only safe because the compass yields rather than pushes: where the pot cannot
+    /// carry both the band and `noticeFloor`, `compassIsAffordable` says no and no cap is applied.
+    /// That floor is `MapLocationNotice`'s `Settings` button — the reader's only remedy for the
+    /// permission the card is about — so this is the assertion that says the new term took its room
+    /// from slack and not from the remedy.
+    ///
+    /// Swept over every palette size as well, because the cap and the legend's reservation interact:
+    /// the notice is squeezed from both ends and only their *sum* can breach the floor.
+    @Test("seating the compass never pushes the location notice below its floor")
+    func theCompassNeverEatsTheNoticeFloor() {
+        for screenHeight in Self.supportedScreenHeights {
+            for topInset in Self.supportedTopInsets {
+                for namedSpecies in 0...MapSpeciesSlot.allCases.count {
+                    for isAccessibilitySize in [true, false] {
+                        let shortfall = MapLayout.chromeBudgetShortfall(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        #expect(shortfall == 0, "a screen stopped being able to house both occupants")
+
+                        let notice = MapLayout.noticeMaxHeight(
+                            screenHeight: screenHeight,
+                            topInset: topInset,
+                            namedSpecies: namedSpecies,
+                            isAccessibilitySize: isAccessibilitySize
+                        )
+                        #expect(
+                            notice >= MapLayout.noticeFloor(isAccessibilitySize: isAccessibilitySize),
+                            """
+                            on a \(screenHeight) pt screen with a \(topInset) pt top inset, \
+                            \(namedSpecies) legend chip(s), isAccessibilitySize=\
+                            \(isAccessibilitySize): the notice is given \(notice) pt against a floor \
+                            of \(MapLayout.noticeFloor(isAccessibilitySize: isAccessibilitySize)). \
+                            The compass's band is meant to come out of slack and to yield entirely \
+                            where there is none — MapLayout.compassIsAffordable is no longer \
+                            refusing where it must, and the card's Settings button is what pays.
+                            """
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// **`FlowRow` never draws a chip wider than the column it was given** (PR #102).
+    ///
+    /// Every measurement in that layout was `sizeThatFits(.unspecified)` — the subview's *ideal*
+    /// size, asked for with no constraint — and the ideal was then both wrapped against and placed
+    /// at. A chip narrower than the row makes those the same number; one wider does not, and the row
+    /// placed it at its ideal anyway. Measured on an iPhone 16 Pro Max at AX5, a `Sycamore, London
+    /// Plane` chip drew **446 pt inside a 408 pt column on a 440 pt screen** — off the trailing edge
+    /// of the phone, and, once the compass's column is reserved, straight over the compass.
+    ///
+    /// **Why this is a unit test and not left to the UI guard.**
+    /// `IdentifyFABReachabilityTests.testTheSpeciesLegendClearsTheCompassColumnAtAX5WithLocationDenied`
+    /// asserts the legend's rectangle on a running phone, and on a 402 pt device at the pinned
+    /// camera it never engages: no single chip there beats the column on its own, so the chips
+    /// merely re-wrap and the legend fits either way — checked, by removing this clamp and watching
+    /// that test stay green. The overflow needs a name long enough to beat the column by itself,
+    /// which is a fixture question rather than a device question.
+    ///
+    /// **And it is the placed width that is asserted, not the reported one.** `FlowRow.sizeThatFits`
+    /// already returns `min(widest, width)`, so the size it *reports* is clamped whether or not the
+    /// subview it *placed* was — the defect is invisible from outside the layout, which is why it
+    /// survived. A `GeometryReader` in the chip's own background reports the width it was given.
+    @Test("FlowRow never places a chip wider than the column it was given")
+    func flowRowClampsAChipWiderThanItsColumn() async {
+        let column: CGFloat = 200
+        let probe = WidthProbe()
+        // One chip whose natural width is far past the column, drawn the way a real legend chip is:
+        // one line of `body12SemiBold` that truncates rather than wrapping.
+        let row = FlowRow(spacing: MapLayout.chipGap, lineSpacing: MapLayout.chipGap) {
+            Text("Sycamore, London Plane and Then Some More Words Besides")
+                .font(CypressFont.body12SemiBold)
+                .lineLimit(1)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
+                            probe.record(width)
+                        }
+                    }
+                }
+        }
+        _ = await Self.ax5Size(of: row, width: column, size: .large)
+
+        let placed = probe.widest
+        #expect(placed > 0, "the probe never reported a width, so nothing below measured anything")
+        #expect(
+            placed <= column + 0.5,
+            """
+            FlowRow placed a chip \(placed) pt wide in a \(column) pt column. It is measuring the \
+            subview's ideal size and placing it at that, so a species name longer than the column \
+            is drawn straight out of it — off the trailing edge of the phone, and over MapKit's \
+            compass once that column is reserved (PR #102's blocking finding).
+            """
+        )
+    }
+
+    /// **The trailing reserve is bought for nothing, and this is the arithmetic that says so.**
+    ///
+    /// The whole argument for solving PR #102's blocking finding sideways is that width is free:
+    /// `legendNaturalHeight` bounds the legend at *one chip per line* already, so narrowing its
+    /// column can push the drawn legend toward that bound and never past it. If that stops being
+    /// true — a chip that wraps to two lines, a bound that starts counting pairs — the reserve
+    /// starts costing vertical budget silently, and every clearance above is spending points that
+    /// belong to somebody else.
+    ///
+    /// Asserted where it is cheapest to state: the per-count reservation is exactly `count` chips
+    /// and `count − 1` gaps, with no term that could depend on how wide the column is.
+    @Test("the legend's height reservation is one chip per line, so a narrower column costs nothing")
+    func theLegendReservationIsIndependentOfItsWidth() {
+        for isAccessibilitySize in [true, false] {
+            let chip = MapLayout.legendChipHeight(isAccessibilitySize: isAccessibilitySize)
+            for count in 1...MapSpeciesSlot.allCases.count {
+                let reserved = MapLayout.legendNaturalHeight(
+                    namedSpecies: count,
+                    isAccessibilitySize: isAccessibilitySize
+                )
+                #expect(
+                    reserved == CGFloat(count) * chip + CGFloat(count - 1) * MapLayout.chipGap,
+                    """
+                    the legend's reservation for \(count) chip(s) at \
+                    isAccessibilitySize=\(isAccessibilitySize) is \(reserved), which is no longer \
+                    one chip per line. MapSpeciesLegend.trailingReserve is affordable only because \
+                    this bound already assumes the worst shape — if the reservation now depends on \
+                    how many chips pair up on a line, taking width off the legend takes height off \
+                    it too, and the compass's clearance is being paid for out of the notice's \
+                    budget without anybody deciding to (PR #102).
+                    """
+                )
+            }
+        }
+    }
+
     /// **Engages.** Offered a budget the card's own unbounded AX5 height is known to exceed — half
     /// of it — the card must not grow past that budget. The budget is derived from a real
     /// measurement rather than a literal so this stays true if the shipped copy ever changes: it is
@@ -1137,3 +1459,25 @@ struct AX5ReflowTests {
     }
 }
 #endif
+
+/// Collects the widths a probed subview was actually laid out at.
+///
+/// A class rather than `@State` because the reader is a test rather than a view, and the widest
+/// value rather than the last because a hosted view settles through several passes and only the
+/// bound matters — a layout that was ever too wide drew too wide.
+final class WidthProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [CGFloat] = []
+
+    func record(_ width: CGFloat) {
+        lock.lock()
+        defer { lock.unlock() }
+        seen.append(width)
+    }
+
+    var widest: CGFloat {
+        lock.lock()
+        defer { lock.unlock() }
+        return seen.max() ?? 0
+    }
+}

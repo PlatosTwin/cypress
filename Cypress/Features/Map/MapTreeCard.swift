@@ -19,6 +19,15 @@ struct MapTreeCard: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// The placeholder bar's height, on the type ramp the title itself rides.
+    ///
+    /// `relativeTo: .headline` because that is `CypressFont.listNameSerif`'s own `relativeTo:`, so
+    /// the bar and the name it stands in for scale together by construction rather than by two
+    /// numbers agreeing. See `MapLayout.cardTitlePlaceholderHeight` for what the old fixed `21` got
+    /// wrong, and `MapCardPlaceholderTests` for the guard.
+    @ScaledMetric(relativeTo: .headline) private var titlePlaceholderHeight =
+        MapLayout.cardTitlePlaceholderHeight
+
     let subject: MapCardSubject
     /// The user's fix, when there is one. Its absence is the "map without location" state, and it
     /// costs the card exactly one clause.
@@ -39,14 +48,18 @@ struct MapTreeCard: View {
 
                 VStack(alignment: .leading, spacing: MapLayout.cardMetaTop) {
                     HStack(spacing: MapLayout.cardTitleBadgeGap) {
-                        Text(subject.title)
-                            .font(CypressFont.listNameSerif)
-                            .foregroundStyle(CypressColor.textInk)
-                            // One line at the mock's size, two once the type is large enough that
-                            // one will not hold a street-tree name. A truncated name is the one
-                            // thing this card exists to give — 01's caption is "tap any pin" and
-                            // the answer to the tap is the name.
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                        if let title = subject.title {
+                            Text(title)
+                                .font(CypressFont.listNameSerif)
+                                .foregroundStyle(CypressColor.textInk)
+                                // One line at the mock's size, two once the type is large enough
+                                // that one will not hold a street-tree name. A truncated name is
+                                // the one thing this card exists to give — 01's caption is "tap any
+                                // pin" and the answer to the tap is the name.
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                        } else {
+                            titlePlaceholder
+                        }
                         if let badge = subject.badge {
                             StatusBadge(badge, size: .compact)
                         }
@@ -91,10 +104,47 @@ struct MapTreeCard: View {
             .cypressShadow(light: CypressShadow.bottomCard, dark: nil)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(subject.title)
+        .accessibilityLabel(subject.title ?? MapCardCopy.awaitingIdentity)
         .accessibilityHint(
             subject.isVacantSite ? SiteCopy.cardAccessibilityHint : "Opens this tree's profile"
         )
+    }
+
+    /// What stands where the name will be, for the moment before the profile read lands.
+    ///
+    /// **NOT SPECIFIED** — SCREENS.md 01 §14 draws a card with a name on it and has no word for the
+    /// card that has not got one yet, because until `MapCardSubject.title` became optional there was
+    /// no such state: the card said `Unidentified` and then corrected itself (see that property).
+    ///
+    /// A bar and not a word. Every string that could stand here is either a claim about the tree
+    /// ("Unidentified", the defect) or a word about the app rather than the tree ("Loading"), and
+    /// this card's whole job is to answer *which tree is this*. A bar answers "not yet" without
+    /// answering the question wrongly. The width is a name's worth of card and nothing is derived
+    /// from it.
+    ///
+    /// **It stands one line of the title tall, which is not the same as "nothing moves"** (PR #102
+    /// review). The bar rides `listNameSerif`'s own ramp — see `titlePlaceholderHeight` — so it is
+    /// the height of the line it is standing in for at whatever size the reader is running. What it
+    /// cannot hold is a name that takes the *second* line `.lineLimit(2)` allows at accessibility
+    /// sizes. On the glass at the default size nothing under the card moves at all, and the bar is
+    /// not why: the row is sized by the thumbnail beside the title, which absorbs the difference
+    /// (the card's white surface measured 769.0 → 850.7 pt both before and after the profile read
+    /// landed).
+    ///
+    /// `surfaceSkeleton` is the app's existing token for exactly this — the blocks drawn where a
+    /// screen's content will be, behind sheets 09 and 10 — so this is the same gray the reader has
+    /// already been taught means *content, shortly*, rather than a sixth one.
+    ///
+    /// Hidden from VoiceOver: the card's own `accessibilityLabel` already says this in words, and a
+    /// listener has no bar to look at.
+    private var titlePlaceholder: some View {
+        RoundedRectangle(cornerRadius: CypressRadius.pill, style: .continuous)
+            .fill(CypressColor.surfaceSkeleton)
+            .frame(
+                width: MapLayout.cardTitlePlaceholderWidth,
+                height: titlePlaceholderHeight
+            )
+            .accessibilityHidden(true)
     }
 
     /// `Maidenhair tree · 6 m NE · visited 3 d ago`, minus whatever is unknown.
@@ -119,6 +169,22 @@ struct MapTreeCard: View {
         // (ARCHITECTURE §5.7).
         return clauses.joined(separator: " · ")
     }
+}
+
+// MARK: - Copy
+
+/// The one thing screen 01's card says that is not a fact about the tree.
+///
+/// **NOT SPECIFIED.** SCREENS.md 01 §14 draws a card with a name on it, so it has no word for the
+/// card that has not read one yet — a state that did not exist until `MapCardSubject.title` stopped
+/// answering "Unidentified" before the read landed (see that property, and the build 37 report on
+/// it). A sighted reader gets `MapTreeCard.titlePlaceholder`, which is a bar; a listener has no bar,
+/// so this is what the bar means, in words.
+///
+/// It says what the app is doing and makes no claim about the tree, which is the whole point of the
+/// change: "Unidentified" was a claim, and it was wrong for as long as it was drawn.
+enum MapCardCopy {
+    static let awaitingIdentity = "Reading this tree"
 }
 
 // MARK: - Relative time

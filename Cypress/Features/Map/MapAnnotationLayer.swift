@@ -363,6 +363,11 @@ enum MapPinImage {
 final class AimableMapView: MKMapView {
     var onFirstLayout: (() -> Void)?
 
+    /// The last value `MapAnnotationLayer.applyCompass` wrote into `layoutMargins.top`, and the only
+    /// record of it: the getter reports the safe-area-adjusted margin instead, so it cannot be asked
+    /// what was set. See `applyCompass` for why the guard needs this rather than the getter.
+    var lastCompassMarginTop: CGFloat?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         guard onFirstLayout != nil, !bounds.isEmpty else { return }
@@ -391,6 +396,12 @@ struct MapAnnotationLayer: UIViewRepresentable {
     var userHeadingDegrees: Double?
     let selectedPinID: UUID?
 
+    /// Where the compass's top edge belongs, **in screen coordinates**, or `nil` for no compass at
+    /// all. Not a layout margin: `applyCompass` subtracts the map's own safe-area top on the way to
+    /// one, because `insetsLayoutMarginsFromSafeArea` adds it straight back. See the compass block
+    /// in `makeUIView`, and `MapKitBasemap.compassTopInset` for which screens get one.
+    var compassTopInset: CGFloat?
+
     var onCameraChange: (BoundingBox, Int) -> Void
     var onSelectPin: (TreePin) -> Void
     var onSelectCluster: (TreeCluster) -> Void
@@ -407,6 +418,81 @@ struct MapAnnotationLayer: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    /// Turns the compass on or off and puts its top edge at the **screen** y `compassTopInset`
+    /// names. See the compass block in `makeUIView` for the ruling and for how that y is arrived at.
+    ///
+    /// ── **The safe area is added, not maxed — and it is deliberately left added** (PR #102) ─────
+    ///
+    /// `MKMapView.insetsLayoutMarginsFromSafeArea` is `true`, and what that does to `layoutMargins`
+    /// is **add** the view's own safe-area inset to the value set, not take the larger of the two.
+    /// Probed on an `MKMapView` in a window with a real safe area: written `(top: 211)` against a
+    /// `safeAreaInsets.top` of 113 reads back as `(top: 324)`, and 211 + 113 = 324. So the compass's
+    /// real screen y is `compassTopInset + safeAreaTop`, not `compassTopInset` — 168 + 62 = 230 on
+    /// an iPhone 16 Pro Max at the default size, and 219 + 62 = 281 at AX5, against a compass
+    /// measured at 287 there. `MapLayout.compassTop` is that sum and is what every guard asserts
+    /// against; this function writes the margin and nothing else.
+    ///
+    /// **The obvious repair — subtract the safe area here — is not available, and the reason is what
+    /// `layoutMargins` is.** On an `MKMapView` it is not an ornament-placement knob: it is the map's
+    /// own content inset, and moving it moves what the camera treats as its centre. Subtracting the
+    /// inset takes the effective top from 230 to 168 and therefore moves the map itself, for every
+    /// reader, on every device — which is the reason this line is written as it is.
+    ///
+    /// **What the tests said about it, both ways.** On a 402 pt iPhone 16 Pro the subtraction turned
+    /// `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` red **4 runs out
+    /// of 4** — "panning the map did not move the camera off the reader", with #241's pan probe
+    /// showing the drag *had* reached the map (`panBegan=3 panEnded=3`) and the camera settling back
+    /// on the reader; a control worktree at `origin/main` passed on that same simulator minutes
+    /// later, and restoring this one line turned it green. Two further runs isolated it to the value
+    /// rather than to the write-guard below. On a 440 pt iPhone 16 Pro Max, PR #102's verifier
+    /// applied the same subtraction to the same head, confirmed the compass moved 61 pt, and saw
+    /// that test go **green 3 runs out of 3**.
+    ///
+    /// Both are true. The pan guard is width-dependent evidence of a width-independent change, so it
+    /// is recorded here as evidence and not as the argument — a green run on one phone is not a
+    /// licence to subtract.
+    ///
+    /// So the double-count the PR #102 review found is **kept, and is no longer load-bearing** —
+    /// which was the real finding, and the part that did not depend on any of the runs above. It used to be the only thing holding the compass off the legend,
+    /// by 5 accidental points; the clearance is now horizontal and exact
+    /// (`MapSpeciesLegend.trailingReserve`), and this number is free to be what the *map* wants:
+    /// "the top of this view is under chrome". What is not allowed is for it to be accidental, and
+    /// it is not — `MapLayout.compassTop` carries the sum, and
+    /// `AX5ReflowTests.theCompassFitsBetweenTheTwoBlocks` sweeps the resulting rectangle against
+    /// the bottom chrome on every screen and inset the app runs.
+    ///
+    /// **`insetsLayoutMarginsFromSafeArea` stays on**, and turning it off would not have helped:
+    /// it would make the write literal at the cost of the same effective change the pan test
+    /// refuses, and it is also what gives the Legal attribution its bottom safe-area inset — the
+    /// probe reads a bottom margin of 34 after writing 0. Zeroing `left`/`right`/`bottom` is
+    /// harmless and was verified: `MKMapView`'s own defaults are already `(0, 0, 0, 0)` and the
+    /// safe area is re-added on top, so writing zeros changes nothing but the top.
+    ///
+    /// ── **The write-guard is against what was last written** (PR #102) ──────────────────────────
+    ///
+    /// This compared `mapView.layoutMargins != margins`, and that guard could never fire: the getter
+    /// returns the safe-area-adjusted margins, so on any map with a safe area it reads
+    /// `(written + safeTop, 0, 34, 0)` against a `margins` of `(written, 0, 0, 0)` and the two are
+    /// unequal every time. `applyCompass` is called from `updateUIView`, so the write the comment
+    /// claimed to be preventing happened on every camera pass instead. Comparing against the value
+    /// this actually last wrote — `AimableMapView.lastCompassMarginTop` — is what makes the claim
+    /// true, and it is the only comparison available: there is no getter that reports it back.
+    ///
+    /// **Not read/modify/write**, for the same additive reason. `mapView.layoutMargins` *reads*
+    /// `(written + safeTop, 0, 34, 0)`, so writing that struct back would hand the safe area in as
+    /// a literal and have it added a second time on the next pass — the bottom margin compounding
+    /// 34 → 68 → 102. The other three edges are written as the zeros MapKit already has them at.
+    private func applyCompass(to mapView: MKMapView) {
+        mapView.showsCompass = compassTopInset != nil
+        guard let compassTopInset, let mapView = mapView as? AimableMapView else { return }
+        // Written as given. The safe area UIKit adds on top is accounted for in
+        // `MapLayout.compassTop`, not cancelled here — see above.
+        let marginTop = compassTopInset
+        guard mapView.lastCompassMarginTop != marginTop else { return }
+        mapView.lastCompassMarginTop = marginTop
+        mapView.layoutMargins = UIEdgeInsets(top: marginTop, left: 0, bottom: 0, right: 0)
+    }
 
     /// Whether this map view has an area to aim a camera at. See `AimableMapView` and E168.
     static func canAim(_ mapView: MKMapView) -> Bool { !mapView.bounds.isEmpty }
@@ -429,10 +515,60 @@ struct MapAnnotationLayer: UIViewRepresentable {
         configuration.showsTraffic = false
         mapView.preferredConfiguration = configuration
 
-        // The mock has no zoom, compass or scale control. SCREENS.md 01 lists zoom controls under
-        // **NOT SPECIFIED**, so none are added.
-        mapView.showsCompass = false
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **The compass is on, and it is the owner's decision rather than this file's.**
+        //
+        // This line read `showsCompass = false` and gave the reason above: the mock has no compass
+        // and SCREENS.md 01 lists map controls under **NOT SPECIFIED**, so none was added. What that
+        // reasoning missed is one line further down — `isRotateEnabled = true`. This map turns, and
+        // a map that turns and does not say which way is north can be left pointing somewhere a
+        // reader did not choose with nothing on screen to undo it. TestFlight found exactly that.
+        //
+        // The owner ruled on 2026-08-21: a MapKit-native compass, visible only when the camera is
+        // off north, and tapping it returns to north. That is `MKMapView`'s own default behavior for
+        // this property — `MKCompassButton` fades itself in on rotation, fades out at a heading of
+        // zero, and its tap animates the camera back — so honoring the ruling is turning the flag on
+        // and drawing nothing. It is also the reason the ruling can be honored at all without a
+        // mock: no glyph of ours is involved, so R57's no-SF-Symbols policy is not in question and
+        // there is no bespoke control to specify.
+        //
+        // ── Where it sits, and how that was found out ────────────────────────────────────────
+        // Turning the flag on and looking: the compass takes MapKit's top-**trailing** ornament
+        // slot, and on screen 01 that slot is underneath `SearchBar`. Photographed on an iPhone 16
+        // Pro with the map rotated — the needle came up inside the search field, clipped by it, with
+        // the field's own glass over the top. A control that says "tap to return to north" is not a
+        // control if it is behind the search bar.
+        //
+        // `layoutMargins` is what `MKMapView` lays its ornaments out against, so the compass is
+        // pushed to just under the chip row: `compassTopInset`, which screen 01 supplies as
+        // `MapLayout.compassTop(topInset:isAccessibilitySize:)` — by construction the y of the chip
+        // row's own bottom edge, built from the same terms `MapLocationNotice`'s budget is. Reusing
+        // them rather than adding numbers here is the point: the chrome moves at accessibility
+        // sizes, and a second hand-built total would move with it for exactly as long as somebody
+        // remembered to update both.
+        //
+        // **That y is a screen coordinate and the layout margin is not** — `applyCompass` does the
+        // conversion, because `insetsLayoutMarginsFromSafeArea` adds the safe area to whatever is
+        // written. Read that function before changing anything here; PR #102's blocking finding was
+        // the two being conflated.
+        //
+        // ── What keeps the legend off it ─────────────────────────────────────────────────────────
+        // The species legend hangs below the chip row on this same trailing side and is drawn *over*
+        // this map, so a chip long enough to reach the trailing edge covers the compass and takes
+        // its taps. It is held out of a `MapLayout.compassColumnReserved` strip instead
+        // (`MapSpeciesLegend.trailingReserve`), which costs no vertical budget — there is none to
+        // spend. `MapLayout`'s compass block carries the sweep that establishes that.
+        //
+        // The two one-tree screens (16's pin adjust, the pin-set map) draw this same basemap and are
+        // **not** in the ruling, so they pass `nil` and get no compass. See
+        // `MapKitBasemap.compassTopInset`.
+        //
+        // The scale bar stays off. Nothing ruled it and the original reasoning still holds for it:
+        // it answers a question nobody on this screen is asking, and it is not the undo for a
+        // gesture the map already allows.
+        // ══════════════════════════════════════════════════════════════════════════════════════
         mapView.showsScale = false
+        applyCompass(to: mapView)
         // **Not `showsUserLocation`.** That would have `MKMapView` open a second `CLLocationManager`
         // of its own, beside `MapLocationProvider`'s — two GPS sessions for one dot, which is the
         // duplication this same round of work just finished removing from the app. The dot is drawn
@@ -517,6 +653,11 @@ struct MapAnnotationLayer: UIViewRepresentable {
             context.coordinator.installWash(on: mapView, isDark: isDark)
             context.coordinator.refreshAllMarkerImages(on: mapView)
         }
+
+        // Here as well as in `makeUIView`, because the inset moves: it is built from the safe-area
+        // inset and the type size, and both can change under a live map — a rotation, a reader
+        // turning the ramp up in Settings and coming back.
+        applyCompass(to: mapView)
 
         context.coordinator.applyCameraIfChanged(position, to: mapView)
         context.coordinator.sync(

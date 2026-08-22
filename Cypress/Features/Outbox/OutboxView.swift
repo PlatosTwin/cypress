@@ -205,7 +205,9 @@ struct OutboxScreen: View {
         let rows = presentation.syncedRows
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                Text(OutboxCopy.syncedLabel)
+                // Not `OutboxCopy.syncedLabel` directly: the heading is a claim about the list under
+                // it, so it comes from the same place the stamps do. See `syncedHeading`.
+                Text(presentation.syncedHeading)
                     .cypressMicroLabel()
                     .padding(.bottom, CypressSpacing.gapVitality)
 

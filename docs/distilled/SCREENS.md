@@ -1365,7 +1365,18 @@ in-progress/uploading state, swipe-to-delete.
    - Corner label at `right:16px; bottom:10px`, mono 10px, `#77836F`: `done trees go quiet`
 3. **Primary CTA** (C6, `padding:16px`) — `padding:0 16px`:
    **`Next nearest: The Tea Tree · 40 m`**
-4. **Secondary** (C7, `padding:14px`, 15px) — `padding:10px 16px 0`: **`Done for today`**
+4. **Secondary** (C7, `padding:14px`, 15px) — `padding:10px 16px 0`: **`Back to the map`** and
+   **`Back to this tree`**
+   > The mock drew one secondary control here, `Done for today`, with a third action
+   > (`See it on the tree's timeline`) elsewhere on the screen. **The owner ruled the control set on
+   > 2026-08-21** — next nearest, back to the map, back to this tree — and chose these two strings
+   > the same day, so the copy is closed as well as the functions. **The destinations did not
+   > move:** `Done for today` already called `goToMap()`, and the timeline link already pushed the
+   > tree's page. Both were renamed for where they go rather than for what the reader has decided
+   > about their morning (R2). `Route done · see your grove` is not a fourth control — it is the
+   > primary CTA's other state. See the ruling in `docs/RULINGS.md` once the orchestrator splices
+   > this branch's pending entry (`docs/rulings-pending/beta-feedback-2026-08-21.md`) under its real
+   > number at merge.
 5. **Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
    `Ten check-ins in a row is the real volunteer morning. The save answers the only question that matters: which tree is next.`
 

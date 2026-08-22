@@ -188,6 +188,72 @@ final class IdentifyFABReachabilityTests: XCTestCase {
         )
     }
 
+    /// `MapLayout.compassColumnReserved` — `compassSize` (44) + `chipRowTop` (12). A literal for the
+    /// same reason every label in this file is one: this target imports nothing from `Cypress`.
+    private static let compassColumnReserved: CGFloat = 56
+
+    /// **The species legend keeps out of MapKit's compass column, and inside the phone** (PR #102).
+    ///
+    /// The owner ruled a compass onto screen 01 on 2026-08-21. MapKit draws it in the map's
+    /// top-**trailing** ornament slot, *underneath* this chrome, and the legend hangs down the same
+    /// side — so a chip long enough to reach the trailing edge does not crowd the compass, it covers
+    /// it and takes its taps. Measured on an iPhone 16 Pro Max at AX5 before the fix: the legend
+    /// reported `(16.0, 230.0, 446.0, 262.67)` — **446 pt wide on a 440 pt screen**, running to
+    /// x 462 — against a compass at x 391–435. A tap aimed at "put me back to north" selected
+    /// `Sycamore, London Plane` and narrowed the map to London planes instead.
+    ///
+    /// **Two assertions, because there were two defects and either can return alone.** The legend
+    /// running past the screen is `FlowRow`'s: it measured every chip at its *ideal* width and placed
+    /// it there, so a chip wider than its column simply overflowed. The legend reaching the compass
+    /// is `MapSpeciesLegend.trailingReserve`'s. Fixing the second without the first buys nothing —
+    /// a reserve on a row that overflows its column is not a reserve — so both are named here.
+    ///
+    /// **Where this bites, and where it cannot** (PR #102 verification). The column assertion goes
+    /// red on widths where the legend actually reaches the compass's column — measured on a 402 pt
+    /// iPhone 16 Pro, where removing `MapSpeciesLegend.trailingReserve` takes the legend's `maxX`
+    /// from 330 to 373.67 against a column starting at 346. On a 440 pt iPhone 16 Pro Max the legend
+    /// frame is byte-identical with and without the reserve, so **a red-proof attempted only there
+    /// will look like a dead assertion and it is not one**. Check it at 402 pt before concluding
+    /// this test does nothing.
+    ///
+    /// **Asserted as arithmetic against the screen's own trailing edge, not against the compass.**
+    /// MapKit's compass is not a child of the map element in the accessibility tree — the map's
+    /// subtree dump is a leaf — so there is no handle to read a rectangle from, and the two-rectangle
+    /// pattern the test above uses is unavailable. What *is* available is the column the compass is
+    /// known to occupy, which is a constant off the trailing edge on every width. That is the same
+    /// bargain `MapLayout`'s own comment strikes for the reservation it cannot measure.
+    func testTheSpeciesLegendClearsTheCompassColumnAtAX5WithLocationDenied() {
+        let app = launchAtAX5Denied()
+
+        let screen = app.windows.firstMatch.frame
+        let legendFrame = settledFrame(
+            resolvedContainer(app, labeled: Self.legendLabel, Self.legendDescription),
+            Self.legendDescription,
+            requireHittable: false
+        )
+
+        XCTAssertLessThanOrEqual(
+            legendFrame.maxX,
+            screen.maxX,
+            "the species legend \(legendFrame) runs past the trailing edge of the \(screen.width) pt "
+                + "screen — `FlowRow` is placing a chip at its ideal width instead of the width of "
+                + "the column it was given, so the widest species name in view is drawn off the "
+                + "side of the phone (PR #102)"
+        )
+
+        let compassColumnStart = screen.maxX - Self.compassColumnReserved
+        XCTAssertLessThanOrEqual(
+            legendFrame.maxX,
+            compassColumnStart,
+            "the species legend \(legendFrame) reaches into the trailing "
+                + "\(Self.compassColumnReserved) pt that MapKit's compass occupies (x "
+                + "\(compassColumnStart) onward on this \(screen.width) pt screen). The legend is "
+                + "drawn OVER the basemap, so this is the compass covered and its taps taken, not "
+                + "merely crowded — a press meant for north applies a species filter instead. "
+                + "`MapSpeciesLegend.trailingReserve` is what holds this column open (PR #102)"
+        )
+    }
+
     /// **The two blocks screen 01 draws its chrome in do not meet** (task #252).
     ///
     /// The test above is about one control. This is about the reservation that keeps every control

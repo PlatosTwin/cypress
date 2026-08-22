@@ -93,33 +93,65 @@ struct MapSpeciesLegend: View {
     /// way to know is there is a fourth filter the reader does not have.
     var maxHeight: CGFloat?
 
+    /// **The trailing strip this legend must not draw into**, in points — 0 for every caller that
+    /// does not put a control there.
+    ///
+    /// Screen 01 passes `MapLayout.compassColumnReserved`, because MapKit's compass takes the map's
+    /// top-**trailing** ornament slot and the legend's band is what hangs below the chip row on the
+    /// same side. The compass is drawn by MapKit *under* this chrome, so a chip that reaches the
+    /// trailing edge does not merely crowd the compass — it covers it and takes its taps, which is
+    /// PR #102's blocking finding: a tap aimed at "put me back to north" applied a species filter
+    /// instead.
+    ///
+    /// **A trailing reserve rather than a vertical one, and that is the whole reason this is
+    /// affordable.** Every vertical slot on this screen is already spoken for — `MapLayout`'s own
+    /// arithmetic leaves exactly `chipRowTop` between the two reserved blocks at every screen,
+    /// inset, palette size and type size the app supports, so there is nowhere to put a 44 pt
+    /// control without taking those points off the legend's ceiling or the notice's floor. Width
+    /// costs nothing: `MapLayout.legendNaturalHeight` already bounds the legend at *one chip per
+    /// line*, so a narrower column can push the drawn legend toward that bound but never past it,
+    /// and every reservation built on it is unchanged. Guarded by
+    /// `AX5ReflowTests.theLegendNeverDrawsIntoTheCompassColumn`.
+    var trailingReserve: CGFloat = 0
+
     var body: some View {
         if !named.isEmpty {
-            if let maxHeight {
-                ScrollView {
+            Group {
+                if let maxHeight {
+                    ScrollView {
+                        chips
+                    }
+                    .frame(maxHeight: maxHeight)
+                    // Vertical only, and load-bearing for "unchanged where there is room": without
+                    // it a legend well under its ceiling sits in a tall, mostly empty scroll well
+                    // instead of hugging its own rows. `MapLocationNotice` and `MapSuggestionList`
+                    // carry it for exactly this reason.
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
                     chips
                 }
-                .frame(maxHeight: maxHeight)
-                // Vertical only, and load-bearing for "unchanged where there is room": without it a
-                // legend well under its ceiling sits in a tall, mostly empty scroll well instead of
-                // hugging its own rows. `MapLocationNotice` and `MapSuggestionList` carry it for
-                // exactly this reason.
-                .fixedSize(horizontal: false, vertical: true)
-                // **The labeled group is the scroller, not the rows inside it** (task #258). An
-                // element's frame is what an assistive technology draws its cursor around and what
-                // XCUITest measures, and the rows inside a clamped `ScrollView` extend past the
-                // window that clips them: on an iPhone 16e at AX5 the visible legend ends at y 417
-                // and the `FlowRow` inside it reports a bottom edge of 477.67 — 48 pt of element
-                // over controls it does not draw on. Labeling the outer view reports the rectangle
-                // the reader can actually see and touch. Found by this ticket's own geometric
-                // guard, which went red on a screen that was, in a screenshot, correct.
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
-            } else {
-                chips
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
             }
+            // **The labeled group is the scroller, not the rows inside it** (task #258). An
+            // element's frame is what an assistive technology draws its cursor around and what
+            // XCUITest measures, and the rows inside a clamped `ScrollView` extend past the window
+            // that clips them: on an iPhone 16e at AX5 the visible legend ends at y 417 and the
+            // `FlowRow` inside it reports a bottom edge of 477.67 — 48 pt of element over controls
+            // it does not draw on. Labeling the outer view reports the rectangle the reader can
+            // actually see and touch. Found by that ticket's own geometric guard, which went red on
+            // a screen that was, in a screenshot, correct.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(MapSpeciesLegendCopy.rowLabel)
+            // **The compass's column, and this modifier is outside the element on purpose** (PR
+            // #102). A first attempt padded `chips`, inside both the `ScrollView` and the labeled
+            // element, and the UI guard caught it: the legend still measured 365 pt of a 370 pt
+            // column on a 402 pt phone, because the scroller — not the rows — is what fills the
+            // width and what the element reports. That is not a measurement quibble. **A
+            // `ScrollView` takes touches across its whole frame** where the bare `FlowRow` takes
+            // them only on the chips (`MapHomeView.chrome`: "the empty width beside a chip has
+            // never taken a touch"), so a scroller reaching the trailing edge steals the compass's
+            // taps with no chip drawn there at all. Narrowing the element itself is what holds the
+            // column open for both branches.
+            .padding(.trailing, trailingReserve)
         }
     }
 
@@ -232,6 +264,27 @@ struct FlowRow: Layout {
     var spacing: CGFloat
     var lineSpacing: CGFloat
 
+    /// **What a subview is allowed to measure, given the column it has to live in** (PR #102).
+    ///
+    /// Every measurement here was `sizeThatFits(.unspecified)` — the subview's *ideal* size, asked
+    /// for with no constraint — and the ideal was then both wrapped against and placed at. For a
+    /// chip narrower than the row those are the same number. For one wider than the row they are
+    /// not, and the row placed it at its ideal anyway: measured on an iPhone 16 Pro Max at AX5, a
+    /// `Sycamore, London Plane` chip drew **446 pt wide inside a 408 pt column on a 440 pt screen**,
+    /// off the trailing edge of the phone. `lines(_:within:)` could not wrap out of it either —
+    /// a single subview is never moved to a line of its own, so the overflow had nothing to break
+    /// against.
+    ///
+    /// Clamping the *proposal* is what fixes it rather than clipping the result: the chip's label is
+    /// `.lineLimit(1)`, so a narrower proposal truncates the name and leaves the height alone. That
+    /// last part is load-bearing — `MapLayout.legendChipHeightAX5` is a bound on a one-line chip,
+    /// and a fix that let a name wrap instead would have broken every reservation built on it.
+    private func measure(_ subview: Subviews.Element, within width: CGFloat) -> CGSize {
+        let ideal = subview.sizeThatFits(.unspecified)
+        guard width.isFinite, ideal.width > width else { return ideal }
+        return subview.sizeThatFits(ProposedViewSize(width: width, height: ideal.height))
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         let rows = lines(subviews, within: width)
@@ -252,7 +305,7 @@ struct FlowRow: Layout {
         for row in lines(subviews, within: bounds.width) {
             var x = bounds.minX
             for index in row.indices {
-                let size = subviews[index].sizeThatFits(.unspecified)
+                let size = measure(subviews[index], within: bounds.width)
                 subviews[index].place(
                     at: CGPoint(x: x, y: y + (row.height - size.height) / 2),
                     proposal: ProposedViewSize(size)
@@ -273,7 +326,7 @@ struct FlowRow: Layout {
         var rows: [Line] = []
         var current = Line()
         for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
+            let size = measure(subviews[index], within: width)
             let next = current.indices.isEmpty ? size.width : current.width + spacing + size.width
             if !current.indices.isEmpty, next > width {
                 rows.append(current)

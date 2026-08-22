@@ -19,6 +19,12 @@ struct VisitCameraView: View {
     @State private var libraryItem: PhotosPickerItem?
     /// The capture whose flash has already been faded out. See `shutterFlash`.
     @State private var fadedCaptureTick = 0
+    /// Where the lens was when the current pinch began; `nil` between pinches. See `zoomPinch`.
+    ///
+    /// `@GestureState`, so "between pinches" is enforced by the property wrapper rather than by an
+    /// `onEnded` that a cancelled gesture can skip — the same argument `PhotoViewerView` makes for
+    /// its own two, in this same round.
+    @GestureState private var zoomBase: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -88,7 +94,50 @@ struct VisitCameraView: View {
                 drawnLayout
             }
         }
-        .background(CypressColor.Dark.bgCamera)
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **The ground is painted under the keyboard, and it has to be said in one modifier.**
+        //
+        // Reported from the field on build 25: with the note field focused, the strip behind and
+        // around the keyboard on this screen draws **white**, on a screen whose whole point is that
+        // it is dark regardless of the system setting (ARCHITECTURE §6).
+        //
+        // What was here was `.background(CypressColor.Dark.bgCamera)` followed by
+        // `.ignoresSafeArea(edges: .top)`, and both halves of that are load-bearing in the defect. A
+        // plain `.background` is laid out *behind the content and to the content's size*, and the
+        // content's size respects the keyboard safe area — which is what it must do, for the reason
+        // `CareLogView` and `BottomSheet` both write down: opt out of `.keyboard` and the keyboard
+        // covers the field being typed into (#146). So the moment the keyboard raised, the content
+        // shrank, the background shrank with it, and what showed through underneath was the hosting
+        // controller's own ground. This screen is presented in a `fullScreenCover`, which hosts it
+        // in a fresh context whose default background is the system's — white in a light appearance,
+        // which is every appearance as far as this screen is concerned, because `cypressForcedDark`
+        // pins the *environment* `colorScheme` for the tokens and does not repaint the host.
+        // `.ignoresSafeArea(edges: .top)` then made the mismatch invisible at the top and left it
+        // untouched at the bottom, which is exactly where the keyboard comes from.
+        //
+        // The fix is to move the escape onto the **fill**: `Color.ignoresSafeArea()` defaults to
+        // `SafeAreaRegions.all`, which includes `.keyboard`, so the paint covers the whole window
+        // while the content it sits behind goes on respecting every inset it respected before. The
+        // layout does not move: nothing about where the content sits changes, only what is drawn
+        // behind it.
+        //
+        // ── Measured, both ways, on iPhone 16 Pro (402 pt) ───────────────────────────────────
+        // Screen 04 opened from a tree's photo CTA, **note field focused**, sampled off
+        // `xcrun simctl io … screenshot` at the middle of the ground the keyboard stands on. The
+        // keyboard is translucent and composites over whatever is under it, so it reports the
+        // ground's color rather than its own:
+        //
+        //     before   rgb(105, 105, 105)      the host's own light ground, read through the
+        //                                      keyboard — the report's word for it is "white"
+        //     after    rgb( 46,  49,  46)      the same keyboard over `Dark.bgCamera` (#10160F)
+        //
+        // **Only the focused state moves, and an earlier draft of this block said otherwise.** It
+        // claimed the *unfocused* bottom strip went rgb(255, 255, 255) → rgb(21, 29, 21). Sampled on
+        // both builds it is rgb(21, 29, 21) either way: with no keyboard up the tray already reaches
+        // the bottom of the display, so there is no unpainted ground left to see. The defect is the
+        // keyboard's safe area and nothing else, which is exactly what the report described.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        .background(CypressColor.Dark.bgCamera.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .cypressForcedDark()
         .task { await model.load() }
@@ -165,6 +214,27 @@ struct VisitCameraView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **Pinch to zoom the lens** — TestFlight, ruled in on 2026-08-21. See
+        // `VisitCameraController.setZoom` for why this moves the *device* and not the preview.
+        //
+        // On the `ZStack` and not on `base`, so the gesture is live over the whole viewfinder
+        // including the ghost — the ghost is the thing being lined up against and it is exactly
+        // where the fingers will land. Before the overlays, so the ✕, the guidance pill and the
+        // shutter keep their own touches; a `.gesture` here composes with the controls above it
+        // rather than swallowing them.
+        //
+        // The whole thing is off unless there is a lens to move (`camera.isZoomable`, false on
+        // every simulator and on a refusal), and off once a frame has been taken, when the
+        // viewfinder is a still photograph and there is nothing left to aim.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        //
+        // `including:` rather than iOS 18's `isEnabled:` — this app is iOS 17+. `.subviews` hands
+        // every touch to the children and takes none here, which is what "off" means for a gesture.
+        .gesture(
+            zoomPinch,
+            including: model.camera.isZoomable && !model.hasSnapped ? .all : .subviews
+        )
         .overlay(alignment: .topLeading) { closeButton }
         .overlay(alignment: .top) { guidancePill }
         .overlay { framingCorners }
@@ -174,6 +244,45 @@ struct VisitCameraView: View {
         .overlay(alignment: .bottom) { bottomControls }
         .overlay(alignment: .bottomLeading) { ghostCaption }
         .overlay { shutterFlash }
+    }
+
+    /// The pinch that drives `AVCaptureDevice.videoZoomFactor`. See the call site on `viewfinder`,
+    /// and `VisitCameraController.setZoom` for what it reaches.
+    ///
+    /// `zoomBase` is where the lens was when the fingers landed, asked for once on the first update
+    /// of each pinch. The controller stays the one place that knows where the lens *is*; this
+    /// closure only ever reads it, and only at the start.
+    ///
+    /// **`@GestureState` rather than `@State` and an `onEnded`** (PR #102 review). This was the
+    /// second, and `PhotoViewerView` — added in the same round — had already written down why that
+    /// is the wrong choice: `@GestureState` resets itself when a gesture ends *or is cancelled*, so
+    /// a pinch interrupted by a phone call or by the screen going away under it leaves nothing
+    /// behind, while the `@State` version has a path where the reset never runs. The consequence
+    /// here was mild — a stale base makes the next pinch multiply from where an older one started,
+    /// a jump rather than a wrong state, and `setZoom` re-clamps — but the round argued both sides
+    /// of one question in two files, and this was the side with the extra path.
+    ///
+    /// The `?? model.camera.zoomFactor` is not defensive noise: it is the same value `updating`
+    /// captures, so the first update of a pinch reads the lens correctly whichever of the two
+    /// callbacks SwiftUI runs first.
+    ///
+    /// Untested on the glass, and it cannot be: `isZoomable` is false on every simulator
+    /// (`AVCaptureDevice.default(...)` is nil), so the gesture never arms. See
+    /// `VisitCameraController`'s zoom block for what else on this path is waiting for the phone.
+    private var zoomPinch: some Gesture {
+        MagnifyGesture()
+            .updating($zoomBase) { _, base, _ in
+                if base == nil { base = model.camera.zoomFactor }
+            }
+            .onChanged { value in
+                model.camera.setZoom(
+                    VisitCameraZoom.factor(
+                        base: zoomBase ?? model.camera.zoomFactor,
+                        magnification: value.magnification,
+                        in: model.camera.zoomRange
+                    )
+                )
+            }
     }
 
     /// czFlash — a sheet of white at `.9` alpha falling to nothing over `.35s`, fired when the

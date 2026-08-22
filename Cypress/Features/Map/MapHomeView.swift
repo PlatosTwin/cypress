@@ -128,7 +128,17 @@ struct MapHomeView: View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 MapCanvas(
-                    basemap: { basemap },
+                    basemap: {
+                        basemap(
+                            topInset: proxy.safeAreaInsets.top,
+                            // The same reconstruction `chrome` is handed below, and for the same
+                            // reason: every term the compass's affordability is computed from
+                            // counts from the top of the display rather than of the safe area.
+                            screenHeight: proxy.size.height
+                                + proxy.safeAreaInsets.top
+                                + proxy.safeAreaInsets.bottom
+                        )
+                    },
                     overlay: {
                         chrome(
                             topInset: proxy.safeAreaInsets.top,
@@ -294,7 +304,14 @@ struct MapHomeView: View {
 
     // MARK: - Basemap
 
-    private var basemap: some View {
+    /// - Parameter topInset: the safe area above this map, which is the first term of the compass's
+    ///   own inset. Handed in rather than read off the `MKMapView`, for the reason
+    ///   `MapLayout.topChromeReserved` gives about baked-in safe areas: the live number is the only
+    ///   correct one, and this proxy is where the screen already reads it.
+    /// - Parameter screenHeight: the whole display, reconstructed the same way `chrome` reconstructs
+    ///   it. The compass needs it because whether this screen can afford one at all is a property of
+    ///   the screen — see `MapLayout.compassIsAffordable`.
+    private func basemap(topInset: CGFloat, screenHeight: CGFloat) -> some View {
         MapKitBasemap(
             position: $position,
             region: $region,
@@ -304,6 +321,28 @@ struct MapHomeView: View {
             userCoordinate: location.availability.coordinate,
             userHeadingDegrees: location.headingDegrees,
             selectedPinID: model.selectedPinID,
+            // MapKit's compass takes the top-trailing ornament slot, which on this screen is under
+            // the search bar (the owner's compass ruling of 2026-08-21; see
+            // `MapAnnotationLayer.makeUIView`). This is the y of the chip row's own bottom edge, in
+            // **screen** coordinates — `MapAnnotationLayer.applyCompass` converts it to the map's
+            // layout margin, which is not the same number because `insetsLayoutMarginsFromSafeArea`
+            // adds the safe area back.
+            //
+            // The legend hangs below the chip row on this same side and is kept out of the
+            // compass's column by `MapSpeciesLegend.trailingReserve` below, rather than by stepping
+            // the compass over it — there is no vertical room to step into. See `MapLayout`'s
+            // compass block for the sweep that establishes that.
+            // **The margin to write, not the compass's screen y** — UIKit adds the map's own safe
+            // area to it, and `MapLayout.compassTop` is that sum. `nil` where the screen cannot
+            // seat the control without eating the location notice's floor.
+            compassTopInset: MapLayout.compassTop(
+                screenHeight: screenHeight,
+                topInset: topInset,
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            ) == nil ? nil : MapLayout.compassLayoutMargin(
+                topInset: topInset,
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            ),
             onCameraChange: { bounds, zoom in
                 model.cameraDidChange(bounds: bounds, zoom: zoom)
             },
@@ -436,7 +475,12 @@ struct MapHomeView: View {
                             topInset: topInset,
                             namedSpecies: MapSpeciesLegend.named(in: model.speciesPalette).count,
                             isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
-                        )
+                        ),
+                        // MapKit draws its compass in this same trailing column, underneath this
+                        // chrome, so a chip that reaches the trailing edge covers it and takes its
+                        // taps (PR #102's blocking finding). The room is bought sideways because
+                        // there is none vertically — `MapLayout`'s compass block has the sweep.
+                        trailingReserve: MapLayout.compassColumnReserved
                     )
                     .accessibilitySortPriority(1)
                 }

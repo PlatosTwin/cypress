@@ -45,7 +45,12 @@ struct ContributionCameraView: View {
             tray
                 .background(CypressColor.Dark.bgCameraTray)
         }
-        .background(CypressColor.Dark.bgCamera)
+        // The fill escapes the safe area, not the composed view — see `VisitCameraView.body`, which
+        // carries the whole account of the build 25 report and of why the two are not the same
+        // thing. This screen has no text field and so cannot show the keyboard half of that defect;
+        // it is the same three lines over the same host and it is corrected with them, because the
+        // next person to copy this pair should copy the version that paints its own ground.
+        .background(CypressColor.Dark.bgCamera.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .cypressForcedDark()
         .task { await camera.start() }
