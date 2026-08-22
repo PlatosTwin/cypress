@@ -181,10 +181,11 @@ Recorded so the next round does not re-derive the same negative. Nothing was cha
 
 ---
 
-### E??? — DEBT, not fixed here: `deadNotice` will tell a reader a community reviewer confirmed a city's own record
+### E??? — `deadNotice` told a reader a community reviewer confirmed a city's own record
 
-**Found by adversarial review of the s17 PR (finding F7). Recorded rather than repaired, and the
-reason for that is stated below.**
+**Found by adversarial review of the s17 PR (finding F7), recorded there as debt, and REPAIRED as a
+fast-follow (build 50) once NYC s17 published and the 10,635 rows became real.** The entry below is
+the debt as it was written; the resolution is at the foot of it.
 
 `TreeProfilePresentation.deadNotice` fires on the status alone:
 
@@ -228,3 +229,69 @@ existing sentence stays correct for the community path and should not be touched
 **Owed before the first NYC publish**, alongside RULING D12's notify-the-City obligation and D20's
 species gate — it is in the same family: a claim the app makes on a reader's behalf that the data
 does not support.
+
+---
+
+#### RESOLVED — build 50, branch `fix/f7-dead-caption`
+
+The owner ruled the repair a fast-follow once the five borough packs went live carrying the 10,635
+`dead_reported` rows. Three things in the debt entry above are worth correcting against the code, and
+they are corrected here rather than silently: the repair is not the one the entry predicted.
+
+**1. `verification_state` is the wrong discriminator, and so is `source`.** The entry named
+`trees.inventory_source` and `verification_state` (`city_record` vs the community values) as the seam.
+Neither answers the question. `dead_reported` reaches a **`city_import`** row by *both* paths — the
+inventory can publish the status, and a reviewer on this device can confirm a reported death on a row
+that shipped `alive`, which is the arm E170 built and `ModerationTests` has exercised since. Both rows
+are `source == .cityImport`, and both are `verification_state == .cityRecord` — every one of the
+198,625 rows in the shipped seed carries that pair, measured off the file, and confirming a death
+writes `tree_status_overrides` and touches neither column. A repair keyed
+on either would have produced the *mirror* falsehood — the city credited with a death the community
+found — on a surface that had been correct since E170.
+
+The actual seam is one line up from all of that. `LocalAPI.treeProfile` reads the record's status and
+then overwrites it from `tree_status_overrides`, and after that overwrite the two origins are
+indistinguishable: one `TreeStatus` field, and the row it came from gone. So the answer is carried
+rather than re-derived — `TreeStatusProvenance` (`.record` / `.communityReview`) on `TreeProfile`, set
+beside the overwrite it describes, defaulting to `.record` everywhere because that arm credits nobody
+and a payload that does not know must not read as evidence that a reviewer confirmed something.
+
+**2. The city sentence names the inventory, not the city, and reads it off the row.** It goes through
+`InventorySource.name` — the value R28 already made the subtitle and the provenance line share — so
+`NYC Parks Forestry Tree Points` appears in no source file, and a second publisher shipping a `Dead`
+condition needs no code here. A seed whose receipt cannot name an inventory falls back to
+`CityRecordCopy.unnamedCityInventory`, the same fallback and the same argument as the subtitle's.
+
+**3. There are three arms, not two.** The third is for a record whose status came neither from a
+review here nor from an inventory: it states the death and attributes it to nobody. Unreachable in
+shipping code today — `addTree` writes `alive`, and only an override moves a status afterwards — and
+written anyway, because an arm that would have to *invent* an attributor is exactly what F7 was.
+
+**The copy, before and after.** All of it is still `NOT SPECIFIED`; SCREENS.md draws no dead profile
+in any of the three states, and the wording went to the owner with the PR.
+
+| | lead-in | sentence |
+|---|---|---|
+| **before**, every dead row | `Confirmed dead:` | Reported dead, and a community reviewer confirmed it. It is still standing, so anything you see here is still worth reporting. |
+| **after** · a reviewer here confirmed it | `Confirmed dead:` | *unchanged — it was never wrong about the rows it was written for* |
+| **after** · the row's own inventory says so | `Listed dead:` | Recorded dead in the {inventory}. It is still standing, so anything you see here is still worth reporting. |
+| **after** · nobody can be credited | `Reported dead:` | Reported dead. It is still standing, so anything you see here is still worth reporting. |
+
+*"Recorded", not "confirmed", in the city arm.* The city wrote it down in a file, on a day. Nobody
+went and looked on the reader's behalf, and DECISIONS §3.3 still holds in both directions: the
+sentence says a file already records the death and says nothing about anybody acting on it.
+
+**The lead-in travels with the sentence.** `deadNotice` returns a `DeadNotice` value carrying both,
+and the view draws both off it. `Confirmed dead:` over a sentence about a city's file is the same
+falsehood F7 was, reassembled one layer up, and the pair is now the thing that cannot come apart.
+
+Guarded by `CypressTests/DeadNoticeProvenanceTests` (nine tests, provenance selection rather than
+phrasing, since the phrasing may still move) and by `ModerationTests.confirmedDeadIsNotAMemorial`,
+which is the end-to-end half: a real `confirmReview` — the only path in shipping code that writes
+`tree_status_overrides` — has to arrive at the presentation as `.communityReview`. Three red-proofs,
+each watched failing for its own reason and restored by file copy: the pre-fix single sentence, the
+plumbing dropped in `LocalAPI`, and the city arm hardcoding `NYC Parks Forestry Tree Points`.
+
+`StatusBadge.Kind.deadReported`'s doc-comment went false on the same day and is corrected with it: it
+read *"a tree a lead has confirmed dead"*. The badge word is `Dead` either way, so the badge needed no
+arm — only the sentence under it did.
