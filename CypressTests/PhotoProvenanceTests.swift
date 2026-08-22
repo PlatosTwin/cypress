@@ -532,6 +532,45 @@ struct PhotoProvenanceTests {
         )
     }
 
+    /// **The staging seam, and the two rules agreeing on one row.** `LocalAPI.debugStrandPhoto` is
+    /// what `DebugDeepLink.strandedPhotoHero` writes with, so a screenshot taken through that case is
+    /// only worth looking at if the seam really produces E277's row. This asserts the row it writes,
+    /// then asks both consumers of the comparison about it: the species guide draws it (RULINGS R82)
+    /// **and** the trash is still offered on it (`AppSchema` v16, E277's first half).
+    ///
+    /// The two expectations are the convergence stated as a test. Before v16 both were false; between
+    /// v16 and R82 exactly one was; if either goes false again the predicates have drifted apart,
+    /// which is the defect E277 reports.
+    @Test("the staging seam writes E277's row, and both rules admit it")
+    func theStrandingSeamProducesARowBothRulesAdmit() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.api(store)
+        let (treeID, photoID, _) = try await Self.treeWithAPhotograph(api)
+
+        try await api.debugStrandPhoto(id: photoID, underAccount: Self.strangerID)
+
+        // The row the seam claims to write: a stranger's account, no device, provenance intact.
+        let row = try await store.queue.read { connection in
+            try ContributionStore().photoForDeletion(id: photoID, connection: connection)
+        }
+        #expect(try #require(row).owner == .user(Self.strangerID), "the seam did not move the photograph")
+        #expect(
+            try #require(row).takenOnDevice == Self.deviceID,
+            "the seam cleared provenance, which stages the anonymized row instead of E277's"
+        )
+        #expect(await api.attribution.userID == nil, "the fixture signed in, so the account arm could answer")
+
+        // Visibility (R82) and removal (v16), on the one row.
+        #expect(
+            try await Self.heroes(of: [treeID], in: store, for: api)[treeID] == photoID,
+            "the species guide would draw no hero for the row the deep-link case stages"
+        )
+        #expect(
+            try await Self.deletableIDs(treeID: treeID, in: store, for: api).contains(photoID),
+            "the trash is gone from the row the guide now draws — the two rules have drifted apart again"
+        )
+    }
+
     /// **The three arms are a disjunction, not a sequence.** Each row below is admitted by exactly
     /// one arm and contradicted by the other two, so an implementation that let any arm shadow
     /// another — or that read provenance only when the owner columns were absent — draws fewer than

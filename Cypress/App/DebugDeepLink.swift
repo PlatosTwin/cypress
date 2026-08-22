@@ -134,6 +134,19 @@ enum DebugDeepLink {
         /// photograph leaves a record its own creation rule forbids, and the only way to look at
         /// what the app says about that before the tap.
         case communityPhotos
+        /// Screen 07 with a nearby hero drawn from a photograph **this installation took under an
+        /// account it can no longer sign into** — RULINGS **R82**, ERRATA **E277**.
+        ///
+        /// The state is otherwise unreachable on a simulator: it needs `claimDevice` to have moved
+        /// the photograph onto an account (E23) and E270 to have made that account impossible to
+        /// authenticate again. `debugStrandPhoto` writes the end state on one named row instead.
+        ///
+        /// It exists because R82 changes what a *shipped* screen draws, and 07 §6 is the screen. The
+        /// two rules meet on this one row and can be seen agreeing on it: the guide draws the
+        /// photograph as this installation's own, and screen 20 still offers its trash — visibility
+        /// and deletion answering the same way about the same picture, which is the convergence the
+        /// ruling is.
+        case strandedPhotoHero
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -386,6 +399,22 @@ enum DebugDeepLink {
                 // delete, back) refreshes correctly — and a screenshot of it would have been read as
                 // a defect. So the deep link ends where a person starts, and the pill is a tap away.
                 router.push(.treeProfile(id))
+            case .strandedPhotoHero:
+                // The data changes here like the photo cases, and one column further (RULINGS R82,
+                // ERRATA E277). One photograph, seeded the ordinary way so the bytes and the row are
+                // the ones the shutter writes, then moved onto an account this installation is not
+                // and cannot become. `debugStrandPhoto` leaves `taken_on_device` alone — that column
+                // is the whole subject, and clearing it would stage the anonymized row instead.
+                //
+                // One photograph rather than three: the hero is what 07 §6 draws, so a second row
+                // would only add a picture nothing on this screen shows.
+                let (speciesID, treeID) = try await strandedHeroSubject(api)
+                let seeded = try await api.debugSeedPhotos(treeID: treeID, count: 1)
+                guard let photo = seeded.first else {
+                    throw Failure(screen: "strandedPhotoHero", reason: "the seam seeded no photograph")
+                }
+                try await api.debugStrandPhoto(id: photo, underAccount: strandedAccount)
+                router.push(.species(speciesID))
             case .moderationReview:
                 // Put the lead's review queue in front of a screenshot: open reviews on real trees,
                 // promote this account to a lead, and show the You tab, where the section draws.
@@ -667,6 +696,62 @@ enum DebugDeepLink {
             throw Failure(screen: "species", reason: "the seed returned no curated species")
         }
         return first.id
+    }
+
+    /// The account `.strandedPhotoHero` moves its photograph onto (RULINGS R82, ERRATA E277).
+    ///
+    /// A fixed id, and one no sign-in can ever produce: the point of the state is that the owning
+    /// account cannot be signed into, so an account this device could authenticate as would stage a
+    /// row the ruling does not turn on. Fixed rather than random so a re-run overwrites the same
+    /// row instead of accumulating owners nobody can read.
+    private static let strandedAccount = UUID(uuidString: "E2770000-0000-4000-8000-000000000082")!
+
+    /// The species to open and the tree to strand a photograph on, chosen so that the tree is one
+    /// the guide will actually **draw** (RULINGS R82).
+    ///
+    /// ── Why this is not a slot like every other writing case ───────────────────────────────
+    /// The other writing cases pick a tree by position — the near end, a quarter, the middle — and
+    /// that works because the screens they open are opened *on that tree*. This case opens screen
+    /// 07, which chooses its own subjects: `SpeciesGuideLimits` draws the **two** nearest trees of
+    /// the species within 500 m of the caller's fix. A tree picked by position would be staged
+    /// correctly and then not be on the screen, and the case would photograph a guide with no hero
+    /// on it while reporting success — E117's silent-failure shape exactly.
+    ///
+    /// So the subject is read back out of the guide itself: whatever the guide says it will draw is
+    /// what gets the photograph. If that ever returns nothing, this fails loudly rather than opening
+    /// a screen with nothing to look at.
+    ///
+    /// **The reserved slots are still honored**, by skipping rather than by arithmetic: this file's
+    /// standing rule is that a case which writes persistent state must not write it onto a tree
+    /// another case reads, and a photograph on `standingTree` is exactly the pollution E125 spent a
+    /// paragraph on (`testTreeProfile` anchors on the title a tree with nothing on it shows). The
+    /// five taken trees are asked for by name rather than recomputed, so this cannot drift out of
+    /// agreement with them.
+    private static func strandedHeroSubject(_ api: LocalAPI) async throws -> (species: UUID, tree: UUID) {
+        let reserved: Set<UUID> = [
+            try await standingTree(api),
+            try await photographedTree(api),
+            try await anonymizedPhotoTree(api),
+            try await measuredTree(api),
+            try await deadCandidateTree(api)
+        ]
+        let species = try await api.curatedSpecies()
+        guard !species.isEmpty else {
+            throw Failure(screen: "strandedPhotoHero", reason: "the seed returned no curated species")
+        }
+        for candidate in species {
+            let guide = try await api.speciesGuide(id: candidate.id, near: center)
+            guard let row = guide.nearby.items.first(where: { !reserved.contains($0.treeID) }) else {
+                continue
+            }
+            return (candidate.id, row.treeID)
+        }
+        throw Failure(
+            screen: "strandedPhotoHero",
+            reason: "none of the \(species.count) curated species draws a nearby tree within "
+                + "\(Int(SpeciesGuideLimits.nearbyRadiusM)) m of \(center.latitude), \(center.longitude) "
+                + "that another deep-link case does not already write to"
+        )
     }
 }
 #endif

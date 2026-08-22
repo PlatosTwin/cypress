@@ -157,8 +157,31 @@
 # `XCTAssert`s on literal `CGRect`s only, no `XCUIApplication` anywhere in the file. Placed on the
 # shortest line by class COUNT, since there is no per-class time to add it by — the rule above,
 # applied where the file's own numbers do not reach.
+#
+# `StrandedPhotoHeroUITests` (RULINGS R82) is one launch and one existence check. Measured alone on
+# the iPhone 16 Pro simulator (EA0AD796-3052-4EE5-A7A8-A1DE807A3653, 402 pt) — a different machine
+# and device from the CI table above, exactly as the four entries before it are:
+#
+#   VERIFY-OK: Executed 1 test, with 0 failures (0 unexpected) in 5.634 (5.639) seconds
+#
+# PLACED ON SHARD 3, and here the arithmetic is not a coin flip for once. The two candidates are the
+# two lowest totals this file states — Shard 3 at 344.8s in the CI table, gained nothing since, and
+# Shard 1 at 348.5s after `AppleSignInUITests`. What matters is the MAXIMUM across shards, since the
+# gate is as slow as its slowest:
+#
+#   this class on Shard 3:  max(348.5, 344.8 + 5.6 = 350.4)  = 350.4s
+#   this class on Shard 1:  max(344.8, 348.5 + 5.6 = 354.1)  = 354.1s
+#
+# Shard 3 wins, and neither arrangement reaches Shard 4's 362.6s — which was already the pace-setter
+# before `RemoteGateComplaintUITests` grew a third method. **So the gate's longest TESTS do not move
+# at all**, on any of these placements. That conclusion survives this class costing four times what
+# it was measured at, which is the property `ReadingOrderAccessibilityTests`' 5.6s margin lacked.
+#
+# One launch and one existence check is all it is: the difference R82 makes to the picture is a
+# thumbnail's pixels, and no test in this target can see those (the hero is `.accessibilityHidden`).
+# The class exists to keep the deep-link case from rotting silently, not to judge the image.
 
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
-DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests
+DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests
