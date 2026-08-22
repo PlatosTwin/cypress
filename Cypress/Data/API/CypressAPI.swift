@@ -1000,8 +1000,10 @@ public struct TreeProfile: Hashable, Sendable {
     /// **The owner settled it on 2026-08-22 and the difference is no longer deliberate: RULINGS
     /// R82, provenance counts here too.** A photograph taken on this installation is drawn among
     /// its own heroes whatever account holds it, on the same reasoning that made it deletable.
-    /// `is_own` gains the provenance arm in a follow-up round of its own — `.nobody` keeps
-    /// refusing, and until that round lands this function still answers the old way.
+    /// `is_own` gains the provenance arm in a follow-up round of its own — in
+    /// `ContributionStore.heroPhotoIDs`' SQL, which is this function's *input* rather than this
+    /// function: `isPhotoVisible` is a pure two-branch read of `own` and does not change.
+    /// `.nobody` keeps refusing, and until that round lands `own` is still computed the old way.
     public static func isPhotoVisible(_ photo: Photo, own: Bool) -> Bool {
         own ? photo.isVisibleToItsContributor : photo.isPubliclyVisible
     }

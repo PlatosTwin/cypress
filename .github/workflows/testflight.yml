@@ -554,9 +554,9 @@ jobs:
           fi
 
           # ── The release note ────────────────────────────────────────────────────────────
-          # Owner ruling, 2026-08-21: a code change cannot merge without one tester-voice line
-          # for TestFlight's "What to Test". `plan`'s `notes` step decides; this is where the
-          # decision is enforced, because this is the required status check.
+          # Owner ruling, 2026-08-21 (RULINGS R81): a code change cannot merge without one
+          # tester-voice line for TestFlight's "What to Test". `plan`'s `notes` step decides;
+          # this is where the decision is enforced, because this is the required status check.
           #
           # The `case` is not decoration. `needs.plan.outputs.notes` is the EMPTY STRING when the
           # step did not run, was renamed, or crashed before writing its output — and an empty

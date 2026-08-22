@@ -542,9 +542,10 @@ struct RootView: View {
     /// timeline" is a row on `cypress-sync`, not a locally minted identifier. E124's closing
     /// sentence, *"nothing on the call path changes"*, was flagged by spec §10 step 5 as a claim to
     /// check rather than assume; checked, it does not hold, for three reasons the #158 session round
-    /// wrote up (unnumbered as this is written, so there is no E to cite yet). This is the second of
-    /// the two forks it named: nothing about the sheet is captured
-    /// here, an `AppleSignIn` value is threaded in instead, and the closure stays `nonisolated`.
+    /// wrote up as ERRATA **E266 §1**. This is the second of the two forks its first bullet named
+    /// — "either the closure stops being `nonisolated` or something new is threaded to it": nothing
+    /// about the sheet is captured here, an `AppleSignIn` value is threaded in instead, and the
+    /// closure stays `nonisolated`.
     ///
     /// **The id is the service's, not this device's.** `signInWithApple` returns the account id
     /// `/auth/oidc` minted, and `linkAccount` hangs this device's rows from *that*. A locally minted
@@ -578,12 +579,14 @@ struct RootView: View {
     /// `AccountAskCopy.noticeFailed` — *"That did not go through."* Honest, because it did not: this
     /// phone is not this account's to take.
     ///
-    /// **What that leaves open is a stop-and-ask, not a gap this round fills.** Nothing on the
+    /// **What that leaves is ERRATA E270 §6c, and it has been ruled.** Nothing on the
     /// service ever clears `devices.user_id` (a sign-out is not a request it receives), so the second
     /// account cannot sign in on this phone *at all* — and "That did not go through" does not say
     /// why, or that trying again will not help. A surface that says "this phone's contributions
     /// belong to another account" is copy no mock draws, and inventing it here is what DECISIONS
-    /// constraint 21 forbids. Raised for the errata, unnumbered as this is written.
+    /// constraint 21 forbids. The owner accepted that state **for the beta on 2026-08-14**: one
+    /// phone, one account, and a refusal that is honest but uninformative. Handing a device on —
+    /// with copy that explains the refusal — is a designed round later, not an open question here.
     ///
     /// **The license answer travels (ERRATA E131).** §6's checkbox becomes `license_version` on the
     /// exchange, and spec §5.6 makes the two answers two different bodies: a version string when it

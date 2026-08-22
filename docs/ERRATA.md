@@ -22125,7 +22125,7 @@ then reported 0 anonymized rows and the payload still named the account.
 
 ### E279 — `addTree` gives a community tree two different ids depending on which implementation runs
 
-Latent, and found by the same round rather than caused by it.
+Latent, and found by the §3.4 round (E278's preamble) rather than caused by it.
 
 `LocalAPI.addTree` mints a fresh `Tree` — so `tree.id` is a new UUID — and stores `TreeDraft.
 clientUUID` beside it in `community_trees.client_uuid`. Every later record about the tree keys on
@@ -22147,8 +22147,8 @@ reconciling them is not this round's ticket: it changes a shipped route's contra
 
 ### E280 — `photo_withdrawal` is the one deferral in the §3.4 round the service could have honored, and the deferral is invisible from the client
 
-Raised by the adversarial review of the round above, and correcting a comment that had already been
-written three times over.
+Raised by the adversarial review of the §3.4 round (E278's preamble), and correcting a comment that
+had already been written three times over.
 
 The justification given for recording nine of the ten new kinds without materializing them was
 "tables this service does not have and moderation rules it cannot evaluate." That is true of eight.
@@ -22186,7 +22186,7 @@ gone anywhere but on the phone.
 
 ### E281 — A sync-path `add_tree` refused by the proximity dedupe is lossy, not merely unresolvable
 
-Sharpened by the same review, against the round's own open question.
+Sharpened by that same §3.4 review (E280), against the round's own open question.
 
 `applyOne` answers `failed(apierr.Conflict, …)` **before** `Store.Apply` runs, so a refused
 `add_tree` leaves **no `contributions` row at all** — the service has no record that anybody tried

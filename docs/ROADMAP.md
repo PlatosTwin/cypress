@@ -271,8 +271,10 @@ coverage, cut packs — and the s17 region dimension is the prerequisite, so all
 NYC's first publish. Whether each city publishes an open street-tree inventory at all, and under
 what terms, is unresearched: the first step per city is the sourcing-and-license pass, and a city
 with no usable inventory comes back to the owner as a finding, not a silent drop. A tester asked
-for Marin/Sausalito/Mill Valley coverage the same day (recorded in the beta-feedback pending
-ruling); when this is scheduled, evaluate the whole list together against the distribution plan's
+for Marin/Sausalito/Mill Valley coverage the same day (RULINGS **R80**, the deferral "Coverage
+outside San Francisco: Marin, Sausalito, Mill Valley", which reframes it as an inventory question
+for the distribution plan); when this is scheduled, evaluate the whole list together against the
+distribution plan's
 per-inventory machinery rather than one city at a time. Not scheduled.
 
 **iNaturalist licensing.** Content is CC BY-NC and Cypress has a paid organizational tier. We store

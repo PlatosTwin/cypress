@@ -7723,7 +7723,7 @@ would then go looking for.
 
 It is not a way out of the rule. The rule is *"every code pull request states its tester-visible
 effect"*; `internal:` states that the effect is none, in the diff, where a reviewer can disagree
-with the judgement. A build whose every note is internal still ships a changelog — it says so in
+with the judgment. A build whose every note is internal still ships a changelog — it says so in
 plain words rather than going out blank.
 
 #### Where CI refuses
@@ -7828,9 +7828,11 @@ delete for you and will not show you, which is not a distinction anybody was ask
 
 - **`.nobody` keeps refusing.** The leaving door's promise (R3, ERRATA E157) is untouched.
   `PhotoOwner.permitsRemoval(by:takenOnDevice:)` refuses an ownerless row on its first line before
-  it reads provenance, and both leaving-door statements — `LocalAPI`'s and
-  `AccountDeletion`'s — set `taken_on_device = NULL` in the same `UPDATE` that takes the name off,
-  so there is nothing left for a provenance arm to admit. `is_own` gains an arm, not an exception.
+  it reads provenance, and the leaving door's statement — `AccountDeletion.anonymizeContributions`,
+  the one shipping door there is — sets `taken_on_device = NULL` in the same `UPDATE` that takes the
+  name off, so there is nothing left for a provenance arm to admit. `is_own` gains an arm, not an
+  exception. (`LocalAPI.debugAnonymizePhoto` writes the same end state on one named row and is a
+  test seam by its own header, not a second door.)
 - **No schema version.** v16's column already carries what this needs. This ruling moves a
   predicate; it does not touch a table, and it must not be read as reserving a migration seat.
 - **Moderation is not repealed.** `isPubliclyVisible` still governs every photograph that is not
