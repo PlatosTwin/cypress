@@ -239,6 +239,23 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
+**Retire the format-1 manifest.** Owner decision, 2026-08-22, taken when the NYC publish round was
+authorized; it closes the "deliberately UNSCHEDULED" item the s17 round left behind, and the full
+reasoning is in that round's pending ruling on dual publishing. The clock has three ticks: **build
+48** is the first TestFlight build that reads `manifest-v2.json`; **the NYC publish** writes both
+objects and is the last publish that writes format 1; **the publish after NYC** writes format 2
+only. RULING D8's "one release cycle" is that interval — so an install that never updated past
+build 48 keeps a working Cities screen through the whole of the NYC publish and loses it only at
+the next one, rather than at the publish that first has something new to offer it.
+
+The work belongs to whichever round publishes after NYC, and it is small and enumerable: delete
+`write_manifest_v1`, `MANIFEST_V1_NAME` and the `level == "city"` filter from
+`Tools/publish_cities.py`, stop uploading the legacy object, and remove
+`CityDownloader.fetchManifest`'s fallback to it. **`CityManifest.knownFormats` keeps `1`** — a
+reader that meets a stale cached format-1 object should still read it; what retires is writing one,
+not reading one. Scheduled by trigger rather than by date, and the trigger is a publish, not a
+build.
+
 **City-inventory disputes.** Owner ruling, 2026-08-21, refined the same day (both in RULINGS
 **R79**, which carries the full spec): city data must be
 disputable from the UI, and city-tree disputes are richer than the community-tree flags. City
