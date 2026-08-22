@@ -57,16 +57,19 @@ struct CommunityOutboxKindTests {
         )
     }
 
+    /// What the trigger below raises, read back by the test that proves the rollback.
+    ///
+    /// One constant rather than the same sentence twice: a guard that asserts a message nothing
+    /// produces is green for the wrong reason, and the two literals drifting apart is the ordinary
+    /// way that happens.
+    static let enqueueRefusalMessage = "the queue refused this row"
+
     /// Makes every `INSERT INTO outbox` fail, and nothing else.
     ///
     /// A trigger rather than dropping the table: the table stays readable, so a mutation that
     /// touches the queue for any *other* reason still behaves normally
     /// (`LocalAPI.deletePhoto` calls `OutboxStore.discardStagedPhoto`), and the failure lands on
     /// exactly the statement under test with a message that says so.
-    /// What the trigger below raises, so the test that reads the message back and the trigger that
-    /// writes it cannot drift apart into a guard that asserts a string nothing produces.
-    static let enqueueRefusalMessage = "the queue refused this row"
-
     private static func refuseEveryEnqueue(in store: CypressStore) async throws {
         try await store.queue.write { connection in
             try connection.execute("""
