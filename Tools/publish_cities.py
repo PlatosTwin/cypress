@@ -45,10 +45,11 @@ the fused seed's schema by construction, never a re-statement of it:
                       `tree_count` therefore still describes the FUSED build --
                       seed_meta.species_map_counts_scope says so in-band.
 
-  seed_meta           the fused build receipt is kept verbatim EXCEPT the two
-                      keys that name this file rather than the build that fed
-                      it (`id_spaces_in_file`, `rows_kept`), which are
-                      rewritten to the truth about this file. Publisher facts
+  seed_meta           the fused build receipt is kept verbatim EXCEPT the keys
+                      that name this file rather than the build that fed it
+                      (`id_spaces_in_file`, `rows_kept`, and every
+                      `rows_from_<inventory>`), which are rewritten to the
+                      truth about this file. Publisher facts
                       are added under `publish_*` keys. `trees_snapshot_on`
                       (which the app shows as "city record as of") is
                       rewritten to the city's own content revision.
@@ -451,10 +452,40 @@ def build_city_file(src: str, dest: str, region: dict) -> dict:
 
         # The receipt keys that name THIS FILE, rewritten to the truth about it;
         # everything else in seed_meta stays the fused build receipt.
+        #
+        # `rows_from_<inventory>` JOINED THIS LIST WITH THE BOROUGH SPLIT, and the
+        # reason it was not on it before is worth stating rather than fixing
+        # silently. Every pack before New York held ALL of its inventory's rows --
+        # one id space, one pack -- so the fused claim and the pack's own count
+        # agreed by geometry, and `verify_seed` check 1b passed on every pack ever
+        # built. A borough is the first pack that holds a strict SUBSET of an
+        # inventory, and the Queens pack shipped claiming 898,643 rows from
+        # `nyc_tree_points` while holding 298,839. Measured, before this fix:
+        #
+        #     [FAIL] 1b. per-inventory row counts match what seed_meta claims
+        #            nyc_tree_points: 298,839 rows, seed_meta says 898,643
+        #
+        # It is the same argument `rows_kept` was already rewritten under -- a key
+        # that says how much of something is in THIS FILE is a fact about this
+        # file, not about the build that fed it. Counted from the pack's own
+        # `trees` rather than derived from the fused number, because the split is
+        # what decided it.
+        rows_from = {
+            f"rows_from_{inventory}": str(n)
+            for inventory, n in cur.execute(
+                "SELECT inventory_source, COUNT(*) FROM trees GROUP BY inventory_source"
+            ).fetchall()
+        }
+        # A fused key for an inventory this pack holds NO rows from would otherwise
+        # survive verbatim and overstate the pack by its whole corpus.
+        for key in fused_meta:
+            if key.startswith("rows_from_") and key not in rows_from:
+                rows_from[key] = "0"
         rewrites = {
             "id_spaces_in_file": space,
             "rows_kept": str(count),
             "trees_snapshot_on": rev,
+            **rows_from,
         }
         additions = {
             # `publish_city_id` keeps its name and its meaning -- the ID SPACE,

@@ -155,6 +155,10 @@ def build_fixture(path: str, *, meta_extra: dict | None = None) -> None:
         "inventory_nyc_tree_points_id_space": "us-ny-nyc",
         "inventory_nyc_tree_points_snapshot_on": "2026-07-28",
         "id_spaces_in_file": "sf,us-ny-nyc",
+        # The FUSED build's per-inventory claims. Deliberately larger than what
+        # any one pack holds -- that is the whole of what test 3i is about.
+        "rows_from_sf_city": "999",
+        "rows_from_nyc_tree_points": "888",
         "rows_kept": str(len(rows)),
         "trees_snapshot_on": "2026-07-31",
     }
@@ -405,6 +409,42 @@ try:
         check(queens["coverage"] == "full",
               f"Queens' coverage is {queens['coverage']!r}; the fixture states "
               f"coverage_us-ny-nyc = full")
+
+        # -- 3i. rows_from_<inventory> describes THIS PACK, not the fused build
+        #
+        # A borough is the first pack that holds a strict SUBSET of an
+        # inventory's rows. Every pack before New York held all of its
+        # inventory's -- one id space, one pack -- so the fused claim and the
+        # pack's own count agreed by geometry and `verify_seed` check 1b passed
+        # on every pack ever built. Measured on the real Queens pack before the
+        # fix: `nyc_tree_points: 298,839 rows, seed_meta says 898,643`.
+        #
+        # Asserted against the pack's OWN trees rather than against a literal:
+        # a literal would be a second statement of the fixture's shape and would
+        # be edited alongside whatever broke this.
+        qcon = sqlite3.connect(os.path.join(out, queens["path"]))
+        pack_meta = dict(qcon.execute("SELECT key, value FROM seed_meta"))
+        actual = dict(qcon.execute(
+            "SELECT inventory_source, COUNT(*) FROM trees GROUP BY inventory_source"))
+        for inventory, n in actual.items():
+            claimed = pack_meta.get(f"rows_from_{inventory}")
+            check(claimed == str(n),
+                  f"the Queens pack claims rows_from_{inventory}={claimed} and holds {n}; "
+                  f"a receipt that describes the fused build is false about this file")
+        # The other direction: an inventory this pack holds NOTHING from must not
+        # keep the fused claim, which would overstate the pack by a whole corpus.
+        for key, value in pack_meta.items():
+            if not key.startswith("rows_from_"):
+                continue
+            inventory = key[len("rows_from_"):]
+            if inventory not in actual:
+                check(value == "0",
+                      f"the Queens pack claims {key}={value} for an inventory it holds no "
+                      f"rows from")
+        check(any(k.startswith("rows_from_") for k in pack_meta),
+              "the pack carries no rows_from_* key at all, so the two checks above "
+              "asserted nothing")
+        qcon.close()
 finally:
     shutil.rmtree(workdir, ignore_errors=True)
 
