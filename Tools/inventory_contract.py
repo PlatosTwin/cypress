@@ -252,6 +252,24 @@ ID_SPACES = {
             "NOT on OBJECTID (the feature service's row number, which moves on republish)."
         ),
     ),
+    "us-ny-nyc": IdSpace(
+        id="us-ny-nyc",
+        identity_prefix="us-ny-nyc:",
+        note=(
+            "City of New York, NYC Parks' ForMS 2.0. The numbering is GlobalID on the Forestry "
+            "Tree Points layer (Socrata hn5i-inap) -- ForMS's own asset UUID. Measured against "
+            "the full extract on 2026-08-14: 1,121,106 rows, 1,121,106 distinct GlobalID, zero "
+            "null, and no ':' in any of them (a UUID cannot contain one). It cannot collide with "
+            "San Francisco's TreeID or San Jose's FACILITYID by construction -- a UUID against "
+            "small integers -- which is a stronger guarantee than either California city enjoys, "
+            "but the prefix is still required, because the rule is about how spaces are declared "
+            "and not about whether a particular pair happens to be safe. "
+            "NOT keyed on OBJECTID: it is the feature service's row number, its observed range "
+            "overlaps both California cities' id ranges numerically, and it moves on republish. "
+            "The Forestry Planting Spaces layer (82zj-84is) is in this same space -- it supplies "
+            "attribute columns for tree points and lists no trees of its own."
+        ),
+    ),
 }
 
 
@@ -300,6 +318,23 @@ INVENTORIES = {
             "https://geo.sanjoseca.gov/server/rest/services/OPN/OPN_OpenDataService/"
             "MapServer/510"
         ),
+    ),
+    "nyc_tree_points": Inventory(
+        id="nyc_tree_points",
+        id_space="us-ny-nyc",
+        name="NYC Parks Forestry Tree Points",
+        url="https://data.cityofnewyork.us/resource/hn5i-inap",
+    ),
+    # LISTS NO TREES. It is registered because `attributes_from` names it -- NYC's
+    # address, borough and site type live here and nowhere else, and a reader who
+    # sees `attributes_from = 'nyc_planting_spaces'` has to be able to look it up.
+    # That is the same role DataSF plays for the San Francisco city build, and it
+    # is why `attributes_from` runs through `require_inventory` like `inventory`.
+    "nyc_planting_spaces": Inventory(
+        id="nyc_planting_spaces",
+        id_space="us-ny-nyc",
+        name="NYC Parks Forestry Planting Spaces",
+        url="https://data.cityofnewyork.us/resource/82zj-84is",
     ),
 }
 

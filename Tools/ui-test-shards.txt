@@ -189,7 +189,28 @@
 # thumbnail's pixels, and no test in this target can see those (the hero is `.accessibilityHidden`).
 # The class exists to keep the deep-link case from rotting silently, not to judge the image.
 
+# `CityDisclaimerUITests` (RULINGS R78 ruling 2) was added by the NYC publish round and has never
+# been on CI. Two tests, each one launch and one walk of the You tab's Cities row. Measured alone on
+# the iPhone 16 Pro Max simulator (DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3, 440 pt) — a different
+# machine and device from the CI table at the top, exactly as the five entries before it are:
+#
+#   VERIFY-OK: Executed 2 tests, with 0 failures (0 unexpected) in 17.653 (17.661) seconds
+#
+# PLACED ON SHARD 2, and the arithmetic says it does not matter much which of two lines it goes on.
+# Working from this file's own corrected totals — Shard 1 at 361.8-363.4s, Shard 2 at 350.1s,
+# Shard 3 at 350.4s (344.8 + StrandedPhotoHero's 5.6), Shard 4 at 362.6s — 17.7s does not reach the
+# pace-setter from either of the two short lines:
+#
+#   this class on Shard 2:  max(363.4, 350.1 + 17.7 = 367.8) = 367.8s   <- placed here
+#   this class on Shard 3:  max(363.4, 350.4 + 17.7 = 368.1) = 368.1s
+#   this class on Shard 1:  max(362.6, 363.4 + 17.7 = 381.1) = 381.1s
+#   this class on Shard 4:  max(363.4, 362.6 + 17.7 = 380.3) = 380.3s
+#
+# Shard 2 and Shard 3 differ by 0.3s, which is a coin flip on this evidence and is stated as one —
+# the file's own standing warning about margins this small applies. What is robust is that either
+# short line beats either long one by ~13s. Re-measure on a single machine before moving it.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests
-MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests
+MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests

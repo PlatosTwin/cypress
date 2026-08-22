@@ -285,6 +285,55 @@ stays attached to its answer rather than disappearing once the question closes.
    threshold, the notify-the-City note actually sent through all three routes in §2/§3, and
    the disclaimer text actually live on both surfaces in §4 — not merely drafted here.
 
+   **Status, 2026-08-22.** Two of the three have moved since this item was written, and the
+   third is what the phase-1 round built. The notify obligation was **discharged** on
+   2026-08-21 (see the header). **D20's gate has been WAIVED by the owner for New York**, at
+   the honest 85.99% mapping ceiling — 35,993 rows short of the threshold, recorded rather
+   than dissolved; the ruling is in `docs/rulings-pending/` pending its number. The
+   disclaimer copy is built and on the city-downloads screen in the s17/NYC phase-1 round,
+   which leaves the **listing text** (item 2 of §4) as the piece still owed before the first
+   pack is published.
+
+---
+
+## 5b. Note added 2026-08-22 — the sent notice describes a whole-city pack the publish does not cut
+
+**Appended, not merged into §3.** §3's draft is the text the owner actually sent on 2026-08-21
+(§0), so it is a record of what was said to the City and is left exactly as it stands. This note
+records a discrepancy found afterwards; it changes nothing above it.
+
+**What §3 says.** The sent note describes the app republishing the two datasets as "read-only
+downloadable packs — **one per NYC borough, plus a whole-city pack** — inside the app."
+
+**What the publish actually cuts.** RULING **D1** makes the borough New York's published unit and
+**D18** requires the borough packs to sum exactly to the whole city. The s17/NYC publish round
+therefore builds and publishes **five borough packs and no whole-city pack**: `us-ny-nyc-manhattan`,
+`us-ny-nyc-brooklyn`, `us-ny-nyc-queens`, `us-ny-nyc-bronx`, `us-ny-nyc-staten-island`. A reader who
+wants all of New York downloads five packs, not one.
+
+**Why this is small, and why it is written down anyway.** Nothing in the note is *now* false about
+what the data is or how it is transformed — the sentence overstates the catalogue by one object that
+does not exist, in a paragraph whose purpose is to describe the use rather than to enumerate the
+files. It matters because it is a statement made **to the City** about how its data is used, and
+this repository's standing rule is that a claim nobody re-reads is how a wrong one survives. It was
+found by the adversarial review of the phase-1 PR (finding N6), not by the round that sent it.
+
+**Not resolved here — it belongs to whoever closes the D12 obligation**, and there are two clean
+ways to close it, which is an owner's choice rather than an author's:
+
+1. **Publish a whole-city pack later**, making the sent sentence true rather than correcting it.
+   D1/D18 do not forbid one; they make the borough the unit, and a whole-city convenience pack
+   alongside five borough packs is a distribution question, not a data one.
+2. **Send a short correction** through the same three routes §2 names, saying the packs are
+   per-borough only.
+
+Doing neither is also a defensible answer, and should be a decision rather than a silence: the
+overstatement is in the direction of describing *more* redistribution than actually happens, which
+is not the direction that creates an obligation the City was not told about.
+
+Flagged to the owner in the phase-1 review report. **No message has been sent about this, and this
+document still sends nothing.**
+
 ---
 
 ## 6. Sources and retrieval log

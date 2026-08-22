@@ -35,6 +35,8 @@ struct CityDownloadsView: View {
                     ForEach(model.rows) { row in
                         card(row)
                     }
+
+                    nycDisclaimer
                 }
                 .padding(.horizontal, CypressSpacing.gutter)
                 .padding(.bottom, CypressSpacing.bottomFootnote)
@@ -48,6 +50,61 @@ struct CityDownloadsView: View {
         // Re-fetched on every appearance and never persisted (ruling §3).
         .task { await model.load() }
     }
+
+    // MARK: - The NYC Data Mine disclaimer (RULINGS R78 ruling 2)
+
+    /// **Unconditional, and that is the decision worth reading.**
+    ///
+    /// R78 ruling 2 puts the verbatim block on "the actual surface offering an NYC pack,
+    /// whole-city or per-borough, trial packs included per D12". The narrower reading — render it
+    /// only when the catalog currently lists an NYC pack — was rejected, for three reasons:
+    ///
+    /// 1. **It would make a legal obligation depend on a network fetch.** `model.rows` is empty
+    ///    while the catalog is loading and holds only installed cities when it fails
+    ///    (`CityDownloadsCopy.offline`). A reader with an NYC pack already installed and no
+    ///    connection is exactly the reader the disclaimer is for.
+    /// 2. **D12 binds trial and beta packs**, which are the packs least likely to arrive through a
+    ///    manifest entry this screen filtered correctly.
+    /// 3. A conditional render fails *silently* — nothing goes red, the screen just stops carrying
+    ///    it. Unconditional has one failure mode and a test can see it.
+    ///
+    /// The cost is that a reader who never downloads New York still reads a sentence about it. That
+    /// is a paragraph of true text in a place it is not needed, against a compliance failure that
+    /// leaves no trace — and R36 makes the source's obligations ride with the data, not with
+    /// whether it happens to be on screen.
+    ///
+    /// Drawn as quiet footer copy in the You tab's idiom, not as a card: it is not a thing to act
+    /// on, and giving it card chrome would read as a fourth city.
+    private var nycDisclaimer: some View {
+        VStack(alignment: .leading, spacing: CityDownloadsMetrics.rowTextGap) {
+            // The You tab's own section-label idiom — the same one `citiesSection` uses for
+            // `City data`, because this block sits under that tab's door and is furniture of the
+            // same kind. It uppercases; the heading is ours, so that is style, not the quoted text.
+            Text(CityDownloadsCopy.nycDisclaimerHeading)
+                .cypressMicroLabel()
+
+            Text(CityDownloadsCopy.nycDisclaimerRequired)
+                .font(CypressFont.body115)
+                .foregroundStyle(CypressColor.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(CityDownloadsCopy.nycDisclaimerAttribution)
+                .font(CypressFont.body115)
+                .foregroundStyle(CypressColor.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, CypressSpacing.gapVitality)
+        .accessibilityIdentifier(CityDownloadsView.nycDisclaimerIdentifier)
+    }
+
+    /// A stable name for the block above, for a reader inspecting the tree.
+    ///
+    /// **`CityDisclaimerUITests` deliberately does NOT assert on it.** An identifier survives the
+    /// text being replaced by anything at all, so a test that looked for it would go green on a
+    /// screen carrying the wrong words — and the words are the whole obligation. That test matches
+    /// the City's sentence itself.
+    static let nycDisclaimerIdentifier = "cities.nycDisclaimer"
 
     // MARK: - One card
 

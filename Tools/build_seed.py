@@ -210,12 +210,37 @@ SJ_BBOX = {
     "max_lon": -121.6500,
 }
 
+# New York City's own extent, on the same job: reject null-island rows,
+# projection leakage and anything Socrata serves that is not New York City.
+#
+# MEASURED, NOT GUESSED. Across the full 1,121,106-row Tree Points extract and
+# the 1,084,845-row Planting Spaces extract (2026-08-14) both datasets occupy
+# exactly lat [40.49668, 40.91419], lon [-74.25499, -73.69808] -- Tottenville
+# at the south end of Staten Island to the north edge of the Bronx, and the
+# Staten Island west shore to the eastern edge of Queens. The box below pads
+# that to the nearest sensible bound and holds every row in both extracts, with
+# zero rows outside it.
+#
+# IT IS ALSO THE E172 CHECK IN THE BUILD RATHER THAN ONLY IN THE FETCH, for the
+# same reason San Jose's is: an ingest whose only geography check runs in the
+# downloader has one place to fail rather than two. It catches, specifically, a
+# `POINT (lon lat)` parsed in the wrong order -- WKT puts longitude first, and a
+# swapped NYC pair lands at (-73.9, 40.9), which is off West Africa and outside
+# this box by a wide margin.
+NYC_BBOX = {
+    "min_lat": 40.45,
+    "max_lat": 40.95,
+    "min_lon": -74.30,
+    "max_lon": -73.65,
+}
+
 # The admission box for each id space. `accepts()` reads this rather than
 # SF_BBOX: a bounding box is a fact about a city, and applying San Francisco's to
 # San Jose's rows would reject all 344,879 of them without a word.
 BBOX_BY_ID_SPACE = {
     "sf": SF_BBOX,
     "us-ca-sj": SJ_BBOX,
+    "us-ny-nyc": NYC_BBOX,
 }
 
 # `--source` names one of SAN FRANCISCO'S two inventories and is unchanged; the
@@ -236,6 +261,7 @@ SJ_META = "sj_street_trees.meta.json"
 SPECIES_MAP_FILES = {
     "sf": "sf_species_map.csv",
     "us-ca-sj": "sj_species_map.csv",
+    "us-ny-nyc": "nyc_species_map.csv",
 }
 
 # ---------------------------------------------------------------------------
@@ -274,6 +300,72 @@ SJ_SHIP_WINDOW = {
     "min_lon": -121.9300,
     "max_lon": -121.8550,
 }
+
+
+def load_nyc_layers(cache_dir: str):
+    """`<cache>/{tree_points,planting_spaces}.csv` -> (tree points, spaces, meta).
+
+    Cache-only, exactly like `load_city_layer` and `load_san_jose_layer`: the
+    fetch is `Tools/fetch_nyc_trees.py`'s job and is run separately, politely,
+    once. The cache lives OUTSIDE the repo -- it is ~430 MB across the two
+    extracts, against the 38 sample rows in `Fixtures/raw/nyc/` -- so unlike the
+    other two sources its location is a required argument rather than a
+    convention.
+
+    Returns the planting spaces as {GlobalID -> row}. `fetch_nyc_trees.py` has
+    already dropped the 6,864 whole-row duplicates and verified they agreed.
+    """
+    tree_points_path = os.path.join(cache_dir, "tree_points.csv")
+    spaces_path = os.path.join(cache_dir, "planting_spaces.csv")
+    meta_path = os.path.join(cache_dir, "nyc_fetch.meta.json")
+    if not os.path.exists(tree_points_path) or not os.path.exists(spaces_path):
+        die(
+            f"{cache_dir} does not hold both NYC extracts. Run:\n"
+            f"    python3 Tools/fetch_nyc_trees.py --cache-dir {cache_dir} --verify\n"
+            f"It pages both Socrata datasets sequentially and caches them; a page "
+            f"already on disk is never re-fetched."
+        )
+
+    def read(path):
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                lat, lon = _nyc_parse_point(row.get("location"))
+                row["lat"], row["lon"] = lat, lon
+                yield row
+
+    tree_points = list(read(tree_points_path))
+    spaces = {}
+    for row in read(spaces_path):
+        key = (row.get("globalid") or "").strip()
+        if key:
+            spaces[key] = row
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    return tree_points, spaces, meta
+
+
+def _nyc_parse_point(raw):
+    """A Socrata CSV point cell -> (lat, lon). WKT is `POINT (lon lat)`.
+
+    Longitude first, which is the opposite of the order every other field in
+    this pipeline uses. A swapped pair puts every NYC tree in Antarctica and
+    nothing downstream would say so, which is why `fetch_nyc_trees.py` bounds-
+    checks the PARSED values rather than the raw string.
+    """
+    text = (raw or "").strip()
+    if not text.upper().startswith("POINT"):
+        return None, None
+    inside = text[text.find("(") + 1: text.rfind(")")].strip()
+    parts = inside.split()
+    if len(parts) != 2:
+        return None, None
+    try:
+        lon, lat = float(parts[0]), float(parts[1])
+    except ValueError:
+        return None, None
+    return lat, lon
 
 
 def load_san_jose_layer(raw_dir: str):
@@ -352,6 +444,8 @@ from inventory_adapters import (  # noqa: E402
     RETIRED_SPECIES_NAMES,
     SFCityLayerAdapter,
     SFDataSFAdapter,
+    BoroughResolver,
+    NYCTreePointAdapter,
     SanJoseStreetTreeAdapter,
     normalise_species_key,
     parse_qspecies,
@@ -491,6 +585,62 @@ def status_for_record(kind: str, condition: Optional[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The seed's per-inventory receipts, and the guard the residual needs
+# ---------------------------------------------------------------------------
+def check_rows_from(source_meta: dict, contributing, kept: int) -> None:
+    """Refuse a build whose `rows_from_<inventory>` claims do not describe it.
+
+    `rows_from_<inventory>` is assembled from per-source counters, one of which is
+    a RESIDUAL (`rows_from_sf_city` = everything not attributed elsewhere). A
+    residual is fine while every other contributor is subtracted from it and
+    silently wrong the moment one is not -- which is exactly what happened when
+    New York arrived: 898,643 rows were attributed to San Francisco's city layer,
+    `seed_meta` claimed 1,032,349 rows for an inventory holding 133,706, and
+    nothing in this file objected. `verify_seed` check 1b found it, at the end of
+    the pipeline, on the first three-city build.
+
+    Two facts close it here instead, both read off `contributing` -- which is
+    built from the records actually emitted, not from a list maintained by hand:
+
+      * every inventory the file holds rows from has a claim, and
+      * the claims sum to the file's own `rows_kept`.
+
+    A new city therefore cannot inflate an old city's number: it either brings its
+    own key or stops the build naming itself.
+
+    `verify_seed` 1b stays and is not made redundant -- it reads the WRITTEN FILE
+    where this reads the build's own counters, so the two disagree if the emit
+    dropped rows, which is a different failure and the one 1b is really for.
+
+    **Module-level rather than inline in `build()` (review finding N1).** It was
+    written inline, which made the only way to exercise it a full three-city
+    build against a scratch repo root -- the reviewer had to stand one up to
+    red-prove it, and deleting the guard would have gone unnoticed by every
+    suite. Nothing about it needs `build()`'s locals: it is a function of the
+    receipt, the contributors and the total.
+
+    Raises nothing it can describe: `die` prints and exits, as everywhere else in
+    this file.
+    """
+    contributing = list(contributing)
+    claimed = {key[len("rows_from_"):]: int(value)
+               for key, value in source_meta.items() if key.startswith("rows_from_")}
+    missing = [inv for inv in contributing if inv not in claimed]
+    stray = sorted(inv for inv, n in claimed.items() if inv not in contributing and n)
+    if missing or stray:
+        die(f"seed_meta's rows_from_* claims do not describe this build: "
+            + (f"no claim for {missing!r}, which contributed rows; " if missing else "")
+            + (f"a nonzero claim for {stray!r}, which contributed none; " if stray else "")
+            + f"contributing={contributing!r}. Add a rows_from_<inventory> key rather "
+            f"than letting another inventory's residual absorb the rows.")
+    total_claimed = sum(claimed.get(inv, 0) for inv in contributing)
+    if total_claimed != kept:
+        die(f"seed_meta's rows_from_* claims sum to {total_claimed:,} but the file holds "
+            f"{kept:,} rows. One of the per-inventory counters is wrong; the "
+            f"residual (rows_from_sf_city) is the one that hides such an error.")
+
+
+# ---------------------------------------------------------------------------
 # dim_city (task #237)
 # ---------------------------------------------------------------------------
 # The city dimension table's rows, keyed by `ID_SPACES` id. Hand-entered on
@@ -532,6 +682,38 @@ DIM_CITY: dict[str, dict[str, str]] = {
             "https://www.sanjoseca.gov/your-government/departments-offices/"
             "transportation/forestry"
         ),
+    },
+    # NEEDS OWNER SIGN-OFF ON TWO FIELDS, and they are flagged rather than guessed.
+    #
+    # `urban_forestry_url` is the DEPARTMENT home page, not a forestry program
+    # page like the other two, because no forestry program page could be
+    # confirmed to resolve on 2026-08-14. Fetched and checked that day:
+    #   https://www.nyc.gov/parks                     200, redirects to
+    #       https://www.nyc.gov/html/dpr/home.html, title "New York City
+    #       Department of Parks & Recreation"  <- entered
+    #   .../site/parks/services/forestry.page         404
+    #   .../site/parks/services/trees.page            404
+    #   .../site/parks/services/street-tree-planting.page  404
+    #   .../site/parks/trees-and-nature/street-trees.page  404
+    #   https://www.nycgovparks.org/trees             403 from CloudFront to a
+    #       non-browser agent. NOT retried with a spoofed agent: that is bot
+    #       detection and working around it is not something this build does.
+    #
+    # `county` is the harder one. New York City is five counties (New York,
+    # Kings, Queens, Bronx, Richmond) and this column holds ONE string, so
+    # unlike SF (coterminous) and San Jose (Santa Clara) there is no true
+    # answer. "New York City" is entered as the least wrong option -- it names
+    # the jurisdiction the data actually comes from -- and it is deliberately
+    # NOT one of the five county names, because picking one would be a false
+    # civic claim about the other four. If a borough-partitioned distribution
+    # lands, this column is the natural place for the borough and that is a
+    # schema question, not one this build may answer.
+    "us-ny-nyc": {
+        "slug": "us-ny-nyc",
+        "display_name": "New York City",
+        "state": "NY",
+        "county": "New York City",
+        "urban_forestry_url": "https://www.nyc.gov/parks",
     },
 }
 
@@ -604,6 +786,81 @@ REGIONS: dict[str, list[dict]] = {
             # says exactly that: level `city`, coverage `downtown`.
             "level": "city",
             "source_names": (),
+        },
+    ],
+    # ── New York City: five borough-level regions in one id space ────────────
+    # RULING D1 makes the borough the published unit, which is the reason
+    # `dim_region` exists at all. This is the first id space with more than one
+    # region, so it is also the first place where the two consequences below are
+    # load-bearing rather than theoretical.
+    #
+    # `pack_id` IS FROZEN HERE AND NOW. Each becomes `cities/<id>/<version>/…`
+    # under R37.2's write-once path rule and the install key on every reader's
+    # device, so these five strings can never change once a byte is published.
+    # They follow the shape `us-ca-sj` already set: the id space, then the unit.
+    #
+    # `source_names` holds NYC's OWN word for each borough, and it is a tuple
+    # because two independent producers must both land on this row:
+    #   * Forestry Planting Spaces' `boroughcode` column, for a tree point that
+    #     joined a planting space; and
+    #   * `Fixtures/nyc_survey/borough_boundaries.geojson`'s `boroname`, which
+    #     `BoroughResolver` returns for the ~22,995 that joined none (D18).
+    # Measured, not assumed: both vocabularies are the same five bare,
+    # title-case strings, so ONE name per row is correct and a second spelling
+    # would be an invention. `NYCTreePointAdapter._borough_for` returns exactly
+    # one of these and `InventoryRecord.region` carries it here unchanged.
+    #
+    # `display_name` is civic content (DECISIONS constraint 15) and is taken
+    # from the City's own boundary file's `boroname`, not composed: that is why
+    # this table says "Bronx" rather than "The Bronx" -- the City writes
+    # "Bronx" in both of the two vocabularies above, and preferring the
+    # colloquially-correct article here would be this file inventing a civic
+    # name it was not given.
+    #
+    # NOTE THAT `(us-ny-nyc, None)` IS NOT REGISTERED, and that is the point.
+    # `sole` is False for a space with five regions, so a record arriving with
+    # `region=None` finds no key and `resolve_region_ids` stops with the count.
+    # That stop is what ENFORCES D18's point-in-polygon orphan assignment rather
+    # than trusting the ingest to have run it; see the block comment there.
+    "us-ny-nyc": [
+        {
+            "pack_id": "us-ny-nyc-manhattan",
+            "display_name": "Manhattan",
+            "level": "borough",
+            "source_names": ("Manhattan",),
+        },
+        {
+            "pack_id": "us-ny-nyc-brooklyn",
+            "display_name": "Brooklyn",
+            "level": "borough",
+            "source_names": ("Brooklyn",),
+        },
+        {
+            "pack_id": "us-ny-nyc-queens",
+            "display_name": "Queens",
+            "level": "borough",
+            "source_names": ("Queens",),
+        },
+        {
+            "pack_id": "us-ny-nyc-bronx",
+            "display_name": "Bronx",
+            "level": "borough",
+            "source_names": ("Bronx",),
+        },
+        {
+            # `-staten-island`, spelled out like its four siblings. The first
+            # draft of this table wrote `-si`, following the only precedent the
+            # repo had (`Tools/test_publish_cities.py`'s fixture, written by the
+            # s17 round), and raised it for the owner because a pack id is
+            # frozen forever at the first publish. **The owner ruled on
+            # 2026-08-22: spell it out** -- `-si` was the lone abbreviation
+            # among five, which is a worse thing to freeze than a long string.
+            # Free to change today and impossible after phase 2; that is why it
+            # was asked before the publish rather than after it.
+            "pack_id": "us-ny-nyc-staten-island",
+            "display_name": "Staten Island",
+            "level": "borough",
+            "source_names": ("Staten Island",),
         },
     ],
 }
@@ -1536,7 +1793,8 @@ def build_species_trigram_index(conn) -> int:
     return len(pairs)
 
 
-def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool = True) -> dict:
+def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool = True,
+                         extra_files: tuple = ()) -> dict:
     """Fixtures/species/*.yaml -> {species uuid: content row}. BUILD-PLAN section 8.
 
     Two files, read in this order so the authored guide wins the overlap:
@@ -1566,7 +1824,20 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
     content = {}
     stats = {"leaf_retention": 0, "family": 0, "curated": 0, "retired": 0, "merged": 0, "absent": 0}
 
-    def apply(entry: dict, path: str, curated: bool) -> None:
+    def apply(entry: dict, path: str, curated: bool, allow_absent: bool = False) -> None:
+        """`allow_absent` -- this fixture may legitimately describe species this
+        build does not contain.
+
+        `strict` exists to catch DRIFT: a fixture and a parser that disagree
+        about what the corpus holds. A whole-city fixture read by a
+        single-borough build is not drift -- `nyc_species.yaml` describes all
+        898,643 NYC rows, and a Manhattan pack contains 98,929 of them, so ~400
+        of its entries name species that pack correctly does not have.
+
+        The NAME-MISMATCH check below stays strict for every file: a fixture
+        claiming a different name for a uuid the seed DOES carry is still a
+        build failure, whichever file it came from.
+        """
         name = entry.get("scientific_name")
         species_uuid = entry.get("species_uuid")
 
@@ -1583,7 +1854,7 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
                     f"not carry ({species_uuid})")
             stats["merged"] += 1
         elif species_uuid not in uuid_to_name:
-            if not strict:
+            if allow_absent or not strict:
                 # `--limit` builds only part of the CSV, so most species are simply absent.
                 stats["absent"] += 1
                 return
@@ -1632,6 +1903,12 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
             for note in entry.get("care_notes") or []
         ]
 
+    # `extra_files` carries the fixtures that only describe a city this build
+    # actually contains. `nyc_species.yaml` names 500-odd species that an
+    # SF-only build has never heard of, and `strict` would (correctly) call every
+    # one of them drift between the fixtures and the parser. So the file is
+    # offered when NYC is in the build and withheld when it is not, rather than
+    # weakening the check that catches real drift.
     for path, curated in (
         (os.path.join(fixtures_dir, "species", "leaf_retention.yaml"), False),
         (os.path.join(fixtures_dir, "species", "curated.yaml"), True),
@@ -1644,6 +1921,19 @@ def load_species_content(fixtures_dir: str, species_by_key: dict, strict: bool =
         log(f"loaded {len(entries)} entries from {os.path.basename(path)}")
         for entry in entries:
             apply(entry, path, curated)
+
+    for path, curated in tuple(extra_files):
+        if not os.path.exists(path):
+            die(f"missing species fixture {path}")
+        with open(path, "r", encoding="utf-8") as fh:
+            document = yaml.safe_load(fh)
+        entries = document.get("species") or []
+        before = stats["absent"]
+        for entry in entries:
+            apply(entry, path, curated, allow_absent=True)
+        log(f"loaded {len(entries)} entries from {os.path.basename(path)} "
+            f"({stats['absent'] - before} name species this build does not contain, "
+            f"which a city-scoped fixture read by a partial build is expected to)")
 
     # D5 / DECISIONS constraint 14, enforced here as well as in the database CHECK,
     # in Species.init and in Tools/validate_species.py. BUILD-PLAN section 7 wants
@@ -1756,7 +2046,8 @@ def species_map_csv(rows) -> str:
 
 def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
           source: str = DEFAULT_SOURCE, sj_extent: str = "none",
-          write_species_map: bool = False) -> int:
+          write_species_map: bool = False,
+          nyc_cache: str = "", nyc_borough: str = "", nyc_structures: str = "Full") -> int:
     if source not in SOURCES:
         die(f"--source must be one of {', '.join(SOURCES)}, got {source!r}")
     if sj_extent not in SJ_EXTENTS:
@@ -1788,6 +2079,23 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             f"{city_meta.get('server_last_edit_date')}")
         enrichment = load_datasf_attributes(csv_path)
         log(f"enrichment index: {len(enrichment):,} DataSF rows by TreeID")
+
+    nyc_rows, nyc_spaces, nyc_meta, nyc_boroughs = None, {}, {}, None
+    if nyc_cache:
+        nyc_rows, nyc_spaces, nyc_meta = load_nyc_layers(nyc_cache)
+        # RULING D18: every NYC row carries a borough, so the boundary file is
+        # not optional -- a build without it stops on the first orphan.
+        boundaries = os.path.join(nyc_cache, "borough_boundaries.geojson")
+        if not os.path.exists(boundaries):
+            die(
+                f"{boundaries} is absent. RULING D18 requires every NYC tree to carry a "
+                f"borough and 22,995 of them join no planting space, so the City's "
+                f"borough polygons are required. Re-run Tools/fetch_nyc_trees.py."
+            )
+        with open(boundaries, "r", encoding="utf-8") as fh:
+            nyc_boroughs = BoroughResolver(json.load(fh))
+        log(f"nyc: {len(nyc_rows):,} tree points, {len(nyc_spaces):,} planting spaces, "
+            f"extracted {nyc_meta.get('extracted_on')}")
 
     sj_rows, sj_meta, sj_window = None, {}, None
     if sj_extent != "none":
@@ -1885,6 +2193,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         # San Jose, under `--sj-extent` other than `none`.
         "sj_source_rows": 0,
         "sj_kept": 0,
+        "nyc_kept": 0,
+        "nyc_source_rows": 0,
         # Records read and validated but deliberately not shipped, because they
         # fall outside `SJ_SHIP_WINDOW`. This is the one drop counter in the
         # build that is a PRODUCT decision rather than a data defect, and it is
@@ -2329,6 +2639,48 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             f"{stats['sj_outside_ship_window']:,} outside the ship window, "
             f"{sj.stats['kind_inferred_from_absent_species']:,} rows whose kind is ours")
 
+    # ---- the THIRD city, and the first outside California. ----------------
+    #
+    # Structurally this block is the same shape as San Jose's above, which is
+    # the contract paying off a second time. What is different is entirely
+    # inside the adapter: NYC is TWO datasets joined on a foreign id, and the
+    # borough filter below is a PLANTING SPACES fact, so a tree point that
+    # joins to nothing cannot be placed in a borough at all.
+    #
+    # INGESTING AND SHIPPING ARE TWO DECISIONS, exactly as for San Jose.
+    # `--nyc-borough` exists because the distribution architecture for a city
+    # this size is an open design question and per-borough numbers are what
+    # that design round needs. Nothing about the borough is baked in: it is one
+    # flag, and the whole city is `--nyc-borough ""`.
+    if nyc_rows is not None:
+        structures = None
+        if nyc_structures and nyc_structures.lower() != "all":
+            structures = {s.strip() for s in nyc_structures.split(",") if s.strip()}
+        nyc = NYCTreePointAdapter(
+            nyc_rows, nyc_spaces, horizon_year, limit=limit,
+            structures=structures, borough=nyc_borough or None,
+            with_raw=with_city_raw, borough_resolver=nyc_boroughs,
+        )
+        for record in nyc.records():
+            if not accepts(record):
+                continue
+            if record.source_ref is not None:
+                if already_seen(record):
+                    stats["dropped_dupe_treeid"] += 1
+                    continue
+                mark_seen(record)
+            emit(record)
+            stats["nyc_kept"] += 1
+            if nyc.stats["source_rows"] % 100000 == 0:
+                log(f"  nyc: {nyc.stats['source_rows']:,} rows read / "
+                    f"{stats['kept']:,} kept in total ({time.time() - t0:.0f}s)")
+
+        stats["nyc_source_rows"] = nyc.stats["source_rows"]
+        stats["dropped_no_coords"] += nyc.stats["dropped_no_coords"]
+        for key, value in nyc.stats.items():
+            if key not in ("source_rows", "dropped_no_coords"):
+                stats["nyc_" + key] = value
+
     # ---- #95, applied. One spelling per case-folded value in the columns the app
     # compares against a literal. `WHERE plant_type = 'Tree'` used to drop three
     # rows spelled `tree`; the seed contract now fails if any such pair returns.
@@ -2470,8 +2822,12 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # rather than swallowed. The name-mismatch check stays strict on both paths --
     # a fixture claiming a different name for a uuid the seed does carry is still a
     # build failure.
+    nyc_fixtures = ()
+    if nyc_rows is not None:
+        nyc_fixtures = ((os.path.join(fixtures_dir, "species", "nyc_species.yaml"), False),)
     species_content, content_stats = load_species_content(
-        fixtures_dir, species_by_key, strict=(source == "datasf" and not limit)
+        fixtures_dir, species_by_key, strict=(source == "datasf" and not limit),
+        extra_files=nyc_fixtures,
     )
     if content_stats["absent"]:
         log(f"species fixtures: {content_stats['absent']} sourced entries name a species "
@@ -2656,8 +3012,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # the arithmetic over both passes: rows read = rows shipped + rows
             # dropped, with nothing unexplained on either side.
             "export_vacant_rows_read": str(stats["export_vacant_rows"]),
+            # A RESIDUAL, and it used to be a silently wrong one: it subtracted
+            # the two inventories that existed when it was written, so New York's
+            # 898,643 rows landed in San Francisco's count (measured on the first
+            # three-city build: 1,032,349 claimed against 133,706 real rows).
+            # `verify_seed` check 1b caught it. The subtraction is corrected here
+            # AND the shape is made loud below -- see `check_rows_from`, which
+            # refuses a build whose per-inventory claims do not name exactly the
+            # inventories the file holds rows from and sum to its own total.
             "rows_from_sf_city":
-                str(stats["kept"] - stats["export_vacant_carried"] - stats["sj_kept"]),
+                str(stats["kept"] - stats["export_vacant_carried"] - stats["sj_kept"]
+                    - stats["nyc_kept"]),
             "rows_from_sf_datasf": str(stats["export_vacant_carried"]),
             "export_vacant_sites_excluded_city_lists_tree":
                 str(stats["export_vacant_city_lists_tree"]),
@@ -2696,7 +3061,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # is the dataset's own last update, which is what SEED_EPOCH is set to
             # (ERRATA E1). Stated rather than left to be inferred from `generated_at`.
             "trees_snapshot_on": NOW[:10],
-            "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"]),
+            "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"] - stats["nyc_kept"]),
             "inventory_sf_datasf_name": INVENTORIES["sf_datasf"].name,
             "inventory_sf_datasf_url": INVENTORIES["sf_datasf"].url,
             "inventory_sf_datasf_snapshot_on": NOW[:10],
@@ -2743,7 +3108,66 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             "sj_trunk_diameter_over_ceiling":
                 str(stats.get("sj_trunk_diameter_over_ceiling", 0)),
         }
-    source_meta = {**source_meta, **sj_meta_keys}
+    nyc_meta_keys = {}
+    if nyc_rows is not None:
+        nyc_meta_keys = {
+            "inventory_nyc_tree_points_name": INVENTORIES["nyc_tree_points"].name,
+            "inventory_nyc_tree_points_url": INVENTORIES["nyc_tree_points"].url,
+            "inventory_nyc_tree_points_snapshot_on": nyc_meta.get("extracted_on", ""),
+            "inventory_nyc_tree_points_id_space": INVENTORIES["nyc_tree_points"].id_space,
+            # NOT a licence string: both datasets publish `license: null`. The
+            # operative grant is the NYC.gov Data Mine terms, which REQUIRE the
+            # City to be notified and a verbatim disclaimer to be carried
+            # wherever the app is downloaded. See the investigation note §2.
+            "inventory_nyc_tree_points_licence": "NYC Open Data / Data Mine terms; "
+                                                 "notification + verbatim disclaimer required",
+            "nyc_rows_read": str(stats["nyc_source_rows"]),
+            "nyc_rows_shipped": str(stats["nyc_kept"]),
+            # The `rows_from_<inventory>` claim `verify_seed` check 1b reads. It
+            # was absent until this round, which is why San Francisco's residual
+            # was swallowing it.
+            "rows_from_nyc_tree_points": str(stats["nyc_kept"]),
+            "nyc_borough": nyc_borough or "(whole city)",
+            "nyc_structures": nyc_structures,
+            "nyc_joined_to_planting_space": str(stats.get("nyc_joined_to_planting_space", 0)),
+            "nyc_no_planting_space_match": str(stats.get("nyc_no_planting_space_match", 0)),
+            # How many rows this file ships as `dead_reported` -- a `Full`
+            # structure NYC rates `Dead`, standing over a pavement (R19). It was
+            # `nyc_standing_dead_mapped_to_alive` and it counted an information
+            # LOSS; s17's condition seam closed that, so the key now counts a
+            # fact about the file rather than an apology for it.
+            "nyc_standing_dead": str(stats.get("nyc_standing_dead", 0)),
+            # How many NYC rows carry a condition claim at all, and how many
+            # leave it to `None`. `Unknown` (33,132 whole-dataset) is the second.
+            "nyc_condition_stated": str(stats.get("nyc_condition_stated", 0)),
+            "nyc_condition_not_stated": str(stats.get("nyc_condition_not_stated", 0)),
+            # The borough rides on the record in `trees.city_raw`, ALWAYS -- not
+            # only under --with-city-raw, and not merely as a build-time filter.
+            # The distribution design makes a borough the published unit.
+            "nyc_borough_carried": str(stats.get("nyc_borough_carried", 0)),
+            "nyc_no_borough_to_carry": str(stats.get("nyc_no_borough_to_carry", 0)),
+            # RULING D18's four outcomes, so a pack's completeness is a fact in
+            # the file rather than something to recompute.
+            "nyc_borough_stated": str(stats.get("nyc_borough_stated_by_planting_space", 0)),
+            "nyc_borough_point_in_polygon": str(stats.get("nyc_borough_from_point_in_polygon", 0)),
+            "nyc_borough_nearest_polygon": str(stats.get("nyc_borough_from_nearest_polygon", 0)),
+            "nyc_borough_unassigned": str(stats.get("nyc_borough_unassigned", 0)),
+            "nyc_borough_geometry_agrees": str(stats.get("nyc_borough_geometry_agrees", 0)),
+            "nyc_borough_geometry_disagrees": str(stats.get("nyc_borough_geometry_disagrees", 0)),
+            # RULING D19: the publisher's own staleness, recorded.
+            "nyc_tree_points_rows_updated_at":
+                str((nyc_meta.get("tree_points") or {}).get("rows_updated_at", "")),
+            "nyc_planting_spaces_rows_updated_at":
+                str((nyc_meta.get("planting_spaces") or {}).get("rows_updated_at", "")),
+            "nyc_planting_spaces_duplicates_dropped":
+                str((nyc_meta.get("planting_spaces") or {}).get("duplicate_globalids_dropped", "")),
+            "nyc_dedupe_rule":
+                str((nyc_meta.get("planting_spaces") or {}).get("dedupe_rule", "")),
+            "nyc_planted_date_beyond_horizon":
+                str(stats.get("nyc_planted_date_beyond_horizon", 0)),
+        }
+
+    source_meta = {**source_meta, **sj_meta_keys, **nyc_meta_keys}
 
     # ---- coverage, standardised (s17) -----------------------------------
     # WHAT R37'S TRAILING CLAUSE ASKED FOR, PAID NOW. It reads: "manifest
@@ -2806,6 +3230,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             str(sj_meta["server_feature_count"])
 
     source_meta = {**source_meta, **coverage_keys, **completeness_keys}
+
+    check_rows_from(source_meta, contributing, stats["kept"])
 
     meta = {
         "generator": "Tools/build_seed.py",
@@ -3081,9 +3507,33 @@ def main() -> int:
              "source. Without it the derived copy goes to Fixtures/build/ and any "
              "drift against the checked-in copy is reported.",
     )
+    ap.add_argument(
+        "--nyc-cache", default="",
+        help="directory holding tree_points.csv and planting_spaces.csv, as written "
+             "by Tools/fetch_nyc_trees.py. Empty (the default) means no New York "
+             "City at all. The cache lives OUTSIDE the repo -- ~430 MB across the "
+             "two extracts -- so its location is given rather than assumed.",
+    )
+    ap.add_argument(
+        "--nyc-borough", default="",
+        help="restrict NYC to one Forestry Planting Spaces boroughcode: Manhattan, "
+             "Brooklyn, Queens, Bronx or Staten Island. Empty is the whole city. "
+             "Borough is a PLANTING SPACES column, so the 22,995 Full tree points "
+             "that join to no planting space are dropped by any borough build and "
+             "counted under nyc_dropped_wrong_borough -- they have no borough to "
+             "be placed in.",
+    )
+    ap.add_argument(
+        "--nyc-structures", default="Full",
+        help="comma-separated TPStructure values to ingest, or `all`. The default "
+             "`Full` is the 898,643 currently-standing tree points; `all` adds the "
+             "Retired, Stump, Shaft and Stump - Uprooted records, which are real "
+             "history the contract's not_a_tree can hold.",
+    )
     args = ap.parse_args()
     return build(args.repo_root, args.fetch, args.limit, args.with_city_raw, args.source,
-                 args.sj_extent, args.write_species_map)
+                 args.sj_extent, args.write_species_map,
+                 args.nyc_cache, args.nyc_borough, args.nyc_structures)
 
 
 if __name__ == "__main__":

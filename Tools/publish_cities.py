@@ -45,10 +45,11 @@ the fused seed's schema by construction, never a re-statement of it:
                       `tree_count` therefore still describes the FUSED build --
                       seed_meta.species_map_counts_scope says so in-band.
 
-  seed_meta           the fused build receipt is kept verbatim EXCEPT the two
-                      keys that name this file rather than the build that fed
-                      it (`id_spaces_in_file`, `rows_kept`), which are
-                      rewritten to the truth about this file. Publisher facts
+  seed_meta           the fused build receipt is kept verbatim EXCEPT the keys
+                      that name this file rather than the build that fed it
+                      (`id_spaces_in_file`, `rows_kept`, and every
+                      `rows_from_<inventory>`), which are rewritten to the
+                      truth about this file. Publisher facts
                       are added under `publish_*` keys. `trees_snapshot_on`
                       (which the app shows as "city record as of") is
                       rewritten to the city's own content revision.
@@ -234,6 +235,24 @@ MANIFEST_V1_NAME = "manifest.json"
 DISPLAY_NAMES = {
     "sf": "San Francisco",
     "us-ca-sj": "San Jose",
+    # New York's six, which is the count the note above predicted: five borough
+    # PACK ids, plus the parent CITY id space `us-ny-nyc`, which is never a pack
+    # and is here only because every borough entry carries
+    # `region.parent_city_display_name` and that line indexes this table by
+    # `id_space`. Removing the parent entry is what F1 of PR #108 caught, and the
+    # guard in `main` now refuses the run before a pack is written rather than
+    # raising `KeyError` with two packs already on disk.
+    #
+    # The five borough names agree with `build_seed.REGIONS`' `display_name`, and
+    # that agreement is CHECKED at publish rather than maintained by care -- see
+    # the drift check below. Both tables take the name from the City's own
+    # boundary file (`boroname`), which is why this reads "Bronx".
+    "us-ny-nyc": "New York City",
+    "us-ny-nyc-manhattan": "Manhattan",
+    "us-ny-nyc-brooklyn": "Brooklyn",
+    "us-ny-nyc-queens": "Queens",
+    "us-ny-nyc-bronx": "Bronx",
+    "us-ny-nyc-staten-island": "Staten Island",
 }
 
 # seed_meta keys that state a city's ship coverage. The v14-era ingest wrote
@@ -433,10 +452,40 @@ def build_city_file(src: str, dest: str, region: dict) -> dict:
 
         # The receipt keys that name THIS FILE, rewritten to the truth about it;
         # everything else in seed_meta stays the fused build receipt.
+        #
+        # `rows_from_<inventory>` JOINED THIS LIST WITH THE BOROUGH SPLIT, and the
+        # reason it was not on it before is worth stating rather than fixing
+        # silently. Every pack before New York held ALL of its inventory's rows --
+        # one id space, one pack -- so the fused claim and the pack's own count
+        # agreed by geometry, and `verify_seed` check 1b passed on every pack ever
+        # built. A borough is the first pack that holds a strict SUBSET of an
+        # inventory, and the Queens pack shipped claiming 898,643 rows from
+        # `nyc_tree_points` while holding 298,839. Measured, before this fix:
+        #
+        #     [FAIL] 1b. per-inventory row counts match what seed_meta claims
+        #            nyc_tree_points: 298,839 rows, seed_meta says 898,643
+        #
+        # It is the same argument `rows_kept` was already rewritten under -- a key
+        # that says how much of something is in THIS FILE is a fact about this
+        # file, not about the build that fed it. Counted from the pack's own
+        # `trees` rather than derived from the fused number, because the split is
+        # what decided it.
+        rows_from = {
+            f"rows_from_{inventory}": str(n)
+            for inventory, n in cur.execute(
+                "SELECT inventory_source, COUNT(*) FROM trees GROUP BY inventory_source"
+            ).fetchall()
+        }
+        # A fused key for an inventory this pack holds NO rows from would otherwise
+        # survive verbatim and overstate the pack by its whole corpus.
+        for key in fused_meta:
+            if key.startswith("rows_from_") and key not in rows_from:
+                rows_from[key] = "0"
         rewrites = {
             "id_spaces_in_file": space,
             "rows_kept": str(count),
             "trees_snapshot_on": rev,
+            **rows_from,
         }
         additions = {
             # `publish_city_id` keeps its name and its meaning -- the ID SPACE,
@@ -747,6 +796,36 @@ def main() -> None:
     if drifted:
         fail("DISPLAY_NAMES disagrees with the seed's own dim_region.display_name -- "
              + "; ".join(drifted), 3)
+
+    # THE SAME CHECK FOR THE PARENT CITY'S NAME, which had none (review N4).
+    #
+    # The check above covers `DISPLAY_NAMES[pack]`, which becomes a manifest
+    # entry's `display_name`. `DISPLAY_NAMES[space]` becomes
+    # `region.parent_city_display_name` on EVERY borough entry, and it had no
+    # instrument at all -- two hand-entered copies of one civic name (here, and
+    # `build_seed.DIM_CITY`, which is what the seed's `dim_city` table holds)
+    # with nothing comparing them. That is exactly the argument the check above
+    # was added under, left standing for the other half.
+    #
+    # What a drift would look like to a reader: "New York City" over the pack
+    # list on the Cities screen and something else on a tree profile in the same
+    # app, both civic claims, neither obviously the wrong one.
+    #
+    # Read from the seed's `dim_city` rather than by importing `build_seed`: the
+    # question is whether this publisher agrees with THE FILE IT IS SPLITTING,
+    # not with another tool's source. A seed built by an older generator is
+    # exactly the case worth catching.
+    city_names = dict(src_con.execute("SELECT id, display_name FROM dim_city"))
+    city_drift = [
+        f"{r['id_space']}: manifest {DISPLAY_NAMES[r['id_space']]!r} vs dim_city "
+        f"{city_names.get(r['city_id'])!r} (via pack {r['pack_id']})"
+        for r in regions
+        if DISPLAY_NAMES[r["id_space"]] != city_names.get(r["city_id"])
+    ]
+    if city_drift:
+        fail("DISPLAY_NAMES disagrees with the seed's own dim_city.display_name, and this is "
+             "the name every borough entry publishes as region.parent_city_display_name -- "
+             + "; ".join(sorted(set(city_drift))), 3)
 
     cities_dir = os.path.join(args.out, "cities")
     if os.path.isdir(cities_dir):

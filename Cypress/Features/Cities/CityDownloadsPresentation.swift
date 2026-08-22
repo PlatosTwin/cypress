@@ -82,6 +82,51 @@ enum CityDownloadsCopy {
     static func bundledOutdatedLine(bundledContentRev: String) -> String {
         "Newer record available · included copy is \(bundledContentRev)"
     }
+
+    // MARK: - NYC Data Mine disclaimer (RULINGS R78 ruling 2)
+
+    /// Heading above the required block. Ours, not the City's.
+    static let nycDisclaimerHeading = "Data disclaimer"
+
+    /// **VERBATIM, AND THE ONLY STRING IN THIS APP THAT MUST NOT BE EDITED.**
+    ///
+    /// Quoted exactly from the NYC.gov Data Mine Terms of Use, obligation (B), as recorded in
+    /// `docs/operations/nyc-data-obligations.md` §1 and §4 (fetched 2026-08-01 and re-fetched
+    /// 2026-08-21, text identical both times; cached at `Fixtures/raw/nyc/datamine_terms.html`).
+    /// RULINGS R78 ruling 2 puts it on this screen and is the constraint-21 sign-off for doing so;
+    /// R78 ruling 3 says the manifest's machine-readable `attribution` array does **not** discharge
+    /// the obligation, so this text has to be rendered and human-visible.
+    ///
+    /// Three things a future edit will be tempted by, and must not do:
+    ///
+    /// - **`can not`, two words, is the City's spelling.** "cannot" is the ordinary one and is
+    ///   wrong here. This is the one place CLAUDE.md's American-spellings rule does not reach,
+    ///   because the rule is about copy this project writes and this is copy it quotes.
+    /// - **`this web site or application`** stays as two nouns, and `web site` stays two words.
+    /// - **The enclosing quotation marks are not part of it.** The terms present the block inside
+    ///   quotes because the surrounding sentence is quoting it; rendering the marks on screen would
+    ///   add punctuation the City did not write into its own disclaimer.
+    ///
+    /// `NYCDisclaimerTests` compares this against a copy read out of
+    /// `docs/operations/nyc-data-obligations.md` at test time, so a drift in either direction is a
+    /// red test rather than a compliance failure nobody notices.
+    static let nycDisclaimerRequired = """
+        The City of New York can not vouch for the accuracy or completeness of data provided by \
+        this web site or application or for the usefulness or integrity of the web site or \
+        application. This site provides applications using data that has been modified for use \
+        from its original source, NYC.gov, the official web site of the City of New York.
+        """
+
+    /// The self-locating line `docs/operations/nyc-data-obligations.md` §4 recommends beneath the
+    /// required block. **Not required by the terms** — it names which datasets and which agency, so
+    /// the disclaimer above is not a floating sentence about an unnamed city. Ours, so ordinary
+    /// house style applies; it is kept in a separate constant precisely so that editing it can
+    /// never reach the required text.
+    static let nycDisclaimerAttribution = """
+        New York City tree data is drawn from the NYC Department of Parks and Recreation's \
+        Forestry Tree Points and Forestry Planting Spaces datasets (NYC Open Data), used under \
+        the NYC.gov Data Mine Terms of Use.
+        """
 }
 
 /// One card on the Cities screen, fully decided — the view draws rows, it does not reason.

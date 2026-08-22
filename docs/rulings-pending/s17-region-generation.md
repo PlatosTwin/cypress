@@ -146,13 +146,36 @@ it, and a source comment is not where a reader looks for the reasoning.
 `CityManifest.knownFormats` becomes `{1, 2}`. The rule that did not soften: an unknown format is
 still refused at the door.
 
-**Deliberately UNSCHEDULED, and named so it is not mistaken for an oversight:** retiring the
-format-1 object and the `level == "city"` filter that keeps it honest has **no date and no ticket**.
-D8 sets the window at "one release cycle" without fixing when it starts, and the honest trigger is
-the first NYC publish — the moment the format-1 catalogue starts omitting real packs rather than
-merely describing whole cities. That is an owner decision about TestFlight adoption, not an
-author's, and it is being carried to the owner separately. Until it is taken, both objects publish
-and both are verified on every run.
+**SCHEDULED by the owner, 2026-08-22.** This paragraph previously read "deliberately UNSCHEDULED
+… no date and no ticket", because D8 sets the window at "one release cycle" without fixing when it
+starts and the s17 round had no standing to fix it. The owner took that decision when authorizing
+the NYC publish round, and it is a clock with three ticks rather than a date:
+
+| tick | what happens | who |
+|---|---|---|
+| **Build 48** | the first TestFlight build that reads `manifest-v2.json` — the first carrying `CityManifest.knownFormats == {1, 2}` | already on `main`; minted by the release job |
+| **The NYC publish** | writes **both** objects: `manifest.json` (format 1, city-level packs only) and `manifest-v2.json` (format 2, every pack). The last publish that writes format 1 | the NYC publish round, phase 2 |
+| **The publish AFTER NYC** | writes **format 2 only**. `manifest.json` stops being republished, and `write_manifest_v1` and the `level == "city"` filter come out with it | whichever round publishes next |
+
+**The one release cycle D8 asks for is the interval between the NYC publish and the next one**, and
+that is what makes the trigger honest: an install that has not updated past build 48 keeps a working
+Cities screen across the whole of the NYC publish, and loses it only at the publish after — by which
+time build 48 is not "the newest build" but "a build one full publish cycle old". The other reading,
+retiring format 1 *at* the NYC publish, is the one this paragraph could not take on its own, and it
+is the wrong one: it would strand an unupdated install on the exact publish that first has something
+new to offer it.
+
+**What this means for the NYC round itself: nothing changes in the publisher.** It already writes
+both, and `verify_seed` checks both on every run. The format-1 catalogue omitting the five boroughs
+— listing `sf` and `us-ca-sj`, silent about New York — is the *intended* behaviour for this one
+publish rather than a defect, and it is what `legacy_entries`' `level == "city"` filter is for.
+
+**What it means for the round after.** Deleting `write_manifest_v1`, `MANIFEST_V1_NAME`,
+`legacy_entries` and `CityDownloader.fetchManifest`'s fallback to the legacy path is that round's
+work, and it is now scheduled rather than waiting to be rediscovered. `CityManifest.knownFormats`
+does **not** drop `1` at the same time: a reader that still meets a format-1 manifest — a stale CDN
+copy, a cached object — should read it, and the rule that an unknown format is refused at the door
+is unchanged.
 
 ---
 

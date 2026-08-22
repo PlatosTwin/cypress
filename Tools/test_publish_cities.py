@@ -155,6 +155,10 @@ def build_fixture(path: str, *, meta_extra: dict | None = None) -> None:
         "inventory_nyc_tree_points_id_space": "us-ny-nyc",
         "inventory_nyc_tree_points_snapshot_on": "2026-07-28",
         "id_spaces_in_file": "sf,us-ny-nyc",
+        # The FUSED build's per-inventory claims. Deliberately larger than what
+        # any one pack holds -- that is the whole of what test 3i is about.
+        "rows_from_sf_city": "999",
+        "rows_from_nyc_tree_points": "888",
         "rows_kept": str(len(rows)),
         "trees_snapshot_on": "2026-07-31",
     }
@@ -179,7 +183,7 @@ FIXTURE_DISPLAY_NAMES = {
     "us-ny-nyc": "New York City",
     "us-ny-nyc-queens": "Queens",
     "us-ny-nyc-bronx": "Bronx",
-    "us-ny-nyc-si": "Staten Island",
+    "us-ny-nyc-staten-island": "Staten Island",
 }
 
 
@@ -405,6 +409,42 @@ try:
         check(queens["coverage"] == "full",
               f"Queens' coverage is {queens['coverage']!r}; the fixture states "
               f"coverage_us-ny-nyc = full")
+
+        # -- 3i. rows_from_<inventory> describes THIS PACK, not the fused build
+        #
+        # A borough is the first pack that holds a strict SUBSET of an
+        # inventory's rows. Every pack before New York held all of its
+        # inventory's -- one id space, one pack -- so the fused claim and the
+        # pack's own count agreed by geometry and `verify_seed` check 1b passed
+        # on every pack ever built. Measured on the real Queens pack before the
+        # fix: `nyc_tree_points: 298,839 rows, seed_meta says 898,643`.
+        #
+        # Asserted against the pack's OWN trees rather than against a literal:
+        # a literal would be a second statement of the fixture's shape and would
+        # be edited alongside whatever broke this.
+        qcon = sqlite3.connect(os.path.join(out, queens["path"]))
+        pack_meta = dict(qcon.execute("SELECT key, value FROM seed_meta"))
+        actual = dict(qcon.execute(
+            "SELECT inventory_source, COUNT(*) FROM trees GROUP BY inventory_source"))
+        for inventory, n in actual.items():
+            claimed = pack_meta.get(f"rows_from_{inventory}")
+            check(claimed == str(n),
+                  f"the Queens pack claims rows_from_{inventory}={claimed} and holds {n}; "
+                  f"a receipt that describes the fused build is false about this file")
+        # The other direction: an inventory this pack holds NOTHING from must not
+        # keep the fused claim, which would overstate the pack by a whole corpus.
+        for key, value in pack_meta.items():
+            if not key.startswith("rows_from_"):
+                continue
+            inventory = key[len("rows_from_"):]
+            if inventory not in actual:
+                check(value == "0",
+                      f"the Queens pack claims {key}={value} for an inventory it holds no "
+                      f"rows from")
+        check(any(k.startswith("rows_from_") for k in pack_meta),
+              "the pack carries no rows_from_* key at all, so the two checks above "
+              "asserted nothing")
+        qcon.close()
 finally:
     shutil.rmtree(workdir, ignore_errors=True)
 
@@ -451,6 +491,58 @@ try:
     ok = run_publisher(db, out2)
     check(ok.returncode == 0,
           f"the control run failed, so the F1 test proves nothing: {ok.stderr[:200]}")
+    check(len(packs_written(out2)) == 3,
+          f"the control run wrote {packs_written(out2)}, expected three packs")
+finally:
+    shutil.rmtree(workdir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+# 3j. THE PARENT CITY'S NAME IS ALSO CHECKED AGAINST THE SEED (review finding N4)
+# --------------------------------------------------------------------------
+# `DISPLAY_NAMES[pack]` is compared with `dim_region.display_name` (test above,
+# and the guard it exercises). `DISPLAY_NAMES[space]` becomes
+# `region.parent_city_display_name` on every borough entry and had NO instrument:
+# two hand-entered copies of one civic name -- this table and `build_seed`'s
+# `DIM_CITY`, which is what the seed's `dim_city` holds -- with nothing comparing
+# them.
+#
+# A drift is not a crash. It publishes: the Cities screen would show one civic
+# name over the pack list and a tree profile another, both plausible.
+#
+# Fails if: the parent-city drift check is removed or narrowed to packs.
+
+workdir = tempfile.mkdtemp(prefix="test-publish-n4-")
+try:
+    db = os.path.join(workdir, "seed.sqlite")
+    build_fixture(db)
+
+    # Every name PRESENT -- this is not F1 again -- but the parent city's name
+    # disagrees with the `dim_city` row the fixture wrote ("New York City").
+    drifted_names = dict(FIXTURE_DISPLAY_NAMES)
+    drifted_names["us-ny-nyc"] = "New York"
+    result = run_publisher(db, os.path.join(workdir, "dist"), names=drifted_names)
+
+    check(result.returncode != 0,
+          "the publisher accepted a parent-city display name that disagrees with the seed's "
+          "own dim_city; every borough entry would publish it as parent_city_display_name")
+    check("UNCAUGHT" not in result.stderr,
+          f"the publisher CRASHED rather than refusing: {result.stderr.strip()[:200]}")
+    check("dim_city" in result.stderr and "parent_city_display_name" in result.stderr,
+          f"the refusal does not say which two things disagree or why it matters: "
+          f"{result.stderr.strip()[:300]}")
+    check("'New York'" in result.stderr and "'New York City'" in result.stderr,
+          f"the refusal does not print BOTH names, so an operator cannot tell which copy "
+          f"is wrong: {result.stderr.strip()[:300]}")
+    check(packs_written(os.path.join(workdir, "dist")) == [],
+          "a pack was written before the parent-city drift was refused")
+
+    # The calibration: the same fixture with the names agreeing publishes fine,
+    # so the refusal above is about the drift and not about the fixture's shape.
+    out2 = os.path.join(workdir, "dist2")
+    ok = run_publisher(db, out2)
+    check(ok.returncode == 0,
+          f"the control run failed, so this test proves nothing: {ok.stderr[:200]}")
     check(len(packs_written(out2)) == 3,
           f"the control run wrote {packs_written(out2)}, expected three packs")
 finally:
@@ -532,7 +624,7 @@ def drop_dim_region(con):
 
 def region_with_no_trees(con):
     con.execute("INSERT INTO dim_region(id,pack_id,display_name,level,city_id) "
-                "VALUES (9,'us-ny-nyc-si','Staten Island','borough',2)")
+                "VALUES (9,'us-ny-nyc-staten-island','Staten Island','borough',2)")
 
 
 def drift_display_name(con):
