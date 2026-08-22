@@ -15,6 +15,9 @@
 # other; it is not a judgement that the work is uninteresting.
 #
 # **The tester-voice line is re-added by a prose-only pull request after the phase-2 publish.**
+# DONE, 2026-08-22: it lives in `docs/whats-new/nyc-street-trees-live.md`, as a new note rather
+# than an edit here -- this file is the record of what build 49 told testers and should keep
+# saying what it said.
 # That is the README's own mechanism rather than a workaround: a note added by a prose merge
 # mints no build and waits here until the next build that actually ships, so the sentence lands
 # with a release whose readers can go and see it. The draft, kept here so the follow-up round
