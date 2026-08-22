@@ -477,6 +477,14 @@ struct PhotoProvenanceTests {
     /// **R3 and ERRATA E157 through the shipping door.** The leaving door clears the owner and the
     /// provenance in one `UPDATE`, so the row it produces has nothing either predicate can admit —
     /// it stays undeletable (asserted in `theLeavingDoorClearsProvenance`) and it stays undrawn.
+    ///
+    /// **The middle assertion is the one that discriminates, and it is here deliberately.** "Not
+    /// drawn" is true of this row twice over — the leading ownerless refusal returns a definite
+    /// `FALSE` (so the `COALESCE` default never even fires) *and* all three columns are NULL — so
+    /// the last expectation alone survives the removal of either guard, and survives the door
+    /// forgetting a column too, since `deleteAccount` ends the session and leaves no attribution
+    /// for any arm to match. Asserting the row's own end state is what makes this test notice a
+    /// leaving-door regression rather than merely restating what the session's absence guarantees.
     @Test("a photograph behind the leaving door is still not drawn among this phone's heroes")
     func theLeavingDoorsRowIsNotDrawn() async throws {
         let store = try await CypressStore.inMemory()
@@ -490,7 +498,11 @@ struct PhotoProvenanceTests {
 
         _ = try await api.deleteAccount(.leaveRecords)
 
-        #expect(try await Self.provenance(of: photoID, in: store) == nil, "the door left the phone's claim on it")
+        let row = try await store.queue.read { connection in
+            try ContributionStore().photoForDeletion(id: photoID, connection: connection)
+        }
+        #expect(try #require(row).owner == .nobody, "the door left an owner on the row")
+        #expect(try #require(row).takenOnDevice == nil, "the door left the phone's claim on it")
         #expect(
             try await Self.heroes(of: [treeID], in: store, for: api)[treeID] == nil,
             "an anonymized photograph was drawn as this installation's own"
