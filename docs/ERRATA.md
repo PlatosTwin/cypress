@@ -21839,3 +21839,378 @@ exceptions are stated in the script itself — a declared value that needs `$(�
 refused until the signing pass can expand it, and a machinery-supplied key that never appears in
 the declared file (the `application-identifier` shape) belongs in the script's small baseline
 list.
+
+### E277 — A photograph attributed to an account is unreachable the moment that account is not the one signed in
+
+**The report**, from the project owner's own phone on 2026-08-15: photographs taken *before* photo
+deletion existed cannot be deleted. Photographs taken since can.
+
+The delete path is Class L and local — `RoutedAPI.deletePhoto` calls `local` and nothing else, R72
+ruling 5 keeps `deletePhotoRemotely` uncalled, and no photograph has ever been uploaded because the
+send sink is unbuilt. So the refusal is on this device, and it is in one of two places: the row's
+owner, or the file removal. It is the owner.
+
+#### The device arm cannot break, which is what makes the diagnosis short
+
+`PhotoOwner.isOwned(by:)` has three arms. Two of them can be decided here without knowing anything
+about the phone that produced the report:
+
+- `.device(D)` is compared against `Attribution.deviceID`, and both sides come from the same row of
+  the same file: `DataLayer.boot` reads `app_state.device_uuid` and mints one only when the key is
+  absent, and `AppSchema` v12's backfill wrote that same key onto every visitless photograph. The
+  Keychain outlives an app deletion and `app_state` does not (`SessionCredentials`), so a database
+  that still holds the photographs still holds the id that owns them. A device-owned photograph
+  cannot stop being this device's.
+- `.nobody` is refused deliberately — the leaving door's promise, R3 and E157 — and says so on
+  screen (task #131, `TreePhotosModel.isNobodysToRemove`).
+
+That leaves `.user(U)`, which matches only while this installation is signed in as exactly `U`.
+**An undeletable photograph on this device is therefore owned by an account, and it is not the
+account the app is currently holding.**
+
+#### Measured, not reasoned
+
+Four instruments, in order of how much they could have refuted the above.
+
+1. **A real upgrade across two builds.** `da51250` (the commit before photo deletion, `user_version`
+   11) was built into its own worktree, installed on the 16 Plus with the container empty, and made
+   to write photographs through its own writer. The rows it left are today's columns minus
+   `user_id`/`device_id`. The current build was then installed **over** it, and the first launch
+   migrated 11 → 15 in place. All three pre-v12 photographs came out `device_id =
+   187A0F37-…-0095CA1B0F42`, which is that install's `app_state.device_uuid` — owned, and deletable.
+   *A plain anonymous upgrade does not reproduce the report.*
+2. **A shape sweep** over the pre-v12 rows an old build could produce (on a device-owned visit, on an
+   account's visit, visitless with and without an account in `app_state`), each carrying a
+   photograph written by the current build as a calibration row. Every refusal in the table was a
+   photograph owned by an account other than the one signed in; the calibration row was deletable in
+   every case.
+3. **An identity sweep**, driven through the shipping calls rather than SQL:
+
+   | sequence after the upgrade | the upgraded photograph | a photograph taken straight afterwards |
+   | --- | --- | --- |
+   | signed in | deleted | deleted |
+   | signed in, then signed out | **refused, `forbidden`, no control drawn** | deleted |
+   | signed in, out, in as a different account | **refused, `forbidden`, no control drawn** | deleted |
+
+4. **The running screen.** With one of three photographs of one tree put into that state
+   (`user_id` set, `device_id` null — the row shape `claimDevice` leaves), the viewer over the owned
+   photograph draws the trash bottom-trailing and the viewer over the other draws **nothing at all**:
+   no control, and no sentence saying why. Task #131 gave the ownerless row its sentence; this state
+   has none, so the app's answer to "delete my photograph" is a blank corner.
+
+#### Why the photographs that predate the feature are the ones that are stranded
+
+Two changes, three weeks apart, compose into exactly the boundary the report describes.
+
+**v12's backfill is the only path in this app that gives a photograph to an account without the
+person doing anything.** Every other attribution is an act: a capture stamps `PhotoOwner(attribution)`
+at the moment of the shutter, and `claimDevice` moves rows because somebody signed in. The backfill
+runs on an app update, and its step 2 hands every visitless photograph to
+`app_state.current_user_id` — including photographs taken on that phone long before that account
+existed. The migration's own comment names this ("It can over-attribute in one case") and rules it
+the same as `claimDevice`'s over-attribution. It is not the same: `claimDevice` corresponds to
+something a person did.
+
+**#158 step 5 (E270) then removed the way back.** E131 states the promise in as many words — "Sign-out
+records `signed_out_user_id`, so signing in again resumes the same account and everything it wrote
+stays attributed." That held while `accountLink` minted the id locally. Today the only sign-in that
+succeeds is Apple's (`RootView.accountLink()` throws `.unavailable` for the other two buttons) and
+the id is the service's, keyed on `apple_subject`. `LocalAPI.resumableUserID()` has no shipping
+caller left, and `claimDevice` clears `signed_out_user_id` on the way past — which E272 already
+records, probe and all, as destroying the evidence of a deliberate sign-out. So an account minted
+during the local-account era can never be signed into again, and `claimDevice` will not adopt its
+rows, because it only takes rows where `user_id IS NULL`.
+
+A device that was signed into a local account when the v12 build was installed therefore has every
+photograph that existed at that moment attributed to an id that no sign-in can produce again, while
+every photograph taken since belongs to the device or to the Apple account. That is "photos from
+before the delete feature cannot be deleted", exactly.
+
+The same phone's **visits** are unaffected and it is worth saying why: `visits` carries `user_id`
+and `device_id` together, so a visit adopted by an account still says which phone made it. `photos`
+carries at most one owner (v12's CHECK), so `claimDevice` clears `device_id` when it adopts — E23's
+"strictly less about the device" — and with it goes the only evidence that this installation took
+the picture.
+
+#### What was ruled out
+
+- The backfill leaving rows ownerless. It cannot, while `app_state.device_uuid` exists, and that key
+  exists in every database that holds a photograph (above). Measured in the two-build upgrade.
+- A dangling `visit_id`. `PRAGMA foreign_keys = ON` has been set on every connection since the data
+  layer's first commit, and the backfill's join is on the parent key's own collation.
+- The file half of `LocalAPI.deletePhoto`. A missing file is skipped, not thrown on; only a file that
+  exists and refuses to be removed throws, and a stale absolute `local_path` from an older container
+  is the former.
+- Moderation state and visibility. `TreeProfile.ownPhotoIDs` is every row in `main.photos`, so a
+  stranded photograph is still drawn — which is what makes this visible as a missing control rather
+  than as a missing photograph.
+
+#### Telling the two states apart on the phone, in five seconds
+
+Open the photograph that will not delete.
+
+- **A sentence saying it is nobody's to remove** → the account was deleted through the leaving door.
+  Working as ruled (R3, E157); the row is anonymous permanently and by design.
+- **No sentence and no control** → this one. The photograph is owned by an account that is not the
+  one signed in.
+
+#### What a repair costs, which is why this stops here
+
+- **Forward only, no migration, no ruling**: when a new account signs in on a device that still holds
+  a previous account in `app_state.current_user_id`, re-home that account's rows onto the new id
+  rather than skipping them. This is D9's "everything you have already done survives signing in"
+  applied to the case that arises when an account is *replaced* rather than adopted. It repairs
+  nothing already stranded, because the previous id is no longer in `app_state` — only on the rows.
+- **Repairing what is already stranded** means deciding that an account which is not signed in may
+  still have its photographs deleted by whoever holds the phone. That is the question R3 and E157
+  answered in the other direction for the leaving door, and it is a hand-me-down-phone hazard, not a
+  detail. **Owner's ruling.**
+- **Keeping the evidence** — a photograph that remembers which installation took it, so the question
+  can be answered without inferring anything about accounts — is a column or a side table on
+  `photos`, and therefore a schema version. **Migration seat, owner-assigned.**
+
+#### Answered, 2026-08-15
+
+**The phone is in this state.** The owner ran the check above on the photograph that will not
+delete: no sentence, no control. So the photographs are owned by an account, not anonymized by the
+leaving door, and the diagnosis stands as written.
+
+**The owner chose the third repair**: the photograph remembers which installation took it, so the
+question can be answered without inferring anything about accounts.
+
+The shape that follows from the rest of this entry, for whoever holds the migration seat:
+
+- A new column on `photos` carrying **provenance, not ownership** — the installation that wrote the
+  row. It is never an owner, so v12's "at most one owner" CHECK is untouched and nothing gains a
+  precedence rule to get wrong. `claimDevice` must not clear it; clearing `device_id` on adoption
+  stays exactly as it is (E23).
+- The delete gate admits it *in addition to* the two owner arms, and `.nobody` keeps refusing —
+  the leaving door clears provenance along with the owner, or R3 and E157 are quietly repealed.
+- The backfill writes `app_state.device_uuid` onto every existing row, on the same standing fact v12
+  reasoned from and that `LocalAPI.treeProfile` restates where it fills `ownPhotoIDs`: every row in
+  `main.photos` was written by this installation. That is what repairs the photographs already
+  stranded, and it is a weaker claim than v12's, because it attributes a machine rather than a
+  person.
+
+#### Built, in a round of its own
+
+The owner assigned the seat in the same decision round. `AppSchema` **v16**, "a photograph
+remembers which installation took it", is that column, and it is the shape above:
+`taken_on_device` is provenance and no query reads it as an owner, `claimDevice` leaves it alone,
+the leaving door clears it in the same statement that takes the name off, and the backfill writes
+`app_state.device_uuid` onto every row that still has an owner — which is what repairs the
+photographs already stranded on the phone this was reported from.
+
+`PhotoOwner.permitsRemoval(by:takenOnDevice:)` is where the three arms meet, and it refuses
+`.nobody` before it reads provenance; `ContributionStore.removalPredicate` is that rule as SQL, in
+one place because it is written in three — the set that draws the control, the vote delete and the
+tombstone `UPDATE` — and it leads with the same refusal. Neither of those two lines is decoration.
+An earlier draft of this entry said that removing either one turns "exactly one expectation red on
+its own"; that was written from reasoning rather than from a log, and the review measured otherwise
+— one edit at a time, restored by file copy between runs, on iPhone 16 Pro `EA0AD796-…`:
+
+- removing the Swift `.nobody` refusal turned **three** expectations red:
+  `PhotoProvenanceTests.anOwnerlessRowIsRefusedWhateverTheProvenanceSays`' first `#expect`, and in
+  `PhotoDeletionTests.anAnonymizedPhotographIsRefused` both the error expectation — `expected error
+  ".forbidden" of type APIError, but ".notFound" of type APIError was thrown instead` — and the
+  `fileExists` line after it;
+- removing the SQL leading clause turned **two** red: the same provenance test's second `#expect`,
+  and `PhotoOwnershipTests` on `an anonymized photograph is still shown and is no longer deletable`.
+
+**The `.notFound`/`fileExists` pair was not a second copy of the same guard, and finding out why
+changed the code.** `LocalAPI.deletePhoto` removed the bytes from disk before the SQL predicate was
+ever evaluated, so in precisely the case the SQL clause exists to be the belt for — Swift permits,
+SQL refuses — the row was correctly saved and the photograph was already destroyed, and the caller
+was told `notFound`. Unreachable with both halves in place, since the two rules agree on every row
+shape; reachable the moment one of them drifts, which is what belt-and-braces is for. The method
+now claims the row inside its write transaction first and removes the bytes only once the tombstone
+has taken, which also closes the race the `counts.photos == 1` guard used to report *after* the
+files were gone. With the fix in, that same `.nobody` red-proof lands two issues rather than three:
+the refused delete no longer touches the picture, so the `fileExists` line stays green.
+
+**Not the backfill the owner ruled against on the same day.** That ruling is about sync —
+pre-sync-path rows and pre-existing photo binaries stay on the device permanently, nothing is
+re-enqueued, no future send path sweeps them up. v16 writes one local column, enqueues nothing and
+uploads nothing.
+
+**One existing test changed, and it is worth reading before the diff is trusted.**
+`PhotoDeletionTests.astrangersPhotographIsRefused` made a stranger's photograph by writing one on
+this device and then rewriting `user_id`. Since v16 that row still says, truthfully, that this
+installation took it — which is the case v16 admits — so the fixture now also gives it a stranger's
+installation. That is the fixture being made to mean its own name, and the guard it protects is
+asserted independently by `PhotoProvenanceTests.aStrangersPhotographIsStillRefused`.
+
+**What is deliberately not in it.** The state this report came from draws a photograph with no
+delete control and no sentence. After v16 that state is much rarer and not impossible — a
+photograph that genuinely came from another installation will produce it the day anything syncs one
+down. Task #131 gave the ownerless row its sentence; this one still has none. New copy on a shipped
+screen is a stop-and-ask (DECISIONS constraint 21), so it stays here rather than in the diff.
+
+#### Left for the owner
+
+**The same root cause reaches the other consumer of "is this mine", and v16 does not follow it
+there.** The diagnosis in this entry is that `.user(U)` matches only while this installation is
+signed in as exactly `U`, and E270 made a local-era `U` impossible to sign into again. v16 repairs
+the *deletion* consumer of that comparison. It has a second consumer:
+`ContributionStore.heroPhotoIDs(treeIDs:attribution:)`'s `is_own` column, which feeds
+`TreeProfile.isPhotoVisible(_:own:)` — `own ? isVisibleToItsContributor : isPubliclyVisible`.
+
+Take the photograph this report is about: taken on this phone, adopted by `claimDevice`, owned by an
+account that can no longer be signed into. After v16 it is deletable again. It is still `own: false`
+to `is_own`, which has the two owner arms and no provenance term, so in the species-guide nearby
+heroes (07 §6) it is judged by `isPubliclyVisible`, it is `.pending`, and **it is not drawn at all**.
+Nothing in the app can set `.approved`.
+
+This is not a regression — the behavior is identical before and after v16 — which is why it is
+recorded here rather than fixed in that change. The decision it needs is the owner's, because
+either answer moves a screen: leave the two predicates deliberately different (deletion is about
+permission, `is_own` is about attribution-for-visibility, and provenance is not attribution), or put
+`is_own` on the same three-arm rule, which starts drawing photographs on the nearby section that
+are not drawn today. The doc comments on `heroPhotoIDs` and on `TreeProfile.isPhotoVisible` now say
+the two comparisons differ on purpose; before v16 they both claimed the comparisons were the same,
+which is how this went unnoticed.
+
+**Answered, 2026-08-22 — provenance counts here too, and the second predicate moves.** The owner
+took the second option: a photograph taken on this installation is drawn among its own heroes
+whatever account owns it, on exactly the reasoning that made it deletable again. RULINGS **R82**
+is that ruling and carries the argument and its limits. Adding the provenance arm to `is_own` is a
+follow-up round of its own and is deliberately not part of the change that spliced this entry —
+what changed here is that the two doc comments now cite E277 and R82 instead of describing a
+question nobody had answered.
+
+### E278 — The `outbox.kind` vocabulary is written out by hand in six places, and one of them under-deleted
+
+Found while landing spec §3.4's nine mutations into the queue (the round that adds `AppSchema` v17
+and `server/migrations/002_community_mutation_kinds.sql`). Neither half of this shipped as a defect
+— the kinds did not exist before the round — but the second half is a rule about a *shape*, and the
+shape is still there for the next kind.
+
+**Where the vocabulary lives.** `OutboxItem.Kind` is the only place a compiler can check it. The
+same list is then restated, as SQL string literals with no link to the enum, in:
+
+1. `AppSchema` v17's `CHECK (kind IN (…))` — the client's stored vocabulary;
+2. `OutboxStore.forgetAccount`'s `kind IN (…)` — which kinds an account deletion sweeps;
+3. `server/migrations/002_…sql` — the service's `contributions.kind` CHECK;
+4. `sync.go`'s `syncKinds` map — which kinds `POST /sync` accepts;
+5. `OutboxCopy.kindLabel` — the only one the compiler *does* check, because it switches on the enum.
+
+Adding a case to the enum compiles against four of those five. `CommunityOutboxKindTests`'
+`theStoredVocabularyCoversEveryKind` iterates `Kind.allCases` against the real table, which closes
+(1); `TestEveryCommunityKindIsAcceptedAndRecorded` is a table of ten and closes (3) and (4) only for
+the ten it lists. **(2) has no such test and is the one that was wrong.**
+
+**The under-deletion.** `forgetAccount` matched a contribution to an account with
+`json_extract(payload, '$.userID')`. That is right for the four original append-only kinds, whose
+payloads flatten `Attribution` into top-level `userID` + `deviceID`. §3.4's ten carry the
+`Attribution` as an **object**, so the account sits at `$.attribution.userID` and the old predicate
+matched none of them — `json_extract` answers NULL for a path that is not there, so the rows were
+silently skipped rather than erroring.
+
+The consequence is RULINGS **R3**'s stated failure mode: a signed-in contributor's queued species
+correction, photo withdrawal, review dismissal or hazard redirect would have survived their own
+account deletion still naming the account, drained to the service afterwards, and been recorded
+against an account that had asked to be gone. Under `leaveRecords` it would also have gone
+untombstoned, so the service would have accepted it rather than answering `duplicate`. Every layer
+reports success throughout.
+
+**The rule.** A new `OutboxItem.Kind` is not landed until its row has been followed through
+`forgetAccount` under **both** doors, with an assertion that reads the payload back. "It is a
+contribution like a visit" is not enough — the payload shape is what the SQL matches on, and two
+shapes are already in the table.
+
+Fixed in the same round: `forgetAccount` names both shapes, and
+`CommunityOutboxKindTests.deletionReachesTheNewKinds` reads the account back out of an anonymized
+payload and checks the tombstone. Red-proved by restoring the single-shape predicate — the deletion
+then reported 0 anonymized rows and the payload still named the account.
+
+### E279 — `addTree` gives a community tree two different ids depending on which implementation runs
+
+Latent, and found by the same round rather than caused by it.
+
+`LocalAPI.addTree` mints a fresh `Tree` — so `tree.id` is a new UUID — and stores `TreeDraft.
+clientUUID` beside it in `community_trees.client_uuid`. Every later record about the tree keys on
+`tree.id`. `RemoteAPI.addTree` sends `draft.clientUUID` as `POST /trees`' `client_uuid`, and the
+service uses that value **as the tree's primary key** (`community_trees.id` in `001_initial.sql`,
+whose own comment argues at length that there must be exactly one identity for a community tree).
+It then returns `Tree(id: response.id, …)`.
+
+So one `TreeDraft` through the two implementations produces two `Tree.id`s, and the id the service
+holds is not the id the phone holds. Nothing ships on that path today — `RoutedAPI.addTree` routes
+to `local` and the shipping build never calls `POST /trees` — which is why this has cost nothing so
+far.
+
+The `add_tree` sync path added by this round deliberately keys on **`tree.id`**, carried in the
+payload as `TreeAddition.treeID` and checked against the item's `tree_uuid`, so that
+`contributions.tree_uuid`, `photos.tree_uuid` and `community_trees.id` all name the same tree. That
+is the correct half. `POST /trees` and `RemoteAPI.addTree` are the half still to be reconciled, and
+reconciling them is not this round's ticket: it changes a shipped route's contract.
+
+### E280 — `photo_withdrawal` is the one deferral in the §3.4 round the service could have honored, and the deferral is invisible from the client
+
+Raised by the adversarial review of the round above, and correcting a comment that had already been
+written three times over.
+
+The justification given for recording nine of the ten new kinds without materializing them was
+"tables this service does not have and moderation rules it cannot evaluate." That is true of eight.
+It is **false for `photo_withdrawal`**, and the service has every piece:
+
+- the table — `photos`, in `server/migrations/001_initial.sql`, read by `store.PhotosForTree` into
+  every `GET /trees/{id}`;
+- the store method — `Store.DeletePhotoByContributor(ctx, id, owner)`, which takes exactly the
+  `owner` the sync handler already holds;
+- the route — `DELETE /photos/{id}`, whose own header cites RULINGS **R72** ruling 5 and ERRATA
+  **E147**: *"the person who took it has to be able to take it back."*
+
+**The real reason it is deferred is that no photograph reaches the service at all.**
+`OutboxSendSink` carries no photo method, by an argument stated on that protocol, and the apply
+sink's `uploadPhoto` is `APIOutboxTransport` over `LocalAPI` — a move inside the app container. A
+withdrawal sent today would name bytes this service has never held. Wiring the upload and wiring
+this deletion are one round.
+
+**The risk this leaves, which is why it is written down rather than left in a comment.** The moment
+photo upload is wired, this path is *already wrong and already says otherwise*. A `photo_withdrawal`
+item drains, is inserted into `contributions`, is answered `applied`, reaches `done`, and screen 17
+draws "Photo removed" in the synced section — while `GET /photos/{id}` keeps serving the bytes and
+every other device on the account keeps drawing the photograph. This project's signature failure
+mode, applied to a deletion, on a surface that has already told the person it is gone.
+
+What makes it likely to be missed is that **no test asserts anything about a `photo_withdrawal`
+reaching the service, in either direction** — not that it deletes, and not that it deliberately does
+not. A round that wires photo upload will be reading `syncKinds`' comment, not this file, which is
+why the comment now names the route that will perform it instead of claiming the service could not.
+
+**The rule.** The round that gives the send sink a photo method wires `DeletePhotoByContributor`
+into the `add_tree`-style arm in the same change, with a test in each direction. Until then,
+`photo_withdrawal` is a recorded act and the client must not be read as claiming the photograph is
+gone anywhere but on the phone.
+
+### E281 — A sync-path `add_tree` refused by the proximity dedupe is lossy, not merely unresolvable
+
+Sharpened by the same review, against the round's own open question.
+
+`applyOne` answers `failed(apierr.Conflict, …)` **before** `Store.Apply` runs, so a refused
+`add_tree` leaves **no `contributions` row at all** — the service has no record that anybody tried
+to add a tree there. `conflict` is non-retryable, so `OutboxRetryPolicy` moves the row straight to
+`failed` and screen 17 shows a terminal red row. The tree stays on the contributor's phone, local
+only, for ever, and there is nothing server-side to reconcile it against later.
+
+This is a stronger statement than "the candidate list has nowhere to travel in a per-item verdict",
+which was the round's original framing. The candidate list is a UI problem. The missing row is a
+data-loss shape: the option "accept the duplicate and reconcile in moderation" cannot be taken later
+by a service that never recorded the attempt.
+
+The three options, for whoever rules on this:
+
+1. carry the candidates in the item verdict, so screen 17 can offer the resolution sheet `POST /trees`
+   offers;
+2. record the contribution **even on the refusal path**, so a later moderation pass has something to
+   reconcile, and answer `conflict` beside it;
+3. leave it, and accept that a tree added within 10 m of somebody else's is a phone-only tree.
+
+Related and separate: `CommunityTreeExists` and `TreesWithin` run on the pool, outside the `Apply`
+transaction, so the dedupe is **advisory under concurrency** — two requests carrying `add_tree`
+items within 10 m of each other can both read "no candidates" and both materialize. That is
+`POST /trees`' own shape reproduced faithfully rather than something new, and within one batch it
+cannot happen, because `applyOne` is sequential and each `Apply` commits before the next item's
+proximity read. `TestAddTreeThroughSyncStillRunsTheProximityDedupe` is a real guard and must not be
+read as proof of an invariant it does not hold.

@@ -7289,3 +7289,567 @@ the City republishes.
 rows today; the publish — trial and beta packs included — waits until synonymy rulings take mapped
 coverage to at least 90%, and the long tail lands through content-rev refreshes. The synonymy review
 round is sized by this number.
+
+### R77 — No backfill of pre-sync-path local data (owner ruling, 2026-08-15)
+
+**Date:** 2026-08-15. **Decided by:** owner, via decision round (AskUserQuestion), option chosen: "No backfill."
+
+#### Question put to the owner
+
+Local data that predates the sync path cannot reach the server today:
+
+- **Measurements and vitality check-ins** captured on builds before the outbox send sink landed
+  settled locally as `done` without ever being sent; the drain selects `pending` (and manual
+  retry selects `failed`), so a never-sent `done` row is never retried and nothing today can
+  push it (see E264's surrounding record of the send-sink gap and its consequence that every
+  pre-sink outbox row is locally applied and unsent).
+- **Photos** have no send path at all, old or new — the binary reaches only the local apply
+  sink (E264); a future send path is additionally blocked on the server's missing idempotency
+  key for the photo-begin endpoint.
+
+Rows captured *after* the send sink landed already sync anonymously at capture time under the
+device token, and sign-in claims them server-side; those need no backfill and are not covered
+by this ruling.
+
+Options offered: (1) one opt-in backfill round after photo sync lands, covering JSON rows and
+photos; (2) JSON-only backfill now, photos later; (3) no backfill.
+
+#### Ruling
+
+**No backfill.** Pre-sync-path local rows and pre-existing photo binaries stay on-device
+permanently. Only data created going forward syncs. No opt-in backfill UI, no re-enqueue of
+settled rows, no retroactive photo upload — not now and not as a later phase of the photo
+send-path work.
+
+#### Consequences
+
+- The hard requirement on the outbox-bypassing-mutations round (task158 live-layer §3.4 scope)
+  — that pre-existing local rows must never be retroactively enqueued — is **permanent policy**,
+  not a provisional safety measure awaiting a backfill design.
+- Any future photo send-path round (closing E264) scopes to **new photos only**. Its design
+  must not sweep existing local photo rows into upload.
+- Agents proposing sync-coverage improvements should not re-raise backfill; the owner has
+  decided it. (Re-raising a decided item is itself a documented failure mode here.)
+
+### R78 — NYC notify-the-City and disclaimer obligations: three rulings on how, not whether (D12; owner rulings, 2026-08-21)
+
+**Date:** 2026-08-21. **Decided by:** owner, via decision round. Full grounding, sourcing, and
+the drafts these rulings apply to are in `docs/operations/nyc-data-obligations.md`, PR #97
+(`docs/nyc-tc-obligations`). D12 of
+`docs/design-proposals/2026-08-14-city-data-distribution.md` already settled *that* both
+obligations must be discharged before the first NYC publish, trial and beta packs included;
+these three rulings settle *how*. They are numbered 1–3 within this entry and are cited as
+**R78 ruling 1/2/3**, the form R72's five already use.
+
+#### Ruling 1 — notify-the-City routing: both reachable channels, not one
+
+**Question put to the owner.** The NYC.gov Data Mine terms require notifying "the City," via a
+hyperlink on the terms page itself. That link (`nyc.gov/html/contact/contact.shtml`) is dead —
+fetched 2026-08-21, it redirects to nyc.gov's generic "outdated or non-existing page." No
+dedicated app-notification email or form exists anywhere reachable from NYC Open Data's current
+site. Two candidates were found instead: the NYC Open Data general contact form
+(`opendata.cityofnewyork.us/engage/`) and the per-dataset "Contact Dataset Owner" route on each
+of the two Socrata dataset pages (routes to Parks & Recreation / DPR, the submitting agency).
+
+**Ruling.** Use both. The same note text goes through the general contact form *and* the
+per-dataset contact route on each of the two datasets (Forestry Tree Points `hn5i-inap`,
+Forestry Planting Spaces `82zj-84is`) — three submissions across two distinct channels, none
+treated as sufficient by itself. `opendata@cityofnewyork.us` (unverified) is not used.
+
+**Consequence.** The draft note in `docs/operations/nyc-data-obligations.md` §3 is written to
+be sent unmodified through all three; the owner sends it, this repo does not.
+
+#### Ruling 2 — disclaimer surface: the in-app city-downloads screen, plus the listing text
+
+**Question put to the owner.** The terms require the verbatim disclaimer "at the site where the
+application can be accessed or downloaded." The repo has no existing "product page" concept —
+no About/data-sources/attribution screen in the mocks (`docs/distilled/SCREENS.md`), and
+CLAUDE.md constraint 21 makes adding one its own stop-and-ask.
+
+**Ruling.** Both surfaces carry the verbatim text: (a) the in-app city-downloads screen
+(`Cypress/Features/Cities/CityDownloadsView.swift` and kin — the actual surface offering an NYC
+pack, whole-city or per-borough, trial packs included per D12), and (b) the TestFlight/App
+Store listing, wherever the app itself is currently distributed. **This ruling is the
+constraint-21 sign-off** for adding disclaimer copy to the city-downloads screen — it does not
+need to be re-raised as a fresh stop-and-ask when that screen work is built.
+
+**Consequence, binding on sequencing.** The in-app copy change is **not** part of PR #97 (a
+docs-only change). It lands with the s17/NYC seed-schema and publish round (design proposal
+§6.3) and must be live in that same round: that round cannot publish an NYC pack, trial or
+beta, without the city-downloads-screen copy already shipped and the listing text already in
+place.
+
+#### Ruling 3 — the manifest's `attribution` array does not discharge the obligation alone
+
+**Question put to the owner.** `Tools/publish_cities.py`'s manifest already carries a per-city
+`attribution` array (`city-publishing.md`; R36 binding consequence (b)) — machine-readable
+`inventory`/`name`/`url`/`snapshot_on`/`license` fields. Does that satisfy the terms' "include
+the following disclaimers" requirement by itself?
+
+**Ruling.** No. Human-visible text is required, on both surfaces named in Ruling 2 — for trial
+packs exactly as for a general release. The manifest's `attribution` array remains
+supplementary, structured provenance; it does not substitute for rendered, human-readable
+disclaimer text.
+
+#### Consequences that apply across all three
+
+- Agents building the s17/NYC publish round should treat Ruling 2's sequencing as a hard
+  precondition on that round's own "first NYC publish" gate, alongside D20's 90%-species-
+  coverage gate — not as a separate, later ticket.
+- Agents should not re-raise these three questions as open; they are decided. Any future
+  question about *whether* the routes/surfaces in Rulings 1–2 are sufficient is a new question,
+  not a re-litigation of these three.
+
+### R79 — City-inventory data is disputable, and the disputes are stored app-side (owner ruling, 2026-08-21)
+
+**Date:** 2026-08-21. **Decided by:** owner, via decision round.
+
+#### Question put to the owner
+
+The tree profile's flag controls ("Report the species as wrong", "Report that there is no tree
+here") render only for community records. A city-inventory row is deliberately `.unavailable`:
+`SpeciesClaim.swift`'s header records that the city's data sits in an ATTACHed read-only database,
+and letting a contributor dispute it "would need an override table and a policy about what the
+export then says, which is a larger decision than this." The owner was asked whether to add
+city-row flagging to the roadmap, scope it as a near-term round, or leave city data undisputable.
+
+#### Ruling
+
+In the owner's words: "City data needs to be disputable via the UI. For now, we can just store it
+in a separate DB, and later on we'll figure out how and whether to sync back to the city's DB."
+
+#### Refinement, same day — the owner's spec
+
+A second round the same day replaced the "same two flags, extended to city rows" framing.
+City-tree and community-tree disputes are **not** the same surface:
+
+**City trees.** The nature-of-issue list, offered as checkboxes (more than one may apply):
+
+1. Pin in wrong location.
+2. Wrong species.
+3. Wrong other metadata — the owner's examples: a planted year that is clearly wrong, or the
+   city recording a tree where the plot is actually empty.
+
+Alongside the checkboxes: an option to enter **suggested values** for whatever is disputed, and a
+free-text **notes / additional information** field.
+
+Separately, a fourth defect class the profile screen cannot host because there is no record to
+open: **a tree that IS on city property and IS NOT in the city database** — reported as a
+missing-tree data defect, another instance of the same dispute machinery.
+
+**Badges and filtering.** A tree carrying flags shows a **small badge displaying those flags**,
+and the existing filters box gains a **"trees with data issues"** filter.
+
+**Community trees.** Disputing **location and species only** — the existing species report stays,
+a location dispute is added, and the city-tree metadata/suggested-values machinery does not apply.
+
+**Addendum, same day — the community flagging view as shipped is not quality.** Two owner
+reports: (1) the community-trees flagging view carries "a bunch of bad copy"; (2) a community
+tree can be flagged but not unflagged by the person who flagged it, which the owner calls out as
+wrong — possibly a placeholder nobody designed. (The shipped screen does have `withdraw` /
+`keep` answers on an open report, gated by `canResolve`, but whatever they cover, the owner's
+experience is that unflagging is not available — the gap between those two statements is itself
+a design question.) The owner's instruction: the community flagging flow **goes through detailed
+design before it is considered quality**. The dispute round therefore treats community flagging
+as a design pass with owner decision rounds, not a copy touch-up: retractability by the flag's
+author, the view's full copy (which also feeds the copy audit), and the report/withdraw/keep
+state machine all get designed deliberately.
+
+This spec is the owner's own UI direction and is the constraint-21 authority for these controls;
+visual detail beyond what is written here still goes back to the owner at build time.
+
+#### Consequences
+
+- The "community rows only" deferral is reversed for *flagging*. The city inventory itself stays
+  read-only; a dispute is a row in the app's writable database referencing the city tree, never a
+  write to the attached city file.
+- Whether or how disputes ever reach a city's own dataset is explicitly deferred — storing and
+  showing the dispute is the scope; sync-back is a later, separate decision.
+- The round that builds this needs the writable-schema migration seat after the §3.4 round's, and
+  changes the tree profile's offer states so city rows stop answering `.unavailable`. The dispute
+  row must carry: which issue kinds are checked, per-field suggested values, and free-text notes —
+  richer than the existing boolean-shaped species/never-existed flags.
+- The missing-tree defect (on city property, absent from the city DB) needs an entry point that is
+  not a tree profile — likely the map. Where exactly it lives is a build-time question for the
+  owner.
+- Map/list rendering gains a flag badge on flagged trees and a "trees with data issues" entry in
+  the filters box.
+- Community trees converge on exactly two dispute modes: location and species.
+- `SpeciesClaim.swift`'s header (and the parallel record-defect reasoning) must be rewritten by
+  that round to cite this ruling's number once spliced.
+
+### R80 — The beta-feedback round of 2026-08-21 (owner rulings on TestFlight tester reports)
+
+**Date:** 2026-08-21. **Decided by:** owner, on TestFlight tester feedback.
+
+#### Provenance of the feedback
+
+App Store Connect pull, run **32497784558**, covering **builds 18–41**. Everything ruled below
+comes from a tester's own words on a shipped build; nothing here is an agent's proposal that the
+owner agreed to. The two build numbers that appear against specific defects (25, 37) are the
+builds the reports were filed against, not the builds the defects were introduced in.
+
+Six items were ruled **in scope** for the polish round and two were **deferred**. Both lists are
+recorded, because a deferral is a decision and re-raising a decided item is a documented failure
+mode in this project.
+
+---
+
+#### In scope
+
+##### 1. The map card must never name a tree it has not read (defect, build 37)
+
+> *"first tree tapped after app open shows 'Unidentified · 25 m N' for about a second, then
+> corrects to the right species"*
+
+**Ruled:** the bottom card on screen 01 must never show a wrong identity. A loading or placeholder
+state is acceptable and so is awaiting resolution; a flash of wrong data is not.
+
+The card is drawn synchronously from the pin so the tap feels answered, and the profile read lands
+after it — that is the design and it is not what was ruled against. What was wrong is that
+`MapCardSubject.title` had no value for *not knowing yet* and fell through to the literal
+`"Unidentified"`, which is a claim about the species. "Still reading" and "read, and there is no
+species" are now two values, and only the second says the word.
+
+##### 2. The visit sheet paints its own ground under the keyboard (defect, build 25)
+
+> the region behind and around the keyboard on the dark visit-logging sheet renders pure white
+
+**Ruled:** fixed, in tokens, with no raw values (ARCHITECTURE §6). Screen 04 is dark regardless of
+the system setting and the ground under the keyboard is part of that screen.
+
+##### 3. Outbox stamps say the date once a list spans days
+
+> synced rows read `1:49 pm` on a list whose rows are from different days
+
+**Ruled, verbatim in effect:** *show the date instead of the time once the list spans more than one
+day, otherwise the time.* It is a property of the list, not of the row: one answer for one list, so
+that every stamp in it is the same kind of fact and the rows can be read against each other.
+
+##### 4. The full-screen photo viewer gets pinch zoom
+
+**Ruled in.** Standard pinch to zoom, pan while zoomed, and double tap to return to the whole
+frame.
+
+This **overrules the viewer's own recorded decision not to have one.** `PhotoViewerView`'s header
+carried a section titled "Why there is no pinch-to-zoom", which closed: *"If somebody asks to look
+closer, that is a second report and it can have its own entry."* Somebody asked. The section is
+rewritten rather than deleted, and one of the three costs it named is now recorded as having been
+wrong: it feared "a gesture that fights the cover's own dismiss drag", and this screen is presented
+in a `fullScreenCover`, which has no interactive dismissal. That concern was `.sheet`'s.
+
+##### 5. The capture screen gets pinch zoom
+
+**Ruled in.** Pinch to zoom while shooting, through `AVCaptureDevice.videoZoomFactor` — the lens,
+not a transform on the preview, so what is captured is what was aimed at.
+
+The ceiling over the hardware's own is **NOT SPECIFIED** and was chosen in the implementation
+(`VisitCameraController.preferredMaxZoom`); it exists so that a volunteer cannot attach an upscaled
+smear to a record. If the owner wants a different number it is one constant.
+
+##### 6a. Screen 18 offers three functions
+
+**Ruled:** the visit-saved screen's control set is **next nearest, back to the map, back to this
+tree**. This replaces `Next nearest` / `Done for today` / `See it on the tree's timeline`.
+
+**The functions were ruled first and the copy was closed the same day** — see the addendum at the
+foot of this entry. The strings shipped in this round (`VisitSavedCopy`) were the implementation's
+draft; the owner chose them, so they are final.
+
+Two of the three functions already existed under labels that named the mood of leaving rather than
+the place being left for. `Done for today` called `goToMap()`, so a person who wanted the map for a
+moment had to declare an end to their morning to reach it; `See it on the tree's timeline` pushes
+the tree's *page*, of which the timeline is one band. The destinations have not moved.
+
+`Route done · see your grove` is **not** a fourth control and is untouched: it is the primary CTA's
+other state, for when the route is finished (PROTOTYPE-FLOW §1.6 rule 5).
+
+##### 6b. The map gets MapKit's own compass
+
+**Ruled:** a MapKit-native compass on screen 01, visible only when the camera is off north, tapping
+it returns to north.
+
+This **overrules the reasoning recorded at the call site**, which was that SCREENS.md 01 lists map
+controls under **NOT SPECIFIED** so none should be added. What that reasoning missed is one line
+below it: `isRotateEnabled = true`. A map that turns and does not say which way is north can be
+left pointing somewhere the reader did not choose, with nothing on screen to undo it.
+
+`MKMapView`'s own behavior for `showsCompass` is exactly the ruling — `MKCompassButton` fades in on
+rotation, fades out at north, and its tap animates the camera back — so no glyph of ours is
+involved and R57's no-SF-Symbols policy is not in question.
+
+---
+
+#### Deferred (decided, not forgotten)
+
+##### Grove statistics: a date-range filter
+
+A tester asked for a way to narrow the Grove's figures to a period. **Deferred**, not refused: it
+is a real request and it is not beta-polish. It wants a design pass of its own — which figures a
+range applies to, what the default range is, and what the screen says when a range contains
+nothing — and none of that is drawn in SCREENS.md.
+
+##### Coverage outside San Francisco: Marin, Sausalito, Mill Valley
+
+Testers asked for trees in Marin County, Sausalito and Mill Valley. **Deferred, and reframed:** it
+is not a defect and it is not a feature request the app can answer on its own terms. It is an
+**inventory question for the distribution plan** — whether those jurisdictions publish a street
+tree inventory this project may ingest, under what license, and whether a second and third city
+file is what the seed/city download path should be spending its budget on next. It goes to whoever
+owns the distribution plan, not to a UI round.
+
+---
+
+#### Consequences
+
+- The two overrulings above (4 and 6b) are the reason this entry exists rather than a set of
+  commit messages: both reversed a decision that was argued in a code comment, and a reader who
+  finds the old reasoning in the history needs to be able to see that it was overruled on purpose
+  and by whom.
+- The copy for screen 18's two new controls was open when this entry was first written and was
+  **closed the same day** — see the addendum below. It is recorded that way rather than edited out
+  because two of the review round's arguments were made while it was still open.
+- Nothing here authorizes a schema migration, and none was taken.
+
+##### Two things the implementation chose, which are NOT SPECIFIED and replaceable
+
+Recorded here so that a later reader can tell a chosen number from a ruled one, the way 5's
+`preferredMaxZoom` already is.
+
+- **The synced section's heading when its list spans days.** Ruling 3 is about the row stamps, and
+  fixing them left `Synced earlier today` standing over rows stamped with two different dates —
+  the app contradicting itself in its own words, which is half of what the original report was
+  about. The heading now asks the same `spansDays` question the stamps do and says `Recently
+  synced` when the answer is yes. The wording is the implementation's, on the same precedent §5's
+  summary line already set (the mock's `this week` became `today` because a week is not a window
+  this app can answer for). If the owner wants different words it is one string.
+- **The compass's room on screen 01.** 6b ruled the compass in and said nothing about where it
+  sits, which turned out to matter: at accessibility sizes a species legend chip covered it and
+  took its taps. The legend now keeps a trailing column clear for it. That costs the legend width
+  rather than height, which is why it was affordable — see `MapLayout`'s compass block.
+
+---
+
+#### Addendum, 2026-08-21 — the copy decision closed
+
+The owner chose the implemented draft in a decision round: **`Back to the map`** and
+**`Back to this tree`**, with `Next nearest` unchanged. Screen 18's copy is no longer open; a
+later change to these strings is a new decision, not a continuation of this one.
+
+### R81 — Every TestFlight build ships a changelog, and CI will not let a code change merge without its line (owner ruling, 2026-08-21)
+
+**Owner ruling, 2026-08-21.** Every build uploaded to TestFlight carries a "What to Test" —
+TestFlight's changelog field — compiled from **one tester-voice line per pull request**, in the
+voice of somebody using the app: *"You can now pinch-zoom photos."* CI enforces it: a code change
+cannot merge without its line.
+
+Until this, builds went up through `xcrun altool` with no notes at all. `altool` cannot set that
+field — it uploads a binary and knows nothing about the metadata hanging off it — so nobody had to
+decide not to write one, and forty-three builds went to testers saying nothing.
+
+---
+
+#### The mechanism
+
+**A note is a file, not a line in a shared file.** `docs/whats-new/<branch-or-topic>.md`, one
+sentence — occasionally two or three. Blank lines and `#` comments are ignored, so a file can
+carry an explanation for reviewers that testers never see. This is the pending-directory pattern
+`docs/errata-pending/` already uses, for the same reason: a single `CHANGELOG.md` conflicts on
+every branch that touches it, and this repository routinely has four open at once.
+
+**"Already shipped" is read off git, and nothing writes a marker.** The release workflow already
+tags the commit each build shipped from, `build-N` (#196). So:
+
+> the notes for the build minted at `<at>` = the note files present at `<at>`, minus the note
+> files present at `<since>`, minus anything git reports as a rename of one of those, where
+> `<since>` is the newest `build-N` tag **strictly behind** `<at>`.
+
+**An absent boundary is never inferred.** It legitimately means "the first build ever", and
+shipping every note in the repository is then the right answer — but that is also exactly what a
+**shallow clone** looks like, because `git merge-base --is-ancestor` answers a confident "no" past
+a graft point rather than failing. Getting it wrong that way is worse than a duplicated changelog:
+the notes ship *and* count as shipped, so the next build loses them too. So the compile refuses
+whenever a build tag exists that it cannot explain having skipped — one that is neither out of
+range, nor missing its commit object, nor merely sitting on the commit being built. Only a genuine
+absence of reachable tags takes the first-build path.
+
+"Strictly behind" is the whole of it, and it is not a refinement. The tag for the build being
+minted is created right after the upload — so that the backstop below has something to read — and
+the remediation for a job that dies in the twenty-minute processing wait is *Re-run failed jobs*.
+On that second attempt "the newest tag" points at the very commit being built: the boundary
+collapses, the changelog compiles to "No tester-visible changes in this build", and once that is
+published the real lines sit at both tags and can never be recovered by any later compile, because
+the backstop only stamps builds whose field is empty. **One false changelog would consume the
+lines permanently.** Walking past any tag on `<at>` settles that, two builds from one commit, and
+a tag somebody made by hand, all at once.
+
+`Tools/whats_new.py compile` is that sentence and little else. The consequences are the
+requirements rather than side effects of them:
+
+- **No line ships twice.** A note keeps its identity across an edit (its path does not change) and
+  across a rename (git reports the move, and the new path is subtracted too), so neither
+  re-announces a sentence testers have read. The one gap, stated rather than left to be
+  discovered: a rename that also *rewrites* the sentence falls below git's similarity threshold,
+  reads as a delete plus a new file, and ships again — defensibly, since a rewritten sentence is a
+  new statement. `docs/whats-new/README.md` tells authors to leave the filename alone when
+  rewording.
+- **A line can be withdrawn, by deleting its note before the build ships.** That is the retraction
+  mechanism and the only one: the compile reads the notes *present* at the commit being built, so
+  a deleted note contributes nothing. Deliberate rather than incidental, and every withdrawal is
+  printed to the release log — a sentence vanishing silently would be the same class of defect as
+  one appearing twice.
+- **Nothing is lost to a merge that minted no build.** A prose-only merge moves no tag (`plan`'s
+  ships predicate), so its notes are still unshipped and are picked up by the next real build.
+  They accumulate across as many skipped merges as it takes.
+- **A build's notes can be re-derived afterwards**, from `build-N` and its own boundary alone.
+  That is what lets the backstop below stamp a build the release job could not reach — and what
+  makes a **re-run** of a failed release job recompile the same set rather than a false empty one.
+- **No bot commit to main, no state file, no token that can write a ref.** Two people running the
+  compile a week apart on the same pair of revisions get the same bytes.
+
+Ordering is newest note first; over App Store Connect's 4000-character limit the oldest lines drop
+and the text ends `…and earlier improvements.` rather than simply stopping.
+
+#### The escape hatch, and why it is not a loophole
+
+**A line beginning `internal:` satisfies the check and is left out of the compiled notes.**
+
+    internal: reworks the outbox retry policy; no tester-visible change.
+
+A real code change with nothing for a tester to look at is common and honest — a workflow edit, a
+refactor, a new test, this very change. The alternative to an escape hatch is not a better
+changelog; it is an invented feature, which DECISIONS constraint 15 forbids and which a tester
+would then go looking for.
+
+It is not a way out of the rule. The rule is *"every code pull request states its tester-visible
+effect"*; `internal:` states that the effect is none, in the diff, where a reviewer can disagree
+with the judgement. A build whose every note is internal still ships a changelog — it says so in
+plain words rather than going out blank.
+
+#### Where CI refuses
+
+`plan` in `.github/workflows/testflight.yml` runs `Tools/whats_new.py check` on every pull request
+whose diff is not prose-only, and `gate` — the required status check — fails when it reports
+missing. Three details are deliberate:
+
+- **The check runs in `plan` but fails in `gate`.** Failing `plan` would skip `unit` and `ui`, and
+  `gate` would then report only "plan did not succeed", burying the one sentence the author needs.
+  As it is, the suite still runs and the author gets both answers in one round.
+- **A note must be an ADDED file.** Editing a note another branch already wrote does not answer
+  the check.
+- **`gate` refuses an unrecognized value, not just a missing one.** If the check is renamed or
+  crashes, `plan`'s output is the empty string — and a gate that only tested for `"missing"` would
+  go green precisely when the enforcement stopped working. That is this repository's signature
+  failure and it is guarded the same way `tests` is.
+
+Prose-only pull requests need no line. They may carry one; it waits in the directory until the
+next build that ships.
+
+#### Publishing it
+
+`Tools/appstore_connect.py set-whats-new` writes the compiled text to the build's
+`betaBuildLocalizations` and then **reads it back and compares**, because a 200 that stored
+something else is indistinguishable from success at the call site.
+
+The release job compiles the notes immediately after checkout — before the archive, so a malformed
+note costs ten seconds instead of forty minutes, and before the new tag exists, so the boundary
+cannot collapse onto itself — and publishes them after the step that already waits for the build
+to appear. **That step's existing twenty-minute bound is reused; no second wait is introduced.**
+
+The one gap is a build that uploads and then processes slowly: the expiry step fails, the build
+reaches testers anyway, and it carries no notes.
+`.github/workflows/whats-new-backstop.yml` runs twice a day, finds any live build with an empty
+"What to Test", and stamps it from that build's own tag. It writes nothing to the repository, and
+it leaves a build alone — with a warning — in two cases rather than guessing:
+
+- **no `build-N` tag**, so the build was not minted by this pipeline and nothing can say what is
+  in it;
+- **no `docs/whats-new/` at `build-N`**, so the build predates this mechanism. That case is worth
+  spelling out because it is a lie rather than an error: a commit with no notes directory has an
+  empty unshipped set, an empty set compiles to *"No tester-visible changes in this build"*, and
+  for build 43 — which shipped the whole community-contribution sync — that sentence is false.
+  Builds 1 to 43 are all of them. `whats_new.py compile` exits 8 there specifically, which is the
+  one status the backstop treats as "leave it blank"; everything else is a red run.
+
+#### Voice
+
+American spellings (favorite, color, center, neighborhood). Plain sentences. Nothing invented, and
+nothing claimed that has not been seen working — a changelog is a claim, and the standing rule
+about unverified claims applies to it in full. `docs/whats-new/README.md` is what an author reads.
+
+#### The backfill
+
+`docs/whats-new/0043-community-contributions-sync.md` describes what build 43 shipped, so that the
+first build carrying notes does not open on a changelog that skips a release. It is a backfill and
+says so in its own comments: **build 43 itself had no notes and this does not pretend otherwise.**
+Its lines were checked against `OutboxItem.Kind` and `server/internal/api/sync.go` rather than
+against the ticket, which is where the last line — that the server records these contributions
+rather than acting on them yet — comes from.
+
+### R82 — Hero visibility follows provenance: a photograph taken on this installation is its own, whatever account holds it (owner ruling, 2026-08-22)
+
+*(The question is ERRATA **E277**'s "Left for the owner" section — the second consumer of a
+comparison `AppSchema` v16 repaired for the first. Put to the owner in a decision round on
+2026-08-22 as an explicit choice between two stated options.)*
+
+#### The question
+
+v16 gave `photos` a provenance column, `taken_on_device`, and admitted it into the deletion gate:
+a photograph this installation wrote stays this installation's to unmake even after `claimDevice`
+handed it to an account and E270 made that account impossible to sign into again. That is what
+repaired the stranding E277 reports.
+
+That comparison has a second consumer and v16 did not follow it there.
+`ContributionStore.heroPhotoIDs(treeIDs:attribution:)` computes its `is_own` column from the two
+owner arms alone and hands the result to `TreeProfile.isPhotoVisible(_:own:)`, which is
+`own ? isVisibleToItsContributor : isPubliclyVisible`. So the repaired photograph — deletable
+again, still owned by an account nobody can sign into — arrives as `own: false`, is judged by
+`isPubliclyVisible`, is `.pending`, and is **not drawn at all** in the species-guide nearby heroes
+(07 §6). Nothing in the app can set `.approved`.
+
+Two options were put to the owner: leave the two predicates deliberately different — deletion is
+about permission, `is_own` is about attribution-for-visibility, and provenance is not attribution —
+or put `is_own` on the same three-arm rule, which starts drawing photographs on a shipped screen
+that are not drawn today.
+
+#### The ruling
+
+**Provenance counts.** A photograph taken on this installation is drawn among that installation's
+own heroes whatever account owns it, on exactly the reasoning that made it deletable again. The two
+predicates converge.
+
+The standing fact underneath both is the one v16's backfill already reasoned from, and that
+`LocalAPI.treeProfile` restates where it fills `ownPhotoIDs`: a row in `main.photos` was written by
+this installation. Being shown your own photograph and being allowed to unmake it are the same
+claim about who took it. Answering them differently is what produced a photograph the app will
+delete for you and will not show you, which is not a distinction anybody was asking it to draw.
+
+#### What this does not decide
+
+- **`.nobody` keeps refusing.** The leaving door's promise (R3, ERRATA E157) is untouched.
+  `PhotoOwner.permitsRemoval(by:takenOnDevice:)` refuses an ownerless row on its first line before
+  it reads provenance, and both leaving-door statements — `LocalAPI`'s and
+  `AccountDeletion`'s — set `taken_on_device = NULL` in the same `UPDATE` that takes the name off,
+  so there is nothing left for a provenance arm to admit. `is_own` gains an arm, not an exception.
+- **No schema version.** v16's column already carries what this needs. This ruling moves a
+  predicate; it does not touch a table, and it must not be read as reserving a migration seat.
+- **Moderation is not repealed.** `isPubliclyVisible` still governs every photograph that is not
+  this installation's. What changes is which side of that fork a repaired row falls on.
+- **The state E277 ends on is still unanswered.** A photograph that genuinely came from another
+  installation draws with no delete control and no sentence. New copy on a shipped screen is a
+  stop-and-ask (DECISIONS constraint 21) and it is not this ruling.
+
+#### What it costs, stated rather than left to be found
+
+Photographs begin appearing in 07 §6's nearby section that are not drawn today. On the phone E277
+was reported from that is the entire point, and it is also the reason this needed the owner rather
+than a refactor: it changes what a shipped screen shows. The round that builds it owes a test in
+each direction — that a row carrying this device's provenance under a stranger's account is drawn,
+and that an anonymized row is still not.
+
+#### Sequencing
+
+**Not implemented by the splice that recorded it.** A follow-up round adds the provenance arm to
+`is_own` — the SQL in `ContributionStore.heroPhotoIDs`, whose doc comment and
+`TreeProfile.isPhotoVisible`'s now cite this ruling as the settled answer rather than describing a
+question nobody had answered.
