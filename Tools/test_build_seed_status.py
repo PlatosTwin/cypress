@@ -20,6 +20,8 @@ have a direction are calibrated in both.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import sys
 
@@ -44,6 +46,8 @@ from build_seed import (  # noqa: E402
     REGIONS,
     STATUS_FOR_CONDITION,
     TREE_COLUMNS,
+    check_rows_from,
+    resolve_region_ids,
     status_for_record,
 )
 
@@ -252,7 +256,7 @@ check([(s, [e["pack_id"] for e in es]) for s, es in REGIONS.items()]
       == [("sf", ["sf"]),
           ("us-ca-sj", ["us-ca-sj"]),
           ("us-ny-nyc", ["us-ny-nyc-manhattan", "us-ny-nyc-brooklyn", "us-ny-nyc-queens",
-                         "us-ny-nyc-bronx", "us-ny-nyc-si"])],
+                         "us-ny-nyc-bronx", "us-ny-nyc-staten-island"])],
       f"REGIONS' declared order changed to "
       f"{[(s, [e['pack_id'] for e in es]) for s, es in REGIONS.items()]}. Every existing seed's "
       f"trees.region_id values were assigned from the old order -- confirm this reordering is "
@@ -319,6 +323,175 @@ for _pack, _rowid in (("sf", 1), ("us-ca-sj", 2)):
           f"already downloaded carry {_rowid} in every trees.region_id; a full build "
           f"registering it elsewhere republishes that city with different bytes for the "
           f"same data. Registration order is {_full}.")
+
+# --------------------------------------------------------------------------
+# 8. `check_rows_from` -- the round's most important new guard (review N1)
+# --------------------------------------------------------------------------
+# It was written INLINE in `build()`, which made a full three-city build against
+# a scratch repo root the only way to exercise it -- the reviewer had to stand
+# one up to red-prove it, and deleting the guard would have gone unnoticed by
+# every suite in this repository. It is now module-level and these are the lines
+# that notice.
+#
+# The two failure shapes below are the two that were REAL, not invented for a
+# test: shape A is New York's `rows_from_*` key never being written, and shape B
+# is the residual not subtracting New York -- the state that had actually shipped
+# a seed_meta claiming 1,032,349 rows for an inventory holding 133,706.
+
+
+def _refusal(source_meta, contributing, kept):
+    """`check_rows_from`'s stderr, or None if it accepted the build.
+
+    `die` prints and calls `sys.exit`, so a refusal is a `SystemExit` plus a line
+    on stderr. Returning the LINE rather than a boolean is the point: a test that
+    only caught the exit would pass against a guard that refused for the wrong
+    reason, which is what red-proof N1a below actually produced.
+    """
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            check_rows_from(source_meta, contributing, kept)
+    except SystemExit:
+        return err.getvalue()
+    return None
+
+
+# A build that is correct: three contributors, three claims, and they add up.
+# This runs FIRST and is not decoration -- every check below asserts a REFUSAL,
+# and a `check_rows_from` that refused everything would satisfy all of them. This
+# is the control that says it does not.
+_GOOD = {
+    "rows_from_sf_city": "133706",
+    "rows_from_sf_datasf": "12258",
+    "rows_from_nyc_tree_points": "898643",
+}
+_GOOD_CONTRIBUTING = ["nyc_tree_points", "sf_city", "sf_datasf"]
+_GOOD_KEPT = 133706 + 12258 + 898643
+
+_control = _refusal(_GOOD, _GOOD_CONTRIBUTING, _GOOD_KEPT)
+check(_control is None,
+      f"check_rows_from refused a correct build: {_control!r}. Every other check in this "
+      f"block asserts a refusal and would pass against a guard that refuses everything")
+
+# ---- shape A: a contributor with no claim of its own.
+# Exactly what `feat/nyc-ingest` merged onto s17 produced -- New York contributed
+# 898,643 rows and no `rows_from_nyc_tree_points` key existed.
+_no_claim = {k: v for k, v in _GOOD.items() if k != "rows_from_nyc_tree_points"}
+_a = _refusal(_no_claim, _GOOD_CONTRIBUTING, _GOOD_KEPT)
+check(_a is not None, "a contributor with no rows_from_* claim was accepted")
+check(_a is not None and "nyc_tree_points" in _a,
+      f"the refusal does not name the inventory that has no claim: {_a!r}")
+check(_a is not None and "rows_from_<inventory>" in _a,
+      f"the refusal does not say what to add: {_a!r}")
+
+# ---- shape B: the claims do not sum to the file's own rows.
+# The state that shipped: `rows_from_sf_city` was a residual that did not
+# subtract New York, so it absorbed 898,643 rows New York's own key also claimed
+# -- every contributor named, and the total far too large.
+_double_counted = {**_GOOD, "rows_from_sf_city": str(133706 + 898643)}
+_b = _refusal(_double_counted, _GOOD_CONTRIBUTING, _GOOD_KEPT)
+check(_b is not None, "claims that do not sum to the file's rows were accepted")
+check(_b is not None and "sum to" in _b and f"{_GOOD_KEPT:,}" in _b,
+      f"the refusal does not print both the claimed total and the file's own: {_b!r}")
+
+# ---- a claim for an inventory that contributed nothing. A pack's receipt
+# inheriting a fused key is what this looks like one layer down, in the publisher.
+_stray = {**_GOOD, "rows_from_sj_street_tree": "52775"}
+_c = _refusal(_stray, _GOOD_CONTRIBUTING, _GOOD_KEPT)
+check(_c is not None and "sj_street_tree" in _c,
+      f"a nonzero claim for a non-contributor was accepted or unnamed: {_c!r}")
+
+# A ZERO claim for a non-contributor must NOT be refused -- that is exactly what
+# the publisher writes when it zero-fills a pack's receipt, and refusing it would
+# make the two tools disagree about a legal file.
+check(_refusal({**_GOOD, "rows_from_sj_street_tree": "0"},
+               _GOOD_CONTRIBUTING, _GOOD_KEPT) is None,
+      "a ZERO claim for a non-contributing inventory was refused; the publisher writes "
+      "exactly that when it zero-fills a pack's receipt")
+
+# --------------------------------------------------------------------------
+# 9. The `sole` region rule, which is what enforces D18 (review N2)
+# --------------------------------------------------------------------------
+# `build_seed` registers `(space, None)` -- "this id space's sole region" -- ONLY
+# when the space has exactly one region. With New York's five, `region=None`
+# resolves to nothing and the build stops with the count.
+#
+# That refusal is not an inconvenience this round worked around; it is what
+# FORCES RULING D18's point-in-polygon assignment to have run on the ~22,995 tree
+# points that join no planting space. Register `(space, None)` to make the error
+# go away and those trees land in an arbitrary pack, silently.
+#
+# Nothing pinned it. `resolve_region_ids` is importable and carries the half that
+# matters: what a record naming no region resolves to, given a registration.
+
+
+def _resolve(rows, keys):
+    """`resolve_region_ids`'s refusal, or None if every row resolved."""
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            resolve_region_ids(rows, keys)
+    except SystemExit:
+        return err.getvalue()
+    return None
+
+
+def _row(space, region):
+    """A tree row shaped as `emit` builds it -- the region placeholder at
+    REGION_ROW_INDEX, full width, so a wrong index is visible."""
+    row = [None] * len(TREE_COLUMNS)
+    row[REGION_ROW_INDEX] = (space, region)
+    return row
+
+
+# A SOLE-region space registers (space, None), so a record naming no region
+# resolves. San Francisco and San Jose have always been this.
+_sole_keys = {("sf", None): 1}
+check(_resolve([_row("sf", None)], _sole_keys) is None,
+      "a record with region=None in a SOLE-region space did not resolve; that is what "
+      "San Francisco and San Jose are")
+
+# ...and it resolved to the registered rowid, not merely survived.
+_resolved = [_row("sf", None)]
+resolve_region_ids(_resolved, _sole_keys)
+check(_resolved[0][REGION_ROW_INDEX] == 1,
+      f"the row carries {_resolved[0][REGION_ROW_INDEX]!r} where dim_region rowid 1 was "
+      f"registered; the key resolved to something else")
+
+# A MULTI-region space does NOT register (space, None), so a record naming no
+# region is a STOP, with the count.
+#
+# Built from `source_names`, which is what `build_seed` registers -- NOT from
+# `display_name`, which happens to be the same five strings for New York and
+# would make this fixture silently wrong for the next city where they differ.
+_nyc_keys = {("us-ny-nyc", name): i + 3
+             for i, e in enumerate(REGIONS["us-ny-nyc"])
+             for name in e["source_names"]}
+check(("us-ny-nyc", None) not in _nyc_keys,
+      "this test registered the bare key it exists to prove is absent")
+# SEVEN DISTINCT ROWS, and `[_row(...)] * 7` is what this must not be. `* 7`
+# builds seven references to ONE list, so the first row `resolve_region_ids`
+# rewrites in place changes all seven -- and the next iteration tries to unpack
+# an int as a `(space, region)` key. The all-unresolvable case never gets that
+# far and passed happily; a red-proof that registered the bare key crashed with
+# `TypeError: cannot unpack non-iterable int object` instead of failing, which is
+# how the aliasing was found. The count below is only a real count with distinct
+# rows.
+_stop = _resolve([_row("us-ny-nyc", None) for _ in range(7)], _nyc_keys)
+check(_stop is not None,
+      "a record with region=None in a five-region space resolved anyway; nothing would then "
+      "force D18's orphan assignment and those trees would land in an arbitrary pack")
+check(_stop is not None and "us-ny-nyc" in _stop and "None" in _stop,
+      f"the refusal does not name the id space and the missing region: {_stop!r}")
+check(_stop is not None and "7" in _stop,
+      f"the refusal does not carry the COUNT of unresolved rows, which is what tells an "
+      f"operator whether this is one bad row or a whole city: {_stop!r}")
+
+# The control: the same five keys DO resolve a record that names its borough, so
+# the check above is about `None` specifically and not about a broken fixture.
+check(_resolve([_row("us-ny-nyc", "Queens")], _nyc_keys) is None,
+      "a record naming its borough did not resolve against the borough keys, so the checks "
+      "above prove nothing about `None` in particular")
 
 # --------------------------------------------------------------------------
 

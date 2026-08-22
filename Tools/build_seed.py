@@ -585,6 +585,62 @@ def status_for_record(kind: str, condition: Optional[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The seed's per-inventory receipts, and the guard the residual needs
+# ---------------------------------------------------------------------------
+def check_rows_from(source_meta: dict, contributing, kept: int) -> None:
+    """Refuse a build whose `rows_from_<inventory>` claims do not describe it.
+
+    `rows_from_<inventory>` is assembled from per-source counters, one of which is
+    a RESIDUAL (`rows_from_sf_city` = everything not attributed elsewhere). A
+    residual is fine while every other contributor is subtracted from it and
+    silently wrong the moment one is not -- which is exactly what happened when
+    New York arrived: 898,643 rows were attributed to San Francisco's city layer,
+    `seed_meta` claimed 1,032,349 rows for an inventory holding 133,706, and
+    nothing in this file objected. `verify_seed` check 1b found it, at the end of
+    the pipeline, on the first three-city build.
+
+    Two facts close it here instead, both read off `contributing` -- which is
+    built from the records actually emitted, not from a list maintained by hand:
+
+      * every inventory the file holds rows from has a claim, and
+      * the claims sum to the file's own `rows_kept`.
+
+    A new city therefore cannot inflate an old city's number: it either brings its
+    own key or stops the build naming itself.
+
+    `verify_seed` 1b stays and is not made redundant -- it reads the WRITTEN FILE
+    where this reads the build's own counters, so the two disagree if the emit
+    dropped rows, which is a different failure and the one 1b is really for.
+
+    **Module-level rather than inline in `build()` (review finding N1).** It was
+    written inline, which made the only way to exercise it a full three-city
+    build against a scratch repo root -- the reviewer had to stand one up to
+    red-prove it, and deleting the guard would have gone unnoticed by every
+    suite. Nothing about it needs `build()`'s locals: it is a function of the
+    receipt, the contributors and the total.
+
+    Raises nothing it can describe: `die` prints and exits, as everywhere else in
+    this file.
+    """
+    contributing = list(contributing)
+    claimed = {key[len("rows_from_"):]: int(value)
+               for key, value in source_meta.items() if key.startswith("rows_from_")}
+    missing = [inv for inv in contributing if inv not in claimed]
+    stray = sorted(inv for inv, n in claimed.items() if inv not in contributing and n)
+    if missing or stray:
+        die(f"seed_meta's rows_from_* claims do not describe this build: "
+            + (f"no claim for {missing!r}, which contributed rows; " if missing else "")
+            + (f"a nonzero claim for {stray!r}, which contributed none; " if stray else "")
+            + f"contributing={contributing!r}. Add a rows_from_<inventory> key rather "
+            f"than letting another inventory's residual absorb the rows.")
+    total_claimed = sum(claimed.get(inv, 0) for inv in contributing)
+    if total_claimed != kept:
+        die(f"seed_meta's rows_from_* claims sum to {total_claimed:,} but the file holds "
+            f"{kept:,} rows. One of the per-inventory counters is wrong; the "
+            f"residual (rows_from_sf_city) is the one that hides such an error.")
+
+
+# ---------------------------------------------------------------------------
 # dim_city (task #237)
 # ---------------------------------------------------------------------------
 # The city dimension table's rows, keyed by `ID_SPACES` id. Hand-entered on
@@ -792,11 +848,16 @@ REGIONS: dict[str, list[dict]] = {
             "source_names": ("Bronx",),
         },
         {
-            # `-si`, not `-staten-island`, following the only precedent the repo
-            # has: `Tools/test_publish_cities.py`'s fixture, written by the s17
-            # round and reviewed with it. Flagged for confirmation before the
-            # first publish freezes it -- see this round's PR body.
-            "pack_id": "us-ny-nyc-si",
+            # `-staten-island`, spelled out like its four siblings. The first
+            # draft of this table wrote `-si`, following the only precedent the
+            # repo had (`Tools/test_publish_cities.py`'s fixture, written by the
+            # s17 round), and raised it for the owner because a pack id is
+            # frozen forever at the first publish. **The owner ruled on
+            # 2026-08-22: spell it out** -- `-si` was the lone abbreviation
+            # among five, which is a worse thing to freeze than a long string.
+            # Free to change today and impossible after phase 2; that is why it
+            # was asked before the publish rather than after it.
+            "pack_id": "us-ny-nyc-staten-island",
             "display_name": "Staten Island",
             "level": "borough",
             "source_names": ("Staten Island",),
@@ -3170,44 +3231,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
 
     source_meta = {**source_meta, **coverage_keys, **completeness_keys}
 
-    # ---- The guard the residual above needs, and the reason it exists --------
-    #
-    # `rows_from_<inventory>` is assembled from per-source counters, one of which
-    # is a RESIDUAL (`rows_from_sf_city` = everything not attributed elsewhere).
-    # A residual is fine while every other contributor is subtracted from it and
-    # silently wrong the moment one is not -- which is exactly what happened when
-    # New York arrived: 898,643 rows were attributed to San Francisco's city
-    # layer, seed_meta claimed 1,032,349 rows for an inventory holding 133,706,
-    # and nothing in this file objected. `verify_seed` check 1b found it, on the
-    # first three-city build, at the end of the pipeline.
-    #
-    # Two facts close it here instead, both read off `contributing` -- which is
-    # built from the records actually emitted, not from a list maintained by
-    # hand:
-    #
-    #   * every inventory this file holds rows from has a claim, and
-    #   * the claims sum to the file's own `rows_kept`.
-    #
-    # A new city therefore cannot inflate an old city's number: it either brings
-    # its own key or it stops the build here, naming itself. The `verify_seed`
-    # check stays -- it reads the WRITTEN FILE where this reads the build's own
-    # counters, so the two disagree if the emit dropped rows, which is a
-    # different failure and the one 1b is really for.
-    claimed = {key[len("rows_from_"):]: int(value)
-               for key, value in source_meta.items() if key.startswith("rows_from_")}
-    missing = [inv for inv in contributing if inv not in claimed]
-    stray = sorted(inv for inv, n in claimed.items() if inv not in contributing and n)
-    if missing or stray:
-        die(f"seed_meta's rows_from_* claims do not describe this build: "
-            + (f"no claim for {missing!r}, which contributed rows; " if missing else "")
-            + (f"a nonzero claim for {stray!r}, which contributed none; " if stray else "")
-            + f"contributing={contributing!r}. Add a rows_from_<inventory> key rather "
-            f"than letting another inventory's residual absorb the rows.")
-    total_claimed = sum(claimed.get(inv, 0) for inv in contributing)
-    if total_claimed != stats["kept"]:
-        die(f"seed_meta's rows_from_* claims sum to {total_claimed:,} but the file holds "
-            f"{stats['kept']:,} rows. One of the per-inventory counters is wrong; the "
-            f"residual (rows_from_sf_city) is the one that hides such an error.")
+    check_rows_from(source_meta, contributing, stats["kept"])
 
     meta = {
         "generator": "Tools/build_seed.py",

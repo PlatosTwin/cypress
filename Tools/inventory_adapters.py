@@ -1090,8 +1090,19 @@ NYC_STRUCTURE_IS_NOT_A_TREE = {"stump", "stump - uprooted", "shaft", "retired"}
 # mapping the City itself makes unambiguous and R19 already defines a badge for.
 # The two are not the same kind of decision and this file only makes the second.
 # The City's own word survives on every row regardless: `TPCondition` rides into
-# `city_record['permit_notes']` verbatim, and `condition_text` carries it to the
-# build's receipt. Raised for the owner rather than decided here.
+# `city_record['permit_notes']` verbatim, which reaches the seed.
+#
+# It used to say "and `condition_text` carries it to the build's receipt", which
+# was false and is the kind of confident comment CLAUDE.md is about (review N3).
+# `build_seed` never reads `record.condition_text`: the contract validates it --
+# a condition with no text it was normalised from is refused -- and then it is
+# dropped. The receipt carries COUNTS (`nyc_condition_stated`,
+# `nyc_condition_not_stated`, `nyc_standing_dead`), never the word. So
+# `permit_notes` is the whole of what preserves the City's wording, and that is
+# enough; the sentence just claimed a second guarantee that does not exist.
+#
+# **RATIFIED by the owner, 2026-08-22**: the 22,992 rows ship as `alive`.
+# Revisitable at a later publish; not an open question any more.
 #
 # ── `Unknown`, blank and absent are `None` ───────────────────────────────────
 # `None` in the contract means "the source made no claim", which is precisely

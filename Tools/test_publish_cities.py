@@ -183,7 +183,7 @@ FIXTURE_DISPLAY_NAMES = {
     "us-ny-nyc": "New York City",
     "us-ny-nyc-queens": "Queens",
     "us-ny-nyc-bronx": "Bronx",
-    "us-ny-nyc-si": "Staten Island",
+    "us-ny-nyc-staten-island": "Staten Island",
 }
 
 
@@ -498,6 +498,58 @@ finally:
 
 
 # --------------------------------------------------------------------------
+# 3j. THE PARENT CITY'S NAME IS ALSO CHECKED AGAINST THE SEED (review finding N4)
+# --------------------------------------------------------------------------
+# `DISPLAY_NAMES[pack]` is compared with `dim_region.display_name` (test above,
+# and the guard it exercises). `DISPLAY_NAMES[space]` becomes
+# `region.parent_city_display_name` on every borough entry and had NO instrument:
+# two hand-entered copies of one civic name -- this table and `build_seed`'s
+# `DIM_CITY`, which is what the seed's `dim_city` holds -- with nothing comparing
+# them.
+#
+# A drift is not a crash. It publishes: the Cities screen would show one civic
+# name over the pack list and a tree profile another, both plausible.
+#
+# Fails if: the parent-city drift check is removed or narrowed to packs.
+
+workdir = tempfile.mkdtemp(prefix="test-publish-n4-")
+try:
+    db = os.path.join(workdir, "seed.sqlite")
+    build_fixture(db)
+
+    # Every name PRESENT -- this is not F1 again -- but the parent city's name
+    # disagrees with the `dim_city` row the fixture wrote ("New York City").
+    drifted_names = dict(FIXTURE_DISPLAY_NAMES)
+    drifted_names["us-ny-nyc"] = "New York"
+    result = run_publisher(db, os.path.join(workdir, "dist"), names=drifted_names)
+
+    check(result.returncode != 0,
+          "the publisher accepted a parent-city display name that disagrees with the seed's "
+          "own dim_city; every borough entry would publish it as parent_city_display_name")
+    check("UNCAUGHT" not in result.stderr,
+          f"the publisher CRASHED rather than refusing: {result.stderr.strip()[:200]}")
+    check("dim_city" in result.stderr and "parent_city_display_name" in result.stderr,
+          f"the refusal does not say which two things disagree or why it matters: "
+          f"{result.stderr.strip()[:300]}")
+    check("'New York'" in result.stderr and "'New York City'" in result.stderr,
+          f"the refusal does not print BOTH names, so an operator cannot tell which copy "
+          f"is wrong: {result.stderr.strip()[:300]}")
+    check(packs_written(os.path.join(workdir, "dist")) == [],
+          "a pack was written before the parent-city drift was refused")
+
+    # The calibration: the same fixture with the names agreeing publishes fine,
+    # so the refusal above is about the drift and not about the fixture's shape.
+    out2 = os.path.join(workdir, "dist2")
+    ok = run_publisher(db, out2)
+    check(ok.returncode == 0,
+          f"the control run failed, so this test proves nothing: {ok.stderr[:200]}")
+    check(len(packs_written(out2)) == 3,
+          f"the control run wrote {packs_written(out2)}, expected three packs")
+finally:
+    shutil.rmtree(workdir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 # 4. THE RED SIDE. Each of these must make the publisher FAIL.
 # --------------------------------------------------------------------------
 # A publisher that only ever succeeds is a publisher whose checks nobody has
@@ -572,7 +624,7 @@ def drop_dim_region(con):
 
 def region_with_no_trees(con):
     con.execute("INSERT INTO dim_region(id,pack_id,display_name,level,city_id) "
-                "VALUES (9,'us-ny-nyc-si','Staten Island','borough',2)")
+                "VALUES (9,'us-ny-nyc-staten-island','Staten Island','borough',2)")
 
 
 def drift_display_name(con):

@@ -252,7 +252,7 @@ DISPLAY_NAMES = {
     "us-ny-nyc-brooklyn": "Brooklyn",
     "us-ny-nyc-queens": "Queens",
     "us-ny-nyc-bronx": "Bronx",
-    "us-ny-nyc-si": "Staten Island",
+    "us-ny-nyc-staten-island": "Staten Island",
 }
 
 # seed_meta keys that state a city's ship coverage. The v14-era ingest wrote
@@ -796,6 +796,36 @@ def main() -> None:
     if drifted:
         fail("DISPLAY_NAMES disagrees with the seed's own dim_region.display_name -- "
              + "; ".join(drifted), 3)
+
+    # THE SAME CHECK FOR THE PARENT CITY'S NAME, which had none (review N4).
+    #
+    # The check above covers `DISPLAY_NAMES[pack]`, which becomes a manifest
+    # entry's `display_name`. `DISPLAY_NAMES[space]` becomes
+    # `region.parent_city_display_name` on EVERY borough entry, and it had no
+    # instrument at all -- two hand-entered copies of one civic name (here, and
+    # `build_seed.DIM_CITY`, which is what the seed's `dim_city` table holds)
+    # with nothing comparing them. That is exactly the argument the check above
+    # was added under, left standing for the other half.
+    #
+    # What a drift would look like to a reader: "New York City" over the pack
+    # list on the Cities screen and something else on a tree profile in the same
+    # app, both civic claims, neither obviously the wrong one.
+    #
+    # Read from the seed's `dim_city` rather than by importing `build_seed`: the
+    # question is whether this publisher agrees with THE FILE IT IS SPLITTING,
+    # not with another tool's source. A seed built by an older generator is
+    # exactly the case worth catching.
+    city_names = dict(src_con.execute("SELECT id, display_name FROM dim_city"))
+    city_drift = [
+        f"{r['id_space']}: manifest {DISPLAY_NAMES[r['id_space']]!r} vs dim_city "
+        f"{city_names.get(r['city_id'])!r} (via pack {r['pack_id']})"
+        for r in regions
+        if DISPLAY_NAMES[r["id_space"]] != city_names.get(r["city_id"])
+    ]
+    if city_drift:
+        fail("DISPLAY_NAMES disagrees with the seed's own dim_city.display_name, and this is "
+             "the name every borough entry publishes as region.parent_city_display_name -- "
+             + "; ".join(sorted(set(city_drift))), 3)
 
     cities_dir = os.path.join(args.out, "cities")
     if os.path.isdir(cities_dir):

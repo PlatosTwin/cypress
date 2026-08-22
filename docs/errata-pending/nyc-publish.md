@@ -128,6 +128,63 @@ catches", the line is decoration.
 
 ---
 
+### E??? — `[_row(...)] * 7` builds one row seven times, and the all-failing case hides it
+
+Found in the review-response round, by insisting on understanding a red-proof that came back
+**green** instead of moving on.
+
+A new test for the `sole` region rule (review N2) built its fixture as `[_row("us-ny-nyc", None)] * 7`
+— seven references to **one** list. `resolve_region_ids` rewrites the region placeholder **in
+place**, so the first row it resolves changes all seven, and the next iteration tries to unpack an
+`int` as a `(space, region)` key.
+
+**The all-unresolvable case never reaches that**: every row fails to resolve, the function collects
+them and dies before any assignment, and the test passed — including its assertion that the refusal
+carries the count `7`, which was a real count of seven aliases of one row. The aliasing only surfaced
+under the red-proof that registered the bare `(space, None)` key: instead of failing, the test
+**crashed** with `TypeError: cannot unpack non-iterable int object`.
+
+Two lessons, and the second is the one worth keeping:
+
+1. A list-of-mutable-rows fixture is `[f() for _ in range(n)]`, never `[f()] * n`, whenever the code
+   under test writes into the rows. `emit`/`resolve_region_ids` is exactly that shape.
+2. **A red-proof that produces a crash rather than a failure has not passed.** A crash and a failure
+   both look like "the test noticed", and only one of them means the assertion works. The rule this
+   repository already has — *read the failure message, not the colour* — extends to reading whether
+   there IS a failure message.
+
+Fixed, re-red-proved, and the reason is written into the test beside the fixture so the next author
+does not tidy it back.
+
+---
+
+### E??? — a guard with two arms can fire from the wrong one, and a refusal-only assertion cannot tell
+
+Also from the review-response round, and it is the reason `check_rows_from`'s new tests assert on the
+**message** rather than on the exit.
+
+`check_rows_from` refuses on two independent facts: every contributor has a `rows_from_*` claim, and
+the claims sum to the file's own rows. Red-proving the first arm — deleting the missing-claim
+detection — did **not** make the build succeed. The *sum* arm caught the same specimen and refused
+it, with a completely different sentence:
+
+```
+FATAL: seed_meta's rows_from_* claims sum to 145,964 but the file holds 1,044,607 rows.
+One of the per-inventory counters is wrong; the residual (rows_from_sf_city) is the one
+that hides such an error.
+```
+
+A test asserting only "the build refused" would have been **green against a guard with one arm
+deleted**, and the operator would have been sent to look for a wrong counter when the real fault was
+a missing key. The tests assert the refusal *names the inventory that has no claim* and *says what to
+add*, which is what actually went red.
+
+This is the same family as the vacuous prefix check below and as the four cases CLAUDE.md records:
+the guard was green while the defect was present. The distinguishing question is not "did it fail?"
+but **"did it fail for the reason this line exists?"**
+
+---
+
 ### E??? — a rebuild today moves San Francisco and San Jose, and the 2026-07-31 extract is not reproducible
 
 Not a defect. A fact about this round's numbers that a reader comparing them to the shipped seed
@@ -148,3 +205,26 @@ and San Jose objects are **updated** rather than re-published unchanged. It also
 byte-identity promise is being kept at the level it actually makes — a new `s17-r2026-08-22-…` path
 holding new content, with the old objects untouched — and not at the level of "the same city
 republishes the same bytes", which no fetch-based pipeline can promise across three weeks.
+
+---
+
+### E??? — the Staten Island pack id was renamed before it froze, and six of seven packs proved byte-identical
+
+Not a defect. A measurement worth keeping, because it is the evidence that the rename was scoped.
+
+The owner ruled on 2026-08-22 that `us-ny-nyc-si` becomes `us-ny-nyc-staten-island` (the lone
+abbreviation among five spelled-out siblings). Rebuilt and republished afterwards:
+
+- `dim_region` rowids are unchanged — Staten Island is still 7 — because registration order is
+  `sorted(spaces)` then `REGIONS`' declared order, and neither moved.
+- Every row count is unchanged, and the five boroughs still sum to **898,643**.
+- **Six of the seven pack files are byte-identical to the pre-rename publish**; only
+  `us-ny-nyc-staten-island` differs (`10d3fbaab0e78c2e…` → `05fd46bc5ab48efa…`), which is exactly the
+  one pack whose `dim_region.pack_id` string is in its bytes.
+- Every pack's *path* moved, because the fused seed's `build_id` is a hash of the fused seed and one
+  of its strings changed. That is R37.2 working, not churn.
+
+The general point for the next identity question: a `pack_id` costs four string replacements and one
+rebuild before the first publish, and cannot be changed at all after it (review N8 — the freeze is
+the publish, not the merge).
+
