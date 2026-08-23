@@ -163,6 +163,44 @@ func TestWithdrawalIsIdempotentAcrossAReplay(t *testing.T) {
 	}
 }
 
+// TestWithdrawalOfAnAlreadyTombstonedPhotographIsApplied covers the third of `withdrawPhoto`'s three
+// answers, which had no test at all until #113's review found it (finding F1).
+//
+// **Why the replay test above does not cover it, which is the whole lesson.**
+// `TestWithdrawalIsIdempotentAcrossAReplay` reuses one `client_uuid`, so the *contribution dedupe*
+// answers `duplicate` before `withdrawPhoto` is ever reached. What that test measures is the
+// dedupe's idempotency, not this arm's — and the reviewer proved the gap by inverting the arm
+// (`deletedAt != nil` → `ErrNotOwned`) and watching the whole suite stay green at 140 passed. The
+// two guards were described as agreeing "rather than depending on each other"; only one of them was
+// being measured.
+//
+// **The path here is the ordinary one, not a contrivance.** `PhotoWithdrawal` is queued already
+// applied, so the local tombstone and the queued row are independent of whatever else set
+// `deleted_at`: a contributor who deletes through `DELETE /photos/{id}` and then drains has a
+// withdrawal carrying a *fresh* key against a photograph that is already gone. Under the inverted
+// arm that contributor gets a permanent red row on screen 17 for a deletion that already succeeded.
+func TestWithdrawalOfAnAlreadyTombstonedPhotographIsApplied(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+	tree := uuid.New()
+	photo := beginPhotoFor(t, h, session.AccessToken, tree)
+
+	// The direct route, which is what a contributor's own delete calls.
+	deleted := h.do(t, http.MethodDelete, Prefix+"/photos/"+photo.String(), session.AccessToken, nil)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("DELETE /photos/{id}: status = %d, body = %s", deleted.Code, deleted.Body.String())
+	}
+
+	// A fresh `client_uuid` — `withdraw` mints one per call — so the contribution dedupe cannot
+	// answer this and `withdrawPhoto` is genuinely reached.
+	result := withdraw(t, h, session.AccessToken, tree, photo)
+	if result.Status != "applied" {
+		t.Fatalf("status = %q (%s), want applied — the photograph is already gone, so a withdrawal "+
+			"for it is a success that changes nothing; refusing puts a permanent red row on screen "+
+			"17 for a deletion that already worked", result.Status, codeOf(result.Error))
+	}
+}
+
 // TestWithdrawalNamingTheWrongTreeIsRefused mirrors the check `add_tree` makes on its own payload,
 // and for the same reason: picking one of two disagreeing ids would file the withdrawal against a
 // tree the photograph does not belong to.
