@@ -67,8 +67,16 @@ to paste keys per-publish is the exact failure #248 records twice. An agent with
    `--content-type application/json`. Never print any `AWS_*` value — names only.
 4. Verify from OUTSIDE the machine, with the repo's own instruments: `curl` the public-domain
    manifest with `?cb=$(date +%s)` and `cmp` against `dist/manifest.json`; run
-   `Tools/fetch_seed.sh <scratch>` (it hash-verifies the seed end to end); full-hash both city
-   files from the public domain.
+   `CYPRESS_SEED_SOURCE=live Tools/fetch_seed.sh <scratch>` (it hash-verifies the seed end to
+   end); full-hash both city files from the public domain.
+
+   **`CYPRESS_SEED_SOURCE=live` is load-bearing there, and is the reason that escape hatch
+   exists.** `Tools/fetch_seed.sh` resolves from `Fixtures/seed/pinned-seed.json` by default —
+   the seed version the repository builds against, which is deliberately NOT whatever was just
+   published. Without the variable this step downloads and verifies the *pinned* artifact,
+   passes, and says nothing whatever about the publish it was meant to confirm. Keep `<scratch>`
+   a scratch root and never the repo, so a verification cannot leave a full-scope seed sitting
+   where the app would bundle it.
 5. Clean up: destroy the worker, delete the relay release and its tag
    (`gh release delete seed-relay-tmp --yes --cleanup-tag`).
 
