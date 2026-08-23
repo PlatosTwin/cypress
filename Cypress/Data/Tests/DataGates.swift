@@ -809,7 +809,7 @@ public enum DataGates {
                 into: &failures
             )
 
-            var rows = try outboxStore.allItems(connection: connection)
+            let rows = try outboxStore.allItems(connection: connection)
             expect(rows.count == 1, "upgrade: \(rows.count) rows survived the migration, expected 1", into: &failures)
             expect(
                 rows.first?.item.photos.map(\.path) == ["/tmp/old-a.jpg", "/tmp/old-b.jpg"],
