@@ -141,6 +141,29 @@ public enum AccountDeletionCopy {
     /// The way out. First, and the default, on any surface that draws these two.
     public static let cancelAction = "Keep my account"
 
+    // MARK: - When it did not happen
+
+    /// What the sheet says when the deletion did not go through.
+    ///
+    /// **A new state, and it exists because deletion stopped being local.** The owner's ruling of
+    /// 2026-08-23 sends `DELETE /me` before anything on the phone is touched and aborts on failure,
+    /// so there is now a way for the destructive tap to do nothing at all — a state that could not
+    /// happen while the whole deletion was a local transaction. R3's rule cuts both ways: an app
+    /// that says nothing here has told somebody their account is gone when it is not.
+    ///
+    /// **The first sentence is the load-bearing one.** It states the outcome rather than the cause,
+    /// because the outcome is the part the reader needs and the part this app can be certain of:
+    /// nothing was deleted, on the phone or on the service. `RoutedAPI.deleteAccount` throws before
+    /// the local half runs, so the promise is structural rather than hopeful.
+    ///
+    /// **It promises no retry.** There is no queue behind a deletion and nothing happens later —
+    /// the person retries by tapping the button again, which is still on screen, which is why the
+    /// sheet stays up. "Try again" names that tap and nothing else; wording that suggested the app
+    /// would keep trying would be describing a mechanism that does not exist.
+    ///
+    /// Sentence case and no counts, like every other string here (ARCHITECTURE §5.7, §5.1).
+    public static let failedBody = "Your account was not deleted. Check your connection and try again."
+
     // MARK: - The destructive door's second gate
 
     /// `eraseEverything` is confirmed twice and `leaveRecords` once, which is the asymmetry the whole

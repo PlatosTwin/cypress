@@ -187,10 +187,36 @@ public struct RoutedAPI: CypressAPI {
     /// Where a fallback is recorded. See `RemoteReadLog`.
     public let log: RemoteReadLog
 
-    public init(local: any CypressAPI, remote: RemoteAPI, log: RemoteReadLog = RemoteReadLog()) {
+    /// Who is signed in, for `deleteAccount` and nothing else.
+    ///
+    /// **Injected, nil by default, and nil means "route deletion local"** — which is exactly the
+    /// behavior every caller had before this seam existed, so a preview double or a test that
+    /// constructs a router without it keeps the local path rather than acquiring a remote failure
+    /// mode it was never written for.
+    ///
+    /// It is a provider rather than a stored `Bool` because the answer changes underneath this
+    /// struct: `RoutedAPI` is a value type held by every screen, and a session can end between the
+    /// tap that opened the You tab and the tap that deletes. `AppSession.signedInUserID` is the one
+    /// accessor whose answer matches what the *next request* would actually act on — it returns nil
+    /// for a stored session whose refresh token has expired — so asking it here is asking the
+    /// question the deletion is about to depend on.
+    ///
+    /// `DataLayer.boot` fills it, and fills it **only when the network gate is open**, for the
+    /// reason the send sink is omitted under the same condition: a refusing transport would turn
+    /// every deletion into a failure a UI test would then be asserting against a network that is
+    /// not there.
+    public let signedInUserID: (@Sendable () async -> UUID?)?
+
+    public init(
+        local: any CypressAPI,
+        remote: RemoteAPI,
+        log: RemoteReadLog = RemoteReadLog(),
+        signedInUserID: (@Sendable () async -> UUID?)? = nil
+    ) {
         self.local = local
         self.remote = remote
         self.log = log
+        self.signedInUserID = signedInUserID
     }
 
     // MARK: - Class L — the city layer, and no remote failure mode
@@ -302,16 +328,66 @@ public struct RoutedAPI: CypressAPI {
         try await local.claimDevice(deviceUUID: deviceUUID, userID: userID)
     }
 
-    /// **Local, and the remote half is the account step's** (spec §10 step 5).
+    /// **Remote first, and nothing local happens unless the service said yes** (the owner's ruling
+    /// of 2026-08-23; ERRATA **E272** is the finding it closes).
     ///
-    /// `DELETE /me` needs the client's still-queued `client_uuid`s so the service can tombstone work
-    /// that has not arrived yet, and this router holds no queue to read them from —
-    /// `RemoteAPI.pendingOutboxKeys` is the seam for that and the composition root is what fills it.
-    /// Calling the remote half without it would send an empty array, which is the *claim* that
-    /// nothing is queued; R3's stated failure mode is deleting differently from what was asked.
+    /// ── What this used to say, and why it stopped being true ───────────────────────────────────
+    ///
+    /// This method routed local, on the stated grounds that `DELETE /me` needs the client's
+    /// still-queued `client_uuid`s, that this router holds no queue to read them from, and that
+    /// `RemoteAPI.pendingOutboxKeys` "is the seam for that and the composition root is what fills
+    /// it". **The composition root does fill it** — `DataLayer.boot` passes a provider that reads
+    /// the outbox table — so the blocker expired in the wiring round and the routing did not follow.
+    /// E272 recorded the gap: an account deleted in the You tab was deleted on the phone and left
+    /// standing on the service, which is neither what R3 promises nor what Apple's account-deletion
+    /// requirement asks of an app that offers Sign in with Apple (R72 ruling 2).
+    ///
+    /// ── The order, which is the whole of the ruling ────────────────────────────────────────────
+    ///
+    /// The service goes first and the phone follows it. On a remote failure this throws **before
+    /// touching the local half**, so nothing is deleted anywhere and the person is still signed in
+    /// on a phone holding everything they had — the state they were in before the tap. The
+    /// alternative order was considered and refused by the owner: deleting locally first and letting
+    /// the remote half fail would destroy someone's records on the phone while their account stood
+    /// on the service with Apple never revoked, and it would do it silently, because there is
+    /// nothing left on the phone that could ever retry.
+    ///
+    /// The person retries by tapping again. That is deliberate and there is no queue behind this: a
+    /// deletion that retried itself in the background would be a destructive act happening at a
+    /// moment nobody chose, and R3 puts every deletion behind copy that has just been read.
+    ///
+    /// **A signed-out installation keeps the pure-local path.** There is no account on the service
+    /// to delete — `me.go` refuses a device credential with `forbidden`, "a device has no account to
+    /// delete" — so asking would turn a working local deletion into a refusal. `signedInUserID` is
+    /// how this method knows, and a nil provider means local, which is what every construction of
+    /// this type that predates the seam gets.
+    ///
+    /// ── The one arm that is not transactional, stated rather than implied ──────────────────────
+    ///
+    /// If the service deletes and the *local* half then throws, the account is gone on the far side
+    /// and intact on this phone. `AccountDeletion` runs in one transaction, so the phone is not left
+    /// half-deleted — but it is left signed in to an account that no longer exists. That corrects
+    /// itself in the direction of the deletion rather than away from it: the next request presenting
+    /// that session is refused, which runs `AppSession`'s involuntary-discard path and ends the local
+    /// session through `onSessionEnded` in the same run. It is the same self-correcting property
+    /// E272's ruling relies on, seen from the other side.
+    ///
+    /// - Returns: the **local** outcome. The service's three counters describe rows on the service
+    ///   and `RemoteAPI.deleteAccount` already declines to spread them across `Outcome`'s twenty
+    ///   fields; merging them into the local tally here would double-count the same contribution
+    ///   once for each side of the wire, and the tally's only consumer is a test asserting what this
+    ///   phone did.
+    /// - Throws: whatever the remote half threw — `APIError`, or a `SessionError` for a credential
+    ///   that could not be refreshed — unchanged and unwrapped, so a caller can tell an offline
+    ///   phone from a refusal. `AccountModel.deleteAccount` turns any of them into the one fact the
+    ///   deletion sheet can draw: nothing was deleted.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
-        try await local.deleteAccount(choice)
+        guard let signedInUserID, await signedInUserID() != nil else {
+            return try await local.deleteAccount(choice)
+        }
+        _ = try await remote.deleteAccount(choice)
+        return try await local.deleteAccount(choice)
     }
 
     // MARK: - Class R, R-degraded: the account's own rows

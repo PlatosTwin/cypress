@@ -102,8 +102,15 @@ public struct RemoteAPI: CypressAPI {
     /// **refuses** rather than sending an empty array, because an empty array is the claim that
     /// nothing is queued and R3's stated failure mode is deleting differently from what was asked.
     ///
-    /// The composition root is what has both. Wiring it is the account step (spec §10 step 5), not
-    /// this one.
+    /// The composition root is what has both, and **it fills this** — `DataLayer.boot` passes a
+    /// provider that reads the outbox table.
+    ///
+    /// This line used to end "wiring it is the account step (spec §10 step 5), not this one", and
+    /// that sentence outlived the round it described: step 5 landed, the seam was filled, and
+    /// `RoutedAPI.deleteAccount` went on routing local anyway — so `DELETE /me` had a working
+    /// implementation and no shipping caller. ERRATA **E272** recorded the gap; the owner's ruling
+    /// of 2026-08-23 closed it by pointing the router at this method. The default stays nil, because
+    /// a `RemoteAPI` built without a queue behind it still must not claim that nothing is queued.
     public let pendingOutboxKeys: (@Sendable () async throws -> [UUID])?
 
     public init(
