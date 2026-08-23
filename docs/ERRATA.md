@@ -21134,7 +21134,16 @@ happened because a Keychain removal failed is undone by the first request that n
 round lands, the residue is an account restored with none of its rows, re-deletable from the same
 screen.
 
-#### Adjacent, and not fixed here
+#### Adjacent, and not fixed here — **CLOSED on `feat/delete-me-wiring`, 2026-08-23**
+
+**Status.** Fixed. The owner ruled the composition on 2026-08-23 — **remote first, abort on
+failure** — and the round below wired it. `RoutedAPI.deleteAccount` now sends `DELETE /me` and runs
+the local half only when the service accepted; `RootView` passes `data.api` to `AccountModel` as
+`router:`, which was the second half of the finding and the one that would have made a fix to the
+router alone do nothing. A deletion that cannot reach the service deletes nothing on the phone
+either, and the sheet stays up and says so (`AccountDeletionCopy.failedBody`, a new state the owner
+ratified with the ruling). The original finding is kept below, unedited, because it is the record of
+what was measured.
 
 `DELETE /me` still has no shipping caller. `AccountModel` deletes through `LocalAPI.deleteAccount`,
 and `RoutedAPI.deleteAccount` routes local as well, so an account deleted in the You tab is deleted
@@ -21152,6 +21161,20 @@ Its interaction with this round is worth one line, though: because deletion is l
 `forgetEverything()` added above throws away credentials for an account that still exists on the
 service. That is the safe direction — the phone stops acting as an account whose records it has
 destroyed — and it is not the end state R3 describes.
+
+**And that last paragraph is now discharged too**, which is worth saying because it was the reason
+the interrupted-deletion residual above was accepted rather than repaired. `forgetEverything()` runs
+only after an outcome came back, and an outcome can only come back once the service has deleted the
+account, so the credentials it discards are no longer an existing account's. The residual closes
+exactly as the 2026-08-15 ruling said it would: a session surviving a failed Keychain removal is one
+the service refuses at the next request, which runs `AppSession`'s involuntary-discard path and ends
+the local half through `onSessionEnded` in the same run.
+
+**What this round did not close, stated so nobody reads the status line too widely.** The deletion
+is not queued and does not retry itself — the person retries by tapping the button again, which is
+the owner's ruling rather than an omission. And a *signed-out* deletion is still local in full,
+because there is no account on the service to delete (`me.go` refuses a device credential with
+`forbidden`); that is the correct behavior and not a remaining arm of this finding.
 
 ### E273 — Two more `verify_seed.py` checks are San Francisco-only, plus a named limit of the species-fixture gate
 
