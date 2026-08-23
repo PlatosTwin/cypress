@@ -14,11 +14,21 @@ import (
 // `POST /photos/begin` idempotency — migration 003, and the blocker ERRATA E264 names against a
 // photo send path.
 //
-// The property under test is **the count of `photos` rows**, not the shape of the response. A begin
-// that answered correctly twice while creating two photographs would have satisfied any assertion
-// about its own JSON, and that is exactly the defect: the client cannot see the duplicate, the
-// contributor sees the picture twice on the tree, and nothing on either row says they are the same
-// one.
+// ── What the headline test actually pins, after two rounds of getting this wrong ──────────────
+//
+// It pins that **a replayed begin succeeds and lands on the row it already made**. It does not pin
+// the count of `photos` rows, and the file said it did for two rounds (#116 N8, then N13).
+//
+// The count cannot be the property here, and the reason is worth keeping: with the unique indexes
+// in place a broken dedupe cannot *duplicate*, it can only *refuse* — the second INSERT hits the
+// index and returns 500. So under the obvious sabotage the count is 1, which is the right number
+// for the wrong reason, and the assertion that speaks is the status check. That is correct
+// behaviour for this test and it makes the count redundant, not load-bearing.
+//
+// The count survives here as a **control**, not as the property: it is what proves the two begins
+// landed at all, calibrated first against a case whose answer is known (two different keys must
+// make two rows). Where the row count genuinely *is* the property is the two index tests below,
+// which insert past the lookup on purpose.
 
 func beginWithKey(t *testing.T, h *harness, bearer string, tree uuid.UUID, key *uuid.UUID) beginPhotoResponse {
 	t.Helper()
@@ -105,14 +115,18 @@ func TestBeginWithTheSameKeyMakesOnePhotograph(t *testing.T) {
 	// Both begins must have *succeeded* before a count of 1 means anything: one row because the
 	// second was deduped is idempotency; one row because the second was refused is a broken replay
 	// wearing the same number. This is the assertion the count leans on, stated before it.
+	// **The property.** A replay must *succeed*; declining to duplicate by refusing is not
+	// idempotency, and it is what a broken lookup actually does once the indexes are underneath it.
 	if firstCode != http.StatusOK || secondCode != http.StatusOK {
-		t.Fatalf("begin statuses = %d, %d; want 200 twice — a replay must succeed, not merely "+
-			"decline to duplicate, and a count of 1 after a refusal is not idempotency",
+		t.Fatalf("begin statuses = %d, %d; want 200 twice — a replayed begin must succeed and land "+
+			"on the row it already made, not be refused by the index underneath the lookup",
 			firstCode, secondCode)
 	}
+	// The control, not the property — see the file header. With the indexes in place a broken
+	// dedupe refuses rather than duplicates, so this number cannot be what catches that; it is here
+	// to show the two begins landed on one row rather than, say, none.
 	if n := photoCount(t, h, tree); n != 1 {
-		t.Fatalf("photos rows = %d, want 1 — the replay created a second photograph, which is the "+
-			"defect migration 003 exists to close", n)
+		t.Fatalf("control: photos rows = %d, want 1", n)
 	}
 	if first.PhotoID != second.PhotoID {
 		t.Fatalf("photo_id = %v then %v; a replayed begin must land on the row it already made",
@@ -319,10 +333,12 @@ func TestReplayAfterAnOperatorTakedownIsRefused(t *testing.T) {
 
 // TestTheDeviceScopedUniqueIndexRefusesADuplicateKey is #116's review N12.
 //
-// The pair test above goes red only when *both* indexes are dropped: its second half asserts that a
-// different owner may reuse the key, which holds either way. So the device-scoped index — the one
-// protecting the anonymous, pre-sign-in contributor, which is the only owner an unclaimed install
-// has — had no coverage of its own.
+// The pair test above never notices the **device-scoped** index: its first half exercises the
+// per-user one and its second half asserts only that a different owner may reuse the key, which
+// holds either way. (An earlier version of this comment said that test goes red "only when both
+// indexes are dropped" — refuted by the review's own sabotage, which reds it by dropping the
+// per-user index alone.) So the device index — the one protecting the anonymous, pre-sign-in
+// contributor, the only owner an unclaimed install has — had no coverage of its own.
 func TestTheDeviceScopedUniqueIndexRefusesADuplicateKey(t *testing.T) {
 	h := newHarness(t)
 	device := h.registerDeviceToken(t, uuid.New())
@@ -348,5 +364,62 @@ func TestTheDeviceScopedUniqueIndexRefusesADuplicateKey(t *testing.T) {
 		t.Fatal("a second row took the same client_uuid for the same device — " +
 			"photos_client_uuid_per_device is not there, and an anonymous contributor's begin " +
 			"has no dedupe underneath its lookup")
+	}
+}
+
+// TestAReplayReportsTheRowsModerationStateNotTheCallers is #116 r3's replay-after-claim finding.
+//
+// The synthesis line was pre-existing; the replay path that exposes it is what this round ships.
+// `ClaimDevice` re-homes a device's photographs onto the account without touching
+// `moderation_state`, so the sequence below produced a response saying `approved` about a row that
+// still held `pending`. The client evaluates `isPubliclyVisible` from this payload, so the app
+// claimed the photograph was publicly visible until the next `treeProfile` read said otherwise.
+//
+// The assertion compares the response to **the row**, rather than to a literal, so it keeps holding
+// if the launch rule's verdict for a fresh begin ever changes.
+func TestAReplayReportsTheRowsModerationStateNotTheCallers(t *testing.T) {
+	h := newHarness(t)
+	deviceUUID := uuid.New()
+	deviceToken := h.registerDeviceToken(t, deviceUUID)
+	tree, key := uuid.New(), uuid.New()
+
+	// Begun anonymously: `pending`, visible to its contributor and nobody else (R72 ruling 5).
+	begun := beginWithKey(t, h, deviceToken, tree, &key)
+	if begun.Moderation != "pending" {
+		t.Fatalf("fixture: a device begin reported %q, want pending", begun.Moderation)
+	}
+
+	// Sign in *claiming this device*, which re-homes the photograph onto the account.
+	session := h.signIn(t, &deviceUUID)
+
+	var stored, storedReason *string
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT moderation_state, approval_reason FROM photos WHERE id = $1`, begun.PhotoID,
+	).Scan(&stored, &storedReason); err != nil {
+		t.Fatal(err)
+	}
+	if stored == nil {
+		t.Fatal("the photograph lost its moderation state")
+	}
+
+	replay, code := beginAllowingFailure(t, h, session.AccessToken, tree, &key)
+	if code != http.StatusOK {
+		t.Fatalf("the replay was refused: status = %d", code)
+	}
+	if replay.PhotoID != begun.PhotoID {
+		t.Fatal("fixture: the claim did not re-home the photograph, so no replay happened")
+	}
+	if replay.Moderation != *stored {
+		t.Fatalf("the replay reported %q while the row holds %q — the client reads "+
+			"isPubliclyVisible from this, so it would claim a visibility the service does not have",
+			replay.Moderation, *stored)
+	}
+	wantReason := ""
+	if storedReason != nil {
+		wantReason = *storedReason
+	}
+	if replay.ApprovalReason != wantReason {
+		t.Fatalf("the replay reported approval_reason %q while the row holds %q",
+			replay.ApprovalReason, wantReason)
 	}
 }

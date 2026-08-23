@@ -318,9 +318,17 @@ public struct OutboxStore {
         connection: SQLiteConnection
     ) throws -> Bool {
         let sent = requiringRemoteSend ? " AND remote_sent = 1" : ""
+        // **`last_error` is cleared here, and that is not tidiness.** A settled row kept whatever
+        // sentence its last failure wrote — "The note is sent. One photo hasn't gone through yet."
+        // on an item where the photograph subsequently *did* go. Screen 17 does not draw a sentence
+        // on a synced receipt, so it was invisible; it stopped being invisible the moment anything
+        // read `lastError` off a `done` row, and a stale sentence is worse than none because it
+        // reads as current. Noted in #116's r3 review as cosmetic and fixed here rather than left
+        // in a PR description that stops existing at merge.
         let statement = try connection.cachedStatement("""
             UPDATE outbox
-               SET state = 'done', next_attempt_at = NULL, updated_at = :now
+               SET state = 'done', next_attempt_at = NULL,
+                   last_error = NULL, last_error_code = NULL, updated_at = :now
              WHERE id = :id AND local_applied = 1 AND photos_outstanding = 0\(sent)
             """)
         _ = try statement.bind([":now": date, ":id": id])

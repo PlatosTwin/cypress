@@ -109,10 +109,19 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
-	response := beginPhotoResponse{PhotoID: begun.ID, Destination: destination, Moderation: "pending"}
-	if who.isUser() {
-		response.Moderation = "approved"
-		response.ApprovalReason = string(store.AutoApprovedLaunch)
+	// **The row's verdict, not a recomputation from the caller.** Synthesizing it here was right for
+	// an insert and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account
+	// without touching `moderation_state`, so device-begin → sign-in-with-claim → replay answered
+	// `approved` about a row still holding `pending`, and the client evaluates `isPubliclyVisible`
+	// from this payload (#116 r3). `BeginPhoto` decides it once, on the insert, and reports what is
+	// actually stored on every answer after that.
+	response := beginPhotoResponse{
+		PhotoID:     begun.ID,
+		Destination: destination,
+		Moderation:  begun.Moderation,
+	}
+	if begun.ApprovalReason != nil {
+		response.ApprovalReason = *begun.ApprovalReason
 	}
 	writeJSON(w, s.Log, http.StatusOK, response)
 	return nil

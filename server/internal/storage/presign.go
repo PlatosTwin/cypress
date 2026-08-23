@@ -101,6 +101,17 @@ const PhotoVarPrefix = "PHOTOS_"
 //
 // A named constructor rather than a flag on `Config`, so the prefix cannot be forgotten at a call
 // site: there is exactly one way to build a photo presigner and it is spelled here.
+func PhotoConfig(getenv func(string) string) Config {
+	return Config{
+		AccessKeyID:     getenv(PhotoVarPrefix + "AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: getenv(PhotoVarPrefix + "AWS_SECRET_ACCESS_KEY"),
+		Endpoint:        getenv(PhotoVarPrefix + "AWS_ENDPOINT_URL_S3"),
+		Region:          getenv(PhotoVarPrefix + "AWS_REGION"),
+		Bucket:          getenv(PhotoVarPrefix + "BUCKET_NAME"),
+		VarPrefix:       PhotoVarPrefix,
+	}.trimmed()
+}
+
 // trimmed returns the config with surrounding whitespace removed from every value.
 //
 // Not exported: there is exactly one place a `Config` is built from the environment and it applies
@@ -114,17 +125,6 @@ func (c Config) trimmed() Config {
 		Bucket:          strings.TrimSpace(c.Bucket),
 		VarPrefix:       c.VarPrefix,
 	}
-}
-
-func PhotoConfig(getenv func(string) string) Config {
-	return Config{
-		AccessKeyID:     getenv(PhotoVarPrefix + "AWS_ACCESS_KEY_ID"),
-		SecretAccessKey: getenv(PhotoVarPrefix + "AWS_SECRET_ACCESS_KEY"),
-		Endpoint:        getenv(PhotoVarPrefix + "AWS_ENDPOINT_URL_S3"),
-		Region:          getenv(PhotoVarPrefix + "AWS_REGION"),
-		Bucket:          getenv(PhotoVarPrefix + "BUCKET_NAME"),
-		VarPrefix:       PhotoVarPrefix,
-	}.trimmed()
 }
 
 // Presigner mints presigned URLs.

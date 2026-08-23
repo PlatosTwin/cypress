@@ -591,7 +591,23 @@ public actor OutboxQueue {
             // forever. This runs after the send settlement above precisely so the reason survives
             // `markRemotelySent`'s clearing of it.
             if let refusal = terminallyRefusedPhotos[record.id] {
-                try await recordFailure(record, error: refusal, at: settledAt, report: &report)
+                // **`settle` directly, not `recordFailure`.** That path composes its sentence with
+                // `OutboxFailureReason.describe`, which for a non-retryable code yields
+                // `refusedTerminally` — "This couldn't be sent." The note *was* sent; only the
+                // photograph was refused, so that sentence is false about this item in exactly the
+                // way the owner's 2026-08-15 ruling forbids for `moderation_rejected`. The state
+                // and the code are the same as `recordFailure` would write; the sentence is the one
+                // that tells the truth about which half failed.
+                try await settle(
+                    record,
+                    state: .failed,
+                    failCount: record.item.failCount + 1,
+                    reason: OutboxFailureReason.photoGivenUp(photoCount: 1),
+                    code: OutboxFailureReason.apiError(from: refusal),
+                    nextAttemptAt: nil,
+                    at: settledAt
+                )
+                report.failedTerminally += 1
                 continue
             }
 

@@ -358,7 +358,122 @@ struct PhotoSendPathTests {
         // Said once, visibly, rather than silently evaporating: screen 17 draws `failed` as `retry`.
         #expect(record.item.state == .failed, "the item is \(record.item.state)")
         #expect(record.item.lastErrorCode == .notFound, "the refusal's code was not carried onto the item")
-        #expect(record.item.lastError != nil, "the row is failed and says nothing about why")
+
+        // ── The sentence, which is the half a person actually reads ───────────────────────────
+        //
+        // `refusedTerminally` is "This couldn't be sent." — a claim about the whole contribution,
+        // and false here, because `remoteSent` above is true. That is the error the owner corrected
+        // on 2026-08-15 for `moderation_rejected`, and a photo refusal is a second code in the same
+        // position. Asserting the *specific* sentence rather than `!= nil` is the difference: the
+        // nil check passed while the row said the wrong thing.
+        #expect(
+            record.item.lastError == OutboxFailureReason.photoGivenUp(photoCount: 1),
+            "the row reads \(record.item.lastError ?? "nothing")"
+        )
+        #expect(
+            record.item.lastError != OutboxFailureReason.refusedTerminally,
+            "the row tells a contributor whose note reached the service that it could not be sent"
+        )
+    }
+
+    /// The other half of the terminal state: what a contributor sees **after** tapping retry.
+    ///
+    /// The sequence the r3 review measured was "This couldn't be sent." → retry → `done` with no
+    /// sentence at all, drawn as an ordinary synced receipt. The contribution was called failed,
+    /// then called synced, and nothing in between said the photograph had been given up.
+    ///
+    /// With the honest sentence the sequence reads correctly — the person is told the note went and
+    /// the picture did not, and the retry is their acknowledgement — but two things still have to be
+    /// true, and they are what this pins: retry must not resurrect a binary that was discarded, and
+    /// the settled row must not carry the **stale** sentence forward as though it were current.
+    @Test("retrying a given-up photograph settles the note and leaves no stale sentence behind")
+    func retryingAfterAPhotographIsGivenUp() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosRefused(.notFound))
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        _ = try await queue.enqueue(
+            .visit(Self.visit()),
+            photos: [OutboxPhoto(path: try Self.stagedFile("given-up-retry"), shotType: .fullTree)]
+        )
+        _ = try await queue.drain()
+
+        let failed = try #require(try await queue.records().first)
+        #expect(failed.item.state == .failed, "fixture: the item is \(failed.item.state), not terminal")
+
+        // The person reads the sentence and taps retry.
+        _ = try await store.queue.write { connection in
+            try OutboxStore().retry(failed.id, at: Date(), connection: connection)
+        }
+        let offeredBeforeRetry = await send.sentPhotos.count
+        _ = try await queue.drain()
+
+        let settled = try #require(try await queue.records().first)
+        #expect(settled.item.state == .done, "the item is \(settled.item.state) after retry")
+        #expect(
+            await send.sentPhotos.count == offeredBeforeRetry,
+            """
+            retry re-offered a binary that had been discarded — the photograph was given up, so \
+            there is nothing left to send and the attempt would refuse again
+            """
+        )
+        // A settled row must not keep the sentence of the failure it recovered from: on a synced
+        // receipt a stale sentence reads as current.
+        #expect(
+            settled.item.lastError == nil,
+            "the settled row still reads \(settled.item.lastError ?? "")"
+        )
+    }
+
+    /// A row that recovers on its own must not keep the sentence of the failure it recovered from.
+    ///
+    /// **The path that reaches `markDoneIfComplete` with a sentence still on the row**, which the
+    /// retry test above does not: retry clears `last_error` itself, so an item that goes
+    /// fail → retry → done is nil by the time it settles. An item that goes fail → *succeed on a
+    /// later drain* never passes through retry, and used to settle carrying "The note is sent. One
+    /// photo hasn't gone through yet." — about a photograph that had, by then, gone through.
+    ///
+    /// Invisible today, because screen 17 draws no sentence on a synced receipt. It stops being
+    /// invisible the moment anything reads `lastError` off a `done` row, and a stale sentence is
+    /// worse than none: it reads as current (#116 r3, recorded as cosmetic and fixed).
+    @Test("an item that recovers on a later drain does not keep its old failure sentence")
+    func recoveringDoesNotKeepTheOldSentence() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        _ = try await queue.enqueue(
+            .visit(Self.visit()),
+            photos: [OutboxPhoto(path: try Self.stagedFile("recovers"), shotType: .fullTree)]
+        )
+
+        // Retryable failure: the sentence lands on the row and the item stays live.
+        _ = try await queue.drain()
+        let stalled = try #require(try await queue.records().first)
+        #expect(
+            stalled.item.lastError == OutboxFailureReason.photoNotSentYet(photoCount: 1),
+            """
+            fixture: the row reads \(stalled.item.lastError ?? "nothing"), so there is no stale \
+            sentence for the next drain to carry
+            """
+        )
+
+        // The connection comes back and the binary goes. No retry tap anywhere in this sequence.
+        await send.setScript(.allSucceed)
+        _ = try await queue.drain()
+
+        let settled = try #require(try await queue.records().first)
+        #expect(settled.item.state == .done, "fixture: the item is \(settled.item.state)")
+        #expect(
+            settled.item.lastError == nil,
+            """
+            the settled row still reads \(settled.item.lastError ?? "") — the photograph did go, \
+            and a synced receipt carrying the sentence of a failure it recovered from reads as current
+            """
+        )
+        #expect(settled.item.lastErrorCode == nil, "the settled row kept its old error code")
     }
 
     // MARK: - 4d. The other F1 door, on its own

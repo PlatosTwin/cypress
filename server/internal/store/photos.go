@@ -56,6 +56,16 @@ type BegunPhoto struct {
 	ID         uuid.UUID
 	StorageKey string
 	Existing   bool
+	// Moderation and ApprovalReason are the **row's**, not a recomputation from the caller.
+	//
+	// The handler used to synthesize them from `who` on every answer, which is right for an insert
+	// and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account without
+	// touching `moderation_state`, so a device-begin, a sign-in that claims, then a replay reported
+	// `approved`/`auto_approved_launch` while the row still held `pending`. The client evaluates
+	// `isPubliclyVisible` from this payload, so the app claimed public visibility until the next
+	// `treeProfile` read contradicted it (#116 r3).
+	Moderation     string
+	ApprovalReason *string
 }
 
 // BeginPhoto reserves the photo record and decides its moderation state on the spot.
@@ -102,12 +112,13 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 			var key string
 			var deletedAt *time.Time
 			var moderation string
+			var approvalReason *string
 			err := tx.QueryRow(ctx, `
-				SELECT id, storage_key, deleted_at, moderation_state FROM photos
+				SELECT id, storage_key, deleted_at, moderation_state, approval_reason FROM photos
 				 WHERE client_uuid = $1
 				   AND (($2::uuid IS NOT NULL AND user_id = $2)
 				     OR ($3::uuid IS NOT NULL AND device_id = $3))
-			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key, &deletedAt, &moderation)
+			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key, &deletedAt, &moderation, &approvalReason)
 			if err == nil {
 				// ── A replay for a photograph that has since been withdrawn ──────────────────
 				//
@@ -141,7 +152,10 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 				if deletedAt != nil || moderation == "rejected" {
 					return ErrPhotoWithdrawn
 				}
-				begun = BegunPhoto{ID: id, StorageKey: key, Existing: true}
+				begun = BegunPhoto{
+					ID: id, StorageKey: key, Existing: true,
+					Moderation: moderation, ApprovalReason: approvalReason,
+				}
 				return nil
 			}
 			if !errors.Is(err, pgx.ErrNoRows) {
@@ -161,7 +175,10 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 		if err != nil {
 			return err
 		}
-		begun = BegunPhoto{ID: photo.ID, StorageKey: photo.StorageKey}
+		begun = BegunPhoto{
+			ID: photo.ID, StorageKey: photo.StorageKey,
+			Moderation: state, ApprovalReason: (*string)(reason),
+		}
 		return nil
 	})
 	return begun, err

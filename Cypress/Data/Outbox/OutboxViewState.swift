@@ -28,12 +28,23 @@ public enum OutboxFailureReason {
     /// service has finished with. That narrowing is the ruling's, recorded rather than inferred —
     /// see the errata entry for this round.
     ///
-    /// **`moderation_rejected` is not in this class and the review of PR #88 is why (F2).** It is
-    /// the one non-retryable code whose item *did* leave the phone: it reached `cypress-sync`, the
-    /// service took the request, and a person read the content and declined it. Telling that
-    /// volunteer their work could not be sent is a false claim about where their field work is —
-    /// ARCHITECTURE §5.4, the rule this whole round exists to enforce. It has its own sentence
-    /// below, ruled by the owner on **2026-08-15**.
+    /// **Two codes are not in this class, and both are non-retryable items that DID leave the
+    /// phone.** This used to be a two-case world and the photo send path made it three; the comment
+    /// said so for one release, which is the shape of confident-comment defect this project keeps
+    /// paying for (#116 review r3).
+    ///
+    /// 1. `moderation_rejected` — the review of PR #88 (F2). It reached `cypress-sync`, the service
+    ///    took the request, and a person read the content and declined it. Telling that volunteer
+    ///    their work could not be sent is a false claim about where their field work is. Its
+    ///    sentence is `moderationDeclined`, ruled by the owner on **2026-08-15**.
+    /// 2. **A photograph refused for good** — new with the send path. The note reached the service
+    ///    and was accepted (`remote_sent = 1`); only the binary was refused. "This couldn't be sent"
+    ///    is false about the note in exactly the way ruling of 2026-08-15 forbids, so this code
+    ///    takes `photoGivenUp` instead. That the item is `failed` is about the photograph, not the
+    ///    note — which is why the sentence has to say which.
+    ///
+    /// The test that pins the pair is `OwnerCopyRulingTests`; it now pins three sentences and the
+    /// fact that they disagree about where the contribution is.
     public static let refusedTerminally = "This couldn't be sent."
 
     /// `moderation_rejected`: the item arrived, a person read it, and it will not be published.
@@ -68,6 +79,30 @@ public enum OutboxFailureReason {
     /// implemented rather than left blank because the alternative is a row that says nothing while
     /// something is outstanding, which is the one thing screen 17 promises never to do: "Nothing
     /// here disappears silently. An item that cannot sync says so, says why, and waits for you."
+    /// The terminal form of `photoNotSentYet`: the note went, the photograph will not, and nothing
+    /// is still trying.
+    ///
+    /// **It exists because `refusedTerminally` is a false sentence for this item.** "This couldn't
+    /// be sent." is a claim about the whole contribution, and the note *was* sent — the same error
+    /// the owner corrected on 2026-08-15 for `moderation_rejected`, arriving through a second door.
+    /// The ruling decides this one too: an item that left the phone is never told it did not.
+    ///
+    /// **"has been given up" rather than "failed", and it is the load-bearing half.** Without it the
+    /// sentence is indistinguishable from the retrying one, and the sequence a contributor actually
+    /// sees is: read it, tap retry, watch the row settle as synced. Saying the photograph was given
+    /// up is what makes that settlement honest rather than the picture quietly evaporating — the
+    /// person is told, once, in the words of the thing that happened, and the retry is their
+    /// acknowledgement rather than a promise the app cannot keep.
+    ///
+    /// **PROPOSED, pending ratification** (round proposes, owner ratifies) — the third copy question
+    /// this round raises, and it goes to the owner with the other two. Implemented rather than left
+    /// blank because the alternative is shipping the sentence that is known to be false.
+    public static func photoGivenUp(photoCount: Int) -> String {
+        photoCount == 1
+            ? "The note is sent. One photo couldn't be, and has been given up."
+            : "The note is sent. \(photoCount) photos couldn't be, and have been given up."
+    }
+
     public static func photoNotSentYet(photoCount: Int) -> String {
         photoCount == 1
             ? "The note is sent. One photo hasn't gone through yet."
