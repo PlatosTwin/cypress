@@ -68,7 +68,18 @@ print(pin["path"], pin["sha256"], pin["bytes"], ",".join(sorted(spaces)))
   origin="the pin, Fixtures/seed/pinned-seed.json"
   ;;
 live)
-  # The public domain caches manifest.json on the plain URL: minutes after a republish, a
+  # READS manifest-v2.json, AND THE NAME IS LOAD-BEARING. This branch read manifest.json
+  # until format 1 was retired on 2026-08-23. That object is now FROZEN -- never written
+  # again, never deleted -- so it still parses, still carries a `source_seed`, and still
+  # passes every check below while naming whatever seed the last dual publish shipped.
+  # "Give me the artifact currently on the bucket" would have quietly meant "give me the
+  # artifact from before the retirement", forever, and the hash check would have confirmed
+  # it. A stale answer that verifies is worse than an error.
+  #
+  # The envelope is the same in both objects -- `source_seed` was never inside the
+  # format-specific part -- so only the name changes here.
+  #
+  # The public domain caches the manifest on the plain URL: minutes after a republish, a
   # bare GET still returned the previous manifest while `?cb=` returned the new one. A
   # build that resolves its seed from a stale manifest is self-consistent and wrong -- the
   # hash check below would pass against the OLD seed. So bust the cache and send no-cache,
@@ -77,8 +88,8 @@ live)
   say "  This is not reproducible: the answer changes when somebody publishes. Do not"
   say "  certify a test run, a warning count or a release from a tree fetched this way."
   manifest="$(curl -fsS --max-time 60 -H 'Cache-Control: no-cache' \
-    "$PUBLIC/manifest.json?cb=$(date +%s)")" \
-    || die "could not read $PUBLIC/manifest.json"
+    "$PUBLIC/manifest-v2.json?cb=$(date +%s)")" \
+    || die "could not read $PUBLIC/manifest-v2.json"
 
   if ! seed_fields="$(printf '%s' "$manifest" | python3 -c '
 import json, sys
@@ -97,7 +108,7 @@ print(s["path"], s["sha256"], s["bytes"])
   # rather than defaulted to the pin's: checking a live seed against the pin's scope would
   # answer a question nobody asked and would refuse every legitimate use of this branch.
   want_spaces=""
-  origin="the live manifest at $PUBLIC"
+  origin="the live manifest-v2.json at $PUBLIC"
   ;;
 *)
   die "CYPRESS_SEED_SOURCE is '$SOURCE'; it is 'pin' (the default) or 'live'"
