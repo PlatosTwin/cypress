@@ -154,9 +154,35 @@ A download in flight keeps whatever section its state already earned: a first do
 `Available to download` until its bytes are verified and installed, and an update to a city already
 held does not jump out of the top section while it runs.
 
-**Alternatives, for the owner:** (a) as built; (b) group by city always, so single-pack cities get
-headings too — rejected as furniture; (c) sort within `On this phone` by what is in use first,
-which adds a third ordering rule to a screen that now has two.
+#### Two shape decisions the adversarial review forced, added 2026-08-23
+
+**Grouping applies inside `On this phone` too, and the first draft applied it only to
+`Available to download`.** The review caught what that meant in practice: the grouping the tester
+asked for survived right up until the moment they acted on it. Download all five boroughs and they
+moved into the top section, where nothing grouped them — five flat cards and no `New York City`
+heading anywhere on the screen. Pack counting is therefore per section, so three boroughs downloaded
+and two not yields a group in each.
+
+**A heading with nothing of its own under it is not drawn**, which follows from the same principle
+that denies a single-pack city a heading. In today's live catalog *every* downloadable pack is a New
+York borough, so they all group — and the screen drew `Available to download` with zero cards
+beneath it, immediately above `New York City` with five. Both are drawn in the same micro-label
+idiom, so the pair reads as two stacked labels rather than as a heading and its child. When a
+section's ungrouped remainder is empty its city groups head the run themselves; the umbrella returns
+the moment any pack is listed under it directly.
+
+**This second one is the item to rule on**, because it trades a heading a reader might want for one
+that says nothing. Alternatives: (a) as built — drop the empty umbrella, so a fully-grouped screen
+reads `On this phone` / `New York City`; (b) keep the empty `Available to download` heading, so the
+affordance context is always stated even when it heads only another heading; (c) distinguish the two
+levels visually — an indent or a quieter style for a city group — which would make (b) read
+correctly but invents card-adjacent geometry R43 does not have. (a) is built because a heading whose
+entire content is another heading is furniture by this ruling's own test.
+
+**Alternatives for the sectioning as a whole, for the owner:** (a) as built; (b) group by city
+always, so single-pack cities get headings too — rejected as furniture; (c) sort within
+`On this phone` by what is in use first, which adds a third ordering rule to a screen that now has
+two.
 
 #### What this does *not* do, and the report it leaves open
 

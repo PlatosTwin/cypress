@@ -15,10 +15,20 @@
 #     ("I can't seem to use manhattan even though it's on my phone"), and the three-button row was
 #     photographed on the device rather than assumed to fit.
 #   * "downloads faster" — `downloadCity` walked the response ONE BYTE AT A TIME through
-#     `URLSession.AsyncBytes`. Measured on this machine over a 6 MB fixture: 0.858 s before,
-#     0.012 s after. The guard in the suite is a ratio against a per-byte control run in the same
-#     test, not a wall-clock bound, because a bound loose enough to be stable sits above both
-#     numbers and would certify the defect as fixed.
+#     `URLSession.AsyncBytes`. Measured on the assigned simulator over the committed 4 MB fixture:
+#     0.280 s before, 0.0059 s after. The guard in the suite is a ratio against a per-byte control
+#     run in the same test, not a wall-clock bound, because a bound loose enough to be stable sits
+#     above both numbers and would certify the defect as fixed. (An earlier draft of this note
+#     quoted a 6 MB run against a 4 MB fixture; the numbers above are the committed test's.)
+#
+# ── WHY THE PROGRESS RING IS NOT MENTIONED ───────────────────────────────────────────────────
+#
+# The determinate ring R43 §3 rules was dead in the first draft of this branch:
+# `session.download(from:delegate:)` never delivers `didWriteData` — measured at 0 calls — so it
+# sat at 0% for an entire 199 MB transfer. It reports honestly now. It is deliberately not a clause
+# here: a reader who never saw the broken build has nothing to compare against, and announcing that
+# a progress bar moves is noise. The same goes for `Cancel`, which used to draw
+# "Download failed. Nothing was changed." over a download the reader themselves stopped.
 #
 # ── WHAT IS DELIBERATELY NOT CLAIMED ─────────────────────────────────────────────────────────
 #
