@@ -195,43 +195,37 @@ public struct CityDownloader: Sendable {
 
         let source = baseURL.appendingPathComponent(city.path)
         do {
-            let (bytes, response) = try await session.bytes(from: source)
+            // **A download task, not `session.bytes`, and this is a performance fix with a receipt.**
+            // The previous body was `for try await byte in bytes` — `URLSession.AsyncBytes` is an
+            // `AsyncSequence` of `UInt8`, so that loop performed one asynchronous iteration, one
+            // `Data.append`, and one buffer-length check **per byte of the file**. On the smallest
+            // NYC borough that is 84 million suspensions; on Queens, 199 million. The 512 KiB
+            // buffer underneath made the *writes* efficient and did nothing about the loop that
+            // filled it, which is why the size of the chunk was never the thing that mattered.
+            //
+            // A tester reported it as *"Download is super slow"* (build 49, 2026-08-23) and, minutes
+            // later, as *"Download fails if app closes or phone screen sleeps"* — the second is a
+            // separate defect (see the note on `downloadCity`'s own doc) but the first made it far
+            // easier to hit, because a transfer that should take a minute was taking long enough for
+            // the screen to sleep underneath it.
+            //
+            // `URLSessionDownloadTask` streams to its own temp file at the transport's pace, with no
+            // per-byte round trip through Swift concurrency at all. The verification that follows is
+            // unchanged in substance and now reads the finished file in 512 KiB chunks; a file this
+            // method does not return still cannot exist on disk afterwards.
+            let delegate = progress.map {
+                DownloadProgressDelegate(expectedBytes: city.bytes, onProgress: $0)
+            }
+            let (downloaded, response) = try await session.download(from: source, delegate: delegate)
             try Self.checkStatus(response)
 
-            FileManager.default.createFile(atPath: destination.path, contents: nil)
-            let handle = try FileHandle(forWritingTo: destination)
-            defer { try? handle.close() }
+            // URLSession deletes its temp file as soon as this call's frame goes away, so the move
+            // happens before anything is verified. Staging is where an unverified file is allowed to
+            // be; the installed layout is not, and nothing below moves it there.
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: downloaded, to: destination)
 
-            var hasher = SHA256()
-            var written: Int64 = 0
-            var buffer = Data(capacity: Self.chunkSize)
-            var lastReportedPercent = -1
-
-            func flush() throws {
-                guard !buffer.isEmpty else { return }
-                try handle.write(contentsOf: buffer)
-                hasher.update(data: buffer)
-                written += Int64(buffer.count)
-                buffer.removeAll(keepingCapacity: true)
-
-                if let progress, city.bytes > 0 {
-                    let fraction = min(1, Double(written) / Double(city.bytes))
-                    let percent = Int(fraction * 100)
-                    if percent != lastReportedPercent {
-                        lastReportedPercent = percent
-                        progress(fraction)
-                    }
-                }
-            }
-
-            for try await byte in bytes {
-                buffer.append(byte)
-                if buffer.count >= Self.chunkSize { try flush() }
-            }
-            try flush()
-            try handle.close()
-
-            let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+            let (written, digest) = try Self.verifiableFacts(ofFileAt: destination)
             guard written == city.bytes else {
                 throw DownloadError.sizeMismatch(expected: city.bytes, got: written)
             }
@@ -245,9 +239,71 @@ public struct CityDownloader: Sendable {
         }
     }
 
-    /// 512 KiB: big enough that hashing and writing dominate the per-chunk overhead, small enough
-    /// that progress moves visibly on an 80 MB file.
+    /// The byte count and sha256 of a finished file, read in chunks so an 199 MB pack is never
+    /// resident in memory. The same two facts the streaming version computed as it wrote.
+    private static func verifiableFacts(ofFileAt url: URL) throws -> (bytes: Int64, digest: String) {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        var total: Int64 = 0
+        while let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty {
+            hasher.update(data: chunk)
+            total += Int64(chunk.count)
+        }
+        return (total, hasher.finalize().map { String(format: "%02x", $0) }.joined())
+    }
+
+    /// 512 KiB: big enough that hashing dominates the per-chunk overhead, small enough that a read
+    /// buffer is not a memory event.
     private static let chunkSize = 512 * 1024
+
+    /// Turns `URLSessionDownloadTask`'s byte counts into the same `0…1` fraction the Cities screen's
+    /// ring already draws.
+    ///
+    /// **Reports on whole percents only**, which is the rule the streaming version had and the
+    /// reason this holds any state at all: the delegate is called per transport chunk, and a
+    /// `@MainActor` hop per call would put thousands of view updates behind one download.
+    ///
+    /// `expectedBytes` is the manifest's count rather than
+    /// `totalBytesExpectedToWrite`, which is `NSURLSessionTransferSizeUnknown` (-1) whenever the
+    /// response carries no `Content-Length`. The manifest always states the size, and it is the
+    /// number the file is about to be verified against anyway.
+    private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+        private let expectedBytes: Int64
+        private let onProgress: @Sendable (Double) -> Void
+        private let lock = NSLock()
+        private var lastReportedPercent = -1
+
+        init(expectedBytes: Int64, onProgress: @escaping @Sendable (Double) -> Void) {
+            self.expectedBytes = expectedBytes
+            self.onProgress = onProgress
+        }
+
+        /// Required by the protocol; the async `download(from:delegate:)` hands the caller the
+        /// finished URL itself, so there is nothing for this to do.
+        func urlSession(
+            _ session: URLSession,
+            downloadTask: URLSessionDownloadTask,
+            didFinishDownloadingTo location: URL
+        ) {}
+
+        func urlSession(
+            _ session: URLSession,
+            downloadTask: URLSessionDownloadTask,
+            didWriteData bytesWritten: Int64,
+            totalBytesWritten: Int64,
+            totalBytesExpectedToWrite: Int64
+        ) {
+            guard expectedBytes > 0 else { return }
+            let fraction = min(1, Double(totalBytesWritten) / Double(expectedBytes))
+            let percent = Int(fraction * 100)
+            lock.lock()
+            let isNew = percent != lastReportedPercent
+            if isNew { lastReportedPercent = percent }
+            lock.unlock()
+            if isNew { onProgress(fraction) }
+        }
+    }
 
     /// `file://` fixtures return no HTTPURLResponse; only a real HTTP answer is status-checked.
     private static func checkStatus(_ response: URLResponse) throws {

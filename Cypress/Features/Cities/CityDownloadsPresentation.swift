@@ -32,6 +32,33 @@ enum CityDownloadsCopy {
     static let checking = "Checking what's available…"
     static let offline = "Couldn't check what's available. Downloaded cities still work."
 
+    // MARK: - Section headings
+    //
+    // R43 §2 rules the screen as one flat list — "one card for the built-in inventory, then one card
+    // per city the manifest lists, in manifest order. That is the whole screen." That was written
+    // when the catalog held two cities. It holds seven, five of them New York boroughs, and a tester
+    // filed the same complaint from two directions on the same evening (build 49, 2026-08-23):
+    // *"The NYC ones should be visually grouped somehow under NYC"*, and *"there needs to be visual
+    // grouping and section separation. If a city is downloaded and usable it should be at top,
+    // separated from others."*
+    //
+    // Two headings, in the You tab's existing micro-label idiom — no new component, no new chrome.
+
+    /// Above the inventories the device already holds: the built-in card, the cities inside it, and
+    /// anything downloaded. "On this phone" rather than "Installed", because the built-in seed is
+    /// not installed in any sense the reader performed.
+    static let onDeviceSection = "On this phone"
+
+    /// Above everything else. The one heading a reader has to act under.
+    static let availableSection = "Available to download"
+
+    /// A city's own name, used as a heading when several of its packs are listed together — `New
+    /// York City` over the five boroughs. **The manifest's `parent_city_display_name`**, which is a
+    /// civic string entered at publish; this file never composes one (DECISIONS constraint 15).
+    static func cityGroupHeading(_ parentCityDisplayName: String) -> String {
+        parentCityDisplayName
+    }
+
     // Row state lines.
     static let downloading = "Downloading…"
     static let downloadFailed = "Download failed. Nothing was changed."
@@ -79,8 +106,42 @@ enum CityDownloadsCopy {
     static let bundled = "Included in the app"
 
     /// Mirrors `updateLine`'s shape — what is newer, and what you are holding.
-    static func bundledOutdatedLine(bundledContentRev: String) -> String {
-        "Newer record available · included copy is \(bundledContentRev)"
+    ///
+    /// **No longer the state line; now the quieter second line.** As the state line it was the only
+    /// thing a bundled city's card said, so San Francisco and San Jose — both shipped inside the
+    /// app, both drawn on the map at that moment — announced a newer record and a `Download` button
+    /// and never once said they were already there. A tester read that as the screen offering to
+    /// sell him what he had: *"Why am I seeing option to download sf and San Jose when those cities
+    /// SHIP WITH THE APP?? Bad design"* (build 49, 2026-08-23).
+    ///
+    /// The fix is order, not new facts. `bundledLine` states possession first — it is the more
+    /// important of the two and it was the one missing — and this line states the offer underneath.
+    /// Both sentences were already true; only one of them was on screen.
+    ///
+    /// **The record date left with the clause that used to carry it.** `bundledLine(contentRev:)`
+    /// now states it directly above (`Included in the app · record as of 2026-07-31`), and repeating
+    /// `included copy is 2026-07-31` under it would print one date twice in two spellings. What is
+    /// left is the half the line above cannot say.
+    static let bundledOutdated = "A newer record is available to download."
+
+    /// Which cities the bundled seed holds, named from the seed itself.
+    ///
+    /// R43 §3 gives the built-in card a title and one subtitle, and a tester found the gap the pair
+    /// leaves: *"On this view we should say WHAT CITIES ship in the pre-built seed. Right now all it
+    /// says is THAT there's an inventory not WHAT ITS OF"* (build 49, 2026-08-23).
+    ///
+    /// **Every name here is read out of the shipped file** (`SeedCities.inMainBundle` →
+    /// `dim_city.display_name`), never a list written down in this file — which is DECISIONS
+    /// constraint 15, and also the only version that cannot go stale the day the bundle changes.
+    /// Nil when the seed names nothing, so a card that has learned nothing says nothing extra.
+    static func builtInCitiesLine(_ names: [String]) -> String? {
+        switch names.count {
+        case 0: return nil
+        case 1: return "Includes \(names[0])"
+        case 2: return "Includes \(names[0]) and \(names[1])"
+        default:
+            return "Includes \(names.dropLast().joined(separator: ", ")), and \(names[names.count - 1])"
+        }
     }
 
     // MARK: - NYC Data Mine disclaimer (RULINGS R78 ruling 2)
@@ -129,6 +190,104 @@ enum CityDownloadsCopy {
         """
 }
 
+/// One headed run of cards on the Cities screen.
+///
+/// **The screen is a list of these now, not a list of rows** (see `CityDownloadsCopy.onDeviceSection`
+/// for the two tester reports that bought the change). The grouping is decided here, as a pure
+/// function of rows the model has already decided, so the whole of it is unit-testable without a
+/// view: `CityDownloadsModel.sections` is the only caller and `rows` remains the flattening.
+struct CityDownloadSection: Equatable, Identifiable {
+
+    /// The heading drawn above the run — `On this phone`, `Available to download`, `New York City`.
+    let title: String
+    /// Whether this is a city grouping nested under `Available to download` rather than a top-level
+    /// heading. The view draws it one step quieter; nothing else differs.
+    let isCityGroup: Bool
+    let rows: [CityDownloadRow]
+
+    /// The heading, which is unique among the sections of one screen: the two fixed headings are
+    /// distinct from each other, and a city group is titled with a `parent_city_display_name` that
+    /// names exactly one parent city per pass.
+    var id: String { title }
+
+    init(title: String, isCityGroup: Bool = false, rows: [CityDownloadRow]) {
+        self.title = title
+        self.isCityGroup = isCityGroup
+        self.rows = rows
+    }
+
+    /// Splits decided rows into `On this phone`, then everything else — with the packs of any city
+    /// that has more than one of them gathered under that city's own name.
+    ///
+    /// - Parameter parentCity: what the manifest says a row's pack belongs to, as
+    ///   `(id, displayName)`, or nil when the catalog does not say (a format-1 manifest, an offline
+    ///   render, the built-in card). **Passed in rather than looked up**, because a manifest is not
+    ///   a thing this file should hold — the model has one and this stays a pure function.
+    ///
+    /// Three properties worth stating, because each is a way this could have gone wrong:
+    ///
+    /// - **Every row lands in exactly one section, and no row is dropped.** The two branches
+    ///   partition on `isOnDevice`, and the second is re-assembled from the same array it was split
+    ///   from. `CityDownloadSectionTests.everyRowSurvivesSectioning` asserts it against the
+    ///   flattening rather than trusting this sentence.
+    /// - **Order inside a section is the order it came in**, which is the publisher's order (R43 §2)
+    ///   for the catalog rows and the library's id order for the disk ones. Grouping reorders only
+    ///   by moving a city's packs to where its first pack already was.
+    /// - **A city with one pack gets no heading of its own.** A `New York City` heading over five
+    ///   boroughs earns its line; a `San Francisco` heading over San Francisco is furniture.
+    static func sections(
+        from rows: [CityDownloadRow],
+        parentCity: (CityDownloadRow) -> (id: String, displayName: String)?
+    ) -> [CityDownloadSection] {
+        let onDevice = rows.filter(\.isOnDevice)
+        let available = rows.filter { !$0.isOnDevice }
+
+        var sections: [CityDownloadSection] = []
+        if !onDevice.isEmpty {
+            sections.append(CityDownloadSection(title: CityDownloadsCopy.onDeviceSection, rows: onDevice))
+        }
+        guard !available.isEmpty else { return sections }
+
+        // Which parents have more than one pack among the available rows — the test for whether a
+        // grouping heading says anything.
+        var packsPerParent: [String: Int] = [:]
+        for row in available {
+            guard let parent = parentCity(row) else { continue }
+            packsPerParent[parent.id, default: 0] += 1
+        }
+
+        // First-seen order, so a group lands where its first pack already was.
+        var groupOrder: [String] = []
+        var grouped: [String: [CityDownloadRow]] = [:]
+        var ungrouped: [CityDownloadRow] = []
+        for row in available {
+            guard let parent = parentCity(row), packsPerParent[parent.id, default: 0] > 1 else {
+                ungrouped.append(row)
+                continue
+            }
+            if grouped[parent.id] == nil { groupOrder.append(parent.id) }
+            grouped[parent.id, default: []].append(row)
+        }
+
+        sections.append(
+            CityDownloadSection(title: CityDownloadsCopy.availableSection, rows: ungrouped)
+        )
+        for parentID in groupOrder {
+            let packs = grouped[parentID] ?? []
+            // The heading is the parent's own display name, taken from a pack that named it.
+            let name = packs.compactMap { parentCity($0)?.displayName }.first ?? parentID
+            sections.append(
+                CityDownloadSection(
+                    title: CityDownloadsCopy.cityGroupHeading(name),
+                    isCityGroup: true,
+                    rows: packs
+                )
+            )
+        }
+        return sections
+    }
+}
+
 /// One card on the Cities screen, fully decided — the view draws rows, it does not reason.
 struct CityDownloadRow: Equatable, Identifiable {
     /// Manifest id, or `CityDownloadRow.builtInID` for the bundle's card.
@@ -144,6 +303,17 @@ struct CityDownloadRow: Equatable, Identifiable {
     let isFailure: Bool
     /// Download progress, only while downloading.
     let progress: Double?
+    /// Whether this inventory is already on the device — installed, or inside the app bundle.
+    ///
+    /// **The one fact the sectioning needs, and it is read off the install state rather than off the
+    /// row's buttons** (`CityInstallState.isOnDevice`) — so a card cannot be filed under
+    /// `On this phone` on any ground other than the device actually holding it.
+    ///
+    /// A download in flight keeps whatever was true before it started: a first download stays under
+    /// `Available to download` until its bytes are verified and installed, and an *update* to a city
+    /// already on the phone does not leave the top section while it runs. Both follow from asking
+    /// the state, and both are what the reader is looking at.
+    let isOnDevice: Bool
 
     enum Affordance: Equatable {
         case download
@@ -156,20 +326,51 @@ struct CityDownloadRow: Equatable, Identifiable {
     }
     let affordances: [Affordance]
 
+    /// Spelled out rather than synthesized so `isOnDevice` can carry a default: every call site that
+    /// predates sectioning describes a row that is not on the device, and saying so eight times adds
+    /// nothing. The factories below state it where it is true.
+    init(
+        id: String,
+        title: String,
+        coverageNote: String?,
+        stateLine: String,
+        detailLine: String?,
+        isFailure: Bool,
+        progress: Double?,
+        isOnDevice: Bool = false,
+        affordances: [Affordance]
+    ) {
+        self.id = id
+        self.title = title
+        self.coverageNote = coverageNote
+        self.stateLine = stateLine
+        self.detailLine = detailLine
+        self.isFailure = isFailure
+        self.progress = progress
+        self.isOnDevice = isOnDevice
+        self.affordances = affordances
+    }
+
     static let builtInID = "built-in"
 
     // MARK: - Deciding a row
 
     /// The built-in bundle's card: `Use` when a city is active, the `In use` label otherwise.
-    static func builtIn(isActive: Bool) -> CityDownloadRow {
+    ///
+    /// - Parameter cityNames: the names the bundled seed states for the cities it holds, in the
+    ///   order they should be read. Empty is a legitimate answer (a test bundle with no seed), and
+    ///   the card then says exactly what it said before.
+    static func builtIn(isActive: Bool, cityNames: [String] = []) -> CityDownloadRow {
         CityDownloadRow(
             id: builtInID,
             title: CityDownloadsCopy.builtInTitle,
             coverageNote: nil,
             stateLine: CityDownloadsCopy.builtInSubtitle,
-            detailLine: nil,
+            // What is actually in it — see `CityDownloadsCopy.builtInCitiesLine`.
+            detailLine: CityDownloadsCopy.builtInCitiesLine(cityNames),
             isFailure: false,
             progress: nil,
+            isOnDevice: true,
             affordances: isActive ? [.inUseLabel] : [.use]
         )
     }
@@ -188,7 +389,8 @@ struct CityDownloadRow: Equatable, Identifiable {
             return CityDownloadRow(
                 id: city.id, title: city.displayName, coverageNote: coverage,
                 stateLine: CityDownloadsCopy.downloading, detailLine: nil,
-                isFailure: false, progress: downloadingFraction, affordances: [.cancel]
+                isFailure: false, progress: downloadingFraction,
+                isOnDevice: state.isOnDevice, affordances: [.cancel]
             )
         }
         if lastAttemptFailed {
@@ -197,7 +399,8 @@ struct CityDownloadRow: Equatable, Identifiable {
             return CityDownloadRow(
                 id: base.id, title: base.title, coverageNote: base.coverageNote,
                 stateLine: CityDownloadsCopy.downloadFailed, detailLine: nil,
-                isFailure: true, progress: nil, affordances: base.affordances
+                isFailure: true, progress: nil,
+                isOnDevice: base.isOnDevice, affordances: base.affordances
             )
         }
         return decide(city: city, state: state, isActive: isActive)
@@ -228,6 +431,7 @@ struct CityDownloadRow: Equatable, Identifiable {
             detailLine: nil,
             isFailure: false,
             progress: nil,
+            isOnDevice: true,
             affordances: isActive ? [.inUseLabel, .remove] : [.use, .remove]
         )
     }
@@ -254,6 +458,7 @@ struct CityDownloadRow: Equatable, Identifiable {
             detailLine: nil,
             isFailure: false,
             progress: nil,
+            isOnDevice: true,
             affordances: []
         )
     }
@@ -273,7 +478,27 @@ struct CityDownloadRow: Equatable, Identifiable {
                 isActive ? [.inUseLabel, .remove] : [.use, .remove]
             )
         case let .updateAvailable(version):
-            row = (CityDownloadsCopy.updateLine(installedVersion: version), nil, [.update, .remove])
+            // **`Use` belongs here, and R43 §3's own table left it out.** That table lists
+            // `update available → Update and Remove`, which silently makes an installed city
+            // unusable the moment the catalog moves ahead of it: the copy on disk is complete,
+            // attachable and *not* in use, and the one button that would attach it is missing. R43
+            // §1 already says such a row "shows the city as installed but not in use" — a state
+            // whose whole point is that `Use` is available.
+            //
+            // Reported by a tester who hit exactly that (build 49, 2026-08-23): *"I have manhattan
+            // downloaded already and used it once but then I clicked use on the default inventory
+            // and now I can't seem to use manhattan even though it's on my phone"*. The download was
+            // fine; only the affordance was gone.
+            //
+            // **This is the one row that draws three buttons**, against §3's parenthetical "never
+            // more than two visible". Dropping `Remove` instead would strand the other direction —
+            // a city you cannot delete until you have first updated it — and demoting `Update` would
+            // hide the newer record the line above is announcing. The count is the thing that gives,
+            // and it does so for one state; see the PR for the alternatives put to the owner.
+            row = (
+                CityDownloadsCopy.updateLine(installedVersion: version), nil,
+                isActive ? [.inUseLabel, .update, .remove] : [.use, .update, .remove]
+            )
         case let .needsNewerApp(installed):
             if let installed {
                 // The older compatible copy keeps its affordances; only the update is refused.
@@ -291,9 +516,12 @@ struct CityDownloadRow: Equatable, Identifiable {
             // is not refused because it cannot work, it is refused because it would buy nothing.
             row = (CityDownloadsCopy.bundledLine(contentRev: contentRev), nil, [])
         case let .bundledOutdated(bundledContentRev):
+            // Possession first, offer second — the card says what you have before what you could
+            // fetch. Same two facts as before, in the order that stops the row reading as an offer
+            // to sell the reader a city already on the phone. See `bundledOutdatedLine`.
             row = (
-                CityDownloadsCopy.bundledOutdatedLine(bundledContentRev: bundledContentRev),
-                nil,
+                CityDownloadsCopy.bundledLine(contentRev: bundledContentRev),
+                CityDownloadsCopy.bundledOutdated,
                 [.download]
             )
         }
@@ -307,7 +535,8 @@ struct CityDownloadRow: Equatable, Identifiable {
         return CityDownloadRow(
             id: city.id, title: city.displayName, coverageNote: coverageIfPartial(city.coverage),
             stateLine: row.stateLine, detailLine: row.detail,
-            isFailure: false, progress: nil, affordances: row.affordances
+            isFailure: false, progress: nil,
+            isOnDevice: state.isOnDevice, affordances: row.affordances
         )
     }
 

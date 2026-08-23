@@ -73,6 +73,18 @@ public struct CityLibrary: Sendable {
         /// The shipped extent's word, read out of the same file's `seed_meta`. Nil for full
         /// coverage — the same meaning the manifest's `coverage` field carries.
         public let coverage: String?
+        /// The record date this copy actually holds (`seed_meta.publish_content_rev`), read from the
+        /// file rather than parsed out of the directory name it sits in.
+        ///
+        /// **This is what makes "is there an update?" answerable without splitting a version
+        /// string.** `CityManifest.City.version`'s own comment forbids the split, and R60 made the
+        /// string end in a `build_id` that is a hash of the whole 108 MB *source seed* — so a
+        /// re-publish changes every city's version while changing no city's data. See
+        /// `CityInstallState`.
+        public let contentRev: String?
+        /// The seed generation stamped into this copy (`seed_meta.publish_schema_version`), for the
+        /// half of the same comparison `contentRev` cannot make on its own.
+        public let publishedSchemaVersion: Int?
 
         public init(
             id: String,
@@ -80,7 +92,9 @@ public struct CityLibrary: Sendable {
             fileURL: URL,
             bytes: Int64,
             displayName: String? = nil,
-            coverage: String? = nil
+            coverage: String? = nil,
+            contentRev: String? = nil,
+            publishedSchemaVersion: Int? = nil
         ) {
             self.id = id
             self.version = version
@@ -88,6 +102,8 @@ public struct CityLibrary: Sendable {
             self.bytes = bytes
             self.displayName = displayName
             self.coverage = coverage
+            self.contentRev = contentRev
+            self.publishedSchemaVersion = publishedSchemaVersion
         }
     }
 
@@ -142,7 +158,9 @@ public struct CityLibrary: Sendable {
                 let named = SeedCities.read(fileAt: url).first { $0.id == id }
                 return InstalledCity(
                     id: id, version: version, fileURL: url, bytes: bytes,
-                    displayName: named?.displayName, coverage: named?.coverage
+                    displayName: named?.displayName, coverage: named?.coverage,
+                    contentRev: named?.contentRev,
+                    publishedSchemaVersion: named?.publishedSchemaVersion
                 )
             }
             .sorted { $0.id < $1.id }

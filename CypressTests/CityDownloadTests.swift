@@ -473,7 +473,11 @@ struct CityDownloadTests {
             city: sf, state: .updateAvailable(installedVersion: "s14-r2026-06-01"), isActive: false,
             downloadingFraction: nil, lastAttemptFailed: false
         )
-        #expect(updatable.affordances == [.update, .remove])
+        // R43 §3's table says `Update` and `Remove` here. `Use` was added to it this round —
+        // without it an installed, unattached copy has no way back on screen, which is exactly what
+        // a tester hit on build 49 (`CityDownloadsFeedbackTests.updateAvailableStillOffersUse`).
+        // The ruled pair is still present and still in its ruled order.
+        #expect(updatable.affordances == [.use, .update, .remove])
         #expect(updatable.stateLine == "Update available · s14-r2026-06-01 installed")
 
         // A promise no button can keep gets no button (ruling §3).

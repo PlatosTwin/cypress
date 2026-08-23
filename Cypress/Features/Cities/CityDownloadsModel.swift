@@ -67,8 +67,24 @@ final class CityDownloadsModel {
     /// vanished from an 81 MB file that was attached at that moment, and `Built-in inventory` drew
     /// `Use` while something else was in use. The offline branch had it right, and the two now
     /// answer through the same `diskRow(for:)`.
+    /// The screen, headed and grouped — what the view draws.
+    ///
+    /// `rows` stays the flat decision and this is the arrangement of it, so nothing about *what* a
+    /// card says depends on which heading it ends up under.
+    var sections: [CityDownloadSection] {
+        CityDownloadSection.sections(from: rows) { [weak self] row in
+            guard let self, case .loaded(let manifest) = self.catalog,
+                  let city = manifest.cities.first(where: { $0.id == row.id }),
+                  let region = city.region
+            else { return nil }
+            return (id: region.parentCity, displayName: region.parentCityDisplayName)
+        }
+    }
+
     var rows: [CityDownloadRow] {
-        var rows: [CityDownloadRow] = [.builtIn(isActive: activeCityID == nil)]
+        var rows: [CityDownloadRow] = [
+            .builtIn(isActive: activeCityID == nil, cityNames: bundledCityNames)
+        ]
         let bundledIDs = bundledCities.map(\.id)
         let installedIDs = installed.map(\.id)
         switch catalog {
@@ -103,6 +119,14 @@ final class CityDownloadsModel {
         return rows
     }
 
+    /// The names the bundled seed states for the cities inside it, for the built-in card's second
+    /// line. Read from the file, never listed here (DECISIONS constraint 15); a city the seed cannot
+    /// name contributes nothing rather than its id, because this line is prose a reader reads and an
+    /// id in the middle of a sentence is not a name.
+    private var bundledCityNames: [String] {
+        bundledCities.compactMap(\.displayName)
+    }
+
     /// The row for a city the catalog cannot describe: the downloaded copy if there is one, else the
     /// bundled one, else nothing. **One implementation, used by both branches**, which is what keeps
     /// their precedence from drifting apart again.
@@ -116,9 +140,15 @@ final class CityDownloadsModel {
     /// The one place a city's state is decided, so the row and the `Download` action can never be
     /// looking at different facts.
     private func installState(for city: CityManifest.City) -> CityInstallState {
-        CityInstallState(
+        let installedCopy = installed.first { $0.id == city.id }
+        return CityInstallState(
             published: city,
-            installedVersion: installed.first { $0.id == city.id }?.version,
+            installedVersion: installedCopy?.version,
+            // What the installed copy actually holds, from its own receipt — so a re-publish that
+            // only changed the source seed's hash is not reported as an update (see
+            // `CityInstallState.installedIsCurrent`).
+            installedContentRev: installedCopy?.contentRev,
+            installedSchemaVersion: installedCopy?.publishedSchemaVersion,
             // The whole city, not its date: a bundled city with no derivable record date is still
             // bundled, and collapsing those two facts is what put the `Download` button back.
             bundled: bundledCities.first { $0.id == city.id }

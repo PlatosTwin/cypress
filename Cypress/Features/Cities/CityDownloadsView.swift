@@ -32,8 +32,16 @@ struct CityDownloadsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
-                    ForEach(model.rows) { row in
-                        card(row)
+                    ForEach(model.sections) { section in
+                        // The You tab's micro-label, the same idiom `City data` and the disclaimer
+                        // heading already use — a heading, not a new component.
+                        Text(section.title)
+                            .cypressMicroLabel()
+                            .padding(.top, section.isCityGroup ? 0 : CityDownloadsMetrics.sectionTop)
+
+                        ForEach(section.rows) { row in
+                            card(row)
+                        }
                     }
 
                     nycDisclaimer
@@ -209,4 +217,8 @@ enum CityDownloadsMetrics {
     static let cardPaddingV: CGFloat = 12
     static let cardPaddingH: CGFloat = 14
     static let buttonsTop: CGFloat = 6
+    /// Extra air above a top-level heading, so `Available to download` reads as a break rather than
+    /// as a caption on the card beneath it. A city group inside that section takes none — it is
+    /// already inside a break.
+    static let sectionTop: CGFloat = 8
 }
