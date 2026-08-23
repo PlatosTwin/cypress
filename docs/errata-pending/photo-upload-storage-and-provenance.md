@@ -79,5 +79,29 @@ give the server a provenance column so it can evaluate R82's third arm, or rule 
 arm is the only one that crosses the network and give screen 17 a sentence for a local-only
 deletion. The second needs new copy on a shipped screen, which is DECISIONS constraint 21.
 
+### 2a · The order of the two checks inside `withdrawPhoto`, and why it stays
+
+`withdrawPhoto` tests `deleted_at` **before** it tests ownership, so once a photograph is tombstoned
+the ownership gate is never consulted. #113's review measured the consequence: a stranger's
+withdrawal of somebody else's already-tombstoned photograph answers `applied`, and a `contributions`
+row is recorded saying that device withdrew it. In a codebase where "the contribution row *is* the
+record" is load-bearing, that deserves to be written down rather than left as an accident of
+statement order.
+
+**Ruled: the order stays** (orchestrator, under overnight authority, on the review's N1).
+
+Swapping the two checks is not a free win, and the case it breaks is the legitimate one. After
+`Anonymize` runs, an account's photographs have `user_id = NULL` — the leaving door's whole promise.
+A withdrawal that account queued *before* deleting is still in the queue and still due to drain, and
+under ownership-first it would meet a row it no longer owns and be told `forbidden`: a permanent red
+row on screen 17, shown to the one person unambiguously entitled to that deletion, for doing it in
+an order the app itself supports.
+
+What the current order costs is bounded and quiet by comparison. The stranger's `applied` is true in
+every respect a client can observe — the photograph is genuinely not served, to them or to anyone —
+and what it leaves behind is a no-op contribution row about an act that changed nothing. One side of
+the trade is a real person losing a real deletion; the other is a spurious row in a table nothing
+consults for authorization. The order is chosen for the first.
+
 Latent today: no photograph reaches the service, so no withdrawal can be refused for this reason
 yet. It becomes reachable on the first day uploads work, which is why it is written down now.
