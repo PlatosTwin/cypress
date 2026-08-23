@@ -968,6 +968,11 @@ struct AccountDeletionTests {
                 connection: connection
             )
         }
+        // `claimDevice` is what writes `app_state.currentUserID`, so without it the signed-in
+        // assertion below would read nil before the deletion as well as after and pass on a
+        // deletion that had emptied everything.
+        try await api.claimDevice(deviceUUID: Self.deviceID, userID: Self.userID)
+        #expect(try await store.appState(.currentUserID) == Self.userID.uuidString, "fixture")
 
         let transport = ScriptedTransport()
         transport.answer("DELETE /me", throwing: APIError.serverError)
@@ -1000,6 +1005,10 @@ struct AccountDeletionTests {
         let tree = try await Self.makeTree(api: api, in: store)
         let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
         try await Self.writeContributions(treeID: tree.id, attribution: attribution, in: store)
+        // As above: the signed-out assertion at the end is only worth making about a device that
+        // was signed in to begin with.
+        try await api.claimDevice(deviceUUID: Self.deviceID, userID: Self.userID)
+        #expect(try await store.appState(.currentUserID) == Self.userID.uuidString, "fixture")
 
         let transport = ScriptedTransport()
         transport.answer(
