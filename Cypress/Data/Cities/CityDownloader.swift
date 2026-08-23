@@ -225,9 +225,10 @@ public struct CityDownloader: Sendable {
             // The previous body was `for try await byte in bytes` — `URLSession.AsyncBytes` is an
             // `AsyncSequence` of `UInt8`, so that loop performed one asynchronous iteration, one
             // `Data.append`, and one buffer-length check **per byte of the file**. On the smallest
-            // NYC borough that is 84 million suspensions; on Queens, 199 million. The 512 KiB
-            // buffer underneath made the *writes* efficient and did nothing about the loop that
-            // filled it, which is why the size of the chunk was never the thing that mattered.
+            // NYC borough — Manhattan, 66,891,776 bytes — that is 66.9 million suspensions; on
+            // Queens, 199 million. The 512 KiB buffer underneath made the *writes* efficient and did
+            // nothing about the loop that filled it, which is why the size of the chunk was never
+            // the thing that mattered.
             //
             // A tester reported it as *"Download is super slow"* (build 49, 2026-08-23) and, minutes
             // later, as *"Download fails if app closes or phone screen sleeps"* — the second is a
@@ -239,17 +240,10 @@ public struct CityDownloader: Sendable {
             // per-byte round trip through Swift concurrency at all. The verification that follows is
             // unchanged in substance and now reads the finished file in 512 KiB chunks; a file this
             // method does not return still cannot exist on disk afterwards.
-            let delegate = progress.map {
-                DownloadProgressDelegate(expectedBytes: city.bytes, onProgress: $0)
-            }
-            let (downloaded, response) = try await session.download(from: source, delegate: delegate)
+            let response = try await downloadFile(
+                from: source, to: destination, expectedBytes: city.bytes, progress: progress
+            )
             try Self.checkStatus(response)
-
-            // URLSession deletes its temp file as soon as this call's frame goes away, so the move
-            // happens before anything is verified. Staging is where an unverified file is allowed to
-            // be; the installed layout is not, and nothing below moves it there.
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: downloaded, to: destination)
 
             let (written, digest) = try Self.verifiableFacts(ofFileAt: destination)
             guard written == city.bytes else {
@@ -263,6 +257,78 @@ public struct CityDownloader: Sendable {
             try? FileManager.default.removeItem(at: destination)
             throw error
         }
+    }
+
+    /// Runs one `URLSessionDownloadTask` to completion, landing its bytes at `destination` and
+    /// reporting progress along the way. Returns the response, unchecked — the caller decides what
+    /// a status code means.
+    ///
+    /// **Three things here are load-bearing, and the first two were measured rather than reasoned
+    /// about** (probe on iPhone 16 Pro, 3 MB body served in 64 KiB chunks by an in-process
+    /// `URLProtocol`):
+    ///
+    /// 1. **`session.downloadTask(with:)` with a task-specific delegate, never
+    ///    `session.download(from:delegate:)`.** The async convenience **does not deliver
+    ///    `didWriteData` at all** — 0 calls, against 4 calls reaching the full byte count through
+    ///    the classic task with the same delegate object, the same session and the same body. This
+    ///    is what made the Cities screen's determinate ring (R43 §3) sit at 0 % for a whole 199 MB
+    ///    transfer, and it is invisible to a `file://` fixture, which reports 0 callbacks even
+    ///    through the healthy path.
+    ///    `CityDownloadsFeedbackTests.progressIsReportedDuringTheTransfer` serves http in-process
+    ///    for exactly that reason.
+    /// 2. **A delegate created with a completion handler is never consulted.** A task made by
+    ///    `downloadTask(with:completionHandler:)` measured 0 progress calls even with a
+    ///    *session*-level delegate, so the continuation below is resumed from
+    ///    `didCompleteWithError` rather than from a handler.
+    /// 3. **The finished file is moved inside `didFinishDownloadingTo`, synchronously.** URLSession
+    ///    deletes its temp file the moment that method returns; staging is where an unverified file
+    ///    is allowed to be, and nothing here moves it into the installed layout.
+    ///
+    /// Cancellation is bridged both ways: cancelling the Swift task cancels the transfer, which
+    /// surfaces as `URLError(.cancelled)` — see `isCancellation`.
+    private func downloadFile(
+        from source: URL,
+        to destination: URL,
+        expectedBytes: Int64,
+        progress: (@Sendable (Double) -> Void)?
+    ) async throws -> URLResponse {
+        let delegate = DownloadProgressDelegate(
+            destination: destination, expectedBytes: expectedBytes, onProgress: progress
+        )
+        let task = session.downloadTask(with: source)
+        task.delegate = delegate
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                delegate.start(continuation, resuming: task)
+            }
+        } onCancel: {
+            // **Not `task.cancel()` directly, and the difference is a hang.** `onCancel` runs
+            // immediately when the enclosing Swift task is *already* cancelled — before the
+            // operation body, so before the transfer is resumed. Cancelling a URLSession task that
+            // was never resumed produces no completion callback at all, and the continuation is
+            // never resumed either: the download sits at `Downloading…` forever, which is the state
+            // pressing `Cancel` puts it in on a slow screen. Measured, in
+            // `cancelDoesNotRenderFailure`. The delegate owns the flag, so `start` can decline to
+            // resume a transfer that has already been called off.
+            delegate.cancel(task)
+        }
+    }
+
+    /// Whether an error means *the reader pressed Cancel*, in either of the two spellings this
+    /// path can produce.
+    ///
+    /// **Both are reachable and only one of them used to be handled.** `CityDownloadsModel.download`
+    /// caught `CancellationError` alone, which was correct while the body was `session.bytes` —
+    /// that path throws Swift's own cancellation error out of the `AsyncSequence`. A
+    /// `URLSessionDownloadTask` does not: cancelling it completes the task with
+    /// `URLError(.cancelled)`, which fell into the generic branch and drew R43 §3's
+    /// `Download failed. Nothing was changed.` at the one moment nothing had failed.
+    ///
+    /// Kept here rather than in the model because it is a fact about what this type throws.
+    public static func isCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError { return urlError.code == .cancelled }
+        return false
     }
 
     /// The byte count and sha256 of a finished file, read in chunks so an 199 MB pack is never
@@ -283,35 +349,117 @@ public struct CityDownloader: Sendable {
     /// buffer is not a memory event.
     private static let chunkSize = 512 * 1024
 
-    /// Turns `URLSessionDownloadTask`'s byte counts into the same `0…1` fraction the Cities screen's
-    /// ring already draws.
+    /// Drives one download task: lands the finished file, turns byte counts into the same `0…1`
+    /// fraction the Cities screen's ring already draws, and resumes the caller's continuation
+    /// exactly once.
     ///
     /// **Reports on whole percents only**, which is the rule the streaming version had and the
-    /// reason this holds any state at all: the delegate is called per transport chunk, and a
-    /// `@MainActor` hop per call would put thousands of view updates behind one download.
+    /// reason this holds any progress state at all: the delegate is called per transport chunk, and
+    /// a `@MainActor` hop per call would put thousands of view updates behind one download.
     ///
     /// `expectedBytes` is the manifest's count rather than
     /// `totalBytesExpectedToWrite`, which is `NSURLSessionTransferSizeUnknown` (-1) whenever the
     /// response carries no `Content-Length`. The manifest always states the size, and it is the
     /// number the file is about to be verified against anyway.
     private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+        private let destination: URL
         private let expectedBytes: Int64
-        private let onProgress: @Sendable (Double) -> Void
+        private let onProgress: (@Sendable (Double) -> Void)?
         private let lock = NSLock()
         private var lastReportedPercent = -1
+        private var continuation: CheckedContinuation<URLResponse, any Error>?
+        private var moveError: (any Error)?
+        private var isCancelled = false
 
-        init(expectedBytes: Int64, onProgress: @escaping @Sendable (Double) -> Void) {
+        init(
+            destination: URL,
+            expectedBytes: Int64,
+            onProgress: (@Sendable (Double) -> Void)?
+        ) {
+            self.destination = destination
             self.expectedBytes = expectedBytes
             self.onProgress = onProgress
         }
 
-        /// Required by the protocol; the async `download(from:delegate:)` hands the caller the
-        /// finished URL itself, so there is nothing for this to do.
+        /// Parks the continuation **before** the task is started, so a transfer that completes
+        /// immediately (an in-process protocol, a `file://` fixture) cannot finish against a nil —
+        /// and declines to start one that was called off first.
+        ///
+        /// `task.resume()` is called while the lock is held, so `cancel` below can only ever see
+        /// "resumed" or "never resumed", never a transfer caught between the two.
+        func start(
+            _ continuation: CheckedContinuation<URLResponse, any Error>,
+            resuming task: URLSessionDownloadTask
+        ) {
+            lock.lock()
+            self.continuation = continuation
+            if isCancelled {
+                lock.unlock()
+                finish(.failure(URLError(.cancelled)))
+                return
+            }
+            task.resume()
+            lock.unlock()
+        }
+
+        /// Cancels the transfer, and remembers that it was cancelled. A task that had already been
+        /// resumed completes through `didCompleteWithError`; one that had not never calls back at
+        /// all, and `start` answers for it.
+        func cancel(_ task: URLSessionDownloadTask) {
+            lock.lock()
+            isCancelled = true
+            lock.unlock()
+            task.cancel()
+        }
+
+        /// Resumes at most once: the stored continuation is taken under the lock and cleared, so a
+        /// second completion callback has nothing to resume.
+        private func finish(_ result: Result<URLResponse, any Error>) {
+            lock.lock()
+            let continuation = self.continuation
+            self.continuation = nil
+            lock.unlock()
+            continuation?.resume(with: result)
+        }
+
+        /// **The move happens here, synchronously, and it has to.** URLSession deletes `location`
+        /// as soon as this method returns; a failure is carried to `didCompleteWithError` rather
+        /// than thrown, because a delegate callback has nowhere to throw to.
         func urlSession(
             _ session: URLSession,
             downloadTask: URLSessionDownloadTask,
             didFinishDownloadingTo location: URL
-        ) {}
+        ) {
+            do {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: location, to: destination)
+            } catch {
+                lock.lock()
+                moveError = error
+                lock.unlock()
+            }
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            didCompleteWithError error: (any Error)?
+        ) {
+            if let error {
+                finish(.failure(error))
+                return
+            }
+            lock.lock()
+            let moveError = self.moveError
+            lock.unlock()
+            if let moveError {
+                finish(.failure(moveError))
+            } else if let response = task.response {
+                finish(.success(response))
+            } else {
+                finish(.failure(URLError(.badServerResponse)))
+            }
+        }
 
         func urlSession(
             _ session: URLSession,
@@ -320,7 +468,7 @@ public struct CityDownloader: Sendable {
             totalBytesWritten: Int64,
             totalBytesExpectedToWrite: Int64
         ) {
-            guard expectedBytes > 0 else { return }
+            guard let onProgress, expectedBytes > 0 else { return }
             let fraction = min(1, Double(totalBytesWritten) / Double(expectedBytes))
             let percent = Int(fraction * 100)
             lock.lock()

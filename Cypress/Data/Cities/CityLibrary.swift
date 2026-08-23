@@ -133,12 +133,21 @@ public struct CityLibrary: Sendable {
     /// Every city on disk, by id. Rendered directly when the manifest is unreachable — the
     /// offline screen is disk facts alone.
     ///
-    /// **The display name is one of those disk facts now.** Since s16 every published city file
-    /// carries `dim_city.display_name`, narrowed to that city's single row by
+    /// **The display name is one of those disk facts now, for a whole-city pack.** Since s16 every
+    /// published city file carries `dim_city.display_name`, narrowed to that city's single row by
     /// `Tools/publish_cities.py`, so reading it here costs one read-only open per installed city
     /// and stops an offline reader being shown `us-ca-sj` where their own phone says `San Jose`.
     /// The open is bounded — this method is called on screen load and after an install or a
     /// remove, never per render — and a file that cannot answer simply has no name.
+    ///
+    /// **A borough pack is the exception, and it is stated rather than papered over.** The name
+    /// inside `us-ny-nyc-manhattan.sqlite` is `New York City` — the *city*'s name, because the file
+    /// carries the city's `dim_city` row and nothing anywhere in it says "Manhattan". Only the
+    /// manifest knows a pack's own display name, and R43 §3 forbids persisting the manifest. So a
+    /// borough keeps the id as its offline title: five rows all reading `New York City`, one per
+    /// borough, would be a worse answer than five ids a reader can tell apart. `displayName` is
+    /// therefore set only when the file's row describes this pack (`packID == id`, or an id space
+    /// that equals it).
     public func installedCities() -> [InstalledCity] {
         guard let ids = try? FileManager.default.contentsOfDirectory(
             at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
@@ -152,13 +161,30 @@ public struct CityLibrary: Sendable {
                 let url = fileURL(id: id, version: version)
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let bytes = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-                // A city file holds exactly one id space (R37.3 narrows it), so the name for this
-                // id is whichever row the file carries — matched on the id rather than assumed to
-                // be first, because assuming would be wrong the day a pack holds two.
-                let named = SeedCities.read(fileAt: url).first { $0.id == id }
+                // **`id` here is the PACK id — the install directory — and the rows a city file
+                // holds are keyed by ID SPACE.** For a whole-city pack those are the same string
+                // (`sf`), which is why matching on the id looked right and worked for a year; for a
+                // borough they are not (`us-ny-nyc-manhattan` against `us-ny-nyc`), so that match
+                // found nothing and every borough's receipt came back nil — see
+                // `SeedCities.City.packID` for what that cost.
+                //
+                // Resolved in the order of what each answer is worth: the pack's own stamped id
+                // first, then an id space that happens to equal it, then — since R37.3 narrows every
+                // published file to exactly one id space — the single row a one-space file has,
+                // which is what a pack published before `publish_pack_id` existed can offer. A file
+                // holding two id spaces (the fused bundled seed) matches none of the three and is
+                // left alone, because there is no single row to attribute the pack to.
+                let cities = SeedCities.read(fileAt: url)
+                let named = cities.first { $0.packID == id }
+                    ?? cities.first { $0.id == id }
+                    ?? (cities.count == 1 ? cities.first : nil)
+                // The name is the *city*'s; only a pack that is its whole city may wear it, which is
+                // exactly the case where the id space equals the pack id.
+                let namesThisPack = named?.id == id
                 return InstalledCity(
                     id: id, version: version, fileURL: url, bytes: bytes,
-                    displayName: named?.displayName, coverage: named?.coverage,
+                    displayName: namesThisPack ? named?.displayName : nil,
+                    coverage: named?.coverage,
                     contentRev: named?.contentRev,
                     publishedSchemaVersion: named?.publishedSchemaVersion
                 )

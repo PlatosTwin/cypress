@@ -213,8 +213,15 @@ final class CityDownloadsModel {
                 if activeCityID == city.id {
                     onInventoryChange()
                 }
-            } catch is CancellationError {
+            } catch let error where CityDownloader.isCancellation(error) {
                 // Canceled by the reader: the temp file is already gone, nothing to say.
+                //
+                // **Two spellings, and catching only one of them drew a failure over a Cancel.**
+                // `session.bytes` threw Swift's `CancellationError`; a cancelled
+                // `URLSessionDownloadTask` completes with `URLError(.cancelled)`, which matched
+                // nothing here and fell through to the branch below — so pressing `Cancel` said
+                // `Download failed. Nothing was changed.` The predicate lives on `CityDownloader`
+                // because it is a fact about what that type throws, not about this screen.
             } catch {
                 // Partial or impostor bytes never reached the library (`CityDownloader`'s
                 // contract); the row reverts and says so.

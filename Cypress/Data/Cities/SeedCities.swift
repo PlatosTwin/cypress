@@ -38,8 +38,21 @@ public enum SeedCities {
     /// precisely how the `Download` button came back for a bundled city — see
     /// `CityInstallState.bundled`.
     public struct City: Equatable, Sendable {
-        /// `id_spaces.id` — `sf`, `us-ca-sj`. The same key the manifest and the library use.
+        /// `id_spaces.id` — `sf`, `us-ca-sj`, `us-ny-nyc`. **The city**, and since format 2 that is
+        /// no longer the same thing as the published pack (see `packID`).
         public let id: String
+        /// `seed_meta.publish_pack_id` — the id the *pack* is published and installed under:
+        /// `us-ny-nyc-manhattan` for a borough, and the same string as `id` for a whole-city pack.
+        /// Nil in the fused bundled seed, which no publisher ever narrowed.
+        ///
+        /// **This field exists because a lookup keyed on `id` silently missed every borough.**
+        /// `CityLibrary.installedCities()` knows a pack by its install directory — the pack id —
+        /// and matched it against `id`, the id space. For `sf` those are one string and the read
+        /// worked; for `us-ny-nyc-manhattan` they are not, so `contentRev` and
+        /// `publishedSchemaVersion` came back nil and update detection fell back to comparing
+        /// version strings — which is exactly the defect the stamped receipt was added to fix, still
+        /// live for the city the tester reported it against. See `CityLibrary.installedCities()`.
+        public let packID: String?
         /// The city's own name as the file states it, or nil when the file is too old to carry one.
         public let displayName: String?
         /// The newest snapshot date among this city's inventories, by the publisher's rule, or nil
@@ -66,13 +79,15 @@ public enum SeedCities {
             displayName: String?,
             contentRev: String?,
             coverage: String? = nil,
-            publishedSchemaVersion: Int? = nil
+            publishedSchemaVersion: Int? = nil,
+            packID: String? = nil
         ) {
             self.id = id
             self.displayName = displayName
             self.contentRev = contentRev
             self.coverage = coverage
             self.publishedSchemaVersion = publishedSchemaVersion
+            self.packID = packID
         }
     }
 
@@ -144,6 +159,11 @@ public enum SeedCities {
 
         let meta = try seedMeta(from: connection)
         let publishedSchemaVersion = meta["publish_schema_version"].flatMap(Int.init)
+        // Guarded on a single id space for the same reason `contentRev` is: the stamped key names
+        // one pack, and a file holding two id spaces has no single row to attribute it to.
+        let packID = named.count == 1
+            ? meta["publish_pack_id"].flatMap { $0.isEmpty ? nil : $0 }
+            : nil
         return named.map {
             City(
                 id: $0.id,
@@ -152,7 +172,8 @@ public enum SeedCities {
                     forIDSpace: $0.id, seedMeta: meta, idSpaceCount: named.count
                 ),
                 coverage: coverage(forIDSpace: $0.id, seedMeta: meta),
-                publishedSchemaVersion: publishedSchemaVersion
+                publishedSchemaVersion: publishedSchemaVersion,
+                packID: packID
             )
         }
     }

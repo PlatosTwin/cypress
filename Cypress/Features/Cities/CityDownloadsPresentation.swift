@@ -198,19 +198,22 @@ enum CityDownloadsCopy {
 /// view: `CityDownloadsModel.sections` is the only caller and `rows` remains the flattening.
 struct CityDownloadSection: Equatable, Identifiable {
 
+    /// Unique within one screen, which the title alone is **not**: since a city's packs group inside
+    /// *either* run, `New York City` can head a group under `On this phone` and another under
+    /// `Available to download` in the same pass — two sections with one `ForEach` id, which SwiftUI
+    /// resolves by dropping rows. Composed from the run and the parent city id rather than from the
+    /// display name, so two cities that share a name cannot collide either.
+    let id: String
     /// The heading drawn above the run — `On this phone`, `Available to download`, `New York City`.
     let title: String
-    /// Whether this is a city grouping nested under `Available to download` rather than a top-level
-    /// heading. The view draws it one step quieter; nothing else differs.
+    /// Whether this is a city grouping nested under a heading **that is present above it**, rather
+    /// than one that heads its run. The view draws it one step quieter; nothing else differs. A
+    /// group whose umbrella heading was suppressed (see `sections(from:parentCity:)`) is not one.
     let isCityGroup: Bool
     let rows: [CityDownloadRow]
 
-    /// The heading, which is unique among the sections of one screen: the two fixed headings are
-    /// distinct from each other, and a city group is titled with a `parent_city_display_name` that
-    /// names exactly one parent city per pass.
-    var id: String { title }
-
-    init(title: String, isCityGroup: Bool = false, rows: [CityDownloadRow]) {
+    init(id: String? = nil, title: String, isCityGroup: Bool = false, rows: [CityDownloadRow]) {
+        self.id = id ?? title
         self.title = title
         self.isCityGroup = isCityGroup
         self.rows = rows
@@ -224,34 +227,55 @@ struct CityDownloadSection: Equatable, Identifiable {
     ///   render, the built-in card). **Passed in rather than looked up**, because a manifest is not
     ///   a thing this file should hold — the model has one and this stays a pure function.
     ///
-    /// Three properties worth stating, because each is a way this could have gone wrong:
+    /// Four properties worth stating, because each is a way this could have gone wrong:
     ///
     /// - **Every row lands in exactly one section, and no row is dropped.** The two branches
-    ///   partition on `isOnDevice`, and the second is re-assembled from the same array it was split
-    ///   from. `CityDownloadSectionTests.everyRowSurvivesSectioning` asserts it against the
-    ///   flattening rather than trusting this sentence.
+    ///   partition on `isOnDevice`, and each is re-assembled from the same array it was split from.
+    ///   `CityDownloadsFeedbackTests.everyRowSurvivesSectioning` asserts it against the flattening
+    ///   rather than trusting this sentence.
     /// - **Order inside a section is the order it came in**, which is the publisher's order (R43 §2)
     ///   for the catalog rows and the library's id order for the disk ones. Grouping reorders only
     ///   by moving a city's packs to where its first pack already was.
     /// - **A city with one pack gets no heading of its own.** A `New York City` heading over five
     ///   boroughs earns its line; a `San Francisco` heading over San Francisco is furniture.
+    /// - **Grouping applies to both runs, and it did not always.** Counting packs only among the
+    ///   *available* rows meant that downloading the boroughs destroyed the grouping the tester had
+    ///   asked for — five NYC packs sat flat under `On this phone` with no `New York City` heading
+    ///   anywhere, i.e. D5 was answered right up until the reader acted on it. The count is per run,
+    ///   so three boroughs downloaded and two not gives a group in each.
+    ///
+    /// **An umbrella heading with nothing of its own is dropped**, by the same rule as the bullet
+    /// above it. With all five boroughs available and nothing else, the screen used to draw
+    /// `Available to download` with zero cards under it and then `New York City` with five — a
+    /// heading whose whole content is another heading. When a run's ungrouped remainder is empty its
+    /// city groups head the run themselves; the moment any pack is ungrouped, the umbrella returns.
     static func sections(
         from rows: [CityDownloadRow],
         parentCity: (CityDownloadRow) -> (id: String, displayName: String)?
     ) -> [CityDownloadSection] {
-        let onDevice = rows.filter(\.isOnDevice)
-        let available = rows.filter { !$0.isOnDevice }
+        run(
+            rows.filter(\.isOnDevice),
+            heading: CityDownloadsCopy.onDeviceSection, key: "on-device", parentCity: parentCity
+        ) + run(
+            rows.filter { !$0.isOnDevice },
+            heading: CityDownloadsCopy.availableSection, key: "available", parentCity: parentCity
+        )
+    }
 
-        var sections: [CityDownloadSection] = []
-        if !onDevice.isEmpty {
-            sections.append(CityDownloadSection(title: CityDownloadsCopy.onDeviceSection, rows: onDevice))
-        }
-        guard !available.isEmpty else { return sections }
+    /// One run of the screen — the rows under one of the two fixed headings — split into that
+    /// heading's own remainder and a section per city with more than one pack in this run.
+    private static func run(
+        _ rows: [CityDownloadRow],
+        heading: String,
+        key: String,
+        parentCity: (CityDownloadRow) -> (id: String, displayName: String)?
+    ) -> [CityDownloadSection] {
+        guard !rows.isEmpty else { return [] }
 
-        // Which parents have more than one pack among the available rows — the test for whether a
-        // grouping heading says anything.
+        // Which parents have more than one pack in THIS run — the test for whether a grouping
+        // heading says anything.
         var packsPerParent: [String: Int] = [:]
-        for row in available {
+        for row in rows {
             guard let parent = parentCity(row) else { continue }
             packsPerParent[parent.id, default: 0] += 1
         }
@@ -260,7 +284,7 @@ struct CityDownloadSection: Equatable, Identifiable {
         var groupOrder: [String] = []
         var grouped: [String: [CityDownloadRow]] = [:]
         var ungrouped: [CityDownloadRow] = []
-        for row in available {
+        for row in rows {
             guard let parent = parentCity(row), packsPerParent[parent.id, default: 0] > 1 else {
                 ungrouped.append(row)
                 continue
@@ -269,17 +293,20 @@ struct CityDownloadSection: Equatable, Identifiable {
             grouped[parent.id, default: []].append(row)
         }
 
-        sections.append(
-            CityDownloadSection(title: CityDownloadsCopy.availableSection, rows: ungrouped)
-        )
+        var sections: [CityDownloadSection] = []
+        if !ungrouped.isEmpty {
+            sections.append(CityDownloadSection(id: key, title: heading, rows: ungrouped))
+        }
         for parentID in groupOrder {
             let packs = grouped[parentID] ?? []
             // The heading is the parent's own display name, taken from a pack that named it.
             let name = packs.compactMap { parentCity($0)?.displayName }.first ?? parentID
             sections.append(
                 CityDownloadSection(
+                    id: "\(key)/\(parentID)",
                     title: CityDownloadsCopy.cityGroupHeading(name),
-                    isCityGroup: true,
+                    // Nested only when the umbrella heading is actually drawn above it.
+                    isCityGroup: !ungrouped.isEmpty,
                     rows: packs
                 )
             )
