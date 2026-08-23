@@ -51,6 +51,19 @@ type Config struct {
 // `PHOTOS_AWS_ACCESS_KEY_ID` sends them to change the credential that was already working — and that
 // credential is the seed publish's.
 func (c Config) Validate() error {
+	// **Whitespace-only counts as unset** (#116 review, "held under attack"). A secret set to a
+	// stray space or a newline is the shape a copy-paste from a dashboard produces, and treating it
+	// as configured would let the service boot and then fail every presign at runtime — handing a
+	// contributor `server_error` for a deployment mistake, which is exactly what the boot refusal
+	// exists to prevent.
+	c = Config{
+		AccessKeyID:     strings.TrimSpace(c.AccessKeyID),
+		SecretAccessKey: strings.TrimSpace(c.SecretAccessKey),
+		Endpoint:        strings.TrimSpace(c.Endpoint),
+		Region:          strings.TrimSpace(c.Region),
+		Bucket:          strings.TrimSpace(c.Bucket),
+		VarPrefix:       c.VarPrefix,
+	}
 	switch {
 	case c.AccessKeyID == "":
 		return errors.New(c.VarPrefix + "AWS_ACCESS_KEY_ID is not set")

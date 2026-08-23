@@ -173,3 +173,42 @@ func signatureOf(t *testing.T, signed string) string {
 	}
 	return parsed.Query().Get("X-Amz-Signature")
 }
+
+// TestValidateRejectsWhitespaceOnlyValues is the small thing #116's review found while confirming
+// the boot refusal held.
+//
+// A secret set to a stray space is what a copy-paste from a dashboard produces. Accepting it would
+// let the service boot and then fail every presign at runtime — a contributor gets `server_error`
+// for a deployment mistake, which is the outcome the boot refusal exists to prevent.
+func TestValidateRejectsWhitespaceOnlyValues(t *testing.T) {
+	full := func() Config {
+		return Config{
+			AccessKeyID: "a", SecretAccessKey: "s", Endpoint: "https://e",
+			Region: "r", Bucket: "b", VarPrefix: PhotoVarPrefix,
+		}
+	}
+	// The control: the same config with real values must pass, so a failure below is about the
+	// whitespace and not about the fixture.
+	if err := full().Validate(); err != nil {
+		t.Fatalf("control: a fully configured Config was refused: %v", err)
+	}
+
+	blanks := map[string]func(*Config){
+		"PHOTOS_AWS_ACCESS_KEY_ID":     func(c *Config) { c.AccessKeyID = "  " },
+		"PHOTOS_AWS_SECRET_ACCESS_KEY": func(c *Config) { c.SecretAccessKey = "\t" },
+		"PHOTOS_AWS_ENDPOINT_URL_S3":   func(c *Config) { c.Endpoint = "\n" },
+		"PHOTOS_AWS_REGION":            func(c *Config) { c.Region = " \n " },
+		"PHOTOS_BUCKET_NAME":           func(c *Config) { c.Bucket = " " },
+	}
+	for name, blank := range blanks {
+		config := full()
+		blank(&config)
+		err := config.Validate()
+		if err == nil {
+			t.Fatalf("%s was whitespace-only and accepted", name)
+		}
+		if !strings.Contains(err.Error(), name) {
+			t.Fatalf("%s was refused as %q, which does not name the variable to go and set", name, err)
+		}
+	}
+}
