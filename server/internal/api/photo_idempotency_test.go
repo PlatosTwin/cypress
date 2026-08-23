@@ -80,19 +80,39 @@ func TestBeginWithTheSameKeyMakesOnePhotograph(t *testing.T) {
 	session := h.signIn(t, nil)
 	tree, key := uuid.New(), uuid.New()
 
-	// Deliberately non-fatal on status: the property is the row count, and a test that dies at the
-	// status check reports the wrong thing when the dedupe breaks (N8).
+	// ── The counter is calibrated before it is believed ───────────────────────────────────────
+	//
+	// #116's review N13: under the obvious sabotage (lookup disabled, indexes intact) the count
+	// *passes* — the surviving unique index turns the duplicate INSERT into a 500, so one row is
+	// the right answer for the wrong reason, and the test then fails at the status check instead.
+	// A count that cannot distinguish "deduped" from "refused" is not measuring idempotency.
+	//
+	// So the same instrument is run first against a case whose answer is known: two begins under
+	// **different** keys must produce two rows. That is the only thing that separates "the dedupe
+	// worked" from "nothing was inserted at all".
+	control := uuid.New()
+	_, controlA := beginAllowingFailure(t, h, session.AccessToken, control, nil)
+	_, controlB := beginAllowingFailure(t, h, session.AccessToken, control, nil)
+	if n := photoCount(t, h, control); n != 2 {
+		t.Fatalf("control: two keyless begins produced %d rows, want 2 (statuses %d, %d) — begins "+
+			"are not landing at all, so a count of 1 below would prove nothing about deduping",
+			n, controlA, controlB)
+	}
+
 	first, firstCode := beginAllowingFailure(t, h, session.AccessToken, tree, &key)
 	second, secondCode := beginAllowingFailure(t, h, session.AccessToken, tree, &key)
 
-	// The count first, because it is the property.
-	if n := photoCount(t, h, tree); n != 1 {
-		t.Fatalf("photos rows = %d, want 1 — the replay created a second photograph, which is the "+
-			"defect migration 003 exists to close (statuses %d, %d)", n, firstCode, secondCode)
-	}
+	// Both begins must have *succeeded* before a count of 1 means anything: one row because the
+	// second was deduped is idempotency; one row because the second was refused is a broken replay
+	// wearing the same number. This is the assertion the count leans on, stated before it.
 	if firstCode != http.StatusOK || secondCode != http.StatusOK {
 		t.Fatalf("begin statuses = %d, %d; want 200 twice — a replay must succeed, not merely "+
-			"decline to duplicate", firstCode, secondCode)
+			"decline to duplicate, and a count of 1 after a refusal is not idempotency",
+			firstCode, secondCode)
+	}
+	if n := photoCount(t, h, tree); n != 1 {
+		t.Fatalf("photos rows = %d, want 1 — the replay created a second photograph, which is the "+
+			"defect migration 003 exists to close", n)
 	}
 	if first.PhotoID != second.PhotoID {
 		t.Fatalf("photo_id = %v then %v; a replayed begin must land on the row it already made",
@@ -247,5 +267,86 @@ func TestTheOwnerScopedUniqueIndexesRefuseADuplicateKey(t *testing.T) {
 	if _, code := beginAllowingFailure(t, h, device, tree, &key); code != http.StatusOK {
 		t.Fatalf("a second contributor was refused the same client key: status = %d — the indexes "+
 			"have stopped being owner-scoped", code)
+	}
+}
+
+// TestReplayAfterAnOperatorTakedownIsRefused is #116's review N16 — F2's door, reached from the
+// operator's side instead of the contributor's.
+//
+// `RejectPhoto` moves `moderation_state` and deliberately does not set `deleted_at` (the takedown is
+// a moderation verdict, not a deletion). The replay lookup only tested `deleted_at`, so a begin
+// replayed after a takedown was answered 200 with a fresh presigned PUT and the bytes landed —
+// which matters here for the same reason it matters for a withdrawal: nothing in this service
+// deletes an object, so bytes written after a takedown stay written.
+func TestReplayAfterAnOperatorTakedownIsRefused(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+	tree, key := uuid.New(), uuid.New()
+
+	first := beginWithKey(t, h, session.AccessToken, tree, &key)
+
+	rejected := h.do(t, http.MethodPost,
+		Prefix+"/operator/photos/"+first.PhotoID.String()+"/reject", "the-operator-token", nil)
+	if rejected.Code != http.StatusOK {
+		t.Fatalf("operator reject: status = %d, body = %s", rejected.Code, rejected.Body.String())
+	}
+
+	// The control that keeps this test honest: a takedown must NOT have set `deleted_at`, or this
+	// would be re-testing F2 rather than the moderation arm.
+	var deletedAt *time.Time
+	var moderation string
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT deleted_at, moderation_state FROM photos WHERE id = $1`, first.PhotoID,
+	).Scan(&deletedAt, &moderation); err != nil {
+		t.Fatal(err)
+	}
+	if deletedAt != nil {
+		t.Fatal("a takedown now sets deleted_at, so this test is a duplicate of the withdrawal one")
+	}
+	if moderation != "rejected" {
+		t.Fatalf("moderation_state = %q, want rejected", moderation)
+	}
+
+	replay, code := beginAllowingFailure(t, h, session.AccessToken, tree, &key)
+	if code == http.StatusOK {
+		t.Fatalf("the replay was answered 200 with destination %q — bytes would land for a "+
+			"photograph an operator took down, and nothing here deletes an object", replay.Destination)
+	}
+	if code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", code)
+	}
+}
+
+// TestTheDeviceScopedUniqueIndexRefusesADuplicateKey is #116's review N12.
+//
+// The pair test above goes red only when *both* indexes are dropped: its second half asserts that a
+// different owner may reuse the key, which holds either way. So the device-scoped index — the one
+// protecting the anonymous, pre-sign-in contributor, which is the only owner an unclaimed install
+// has — had no coverage of its own.
+func TestTheDeviceScopedUniqueIndexRefusesADuplicateKey(t *testing.T) {
+	h := newHarness(t)
+	device := h.registerDeviceToken(t, uuid.New())
+	tree, key := uuid.New(), uuid.New()
+
+	begun := beginWithKey(t, h, device, tree, &key)
+
+	var ownerID *uuid.UUID
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT device_id FROM photos WHERE id = $1`, begun.PhotoID).Scan(&ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if ownerID == nil {
+		t.Fatal("fixture: the photograph is not device-owned, so the per-device index is not under test")
+	}
+
+	_, err := h.store.Pool().Exec(context.Background(), `
+		INSERT INTO photos (id, tree_uuid, device_id, shot_type, moderation_state,
+		                    captured_at, storage_key, client_uuid, created_at, updated_at)
+		VALUES ($1, $2, $3, 'full_tree', 'pending', now(), $4, $5, now(), now())
+	`, uuid.New(), tree, *ownerID, "photos/"+uuid.New().String()+".jpg", key)
+	if err == nil {
+		t.Fatal("a second row took the same client_uuid for the same device — " +
+			"photos_client_uuid_per_device is not there, and an anonymous contributor's begin " +
+			"has no dedupe underneath its lookup")
 	}
 }

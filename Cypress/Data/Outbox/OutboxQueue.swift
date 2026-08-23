@@ -433,6 +433,9 @@ public actor OutboxQueue {
         // stays visible and retryable rather than quietly becoming `done`. Nothing is reported as
         // sent that was not sent.
         var itemsWithUnsentPhotos: [UUID: Int] = [:]
+        // Items whose binary was refused in a way that will not change. Phase D must not reschedule
+        // these: `recordFailure` has already settled them terminally, and rescheduling would undo it.
+        var terminallyRefusedPhotos: [UUID: Error] = [:]
         if let send {
             for index in carrying.indices {
                 let entry = carrying[index]
@@ -470,20 +473,55 @@ public actor OutboxQueue {
                         }
                         report.photosSent += 1
                     } catch {
-                        // Recorded against the binary, not the item: the note is already applied and
-                        // accepted, and failing the item would put it back in a retry window whose
-                        // 48 h cap eventually expires the whole thing.
+                        let code = OutboxFailureReason.apiError(from: error)
                         try await queue.write { connection in
                             try store.recordPhotoFailure(
                                 id: photo.id,
                                 failCount: photo.failCount + 1,
                                 reason: OutboxFailureReason.sentence(for: error),
-                                code: error as? APIError,
+                                code: code,
                                 at: entry.settledAt,
                                 connection: connection
                             )
                         }
                         report.photosFailed += 1
+
+                        // ── Retryable or not, which this path did not ask before ──────────────
+                        //
+                        // The JSON half routes every failure through `OutboxRetryPolicy.nextState`,
+                        // whose first line is `if let error, !error.retryable { return .failed }`.
+                        // The photo half asked nothing, and the cost was specific: a permanently
+                        // refused binary — a `notFound` for a photograph withdrawn on another
+                        // install, an operator takedown — was replayed on **every drain with no
+                        // backoff at all**, because the reschedule below sets `next_attempt_at`
+                        // NULL and `dueItems` reads NULL as due. After 48 h the cap then expired
+                        // the *item*, taking down a note the service had already accepted. That is
+                        // exactly the trade the comment above says this arrangement prevents, and a
+                        // confident comment with no code behind it is this project's own defect
+                        // class (#116 review F4).
+                        //
+                        // **A refusal that will not change discards the binary rather than keeping
+                        // it.** Holding the row would wedge the item the way F1 did — never
+                        // sendable, never removed, never settled. Dropping it lets the item finish,
+                        // and the item is failed *once*, deliberately, so the person is told rather
+                        // than left with a photograph that silently evaporated: screen 17 draws
+                        // `retry`, carrying the reason this binary was refused. Tapping retry
+                        // settles the item, because by then there is nothing left owed.
+                        if let code, !code.retryable {
+                            try await queue.write { connection in
+                                try store.completePhoto(id: photo.id, connection: connection)
+                            }
+                            // **Recorded in phase D, not here.** `markRemotelySent` clears
+                            // `last_error` and `last_error_code` — correctly, since the note did go
+                            // — and in phase D it runs after this point. Settling the item here put
+                            // the refusal on the row and then wiped it moments later, leaving a
+                            // `failed` row with no reason at all: state without a sentence, which is
+                            // the silence screen 17 promises never to show. So the verdict is
+                            // carried and applied once the send half has finished writing.
+                            terminallyRefusedPhotos[record.id] = error
+                            break
+                        }
+
                         // Counted per item, because the sentence screen 17 draws says how many
                         // photographs are outstanding, not how many attempts failed.
                         itemsWithUnsentPhotos[record.id, default: 0] += 1
@@ -548,6 +586,15 @@ public actor OutboxQueue {
             // binary can be outstanding.** Without it the row would sit there saying nothing while
             // `markDoneIfComplete` quietly declined to match, which is the one thing screen 17
             // promises it will never do.
+            // A binary refused in a way that will not change. Its row is already gone, so the item
+            // owes nothing further; what it needs is to say why, once, instead of being rescheduled
+            // forever. This runs after the send settlement above precisely so the reason survives
+            // `markRemotelySent`'s clearing of it.
+            if let refusal = terminallyRefusedPhotos[record.id] {
+                try await recordFailure(record, error: refusal, at: settledAt, report: &report)
+                continue
+            }
+
             if let outstanding = itemsWithUnsentPhotos[record.id] {
                 try await queue.write { connection in
                     try store.reschedule(

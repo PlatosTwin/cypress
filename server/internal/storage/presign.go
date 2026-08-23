@@ -51,19 +51,17 @@ type Config struct {
 // `PHOTOS_AWS_ACCESS_KEY_ID` sends them to change the credential that was already working — and that
 // credential is the seed publish's.
 func (c Config) Validate() error {
-	// **Whitespace-only counts as unset** (#116 review, "held under attack"). A secret set to a
-	// stray space or a newline is the shape a copy-paste from a dashboard produces, and treating it
-	// as configured would let the service boot and then fail every presign at runtime — handing a
-	// contributor `server_error` for a deployment mistake, which is exactly what the boot refusal
-	// exists to prevent.
-	c = Config{
-		AccessKeyID:     strings.TrimSpace(c.AccessKeyID),
-		SecretAccessKey: strings.TrimSpace(c.SecretAccessKey),
-		Endpoint:        strings.TrimSpace(c.Endpoint),
-		Region:          strings.TrimSpace(c.Region),
-		Bucket:          strings.TrimSpace(c.Bucket),
-		VarPrefix:       c.VarPrefix,
-	}
+	// **Whitespace-only counts as unset.** A secret set to a stray space or a newline is the shape a
+	// copy-paste from a dashboard produces, and treating it as configured would let the service boot
+	// and then fail every presign at runtime — handing a contributor `server_error` for a deployment
+	// mistake, which is exactly what the boot refusal exists to prevent.
+	//
+	// **Checked here, trimmed in `PhotoConfig`.** The first version of this trimmed a local copy on
+	// a value receiver, so the caller kept the padded value and `NewPresigner` was handed it anyway:
+	// a padded secret passed validation and then broke every presign, which is the outcome this
+	// comment claimed to prevent (#116 review N15). Validation does not mutate what it validates —
+	// the reading happens where the value is read from the environment, and this only refuses.
+	c = c.trimmed()
 	switch {
 	case c.AccessKeyID == "":
 		return errors.New(c.VarPrefix + "AWS_ACCESS_KEY_ID is not set")
@@ -103,6 +101,21 @@ const PhotoVarPrefix = "PHOTOS_"
 //
 // A named constructor rather than a flag on `Config`, so the prefix cannot be forgotten at a call
 // site: there is exactly one way to build a photo presigner and it is spelled here.
+// trimmed returns the config with surrounding whitespace removed from every value.
+//
+// Not exported: there is exactly one place a `Config` is built from the environment and it applies
+// this, so a second caller would mean a second source of these values.
+func (c Config) trimmed() Config {
+	return Config{
+		AccessKeyID:     strings.TrimSpace(c.AccessKeyID),
+		SecretAccessKey: strings.TrimSpace(c.SecretAccessKey),
+		Endpoint:        strings.TrimSpace(c.Endpoint),
+		Region:          strings.TrimSpace(c.Region),
+		Bucket:          strings.TrimSpace(c.Bucket),
+		VarPrefix:       c.VarPrefix,
+	}
+}
+
 func PhotoConfig(getenv func(string) string) Config {
 	return Config{
 		AccessKeyID:     getenv(PhotoVarPrefix + "AWS_ACCESS_KEY_ID"),
@@ -111,7 +124,7 @@ func PhotoConfig(getenv func(string) string) Config {
 		Region:          getenv(PhotoVarPrefix + "AWS_REGION"),
 		Bucket:          getenv(PhotoVarPrefix + "BUCKET_NAME"),
 		VarPrefix:       PhotoVarPrefix,
-	}
+	}.trimmed()
 }
 
 // Presigner mints presigned URLs.

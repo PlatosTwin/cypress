@@ -141,8 +141,15 @@ struct OwnerCopyRulingTests {
             .components(separatedBy: CharacterSet(charactersIn: ".;"))
             .filter { $0.contains("photo") }
         let travelVerbs = ["upload", "sync", "share", "back up", "backed up"]
-        let photographsTravel = !clauses.isEmpty
-            && clauses.contains { clause in travelVerbs.contains { clause.contains($0) } }
+        // **A negated travel verb is not a travel claim** (#116 review N11). "Photos are never
+        // uploaded from this phone" contains "upload", and the first version of this scan read that
+        // as travel — passing the guard while the sentence promised exactly what the sink makes
+        // false. It is the wording a careful copywriter is *most* likely to produce, because it is
+        // the natural way to say the thing this round removed.
+        let negators = ["never", "not ", "n't", "no longer", "without"]
+        let photographsTravel = !clauses.isEmpty && clauses.contains { clause in
+            travelVerbs.contains { clause.contains($0) } && !negators.contains { clause.contains($0) }
+        }
 
         let claimsPhotosStayOnDevice = !photographsTravel
         #expect(

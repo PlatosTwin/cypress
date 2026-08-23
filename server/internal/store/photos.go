@@ -101,12 +101,13 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 			var id uuid.UUID
 			var key string
 			var deletedAt *time.Time
+			var moderation string
 			err := tx.QueryRow(ctx, `
-				SELECT id, storage_key, deleted_at FROM photos
+				SELECT id, storage_key, deleted_at, moderation_state FROM photos
 				 WHERE client_uuid = $1
 				   AND (($2::uuid IS NOT NULL AND user_id = $2)
 				     OR ($3::uuid IS NOT NULL AND device_id = $3))
-			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key, &deletedAt)
+			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key, &deletedAt, &moderation)
 			if err == nil {
 				// ── A replay for a photograph that has since been withdrawn ──────────────────
 				//
@@ -127,7 +128,17 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 				// `ErrPhotoWithdrawn` rather than `ErrNotFound` so the caller can say the true
 				// thing; the handler maps it to `not_found`, which is non-retryable, so the client
 				// stops rather than spending 48 h re-asking for a photograph that is gone.
-				if deletedAt != nil {
+				// **`rejected` refuses on the same argument as `deleted_at`** (#116 review N16).
+				// `RejectPhoto` is the operator takedown and it moves `moderation_state` without
+				// setting `deleted_at`, so a replay after a takedown was still answered with a
+				// fresh presigned PUT and the bytes landed — the same door F2 closed, reached from
+				// the operator's side instead of the contributor's. It matters for exactly the
+				// reason F2 does: nothing in this service deletes an object, so bytes written after
+				// a takedown stay written.
+				//
+				// Both are the same answer to the caller because they are the same fact about the
+				// upload: this photograph is not going to be published, so its bytes are not wanted.
+				if deletedAt != nil || moderation == "rejected" {
 					return ErrPhotoWithdrawn
 				}
 				begun = BegunPhoto{ID: id, StorageKey: key, Existing: true}

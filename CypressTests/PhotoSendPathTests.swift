@@ -307,6 +307,119 @@ struct PhotoSendPathTests {
         #expect(record.item.state != .failed, "an unsent photograph drew the note as terminally failed")
     }
 
+    // MARK: - 4c. A refusal that will not change is not retried
+
+    /// #116's review F4. `POST /photos/begin` answers 404 for a photograph withdrawn on another
+    /// install or taken down by an operator, and `APIError.notFound` is non-retryable — but the
+    /// photo path never asked. The binary was replayed on **every drain with no backoff**, because
+    /// the reschedule sets `next_attempt_at` NULL and `dueItems` reads NULL as due; after 48 h the
+    /// cap expired the item, taking down a note the service had already accepted.
+    ///
+    /// The assertions are about **drain count** and **the item's fate**, not about a state column:
+    /// a version that recorded the code correctly and still looped would satisfy any single-drain
+    /// check. Five drains is the same measurement the review used.
+    @Test("a photograph refused for good is not replayed, and does not expire its accepted note")
+    func aNonRetryableBinaryStopsBeingRetried() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosRefused(.notFound))
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        _ = try await queue.enqueue(
+            .visit(Self.visit()),
+            photos: [OutboxPhoto(path: try Self.stagedFile("refused-for-good"), shotType: .fullTree)]
+        )
+
+        let first = try await queue.drain()
+        #expect(first.sent == 1, "fixture: the note did not go, so this proves nothing about the binary")
+        let attemptsAfterFirst = await send.sentPhotos.count
+        #expect(attemptsAfterFirst == 1, "fixture: the binary was never offered")
+
+        for _ in 0..<4 { _ = try await queue.drain() }
+
+        // **The property.** A non-retryable refusal is asked once. Anything above one is the loop.
+        let attempts = await send.sentPhotos.count
+        #expect(
+            attempts == attemptsAfterFirst,
+            """
+            the binary was offered \(attempts) times across five drains — a refusal that will not \
+            change is being replayed with no backoff, and at 48 h the cap expires the note the \
+            service already accepted
+            """
+        )
+
+        let record = try #require(try await queue.records().first)
+        #expect(record.remoteSent, "the note was accepted and must stay accepted")
+        // Discarded rather than held: keeping it would wedge the item the way F1 did.
+        let outstanding = try await store.queue.read { connection in
+            try OutboxStore().outstandingPhotoCount(for: record.id, connection: connection)
+        }
+        #expect(outstanding == 0, "a permanently refused binary is still outstanding")
+        // Said once, visibly, rather than silently evaporating: screen 17 draws `failed` as `retry`.
+        #expect(record.item.state == .failed, "the item is \(record.item.state)")
+        #expect(record.item.lastErrorCode == .notFound, "the refusal's code was not carried onto the item")
+        #expect(record.item.lastError != nil, "the row is failed and says nothing about why")
+    }
+
+    // MARK: - 4d. The other F1 door, on its own
+
+    /// #116's review N10. F1 was repaired at two doors — `discardPhoto` (what
+    /// `LocalAPI.deletePhoto` calls) and the drain's own `discardWithdrawnPhotos` — and only the
+    /// drain door was covered: reverting `discardPhoto` to path-only matching left the full suite
+    /// green, because the drain cleaned up on the next pass and hid it.
+    ///
+    /// What that concealed is not the wedge but a **lie to the contributor**: `discardPhoto`'s
+    /// return value is surfaced as `PhotoDeletion.dequeuedBinaries`, so an applied binary's
+    /// withdrawal reported **0** queued rows removed when it had removed one. And a `failed` item is
+    /// never re-drained, so for that item the drain door never runs at all.
+    ///
+    /// So this asserts the count, not just the absence of the row — the count is the half that was
+    /// wrong while everything else looked right.
+    @Test("withdrawing an applied binary reports the queue row it removed")
+    func discardPhotoReportsAnAppliedBinary() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        let staged = OutboxPhoto(path: try Self.stagedFile("n10"), shotType: .fullTree)
+        let item = try await queue.enqueue(.visit(Self.visit()), photos: [staged])
+
+        // Applied, so `path` is now NULL and only `photo_id` can find it — which is exactly the
+        // state the path-only matcher could not see.
+        _ = try await queue.drain()
+        let photoID = try await store.queue.read { connection -> UUID in
+            let st = try connection.prepare("SELECT photo_id FROM outbox_photos WHERE outbox_id = :i")
+            defer { st.finalize() }
+            _ = try st.bind(item.id, forName: ":i")
+            return try st.fetchOne { try $0.uuid("photo_id") } ?? UUID()
+        }
+
+        let removed = try await store.queue.write { connection in
+            try OutboxStore().discardPhoto(
+                id: photoID,
+                // The staged path as `LocalAPI.deletePhoto` passes it — `photos.local_path`, which
+                // after the apply is the container copy and no longer matches `outbox_photos.path`.
+                stagedPath: staged.path,
+                at: Date(),
+                connection: connection
+            )
+        }
+        #expect(
+            removed == 1,
+            """
+            discardPhoto reported \(removed) queued rows for a binary that was still queued — the \
+            contributor is told nothing was dequeued while a row was removed, and for a `failed` \
+            item the drain never runs to correct it
+            """
+        )
+
+        let left = try await store.queue.read { connection in
+            try OutboxStore().outstandingPhotoCount(for: item.id, connection: connection)
+        }
+        #expect(left == 0, "the withdrawn binary is still queued")
+    }
+
     // MARK: - 5. The binary's idempotency key is the row's own id
 
     /// Server migration 003 dedupes `POST /photos/begin` on the key the client mints, so the key has

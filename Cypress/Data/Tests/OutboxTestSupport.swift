@@ -65,8 +65,16 @@ public enum OutboxTestSupport {
         case firstFail(count: Int, code: APIError)
         /// Named client UUIDs fail; everything else succeeds.
         case theseFail(Set<UUID>, APIError)
-        /// Photo binaries fail, JSON succeeds.
+        /// Photo binaries fail, JSON succeeds. The thrown error is a dropped connection, i.e.
+        /// **retryable** — the ordinary "no signal" case the 48 h backoff exists for.
         case photosFail
+        /// Photo binaries are refused with a code that will not change; JSON succeeds.
+        ///
+        /// Separate from `photosFail` because the two take different paths through the drain and
+        /// the difference is the whole of #116's F4: a retryable binary is rescheduled, a
+        /// non-retryable one is discarded and its item settled once, rather than replayed on every
+        /// drain for 48 h and then expiring the note with it.
+        case photosRefused(APIError)
     }
 
     /// A transport that follows a script and, critically, **applies successful items into a set
@@ -124,7 +132,7 @@ public enum OutboxTestSupport {
                         : accept(item)
                 }
 
-            case .allSucceed, .photosFail:
+            case .allSucceed, .photosFail, .photosRefused:
                 return items.map(accept)
             }
         }
@@ -218,7 +226,7 @@ public enum OutboxTestSupport {
                         : accept(item)
                 }
 
-            case .allSucceed, .photosFail:
+            case .allSucceed, .photosFail, .photosRefused:
                 return items.map(accept)
             }
         }
@@ -239,6 +247,7 @@ public enum OutboxTestSupport {
         public func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {
             sentPhotos.append(photo)
             if script == .photosFail { throw URLError(.networkConnectionLost) }
+            if case let .photosRefused(code) = script { throw code }
             if let path = photo.containerPath { sentPhotoPaths.append(path) }
         }
     }

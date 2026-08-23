@@ -212,3 +212,37 @@ func TestValidateRejectsWhitespaceOnlyValues(t *testing.T) {
 		}
 	}
 }
+
+// TestPhotoConfigTrimsWhatTheCallerReceives is #116's review N15.
+//
+// `Validate` trimmed a local copy on a value receiver, so the caller kept the padded value and
+// handed it to `NewPresigner` anyway — a padded secret passed validation and then broke every
+// presign at runtime, the exact outcome the trim was added to prevent. So the property is not
+// "validation accepts it" but **what the constructor hands back**.
+func TestPhotoConfigTrimsWhatTheCallerReceives(t *testing.T) {
+	padded := map[string]string{
+		"PHOTOS_AWS_ACCESS_KEY_ID":     "  AKIA  ",
+		"PHOTOS_AWS_SECRET_ACCESS_KEY": "\tsecret\n",
+		"PHOTOS_AWS_ENDPOINT_URL_S3":   " https://fly.storage.tigris.dev ",
+		"PHOTOS_AWS_REGION":            "\nauto\n",
+		"PHOTOS_BUCKET_NAME":           "  cypress-photos  ",
+	}
+	config := PhotoConfig(func(key string) string { return padded[key] })
+
+	if err := config.Validate(); err != nil {
+		t.Fatalf("a padded but present config was refused: %v", err)
+	}
+	for name, got := range map[string]string{
+		"AccessKeyID": config.AccessKeyID, "SecretAccessKey": config.SecretAccessKey,
+		"Endpoint": config.Endpoint, "Region": config.Region, "Bucket": config.Bucket,
+	} {
+		if got != strings.TrimSpace(got) {
+			t.Fatalf("%s is %q — the padding reached the caller, so it reaches the signature too",
+				name, got)
+		}
+	}
+	// The one that would actually break a presign: a bucket with a space in the host segment.
+	if config.Bucket != "cypress-photos" {
+		t.Fatalf("Bucket = %q, want %q", config.Bucket, "cypress-photos")
+	}
+}

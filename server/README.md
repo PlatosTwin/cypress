@@ -242,7 +242,7 @@ credential and neither changes behaviour — the first is what Fly sets anyway, 
 | `APPLE_BUNDLE_ID` | no | `app.cypress.Cypress`. In `fly.toml` `[env]`, not in secrets — it is in every copy of the app. |
 | `OPERATOR_TOKEN` | yes | Authorizes the takedown route. Required: a takedown with no credential configured is a takedown that cannot be performed. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `BUCKET_NAME` | no | The **`cypress-cities`** bucket's, set as app secrets by `flyctl storage create`. The service itself no longer reads them — only the seed-publish relay does — but they must not be disturbed, which is the whole reason the photo bucket has its own names below. |
-| `PHOTOS_AWS_ACCESS_KEY_ID`, `PHOTOS_AWS_SECRET_ACCESS_KEY`, `PHOTOS_AWS_ENDPOINT_URL_S3`, `PHOTOS_AWS_REGION`, `PHOTOS_BUCKET_NAME` | yes | The **private photo bucket's**. The service refuses to boot without all five (`storage.PhotoConfig`), and each refusal names the variable it is missing. See "Provisioning the photo bucket" below — photographs may not share `cypress-cities`, which is public-read. |
+| `PHOTOS_AWS_ACCESS_KEY_ID`, `PHOTOS_AWS_SECRET_ACCESS_KEY`, `PHOTOS_AWS_ENDPOINT_URL_S3`, `PHOTOS_AWS_REGION`, `PHOTOS_BUCKET_NAME` | yes | The **private photo bucket's**. The service refuses to boot without all five (`storage.PhotoConfig`), and each refusal names the variable it is missing. See "Provisioning the photo bucket" — photographs may not share `cypress-cities`, which is public-read. |
 
 ## Provisioning the photo bucket
 
@@ -265,14 +265,32 @@ red, and the next publish fails with `InvalidAccessKeyId` (ticket #248's symptom
 ```sh
 cd "$(mktemp -d)"      # a directory with no fly.toml — this is the protection, not a formality
 test ! -e fly.toml || { echo "REFUSING: a fly.toml is reachable here"; exit 1; }
-fly storage create --name cypress-photos --org personal
+env -u FLY_APP fly storage create --name cypress-photos --org personal
 ```
 
-`cd "$(mktemp -d)"` is what makes the injection impossible: with no `fly.toml` to read and no `--app`
-given, flyctl has no app to resolve and cannot write a secret onto one. The `test` line is there so
-that a shell which somehow started elsewhere stops rather than proceeds — the failure mode being
-guarded against is silent, so the guard is explicit. **If flyctl interactively offers to attach the
-bucket to an app, decline.** Copy the five values it prints; they are the new bucket's.
+Two guards, because flyctl has **two** ways to resolve an app and the empty directory only closes
+one:
+
+- `cd "$(mktemp -d)"` removes the `fly.toml` it would otherwise read. The `test` line makes a shell
+  that somehow started elsewhere stop rather than proceed — the failure being guarded against is
+  silent, so the guard is explicit.
+- `env -u FLY_APP` removes the environment variable, which flyctl honors **even in an empty
+  directory**. Measured: with `FLY_APP` exported, `flyctl status` in an empty temp directory
+  resolved an app and went to the network; with it unset, it refused with "the config for your app
+  is missing an app name". An operator who has been working on `cypress-sync` is exactly the person
+  likely to have it exported, so the empty directory alone is not the protection it looks like
+  (#116 review N14).
+
+**If flyctl interactively offers to attach the bucket to an app, decline.** Copy the five values it
+prints; they are the new bucket's.
+
+Then make a named AWS profile from them, which step 2 uses — the same convention the seed bucket
+follows above, and for the same reason (#248: an ambient `AWS_*` disappears with the shell that
+exported it, and Tigris rejects a mismatched key mid-upload):
+
+```sh
+aws configure --profile cypress-photos-tigris   # the NEW bucket's key, secret, and region
+```
 
 ### 2 · Prove the new bucket is private, with a control that proves the check works
 
@@ -392,8 +410,8 @@ a Postgres that do not exist yet. What it will need:
    `BUCKET_NAME` values are already set on the app — they are `cypress-cities`', and nothing here
    should touch them.
 2b. **The five `PHOTOS_*` secrets**, which do *not* exist yet and which the service refuses to boot
-   without. See "Provisioning the photo bucket" below; that section is the only supported way to
-   create them, and it exists because the obvious command clobbers the `AWS_*` above.
+   without. See "Provisioning the photo bucket" above; that section is the only supported way to
+   create them, and it exists because the obvious command clobbers the `AWS_*` secrets.
 3. **An Apple `.p8` key** with Sign in with Apple enabled, and the Service ID / key configured in
    the Apple Developer account. Nothing in this repository can create one.
 4. **The deploy itself**, unchanged from the placeholder's:
