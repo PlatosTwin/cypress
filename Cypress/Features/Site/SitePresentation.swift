@@ -244,12 +244,17 @@ enum SiteCopy {
     /// well, C15 and 06's disclosure are all drawn in.
     static let statementLeadIn = "No tree at this site."
 
-    /// Verbatim, leading space and un-spaced em dash included (ARCHITECTURE §5.7).
+    /// What the record holds about this ground, and nothing after it. Leading space is in the source.
     ///
-    /// The second sentence is the one that has to be exactly right. It says what Cypress does and
-    /// what it does not, and it stops there: no authority has been notified, because nothing has
-    /// been reported, and no tree is coming, because this app cannot plant one (ARCHITECTURE §5.4).
-    static let statementBody = " The city's inventory lists a planting basin here and nothing growing in it. Cypress keeps the record of what is planted—it does not plant."
+    /// **`Cypress keeps the record of what is planted—it does not plant.` is gone** (copy audit of
+    /// 2026-08-23, R1, owner-approved): the app explaining what kind of app it is, on the screen of
+    /// somebody standing at an empty basin.
+    ///
+    /// ARCHITECTURE §5.4 does not weaken with it. The rule is that nothing here may imply an
+    /// authority was notified or a tree is coming, and what enforces it is
+    /// `SiteTests.noSentencePromisesAnOutcome`, a sweep over every string this screen can draw —
+    /// a guard, where the deleted sentence was a disclaimer.
+    static let statementBody = " The city's inventory lists a planting basin here and nothing growing in it."
 
     // MARK: The stat grid
 

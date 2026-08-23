@@ -743,7 +743,11 @@ empty/no-GPS state.
    - `Monterey Cypress · Hesperocyparis macrocarpa` — Serif italic 15px, `#66735F`, `margin-top:2px`.
 4. **Recognize-it callout** (C14 green) — `margin:12px 16px 0`:
    **`How to recognize it:`** ` flat, layered crown; tiny scale-like leaves; lemony scent when crushed.`
-5. **Primary CTA** (C6) — `padding:12px 16px 0`: **`Visit · say hello with a photo`**
+5. **Primary CTA** (C6) — `padding:12px 16px 0`: ~~**`Visit · say hello with a photo`**~~ →
+   **`Visit · add a photo`**
+   **REWRITTEN — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`), R3. `say hello` was the demo
+   voice on the app's most-visited screen. PROTOTYPE-FLOW's three copies of the old label are
+   struck with it.
 6. **Quad action row** (C8): `Favorite` · `Care` · `Share` · `Report`
 7. **Regulars row** — `margin:10px 16px 0`, fill `#fff`, border `1px #E3E8D9`, radius 12px,
    `padding:9px 13px`, `gap:10px`, shadow `0 1px 3px rgba(25,40,28,.05)`.
@@ -893,8 +897,12 @@ height, so they always sum to it.
    (multi-select).
 6. **Optional well** (C15): `Add photos · notes (optional)`
 7. **Sticky CTA** — `margin-top:auto; padding:12px 18px 8px`, C6: **`Save check-in`**
-8. **Footnote** — 12px, `#77836F`, centered, `padding:0 18px 36px`:
-   `Everything here is optional. Skip anything and it still counts.`
+8. ~~**Footnote** — 12px, `#77836F`, centered, `padding:0 18px 36px`:
+   `Everything here is optional. Skip anything and it still counts.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). One of the four sites the
+   footnote ruling's first enumeration missed; the owner extended it to all four on the same day.
+   The card's behavior is what carried the claim and is unchanged — every control on 05 really is
+   optional. The `36px` survives as the screen's closing space, on the sticky CTA block.
 
 ---
 
@@ -926,6 +934,13 @@ height, so they always sum to it.
    **`Save a private reminder for yourself`**
 6. **Dashed disclosure** (C14 dashed) — `margin:14px 16px 0`:
    `Hazards never become public notes: a “hanging limb” pin the city never saw would be a liability record, not a warning. Your reminder stays yours alone, and ` **`the city has not been notified`** ` until you call. “Routed to the city” appears only with a real 311 ticket (Phase 2).`
+
+   *Note — copy audit 2026-08-23, R20/R21:* **this disclosure is unchanged and stays verbatim.**
+   The audit rewrote the two screens that *restated* it — the save confirmation
+   (`Saved. Your reminder stays yours alone.` → `Saved. This reminder is private to you.`) and the
+   You tab's empty state — onto the phrasing screen 17 already uses for the same fact. The
+   disclosure itself was not in the audit's table and was not touched, which does leave one
+   instance of `stays yours alone` in the app. Recorded rather than widened.
 
 **States:** the 311 panel appears because a hazard chip is selected. **NOT SPECIFIED:** what the
 screen looks like with only a neighborly chip selected, or with nothing selected.
@@ -1031,7 +1046,10 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
 **Sheet contents:**
 1. Grabber (40×5, `#DDE2D2`, `margin:4px auto 14px`).
 2. Title `Care log · Monterey Cypress` — Serif 20px/600, `margin-bottom:4px`.
-3. Sub `Toggle what you did. Thirty seconds, then back to your walk.` — 12.5px, `#8B9482`,
+3. Sub ~~`Toggle what you did. Thirty seconds, then back to your walk.`~~ → `Toggle what you did.`
+   (**REWRITTEN — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`), R24 — the first sentence is
+   an instruction about the chips below it, the second was a promise about the reader's morning;
+   RULINGS R80 item 6a drew the same line for screen 18's buttons.) — 12.5px, `#8B9482`,
    `margin-bottom:14px`.
 4. Toggle chips (C4 care variant), `flex-wrap`, `gap:9px`, `margin-bottom:14px`:
    **`Watered ✓`** (on) · **`Mulched ✓`** (on) · `Weeded basin` · `Litter cleared`
@@ -1108,8 +1126,13 @@ README mentions.
    | `62 cm` | `taped` | `steward` | `Jun 2024` |
    | `60 cm` | `estimated` | `member` | `Aug 2023` |
 
-6. **Footnote** — 12px, `#77836F`, centered, `padding:14px 18px 36px`, `margin-top:auto`:
-   `Tap any point to open the observation behind it.`
+6. ~~**Footnote** — 12px, `#77836F`, centered, `padding:14px 18px 36px`, `margin-top:auto`:
+   `Tap any point to open the observation behind it.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). This one was never *drawn* —
+   ERRATA E64 refused it, because there is nothing behind a point to open — but the sentence was
+   kept verbatim in `GrowthHistoryCopy.unrenderedFootnote` against the day a destination is
+   designed. That constant is gone too: retired copy parked in the source is one of the routes by
+   which the voice comes back. It is preserved here, struck, and E64 is amended to say so.
 
 ---
 
@@ -1200,8 +1223,13 @@ README mentions.
    - `2025` — `radial(55% 40%, #7FA284 0→55%)` over `linear-gradient(175deg,#E3E8DC,#BFC9BA)`
    - **`this week`** — `border:2px solid #2F6B4F`, `radial(45% 42%, #4E8F6A 0→52%)` over
      `linear-gradient(175deg,#DFE8D6,#AFC4AC)`; chip is `#fff` on `#2F6B4F`.
-5. **Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
-   `One scale across all three charts, so a tall bar means the same amount everywhere. June’s 12 photos set the ceiling.`
+5. ~~**Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
+   `One scale across all three charts, so a tall bar means the same amount everywhere. June’s 12 photos set the ceiling.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). The second of the four sites
+   the first enumeration missed. **This one took a fact with it** — the shared scale is real and is
+   now unstated on the screen; the ruling made exactly one exception for a fact, and it was screen
+   16's. Recorded in the audit document rather than worked around. The `36px` survives as the
+   screen's closing space, on the column.
 
 ---
 
@@ -1241,7 +1269,10 @@ Intro: *The unglamorous screens that make the app trustworthy: a brand-new tree 
    | `City record` | `SF #201-33` | — | (drawn; `#201-33` on screen, R28)
    | `Watch for` | `First-summer thirst` — **13px/700 sans, not mono**, `margin-top:2px` | — |
 
-6. **CTA** (C6) — `padding:14px 16px 0`: **`Be the first to photograph this tree`**
+6. **CTA** (C6) — `padding:14px 16px 0`: ~~**`Be the first to photograph this tree`**~~ →
+   **`Add the first photo of this tree`**
+   **REWRITTEN — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`), R4 — the mock's line reads as a
+   prize for arriving early rather than as a description of the tap.
 7. ~~**Footnote** — `padding:14px 24px 36px`, `margin-top:auto`, `line-height:1.5`:
    `A young tree nobody has visited. This is the almanac’s “walk the nine” list, one tree at a time.`~~
    **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). **This is the
@@ -1307,8 +1338,14 @@ scrim `rgba(14,24,17,.3)`.
    Keys: `1 2 3 4 5 6 7 8 9 . 0 ⌫`. Each: centered, `padding:14px 0`, fill `#fff`,
    `border:1px solid #E3E8D9`, radius 12px, Spline Sans Mono 19px/600.
 6. **CTA** (C6) — `margin-top:auto; padding:14px 18px 8px`: **`Save measurement`**
-7. **Footnote** — `padding:0 24px 36px`, `line-height:1.5`:
-   `Taken at 1.4 m, tape in one hand. A shrinking trunk gets a “sure about that?” before it saves.`
+7. ~~**Footnote** — `padding:0 24px 36px`, `line-height:1.5`:
+   `Taken at 1.4 m, tape in one hand. A shrinking trunk gets a “sure about that?” before it saves.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). **The 1.4 m did not go with
+   it.** The ruling made one exception for a fact worth keeping (R9): the convention now reads
+   `DBH is measured at 1.4 m above the ground.` and is drawn in §2, under the segmented control
+   that selects DBH — inline, where it applies, instead of at the foot of the screen. The second
+   sentence dies outright (R10): the confirmation it described is already on screen at the moment
+   it applies. The `36px` survives as the screen's closing space, on the CTA.
 
 **States:** the "sure about that?" confirmation is described in copy only — **NOT SPECIFIED** visually.
 
@@ -1420,7 +1457,10 @@ Anchor: `id="screen-19"` (linked from the 01 caption).
    - Bottom-right pill (`rgba(30,34,28,.45)`, text `#EFF1EA`): `86 photos · 2019–2026`
    - Bottom-left eyebrow (`#EFF1EA`): `Last photo · Apr 2026`
 2. **Memorial banner** (C14 memorial) — `margin:14px 16px 0`:
-   **`Removed by the city, May 2026.`** ` This profile is now read-only. Every photo, visit, and check-in stays—a record of the tree that was here.`
+   **`Removed by the city, May 2026.`** ~~` This profile is now read-only. Every photo, visit, and check-in stays—a record of the tree that was here.`~~ →
+   ` This profile is now read-only. Every photo, visit, and check-in stays.`
+   **REWRITTEN — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`), R2 — the closing clause told the
+   reader what the screen means; the two facts before it are the banner's whole job.
 3. **Identity block** — `padding:14px 16px 0`:
    - `Judah Street Gum` — Serif 27px/600, `line-height:1.05`.
    - `REMOVED` badge (C13).
@@ -1429,13 +1469,17 @@ Anchor: `id="screen-19"` (linked from the 01 caption).
 
    | Thumb | Copy | Date |
    |---|---|---|
-   | `radial(42% 44%, #9FB582 0→52%)` over `linear-gradient(170deg,#E8E9DE,#C9CDBB)` | **`First photo`** ` · the record begins · six people came to know it` | `Mar 2019` |
+   | `radial(42% 44%, #9FB582 0→52%)` over `linear-gradient(170deg,#E8E9DE,#C9CDBB)` | **`First photo`** ~~` · the record begins · six people came to know it`~~ → ` · six people know this tree` | `Mar 2019` |
    | `radial(40% 40%, #C0523E 0→50%)` over `linear-gradient(170deg,#E3E5D9,#C2C7B4)` | **`Visit`** ` · “The reddest bloom on the block, every January”` | `Jan 2026` |
-   | `linear-gradient(140deg,#C9B06A,#A3813F)` (vitality-2 swatch) | **`Check-in`** ` · vitality 2 · a steward confirmed the decline` | `Mar 2026` |
+   | `linear-gradient(140deg,#C9B06A,#A3813F)` (vitality-2 swatch) | **`Check-in`** ` · vitality 2`~~` · a steward confirmed the decline`~~ | `Mar 2026` |
    | `#EDEEE6` with mono 10px/600 `#5C6555` text `SYNC` | **`City record`** ` · marked removed · storm damage` | `May 2026` |
 
 5. **Lineage callout** (C14 green, radius 14px, `padding:13px 15px`) — `margin:12px 16px 0`:
-   **`A new tree is coming.`** ` When the city replants this site, the new profile will link back here—the site keeps its lineage.`
+   ~~**`A new tree is coming.`** ` When the city replants this site, the new profile will link back here—the site keeps its lineage.`~~ →
+   **`This site may be replanted.`** ` If the city replants here, the new tree's profile will link back to this one.`
+   **REWRITTEN — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`), R5/R6. Nothing in the record says
+   the city will replant this site; a future tense the data cannot support is ARCHITECTURE §5.4's
+   rule in a different grammar.
 6. **Stat grid** (C11):
 
    | Label | Value |

@@ -130,7 +130,10 @@ struct ActivityPresentationTests {
 
     // MARK: - §5.6 · nothing below the floor
 
-    @Test("an empty record renders no chart, no moments, no strip and no footnote")
+    // The footnote was a fifth thing this test named, until the copy audit of 2026-08-23 removed
+    // it from the screen entirely; `glance == nil` covered it then and covers nothing now, because
+    // there is no longer a footnote to be absent.
+    @Test("an empty record renders no chart, no moments and no strip")
     func emptyRecordRendersNothing() {
         let subject = Self.present(Self.profile())
         #expect(subject.glance == nil)
@@ -317,32 +320,45 @@ struct ActivityPresentationTests {
         #expect(rows[2].counts.reduce(0, +) == 2)
     }
 
-    /// The footnote names the month that set the ceiling. When that month is a care month the
-    /// sentence would be a care count in prose, so it is not written.
-    @Test("the ceiling sentence never publishes a care count")
-    func ceilingSentenceNeverPublishesACareCount() {
-        let photoCeiling = Self.present(
-            Self.profile(
-                photos: [Self.photo(2026, 6), Self.photo(2026, 6, 20)],
-                careEvents: [Self.care(2026, 7)]
-            )
-        )
-        #expect(
-            photoCeiling.glance?.footnote
-                == "One scale across all three charts, so a tall bar means the same amount everywhere. June’s 2 photos set the ceiling."
-        )
-
+    /// **BUILD-PLAN §4: care events are "never publicly counted or ranked (D1)".**
+    ///
+    /// This test used to hold that rule through §5's footnote, which named the month that set the
+    /// chart's ceiling and was written to fall silent when that month's ceiling was a care count.
+    /// The copy audit of 2026-08-23 removed the footnote from the screen (owner ruling), and with
+    /// it the only sentence that could have leaked the number in prose.
+    ///
+    /// The rule outlived the sentence, so the test does: the tallest bar on the card belongs to the
+    /// care row here, and the number behind it must appear nowhere the screen draws — not as the
+    /// row's total, and not inside any other string. Asserted over everything the card produces
+    /// rather than over one field, because that is how the footnote leaked it in the first place.
+    @Test("a care month at the ceiling publishes its count nowhere on the screen")
+    func aCareCeilingPublishesNoCount() throws {
         let careCeiling = Self.present(
             Self.profile(
                 photos: [Self.photo(2026, 6)],
                 careEvents: [Self.care(2026, 7, 2), Self.care(2026, 7, 9), Self.care(2026, 7, 19)]
             )
         )
-        #expect(
-            careCeiling.glance?.footnote
-                == "One scale across all three charts, so a tall bar means the same amount everywhere.",
-            "the ceiling sentence named a care month and therefore printed a care count"
-        )
+        let glance = try #require(careCeiling.glance, "the card is absent, so nothing below is tested")
+
+        // The care row really is the tallest — otherwise this fixture proves nothing about a
+        // ceiling that a care month set.
+        let care = try #require(glance.rows.first { $0.kind == .care })
+        #expect(care.counts.max() == 3)
+        #expect(glance.rows.allSatisfy { ($0.counts.max() ?? 0) <= 3 })
+        #expect(care.total == nil, "the care row printed a total, which BUILD-PLAN §4 forbids")
+
+        var drawn = glance.rows.flatMap { [$0.name, $0.total ?? ""] }
+        drawn.append(glance.year)
+        drawn += careCeiling.moments.flatMap { [$0.title, $0.subtitle] }
+        drawn += careCeiling.sameWeek.map(\.label)
+
+        for string in drawn {
+            #expect(
+                !string.contains("3"),
+                "the care count reached a drawn string: \(string)"
+            )
+        }
     }
 
     /// **The whole of D2 on this screen**: one height rule for all three rows. A count of n draws
@@ -393,7 +409,6 @@ struct ActivityPresentationTests {
         var strings = subject.moments.flatMap { [$0.title, $0.subtitle] }
         strings.append(subject.treeDisplayName)
         if let glance = subject.glance {
-            strings.append(glance.footnote)
             strings.append(glance.year)
             strings += glance.rows.flatMap { [$0.name, $0.total ?? ""] }
         }

@@ -71,14 +71,8 @@ enum ActivitySeriesKind: String, CaseIterable, Identifiable {
     /// the chart, and a shape is not a tally.
     var mayPrintTotal: Bool { self != .care }
 
-    /// The noun the footnote's ceiling sentence uses — `June’s 12 photos set the ceiling.`
-    func countedNoun(_ count: Int) -> String {
-        switch self {
-        case .photos: return count == 1 ? "photo" : "photos"
-        case .checkIns: return count == 1 ? "check-in" : "check-ins"
-        case .care: return count == 1 ? "care visit" : "care visits"
-        }
-    }
+    // `countedNoun` pluralized the noun in §5's footnote (`June’s 12 photos set the ceiling.`) and
+    // had no other caller. It went with the footnote in the copy audit of 2026-08-23.
 }
 
 /// Where a strip cell's placeholder artwork comes from. Same reasoning as `ActivitySeriesKind`:
@@ -112,12 +106,13 @@ struct ActivityPresentation {
     }
 
     /// §2's whole card, which exists only when all three series are whole and something happened.
+    ///
+    /// It carried §5's footnote until the copy audit of 2026-08-23; see `ActivityCopy` for what the
+    /// sentence said and for the one fact that went with it.
     struct Glance {
         /// The mono range in the card header — `2026`.
         let year: String
         let rows: [SeriesRow]
-        /// §5's footnote. Its second sentence is present only when it can be written truthfully.
-        let footnote: String
     }
 
     /// One C10 row of §3's `Moments`.
@@ -198,8 +193,7 @@ struct ActivityPresentation {
 
         return Glance(
             year: String(calendar.component(.year, from: now)),
-            rows: rows,
-            footnote: ActivityCopy.footnote(ceiling: ceiling(in: series, peak: peak))
+            rows: rows
         )
     }
 
@@ -230,24 +224,11 @@ struct ActivityPresentation {
         return counts
     }
 
-    /// Which month set the ceiling, for §5's second sentence — or nil when naming it would print a
-    /// number this screen withholds.
-    ///
-    /// Scanning in `ActivitySeriesKind` order and then by month makes the tie deterministic and puts
-    /// the earliest month of the first series in front, which is the mock's own reading (`June’s 12
-    /// photos`). A ceiling set by the Care row names no month at all: the sentence's whole content
-    /// is a care count, and BUILD-PLAN §4 does not publish one.
-    private func ceiling(
-        in series: [(kind: ActivitySeriesKind, counts: [Int])],
-        peak: Int
-    ) -> (month: String, count: Int, kind: ActivitySeriesKind)? {
-        for entry in series {
-            guard entry.kind.mayPrintTotal else { continue }
-            guard let index = entry.counts.firstIndex(of: peak) else { continue }
-            return (ActivityCopy.monthName(index + 1, calendar: calendar, locale: locale), peak, entry.kind)
-        }
-        return nil
-    }
+    // `ceiling(in:peak:)` named the month that set the shared scale, for §5's footnote's second
+    // sentence. It went with the footnote in the copy audit of 2026-08-23 — deleted rather than
+    // kept, for the reason the killed Moments builders were: it had exactly one caller, and a
+    // helper whose only output was a removed sentence is a dark code path, not a utility. The
+    // `peak` it scanned for is still computed in `glance`, where it sets the bar heights.
 
     // MARK: - §3 Moments
 
@@ -431,20 +412,18 @@ enum ActivityCopy {
         return "\(first) · \(spelledOut(caretakers, locale: locale)) people know this tree"
     }
 
-    // MARK: §5's footnote
-
-    /// `One scale across all three charts, so a tall bar means the same amount everywhere. June’s 12
-    /// photos set the ceiling.`
-    ///
-    /// The first sentence is a fact about the chart above it and is always true, because the shared
-    /// scale is how `glance` is built. The second names the month that set the ceiling and is only
-    /// written when there is a month to name and a number this screen publishes — a ceiling set by
-    /// the Care row leaves the first sentence standing alone (BUILD-PLAN §4).
-    static func footnote(ceiling: (month: String, count: Int, kind: ActivitySeriesKind)?) -> String {
-        let opening = "One scale across all three charts, so a tall bar means the same amount everywhere."
-        guard let ceiling else { return opening }
-        return "\(opening) \(ceiling.month)’s \(ceiling.count) \(ceiling.kind.countedNoun(ceiling.count)) set the ceiling."
-    }
+    // MARK: §5's footnote — removed
+    //
+    // It read `One scale across all three charts, so a tall bar means the same amount everywhere.`,
+    // with a second sentence naming the month that set the ceiling (`June’s 12 photos set the
+    // ceiling.`) when there was a month to name and a number this screen publishes.
+    //
+    // Removed by the copy audit of 2026-08-23, when the owner extended that day's footnote-slot
+    // ruling to the four sites its first enumeration missed. **Unlike screen 16's, this fact was
+    // not moved inline**: the ruling made one exception, for the 1.4 m of `MeasureCopy`, and this
+    // is not it. So the shared scale is now a property of the chart that the chart does not state.
+    // That is a deliberate consequence of the ruling and is written up in the audit document rather
+    // than worked around here.
 
     // MARK: The state SCREENS.md does not draw
 
@@ -503,27 +482,14 @@ enum ActivityCopy {
         return formatter
     }
 
-    /// `June` — the footnote writes the month out.
-    static func monthName(_ month: Int, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        let symbols = formatter.standaloneMonthSymbols ?? TreeProfilePresentation.monthNames
-        guard (1...symbols.count).contains(month) else { return "" }
-        return symbols[month - 1]
-    }
-
-    /// `Jun` — the moments list abbreviates it.
-    static func shortMonthName(_ month: Int, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        let symbols = formatter.shortStandaloneMonthSymbols ?? []
-        guard (1...symbols.count).contains(month) else {
-            return monthName(month, calendar: calendar, locale: locale)
-        }
-        return symbols[month - 1]
-    }
+    // Two month formatters stood here and both are gone.
+    //
+    // `monthName` wrote `June` out for §5's footnote, which the copy audit of 2026-08-23 removed;
+    // `shortMonthName` wrote `Apr` for the `Apr 3 · …` subtitle of a Moments row the first half of
+    // the same audit killed, and had been dead since. Neither is left dark, for the reason that
+    // round gave: a formatter whose only output was a deleted sentence is a dormant path, not a
+    // utility. `ActivityCopy.monthYear` and `TreeProfilePresentation.monthNames` are what the
+    // screen's surviving strings use.
 }
 
 // MARK: - Screen metrics
@@ -584,7 +550,6 @@ enum ActivityMetrics {
     static let stripChipInset: CGFloat = 8
     /// §4's current-week tile: `border:2px solid #2F6B4F`.
     static let stripCurrentBorder: CGFloat = 2
-    /// §5: `padding:16px 24px 36px`.
-    static let footnoteTop: CGFloat = 16
-    static let footnotePaddingH: CGFloat = 24
+    // §5's `padding:16px 24px 36px` went with the footnote in the copy audit of 2026-08-23. Only
+    // the 36pt survives, as the screen's closing space on the column — see `ActivityScreen`.
 }

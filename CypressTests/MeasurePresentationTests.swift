@@ -318,23 +318,31 @@ struct MeasurePresentationTests {
 
     // MARK: - Copy
 
-    @Test("the footnote drops its DBH sentence over a height")
-    func footnote() {
-        let dbh = Self.presentation(Self.draft(entry: "64")).footnote
-        #expect(dbh.hasPrefix("Taken at 1.4 m, tape in one hand."))
-        #expect(dbh.contains("“sure about that?”"))
+    /// **§7's footnote is gone and its one fact is not.**
+    ///
+    /// The copy audit of 2026-08-23 took the footnote slot off this screen with the rest of the
+    /// app's (owner ruling). The `1.4 m` survived by the single exception that ruling made (R9) —
+    /// the convention is what makes two readings of one trunk comparable — and moved up into §2,
+    /// under the control that selects DBH.
+    ///
+    /// The arm is the footnote's own and is the half worth keeping under test:
+    /// `TreeMeasurement.height` carries no `measurementHeightM` at all, by construction, so the
+    /// sentence must never appear over a height reading.
+    @Test("the DBH convention is stated for a trunk and never over a height")
+    func dbhHelp() {
+        let dbh = Self.presentation(Self.draft(entry: "64")).dbhHelp
+        #expect(dbh == MeasureCopy.dbhHelp)
+        #expect(dbh?.contains("1.4 m") == true, "the DBH help lost the convention it exists to state")
 
-        // `TreeMeasurement.height` carries no `measurementHeightM` at all, by construction.
-        let height = Self.presentation(Self.draft(kind: .height, entry: "18")).footnote
-        #expect(height == MeasureCopy.footnoteAnomaly)
-        #expect(height.contains("1.4 m") == false)
+        let height = Self.presentation(Self.draft(kind: .height, entry: "18")).dbhHelp
+        #expect(height == nil, "a height reading was told where DBH is measured: \(height ?? "")")
     }
 
     @Test("no copy on this screen claims an authority was told anything, or spaces an em dash")
     func copyRules() {
         let everything = [
             MeasureCopy.screenTitle, MeasureCopy.kindLabel, MeasureCopy.methodLabel,
-            MeasureCopy.saveCTA, MeasureCopy.footnoteDBH, MeasureCopy.footnoteAnomaly,
+            MeasureCopy.saveCTA, MeasureCopy.dbhHelp,
             MeasureCopy.anomalyShrunkTrunk, MeasureCopy.anomalyShrunk, MeasureCopy.anomalyOutOfRange,
             MeasureCopy.chartNoticeNoFix, MeasureCopy.chartNoticeTooImprecise(accuracyM: 40),
             MeasureCopy.saveFailed

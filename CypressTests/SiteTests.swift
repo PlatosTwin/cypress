@@ -483,20 +483,44 @@ struct SiteTests {
         }
     }
 
-    /// The one sentence that has to be exactly right says what Cypress does and stops.
-    @Test("the screen states plainly that this app does not plant trees")
+    /// The statement says what the record holds, and stops there.
+    ///
+    /// **It used to end `Cypress keeps the record of what is planted—it does not plant.`**, and this
+    /// test asserted that clause. The copy audit of 2026-08-23 removed it (R1): a disclaimer about
+    /// what kind of app this is, on the screen of somebody standing at an empty basin. The rule it
+    /// was defending is not weakened — `noSentencePromisesAnOutcome` above sweeps every string this
+    /// screen can draw for exactly the promises ARCHITECTURE §5.4 forbids, which is a guard where
+    /// the sentence was an assurance.
+    @Test("the screen states the absence and the record behind it")
     func theStatementIsHonest() {
-        #expect(SiteCopy.statementBody.contains("it does not plant"))
         #expect(SiteCopy.statementLeadIn == "No tree at this site.")
+        #expect(SiteCopy.statementBody.contains("inventory"), "the statement does not cite the record")
+        #expect(
+            SiteCopy.statementBody.contains("nothing growing"),
+            "the statement does not say the basin is empty"
+        )
     }
 
     /// ARCHITECTURE §5.7: no spaces around em dashes.
+    ///
+    /// **The calibration changed on 2026-08-23.** This used to end with
+    /// `#expect(SiteCopy.statementBody.contains("—"))` — a control proving the corpus really held an
+    /// em dash for the sweep to find. R1 deleted the only clause on this screen that had one, so
+    /// that control would now fail on its own terms rather than on the rule. It is replaced by a
+    /// specimen run through the sweep's own expression, plus a check that the corpus is not empty —
+    /// which is the failure this shape of sweep actually has: an `allCopy()` returning nothing
+    /// passes every line in it.
     @Test("copy follows the em-dash rule")
     func emDashRule() {
-        for line in SiteTests.allCopy() {
+        let specimen = "a sentence — with a spaced em dash"
+        #expect(specimen.contains(" — "), "the em-dash sweep cannot see a spaced em dash any more")
+
+        let lines = SiteTests.allCopy()
+        #expect(!lines.isEmpty, "the sweep has nothing to sweep")
+        for line in lines {
+            #expect(!line.isEmpty, "an empty line in the sweep proves nothing")
             #expect(!line.contains(" — "), "spaced em dash in: \(line)")
         }
-        #expect(SiteCopy.statementBody.contains("—"))
     }
 
     // MARK: - Identity

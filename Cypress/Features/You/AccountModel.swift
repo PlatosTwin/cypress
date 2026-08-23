@@ -11,7 +11,8 @@
 //  were signed in, nothing signed you out, and `LocalAPI.deleteAccount()`, written to RULINGS R3
 //  and complete, had exactly one caller: its own test. A person who had signed in could neither see
 //  it nor leave it. Private reminders were the same shape one layer down: screen 06 offers "Save a
-//  private reminder for yourself", confirms "Saved. Your reminder stays yours alone.", and
+//  private reminder for yourself", confirms the save is private to you (`ReportCopy.reminderSaved`),
+//  and
 //  `LocalAPI.privateReminders(limit:)` — the correct one-owner query — had no shipping caller, so a
 //  reminder could be written and never read again by anybody, including the person who wrote it.
 //

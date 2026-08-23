@@ -126,14 +126,20 @@ enum MapInventoryCopy {
     /// the *top* of the display. `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` holds the
     /// budget, so a copy edit that spends the line back fails rather than ships.
     ///
-    /// `may well stand here` is doing load-bearing work and is not a hedge to be tidied away: the
-    /// trigger fires wherever the record is empty, which includes the Pacific and the ground
-    /// outside a downloaded city's window. `Trees stand here` would be a stronger sentence and a
-    /// false one in those places; `may well` is true in all of them and still refuses the reading
-    /// the ticket is about — that the park has no trees.
+    /// **The hedge is load-bearing and is not to be tidied away.** The trigger fires wherever the
+    /// record is empty, which includes the Pacific and the ground outside a downloaded city's
+    /// window. `Trees stand here` would be a stronger sentence and a false one in those places;
+    /// `may` is true in all of them and still refuses the reading the ticket is about — that the
+    /// park has no trees.
+    ///
+    /// The copy audit of 2026-08-23 (R25) replaced `Trees may well stand here, unlisted.`:
+    /// `may well` leans toward asserting the trees, which is the half of the hedge the sentence
+    /// cannot carry, and the trailing `unlisted` made a fact about the record read as an adjective
+    /// on the trees. The clause the rewrite spends on `without being listed` is measured, not
+    /// assumed — see the AX5 budget above.
     ///
     /// No spaces around em dashes (ARCHITECTURE §5.7) — there are none to space.
     static let message =
         "Cypress draws a city street-tree inventory, and this ground is not on it. "
-        + "Trees may well stand here, unlisted."
+        + "Trees may stand here without being listed."
 }

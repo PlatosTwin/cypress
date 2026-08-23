@@ -356,14 +356,19 @@ enum GrowthHistoryCopy {
     static let noFixRecordedState =
         "These readings were saved before the phone had a location fix, so none of them can be attributed to this tree and none is charted."
 
-    /// 11 §6's footnote is **deliberately not rendered**. It reads `Tap any point to open the
-    /// observation behind it.`, and there is nothing behind a point to open: a measurement is not an
-    /// observation, `Route` has no case for either, and no screen in SCREENS.md is drawn as that
-    /// destination. Printing an instruction for an affordance that does not exist is the same class
-    /// of claim as "sent to the city" (ARCHITECTURE §5.4) — small, and still a promise the app does
-    /// not keep. Recorded in ERRATA (E64), with the string kept here so it returns unedited the day
-    /// the destination is designed.
-    static let unrenderedFootnote = "Tap any point to open the observation behind it."
+    // 11 §6's footnote — `Tap any point to open the observation behind it.` — was never rendered,
+    // and the string is no longer kept here either.
+    //
+    // Why it was never drawn (ERRATA E64) is unchanged: there is nothing behind a point to open. A
+    // measurement is not an observation, `Route` has no case for either, and no screen in SCREENS.md
+    // is drawn as that destination, so printing the instruction would be a promise the app does not
+    // keep — the same class of claim as "sent to the city" (ARCHITECTURE §5.4).
+    //
+    // Why the constant is gone: the copy audit of 2026-08-23 removed the footnote slot everywhere,
+    // this site included (owner ruling). It had been kept "so it returns unedited the day the
+    // destination is designed", and a mock sentence held in the source against a screen that may
+    // never be built is exactly the route by which retired copy comes back. SCREENS.md 11 §6 is
+    // struck, which is where it is preserved now, and E64 still says what it said.
 
     /// **NOT SPECIFIED**; decided in RULINGS R15, see `GrowthHistoryPresentation.offersAddReading`.
     ///

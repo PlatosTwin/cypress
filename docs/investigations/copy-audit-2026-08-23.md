@@ -11,8 +11,11 @@ item **K1**. It is gone.
 
 ## 0. Status — the owner's rulings, 2026-08-23
 
-The decision round is closed for the kills. **Phase 2A landed them on this branch**; the 25
-rewrites are unimplemented and go to the owner as a second batch (§5, unchanged below).
+**Both decision rounds are closed and both halves have landed on this branch.** Phase 2A landed the
+kills, the footnote slot and the mock's strikes; phase 2B landed the rewrites, the four remaining
+footnotes and R9's inline move. Nothing in §§3–5 below is pending.
+
+### Round one — the kills
 
 | # | Ruling | Where it landed |
 | --- | --- | --- |
@@ -23,6 +26,47 @@ rewrites are unimplemented and go to the owner as a second batch (§5, unchanged
 
 **R26 is a waived item. Do not re-flag it in any future copy audit.** The public-timeline
 sentence is a deliberate forward promise, not an oversight; it was screened, raised, and settled.
+
+### Round two — the rewrites (2026-08-23, second decision round)
+
+| # | Ruling | Where it landed |
+| --- | --- | --- |
+| 5 | **Every rewrite in §5's table is approved as proposed**, with one modification: R7 ships as `First photo · six people know this tree` — **`know`, not the proposed `knew`**, the owner's explicit verbatim wording | §5, and the dispositions in §11 |
+| 6 | **Ruling 3 extends to the four footnotes §4a named as untouched.** All four go | §4b below |
+| 7 | **Exception to ruling 6: R9's fact moves inline.** `DBH is measured at 1.4 m above the ground.` survives, in screen 16's §2 under the control that selects DBH; the slot dies | §4b, and `MeasureCopy.dbhHelp` |
+| 8 | **R10 dies entirely** — the confirmation dialog already says it, and says it at the moment it applies | `MeasureCopy.anomalyShrunkTrunk` is now the only place that question is asked |
+
+**On R7's tense.** The proposal was `six people knew this tree`, past, matching a memorial. The
+owner's wording is present. It is implemented exactly as ruled, and it turns out to be the same
+clause `ActivityCopy.onRecordSubtitle` and `TreeProfilePresentation.caretakerHeadline` already
+print, so A8's headcount now reads identically on all three screens that draw it. The comment in
+`MemorialPresentation.caretakerCount` that leaned on the past tense to justify not applying A8's
+24-month window has been rewritten around the reason that survives the change: a removed tree
+accrues nothing, so a rolling window walks every memorial to zero.
+
+### 4b. What ruling 6 removed, and what ruling 7 kept
+
+The four sites §4a named, all gone:
+
+| Site | What it said | What happened |
+| --- | --- | --- |
+| `CheckInCopy.footnote` (05 §8) | `Everything here is optional. Skip anything and it still counts.` | Removed. The claim was always carried by the card's behavior — no control on 05 is required and the CTA is live on an untouched card — and that is unchanged. The 36pt it carried moves to the sticky CTA block. `CypressSpacing.bottomStickyCTAGap` had no other caller and goes with it. |
+| `ActivityCopy.footnote` (13 §5) | `One scale across all three charts…` plus the ceiling sentence | Removed, with `ceiling(in:peak:)`, `countedNoun`, `ActivityCopy.monthName` and the `Spacer` that bottom-pinned it. `shortMonthName` had been dead since phase 2A killed its caller and goes in the same sweep. |
+| `MeasureCopy.footnoteDBH` / `.footnoteAnomaly` (16 §7) | `Taken at 1.4 m, tape in one hand. A shrinking trunk gets a “sure about that?” before it saves.` | Slot removed. First sentence's fact survives inline as `MeasureCopy.dbhHelp` (ruling 7); second dies (ruling 8). |
+| `GrowthHistoryCopy.unrenderedFootnote` (11 §6) | `Tap any point to open the observation behind it.` | Never drawn (E64) and now not held in the source either. ERRATA **E64 is amended in place** to say so — it claimed the constant was kept "so it returns unedited the day the destination is designed", and that is no longer true. |
+
+**One fact was lost on purpose and is recorded rather than worked around.** Screen 13's footnote
+opened with a true statement about the chart above it — the three rows share one vertical scale —
+and ruling 7 made exactly one exception for a fact, for screen 16. So the shared scale is now a
+property of the chart that the chart does not state. Widening ruling 7 to cover it would have been
+an inference, which is the mistake §4a exists to avoid; if the owner wants it said, that is a
+one-line follow-up on screen 13.
+
+**A fifth `footnote` was checked and is not one.** `VisitAddTreeCopy.footnote`
+(`Recorded as community-added and unverified, on this phone.`) is named like the others and is a
+different shape: it is centered under the CTA in the footer, states what the record will say, and
+is not a bottom-pinned slot. It was in neither enumeration and was not touched. Named here so the
+next round does not have to decide whether it was missed.
 
 ### 4a. What ruling 3 actually removed
 
@@ -126,17 +170,22 @@ Stated so the gap is on the record rather than implied:
 | `Info.plist` permission strings | 3 |
 | **Total user-facing strings screened** | **965** |
 | **KILL** — narrative holdover, delete outright | **11** items / **13** strings — *ruled, landed* |
-| **REWRITE** — useful purpose, wrong voice or now untrue | **25** — *24 pending the owner's second batch; R26 withdrawn* |
+| **REWRITE** — useful purpose, wrong voice or now untrue | **25** — *23 implemented; R26 withdrawn, R15 died as a kill* |
 | **KEEP** | **929** |
 | Additionally removed under ruling 3 (footnote slot) | **1** — `CareLogCopy.footnote`, a KEEP the owner overrode |
+| Additionally removed under ruling 6 (the same slot, four more sites) | **4** — §4b |
 
 Numbered **K1–K11** and **R1–R27** below. That is 38 numbers over **36 distinct strings**: R14
 and R16 are the same two strings as K10 and K8, offered as rewrites rather than deletions so the
 owner has both options on one line. 11 + 25 = 36.
 
-Of the 36, **20 are load-bearing for tests** (§8), and **20 are specified verbatim in
-`SCREENS.md`** (§7) — which is the DECISIONS constraint-21 territory the ROADMAP item
-anticipated, and the reason nothing is being reworded silently.
+Of the 36, **20 are load-bearing for tests** (§8), and **22 are specified verbatim in
+`SCREENS.md`** (§7, corrected during implementation) — which is the DECISIONS constraint-21
+territory the ROADMAP item anticipated, and the reason nothing was reworded silently.
+
+**The 23 rewrites that shipped** are R1–R13, R17–R25 and R27. R14/R15/R16 were moot before phase
+2A (their strings died as kills K10/K11/K8) and R26 is waived. The count of 25 above is the
+phase-1 tally of *distinct strings* proposed for rewrite and is left as it was written.
 
 ---
 
@@ -202,7 +251,7 @@ of the demo voice on the most-visited screen in the app; R4 reads as a first-mov
 | R2 | `MemorialPresentation.swift:435` | ` This profile is now read-only. Every photo, visit, and check-in stays—a record of the tree that was here.` | ` This profile is now read-only. Every photo, visit, and check-in stays.` |
 | R5 | `MemorialPresentation.swift:522` | `A new tree is coming.` | `This site may be replanted.` |
 | R6 | `MemorialPresentation.swift:524` | ` When the city replants this site, the new profile will link back here—the site keeps its lineage.` | ` If the city replants here, the new tree's profile will link back to this one.` |
-| R7 | `MemorialPresentation.swift:492–494` | `First photo · the record begins · six people came to know it` | `First photo · six people knew this tree` |
+| R7 | `MemorialPresentation.swift:492–494` | `First photo · the record begins · six people came to know it` | ~~`First photo · six people knew this tree`~~ → **shipped as `First photo · six people know this tree`** — the owner's explicit wording, present tense (§0, ruling 5) |
 | R8 | `MemorialPresentation.swift:511–513` | `Check-in · vitality 2 · a steward confirmed the decline` | `Check-in · vitality 2` |
 
 R5/R6: `A new tree is coming.` is a prediction the app cannot make — nothing in the data says
@@ -229,11 +278,25 @@ The owner chose KILL. R14 and R15 are withdrawn; both rows and both subtitles ar
 
 | # | File:line | Current | → |
 | --- | --- | --- | --- |
-| R9 | `MeasurePresentation.swift:454` | `Taken at 1.4 m, tape in one hand.` | `DBH is measured at 1.4 m above the ground.` |
+| R9 | `MeasurePresentation.swift:454` | `Taken at 1.4 m, tape in one hand.` | `DBH is measured at 1.4 m above the ground.` — **and it moved.** See below |
 | R10 | `MeasurePresentation.swift:456` | `A shrinking trunk gets a “sure about that?” before it saves.` | **delete** — the confirmation itself already says it, and better |
 
 R9 keeps the only fact in the sentence and drops the pose. The 1.4 m is genuinely useful and
 must survive.
+
+**Where it went (ruling 7, phase 2B).** The footnote *slot* on 16 dies with all the others, so the
+sentence had nowhere to stand at the foot of the screen. It is now `MeasureCopy.dbhHelp`, drawn in
+**§2, directly under the segmented control that selects `Trunk · DBH`** — in the footnote's own
+type (`body135` / `text.faintAlt`), on the DBH arm only, exactly as the footnote's first sentence
+was. That arm is not a style choice: `TreeMeasurement.height` carries no `measurement_height_m` at
+all (BUILD-PLAN §4), so over a height reading the sentence would describe a column that row does
+not have.
+
+**Screen 16 has no other help or caption text**, which was checked against the mock and the view
+before this was placed: §2 and §4 are uppercase micro-labels, §3 is the readout and the sanity
+pill, and the two lines above the CTA are notices about *this* reading. So "inline" meant beside
+the control the fact is about, which is where it is. It is a placement decision made under the
+ruling and is flagged here rather than buried in a diff.
 
 ### 5.6 Add-a-tree flow
 
@@ -354,8 +417,16 @@ So that "928 KEEP" is not an unexamined remainder, the notable near-misses:
 
 ## 7. The `SCREENS.md` problem
 
-**20 of the 36 distinct strings are specified verbatim in `docs/distilled/SCREENS.md`** — 18
-rows below, two of which cover a pair each. Grepped and confirmed line by line:
+**Corrected 2026-08-23 during phase 2B: it is 22, not 20.** R5 and R6 are listed below as
+agent-written and they are not — screen 19 §5's lineage callout is in the mock verbatim, lead-in
+and body, and the strike had to be made there. The line was found by grepping the file for each
+string before striking it rather than by trusting this table, which is the only reason it was
+caught. Treat the "not in the mocks" list below as a claim to re-check, not a finding.
+
+**22 of the 36 distinct strings are specified verbatim in `docs/distilled/SCREENS.md`** — 19
+rows below, two of which cover a pair each. Grepped and confirmed line by line. **The line numbers
+are phase-1's and have moved**: both phases struck and annotated this file, so grep for the string.
+Every row below now carries a `~~strike~~` and a marker naming this document.
 
 | Item | `SCREENS.md` line |
 | --- | --- |
@@ -377,10 +448,17 @@ rows below, two of which cover a pair each. Grepped and confirmed line by line:
 | R20/R21 `stays yours alone` | 928 |
 | R24 `Thirty seconds, then back to your walk` | 1031 |
 | R26 `public timeline` | 1254 |
+| **R5/R6 lineage callout** — *missed by this table, found in phase 2B* | 19 §5 |
 
-Sixteen are **not** in the mocks and are agent-written: K6, K7, R1, R5, R6, R11, R12, R13, R15,
-R17, R18, R19, R22, R23, R25, R27 — which includes the whole of §5.6, a flow the mocks never
-drew.
+Fourteen are **not** in the mocks and are agent-written: K6, K7, R1, R11, R12, R13, R15, R17, R18,
+R19, R22, R23, R25, R27 — which includes the whole of §5.6, a flow the mocks never drew. (R5 and
+R6 were on this list and should not have been; see the correction above.)
+
+**Four more strikes were added in phase 2B for footnotes rather than for numbered items**: 05 §8,
+11 §6, 13 §5 and 16 §7, under ruling 6. Screen 06's dashed disclosure carries a *note* rather than
+a strike — it is unchanged, and the note records that it is now the last place in the app that says
+`stays yours alone`, since R20/R21 moved the two screens that restated it onto screen 17's
+phrasing. That was not in the ruling's scope and was not widened.
 
 `SCREENS.md` is a distilled transcription of the demo-era mock, which is the source of the voice
 being removed. Whatever the owner rules, **phase 2 must also amend `SCREENS.md`**, or the next
@@ -423,6 +501,35 @@ is a lower bound; do not use it on its own in phase 2.**
 R3/R4 are the expensive ones: the two UI suites drive the primary CTA by its label, so phase 2
 needs a simulator run, not just a unit pass.
 
+### What phase 2B actually found, sweeping again
+
+Both methods were run again before anything was edited, and the table above was a lower bound in
+two places it did not predict:
+
+- **`MapEmptyInventoryTests` pins R25's clause** (`.contains("may well stand here")`), and R25 is
+  not in the table at all. It was found by the symbol-name sweep, not the substring one — the same
+  asymmetry `SiteTests.swift:488` demonstrated. The suite caught it anyway, in the first run.
+- **Two tests broke on their own *calibration* rather than on their rule.** `SiteTests.emDashRule`
+  ended `#expect(SiteCopy.statementBody.contains("—"))` and `MemorialPresentationTests.emDashRule`
+  asserted `line.contains("—")` for each line it swept. Both were controls proving the corpus held
+  a real em dash — and R1, R2 and R6 deleted every em dash on both screens. Neither is listed as
+  load-bearing above, because neither asserts a rewritten string; they assert a *property* the
+  rewrites removed. Both now calibrate against a specimen instead, so the control survives the
+  corpus.
+
+**Where a phrasing assertion could become a fact assertion, it did.** Three cases:
+
+| Test | Was | Is |
+| --- | --- | --- |
+| `LandContextScreenTests.theQuestionIsOptional` | whole-sentence equality on R12 | the empty form is non-empty and contains no pressure word — the contract the test's own name is about |
+| `MemorialPresentationTests` (steward clause) | the clause renders iff `verificationState == .orgVerified` | the row reads the same on both arms and names nobody — the stronger claim, and it catches a re-introduction |
+| `ActivityPresentationTests` (ceiling sentence) | the footnote's exact text on two fixtures | with a care month at the ceiling, the care count reaches no drawn string on the screen — BUILD-PLAN §4's actual rule, held over whatever the screen draws |
+
+`SiteTests.theStatementIsHonest` was retargeted rather than deleted: it asserted the clause R1
+removed, and now asserts the two facts that survive. The rule it was guarding (ARCHITECTURE §5.4)
+was never carried by that sentence — `noSentencePromisesAnOutcome` sweeps every string the screen
+can draw, and it is untouched.
+
 ---
 
 ## 9. Ambiguities — asked, and answered
@@ -441,12 +548,25 @@ All five were put to the owner on 2026-08-23. Four are closed; one was never in 
    and why.
 5. **Seed-database prose** — **out of scope** until the owner rules on it. Unchanged.
 
-### New, opened by the implementation
+### Answered in the second round
 
-6. **Four footnotes remain** (§4a). Ruling 3's enumeration named eight sites and this round
-   removed exactly those eight; `ActivityCopy.footnote`, `CheckInCopy.footnote`, Measure's two,
-   and `GrowthHistoryCopy.unrenderedFootnote` are still drawn. Whether ruling 3 meant *all*
-   footnotes is a question, not an inference.
+6. **Four footnotes remain** (§4a). Ruling 3's enumeration named eight sites and phase 2A removed
+   exactly those eight; `ActivityCopy.footnote`, `CheckInCopy.footnote`, Measure's two, and
+   `GrowthHistoryCopy.unrenderedFootnote` were still drawn. Whether ruling 3 meant *all* footnotes
+   was a question, not an inference. — **Answered: yes, all four go** (ruling 6), with one
+   exception for a fact (ruling 7). Implemented in phase 2B; see §4b.
+
+### Open after the second round
+
+7. **Screen 13 no longer says its three charts share a scale.** The fact was true and is now
+   unstated (§4b). Not a defect and not an oversight — the consequence of a ruling that made
+   exactly one exception, for screen 16 — but the next person to read the chart will not be told.
+   A one-line decision for the owner if it is wanted back, and deliberately not taken here.
+8. **`stays yours alone` survives once, in screen 06's dashed disclosure.** R20/R21 moved the
+   confirmation and the You tab's empty state onto screen 17's `private to you`; the disclosure
+   itself was not in the table and was not touched, so the synonym the two rewrites were partly
+   meant to retire is still in the app in one place. Recorded rather than widened.
+9. **Seed prose is still unscreened** (ambiguity 5, unchanged). Out of scope until ruled on.
 
 ## 10. Where the machinery is
 

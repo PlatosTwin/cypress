@@ -286,7 +286,7 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
         // Two-valued (`TreeProfilePresentation.ctaTitle`) on whether the harness's resolved tree is
         // cold or has a hero photograph — see `PrimaryCTAReachabilityTests`' own table for why both
         // are checked rather than one assumed.
-        let ctaLabels = ["Be the first to photograph this tree", "Visit \u{00b7} say hello with a photo"]
+        let ctaLabels = ["Add the first photo of this tree", "Visit \u{00b7} add a photo"]
         guard let ctaIndex = index({ ctaLabels.contains($0) }) else {
             XCTFail("treeProfile: neither primary CTA label is in the tree")
             return
@@ -573,7 +573,7 @@ final class ReadingOrderAccessibilityTests: XCTestCase, DeepLinkHarness {
 
     /// **The care log's entry *is* its four toggles**, and `Done` with none of them on writes a
     /// visit that records nothing. Screen 09's own instruction line says the shape out loud
-    /// ("Toggle what you did. Thirty seconds, then back to your walk"), and the order that sentence
+    /// ("Toggle what you did"), and the order that sentence
     /// describes has never been asserted.
     ///
     /// The second half of this is ERRATA **E185**'s: the photo/note well under the toggles is

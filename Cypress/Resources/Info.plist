@@ -7,7 +7,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Cypress uses your location to show the street trees around you and to work out which one you are standing in front of.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>A visit is a photo of a tree lined up against the last one. Cypress needs the camera to take it.</string>
+	<string>Cypress uses the camera to photograph the tree you are visiting.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Cypress can keep a copy of the photos you take of a tree in your own library.</string>
 	<key>UIAppFonts</key>

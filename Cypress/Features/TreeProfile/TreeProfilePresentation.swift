@@ -648,7 +648,7 @@ struct TreeProfilePresentation {
     /// It is drawn exactly when a photograph *could* be added — `acceptsContributions` gates it — and
     /// `LocationPrompt` (E123) already settled that a dashed-ring card in this vocabulary is tappable
     /// when a user action would fill it. A camera glyph inside a dashed frame, sitting above a button
-    /// that says "Be the first to photograph this tree", is the most photograph-shaped hole in the
+    /// that says "Add the first photo of this tree", is the most photograph-shaped hole in the
     /// app; leaving it inert made it the one dashed card here that refused the tap.
     ///
     /// The hint, not the label: the label is the well's own sentence, which states the fact, and R2's
@@ -731,9 +731,15 @@ struct TreeProfilePresentation {
 
     // MARK: - Primary action
 
-    /// Verbatim from 03 and 14.
+    /// What the button does, on both arms.
+    ///
+    /// **No longer verbatim from 03 and 14.** The mock's `Visit · say hello with a photo` and
+    /// `Be the first to photograph this tree` were rewritten by the copy audit of 2026-08-23
+    /// (R3/R4, owner-approved): the first is the demo-era voice on the most-visited screen in the
+    /// app, and the second reads as a prize for arriving early rather than as a description of the
+    /// tap. `SCREENS.md` 746 and 1231 are struck to match, so the mock cannot restore them.
     var ctaTitle: String {
-        isCold ? "Be the first to photograph this tree" : "Visit · say hello with a photo"
+        isCold ? "Add the first photo of this tree" : "Visit · add a photo"
     }
 
     // MARK: - Secondary action (screen 05)

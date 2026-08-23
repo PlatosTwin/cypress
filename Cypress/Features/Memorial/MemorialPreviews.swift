@@ -115,8 +115,9 @@ enum MemorialFixtures {
         capturedAt: date("2026-01-18")
     )
 
-    /// The check-in the mock draws: vitality 2, and made by an org steward, which is the column that
-    /// earns the `a steward confirmed the decline` clause.
+    /// The check-in the mock draws: vitality 2, org-verified. The verification state no longer
+    /// changes what the row says — the copy audit of 2026-08-23 (R8) removed the clause that read
+    /// it — and is kept because it is what the mock's row is.
     static let observation = TreeObservation(
         id: id(30),
         treeID: treeID,
@@ -224,7 +225,7 @@ enum MemorialFixtures {
 }
 
 /// The photo series read as a page. `86 photos · 2019–2026` cannot be said about thirty rows, so it
-/// is not said, and `three people came to know it` goes with the partial care series.
+/// is not said, and `three people know this tree` goes with the partial care series.
 #Preview("19 · a page, not a series") {
     MemorialScreen(
         presentation: MemorialPresentation(

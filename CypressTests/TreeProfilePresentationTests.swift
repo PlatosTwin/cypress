@@ -102,7 +102,7 @@ struct TreeProfilePresentationTests {
         #expect(subject.showsFoliageStrip)
         #expect(subject.photographedMonths == Set([1, 2, 3, 6, 7, 9, 10, 11, 12]))
         #expect(subject.foliageDensities.filter { $0 == .full }.count == 9)
-        #expect(subject.ctaTitle == "Visit · say hello with a photo")
+        #expect(subject.ctaTitle == "Visit · add a photo")
 
         // Nothing was quietly promoted to approved to make that happen.
         #expect(subject.visiblePhotos.items.allSatisfy { $0.moderationState == .pending })
@@ -159,7 +159,7 @@ struct TreeProfilePresentationTests {
         let subject = Self.presentation(Self.profile(photos: .empty, ownPhotoIDs: []))
         #expect(subject.isCold)
         #expect(subject.heroMetaPill == nil)
-        #expect(subject.ctaTitle == "Be the first to photograph this tree")
+        #expect(subject.ctaTitle == "Add the first photo of this tree")
         #expect(!subject.showsFoliageStrip)
     }
 

@@ -301,7 +301,12 @@ enum JournalCopy {
 
     // MARK: The export (ERRATA E39's method, given an entrance)
 
-    static let exportLabel = "Take your record with you"
+    /// The section header over the two format rows.
+    ///
+    /// It read `Take your record with you` until the copy audit of 2026-08-23 (R23). The rows under
+    /// it already say `Export as a spreadsheet` and `Export as map data`, so the header was the one
+    /// place on this screen that avoided the word for what its controls do.
+    static let exportLabel = "Export your journal"
     /// What the file contains, in one line. It names the disclaimer that travels inside it rather
     /// than paraphrasing it, because the file says it too and the two must not drift.
     static let exportBody =

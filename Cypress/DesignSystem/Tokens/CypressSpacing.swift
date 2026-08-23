@@ -68,8 +68,10 @@ enum CypressSpacing {
     static let bottomCTA: CGFloat = 40
     /// `44px` — sheets.
     static let bottomSheet: CGFloat = 44
-    /// `8px` — gap under a sticky CTA that sits over a footnote (pairs with `bottomFootnote`).
-    static let bottomStickyCTAGap: CGFloat = 8
+    // `bottomStickyCTAGap` (8px) was the gap under a sticky CTA that sat over a footnote. Screen 05
+    // was its only caller and that footnote was removed by the copy audit of 2026-08-23, so no CTA
+    // in the app sits over one now. Deleted rather than kept as an unused token: the next screen to
+    // need a gap of its own should measure it, not inherit this one's name.
 
     // MARK: - Accessibility
 

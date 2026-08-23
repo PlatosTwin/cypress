@@ -101,8 +101,13 @@ enum CareLogCopy {
     /// 09 §2's title, before the middle dot.
     static let titleLead = "Care log"
 
-    /// 09 §3, verbatim.
-    static let subtitle = "Toggle what you did. Thirty seconds, then back to your walk."
+    /// 09 §3, minus its second sentence.
+    ///
+    /// `Thirty seconds, then back to your walk.` was cut by the copy audit of 2026-08-23 (R24,
+    /// owner-approved). The first sentence is an instruction about the controls under it; the
+    /// second was a promise about the reader's morning — the same distinction RULINGS R80 item 6a
+    /// drew for screen 18's two buttons, one screen over. `SCREENS.md` 1031 is struck to match.
+    static let subtitle = "Toggle what you did."
 
     /// 09 §5's well copy, verbatim. Since task #168 it is the caption over the always-visible
     /// fields rather than a control — the reveal step was the owner-reported awkwardness. The

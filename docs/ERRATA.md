@@ -1657,9 +1657,17 @@ destination. Wiring one would be inventing a screen (DECISIONS constraint 21); r
 over inert dots would print an instruction the app does not honor, which is the same class of claim
 as "sent to the city" (ARCHITECTURE §5.4), smaller and still a promise.
 
-So the footnote is absent. The string is kept verbatim in `GrowthHistoryCopy.unrenderedFootnote` so
-it returns unedited the day the destination is designed, and the dots carry their value and method in
-their accessibility labels in the meantime.
+So the footnote is absent, and the dots carry their value and method in their accessibility labels
+instead.
+
+**Amended 2026-08-23 (copy audit).** The string was also kept verbatim in
+`GrowthHistoryCopy.unrenderedFootnote`, "so it returns unedited the day the destination is designed".
+That constant is gone: the copy audit of 2026-08-23 removed the footnote slot across the app by owner
+ruling, this site included. A retired mock sentence held in the source against a screen that may
+never be built is one of the routes by which that voice comes back, which is the audit's own finding.
+The sentence is preserved struck in SCREENS.md 11 §6, where the rest of the mock's copy lives.
+Nothing above changes: the affordance still does not exist, and if it is ever designed its copy is a
+decision for that round.
 
 **Related, and also not invented:** SCREENS.md §5 gap 2 lists the disabled button state as
 unspecified, and screen 09's `Done` needs one — PROTOTYPE-FLOW §1.3 `logCare` guards on "no-op if no

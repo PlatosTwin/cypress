@@ -89,16 +89,18 @@ struct ActivityScreen: View {
                         }
                     }
 
-                    // §5's footnote sits under the strip. It describes the chart card, so it is
-                    // absent exactly when the card is: a sentence about one scale across three
-                    // charts, printed over no charts, explains nothing.
-                    Spacer(minLength: 0)
-                    if let footnote = presentation?.glance?.footnote {
-                        footnoteBlock(footnote)
-                    }
+                    // §5's footnote sat here, under the strip, and was removed by the copy audit of
+                    // 2026-08-23 (owner ruling). The `Spacer` went with it: it existed only to push
+                    // the footnote to the bottom of a short screen, and the `minHeight` frame below
+                    // is what top-aligns the content either way.
+                    //
+                    // **The 36pt the footnote carried is not the footnote and stays**, on the column
+                    // — it is the screen's closing space above the home indicator, and without it
+                    // the photo strip sits on the edge.
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
+                .padding(.bottom, CypressSpacing.bottomFootnote)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
@@ -227,18 +229,8 @@ struct ActivityScreen: View {
         }
     }
 
-    // MARK: - §5 Footnote
-
-    private func footnoteBlock(_ text: String) -> some View {
-        Text(text)
-            .cypressBody135(color: CypressColor.textFaintAlt)
-            .lineSpacing(CypressFont.LineSpacing.body135)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, ActivityMetrics.footnoteTop)
-            .padding(.bottom, CypressSpacing.bottomFootnote)
-            .padding(.horizontal, ActivityMetrics.footnotePaddingH)
-    }
+    // §5's footnote block was removed by the copy audit of 2026-08-23 (owner ruling); SCREENS.md 13
+    // §5 is struck to match. See `ActivityCopy`.
 
     // MARK: - The states SCREENS.md does not draw
 
