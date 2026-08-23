@@ -101,8 +101,16 @@ Three guards, at three different layers, because each catches something the othe
    what it catches is a **pin** whose declared scope does not describe the file it names — a publish
    round bumping `path` and `sha256` to the newest fused seed by reflex and putting every published
    city inside the app. Red-proved against the live `ac7b1ccc` object.
+
+   **It is a readability aid, not the load-bearing guard**, and the difference is worth stating so
+   a later round does not lean on the wrong one. `sha256` is what decides which bytes may exist
+   here at all, so a scope change is unreachable without editing the pin. The `id_spaces` check is
+   also the one check that can be *absent*: with no `sqlite3` on `PATH` the script says it did not
+   run and continues — a fail-open, announced rather than silent, because the hash has already
+   settled the question it would have been answering.
 2. **`BundleContractTests.bundledSeedHoldsOnlyTheRuledScope`** asserts the *built app's* bundle
-   holds exactly `sf` and `us-ca-sj`, whichever way the file arrived.
+   holds exactly `sf` and `us-ca-sj`, whichever way the file arrived. **This is the last line**,
+   and it is why widening the app's scope takes two deliberate edits in two files.
 3. **`BundleContractTests.bundledSeedStaysWithinTheAppSizeRuling`** asserts it stays under 200 MB —
    a ceiling, not a pin, since a legitimate refresh of the same two cities moves the count by
    megabytes and nothing legitimate multiplies it sevenfold.
