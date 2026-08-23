@@ -99,6 +99,14 @@ string in the payload and in every index that copies it.
 
 ### R??? — The format-1 manifest keeps the old *path*, and format 2 takes a new one
 
+> **The SCHEDULE below is SUPERSEDED 2026-08-23 by the owner** — see
+> `docs/rulings-pending/format1-retirement.md`. The naming decision this entry makes (old name
+> keeps the old format, format 2 takes a new one) stands and is why the frozen object still works.
+> What no longer holds is the three-tick clock at the end: format 1 was retired on 2026-08-23,
+> ahead of "the publish after NYC". Two further corrections are recorded in that entry — the
+> fallback to `manifest.json` is **kept**, not deleted with the rest; and the claim below that
+> `verify_seed` checks both manifests is wrong, `Tools/verify_seed.py` never mentions either.
+
 RULING D8 requires dual-publishing for one release cycle. It does not say which object gets which
 name, and the choice is load-bearing.
 

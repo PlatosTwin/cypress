@@ -52,23 +52,37 @@ the wrong identity.
 to paste keys per-publish is the exact failure #248 records twice. An agent with `dist/` built,
 `gh` auth, and Fly access publishes end to end like this — the keys never leave the Fly app:
 
-1. Put the four `dist/` files (two city files, the fused seed, `manifest.json`) on a temporary
-   release on this repo (`gh release create seed-relay-tmp … --prerelease --latest=false`).
+1. Put the `dist/` files on a temporary release on this repo (`gh release create
+   seed-relay-tmp … --prerelease --latest=false`): one pack per published region, the fused
+   seed, and `manifest-v2.json` — **the number of packs the manifest lists, plus two**. Four
+   assets at s16 (2 packs); nine after New York (7 packs). Count them off the manifest rather
+   than from memory, and note it is deliberately not the same number as step 3 checks.
+   **Never `manifest.json`** — it is retired and the bucket's copy is frozen (step 3).
    The bytes are public-by-design — they are about to be served anonymously from the bucket.
 2. Launch a throwaway worker on the `cypress-sync` app, which inherits the bucket secrets as
    env: `alpine:3.20`, ~512 MB, entrypoint `sh -c` with command `sleep 3600` (the MCP runner
    appends a stray argv token; `sh -c` swallows it — a bare `sleep 3600` entrypoint exits 1).
 3. `exec` has a ~30 s transport ceiling: run every long step detached
    (`nohup sh -c '… && touch /tmp/x.done || touch /tmp/x.fail' &`) and poll the marker files.
-   Steps: `apk add --no-cache aws-cli`; `wget` the four release assets; `sha256sum -c` against
-   the hashes in `manifest.json` (write the sums file with one `echo` per line — `printf '\n'`
-   mangles through the nested quoting); `aws s3 cp` each to its manifest path with
+   Steps: `apk add --no-cache aws-cli`; `wget` the release assets; `sha256sum -c` against
+   the hashes in `manifest-v2.json` — **one hash per pack, plus one for the seed**, so eight
+   after New York and one fewer than the assets you uploaded in step 1: a manifest states no
+   hash of itself, and it is verified in step 4 by `cmp` instead. (Write the sums file with one
+   `echo` per line — `printf '\n'` mangles through the nested quoting.) `aws s3 cp` each to its
+   manifest path with
    `--endpoint-url $AWS_ENDPOINT_URL_S3`, cities and seed first, manifest LAST with
    `--content-type application/json`. Never print any `AWS_*` value — names only.
+
+   **`manifest.json` is uploaded by no step here, and that is deliberate.** Format 1 retired
+   on 2026-08-23; the object already in the bucket is frozen, and it is what builds ≤ 47 still
+   read. Copying a newer file over it would replace a stale-but-true catalogue with one whose
+   packs those builds cannot open — the outage the dual-publish window existed to prevent.
+   `Tools/publish_cities.py` no longer writes the file at all and refuses a `dist/` that still
+   holds one from an older round, so if you see it in `dist/`, delete it rather than shipping it.
 4. Verify from OUTSIDE the machine, with the repo's own instruments: `curl` the public-domain
-   manifest with `?cb=$(date +%s)` and `cmp` against `dist/manifest.json`; run
+   manifest with `?cb=$(date +%s)` and `cmp` against `dist/manifest-v2.json`; run
    `CYPRESS_SEED_SOURCE=live Tools/fetch_seed.sh <scratch>` (it hash-verifies the seed end to
-   end); full-hash both city files from the public domain.
+   end); full-hash every city file from the public domain.
 
    **`CYPRESS_SEED_SOURCE=live` is load-bearing there, and is the reason that escape hatch
    exists.** `Tools/fetch_seed.sh` resolves from `Fixtures/seed/pinned-seed.json` by default —
@@ -308,7 +322,7 @@ aws s3 cp /tmp/probe.txt s3://cypress-photos/probe.txt --profile cypress-photos-
 # THE CONTROL, run first: a bucket that IS public must answer 200 here. If this does not print 200,
 # the check itself is broken (wrong domain, no network, DNS) and the result below means nothing.
 curl -s -o /dev/null -w 'control cypress-cities: %{http_code}\n' \
-  https://cypress-cities.t3.tigrisbucket.io/manifest.json
+  https://cypress-cities.t3.tigrisbucket.io/manifest-v2.json
 
 # THE CHECK: the new bucket must NOT answer 200 for the object that is definitely there.
 curl -s -o /dev/null -w 'photos bucket:        %{http_code}\n' \

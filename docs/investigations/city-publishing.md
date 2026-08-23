@@ -5,6 +5,15 @@
 artifacts reach the `cypress-cities` Tigris bucket. Design decisions delegated to this
 ticket are recorded as RULINGS R37.*
 
+> **Historical — read the code for the current contract.** This records the state at #156, when
+> there was one catalog and it was format 1 at `manifest.json`. Since then the s17 round added
+> `manifest-v2.json` (format 2, one entry per published *region* rather than per city), and on
+> 2026-08-23 format 1 retired: the publisher writes only `manifest-v2.json`, and the format-1
+> object is frozen in the bucket rather than deleted. See
+> `docs/rulings-pending/format1-retirement.md`. Everything below about narrowing, determinism,
+> immutable paths and upload ordering still holds; substitute `manifest-v2.json` for
+> `manifest.json` and "region" for "city" when reading it.
+
 ## What the publisher does
 
 `Tools/publish_cities.py` consumes the ingest pipeline's output — the fused seed at

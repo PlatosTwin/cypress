@@ -14,8 +14,9 @@ struct CityDownloadTests {
 
     // MARK: - Fixtures
 
-    /// A trimmed copy of the live manifest's shape (format 1, two cities), fields as
-    /// `Tools/publish_cities.py` writes them.
+    /// A trimmed copy of the frozen format-1 manifest's shape (two cities), fields as
+    /// `Tools/publish_cities.py` wrote them before format 1 retired. Still the right specimen
+    /// for this suite: that object is permanent in the bucket and this build still reads it.
     static let manifestJSON = """
     {
       "manifest_format": 1,
@@ -160,9 +161,10 @@ struct CityDownloadTests {
     }
 
     /// **The future moved, and this test moved with it.** Format 2 was the future when this was
-    /// written; the s17 round shipped it, and `CityManifest.knownFormats` now reads 1 and 2 for
-    /// RULING D8's dual-publish window. So the specimen is 3 — a format genuinely nobody has
-    /// written — and the rule it pins is unchanged: an unknown format is refused at the door,
+    /// written; the s17 round shipped it, and `CityManifest.knownFormats` reads 1 and 2 — it
+    /// keeps 1 because the retired format-1 object is frozen in the bucket rather than deleted.
+    /// So the specimen is 3 — a format genuinely nobody has written — and the rule it pins is
+    /// unchanged: an unknown format is refused at the door,
     /// before anything else is read, because guessing at a format's meaning is how a reader
     /// silently mis-installs a file.
     @Test("a manifest from the future is refused at the door")
