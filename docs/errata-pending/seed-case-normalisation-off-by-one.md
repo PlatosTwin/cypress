@@ -1,9 +1,9 @@
 # The case-normalisation pass went one column out of step when `region_id` landed
 
-**Status: the published s17 seed (`4f6ebaaa`) carries the defect. The corrective rebuild
-(`ac7b1ccc`) is built and verified in staging; the owner has given the GO and the orchestrator runs
-the relay publish. `unit` goes green the moment that artifact is live — it is already green against
-it locally.**
+**Status: settled. The first s17 artifact (`4f6ebaaa`) shipped with the defect; the corrective
+rebuild (`ac7b1ccc`) replaced it on the bucket on 2026-08-22 and CI is green against it. Both files
+remain reachable at their own immutable `seed/<build_id>/` paths, so the comparison below can still
+be re-run by anyone who wants to check it.**
 
 `Tools/build_seed.py`'s #95 pass folds case-variant spellings in the five columns the app compares
 against a string literal (`NORMALISED_SEED_COLUMNS`). It rewrites those values in place inside the
@@ -32,10 +32,10 @@ INSERT does not expect it, because there is no second place to put it." There wa
 It was thirty lines further down, in a pass whose job is also to index into a row, and bringing
 `flush` onto the derived list did not bring it along.
 
-## What is in the published file
+## What was in the defective file
 
-Seed `4f6ebaaa` (2026-08-22), the one `Tools/fetch_seed.sh` resolves and CI's `unit` job builds
-against, holds three unfolded case-variant pairs:
+Seed `4f6ebaaa` (2026-08-22) — which `Tools/fetch_seed.sh` resolved, and CI's `unit` job built
+against, for about nine hours — held three unfolded case-variant pairs:
 
 - `plant_type`: `Tree` ×145,797 and `tree` ×1, both in `sf`
 - `plant_type`: `Park Strip` ×15,894 and `Park strip` ×1, both in `us-ca-sj`
@@ -54,8 +54,8 @@ defect the gate was written for, and the gate caught it.
 
 `Tools/build_seed.py` now derives `column_index` from `TREE_COLUMNS`.
 
-**The gate was not touched.** `DataGates.seedContract`'s #95 assertion is correct about the
-published file and stays red until the corrected artifact replaces it. Silencing it — an allowlist,
+**The gate was not touched.** `DataGates.seedContract`'s #95 assertion was correct about the
+published file and stayed red until the corrected artifact replaced it. Silencing it — an allowlist,
 a widened predicate, a skip keyed on the id space — would have removed the only thing that noticed,
 and the finding here is that a fold reporting `0` looked identical to a fold with nothing to do.
 
@@ -88,9 +88,25 @@ uuidv5(NS_TREE, TreeID)`, and the R*Tree superset probe that uses the SF window)
 family as the two gates this round extended in `DataGates`, and it is the third instance: a
 San-Francisco-shaped assumption left behind by a multi-city seed. Worth its own round.
 
+## What stops it recurring
+
+Two mechanisms, deliberately different, because the first one alone already failed once: the index
+is derived from `TREE_COLUMNS`, so there is no second copy to drift — and `TREE_COLUMNS` was
+introduced by the very pass that broke this, with a comment saying the index "cannot disagree", so
+derivation is necessary and not sufficient. The fold is therefore also extracted as
+`build_seed.normalise_case` and pinned by `Tools/test_build_seed_status.py`, which drives it over a
+specimen whose `address` column holds the exact string a one-column slip would rewrite. Re-inserting
+the old hand-written list turns that harness red on five checks, including the log line reading
+`over 0 rows` — the defect's own signature.
+
+One thing worth knowing about that guard: **no workflow runs `Tools/test_*.py`.** The only Python CI
+invokes are `whats_new.py` and `appstore_connect.py`, so this is a local convention guard rather
+than a gate. Wiring the twelve sibling harnesses into CI is its own round.
+
 ## What still needs deciding
 
-The open question is whether the seed contract should also assert that
-`seed_meta.case_normalised_values` is *plausible* rather than merely present — a fold that reports
-zero over a corpus of a million rows drawn from three publishers is itself suspicious, and that
-assertion would have caught this at build time rather than one publish later.
+Whether the seed contract should also assert that `seed_meta.case_normalised_values` is *plausible*
+rather than merely present — a fold reporting zero over a corpus of a million rows drawn from three
+publishers is itself suspicious, and that assertion would have caught this at build time rather than
+one publish later. The harness above catches the index drift specifically; it would not catch a
+different mechanism producing the same silent zero.

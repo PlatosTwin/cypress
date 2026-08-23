@@ -529,6 +529,49 @@ TREE_COLUMNS: tuple = (
 REGION_ROW_INDEX = TREE_COLUMNS.index("region_id")
 
 
+def normalise_case(tree_rows: list, case_counts: dict, log=lambda _msg: None) -> int:
+    """#95: one spelling per case-folded value, in the columns the app matches on.
+
+    Rewrites `tree_rows` in place and returns how many row-values changed --
+    `seed_meta.case_normalised_values`.
+
+    A FUNCTION, AND TESTED, BECAUSE THIS IS WHERE THE INDEX DRIFTED. This body
+    used to sit inline in the build and compute its column indices from its own
+    hand-written copy of the row layout. When the s17 pass inserted `region_id`
+    at index 6, that copy went one column out of step -- it read `address` where
+    it meant `site_type`, `verification_state` where it meant `legal_status` --
+    matched nothing, and rewrote nothing. It did not crash and it did not warn:
+    it reported `case_normalised_values = 0`, which is indistinguishable from
+    "there was nothing to fold". The published s17 seed shipped with the
+    unfolded pairs, and the seed contract caught it one publish later.
+
+    Two things stop that recurring, and they are different mechanisms. The
+    indices are DERIVED from `TREE_COLUMNS` below, so there is no second copy to
+    drift; and `Tools/test_build_seed_status.py` drives this function over a
+    specimen row carrying a known variant, so an index that drifts again fails
+    at edit time rather than at the next publish. The derivation alone was not
+    enough the first time -- `TREE_COLUMNS` was introduced by the same pass that
+    broke this, and its own comment says the index "cannot disagree".
+    """
+    column_index = {name: index for index, name in enumerate(TREE_COLUMNS)}
+    changed_total = 0
+    for column in NORMALISED_SEED_COLUMNS:
+        mapping = {k: v for k, v in canonical_case_map(case_counts[column]).items() if k != v}
+        if not mapping:
+            continue
+        index = column_index[column]
+        changed = 0
+        for row in tree_rows:
+            replacement = mapping.get(row[index])
+            if replacement is not None:
+                row[index] = replacement
+                changed += 1
+        changed_total += changed
+        log(f"#95 {column}: folded {len(mapping)} case-variant spelling(s) over "
+            f"{changed:,} rows -> {sorted(set(mapping.values()))}")
+    return changed_total
+
+
 def resolve_region_ids(tree_rows: list, region_id_by_key: dict) -> None:
     """Rewrite each row's `(id_space, source region name)` to a `dim_region.id`.
 
@@ -2684,31 +2727,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # ---- #95, applied. One spelling per case-folded value in the columns the app
     # compares against a literal. `WHERE plant_type = 'Tree'` used to drop three
     # rows spelled `tree`; the seed contract now fails if any such pair returns.
-    stats["case_normalised_values"] = 0
-    # DERIVED FROM `TREE_COLUMNS`, and it has to be. This was a second hand-written
-    # copy of the row layout, and it silently went one column out of step the moment
-    # `region_id` was inserted at index 6 for the s17 pass: the fold then read
-    # `address` where it meant `site_type` and `verification_state` where it meant
-    # `legal_status`, matched nothing, and reported `case_normalised_values = 0`
-    # while the seed still held 'Tree'/'tree' and 'Park Strip'/'Park strip'. The
-    # published s17 seed carries exactly that, and the #95 seed-contract gate is
-    # what caught it. `TREE_COLUMNS`'s own comment already says why there must be
-    # one list -- this pass was the place that had not been brought onto it.
-    column_index = {name: index for index, name in enumerate(TREE_COLUMNS)}
-    for column in NORMALISED_SEED_COLUMNS:
-        mapping = {k: v for k, v in canonical_case_map(case_counts[column]).items() if k != v}
-        if not mapping:
-            continue
-        index = column_index[column]
-        changed = 0
-        for row in tree_rows:
-            replacement = mapping.get(row[index])
-            if replacement is not None:
-                row[index] = replacement
-                changed += 1
-        stats["case_normalised_values"] += changed
-        log(f"#95 {column}: folded {len(mapping)} case-variant spelling(s) over "
-            f"{changed:,} rows -> {sorted(set(mapping.values()))}")
+    stats["case_normalised_values"] = normalise_case(tree_rows, case_counts, log)
 
     # ---- the vocabulary this file's own rows are checked against.
     #

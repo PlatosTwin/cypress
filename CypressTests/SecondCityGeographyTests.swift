@@ -244,9 +244,43 @@ struct SecondCityGeographyTests {
         )
         #expect(species.spaces > 1, "the probe stopped spanning more than one city")
 
-        // 2 · so the label names the inventory it counted, and no city in it. Markers rather than a
-        //     fixed string, so swapping one hardcoded city for another cannot satisfy this.
-        for marker in ["San Francisco", "San Jose", "SF", "DataSF"] {
+        // 2 · so the label names the inventory it counted, and no city in it.
+        //
+        // ── The markers are READ OUT OF THE SEED, and that is the whole point ────────────────
+        // This loop used to be the hand-written list `["San Francisco", "San Jose", "SF",
+        // "DataSF"]`, under a comment claiming that "markers rather than a fixed string" meant
+        // "swapping one hardcoded city for another cannot satisfy this". A third city arrived and
+        // the claim became false without the comment changing: `cityCountLabel = "In New York
+        // City"` named a single city over a number spanning three, and passed this test and the
+        // whole suite. A list of names is only as general as the last person to extend it, and the
+        // thing it is guarding against is precisely a name nobody thought to write down.
+        //
+        // So the civic names come from the file's own civic tables — `dim_city` for the cities and
+        // `dim_region` for the packs, which is what makes `Brooklyn` a refused label too, not just
+        // `New York City`. A fourth city extends this loop by being ingested. What CANNOT be
+        // derived is the handful of abbreviations and source names no table carries; those stay
+        // written down below, and they are the only part a new city could still need help with.
+        let civicNames = try await store.queue.read { connection -> [String] in
+            var names: [String] = []
+            for table in ["dim_city", "dim_region"] where try connection.tableExists(table, in: Self.seed) {
+                let statement = try connection.prepare(
+                    "SELECT display_name FROM \(Self.seed).\(table)"
+                )
+                defer { statement.finalize() }
+                names += try statement.fetchAll { try $0.string("display_name") }
+            }
+            return names
+        }
+        // The check that this assertion is checking something: an empty derived list would make the
+        // loop below vacuous, which is this repository's dominant defect class.
+        #expect(
+            civicNames.count >= species.spaces,
+            "derived \(civicNames.count) civic names for \(species.spaces) id spaces; the marker list is not covering the corpus"
+        )
+        // `SF` and `DataSF` are San Francisco's abbreviation and its open-data export's name;
+        // `NYC` is New York's. None appears in `dim_city` or `dim_region`, so none can be derived.
+        let markers = civicNames + ["SF", "DataSF", "NYC"]
+        for marker in markers {
             #expect(
                 !SpeciesCopy.cityCountLabel.contains(marker),
                 "07 §5's count card says \(marker) over a number counting \(species.total) trees in \(species.spaces) cities"

@@ -140,6 +140,21 @@ struct SeedCorpus: Sendable {
     /// inventory, not about the code.
     let cityRowsWithNoDBHBucket: Int
 
+    /// What `SeedCities.read` derives from this corpus's build receipt: the id spaces the file
+    /// holds, their civic names, each one's content revision and its coverage word.
+    ///
+    /// **Keyed here for the same reason every other per-snapshot literal is.** These four lived in
+    /// `BundledCityTests` as hardcoded arrays, and that made them the one place in this round where
+    /// "a new city is a new entry" was not applied: a `--sj-extent none` or a `--sj-extent downtown`
+    /// build — both supported, both documented — failed an assertion that had simply been rewritten
+    /// in place for the corpus that happens to ship. A corpus entry is what lets each of those files
+    /// be judged against its own receipt.
+    ///
+    /// `nil` where nobody has measured one, on the same rule as `datedTrees`: this repo ships no
+    /// San-Francisco-only build to read, and inventing the dates it would carry would be a figure
+    /// whose provenance is a guess.
+    let bundledCities: [SeedCities.City]?
+
     /// The share of rows carrying no planting year, and the share that are vacant planting sites.
     ///
     /// **Bands rather than pins, because they are arguments rather than measurements.** The first
@@ -177,12 +192,46 @@ struct SeedCorpus: Sendable {
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty })
-        switch (source, spaces.contains("us-ca-sj"), spaces.contains("us-ny-nyc")) {
-        case ("sf_city", false, false), ("city", false, false): return .city(absentColumns: absent)
-        case ("sf_city", true, false), ("city", true, false): return .cityWithSanJose(absentColumns: absent)
-        case ("sf_city", true, true), ("city", true, true):
-            return .cityWithSanJoseAndNewYork(absentColumns: absent)
-        case ("sf_datasf", _, _), ("datasf", _, _): return .dataSF(absentColumns: absent)
+
+        // ── This selector FAILS CLOSED, on the same rule as `DataGates`' `unboxed` check ────────
+        // It used to ask `spaces.contains("us-ca-sj")` and `spaces.contains("us-ny-nyc")`, which
+        // answers "does it have at least these" and not "is it exactly this". A file naming a
+        // fourth space alongside the three therefore resolved to the three-city entry and said
+        // nothing: the whole suite passed against a corpus no entry is pinned for. A real fourth
+        // city would move the pinned counts and go red loudly, so that was a narrow hole rather
+        // than an open door — but it is the exact shape of the two gates this round extended, and
+        // "a city cannot arrive unrecognized" has to hold here too or the doctrine is decorative.
+        //
+        // An EMPTY set is legitimate and is not an unrecognized set: `id_spaces_in_file` is written
+        // by the v14 pass, so every earlier file lacks it, and those files hold San Francisco alone.
+        let known: [Set<String>: (Set<String>) -> SeedCorpus] = [
+            []: SeedCorpus.city,
+            ["sf"]: SeedCorpus.city,
+            ["sf", "us-ca-sj"]: SeedCorpus.cityWithSanJose,
+            ["sf", "us-ca-sj", "us-ny-nyc"]: SeedCorpus.cityWithSanJoseAndNewYork
+        ]
+        switch source {
+        case "sf_datasf", "datasf":
+            // The export is San Francisco's alone; a second space in a DataSF-sourced file is a
+            // combination nobody has pinned, not a variant of this one.
+            guard spaces.isEmpty || spaces == ["sf"] else {
+                Issue.record("""
+                    seed_meta.trees_source is '\(source)' with id_spaces_in_file \
+                    \(spaces.sorted().joined(separator: ",")), which no corpus is pinned for
+                    """)
+                return .dataSF(absentColumns: absent)
+            }
+            return .dataSF(absentColumns: absent)
+        case "sf_city", "city":
+            guard let make = known[spaces] else {
+                Issue.record("""
+                    seed_meta.id_spaces_in_file is \
+                    '\(spaces.sorted().joined(separator: ","))', which no corpus is pinned for — \
+                    a new city is a new SeedCorpus entry, and this is the reminder to write one
+                    """)
+                return .cityWithSanJoseAndNewYork(absentColumns: absent)
+            }
+            return make(absent)
         default:
             Issue.record("seed_meta.trees_source is '\(source)', which no corpus is pinned for")
             return .dataSF(absentColumns: absent)
@@ -257,6 +306,8 @@ struct SeedCorpus: Sendable {
             sunsetSpeciesInMix: 200,
             densestScreenfulFloor: 4_000,
             cityRowsWithNoDBHBucket: 9_019,
+            // Never measured: this repo ships no San-Francisco-only build to read one off.
+            bundledCities: nil,
             // The `sf` id space's own shares, measured on seed 4f6ebaaa (2026-08-22) at 0.73987 /
             // 0.08503 and on the previous shipped file at 0.73970 / 0.08512 — this corpus is that
             // space alone. NOTE it sits BELOW the 0.75 the fused corpus's band starts at: San
@@ -341,6 +392,16 @@ struct SeedCorpus: Sendable {
             sunsetSpeciesInMix: 200,
             densestScreenfulFloor: 4_000,
             cityRowsWithNoDBHBucket: 9_019,
+            // The previously shipped fused file's receipt: `inventory_sf_city_snapshot_on`
+            // 2026-07-31 (newer than `sf_datasf`'s 2026-07-20), `inventory_sj_street_tree_snapshot_on`
+            // 2026-07-31, `sj_ship_extent` downtown, and NO `coverage_sf` key — which is why San
+            // Francisco's coverage is nil here and `full` on the s17 corpus below.
+            bundledCities: [
+                SeedCities.City(id: "sf", displayName: "San Francisco",
+                                contentRev: "2026-07-31", coverage: nil),
+                SeedCities.City(id: "us-ca-sj", displayName: "San Jose",
+                                contentRev: "2026-07-31", coverage: "downtown")
+            ],
             // Unchanged from what `MapFilterTests` carried as literals while this was the shipped
             // corpus; measured on that file at 0.80776 undated / 0.12184 vacant.
             undatedShareBand: 0.75...0.85,
@@ -352,18 +413,21 @@ struct SeedCorpus: Sendable {
     /// What ships after the s17 publish. **Every number below holds on two artifacts and was
     /// measured on both, on 2026-08-22:**
     ///
-    /// - **`4f6ebaaa`** (706,535,424 bytes, sha256 `4f6ebaaad8c94bde…`) — what the s17 publish put
-    ///   on the bucket, and what `Tools/fetch_seed.sh` resolves as of this writing.
-    /// - **`ac7b1ccc`** (706,535,424 bytes, sha256 `ac7b1cccd7de413c…`) — the corrective rebuild
-    ///   that repairs the `#95` case-normalisation defect `4f6ebaaa` shipped with, built from the
-    ///   *same* cached extracts so that fix is the only difference.
+    /// - **`ac7b1ccc`** (706,535,424 bytes, sha256 `ac7b1cccd7de413c…`) — **what is live**, and what
+    ///   `Tools/fetch_seed.sh` resolves. It repairs the `#95` case-normalisation defect the first
+    ///   s17 artifact shipped with, and was built from the *same* cached extracts so that fix is the
+    ///   only difference.
+    /// - **`4f6ebaaa`** (706,535,424 bytes, sha256 `4f6ebaaad8c94bde…`) — what the s17 publish first
+    ///   put on the bucket. Superseded, and still reachable at its own immutable path under
+    ///   `seed/4f6ebaaa/`, which is what R37.2 promises and why this entry can still speak for it.
     ///
     /// **Not one row count moves between them**, which is the point. The fix rewrites three field
     /// *values* (`tree` → `Tree`, `Park strip` → `Park Strip` in two columns) and moves
     /// `seed_meta.case_normalised_values` from 0 to 3. The only counts that shift at all are
     /// `COUNT(DISTINCT plant_type)` 18 → 16 and `COUNT(DISTINCT site_type)` 44 → 43, and nothing in
     /// this file or the suite reads either. So every literal below carries the same provenance for
-    /// both files, and this entry is correct before and after the corrective publish.
+    /// both files: this entry was written against `4f6ebaaa`, needed no re-measuring when
+    /// `ac7b1ccc` replaced it on the bucket, and would need none if the two were swapped back.
     ///
     /// **Each query was calibrated first by reproducing `cityWithSanJose`'s shipped literal from the
     /// previous seed.** None was copied out of a failure message: a failing expectation prints the
@@ -431,6 +495,18 @@ struct SeedCorpus: Sendable {
             sunsetSpeciesInMix: 200,
             densestScreenfulFloor: 4_000,
             cityRowsWithNoDBHBucket: 9_177,
+            // Ordered by `id_spaces.id`, which is what `SeedCities.read` sorts on. All three
+            // content revisions are 2026-08-22 because the s17 publish read all three layers that
+            // day; `sf` carries `full` rather than nil because this is the first build to write a
+            // `coverage_sf` key at all.
+            bundledCities: [
+                SeedCities.City(id: "sf", displayName: "San Francisco",
+                                contentRev: "2026-08-22", coverage: "full"),
+                SeedCities.City(id: "us-ca-sj", displayName: "San Jose",
+                                contentRev: "2026-08-22", coverage: "downtown"),
+                SeedCities.City(id: "us-ny-nyc", displayName: "New York City",
+                                contentRev: "2026-08-22", coverage: "full")
+            ],
             // 0.85245 undated on this file. Still "most rows", and slightly more so than the fused
             // California corpus: New York states a planting year on 123,723 of its 898,643 rows.
             undatedShareBand: 0.82...0.88,
@@ -484,6 +560,7 @@ struct SeedCorpus: Sendable {
             sunsetSpeciesInMix: 215,
             densestScreenfulFloor: 5_000,
             cityRowsWithNoDBHBucket: 44_584,
+            bundledCities: nil,
             // Never measured: this repo ships no DataSF-built seed to count, and the band that used
             // to be asserted against this corpus was the fused corpus's. See the fields.
             undatedShareBand: nil,

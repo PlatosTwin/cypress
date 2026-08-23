@@ -1399,11 +1399,17 @@ public enum DataGates {
             // stopped carrying sites would otherwise balance its books without them.
             //
             // **A third pass once a second city is in the file**, on the same terms. San Jose's
-            // whole 344,879-record corpus is read and validated; what does not ship is the part
+            // whole 345,023-record corpus is read and validated; what does not ship is the part
             // outside `SJ_SHIP_WINDOW`, and that count is a *product* decision rather than a data
             // defect — which is why it is named `sj_rows_outside_ship_window` and not folded in
             // with the drops. It still has to appear on this side of the arithmetic, or the books
-            // balance only by not mentioning 292,091 rows.
+            // balance only by not mentioning 292,248 rows.
+            //
+            // Those two figures read 344,879 and 292,091 until the s17 publish re-read the San Jose
+            // layer on 2026-08-22. Measured on seed `ac7b1ccc`: `sj_rows_read` 345,023 and
+            // `sj_rows_outside_ship_window` 292,248, whose difference is 52,775 — exactly the
+            // `us-ca-sj` rows the file holds. A comment stating a count is a claim, and this one had
+            // gone stale inside the very block whose job is to check counts.
             //
             // **A fourth pass once New York is in the file**, and adding it here is the same
             // conscious act the bbox table above demands. Left out, this gate reported the s17 seed

@@ -85,41 +85,38 @@ struct BundledCityTests {
     /// The shipped seed names its own cities, dates them by the publisher's rule, and states the
     /// coverage word the manifest gets from the same keys.
     ///
-    /// **The literals are the shipped seed's build receipt, not a preference.** They come from
-    /// `seed_meta` (`inventory_sf_city_snapshot_on` 2026-08-22, `inventory_sf_datasf_snapshot_on`
-    /// 2026-07-20, `inventory_sj_street_tree_snapshot_on` 2026-08-22,
-    /// `inventory_nyc_tree_points_snapshot_on` 2026-08-22, and the `coverage_<space>` keys) and from
-    /// `dim_city`, and the dates are exactly the `r2026-08-22` in all three published version
-    /// strings. A seed rebuild that moves a snapshot date moves this assertion with it; that is the
-    /// assertion doing its job — and it did it here, on seed 4f6ebaaa.
+    /// **The expected cities are the seed's build receipt, not a preference**, and they are keyed by
+    /// corpus in `SeedCorpus.bundledCities` rather than written out here. They are derived from
+    /// `seed_meta` (each space's `inventory_*_snapshot_on` keys and its `coverage_<space>` key) and
+    /// from `dim_city`, and each date is exactly the `r`-segment of that city's published version
+    /// string. A seed rebuild that moves a snapshot date moves this assertion with it; that is the
+    /// assertion doing its job — and it did it on seed `4f6ebaaa`, where all three dates moved to
+    /// 2026-08-22 and `sf`'s coverage moved from `nil` to `full`, the latter because that publish is
+    /// the first to write a `coverage_sf` key at all.
     ///
-    /// **Two of these changed for reasons other than New York arriving**, and both are the receipt
-    /// telling the truth. The dates moved because the s17 publish re-read San Francisco's and San
-    /// Jose's layers on the same day it first read New York's. And `sf`'s coverage moved from `nil`
-    /// to `full` because that publish is the first to write a `coverage_sf` key at all — the
-    /// previous file stated San Jose's extent and left San Francisco's to be inferred from absence.
+    /// **Why keyed and not hardcoded.** These four arrays were hardcoded, and that made this the one
+    /// assertion in the file that a *correct* seed could fail: `--sj-extent none` and `--sj-extent
+    /// downtown` without `--nyc-cache` are both supported, documented builds, and both produce a
+    /// bundle this test called wrong. The corpus entry is what lets each build be judged against its
+    /// own receipt — the same doctrine that keeps `cityWithSanJose`'s counts alive beside the
+    /// three-city corpus. `nil` for a corpus nobody has measured, which skips rather than invents.
     @Test("the shipped bundle names its cities, dates them, and states their coverage")
-    func bundledSeedNamesItsCities() throws {
+    func bundledSeedNamesItsCities() async throws {
         let url = try #require(Self.seedURL, "no seed database; set CYPRESS_SEED_PATH")
         let cities = SeedCities.read(fileAt: url)
+        let store = try await CypressStore.inMemory(seedURL: url)
+        let corpus = try await SeedCorpus.current(store)
 
+        guard let expected = corpus.bundledCities else { return }
         // Ordered by `id_spaces.id`, which is what `SeedCities.read` sorts on.
-        #expect(cities.map(\.id) == ["sf", "us-ca-sj", "us-ny-nyc"])
-        #expect(cities.map(\.displayName) == ["San Francisco", "San Jose", "New York City"])
         #expect(
-            cities.map(\.contentRev) == ["2026-08-22", "2026-08-22", "2026-08-22"],
+            cities == expected,
             """
-            the bundle's derived record dates are \(cities.map(\.contentRev)); the publisher's rule \
-            over this seed's seed_meta says 2026-08-22 for all three spaces, which is the r-segment \
-            of every published version string
-            """
-        )
-        #expect(
-            cities.map(\.coverage) == ["full", "downtown", "full"],
-            """
-            the bundle's derived coverage is \(cities.map(\.coverage)); the live manifest says \
-            "full" for sf, "downtown" for us-ca-sj and "full" for us-ny-nyc, from the \
-            seed_meta.coverage_<space> keys
+            the bundle names \(cities.map(\.id)) with display names \(cities.map(\.displayName)), \
+            record dates \(cities.map(\.contentRev)) and coverage \(cities.map(\.coverage)); the \
+            \(corpus.source) corpus is pinned at \(expected.map(\.id)), \
+            \(expected.map(\.displayName)), \(expected.map(\.contentRev)) and \
+            \(expected.map(\.coverage))
             """
         )
     }
