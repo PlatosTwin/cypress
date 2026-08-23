@@ -993,9 +993,21 @@ public enum DataGates {
         // enforces it. A gate that rejected the correct outcome is a gate that would have been
         // "fixed" by widening it to hold both cities, which is how a bbox check stops catching
         // state-plane leakage and null island at all.
+        //
+        // **New York arrived, and this table is the conscious act the check above demands.** The
+        // `unboxed` assertion below is not a formality: when the s17 seed landed it reported all
+        // 898,643 New York rows as unchecked, which is the gate working. What it is NOT is evidence
+        // of a data gap — the rows carry good coordinates, `Tools/build_seed.py` already holds
+        // `NYC_BBOX` and `accepts()` already rejected against it at ingest (`dropped_out_of_bbox`
+        // is 0), and the seed carries no per-region box for this to have read instead: `dim_region`
+        // has no bbox column, and the manifest's per-borough boxes are computed at publish time.
+        // The three boxes below are `Tools/build_seed.py`'s `BBOX_BY_ID_SPACE` verbatim, which is
+        // where SF's and San Jose's came from too; copying the seed's own observed min/max instead
+        // would make this check compare the data against itself and stop catching anything.
         let boxes: [(space: String, minLat: Double, maxLat: Double, minLon: Double, maxLon: Double)] = [
             ("sf", 37.69, 37.85, -122.54, -122.33),
-            ("us-ca-sj", 37.10, 37.50, -122.10, -121.65)
+            ("us-ca-sj", 37.10, 37.50, -122.10, -121.65),
+            ("us-ny-nyc", 40.45, 40.95, -74.30, -73.65)
         ]
         if schema.hasIdSpace {
             for box in boxes {
@@ -1387,15 +1399,30 @@ public enum DataGates {
             // stopped carrying sites would otherwise balance its books without them.
             //
             // **A third pass once a second city is in the file**, on the same terms. San Jose's
-            // whole 344,879-record corpus is read and validated; what does not ship is the part
+            // whole 345,023-record corpus is read and validated; what does not ship is the part
             // outside `SJ_SHIP_WINDOW`, and that count is a *product* decision rather than a data
             // defect — which is why it is named `sj_rows_outside_ship_window` and not folded in
             // with the drops. It still has to appear on this side of the arithmetic, or the books
-            // balance only by not mentioning 292,091 rows.
+            // balance only by not mentioning 292,248 rows.
+            //
+            // Those two figures read 344,879 and 292,091 until the s17 publish re-read the San Jose
+            // layer on 2026-08-22. Measured on seed `ac7b1ccc`: `sj_rows_read` 345,023 and
+            // `sj_rows_outside_ship_window` 292,248, whose difference is 52,775 — exactly the
+            // `us-ca-sj` rows the file holds. A comment stating a count is a claim, and this one had
+            // gone stale inside the very block whose job is to check counts.
+            //
+            // **A fourth pass once New York is in the file**, and adding it here is the same
+            // conscious act the bbox table above demands. Left out, this gate reported the s17 seed
+            // as reading 492,490 rows and accounting for 1,391,133 — a shortfall of exactly
+            // 898,643, which is New York's whole contribution. That is the gate working: it is
+            // written so a city cannot arrive unaccounted for, and the arithmetic balances to the
+            // row again the moment its pass is named. New York drops nothing — `nyc_rows_read` and
+            // `nyc_rows_shipped` are both 898,643 — so it adds a term on this side only.
             let spineRead = meta["source_rows"].flatMap(Int.init) ?? -1
             let read = spineRead
                 + (meta["export_vacant_rows_read"].flatMap(Int.init) ?? 0)
                 + (meta["sj_rows_read"].flatMap(Int.init) ?? 0)
+                + (meta["nyc_rows_read"].flatMap(Int.init) ?? 0)
             let dropped = [
                 "dropped_no_coords", "dropped_out_of_bbox", "dropped_dupe_treeid",
                 // Read, validated, and deliberately not shipped. See above.

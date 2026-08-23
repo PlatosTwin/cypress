@@ -400,18 +400,18 @@ struct InventoryContractTests {
             return try statement.fetchOne { try $0.int("n") } ?? -1
         }
 
-        if source == "sf_city" || source == "city" {
-            #expect(
-                noBucket == 9_019,
-                "\(noBucket) city rows carry no DBH bucket, expected 2,647 zeros + 6,372 nulls = 9,019. Below 9,019 means the 'not recorded' zero was read as a measurement."
-            )
-        } else {
-            // The export's own zeros and blanks, measured on the rebuilt corpus.
-            #expect(
-                noBucket == 44_584,
-                "\(noBucket) export rows carry no DBH bucket, expected 44,584"
-            )
-        }
+        // Keyed by corpus rather than pinned as two bare literals here, because this is a fact about
+        // one snapshot of one inventory and the s17 publish re-read San Francisco's layer: the
+        // 2,647 zeros + 6,372 nulls = 9,019 the comment above decomposes were the 2026-07-31
+        // extract's, and the 2026-08-22 extract carries 9,177. The decomposition is NOT re-derivable
+        // from the seed — a zero and a null both arrive as no bucket, which is the whole point — so
+        // the corpus entry pins the total and `docs/investigations/city-tree-source.md` §2 remains
+        // the authority on the split.
+        let corpus = try await SeedCorpus.current(store)
+        #expect(
+            noBucket == corpus.cityRowsWithNoDBHBucket,
+            "\(noBucket) rows of \(source) carry no DBH bucket; the \(corpus.source) corpus is pinned at \(corpus.cityRowsWithNoDBHBucket). Below that means the 'not recorded' zero was read as a measurement."
+        )
 
         // The ladder itself: every rung is a half-open 5 cm interval on a multiple of 5. A bucket
         // that is not is a corrupted ladder, which no count above would notice.

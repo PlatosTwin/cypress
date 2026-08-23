@@ -85,32 +85,38 @@ struct BundledCityTests {
     /// The shipped seed names its own cities, dates them by the publisher's rule, and states the
     /// coverage word the manifest gets from the same keys.
     ///
-    /// **The literals are the shipped seed's build receipt, not a preference.** They come from
-    /// `seed_meta` (`inventory_sf_city_snapshot_on` 2026-07-31, `inventory_sf_datasf_snapshot_on`
-    /// 2026-07-20, `inventory_sj_street_tree_snapshot_on` 2026-07-31, `sj_ship_extent` downtown)
-    /// and from `dim_city`, and the dates are exactly the `r2026-07-31` in both published version
-    /// strings. A seed rebuild that moves a snapshot date moves this assertion with it; that is the
-    /// assertion doing its job.
+    /// **The expected cities are the seed's build receipt, not a preference**, and they are keyed by
+    /// corpus in `SeedCorpus.bundledCities` rather than written out here. They are derived from
+    /// `seed_meta` (each space's `inventory_*_snapshot_on` keys and its `coverage_<space>` key) and
+    /// from `dim_city`, and each date is exactly the `r`-segment of that city's published version
+    /// string. A seed rebuild that moves a snapshot date moves this assertion with it; that is the
+    /// assertion doing its job — and it did it on seed `4f6ebaaa`, where all three dates moved to
+    /// 2026-08-22 and `sf`'s coverage moved from `nil` to `full`, the latter because that publish is
+    /// the first to write a `coverage_sf` key at all.
+    ///
+    /// **Why keyed and not hardcoded.** These four arrays were hardcoded, and that made this the one
+    /// assertion in the file that a *correct* seed could fail: `--sj-extent none` and `--sj-extent
+    /// downtown` without `--nyc-cache` are both supported, documented builds, and both produce a
+    /// bundle this test called wrong. The corpus entry is what lets each build be judged against its
+    /// own receipt — the same doctrine that keeps `cityWithSanJose`'s counts alive beside the
+    /// three-city corpus. `nil` for a corpus nobody has measured, which skips rather than invents.
     @Test("the shipped bundle names its cities, dates them, and states their coverage")
-    func bundledSeedNamesItsCities() throws {
+    func bundledSeedNamesItsCities() async throws {
         let url = try #require(Self.seedURL, "no seed database; set CYPRESS_SEED_PATH")
         let cities = SeedCities.read(fileAt: url)
+        let store = try await CypressStore.inMemory(seedURL: url)
+        let corpus = try await SeedCorpus.current(store)
 
-        #expect(cities.map(\.id) == ["sf", "us-ca-sj"])
-        #expect(cities.map(\.displayName) == ["San Francisco", "San Jose"])
+        guard let expected = corpus.bundledCities else { return }
+        // Ordered by `id_spaces.id`, which is what `SeedCities.read` sorts on.
         #expect(
-            cities.map(\.contentRev) == ["2026-07-31", "2026-07-31"],
+            cities == expected,
             """
-            the bundle's derived record dates are \(cities.map(\.contentRev)); the publisher's rule \
-            over this seed's seed_meta says 2026-07-31 for both spaces, which is the r-segment of \
-            both published version strings
-            """
-        )
-        #expect(
-            cities.map(\.coverage) == [nil, "downtown"],
-            """
-            the bundle's derived coverage is \(cities.map(\.coverage)); the live manifest says \
-            "full" for sf and "downtown" for us-ca-sj, from seed_meta.sj_ship_extent
+            the bundle names \(cities.map(\.id)) with display names \(cities.map(\.displayName)), \
+            record dates \(cities.map(\.contentRev)) and coverage \(cities.map(\.coverage)); the \
+            \(corpus.source) corpus is pinned at \(expected.map(\.id)), \
+            \(expected.map(\.displayName)), \(expected.map(\.contentRev)) and \
+            \(expected.map(\.coverage))
             """
         )
     }
