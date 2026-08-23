@@ -476,13 +476,14 @@ enum OutboxCopy {
         "today · \(sent) synced · \(lost) lost"
     }
 
-    /// §6's footnote, verbatim.
-    static let footnote =
-        "Nothing here disappears silently. An item that cannot sync says so, says why, and waits for you."
+    // §6's footnote — `Nothing here disappears silently. An item that cannot sync says so, says why,
+    // and waits for you.` — was removed by the copy audit of 2026-08-23 (owner ruling: the footnote
+    // slot is a demo-era artifact and comes out of every screen that had one). SCREENS.md 17 §6 is
+    // struck to match. The behavior it described is unchanged and is still asserted by
+    // `OutboxPresentationTests`; what went is the screen narrating it.
 
     /// **NOT SPECIFIED**, and named as a required decision by SCREENS.md §5 gap 5. Written in the
-    /// shape every other empty state in this app uses: state the fact, draw nothing else. The
-    /// footnote above it is the rest of the answer.
+    /// shape every other empty state in this app uses: state the fact, draw nothing else.
     static let emptyState = "Nothing is waiting to send."
 
     /// The retry control's label, from §2's drawn state word.
@@ -589,7 +590,6 @@ enum OutboxMetrics {
     static let syncedRowPaddingH: CGFloat = 13
     /// §5: `margin-top:9px`.
     static let summaryTop: CGFloat = 9
-    /// §6: `padding:16px 24px 36px`.
-    static let footnoteTop: CGFloat = 16
-    static let footnoteGutter: CGFloat = 24
+    // §6's footnote metrics (`padding:16px 24px 36px`) went with the footnote itself in the copy
+    // audit of 2026-08-23.
 }

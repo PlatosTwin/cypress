@@ -404,7 +404,7 @@ struct OutboxPresentationTests {
     func copyRules() {
         let everything = [
             OutboxCopy.screenTitle, OutboxCopy.wifiTitle, OutboxCopy.wifiSubtitle,
-            OutboxCopy.syncedLabel, OutboxCopy.footnote, OutboxCopy.emptyState,
+            OutboxCopy.syncedLabel, OutboxCopy.emptyState,
             OutboxCopy.summary(sent: 14, lost: 0), OutboxCopy.waitingPill(count: 3),
             OutboxFailureReason.expired, OutboxFailureReason.awaitingWifi(photoCount: 2)
         ].joined(separator: " ")
@@ -414,11 +414,20 @@ struct OutboxPresentationTests {
         #expect(everything.lowercased().contains("routed to") == false)
         // ARCHITECTURE §5.7.
         #expect(everything.contains(" — ") == false)
-        // §6's footnote is the screen's contract and is kept verbatim.
-        #expect(
-            OutboxCopy.footnote
-                == "Nothing here disappears silently. An item that cannot sync says so, says why, and waits for you."
-        )
+
+        // **§6's footnote was the screen's contract in words, and it is gone** — the copy audit of
+        // 2026-08-23 removed it by owner ruling. This used to pin it verbatim: `Nothing here
+        // disappears silently. An item that cannot sync says so, says why, and waits for you.`
+        //
+        // The contract is not weakened by losing the sentence, because the sentence was never what
+        // enforced it. Each clause has a test of the behavior instead, and they are named here so
+        // that deleting the pin cannot be mistaken for deleting the guarantee:
+        //   - "says so"   → `everyReasonSaysWhy`, below: every code in every state produces a
+        //                   non-empty sentence.
+        //   - "says why"  → `OwnerCopyRulingTests.everyTerminalCodeGetsItsRuledSentence`, which is
+        //                   exhaustive over `APIError` with no `default`.
+        //   - "and waits" → `expired` and the retry path, which keep a failed item on the screen.
+        #expect(OutboxCopy.emptyState.isEmpty == false)
     }
 
     @Test("every failure sentence this screen can show is a sentence")

@@ -151,7 +151,6 @@ struct SiteTests {
             SiteCopy.neighborhoodLabel,
             SiteCopy.neighborDetail(meters: 24),
             SiteCopy.unidentified,
-            SiteCopy.footnote,
             SiteCopy.cardTitle,
             SiteCopy.cardMeta,
             SiteCopy.cardAccessibilityHint,
@@ -300,9 +299,11 @@ struct SiteTests {
         let subject = SitePresentation(profile: SiteTests.profile(bare, neighborhood: nil))
 
         #expect(subject.stats.isEmpty)
-        // …and the screen still says the one thing it exists to say.
+        // …and the screen still says the one thing it exists to say. The footnote was the second
+        // half of that claim until the copy audit of 2026-08-23 removed it, so the statement now
+        // carries the screen alone — which is why both of its halves are asserted here.
         #expect(!subject.statementLeadIn.isEmpty)
-        #expect(!subject.footnote.isEmpty)
+        #expect(!subject.statementBody.isEmpty)
     }
 
     /// A community-added row has no city reference to cite, under the same rule 03, 14 and 19 apply.

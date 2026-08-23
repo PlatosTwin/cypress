@@ -101,12 +101,14 @@ struct OutboxScreen: View {
                     syncedSection
                     if let summary = presentation.summaryLine { summaryLine(summary) }
 
-                    // §6 carries no `margin-top:auto`, unlike 16's CTA, so the footnote follows the
-                    // content rather than being pinned to the bottom of the frame. On an empty queue
-                    // that keeps the screen's one promise next to its one sentence.
-                    footnote
-                    Spacer(minLength: 0)
+                    // §6's footnote stood here and was removed by the copy audit of 2026-08-23
+                    // (owner ruling), taking the trailing spacer with it — the `minHeight` frame
+                    // below is what top-aligns a short queue, and the spacer only ever filled.
+                    // **The 36pt it carried is not the footnote and stays.** It is the screen's
+                    // closing space above the home indicator, which every other screen in the app
+                    // has; deleting it with the sentence would have run the last row into the edge.
                 }
+                .padding(.bottom, CypressSpacing.bottomFootnote)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }
@@ -234,17 +236,8 @@ struct OutboxScreen: View {
             .padding(.horizontal, CypressSpacing.gutter)
     }
 
-    // MARK: - §6 Footnote
-
-    private var footnote: some View {
-        Text(OutboxCopy.footnote)
-            .cypressBody135(color: CypressColor.textFaintAlt)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, OutboxMetrics.footnoteTop)
-            .padding(.bottom, CypressSpacing.bottomFootnote)
-            .padding(.horizontal, OutboxMetrics.footnoteGutter)
-    }
+    // §6's footnote was removed by the copy audit of 2026-08-23 (owner ruling); SCREENS.md 17 §6 is
+    // struck to match.
 
     // MARK: - The state SCREENS.md does not draw
 

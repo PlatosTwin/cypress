@@ -116,12 +116,11 @@ enum CareLogCopy {
     /// 09 §6.
     static let doneCTA = "Done"
 
-    /// 09 §7, verbatim — including the em dash with no spaces around it (ARCHITECTURE §5.7).
-    ///
-    /// PROTOTYPE-FLOW §"Care sheet" records an earlier wording of the same sentence ("…care history,
-    /// kept separate from health observations."). SCREENS.md is the visual truth (ARCHITECTURE §1),
-    /// so this is the one that ships.
-    static let footnote = "This joins the tree’s care history—separate from health observations."
+    // 09 §7's footnote — `This joins the tree's care history—separate from health observations.` —
+    // was removed by the copy audit of 2026-08-23. **This one was a KEEP in the audit and the owner
+    // overrode it**: the ruling is that the footnote *slot* is the demo-era artifact, so it comes
+    // out of every screen that had one rather than being judged sentence by sentence. SCREENS.md 09
+    // §7 is struck to match, as is PROTOTYPE-FLOW's earlier wording of the same sentence.
 
     /// The four actions SCREENS.md 09 §4 draws, in its order.
     ///

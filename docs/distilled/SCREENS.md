@@ -1010,8 +1010,11 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
    | 8 | `Brisbane Box` | `#D9CDA8`, `#4A7D55` | `#7E9B72 → #3A5B3E` |
    | 9 | *(locked)* `?` | — | `#E9ECDE`, glyph `#A8B29C` |
 
-6. **Footnote** — 12px, `#77836F`, centered, `padding:14px 18px`, `margin-top:auto`:
-   `Quiet collecting. There are no streaks and no leaderboards.`
+6. ~~**Footnote** — 12px, `#77836F`, centered, `padding:14px 18px`, `margin-top:auto`:
+   `Quiet collecting. There are no streaks and no leaderboards.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). The
+   footnote slot itself comes out, not just the sentence, and the `margin-top:auto` spacer that
+   pinned it goes with it. The Journal tab drew this same line and lost it in the same commit.
 7. **Bottom tab bar** (C16) — **My Grove** active; no `backdrop-filter` on this instance.
 
 ---
@@ -1035,8 +1038,10 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
    *(the ✓ is part of the on-state label string)*
 5. Optional well (C15): `Photo or note (optional)`, `margin-bottom:14px`.
 6. CTA (C6): **`Done`**
-7. Footnote — 12px, `#77836F`, centered, `margin-top:10px`:
-   `This joins the tree’s care history—separate from health observations.`
+7. ~~Footnote — 12px, `#77836F`, centered, `margin-top:10px`:
+   `This joins the tree’s care history—separate from health observations.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). PROTOTYPE-FLOW's
+   earlier wording of the same sentence is struck with it.
 
 ---
 
@@ -1143,10 +1148,14 @@ README mentions.
    `padding:14px 16px`):
    - Title 14.5px/700: **`9 young trees with no visits since planting`**
    - Body 12.5px `#66735F`, `margin:4px 0 12px`, `line-height:1.45`:
-     `The first two summers decide whether a street tree makes it. All nine are within a 15-minute walk.`
-   - CTA (C6 small): **`Walk the nine`**
-5. **Footnote** — `padding:16px 18px 36px`, `margin-top:auto`:
-   `No ranks, no counters. The almanac notices trees, not scores.`
+     ~~`The first two summers decide whether a street tree makes it.`~~ `All nine are within a 15-minute walk.`
+     **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). The first sentence
+     only; it is an arboricultural claim the app cannot source (DECISIONS constraint 15). The
+     second is checked before it is drawn, so a card that cannot prove it now has no body at all.
+   - CTA (C6 small): **`Walk the nine`** — *kept.*
+5. ~~**Footnote** — `padding:16px 18px 36px`, `margin-top:auto`:
+   `No ranks, no counters. The almanac notices trees, not scores.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`).
 
 ---
 
@@ -1176,9 +1185,13 @@ README mentions.
 
    | Tile accent | Title | Subtitle |
    |---|---|---|
-   | `#8FB573` over `#EDF2E0` | `Spring flush noted` | `Apr 3 · four visitors caught the bright new tips` |
-   | `#7FA8C4` over `#E8EEF2` | `Watered through the dry weeks` | `Jun–Aug · five care visits kept it going` |
+   | `#8FB573` over `#EDF2E0` | ~~`Spring flush noted`~~ | ~~`Apr 3 · four visitors caught the bright new tips`~~ |
+   | `#7FA8C4` over `#E8EEF2` | ~~`Watered through the dry weeks`~~ | ~~`Jun–Aug · five care visits kept it going`~~ |
    | `#C9B44A` over `#F4F0DE` | `Seven years on record` | `First photo Mar 2019 · six people know this tree` |
+
+   Rows 1 and 2: **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). Both
+   captioned arithmetic as a season — nothing in the app detects a flush or a dry spell — so the
+   rows and their builders are gone and §3 draws one row. Row 3 is kept: it says what it counts.
 
 4. **`Same week, other years`** micro-label + 3-up photo strip (`gap:8px`), each `flex:1`,
    height **88px**, radius 12px, with a bottom-left mono 10px chip
@@ -1229,8 +1242,12 @@ Intro: *The unglamorous screens that make the app trustworthy: a brand-new tree 
    | `Watch for` | `First-summer thirst` — **13px/700 sans, not mono**, `margin-top:2px` | — |
 
 6. **CTA** (C6) — `padding:14px 16px 0`: **`Be the first to photograph this tree`**
-7. **Footnote** — `padding:14px 24px 36px`, `margin-top:auto`, `line-height:1.5`:
-   `A young tree nobody has visited. This is the almanac’s “walk the nine” list, one tree at a time.`
+7. ~~**Footnote** — `padding:14px 24px 36px`, `margin-top:auto`, `line-height:1.5`:
+   `A young tree nobody has visited. This is the almanac’s “walk the nine” list, one tree at a time.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). **This is the
+   sentence the owner named when he ordered the audit.** ERRATA E129 previously considered and kept
+   it; the audit is the round with standing to remove it. The 36pt closing space survives on the
+   cold column — it is the screen's bottom margin, not the footnote.
 
 **Differences from 03 to encode as a variant:** no hero, no foliage strip, no regulars row,
 no activity feed, no quad-action row, badge is `PLANTED <year>` instead of `THRIVING`.
@@ -1332,8 +1349,10 @@ scrim `rgba(14,24,17,.3)`.
    - `Care · watered · Brisbane Box` → `✓ 9:41 am`
 5. **Summary line** — `margin-top:9px`, mono 11px `#8B9482`:
    `this week · 14 synced · 0 lost`, trailing `full history` in `#2F6B4F` weight 700.
-6. **Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
-   `Nothing here disappears silently. An item that cannot sync says so, says why, and waits for you.`
+6. ~~**Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
+   `Nothing here disappears silently. An item that cannot sync says so, says why, and waits for you.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). The behavior it
+   promised is unchanged and is asserted by tests named in `OutboxPresentationTests.copyRules`.
 
 **States drawn:** `waiting`, `retry`, `synced` (dimmed, green check). **NOT SPECIFIED:**
 in-progress/uploading state, swipe-to-delete.
@@ -1362,7 +1381,8 @@ in-progress/uploading state, swipe-to-delete.
      `left:22,top:34` · `left:78,top:96` · `left:146,top:52` · `left:206,top:112`.
    - One **active** amber pin (24×24 `#B4711F`, `3px solid #fff`,
      `0 0 0 7px rgba(180,113,31,.22)`) at `right:84px; top:66px`.
-   - Corner label at `right:16px; bottom:10px`, mono 10px, `#77836F`: `done trees go quiet`
+   - ~~Corner label at `right:16px; bottom:10px`, mono 10px, `#77836F`: `done trees go quiet`~~
+     **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`).
 3. **Primary CTA** (C6, `padding:16px`) — `padding:0 16px`:
    **`Next nearest: The Tea Tree · 40 m`**
 4. **Secondary** (C7, `padding:14px`, 15px) — `padding:10px 16px 0`: **`Back to the map`** and
@@ -1376,8 +1396,10 @@ in-progress/uploading state, swipe-to-delete.
    > about their morning (R2). `Route done · see your grove` is not a fourth control — it is the
    > primary CTA's other state. The ruling is RULINGS **R80**, item 6a, and its addendum is where
    > the copy was closed.
-5. **Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
-   `Ten check-ins in a row is the real volunteer morning. The save answers the only question that matters: which tree is next.`
+5. ~~**Footnote** — `padding:16px 24px 36px`, `line-height:1.5`:
+   `Ten check-ins in a row is the real volunteer morning. The save answers the only question that matters: which tree is next.`~~
+   **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`). Same complaint
+   R80 item 6a made about this screen's two buttons, one paragraph lower.
 
 ---
 

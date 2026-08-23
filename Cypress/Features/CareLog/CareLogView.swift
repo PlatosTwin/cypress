@@ -72,7 +72,9 @@ struct CareLogView: View {
                     optionalWell
                     if model.saveFailed { failureLine }
                     doneCTA(presentation)
-                    footnote
+                    // §7's footnote stood here and was removed by the copy audit of 2026-08-23
+                    // (owner ruling). It carried no bottom padding — `BottomSheet` closes the sheet
+                    // itself — so nothing has to stand in for it.
                 }
             }
         }
@@ -156,17 +158,8 @@ struct CareLogView: View {
         }
     }
 
-    // MARK: - 7 · Footnote
-
-    private var footnote: some View {
-        Text(CareLogCopy.footnote)
-            .font(CypressFont.body12)
-            .foregroundStyle(CypressColor.textFaintAlt)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .padding(.top, CareLogMetrics.footnoteTop)
-    }
+    // §7's footnote was removed by the copy audit of 2026-08-23 (owner ruling); SCREENS.md 09 §7 is
+    // struck to match.
 
     // MARK: - Failure
 
@@ -190,8 +183,7 @@ enum CareLogMetrics {
     static let titleBottom: CGFloat = 4
     /// 09 §3–5: `margin-bottom:14px` under the sub, the chip row and the well.
     static let blockBottom: CGFloat = 14
-    /// 09 §7: `margin-top:10px` above the footnote.
-    static let footnoteTop: CGFloat = 10
+    // 09 §7's `margin-top:10px` went with the footnote itself in the copy audit of 2026-08-23.
     /// C17: three 52pt blocks behind 09 (two behind 10).
     static let skeletonBlocks = 3
 

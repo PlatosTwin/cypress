@@ -127,8 +127,11 @@ struct GrovePresentationTests {
         #expect(subject.celebration == nil)
         #expect(subject.tiles.isEmpty)
         #expect(subject.isEmpty)
-        // The one thing that always renders. It is the whole empty state.
-        #expect(subject.footnote == "Quiet collecting. There are no streaks and no leaderboards.")
+        // The footnote used to be the one thing that always rendered, and this asserted its words.
+        // The copy audit of 2026-08-23 removed it, so what an empty grove has is
+        // `GroveCopy.emptyGrove` and nothing else — a fact about the screen rather than a phrasing,
+        // and the four expectations above are now the whole of it.
+        #expect(GroveCopy.emptyGrove.isEmpty == false)
     }
 
     @Test("Zero recognized species renders no ring rather than a ring at zero")
@@ -180,16 +183,17 @@ struct GrovePresentationTests {
         )
     }
 
-    /// Screen 08 has three sentences that can occupy roughly the same slot — this one, the `Trees`
-    /// pill's own empty state, and the footnote that renders in both — and E158's warning (two
-    /// different facts reaching a reader in the same words) applies across pills exactly as it does
-    /// across screens. `MapEmptyInventoryTests.theFifthStateIsItsOwnSentence` is the same shape one
-    /// screen over.
-    @Test("The empty-grove sentence is not the Trees pill's empty state or the footnote wearing a new name")
+    /// Screen 08 has sentences that can occupy roughly the same slot — this one, the `Trees` pill's
+    /// own empty state, and the failed read — and E158's warning (two different facts reaching a
+    /// reader in the same words) applies across pills exactly as it does across screens.
+    /// `MapEmptyInventoryTests.theFifthStateIsItsOwnSentence` is the same shape one screen over.
+    ///
+    /// The footnote was a fourth member of this set until the copy audit of 2026-08-23 removed it.
+    @Test("The empty-grove sentence is not the Trees pill's empty state wearing a new name")
     func emptyGroveCopyIsItsOwnSentence() {
         #expect(GroveCopy.emptyGrove != GroveCopy.treesEmptyState)
-        #expect(GroveCopy.emptyGrove != GroveCopy.footnote)
         #expect(GroveCopy.emptyGrove != GroveCopy.loadFailed)
+        #expect(GroveCopy.treesEmptyState != GroveCopy.loadFailed)
     }
 
     @Test("One recognized species is the threshold, and it renders")

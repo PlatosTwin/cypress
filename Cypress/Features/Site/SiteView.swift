@@ -135,8 +135,11 @@ struct SiteScreen: View {
                 stats
                 provenance
                 neighbor
-                footnote
+                // The footnote stood here and was removed by the copy audit of 2026-08-23 (owner
+                // ruling). The 36pt it carried is the screen's closing space, not the footnote, and
+                // moves to the column so the neighbor row does not sit on the edge.
             }
+            .padding(.bottom, CypressSpacing.bottomFootnote)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -239,15 +242,5 @@ struct SiteScreen: View {
         }
     }
 
-    // MARK: - Footnote
-
-    private var footnote: some View {
-        Text(presentation.footnote)
-            .cypressBody135(color: CypressColor.textMuted)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, SiteMetrics.footnotePaddingH)
-            .padding(.top, SiteMetrics.footnoteTop)
-            .padding(.bottom, CypressSpacing.bottomFootnote)
-    }
+    // The footnote was removed by the copy audit of 2026-08-23 (owner ruling); see `SiteCopy`.
 }

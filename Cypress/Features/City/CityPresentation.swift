@@ -92,11 +92,9 @@ struct CityPresentation: Equatable {
     let composition: AlmanacPresentation.Composition?
     let oldest: OldestBlock?
 
-    /// Always drawn once a city has resolved — the screen's own closing line, in the almanac's
-    /// voice and not its words (see `CityCopy.footnote`).
-    var footnote: String { CityCopy.footnote }
+    // The screen's closing line was removed by the copy audit of 2026-08-23; see `CityCopy`.
 
-    /// Whether anything sits between the header and the footnote, for a resolved city with nothing
+    /// Whether anything sits between the header and the last block, for a resolved city with nothing
     /// yet to report. Unreached by the shipped seed — both cities clear every floor below — but kept
     /// so a thin future inventory renders its chrome honestly rather than three absent optionals
     /// with no explanation, the same care `AlmanacPresentation.isEmpty` takes.
@@ -297,9 +295,8 @@ enum CityCopy {
     static let locationPromptTitle = "See your city"
     static let locationPromptSubtitle = "Turn on location and this screen fills in with your city's own record."
 
-    // MARK: Footnote
-
-    /// The screen's own closing line — the almanac's kind of sentence, not its words (the brief's
-    /// own instruction). Same job: no rank, no counter, nothing measuring the reader.
-    static let footnote = "No leaderboard, no city ranking. Just what the record holds."
+    // The screen's closing line — `No leaderboard, no city ranking. Just what the record holds.` —
+    // was removed by the copy audit of 2026-08-23 (owner ruling). It was written to be "the
+    // almanac's kind of sentence, not its words", and the almanac's own went in the same commit.
+    // This screen is not in the mocks, so there is nothing to strike in SCREENS.md for it.
 }

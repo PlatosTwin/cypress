@@ -119,7 +119,9 @@ enum JournalFixtures {
         entry(1, kind: .visit, tree: "Grandmother Cypress", daysAgo: 1, summary: "Fog on the crown"),
         entry(2, kind: .careEvent, tree: "Grandmother Cypress", daysAgo: 3, summary: "watering, weeding"),
         entry(3, kind: .measurement, tree: "Ginkgo on Judah", daysAgo: 12, summary: "31 cm taped"),
-        entry(4, kind: .observation, tree: "Ginkgo on Judah", daysAgo: 40, summary: "Spring flush noted"),
+        // `Spring flush noted` until the copy audit of 2026-08-23 retired it — see
+        // `ActivityPresentation.moments`. A preview fixture is a place retired copy survives.
+        entry(4, kind: .observation, tree: "Ginkgo on Judah", daysAgo: 40, summary: "Leaf-out noted"),
         entry(5, kind: .visit, tree: "", daysAgo: 400, summary: "")
     ]
 }

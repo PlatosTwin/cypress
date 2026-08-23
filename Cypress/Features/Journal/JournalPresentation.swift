@@ -260,12 +260,10 @@ enum JournalCopy {
     static let explanation =
         "One line for each thing you did, newest first, under the day it happened."
 
-    /// The footnote, which is screen 08's own, verbatim.
-    ///
-    /// Borrowed rather than written because it is *already* the specification of every personal
-    /// surface in this app, and this is the one most able to break it. It is the sentence that makes
-    /// a list of your own contributions read as a record rather than a scoreboard.
-    static let footnote = GroveCopy.footnote
+    // The footnote was an alias of screen 08's (`GroveCopy.footnote`), borrowed rather than written.
+    // Both were removed by the copy audit of 2026-08-23 (owner ruling: the footnote slot is a
+    // demo-era artifact and comes out of every screen that had one). The alias is named here so a
+    // reader who finds the Journal tab ending without one knows it was a decision.
 
     // MARK: The end of a page (ERRATA E38)
 

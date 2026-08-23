@@ -180,25 +180,41 @@ struct ActivityPresentationTests {
         )
     }
 
-    /// The same floor on §3's first row. Naming a number beside the tree and the day, at one or two,
-    /// comes close to naming the person (D11).
-    @Test("the spring-flush visitor count holds A8's floor too")
-    func springFlushVisitorCountHoldsItsFloor() {
-        func flushes(people: Int) -> TreeProfile {
+    /// **The two season rows are gone and cannot come back by accident** (copy audit, 2026-08-23).
+    ///
+    /// This replaces `springFlushVisitorCountHoldsItsFloor` and
+    /// `dryWeeksNeedsMoreThanOneMonth`, which guarded the *inside* of two rows the owner has since
+    /// killed: `Spring flush noted` and `Watered through the dry weeks`. Deleting them and stopping
+    /// there would leave the removal unguarded, and the rows are easy to reinstate — their builders
+    /// read ordinary timeline data that is all still there.
+    ///
+    /// So this is the same fixtures, asserting the opposite: a tree carrying exactly what used to
+    /// produce both rows produces neither. It asserts a fact about the screen (what §3 draws for
+    /// this record), not a phrasing, so it survives any rewording of the row that remains.
+    @Test("a leaf-out visit and a summer of watering no longer caption themselves as a season")
+    func theSeasonRowsAreGone() {
+        // Three contributors on one April day, all tagging leaf-out: row 1's strongest case, over
+        // A8's floor, which is what used to make it print the visitor clause.
+        let flush = Self.present(
             Self.profile(
-                visits: (0..<max(people, 1)).map { index in
-                    Self.visit(2026, 4, 3, tags: [.leafOut], userID: people == 0 ? nil : Self.person(index))
+                visits: (0..<3).map { index in
+                    Self.visit(2026, 4, 3, tags: [.leafOut], userID: Self.person(index))
                 }
             )
-        }
+        )
+        #expect(flush.moments.isEmpty, "a leaf-out visit still produces a moment: \(flush.moments)")
 
-        for people in 0...2 {
-            let moment = Self.present(flushes(people: people)).moments.first { $0.kind == .springFlush }
-            #expect(moment?.subtitle == "Apr 3", "at \(people) visitors the clause must be absent")
-        }
+        // Waterings across three of the dry months: row 2's case, well past its two-month floor.
+        let watered = Self.present(
+            Self.profile(careEvents: [Self.care(2026, 6, 3), Self.care(2026, 7, 9), Self.care(2026, 8, 2)])
+        )
+        #expect(watered.moments.isEmpty, "watering still produces a moment: \(watered.moments)")
 
-        let three = Self.present(flushes(people: 3)).moments.first { $0.kind == .springFlush }
-        #expect(three?.subtitle == "Apr 3 · three visitors caught the bright new tips")
+        // The control, and the reason the two assertions above are not vacuous: §3 still draws the
+        // row that says what it counts, from a fixture that differs only in what it carries.
+        let onRecord = Self.present(Self.profile(photos: [Self.photo(2025, 11)]))
+        #expect(onRecord.moments.count == 1)
+        #expect(onRecord.moments.first?.kind == .onRecord)
     }
 
     /// A tree first photographed this year is on record for zero years.
@@ -209,19 +225,6 @@ struct ActivityPresentationTests {
 
         let lastYear = Self.present(Self.profile(photos: [Self.photo(2025, 11)]))
         #expect(lastYear.moments.first { $0.kind == .onRecord }?.title == "One year on record")
-    }
-
-    /// "Through the dry weeks" is checked rather than asserted: one month of watering is not a
-    /// season of it.
-    @Test("one month of watering does not claim to have carried the tree through anything")
-    func dryWeeksNeedsMoreThanOneMonth() {
-        let oneMonth = Self.present(Self.profile(careEvents: [Self.care(2026, 7, 2), Self.care(2026, 7, 19)]))
-        #expect(oneMonth.moments.contains { $0.kind == .dryWeeks } == false)
-
-        let threeMonths = Self.present(
-            Self.profile(careEvents: [Self.care(2026, 6, 3), Self.care(2026, 7, 9), Self.care(2026, 8, 2)])
-        )
-        #expect(threeMonths.moments.first { $0.kind == .dryWeeks }?.subtitle == "Jun–Aug")
     }
 
     /// `Same week, other years` with no other year in it is a heading that is false.

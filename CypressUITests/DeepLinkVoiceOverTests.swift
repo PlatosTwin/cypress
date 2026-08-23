@@ -55,7 +55,24 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
     func testShare()         { check("share",         anchor: "Share this tree", pushed: false) }
 
     /// The three tab roots other than the map. No Back, because a tab root has nowhere to go back to.
-    func testGroveTab()      { check("grove",         anchor: "Quiet collecting", pushed: false) }
+    /// The anchor was `Quiet collecting` — screen 08's footnote — until the copy audit of
+    /// 2026-08-23 removed it, and choosing its replacement turned up a live trap worth recording.
+    ///
+    /// **`My Grove` looks like the obvious anchor and is worthless.** It is the screen's own title,
+    /// but C16's tab item carries the same words on *every* tab root, so `app.staticTexts` finds it
+    /// on the You tab as readily as on the grove. Measured, not reasoned: pointing this case at
+    /// `you` with that anchor **passed**, which is a test that cannot fail for the thing it exists
+    /// to check. `Your grove is empty` fails the other way — the seeded device has a grove.
+    ///
+    /// So the anchor is §3's progress caption, which is `GroveCopy`'s alone. Red-proved the same
+    /// way: pointed at `you`, it fails with "'you can recognize' never appeared".
+    ///
+    /// **Its one weakness, stated rather than discovered later:** the caption renders only when the
+    /// ring does, so a device whose grove is empty would fail here on a healthy build. That is a
+    /// property of the seed, not of a contribution, and it is why the empty-state string is the
+    /// wrong anchor rather than the right one — but it is a state dependence the footnote did not
+    /// have, and it is the real cost of removing that sentence.
+    func testGroveTab()      { check("grove",         anchor: "you can recognize", pushed: false) }
     func testJournalTab()    { check("journal",       anchor: "Almanac",          pushed: false) }
     func testYouTab()        { check("you",           anchor: "Your contributions", pushed: false) }
 

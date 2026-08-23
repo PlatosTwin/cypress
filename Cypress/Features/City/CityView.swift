@@ -88,9 +88,11 @@ struct CityScreen: View {
                         failure
                     }
 
-                    Spacer(minLength: 0)
-                    footnote
+                    // The spacer bottom-pinned the footnote and went with it (copy audit,
+                    // 2026-08-23). The `minHeight` frame below still top-aligns a short column, and
+                    // the 36pt is the screen's closing space rather than part of the footnote.
                 }
+                .padding(.bottom, CypressSpacing.bottomFootnote)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }
@@ -245,16 +247,6 @@ struct CityScreen: View {
         .padding(.horizontal, CypressSpacing.gutter)
     }
 
-    // MARK: - Footnote
-
-    private var footnote: some View {
-        Text(CityCopy.footnote)
-            .font(CypressFont.body12)
-            .foregroundStyle(CypressColor.textFaintAlt)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.top, AlmanacMetrics.footnoteTop)
-            .padding(.bottom, AlmanacMetrics.footnoteBottom)
-            .padding(.horizontal, CypressSpacing.gutterLabel)
-    }
+    // The footnote was removed by the copy audit of 2026-08-23 (owner ruling), along with the
+    // `AlmanacMetrics` footnote paddings it borrowed.
 }

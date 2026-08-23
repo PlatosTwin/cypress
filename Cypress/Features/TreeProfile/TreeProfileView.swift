@@ -276,10 +276,13 @@ struct TreeProfileView: View {
 
                 cityDetails(presentation)
 
-                if presentation.isCold {
-                    footnote(presentation)
-                }
+                // 14 §7's footnote stood here and was removed by the copy audit of 2026-08-23
+                // (owner ruling) — it is the sentence that occasioned the audit. It carried the
+                // cold profile's whole closing space in its own bottom padding, and `cityDetails`
+                // below still declines to add any when cold for exactly that reason, so the 36pt
+                // is kept here as itself rather than deleted with the words.
             }
+            .padding(.bottom, presentation.isCold ? CypressSpacing.bottomFootnote : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -899,17 +902,8 @@ struct TreeProfileView: View {
         }
     }
 
-    // MARK: - 7 (cold) · Footnote
-
-    private func footnote(_ presentation: TreeProfilePresentation) -> some View {
-        Text(presentation.coldStartFootnote)
-            .cypressBody135(color: CypressColor.textMuted)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, TreeProfileMetrics.footnotePaddingH)
-            .padding(.top, TreeProfileMetrics.footnoteTop)
-            .padding(.bottom, CypressSpacing.bottomFootnote)
-    }
+    // 14 §7's footnote was removed by the copy audit of 2026-08-23 (owner ruling); SCREENS.md 14 §7
+    // is struck to match, and `TreeProfilePresentation`'s own header records why it survived E129.
 
     // MARK: - Failure
 
@@ -990,9 +984,8 @@ enum TreeProfileMetrics {
     static let activityLinkTop: CGFloat = 8
     /// 03 §9: `padding:10px 16px 30px`.
     static let statGridTop: CGFloat = 10
-    /// 14 §7: `padding:14px 24px 36px`.
-    static let footnoteTop: CGFloat = 14
-    static let footnotePaddingH: CGFloat = 24
+    // 14 §7's footnote paddings (`14px 24px 36px`) went with the footnote itself in the copy audit
+    // of 2026-08-23. The 36pt closing space survives on the cold column — see `TreeProfileView.body`.
     /// Not a spec value — the retry control on the failure state, which SCREENS.md does not draw.
     static let retryButtonWidth: CGFloat = 200
 }

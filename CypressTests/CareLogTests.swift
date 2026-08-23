@@ -69,14 +69,18 @@ struct CareLogTests {
 
     // MARK: - Copy
 
-    @Test("the footnote keeps SCREENS.md's wording and its em dash rule")
-    func footnote() {
-        #expect(CareLogCopy.footnote == "This joins the tree’s care history—separate from health observations.")
-        // ARCHITECTURE §5.7: no spaces around em dashes.
-        #expect(CareLogCopy.footnote.contains(" — ") == false)
-        #expect(CareLogCopy.footnote.contains("—"))
+    /// **The footnote is gone and the rules it was checked against are not.**
+    ///
+    /// This test pinned §7's wording — `This joins the tree's care history—separate from health
+    /// observations.` — and used it as the specimen for the em-dash rule and for two content
+    /// sweeps. The copy audit of 2026-08-23 removed the sentence by owner ruling (the footnote
+    /// *slot* is the demo-era artifact, so it comes out of every screen that had one, including the
+    /// ones the audit itself proposed keeping). What is left here is the part that was never about
+    /// that sentence: no sheet copy claims an authority was told, and none of it counts anything.
+    @Test("nothing this sheet says claims an authority was told, or counts what anybody did")
+    func sheetCopyRules() {
         // ARCHITECTURE §5.4: nothing on this sheet says an authority was told anything.
-        let everything = [CareLogCopy.subtitle, CareLogCopy.footnote, CareLogCopy.optionalWell, CareLogCopy.doneCTA]
+        let everything = [CareLogCopy.subtitle, CareLogCopy.optionalWell, CareLogCopy.doneCTA]
             .joined(separator: " ")
             .lowercased()
         for forbidden in ["sent to the city", "routed to", "reported to", "notified"] {

@@ -251,7 +251,8 @@ Visit rows use a 38px photo thumb; care rows use a 38px `#E2EFE2` tile with a `#
 - Chips: `Watered`, `Mulched`, `Weeded basin`, `Litter cleared`
 - Placeholder box: `Photo or note (optional)` (`1px dashed #C9D1BC`)
 - CTA `Done`
-- Footnote `This joins the tree’s care history, kept separate from health observations.`
+- ~~Footnote `This joins the tree’s care history, kept separate from health observations.`~~
+  **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`).
 
 ### Share sheet
 - Title `Share {{ treeName }}`

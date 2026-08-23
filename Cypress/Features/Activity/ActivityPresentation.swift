@@ -121,8 +121,12 @@ struct ActivityPresentation {
     }
 
     /// One C10 row of §3's `Moments`.
+    ///
+    /// `Kind` carried `springFlush` and `dryWeeks` until the copy audit of 2026-08-23 removed both
+    /// rows (owner ruling); see `moments` for what they were and why the builders are gone rather
+    /// than dark.
     struct Moment: Identifiable {
-        enum Kind: String { case springFlush, dryWeeks, onRecord }
+        enum Kind: String { case onRecord }
 
         let kind: Kind
         let accent: CypressColor.TileAccent
@@ -247,82 +251,38 @@ struct ActivityPresentation {
 
     // MARK: - §3 Moments
 
-    /// The three C10 rows, in SCREENS.md's order, each present only when the record proves it.
+    /// The C10 rows, in SCREENS.md's order, each present only when the record proves it.
+    ///
+    /// **There is one of them now, and there were three.** The copy audit of 2026-08-23 killed rows
+    /// 1 and 2 by owner ruling. Their titles — `Spring flush noted` and `Watered through the dry
+    /// weeks` — asserted a seasonal narrative nothing in the app detects: the rows keyed off a
+    /// `leaf_out` tag and a count of waterings in named months, and then captioned that arithmetic
+    /// as a season. `Seven years on record` survives because it says what it counts.
+    ///
+    /// The row builders went with the titles rather than being left dark, so there is no dormant
+    /// code path waiting to draw a killed string.
     var moments: [Moment] {
-        [springFlush, dryWeeks, yearsOnRecord].compactMap { $0 }
+        [yearsOnRecord].compactMap { $0 }
     }
 
-    /// `Spring flush noted` · `Apr 3 · four visitors caught the bright new tips`.
-    ///
-    /// A visit carrying `leaf_out` is the record of a spring flush. The tag is validated against the
-    /// species vocabulary at capture (`PhenologyTag.validated(_:for:)`), so D5 is already answered by
-    /// the time a row exists — an evergreen that flushes new growth legitimately carries `leaf_out`,
-    /// and none of them can carry `fall_color`.
-    ///
-    /// The headcount clause is A8's floor applied to a sentence rather than to a row, exactly as
-    /// `AlmanacCopy.bloomSubtitle` applies it: at one or two, naming the number beside the tree and
-    /// the day comes close to naming the person (D11), so the clause is dropped and the date stands
-    /// on its own. On the shipped app it is always dropped, because every contribution is anonymous
-    /// under a device id until the account ask exists (D9).
-    private var springFlush: Moment? {
-        let visits = base.visibleVisits
-        // The claim is "the first one this year", which is a claim about all of them.
-        guard visits.isComplete else { return nil }
-
-        let year = calendar.component(.year, from: now)
-        let flushes = visits.items.filter {
-            $0.phenologyTags.contains(.leafOut) && calendar.component(.year, from: $0.capturedAt) == year
-        }
-        guard let first = flushes.min(by: { $0.capturedAt < $1.capturedAt }) else { return nil }
-
-        let people = Set(flushes.compactMap(\.userID)).count
-        return Moment(
-            kind: .springFlush,
-            accent: .newGrowth,
-            title: ActivityCopy.springFlushTitle,
-            subtitle: ActivityCopy.springFlushSubtitle(
-                seenAt: first.capturedAt,
-                visitors: people,
-                calendar: calendar,
-                locale: locale
-            )
-        )
-    }
-
-    /// `Watered through the dry weeks` · `Jun–Aug`.
-    ///
-    /// SCREENS.md's subtitle is `Jun–Aug · five care visits kept it going`. The second clause is a
-    /// public count of care events and BUILD-PLAN §4 forbids one; see `ActivitySeriesKind
-    /// .mayPrintTotal`. What is left is the span, which is what the title is claiming anyway.
-    ///
-    /// **"Through" is checked rather than asserted.** Waterings inside a single month are not
-    /// watering *through* anything, so the row needs two months of them before it will say so — the
-    /// same shape of check `AlmanacCopy.coverageBody` uses on its fifteen-minute walk.
-    private var dryWeeks: Moment? {
-        let care = base.visibleCareEvents
-        guard care.isComplete else { return nil }
-
-        let year = calendar.component(.year, from: now)
-        let months = care.items.compactMap { event -> Int? in
-            guard event.actions.contains(.watered),
-                  calendar.component(.year, from: event.capturedAt) == year
-            else { return nil }
-            let month = calendar.component(.month, from: event.capturedAt)
-            return ActivityMetrics.dryMonths.contains(month) ? month : nil
-        }
-        let distinct = Set(months).sorted()
-        guard distinct.count >= ActivityMetrics.minimumDryMonths,
-              let first = distinct.first,
-              let last = distinct.last
-        else { return nil }
-
-        return Moment(
-            kind: .dryWeeks,
-            accent: .water,
-            title: ActivityCopy.dryWeeksTitle,
-            subtitle: ActivityCopy.monthRange(from: first, to: last, calendar: calendar, locale: locale)
-        )
-    }
+    // Rows 1 and 2 — `Spring flush noted` and `Watered through the dry weeks`, with their
+    // subtitles `Apr 3 · four visitors caught the bright new tips` and `Jun–Aug` — were removed by
+    // the copy audit of 2026-08-23 (owner ruling). SCREENS.md 13 §3's first two table rows are
+    // struck to match.
+    //
+    // **The builders are deleted rather than left unreferenced**, because a dark builder is how a
+    // killed string comes back: the next reader finds `springFlush` intact, assumes the row was
+    // dropped by accident, and reinstates it. What they did is on the record here instead. Row 1
+    // fired on a visit tagged `leaf_out` in the current year and counted distinct contributors
+    // against A8's floor; row 2 fired on waterings falling in two or more of
+    // `ActivityMetrics.dryMonths` and printed the span, its own doc comment noting that
+    // SCREENS.md's `· five care visits kept it going` was already dropped as a public count
+    // BUILD-PLAN §4 forbids. Neither detection is lost — the visits and care events they read are
+    // still on the timeline and still in the three charts above; what is gone is the screen calling
+    // them a season.
+    //
+    // `ActivityMetrics.dryMonths` and `minimumDryMonths` went with row 2. `PhenologyTag.leafOut` is
+    // untouched: it is stored vocabulary and the check-in screen still writes it.
 
     /// `Seven years on record` · `First photo Mar 2019 · six people know this tree`.
     ///
@@ -431,12 +391,11 @@ enum ActivityCopy {
     static let sameWeekLabel = "Same week, other years"
     static let thisWeekChip = "this week"
 
-    // MARK: §3's three titles
+    // MARK: §3's titles
 
-    /// §3 row 1, verbatim.
-    static let springFlushTitle = "Spring flush noted"
-    /// §3 row 2, verbatim.
-    static let dryWeeksTitle = "Watered through the dry weeks"
+    // Rows 1 and 2 — `Spring flush noted` and `Watered through the dry weeks` — were removed by the
+    // copy audit of 2026-08-23 (owner ruling: they caption arithmetic as a season). SCREENS.md 13
+    // §3's first two table rows are struck to match.
 
     /// §3 row 3 — `Seven years on record`. The mock spells its number out and so does this.
     static func onRecordTitle(years: Int, locale: Locale) -> String {
@@ -447,25 +406,13 @@ enum ActivityCopy {
 
     // MARK: §3's subtitles
 
-    /// `Apr 3 · four visitors caught the bright new tips`.
-    ///
-    /// The headcount clause needs A8's three (`TreeProfilePresentation.caretakerThreshold`). Below
-    /// it the date stands alone: the flush still happened, the screen just stops saying how many
-    /// people were there.
-    static func springFlushSubtitle(seenAt: Date, visitors: Int, calendar: Calendar, locale: Locale) -> String {
-        let day = dayStamp(seenAt, calendar: calendar, locale: locale)
-        guard visitors >= TreeProfilePresentation.caretakerThreshold else { return day }
-        let people = spelledOut(visitors, locale: locale)
-        let noun = visitors == 1 ? "visitor" : "visitors"
-        return "\(day) · \(people) \(noun) caught the bright new tips"
-    }
-
-    /// `Jun–Aug`. An en dash and no spaces (ARCHITECTURE §5.7).
-    static func monthRange(from: Int, to: Int, calendar: Calendar, locale: Locale) -> String {
-        let start = shortMonthName(from, calendar: calendar, locale: locale)
-        guard to != from else { return start }
-        return start + "–" + shortMonthName(to, calendar: calendar, locale: locale)
-    }
+    // Both subtitles went with their rows in the copy audit of 2026-08-23: row 1's
+    // `Apr 3 · four visitors caught the bright new tips`, and row 2's `monthRange(from:to:…)`, which
+    // rendered `Jun–Aug`.
+    //
+    // `monthRange` is deleted rather than kept as a utility because it had exactly one caller — the
+    // dry-weeks row — and `Species.CareNote.monthRange` is a different symbol that a grep for
+    // "monthRange" will find nine times over. Checked by callers, not by name.
 
     /// `First photo Mar 2019 · six people know this tree`.
     ///
@@ -608,14 +555,9 @@ enum ActivityMetrics {
 
     // MARK: Thresholds
 
-    /// §3 row 2's window. **NOT SPECIFIED** — the mock states `Jun–Aug` for one tree in one year and
-    /// no rule behind it. San Francisco's dry season is longer than this and its own driest weeks
-    /// are inside it; the narrow reading is the one that cannot overclaim, and it is named here
-    /// rather than buried in a comparison.
-    static let dryMonths: ClosedRange<Int> = 6...8
-
-    /// How many distinct months of watering "through the dry weeks" needs before it is true.
-    static let minimumDryMonths = 2
+    // §3 row 2's window (`dryMonths`, Jun–Aug) and its two-month floor (`minimumDryMonths`) went
+    // with the row in the copy audit of 2026-08-23. Both were **NOT SPECIFIED** guesses standing
+    // behind a sentence about a season, which is the thing the ruling removed.
 
     /// A tree first photographed this year is on record for zero years, and §5.6 does not draw a
     /// zero.

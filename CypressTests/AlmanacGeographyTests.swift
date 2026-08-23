@@ -210,7 +210,11 @@ struct AlmanacGeographyTests {
 
         let presentation = AlmanacPresentation(almanac: almanac, now: Self.now, locale: Self.locale)
         let card = try #require(presentation.coverage)
-        #expect(card.body.contains("15-minute walk"), "the walking sentence was withheld")
+        // Optional since the copy audit of 2026-08-23 removed the body's opening sentence: what is
+        // left is the walking claim alone, so a withheld sentence is now a nil rather than a
+        // shorter string. `#require` makes that the failure this test reports.
+        let body = try #require(card.body, "the walking sentence was withheld")
+        #expect(body.contains("15-minute walk"))
     }
 
     /// The fallback names itself as a distance and says so in a sentence, not only in a pill.

@@ -575,7 +575,11 @@ private struct GalleryC10: View {
         (.bloom, "First bloom of the year", "Red flowering gum on 44th Ave · Jan 22, three neighbors saw it"),
         (.elder, "The elder", "Grandmother Cypress · in the city record since 1898"),
         (.newGrowth, "Newest neighbors", "23 trees planted this spring, mostly ginkgo and tea tree"),
-        (.water, "Watered through the dry weeks", "Jun–Aug · five care visits kept it going"),
+        // The mock's second Moments row said `Watered through the dry weeks` / `Jun–Aug · five care
+        // visits kept it going`. The copy audit of 2026-08-23 killed that row; the C10 accent it
+        // demonstrated is still in the catalog, so the sample carries a neutral label instead of
+        // preserving retired copy where somebody could copy it back out.
+        (.water, "Care recorded", "Jun–Aug"),
         (.record, "Seven years on record", "First photo Mar 2019 · six people know this tree"),
     ]
 
@@ -1127,7 +1131,9 @@ private struct GalleryC24C25: View {
                                 Text("9 young trees with no visits since planting")
                                     .font(CypressFont.body145Bold)
                                     .foregroundStyle(CypressColor.textInk)
-                                Text("The first two summers decide whether a street tree makes it. All nine are within a 15-minute walk.")
+                                // Opening sentence removed by the copy audit of 2026-08-23; this
+                                // is what the card draws now.
+                                Text("All nine are within a 15-minute walk.")
                                     .font(CypressFont.body125)
                                     .foregroundStyle(CypressColor.textMuted)
                                     .fixedSize(horizontal: false, vertical: true)

@@ -83,8 +83,8 @@ struct SitePresentation: Equatable {
     /// absent rather than reworded.
     let neighbor: Neighbor?
 
-    /// The closing line, in the place screen 14 puts its own footnote.
-    let footnote: String
+    // The closing line was removed by the copy audit of 2026-08-23 (owner ruling); see `SiteCopy`
+    // for the sentence and the reason.
 
     /// The map this screen can send the reader to (ERRATA E144).
     ///
@@ -113,7 +113,6 @@ struct SitePresentation: Equatable {
         self.stats = Self.stats(profile: profile)
         self.provenanceNote = Self.provenanceNote(profile: profile)
         self.neighbor = nearest.map(Neighbor.init(nearby:))
-        self.footnote = SiteCopy.footnote
         // Named with this screen's own H1 — the address — because that is the only thing that
         // identifies a site, and the map's title should be what the reader just read.
         self.locateSet = PinSet.locate(profile, name: SiteCopy.title(profile: profile))
@@ -283,15 +282,12 @@ enum SiteCopy {
         "\(Int(meters.rounded())) m away · the nearest tree to this site"
     }
 
-    // MARK: The footnote
-
-    /// Where 14 puts `This is the almanac's "walk the nine" list, one tree at a time.`
-    ///
-    /// It says what a site *is* rather than what anybody should do about it. E11 reads a vacant site
-    /// as the coverage gap D1 points at, and this sentence is as far as that reading can be taken
-    /// without claiming a feature: the almanac excludes vacant sites today (ERRATA E107), so nothing
-    /// here says it counts them.
-    static let footnote = "A planting site is a gap in the canopy, not a tree with a page missing. It stays on the map because it is the city's own record of where a tree could stand."
+    // The footnote — `A planting site is a gap in the canopy, not a tree with a page missing. It
+    // stays on the map because it is the city's own record of where a tree could stand.` — was
+    // removed by the copy audit of 2026-08-23 (owner ruling). It was written to fill the slot
+    // screen 14's cold-start footnote occupied, and that footnote was killed in the same commit, so
+    // the thing it was modeled on no longer exists. This screen is not in the mocks; there is
+    // nothing to strike in SCREENS.md for it.
 
     // MARK: - The map card (screen 01)
 
@@ -339,9 +335,8 @@ enum SiteMetrics {
     static let calloutTop: CGFloat = 12
     /// 14 §3: `margin-top:2px` on the italic line.
     static let latinTop: CGFloat = 2
-    /// 14 §7: `padding:14px 24px 36px`.
-    static let footnoteTop: CGFloat = 14
-    static let footnotePaddingH: CGFloat = 24
+    // 14 §7's footnote paddings (`14px 24px 36px`) went with the footnote itself in the copy audit
+    // of 2026-08-23. The 36pt closing space survives on the column — see `SiteView.body`.
     /// Not a spec value — the retry control on the failure state, matched to 03's and 19's.
     static let retryButtonWidth: CGFloat = 200
 }

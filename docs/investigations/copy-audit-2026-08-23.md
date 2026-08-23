@@ -4,12 +4,47 @@ Phase 1 inventory and verdict proposal, 2026-08-23. Branch `feat/copy-audit`, of
 at `f5b4a63`. Answers the ROADMAP item "Copy audit: remove demo-era narrative holdovers"
 (owner instruction 2026-08-21).
 
-**This document proposes; it does not change anything.** No drawn string is edited on this
-branch. The orchestrator runs batched owner decision rounds off the tables below, and phase 2
-implements whatever comes back.
+The owner's exemplar — *"This is that almanac's 'walk the nine' list, one tree at a time"* — was
+item **K1**. It is gone.
 
-The owner's exemplar — *"This is that almanac's 'walk the nine' list, one tree at a time"* — is
-item **K1**, at `Cypress/Features/TreeProfile/TreeProfilePresentation.swift:1340`.
+---
+
+## 0. Status — the owner's rulings, 2026-08-23
+
+The decision round is closed for the kills. **Phase 2A landed them on this branch**; the 25
+rewrites are unimplemented and go to the owner as a second batch (§5, unchanged below).
+
+| # | Ruling | Where it landed |
+| --- | --- | --- |
+| 1 | **KILL all 11**, and K10/K11 die as kills rather than rewrites — R14 and R16 are moot | §4, and the two Moments *subtitles* go with their rows, so 11 numbered items = **13 strings** |
+| 2 | Strike every transcribed line from `SCREENS.md` **in the same commit**, each with a marker citing this document | §7; 8 strikes in `SCREENS.md`, 1 in `PROTOTYPE-FLOW.md` |
+| 3 | **The footnote *slot* is the demo artifact** — it comes out everywhere, including the survivor this audit proposed keeping (`CareLogCopy.footnote`) and the `JournalCopy.footnote` alias, and the layout slot goes with it rather than being left empty | §4a below |
+| 4 | `AccountAskCopy.body` — **keep the promise verbatim**, on the record that the feature is coming | **R26 is withdrawn. KEEP by ruling** — see §5.12 |
+
+**R26 is a waived item. Do not re-flag it in any future copy audit.** The public-timeline
+sentence is a deliberate forward promise, not an oversight; it was screened, raised, and settled.
+
+### 4a. What ruling 3 actually removed
+
+Ruling 3 is the one that went past the audit's own proposal, so its scope is written out rather
+than left to "everywhere". **Eight footnote render sites** were removed — the six screens §9
+item 4 named (08 My Grove, 12 Almanac, 17 Outbox, 18 Next tree, City, vacant Site), plus the
+survivor (09 Care log) and the Journal tab's alias — together with K1's cold-start footnote on
+14, which was already a kill. With them went the `margin-top:auto` spacers that existed only to
+bottom-pin a footnote, and every `…Metrics.footnote*` constant that positioned one.
+
+**What was deliberately kept: the closing space.** Six of those footnotes carried the screen's
+bottom margin (36pt, or 14pt above a tab bar) in their own `padding(.bottom:)`. That is the
+screen's inset above the home indicator, not part of the footnote, and deleting it with the
+sentence would have run the last row into the edge. It moves to the column on each screen and is
+commented as such at every site.
+
+**Four footnotes were NOT touched, because ruling 3's enumeration does not reach them and this
+round had no standing to widen it.** They are named here so the next round does not have to
+rediscover them: `ActivityCopy.footnote` (13 §5, the shared-scale sentence — a fact about the
+chart above it), `CheckInCopy.footnote` (05), `MeasureCopy.footnoteDBH`/`footnoteAnomaly` (16 —
+already pending as rewrites R9/R10), and `GrowthHistoryCopy.unrenderedFootnote` (11). **If the
+owner's intent was every footnote in the app, that is a follow-up ruling, not an inference.**
 
 ---
 
@@ -90,9 +125,10 @@ Stated so the gap is on the record rather than implied:
 | Short labels (one-word buttons, chips, enum labels) | 188 |
 | `Info.plist` permission strings | 3 |
 | **Total user-facing strings screened** | **965** |
-| **KILL** — narrative holdover, delete outright | **11** |
-| **REWRITE** — useful purpose, wrong voice or now untrue | **25** |
+| **KILL** — narrative holdover, delete outright | **11** items / **13** strings — *ruled, landed* |
+| **REWRITE** — useful purpose, wrong voice or now untrue | **25** — *24 pending the owner's second batch; R26 withdrawn* |
 | **KEEP** | **929** |
+| Additionally removed under ruling 3 (footnote slot) | **1** — `CareLogCopy.footnote`, a KEEP the owner overrode |
 
 Numbered **K1–K11** and **R1–R27** below. That is 38 numbers over **36 distinct strings**: R14
 and R16 are the same two strings as K10 and K8, offered as rewrites rather than deletions so the
@@ -174,14 +210,16 @@ the city will replant this site. That is the F7-round rule (copy must be true an
 provenance-accurate) applied to a future tense. R8: "a steward" is a role this app has no
 concept of; the check-in was made by a contributor.
 
-### 5.3 Screen 13 · tree activity (alternative to K10/K11)
+### 5.3 Screen 13 · tree activity — ~~alternative to K10/K11~~ **MOOT**
+
+The owner chose KILL. R14 and R15 are withdrawn; both rows and both subtitles are gone.
 
 | # | File:line | Current | → |
 | --- | --- | --- | --- |
 | R14 | `ActivityPresentation.swift:437` | `Spring flush noted` | `Leaf-out noted` |
 | R15 | `ActivityPresentation.swift:460` | `Apr 3 · four visitors caught the bright new tips` | `Apr 3 · four visitors` |
 
-### 5.4 Screen 12 · almanac
+### 5.4 Screen 12 · almanac — **MOOT (R16 = K8, ruled KILL)**
 
 | # | File:line | Current | → |
 | --- | --- | --- | --- |
@@ -259,7 +297,13 @@ for what the reader has decided about their day — and this is the same sentenc
 
 | # | File:line | Current | → |
 | --- | --- | --- | --- |
-| R26 | `AccountAskPresentation.swift:176` | `They live on this phone right now. An account backs them up and lets them join each tree’s public timeline.` | **owner's call** — see §9, ambiguity 3. There is no public timeline in the shipping app. |
+| R26 | `AccountAskPresentation.swift:176` | `They live on this phone right now. An account backs them up and lets them join each tree’s public timeline.` | ~~raised~~ → **KEEP BY RULING (2026-08-23)** |
+
+**WAIVED — do not re-raise.** The audit flagged this as a promise about a feature that does not
+exist. The owner ruled that the promise stays verbatim, deliberately, on the record that the
+feature is coming. It is pinned by `AccountAskSheetTests.swift:278` and
+`AccountSurfaceTests.swift:407`, and both stay. A future copy audit that re-flags this sentence
+is re-litigating a settled decision.
 
 ### 5.13 `Info.plist`
 
@@ -381,34 +425,28 @@ needs a simulator run, not just a unit pass.
 
 ---
 
-## 9. Ambiguities needing a ruling before phase 2
+## 9. Ambiguities — asked, and answered
 
-1. **Does this round amend `SCREENS.md`?** Eighteen items are transcribed there verbatim.
-   Leaving `SCREENS.md` alone leaves the app and its own screen map disagreeing, and the map is
-   what the next builder reads. Proposal: phase 2 edits `SCREENS.md` in the same commit, marking
-   each struck line `— removed by the 2026-08-23 copy audit`, so the transcription stays honest
-   about what it used to say. Needs the owner's yes, because `SCREENS.md` is a distillation of a
-   source document rather than a document we own.
+All five were put to the owner on 2026-08-23. Four are closed; one was never in scope.
 
-2. **K10/K11 or R14/R15 — kill the Moments rows, or keep them and de-narrate?** They cannot both
-   apply. My recommendation is **KILL**: the titles claim a seasonal event the app never detects.
+1. **Does this round amend `SCREENS.md`?** — **Yes, in the same commit.** Done: 8 strikes in
+   `SCREENS.md` and 1 in `PROTOTYPE-FLOW.md`, each line struck through rather than deleted and
+   each carrying `**REMOVED — copy audit 2026-08-23**` with a pointer back here. Struck rather
+   than deleted so the transcription stays honest about what the mock said.
+2. **K10/K11 or R14/R15?** — **KILL.** Both rows are gone, builders included.
+3. **`AccountAskCopy.body` (R26)** — **KEEP the promise verbatim** (see §0, ruling 4). Waived;
+   never re-raise.
+4. **Footnotes as a class** — **the slot is the artifact; remove it everywhere.** Scope and its
+   deliberate edges are written out in §4a, including the four footnotes this round did not touch
+   and why.
+5. **Seed-database prose** — **out of scope** until the owner rules on it. Unchanged.
 
-3. **`AccountAskCopy.body` (R26) is a truth question wearing a tone question's clothes.** It
-   promises records "join each tree's public timeline". There is no public timeline in the
-   shipping app. This is the same shape as ruling 2 of 2026-08-14 (`storageBody`), and I did not
-   propose wording, because a rewrite has to decide what the app *does* promise — which is a
-   product answer, not a copy answer. Flagging rather than guessing.
+### New, opened by the implementation
 
-4. **Footnotes as a class.** Six screens end in a footnote (08/12/17/18 + City + Site) and five
-   of the six are on the KILL list. If the owner's view is that the footnote *slot* is the demo
-   artifact, the sixth (`CareLogCopy.footnote`, kept above) and `JournalCopy`'s alias should go
-   with them and the layout slot should be removed rather than left empty. If instead the slot
-   stays, three of the five need replacement text and I have not proposed any. Which?
-
-5. **Seed-database prose.** Species recognition text and the like live in the seed, not in
-   source, and were **not** screened (§1). If they are in scope this is a second round.
-
----
+6. **Four footnotes remain** (§4a). Ruling 3's enumeration named eight sites and this round
+   removed exactly those eight; `ActivityCopy.footnote`, `CheckInCopy.footnote`, Measure's two,
+   and `GrowthHistoryCopy.unrenderedFootnote` are still drawn. Whether ruling 3 meant *all*
+   footnotes is a question, not an inference.
 
 ## 10. Where the machinery is
 

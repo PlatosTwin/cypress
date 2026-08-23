@@ -272,8 +272,11 @@ struct PhotoSendPathTests {
 
     // MARK: - 4b. The row says why, which is what screen 17 promises
 
-    /// Screen 17's footnote is a promise: "Nothing here disappears silently. An item that cannot
-    /// sync says so, says why, and waits for you."
+    /// Screen 17 used to make this promise in a footnote — "Nothing here disappears silently. An
+    /// item that cannot sync says so, says why, and waits for you." — which the copy audit of
+    /// 2026-08-23 removed by owner ruling. **The promise is unchanged; only the screen's narration
+    /// of it went**, and this test is one of the three that now carry it (see
+    /// `OutboxPresentationTests.copyRules` for the other two).
     ///
     /// The photo send path creates the first state that could break it — the note sent, the
     /// photograph not — because the failure is recorded against the *binary* and the item is
