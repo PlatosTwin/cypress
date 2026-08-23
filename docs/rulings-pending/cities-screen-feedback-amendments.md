@@ -163,21 +163,29 @@ moved into the top section, where nothing grouped them — five flat cards and n
 heading anywhere on the screen. Pack counting is therefore per section, so three boroughs downloaded
 and two not yields a group in each.
 
-**A heading with nothing of its own under it is not drawn**, which follows from the same principle
-that denies a single-pack city a heading. In today's live catalog *every* downloadable pack is a New
-York borough, so they all group — and the screen drew `Available to download` with zero cards
-beneath it, immediately above `New York City` with five. Both are drawn in the same micro-label
-idiom, so the pair reads as two stacked labels rather than as a heading and its child. When a
-section's ungrouped remainder is empty its city groups head the run themselves; the umbrella returns
-the moment any pack is listed under it directly.
+**A section heading is drawn even when every one of its rows grouped**, and this is the item to
+rule on, because it is the one place this round leaves something on screen that says nothing.
 
-**This second one is the item to rule on**, because it trades a heading a reader might want for one
-that says nothing. Alternatives: (a) as built — drop the empty umbrella, so a fully-grouped screen
-reads `On this phone` / `New York City`; (b) keep the empty `Available to download` heading, so the
-affordance context is always stated even when it heads only another heading; (c) distinguish the two
-levels visually — an indent or a quieter style for a city group — which would make (b) read
-correctly but invents card-adjacent geometry R43 does not have. (a) is built because a heading whose
-entire content is another heading is furniture by this ruling's own test.
+In today's live catalog *every* downloadable pack is a New York borough, so they all group and
+`Available to download` renders with zero cards beneath it, immediately above `New York City` with
+five. Both are drawn in the same micro-label idiom, so the pair reads as two stacked labels rather
+than as a heading and its child. The review flagged it, and the obvious tidy — suppress a heading
+with nothing directly under it — **was built, put on the device, and reversed there.** With one
+borough downloaded, the city has a group in *both* sections, and with the umbrella suppressed the
+screen draws `New York City` twice in a row with nothing between them saying that the first is
+installed and the second is not. Photographed at 402 pt with Manhattan and Staten Island installed.
+
+An empty heading says nothing. Two identical adjacent headings say something false. So the heading
+stays, and the empty `Available to download` is the price.
+
+**Alternatives, for the owner:** (a) as built — every section keeps its heading, and a fully-grouped
+section shows an empty one; (b) suppress the empty heading, accepting the doubled `New York City`
+in the mixed state — rejected on the evidence above; (c) suppress it *only* when doing so would not
+put two identical headings together, which is correct in both states and is a conditional nobody
+reading the screen could predict; (d) distinguish the two levels visually — an indent, or a quieter
+style for a city group — which makes (a) read as the nesting it is, and is the only option that
+removes the oddity rather than choosing which oddity to keep. (d) is not built because it invents
+card-adjacent geometry R43 does not have, and that is a look-at-it decision rather than a branch's.
 
 **Alternatives for the sectioning as a whole, for the owner:** (a) as built; (b) group by city
 always, so single-pack cities get headings too — rejected as furniture; (c) sort within

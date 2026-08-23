@@ -244,11 +244,8 @@ struct CityDownloadSection: Equatable, Identifiable {
     ///   anywhere, i.e. D5 was answered right up until the reader acted on it. The count is per run,
     ///   so three boroughs downloaded and two not gives a group in each.
     ///
-    /// **An umbrella heading with nothing of its own is dropped**, by the same rule as the bullet
-    /// above it. With all five boroughs available and nothing else, the screen used to draw
-    /// `Available to download` with zero cards under it and then `New York City` with five — a
-    /// heading whose whole content is another heading. When a run's ungrouped remainder is empty its
-    /// city groups head the run themselves; the moment any pack is ungrouped, the umbrella returns.
+    /// **A run's own heading is drawn even when every one of its rows grouped**, which is not
+    /// obviously right and was decided by looking at the screen — see the comment on `run` below.
     static func sections(
         from rows: [CityDownloadRow],
         parentCity: (CityDownloadRow) -> (id: String, displayName: String)?
@@ -293,10 +290,17 @@ struct CityDownloadSection: Equatable, Identifiable {
             grouped[parent.id, default: []].append(row)
         }
 
-        var sections: [CityDownloadSection] = []
-        if !ungrouped.isEmpty {
-            sections.append(CityDownloadSection(id: key, title: heading, rows: ungrouped))
-        }
+        // **The run's own heading is always drawn, including with nothing directly under it**, and
+        // that is a decision the running screen reversed once. Dropping an empty heading is the
+        // obvious tidy: today's live catalog groups *every* available pack under `New York City`, so
+        // `Available to download` renders with no cards beneath it. But the moment a reader
+        // downloads one borough, the same city has a group in **both** runs — and with the umbrella
+        // suppressed the screen draws `New York City` twice in a row, in the same micro-label idiom,
+        // with nothing between them saying that the first is installed and the second is not.
+        // Photographed on the device at 402 pt with Manhattan and Staten Island installed. An empty
+        // heading says nothing; two identical adjacent headings say something false. See the pending
+        // ruling for the alternatives put to the owner.
+        var sections = [CityDownloadSection(id: key, title: heading, rows: ungrouped)]
         for parentID in groupOrder {
             let packs = grouped[parentID] ?? []
             // The heading is the parent's own display name, taken from a pack that named it.
@@ -305,8 +309,7 @@ struct CityDownloadSection: Equatable, Identifiable {
                 CityDownloadSection(
                     id: "\(key)/\(parentID)",
                     title: CityDownloadsCopy.cityGroupHeading(name),
-                    // Nested only when the umbrella heading is actually drawn above it.
-                    isCityGroup: !ungrouped.isEmpty,
+                    isCityGroup: true,
                     rows: packs
                 )
             )

@@ -518,13 +518,18 @@ struct CityDownloadsFeedbackTests {
         )
     }
 
-    /// **The production shape today, and it used to draw an empty heading.** Every available pack in
-    /// the live catalog is a New York borough, so they all group — and `Available to download` was
-    /// drawn with nothing under it, immediately above `New York City`. A heading whose entire
-    /// content is another heading is furniture by this file's own rule, so it is dropped and the
-    /// city group heads the run.
-    @Test("an umbrella heading with nothing of its own is not drawn")
-    func emptyUmbrellaHeadingIsNotDrawn() {
+    /// **The production shape today: `Available to download` heads a run whose every row grouped.**
+    /// Every available pack in the live catalog is a New York borough, so the umbrella carries no
+    /// cards of its own and sits immediately above `New York City`.
+    ///
+    /// **This was built the other way first, and the running screen reversed it.** Suppressing an
+    /// empty heading is the tidier rule right up to the moment a reader downloads one borough: the
+    /// city then has a group in both runs, and with no umbrella between them the screen draws
+    /// `New York City` twice in a row with nothing saying which is which. Photographed at 402 pt
+    /// with Manhattan and Staten Island installed. So the heading stays, and the test that asserted
+    /// its absence now asserts its presence — deliberately, with the reason on the record.
+    @Test("a run keeps its own heading even when every row of it grouped")
+    func umbrellaHeadingSurvivesAFullyGroupedRun() {
         let cities = [Self.borough("manhattan", "Manhattan"), Self.borough("brooklyn", "Brooklyn")]
         let rows: [CityDownloadRow] = [
             .builtIn(isActive: true, cityNames: ["San Francisco"]),
@@ -535,10 +540,40 @@ struct CityDownloadsFeedbackTests {
         let sections = CityDownloadSection.sections(
             from: rows, parentCity: Self.parentCity(in: cities)
         )
-        #expect(sections.map(\.title) == ["On this phone", "New York City"])
-        // Not nested: there is no heading above it in its own run, so it takes the section break.
-        #expect(sections.map(\.isCityGroup) == [false, false])
-        #expect(sections.flatMap { $0.rows.map(\.id) }.count == 3)
+        #expect(sections.map(\.title) == ["On this phone", "Available to download", "New York City"])
+        #expect(sections.map(\.isCityGroup) == [false, false, true])
+        // The umbrella is empty, and the group under it holds both boroughs.
+        #expect(sections.map { $0.rows.count } == [1, 0, 2])
+    }
+
+    /// **The mixed state that decided the rule above**, asserted as a shape rather than described.
+    /// One borough installed, two not: the two `New York City` groups are separated by the
+    /// `Available to download` heading, which is the whole of what that heading is for here.
+    @Test("a city grouped in both runs keeps a heading between the two")
+    func groupsInBothRunsAreSeparated() {
+        let cities = [
+            Self.borough("manhattan", "Manhattan"),
+            Self.borough("staten-island", "Staten Island"),
+            Self.borough("brooklyn", "Brooklyn"),
+            Self.borough("queens", "Queens")
+        ]
+        let rows: [CityDownloadRow] = [
+            .builtIn(isActive: true, cityNames: ["San Francisco"]),
+            Self.row(cities[0], state: .installedCurrent(installedVersion: "v")),
+            Self.row(cities[1], state: .installedCurrent(installedVersion: "v")),
+            Self.row(cities[2], state: .notInstalled),
+            Self.row(cities[3], state: .notInstalled)
+        ]
+
+        let sections = CityDownloadSection.sections(
+            from: rows, parentCity: Self.parentCity(in: cities)
+        )
+        #expect(
+            sections.map(\.title)
+                == ["On this phone", "New York City", "Available to download", "New York City"]
+        )
+        // No two identical headings are ever adjacent.
+        #expect(!zip(sections, sections.dropFirst()).contains { $0.title == $1.title })
     }
 
     /// **The grouping D5 asked for survives the reader acting on it.** Pack counting used to look at
@@ -571,6 +606,25 @@ struct CityDownloadsFeedbackTests {
         #expect(sections.last?.isCityGroup == true)
     }
 
+    /// The whole shape, at the state the live catalog actually produces once a borough is on the
+    /// phone — the case the two rules above have to agree about.
+    @Test("nothing is dropped when a city groups in both runs")
+    func bothRunsKeepEveryRow() {
+        let cities = (1...4).map { Self.borough("b\($0)", "Borough \($0)") }
+        let rows: [CityDownloadRow] = [
+            .builtIn(isActive: true, cityNames: []),
+            Self.row(cities[0], state: .installedCurrent(installedVersion: "v")),
+            Self.row(cities[1], state: .installedCurrent(installedVersion: "v")),
+            Self.row(cities[2], state: .notInstalled),
+            Self.row(cities[3], state: .notInstalled)
+        ]
+        let sections = CityDownloadSection.sections(
+            from: rows, parentCity: Self.parentCity(in: cities)
+        )
+        #expect(sections.flatMap(\.rows).count == rows.count)
+        #expect(Set(sections.flatMap { $0.rows.map(\.id) }) == Set(rows.map(\.id)))
+    }
+
     /// A city can now head a group in **both** runs at once — three boroughs downloaded, two not —
     /// and a section id that was just the title would give one `ForEach` two identical ids, which
     /// SwiftUI resolves by dropping rows.
@@ -588,7 +642,12 @@ struct CityDownloadsFeedbackTests {
         let sections = CityDownloadSection.sections(
             from: rows, parentCity: Self.parentCity(in: cities)
         )
-        #expect(sections.map(\.title) == ["On this phone", "New York City", "New York City"])
+        #expect(
+            sections.map(\.title)
+                == ["On this phone", "New York City", "Available to download", "New York City"]
+        )
+        // The identity, not the title, is what `ForEach` uses — two `New York City` sections in one
+        // pass must not collide, or SwiftUI resolves the duplicate by dropping rows.
         #expect(Set(sections.map(\.id)).count == sections.count)
     }
 
