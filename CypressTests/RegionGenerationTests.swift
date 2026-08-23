@@ -42,8 +42,9 @@ struct RegionGenerationTests {
     func theGenerationNumbersAreWhatThisRoundSet() {
         #expect(SeedDatabase.newestKnownSchemaVersion == 17)
         #expect(CityManifest.knownFormat == 2)
-        // Format 1 is still read during RULING D8's dual-publish window, and dropping it would
-        // break this build against the format-1 object still in the bucket.
+        // Format 1 is retired as an OUTPUT and still accepted as an INPUT. Dropping 1 here would
+        // break this build against the format-1 object frozen in the bucket, which retirement
+        // deliberately leaves in place rather than deleting.
         #expect(CityManifest.knownFormats == [1, 2])
     }
 
@@ -193,8 +194,9 @@ struct RegionGenerationTests {
     }
 
     /// **A format-1 manifest still decodes, and its nil region is an answer rather than a gap.**
-    /// RULING D8 keeps a format-1 object in the bucket for a release cycle and it lists whole-city
-    /// packs only, so "no region stated" and "this is a whole city" are the same fact there.
+    /// The format-1 object is frozen in the bucket rather than deleted — retirement ended the
+    /// writing of one, not the reading — and it lists whole-city packs only, so "no region
+    /// stated" and "this is a whole city" are the same fact there.
     @Test("a format-1 entry decodes, with a nil region")
     func formatOneDecodesWithNilRegion() throws {
         let manifest = try CityManifest.decode(Data(Self.manifestJSON(format: 1).utf8))
@@ -280,11 +282,13 @@ struct RegionGenerationTests {
 
     // MARK: - The manifest fallback (the other direction of RULING D8's window)
 
-    /// **A new build against an old bucket.** D8 protects an unupdated *install* against a
-    /// republished bucket; nothing in it protects a *new build* against a bucket that has not been
-    /// republished yet — and that is the ordinary state of the world between shipping this round
-    /// and running the next publish. Without the fallback, every install of this build would show
-    /// "Couldn't check what's available" until someone remembered to republish.
+    /// **A new build against a base URL carrying no format-2 object.** D8 protected an unupdated
+    /// *install* against a republished bucket; nothing in it protected a *new build* against a
+    /// bucket not yet republished. The live bucket has carried `manifest-v2.json` since
+    /// 2026-08-23, so that particular window is closed — what this pins is the fallback's
+    /// remaining job: any other base URL, an archived mirror or a fixture directory, where the
+    /// format-1 object is the only catalog present. Without it, those show "Couldn't check
+    /// what's available".
     @Test("a base URL serving only the format-1 manifest still yields a catalog")
     func fallsBackToTheFormatOneManifest() async throws {
         let directory = FileManager.default.temporaryDirectory
@@ -292,7 +296,7 @@ struct RegionGenerationTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        // Only the legacy object exists — the shape of the bucket right now.
+        // Only the legacy object exists — the shape of a base URL that never got format 2.
         try Data(Self.manifestJSON(format: 1).utf8)
             .write(to: directory.appendingPathComponent(CityDownloader.legacyManifestName))
 

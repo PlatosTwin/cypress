@@ -73,18 +73,29 @@ public struct CityDownloader: Sendable {
     /// **`file://` bases are left alone.** Unit tests serve fixture manifests from disk, and a
     /// query string on a file URL does not identify a file — appending one would break every test
     /// that uses this path, in the name of defeating a cache that cannot exist there.
-    /// The object this build asks for first — the format-2 catalog, which is the only one that
-    /// lists sub-city packs. `Tools/publish_cities.py MANIFEST_V2_NAME`.
+    /// The object this build asks for first — the format-2 catalog, and since format 1 retired
+    /// the only one that is published at all. `Tools/publish_cities.py MANIFEST_V2_NAME`.
     public static let manifestName = "manifest-v2.json"
 
-    /// The format-1 catalog, still published beside it for RULING D8's transition window, and the
-    /// name every build before this one hard-codes. `Tools/publish_cities.py MANIFEST_V1_NAME`.
+    /// The format-1 catalog, and the name every build before this one hard-codes.
+    /// **No longer published — frozen.** Format 1 retired on 2026-08-23; the publisher's
+    /// `RETIRED_MANIFEST_V1_NAME` now names an object it only ever checks for the *absence* of.
+    /// The copy in the bucket stays exactly as the 2026-08-23 publish left it, because deleting
+    /// it would take the Cities screen offline for every build that hard-codes this name. It is
+    /// stale but true: the city packs it lists are immutable and still served.
     ///
-    /// **Fetched only as a fallback, and the fallback is what makes the cutover safe in the other
-    /// direction.** D8 protects an old app against a new bucket; nothing in it protects a new app
-    /// against an *old* bucket, and that is the ordinary state of things between shipping a build
-    /// and running the next publish. Without this, every install of this build would show
-    /// "Couldn't check what's available" until someone remembered to republish.
+    /// **Still fetched as a fallback, and retirement did not make that dead code.** D8 protected
+    /// an old app against a new bucket; this is the other direction — a new app against a bucket
+    /// carrying no format-2 object. That was the ordinary state between shipping this build and
+    /// running the next publish, and it no longer arises on the live bucket, where
+    /// `manifest-v2.json` has been present since 2026-08-23. What the fallback still covers is
+    /// every base URL that is *not* the live bucket: an archived mirror, a fixture directory, a
+    /// future bucket populated in some other order. It costs one request on a path that already
+    /// failed, and dropping it would buy nothing while risking a dead Cities screen in exactly
+    /// the cases nobody watches.
+    ///
+    /// `CityManifest.knownFormats` keeps `1` for the same reason: what retired is *writing* a
+    /// format-1 manifest, never *reading* one.
     public static let legacyManifestName = "manifest.json"
 
     static func manifestRequest(base: URL, name: String = manifestName) -> URLRequest {
@@ -104,7 +115,9 @@ public struct CityDownloader: Sendable {
     }
 
     /// `GET <base>/manifest-v2.json`, decoded strictly (`CityManifest.decode`), falling back to
-    /// `<base>/manifest.json` when the bucket has not been republished since this build shipped.
+    /// `<base>/manifest.json` when that base serves no format-2 object at all — see
+    /// `legacyManifestName` for what that covers now that format 1 is retired and the live
+    /// bucket always carries a format-2 catalog.
     ///
     /// **The fallback is on "the object is not there", and on nothing else.** A 404 (or a missing
     /// `file://` fixture) means the publisher has not run since format 2 landed, which is a

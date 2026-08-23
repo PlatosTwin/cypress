@@ -2,15 +2,17 @@ import Foundation
 
 /// The published city catalog at the bucket root, decoded.
 ///
-/// **Two objects since s17, not one.** `manifest-v2.json` is the format-2 catalog this build asks
-/// for and the only one that lists sub-city packs; `manifest.json` keeps its format-1 shape for
-/// RULING D8's transition window so an unupdated install still has a working Cities screen.
-/// `CityDownloader` picks between them; this type decodes either.
+/// **Two objects in the bucket, only one of them still written.** `manifest-v2.json` is the
+/// format-2 catalog this build asks for, the only one that lists sub-city packs, and since format
+/// 1 retired on 2026-08-23 the only one any publish produces. `manifest.json` is frozen at the
+/// bytes that publish left, so an install too old to know the new name keeps a working Cities
+/// screen. `CityDownloader` picks between them; this type decodes either.
 ///
 /// The contract is R37's (see RULINGS R43 for the app side): versioned
 /// per-city SQLite files at immutable paths `cities/<id>/<version>/<id>.sqlite`, described by one
-/// manifest that is the only object ever rewritten in place. `Tools/publish_cities.py` writes it;
-/// this type is the reader.
+/// manifest that is the only object ever rewritten in place — `manifest-v2.json`, now that the
+/// format-1 object is never rewritten at all. `Tools/publish_cities.py` writes it; this type is
+/// the reader.
 ///
 /// Decoding is strict about the one thing that can break a reader — `manifest_format` — and
 /// tolerant of everything additive, because R37.4 explicitly reserves the right to add keys
@@ -25,22 +27,26 @@ public struct CityManifest: Equatable, Sendable {
     /// (`CityDownloader.manifestName`), never "the format this build emits".
     public static let knownFormat = 2
 
-    /// **Every** envelope format this build reads, which is more than one during RULING D8's
-    /// dual-publish window.
+    /// **Every** envelope format this build reads, which is more than one.
     ///
-    /// Format 1 is still accepted, and that is a deliberate softening of the original rule rather
-    /// than a hole in it. **Note that R37.4 does not license this**: R37.4 reserves the right to
-    /// add *keys* without bumping the format, which is why `region` needed no bump on top of the
-    /// one the unit's changed meaning already required. Reading two formats is a separate
-    /// decision, taken for the dual-publish window RULING D8 sets. The rule that matters — *never guess at a format you do not know* — is
-    /// unchanged: an unknown format is still refused outright, before anything else is read. What
-    /// changed is that 1 is no longer unknown. A build that refused it would break itself against
-    /// the format-1 object still sitting in the bucket for the whole transition window, and would
-    /// break every test fixture written before this round, in exchange for nothing.
+    /// **Retiring format 1 did not remove `1` from this set, and the distinction is the whole
+    /// point.** What retired on 2026-08-23 is *writing* a format-1 manifest; *reading* one is a
+    /// property of this reader, and the object it would read is still sitting in the bucket,
+    /// frozen and permanent. A build that refused it would break against that object, against
+    /// every archived mirror of it, and against every test fixture written before format 2 — in
+    /// exchange for nothing.
+    ///
+    /// Format 1 is accepted as a deliberate softening of the original rule rather than a hole in
+    /// it. **Note that R37.4 does not license this**: R37.4 reserves the right to add *keys*
+    /// without bumping the format, which is why `region` needed no bump on top of the one the
+    /// unit's changed meaning already required. Reading two formats is a separate decision, taken
+    /// for the dual-publish window RULING D8 set. The rule that matters — *never guess at a format
+    /// you do not know* — is unchanged: an unknown format is still refused outright, before
+    /// anything else is read. What changed is that 1 is no longer unknown.
     ///
     /// What a format-1 manifest costs a format-2 reader is exactly one thing: `region` is absent,
     /// so `City.region` is nil and every entry is a whole city. That is the truth about a
-    /// format-1 manifest — the publisher only ever lists `city`-level packs in one — so the nil
+    /// format-1 manifest — every one ever published listed `city`-level packs only — so the nil
     /// is not a missing value to be defaulted, it is the answer.
     public static let knownFormats: Set<Int> = [1, 2]
 
@@ -130,10 +136,10 @@ public struct CityManifest: Equatable, Sendable {
         /// What kind of unit this pack is and which city it belongs to (`manifest_format` 2).
         ///
         /// Optional for the same reason `contentRev` is, and one more. A format-1 manifest does
-        /// not carry the key at all — and *nil is the correct answer there*, not a gap: the
-        /// publisher lists only whole-city packs in a format-1 manifest, so "no region stated"
-        /// and "this is a whole city" are the same fact. A caller that needs the distinction has
-        /// `CityManifest.format`.
+        /// not carry the key at all — and *nil is the correct answer there*, not a gap: every
+        /// format-1 manifest ever published listed whole-city packs only, so "no region stated"
+        /// and "this is a whole city" are the same fact. That set is closed now that format 1 is
+        /// retired. A caller that needs the distinction has `CityManifest.format`.
         public let region: Region?
         /// Relative to the app's configured base URL, never to `base_url_hint`.
         public let path: String
