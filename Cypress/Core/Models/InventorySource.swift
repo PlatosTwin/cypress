@@ -76,10 +76,27 @@ public struct InventorySource: Hashable, Sendable {
     /// A receipt naming a source but carrying no date still produces a value, with `snapshotDate`
     /// nil. That is deliberate: half an answer is still an answer, and the missing half is visible
     /// as missing rather than papered over.
+    ///
+    /// **A name that is present and empty is not a name, and this initializer used to accept one.**
+    /// Its per-inventory sibling below has always guarded `!name.isEmpty`; this one did not, so a
+    /// receipt carrying `trees_source_name` as `""` produced a value whose `name` was `""` — and
+    /// `name` is documented as "the phrase the app puts on screen", read by every surface that draws
+    /// provenance. The visible results were `Recorded dead in the .` on the tree profile's dead
+    /// notice, and `From the , 26 July 2026.` on the city-record provenance line; the subtitle's
+    /// `?? unnamedCityInventory` never fired, because the value was not nil, only unsayable.
+    ///
+    /// Nil is the right answer rather than falling back to `id`: `id` is documented "Not shown to
+    /// anyone", and every caller of this type already has a correct path for an inventory it cannot
+    /// name — the subtitle and the dead notice say `city inventory`, and the provenance line renders
+    /// nothing at all, which is the same discipline `snapshotDate` keeps for an absent date. Narrow
+    /// by construction: an *absent* key still yields `id`, which is non-empty by the guard above, so
+    /// this can only fire on a receipt that wrote the key empty.
     public init?(seedMeta: [String: String]) {
         guard let id = seedMeta["trees_source"], !id.isEmpty else { return nil }
+        let name = seedMeta["trees_source_name"] ?? id
+        guard !name.isEmpty else { return nil }
         self.id = id
-        self.name = seedMeta["trees_source_name"] ?? id
+        self.name = name
         self.url = seedMeta["trees_source_url"] ?? ""
         self.snapshotDate = (seedMeta["trees_snapshot_on"]).flatMap(Self.date(fromISODay:))
     }

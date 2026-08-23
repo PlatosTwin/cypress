@@ -316,8 +316,18 @@ public actor LocalAPI: CypressAPI {
             // memorial record — `status.isMemorial` gates `MemorialModel`, and `acceptsNewContributions`
             // goes false — exactly as the same override makes the map pin a memorial. One row per
             // moderated tree, so the lookup is a scan of a handful of rows (usually none).
+            //
+            // **The overwrite is lossy, and `statusProvenance` is what it stops losing.** After this
+            // line `tree.status` is one value and the two things that could have produced it — the
+            // publishing inventory, and a review on this device — read identically. `deadNotice` is
+            // the surface where that difference is the whole sentence, so the answer travels on the
+            // payload rather than being re-derived from `source`, which cannot answer it: an
+            // inventory row that shipped `alive` and was then confirmed dead here is a `city_import`
+            // row whose death is the community's.
+            var statusProvenance = TreeStatusProvenance.record
             if let overridden = try contributions.statusOverrides(connection: connection)[id] {
                 tree.status = overridden
+                statusProvenance = .communityReview
             }
 
             // Each series is read whole (`limit: nil`), because everything the profile derives from
@@ -396,7 +406,9 @@ public actor LocalAPI: CypressAPI {
                 // Same transaction, same reason (task #125): the offer is a statement about the
                 // open reports against this record, and a control drawn from one moment's answer
                 // over another moment's record offers to withdraw something already withdrawn.
-                recordDefect: try recordDefectOffer(tree: tree, connection: connection)
+                recordDefect: try recordDefectOffer(tree: tree, connection: connection),
+                // Set above, beside the overwrite it describes, so the two cannot be changed apart.
+                statusProvenance: statusProvenance
             )
         }
     }
