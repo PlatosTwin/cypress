@@ -87,11 +87,11 @@ public struct OutboxStore {
     ) throws -> Bool {
         let statement = try connection.cachedStatement("""
             INSERT INTO outbox
-                (id, kind, client_uuid, payload, photo_paths, state, fail_count,
+                (id, kind, client_uuid, payload, state, fail_count,
                  last_error, last_error_code, local_applied, remote_sent, window_started_at,
                  next_attempt_at, created_at, updated_at)
             VALUES
-                (:id, :kind, :client, :payload, :photos, :state, :failCount,
+                (:id, :kind, :client, :payload, :state, :failCount,
                  :lastError, :lastErrorCode, :localApplied, 0, :created,
                  NULL, :created, :updated)
             ON CONFLICT(client_uuid) DO NOTHING
@@ -102,7 +102,6 @@ public struct OutboxStore {
             ":kind": item.kind.rawValue,
             ":client": item.clientUUID,
             ":payload": String(data: item.payload, encoding: .utf8) ?? "{}",
-            ":photos": JSONColumn.encode(item.photos) ?? "[]",
             ":state": item.state.rawValue,
             ":failCount": item.failCount,
             ":lastError": item.lastError,
@@ -113,6 +112,14 @@ public struct OutboxStore {
         try statement.run()
         let inserted = connection.changes > 0
         _ = try statement.reset()
+        // **Only when the row is new.** The `DO NOTHING` arm means this `client_uuid` was already
+        // queued, and staging its binaries a second time would give one mutation two copies of every
+        // photograph — the duplicate the whole per-photo model exists to make impossible.
+        if inserted {
+            // `sendable: true` — these are binaries staged now, which is exactly what RULINGS R77
+            // permits to travel. v18's migrated rows are the ones marked 0, by that migration.
+            try stagePhotos(item.photos, for: item.id, sendable: true, at: item.createdAt, connection: connection)
+        }
         return inserted
     }
 
@@ -171,16 +178,21 @@ public struct OutboxStore {
     /// time this runs; `AppSchema` v2 converts the rows that were not.
     public func removePhoto(atPath path: String, from id: UUID, at date: Date, connection: SQLiteConnection) throws {
         let statement = try connection.cachedStatement("""
-            UPDATE outbox
-               SET photo_paths = (
-                     SELECT COALESCE(json_group_array(json(value)), json('[]'))
-                       FROM json_each(outbox.photo_paths)
-                      WHERE json_extract(value, '$.path') <> :path
-                   ),
-                   updated_at = :now
-             WHERE id = :id
+            DELETE FROM outbox_photos WHERE outbox_id = :id AND path = :path
             """)
-        _ = try statement.bind([":path": path, ":now": date, ":id": id])
+        _ = try statement.bind([":path": path, ":id": id])
+        try statement.run()
+        _ = try statement.reset()
+        try touch(id, at: date, connection: connection)
+    }
+
+    /// Bumps an item's `updated_at` without changing anything else, for the changes that now happen
+    /// in `outbox_photos` and would otherwise leave the item looking untouched on screen 17.
+    private func touch(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement(
+            "UPDATE outbox SET updated_at = :now WHERE id = :id"
+        )
+        _ = try statement.bind([":now": date, ":id": id])
         try statement.run()
         _ = try statement.reset()
     }
@@ -198,27 +210,58 @@ public struct OutboxStore {
     /// The mutation the binary rode on is left in the queue. A visit is not a photograph: the person
     /// asked to delete the picture, not the record of having stood in front of the tree.
     ///
+    /// ── It matches on the photograph's **id** as well as its staged path, and the id is the arm
+    /// that matters ────────────────────────────────────────────────────────────────────────────
+    ///
+    /// Keying on `path` alone was correct while a binary was only ever staged. It stopped being
+    /// correct when `AppSchema` v18 gave a binary a second half of its life: `markPhotoApplied`
+    /// sets `path = NULL` once the apply has moved the bytes into the container, so from that
+    /// moment nothing in this table can be found by path at all.
+    ///
+    /// **What that cost, measured in #116's review rather than reasoned about.** A photograph
+    /// withdrawn after its apply left its `outbox_photos` row behind forever. `sendablePhotos`
+    /// refused it (correctly — it is tombstoned), so phase B3 skipped the item entirely and never
+    /// even recorded a reason; `photos_outstanding` stayed at 1, so `markDoneIfComplete` never
+    /// matched; and the item sat in `uploading` across five consecutive drains still displaying
+    /// "One photo hasn't gone through yet" — a sentence promising a photograph in flight, about one
+    /// the contributor had deleted. The retry button could not clear it either, because `retry`
+    /// requires `failed` and this row was never failed. It was reachable in two ordinary steps: one
+    /// send fails for want of signal, then the person deletes the picture.
+    ///
+    /// So the match is `photo_id = :photo OR path = :path`, and the two arms are the binary's two
+    /// lives. `:path` is still needed on its own: before the apply there is no `photo_id` to match.
+    ///
     /// - Returns: how many queued rows were carrying it.
     @discardableResult
-    public func discardStagedPhoto(atPath path: String, at date: Date, connection: SQLiteConnection) throws -> Int {
-        let statement = try connection.cachedStatement("""
-            UPDATE outbox
-               SET photo_paths = (
-                     SELECT COALESCE(json_group_array(json(value)), json('[]'))
-                       FROM json_each(outbox.photo_paths)
-                      WHERE json_extract(value, '$.path') <> :path
-                   ),
-                   updated_at = :now
-             WHERE EXISTS (
-                     SELECT 1 FROM json_each(outbox.photo_paths)
-                      WHERE json_extract(value, '$.path') = :path
-                   )
+    public func discardPhoto(
+        id photoID: UUID,
+        stagedPath path: String?,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> Int {
+        // The items that were carrying it, read before the delete because after it there is nothing
+        // left to name them. The return value is a count of *rows carrying the binary*, which is
+        // what the caller reports, and it stays that even though the delete is now on another table.
+        let owners = try connection.cachedStatement("""
+            SELECT DISTINCT outbox_id FROM outbox_photos
+             WHERE photo_id = :photo COLLATE NOCASE
+                OR (:path IS NOT NULL AND path = :path)
             """)
-        _ = try statement.bind([":path": path, ":now": date])
+        _ = try owners.bind([":photo": photoID, ":path": path])
+        let ids = try owners.fetchAll { try $0.uuid("outbox_id") }
+        _ = try owners.reset()
+
+        let statement = try connection.cachedStatement("""
+            DELETE FROM outbox_photos
+             WHERE photo_id = :photo COLLATE NOCASE
+                OR (:path IS NOT NULL AND path = :path)
+            """)
+        _ = try statement.bind([":photo": photoID, ":path": path])
         try statement.run()
-        let changed = connection.changes
         _ = try statement.reset()
-        return changed
+
+        for id in ids { try touch(id, at: date, connection: connection) }
+        return ids.count
     }
 
     /// The `client_uuid`s this device is still holding for a server, for `DELETE /me`.
@@ -275,10 +318,18 @@ public struct OutboxStore {
         connection: SQLiteConnection
     ) throws -> Bool {
         let sent = requiringRemoteSend ? " AND remote_sent = 1" : ""
+        // **`last_error` is cleared here, and that is not tidiness.** A settled row kept whatever
+        // sentence its last failure wrote — "The note is sent. One photo hasn't gone through yet."
+        // on an item where the photograph subsequently *did* go. Screen 17 does not draw a sentence
+        // on a synced receipt, so it was invisible; it stopped being invisible the moment anything
+        // read `lastError` off a `done` row, and a stale sentence is worse than none because it
+        // reads as current. Noted in #116's r3 review as cosmetic and fixed here rather than left
+        // in a PR description that stops existing at merge.
         let statement = try connection.cachedStatement("""
             UPDATE outbox
-               SET state = 'done', next_attempt_at = NULL, updated_at = :now
-             WHERE id = :id AND local_applied = 1 AND json_array_length(photo_paths) = 0\(sent)
+               SET state = 'done', next_attempt_at = NULL,
+                   last_error = NULL, last_error_code = NULL, updated_at = :now
+             WHERE id = :id AND local_applied = 1 AND photos_outstanding = 0\(sent)
             """)
         _ = try statement.bind([":now": date, ":id": id])
         try statement.run()
@@ -401,19 +452,336 @@ public struct OutboxStore {
              LIMIT :limit
             """)
         _ = try statement.bind([":now": now, ":limit": limit])
-        return try statement.fetchAll(Self.decode)
+        return try attachStagedPhotos(to: statement.fetchAll(Self.decode), connection: connection)
     }
 
     /// Everything, newest activity first. Screen 17 renders this whole list.
     public func allItems(connection: SQLiteConnection) throws -> [Record] {
         let statement = try connection.cachedStatement("SELECT * FROM outbox ORDER BY seq")
-        return try statement.fetchAll(Self.decode)
+        return try attachStagedPhotos(to: statement.fetchAll(Self.decode), connection: connection)
     }
 
     public func item(id: UUID, connection: SQLiteConnection) throws -> Record? {
         let statement = try connection.cachedStatement("SELECT * FROM outbox WHERE id = :id")
         _ = try statement.bind(id, forName: ":id")
-        return try statement.fetchOne(Self.decode)
+        guard let record = try statement.fetchOne(Self.decode) else { return nil }
+        return try attachStagedPhotos(to: [record], connection: connection).first
+    }
+
+    /// Fills in each record's **staged** binaries — the ones an apply still owes.
+    ///
+    /// `OutboxItem.photos` has always meant "binaries this row has not committed yet", and it still
+    /// does; what changed in `AppSchema` v18 is where they live. Only `state = 'pending'` rows are
+    /// attached: an `applied` binary has been ingested into the app container, its staged file is
+    /// gone, and offering it to the apply sink again would write the photograph twice — which is
+    /// the defect ERRATA **E264** says a second sink cannot be built around. The send half reads
+    /// `sendablePhotos(for:)` instead, which is the other state.
+    ///
+    /// One statement per record rather than one `IN` over all of them: a drain batch is 20 rows and
+    /// the index on `outbox_id` makes each lookup a seek, so the loop costs less than building the
+    /// list, and it keeps the ordering of `photos` per item obvious.
+    private func attachStagedPhotos(to records: [Record], connection: SQLiteConnection) throws -> [Record] {
+        guard !records.isEmpty else { return records }
+        let statement = try connection.cachedStatement("""
+            SELECT id, path, shot_type FROM outbox_photos
+             WHERE outbox_id = :item AND state = 'pending'
+             ORDER BY rowid
+            """)
+        return try records.map { record in
+            _ = try statement.reset()
+            _ = try statement.bind(record.id, forName: ":item")
+            let photos = try statement.fetchAll { row in
+                OutboxPhoto(
+                    id: try row.uuid("id"),
+                    path: try row.string("path"),
+                    shotType: try row.value("shot_type", ShotType.self)
+                )
+            }
+            var item = record.item
+            item.photos = photos
+            return Record(
+                sequence: record.sequence,
+                item: item,
+                locallyApplied: record.locallyApplied,
+                remoteSent: record.remoteSent,
+                windowStartedAt: record.windowStartedAt,
+                nextAttemptAt: record.nextAttemptAt
+            )
+        }
+    }
+
+    /// One binary's durable row, which is what a per-photo state machine needs and
+    /// `OutboxPhoto` deliberately is not.
+    ///
+    /// `OutboxPhoto` is the *staged descriptor* a feature hands to `enqueue` — a file and a framing.
+    /// This is the row that outlives it: it keeps its identity after the file is consumed, it names
+    /// the local `photos` row the apply wrote, and it says whether a send is owed. Keeping the two
+    /// apart is why `Core` still compiles with no notion of a send (ARCHITECTURE §2).
+    public struct PhotoRow: Sendable, Equatable {
+        public var id: UUID
+        public var outboxID: UUID
+        /// NULL once the apply has consumed the staged file.
+        public var path: String?
+        public var shotType: ShotType
+        /// The local `photos.id` the apply minted. The source a send reads.
+        public var photoID: UUID?
+        /// `photos.local_path` — where the apply put the binary inside the app container.
+        ///
+        /// This is the answer to the first of the three things ERRATA **E264** says a send needs and
+        /// did not have: "a source the remote can still read after ingest". `path` above is the
+        /// staged file and is gone by then; this one is the copy that outlived it.
+        public var containerPath: String?
+        public var isApplied: Bool
+        /// RULINGS **R77**: false for every binary `AppSchema` v18 migrated, which stays on device.
+        public var isSendable: Bool
+        public var failCount: Int
+    }
+
+    /// The binaries whose local commit is done and whose send is still owed.
+    ///
+    /// `sendable = 1` is R77 in the `WHERE`: a binary staged before the send path existed is
+    /// applied, deleted, and never offered here. `photo_id IS NOT NULL` is redundant against the
+    /// table's own CHECK and is written anyway, because this is the statement whose result is handed
+    /// to a network call and the alternative to a redundant predicate is a force-unwrap.
+    /// **`sendable = 1` here is the second of two R77 gates, and it is not redundant.** The first is
+    /// `settleAppliedPhoto`, which deletes a local-only binary the moment it is applied, so in the
+    /// ordinary flow no `sendable = 0` row ever reaches this statement. Measured, when red-proving:
+    /// removing *this* predicate alone changes nothing, because the delete has already run — and
+    /// removing the delete alone leaves the binary unsent, because this predicate catches it. Each
+    /// covers the other's failure, which is why both stay: R77 is a ruling about photographs
+    /// leaving the device, and one guard for it is one edit away from none.
+    ///
+    /// **The `NOT EXISTS` is a gate, not tidiness.** A photograph the contributor deleted between
+    /// the apply and the send has a tombstoned `photos` row, and sending it anyway would publish a
+    /// picture somebody had already taken back — ERRATA **E147**'s harm, arriving through the one
+    /// door that opens *after* the deletion gate has run.
+    ///
+    /// Written as `NOT EXISTS (… deleted_at IS NOT NULL)` rather than as a join requiring a live
+    /// row, because those differ on the case that matters: a binary whose `photos` row is missing
+    /// entirely is not a withdrawn photograph, it is a queue whose apply sink is not `LocalAPI` —
+    /// which is every test double, and refusing those would make this path untestable except
+    /// end-to-end. Absent means "nothing says it was withdrawn"; present-and-tombstoned means it
+    /// was.
+    public func sendablePhotos(for id: UUID, connection: SQLiteConnection) throws -> [PhotoRow] {
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM outbox_photos
+             WHERE outbox_id = :item AND state = 'applied' AND sendable = 1
+               AND photo_id IS NOT NULL AND container_path IS NOT NULL
+               AND NOT EXISTS (
+                     SELECT 1 FROM photos
+                      WHERE photos.id = outbox_photos.photo_id AND photos.deleted_at IS NOT NULL
+                   )
+             ORDER BY rowid
+            """)
+        _ = try statement.bind(id, forName: ":item")
+        return try statement.fetchAll(Self.decodePhotoRow)
+    }
+
+    /// Drops the queue rows of binaries whose photograph has been withdrawn.
+    ///
+    /// **The drain's own half of the F1 repair, and the half that does not depend on which door the
+    /// deletion came through.** `LocalAPI.deletePhoto` calls `discardPhoto`, which is the direct
+    /// route; this is what makes the queue converge anyway when a row is tombstoned by any other
+    /// means — an operator takedown reaching this device, a future sync-down, a repair script.
+    /// Without it the drain's correct refusal to send a withdrawn photograph (`sendablePhotos`)
+    /// becomes a permanent wedge: the row is never sendable and never removed, so the item's
+    /// `photos_outstanding` never reaches zero and it can never settle.
+    ///
+    /// Only `applied` rows, and only against a tombstone. A `pending` row still has a staged file
+    /// and is the apply's business, and a photograph that simply has no `photos` row yet is not a
+    /// withdrawn one — the same distinction `sendablePhotos` draws, written the same way so the two
+    /// cannot disagree about what "withdrawn" means.
+    ///
+    /// - Returns: how many rows were dropped.
+    @discardableResult
+    public func discardWithdrawnPhotos(for id: UUID, at date: Date, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            DELETE FROM outbox_photos
+             WHERE outbox_id = :item AND state = 'applied'
+               AND EXISTS (
+                     SELECT 1 FROM photos
+                      WHERE photos.id = outbox_photos.photo_id AND photos.deleted_at IS NOT NULL
+                   )
+            """)
+        _ = try statement.bind(id, forName: ":item")
+        try statement.run()
+        let dropped = connection.changes
+        _ = try statement.reset()
+        if dropped > 0 { try touch(id, at: date, connection: connection) }
+        return dropped
+    }
+
+    /// The binaries an item still owes something for, whatever that something is. Used to decide
+    /// whether a row can settle when its send half is done.
+    public func outstandingPhotoCount(for id: UUID, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement(
+            "SELECT COUNT(*) AS n FROM outbox_photos WHERE outbox_id = :item"
+        )
+        _ = try statement.bind(id, forName: ":item")
+        return try statement.fetchOne { try $0.int("n") } ?? 0
+    }
+
+    static func decodePhotoRow(_ row: SQLiteRow) throws -> PhotoRow {
+        PhotoRow(
+            id: try row.uuid("id"),
+            outboxID: try row.uuid("outbox_id"),
+            path: try row.stringIfPresent("path"),
+            shotType: try row.value("shot_type", ShotType.self),
+            photoID: try row.uuidIfPresent("photo_id"),
+            containerPath: try row.stringIfPresent("container_path"),
+            isApplied: (try row.string("state")) == "applied",
+            isSendable: try row.bool("sendable"),
+            failCount: try row.int("fail_count")
+        )
+    }
+
+    /// Writes one row per staged binary, at the moment its mutation is queued.
+    func stagePhotos(
+        _ photos: [OutboxPhoto],
+        for id: UUID,
+        sendable: Bool,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        guard !photos.isEmpty else { return }
+        let statement = try connection.cachedStatement("""
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, state, sendable,
+                 fail_count, created_at, updated_at)
+            VALUES
+                (:id, :item, :path, :shot, NULL, 'pending', :sendable, 0, :now, :now)
+            ON CONFLICT(id) DO NOTHING
+            """)
+        for photo in photos {
+            _ = try statement.reset()
+            _ = try statement.bind([
+                ":id": photo.id,
+                ":item": id,
+                ":path": photo.path,
+                ":shot": photo.shotType.rawValue,
+                ":sendable": sendable ? 1 : 0,
+                ":now": date
+            ])
+            try statement.run()
+        }
+        _ = try statement.reset()
+    }
+
+    /// Records that the apply sink has committed this binary locally.
+    ///
+    /// The staged path is cleared in the same statement that sets `photo_id`, because after this the
+    /// file is gone: `LocalAPI.uploadPhoto` moves it into the app container. Leaving the path behind
+    /// would leave a column naming a file that is not there, which is the shape of the defect E264
+    /// describes rather than a record of anything.
+    public func markPhotoApplied(
+        id: UUID,
+        photoID: UUID,
+        containerPath: String,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox_photos
+               SET state = 'applied', photo_id = :photo, container_path = :container,
+                   path = NULL, updated_at = :now
+             WHERE id = :id AND state = 'pending'
+            """)
+        _ = try statement.bind([":id": id, ":photo": photoID, ":container": containerPath, ":now": date])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
+    /// Settles one binary's *apply*, and decides in one place whether anything is still owed for it.
+    ///
+    /// Three cases, and the third is the one that would otherwise be a stranded row:
+    ///
+    ///   - **No send sink wired.** The local commit was everything. The row goes, which is the
+    ///     behavior every shipped build has, and it is what keeps `photos_outstanding = 0` — and
+    ///     therefore `done` — reachable on a phone with no server.
+    ///   - **Send sink, sendable binary.** Marked `applied`; the send half will complete it.
+    ///   - **Send sink, `sendable = 0` binary.** Also goes, immediately. These are the binaries
+    ///     `AppSchema` v18 migrated, which RULINGS **R77** keeps on the device permanently: nothing
+    ///     will ever send one, so leaving it `applied` would leave its item's `photos_outstanding`
+    ///     above zero for the life of the install and the mutation could never settle. A contributor
+    ///     would see one visit stuck on screen 17 forever, for a rule they cannot see and did not
+    ///     choose.
+    ///
+    /// The `sendable = 0` arm is a predicate rather than a Swift branch because the flag lives in
+    /// the row, not in the caller — the drain does not know which binaries predate the send path and
+    /// has no business learning.
+    public func settleAppliedPhoto(
+        id: UUID,
+        photoID: UUID,
+        containerPath: String,
+        sendSinkWired: Bool,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        guard sendSinkWired else {
+            // Touch first: after the delete the row is gone and there is nothing left to resolve the
+            // owning item from.
+            try touchItem(forPhoto: id, at: date, connection: connection)
+            try completePhoto(id: id, connection: connection)
+            return
+        }
+        try markPhotoApplied(
+            id: id, photoID: photoID, containerPath: containerPath, at: date, connection: connection
+        )
+        let localOnly = try connection.cachedStatement(
+            "DELETE FROM outbox_photos WHERE id = :id AND sendable = 0"
+        )
+        _ = try localOnly.bind(id, forName: ":id")
+        try localOnly.run()
+        _ = try localOnly.reset()
+    }
+
+    /// Bumps the item that owns one binary, by the binary's id.
+    ///
+    /// Read before the caller's delete would make it unfindable, so this takes the photo id and
+    /// resolves the owner itself only while the row still exists; callers that already deleted the
+    /// row pass the item id to `touch` instead.
+    private func touchItem(forPhoto id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement(
+            "UPDATE outbox SET updated_at = :now WHERE id = (SELECT outbox_id FROM outbox_photos WHERE id = :id)"
+        )
+        _ = try statement.bind([":now": date, ":id": id])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
+    /// Removes a binary's row once nothing more is owed for it.
+    ///
+    /// Deletion rather than a third `state`, so that "outstanding" stays countable: the trigger pair
+    /// v18 installs decrements `outbox.photos_outstanding` here, and that column is what the `done`
+    /// CHECK reads. A `sent` state left in the table would have to be excluded from the count by
+    /// every future reader, which is the convention v1's comment refuses.
+    public func completePhoto(id: UUID, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("DELETE FROM outbox_photos WHERE id = :id")
+        _ = try statement.bind(id, forName: ":id")
+        try statement.run()
+        _ = try statement.reset()
+    }
+
+    /// Records a failed send attempt against one binary.
+    public func recordPhotoFailure(
+        id: UUID,
+        failCount: Int,
+        reason: String,
+        code: APIError?,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox_photos
+               SET fail_count = :count, last_error = :reason, last_error_code = :code, updated_at = :now
+             WHERE id = :id
+            """)
+        _ = try statement.bind([
+            ":id": id, ":count": failCount, ":reason": reason,
+            ":code": code?.rawValue, ":now": date
+        ])
+        try statement.run()
+        _ = try statement.reset()
     }
 
     /// Drops rows that have been `done` for longer than `age`.
@@ -596,9 +964,10 @@ public struct OutboxStore {
             kind: try row.value("kind", OutboxItem.Kind.self),
             clientUUID: try row.uuid("client_uuid"),
             payload: Data((try row.string("payload")).utf8),
-            // `OutboxPhoto` decodes the pre-shot-type bare-string form too, so a row that somehow
-            // escaped the v2 migration still yields its binaries instead of an empty list.
-            photos: JSONColumn.decode([OutboxPhoto].self, try row.stringIfPresent("photo_paths")) ?? [],
+            // Empty here, filled by `attachStagedPhotos`. Since `AppSchema` v18 the binaries are
+            // rows in `outbox_photos` rather than a JSON column on this one, so they cannot be
+            // decoded from `row` — every query returning a `Record` runs them through that step.
+            photos: [],
             state: try row.value("state", OutboxItem.State.self),
             failCount: try row.int("fail_count"),
             lastError: try row.stringIfPresent("last_error"),

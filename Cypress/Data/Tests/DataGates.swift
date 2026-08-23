@@ -209,11 +209,36 @@ public enum DataGates {
                     'unverified','\(now)','\(now)')
                 """)
             // An outbox row cannot claim `done` while a photo binary is still on device.
-            await rejects("outbox row marked done with photos pending", """
-                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, local_applied,
+            //
+            // Against `photos_outstanding` since `AppSchema` v18, where the binaries became rows in
+            // `outbox_photos` and this counter — kept by that migration's two triggers — is what a
+            // CHECK can read; SQLite CHECKs cannot hold a subquery. The invariant is v1's and is
+            // unchanged: zero loss is a schema rule, not a convention.
+            // A binary cannot be moved between items: the counter both triggers maintain has no
+            // third arm, so a reassignment would leave one item able to settle with work
+            // outstanding and another unable to settle at all (`AppSchema` v18).
+            await rejects("outbox_photos row reassigned to another item", """
+                INSERT INTO outbox (id, kind, client_uuid, payload, state, local_applied,
                     window_started_at, created_at, updated_at)
-                VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}',
-                    '[{"path":"/tmp/a.jpg","shotType":"trunk"}]','done',1,
+                VALUES ('11111111-1111-4111-8111-111111111111','visit',
+                    '\(UUID().uuidString)','{}','pending',1,'\(now)','\(now)','\(now)');
+                INSERT INTO outbox (id, kind, client_uuid, payload, state, local_applied,
+                    window_started_at, created_at, updated_at)
+                VALUES ('22222222-2222-4222-8222-222222222222','visit',
+                    '\(UUID().uuidString)','{}','pending',1,'\(now)','\(now)','\(now)');
+                INSERT INTO outbox_photos (id, outbox_id, path, shot_type, state, sendable,
+                    created_at, updated_at)
+                VALUES ('33333333-3333-4333-8333-333333333333',
+                    '11111111-1111-4111-8111-111111111111','/tmp/move.jpg','full_tree','pending',1,
+                    '\(now)','\(now)');
+                UPDATE outbox_photos SET outbox_id = '22222222-2222-4222-8222-222222222222'
+                 WHERE id = '33333333-3333-4333-8333-333333333333';
+                """)
+
+            await rejects("outbox row marked done with photos pending", """
+                INSERT INTO outbox (id, kind, client_uuid, payload, photos_outstanding, state,
+                    local_applied, window_started_at, created_at, updated_at)
+                VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}',1,'done',1,
                     '\(now)','\(now)','\(now)')
                 """)
 
@@ -805,7 +830,7 @@ public enum DataGates {
                 into: &failures
             )
 
-            var rows = try outboxStore.allItems(connection: connection)
+            let rows = try outboxStore.allItems(connection: connection)
             expect(rows.count == 1, "upgrade: \(rows.count) rows survived the migration, expected 1", into: &failures)
             expect(
                 rows.first?.item.photos.map(\.path) == ["/tmp/old-a.jpg", "/tmp/old-b.jpg"],
@@ -823,29 +848,36 @@ public enum DataGates {
                 into: &failures
             )
 
-            // Replaying the migration must not re-wrap what it already wrapped.
-            let stored = try storedPhotoPathsJSON(connection: connection)
-            try AppSchema.migrations.first(where: { $0.version == 2 })?.migrate(connection)
-            let afterReplay = try storedPhotoPathsJSON(connection: connection)
+            // Replaying the migration must not move the binaries a second time.
+            //
+            // **This replays v18 rather than v2, because v2 can no longer run here.** v2 rewrote
+            // `outbox.photo_paths`, and v18 dropped that column when it turned each binary into a
+            // row; replaying v2 against a fully migrated database is not a weaker version of this
+            // check, it is a statement error. What the check is actually for — a migration that
+            // runs twice must not duplicate what it moved — is now v18's to answer, and its guard
+            // is the `outbox_photos` table already existing.
+            let stored = try stagedBinariesFingerprint(connection: connection)
+            try AppSchema.migrations.first(where: { $0.version == 18 })?.migrate(connection)
+            let afterReplay = try stagedBinariesFingerprint(connection: connection)
             expect(
                 stored == afterReplay,
-                "upgrade: replaying the migration changed the column: \(stored) then \(afterReplay)",
+                "upgrade: replaying the migration changed the staged binaries: \(stored) then \(afterReplay)",
                 into: &failures
             )
 
-            // And a bare-path row that somehow reaches a migrated database still decodes rather than
-            // dropping a contributor's pending visit.
-            try connection.execute("""
-                INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, local_applied,
-                    window_started_at, created_at, updated_at)
-                VALUES ('\(UUID().uuidString)','visit','\(UUID().uuidString)','{}',
-                    '["/tmp/stray.jpg"]','pending',0,'\(now)','\(now)','\(now)')
-                """)
-            rows = try outboxStore.allItems(connection: connection)
-            expect(rows.count == 2, "upgrade: a bare-path row failed to decode and vanished", into: &failures)
+            // RULINGS **R77**: a binary the migration carried over was staged by a build with no
+            // send path, so it stays on this device permanently. Every row v18 writes is
+            // `sendable = 0`, and this is the assertion that says so — without it the migration
+            // would be a silent retroactive upload of pre-existing photographs, which is the one
+            // thing R77 names and forbids.
+            let sendable = try connection.prepare(
+                "SELECT COUNT(*) AS n FROM outbox_photos WHERE sendable = 1"
+            )
+            defer { sendable.finalize() }
+            let sendableCount = try sendable.fetchOne { try $0.int("n") } ?? -1
             expect(
-                rows.last?.item.photos == [OutboxPhoto(path: "/tmp/stray.jpg", shotType: .other)],
-                "upgrade: a bare-path row decoded as \(String(describing: rows.last?.item.photos))",
+                sendableCount == 0,
+                "upgrade: \(sendableCount) migrated binaries were marked sendable; R77 keeps them on device",
                 into: &failures
             )
         }
@@ -853,9 +885,18 @@ public enum DataGates {
         return failures
     }
 
-    /// The `outbox.photo_paths` column exactly as SQLite holds it, for the migration's replay check.
-    private static func storedPhotoPathsJSON(connection: SQLiteConnection) throws -> String {
-        let statement = try connection.prepare("SELECT group_concat(photo_paths) AS j FROM outbox")
+    /// Every staged binary as one string, ordered, for the migration's replay check.
+    ///
+    /// Replaced `storedPhotoPathsJSON` when `AppSchema` v18 moved the binaries out of
+    /// `outbox.photo_paths` and into rows. `ORDER BY` is not decoration: without it two runs could
+    /// return the same rows in different orders and the check would fail on nothing.
+    private static func stagedBinariesFingerprint(connection: SQLiteConnection) throws -> String {
+        let statement = try connection.prepare("""
+            SELECT group_concat(line, '|') AS j FROM (
+                SELECT outbox_id || ':' || COALESCE(path, '-') || ':' || shot_type || ':' || sendable AS line
+                  FROM outbox_photos ORDER BY outbox_id, path
+            )
+            """)
         defer { statement.finalize() }
         return try statement.fetchOne { try $0.stringIfPresent("j") ?? "" } ?? ""
     }

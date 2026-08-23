@@ -58,7 +58,8 @@ struct OutboxApplySendSplitTests {
             return try await inner.sync(items)
         }
 
-        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
+        @discardableResult
+        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
             try await inner.uploadPhoto(photo, for: item)
         }
     }
@@ -68,6 +69,8 @@ struct OutboxApplySendSplitTests {
         func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
             items.map { SyncResult(clientUUID: $0.clientUUID, status: .duplicate) }
         }
+
+        func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {}
     }
 
     // MARK: - 1. With no send sink, nothing changed
@@ -420,7 +423,10 @@ struct OutboxApplySendSplitTests {
         #expect(rows.map(\.item.state) == [.pending, .failed, .done])
         #expect(rows.map(\.item.failCount) == [0, 3, 0])
         #expect(rows[1].item.lastError == "no signal", "the reason screen 17 shows was dropped")
-        #expect(rows[0].item.photos == [OutboxPhoto(path: "/tmp/queued.jpg", shotType: .trunk)])
+        // By path and framing, not by value: `OutboxPhoto.id` is minted by the migration, so an
+        // equality on the whole value would be asserting a random UUID equals another one.
+        #expect(rows[0].item.photos.map(\.path) == ["/tmp/queued.jpg"])
+        #expect(rows[0].item.photos.map(\.shotType) == [.trunk])
 
         // The truth about each row: `json_synced` was only ever the local commit.
         #expect(rows.map(\.locallyApplied) == [false, false, true], "the migration moved the applied flag")

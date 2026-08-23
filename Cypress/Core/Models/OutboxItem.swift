@@ -7,12 +7,24 @@ import Foundation
 /// upload from whatever the transport was handed (BUILD-PLAN §4, §6 `POST /photos/begin`). A path
 /// on its own forces the upload to guess, and a guess is permanent on an append-only record.
 public struct OutboxPhoto: Codable, Hashable, Sendable {
+    /// This binary's own identity, minted on device and stable for its whole life.
+    ///
+    /// **It is the idempotency key `POST /photos/begin` dedupes on**, which is why the client mints
+    /// it rather than taking the id the server returns. `beginPhotoUpload` inserts a `photos` row
+    /// per call, so a begin retried after a flap used to create a second photograph — ERRATA
+    /// **E264**'s reason a send path could not simply retry. A key the client already holds before
+    /// the first attempt is what makes the retry land on the row it created.
+    ///
+    /// Distinct from `photos.id`, deliberately. That one names the *local* row the apply wrote and
+    /// is not known until the apply has run; this one exists from the moment the shutter closes.
+    public let id: UUID
     /// Where the binary is staged on device. See `VisitPhotoStaging`.
     public let path: String
     /// The chip the contributor tapped on screen 04.
     public let shotType: ShotType
 
-    public init(path: String, shotType: ShotType) {
+    public init(id: UUID = UUID(), path: String, shotType: ShotType) {
+        self.id = id
         self.path = path
         self.shotType = shotType
     }
@@ -24,14 +36,19 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
     /// build. `AppSchema` v2 rewrites those rows, but this decoder handles the shape too: a decode
     /// failure here would drop a contributor's pending visit, which is worse than any labeling
     /// mistake. Old rows become `.other` for the reason given on that migration.
+    /// `id` is absent from every encoded form that predates it, so it is minted on decode rather
+    /// than required. A missing key must not throw here for the reason the whole decoder is lenient:
+    /// the failure it would cause is a dropped contribution.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let path = try? container.decode(String.self) {
+            self.id = UUID()
             self.path = path
             self.shotType = OutboxPhoto.shotTypeForRowsWrittenBeforeShotTypesTraveled
             return
         }
         let keyed = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try keyed.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         self.path = try keyed.decode(String.self, forKey: .path)
         self.shotType = try keyed.decode(ShotType.self, forKey: .shotType)
     }

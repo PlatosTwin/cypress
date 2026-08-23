@@ -184,9 +184,9 @@ struct CommunityOutboxKindTests {
         // And the widening actually happened — otherwise "nothing was enqueued" is true for the
         // uninteresting reason that the migration did nothing at all.
         try connection.execute("""
-            INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, fail_count,
+            INSERT INTO outbox (id, kind, client_uuid, payload, state, fail_count,
                 local_applied, remote_sent, window_started_at, created_at, updated_at)
-            VALUES ('\(UUID().uuidString)','add_tree','\(UUID().uuidString)','{}','[]','pending',0,
+            VALUES ('\(UUID().uuidString)','add_tree','\(UUID().uuidString)','{}','pending',0,
                 1,0,'\(moment)','\(moment)','\(moment)');
             """)
     }
@@ -414,17 +414,23 @@ struct CommunityOutboxKindTests {
             return try await inner.sync(items)
         }
 
-        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
+        @discardableResult
+        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
             try await inner.uploadPhoto(photo, for: item)
         }
     }
 
     private actor CountingSend: OutboxSendSink {
         private(set) var offered: [UUID] = []
+        private(set) var photosOffered: [UUID] = []
 
         func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
             offered.append(contentsOf: items.map(\.clientUUID))
             return items.map { SyncResult(clientUUID: $0.clientUUID, status: .applied) }
+        }
+
+        func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {
+            photosOffered.append(photo.id)
         }
     }
 

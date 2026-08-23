@@ -33,28 +33,98 @@ import (
 // These are the names `flyctl storage create` already set as app secrets on `cypress-sync`
 // (server/README.md). They are not in this repository and must never be.
 type Config struct {
-	AccessKeyID     string // AWS_ACCESS_KEY_ID
-	SecretAccessKey string // AWS_SECRET_ACCESS_KEY
-	Endpoint        string // AWS_ENDPOINT_URL_S3, e.g. https://fly.storage.tigris.dev
-	Region          string // AWS_REGION
-	Bucket          string // BUCKET_NAME
+	AccessKeyID     string // …AWS_ACCESS_KEY_ID
+	SecretAccessKey string // …AWS_SECRET_ACCESS_KEY
+	Endpoint        string // …AWS_ENDPOINT_URL_S3, e.g. https://fly.storage.tigris.dev
+	Region          string // …AWS_REGION
+	Bucket          string // …BUCKET_NAME
+	// VarPrefix is what the five variables above are actually called, minus their common tail. Empty
+	// for the original set; `PhotoVarPrefix` for the photo bucket. It exists so a refusal names the
+	// variable somebody has to go and set.
+	VarPrefix string
 }
 
-// Validate reports the first missing field.
+// Validate reports the first missing field, naming the environment variable it came from.
+//
+// **The names are built from `VarPrefix` rather than written as literals**, because there are two
+// buckets now and telling somebody to set `AWS_ACCESS_KEY_ID` when the empty one is
+// `PHOTOS_AWS_ACCESS_KEY_ID` sends them to change the credential that was already working — and that
+// credential is the seed publish's.
 func (c Config) Validate() error {
+	// **Whitespace-only counts as unset.** A secret set to a stray space or a newline is the shape a
+	// copy-paste from a dashboard produces, and treating it as configured would let the service boot
+	// and then fail every presign at runtime — handing a contributor `server_error` for a deployment
+	// mistake, which is exactly what the boot refusal exists to prevent.
+	//
+	// **Checked here, trimmed in `PhotoConfig`.** The first version of this trimmed a local copy on
+	// a value receiver, so the caller kept the padded value and `NewPresigner` was handed it anyway:
+	// a padded secret passed validation and then broke every presign, which is the outcome this
+	// comment claimed to prevent (#116 review N15). Validation does not mutate what it validates —
+	// the reading happens where the value is read from the environment, and this only refuses.
+	c = c.trimmed()
 	switch {
 	case c.AccessKeyID == "":
-		return errors.New("AWS_ACCESS_KEY_ID is not set")
+		return errors.New(c.VarPrefix + "AWS_ACCESS_KEY_ID is not set")
 	case c.SecretAccessKey == "":
-		return errors.New("AWS_SECRET_ACCESS_KEY is not set")
+		return errors.New(c.VarPrefix + "AWS_SECRET_ACCESS_KEY is not set")
 	case c.Endpoint == "":
-		return errors.New("AWS_ENDPOINT_URL_S3 is not set")
+		return errors.New(c.VarPrefix + "AWS_ENDPOINT_URL_S3 is not set")
 	case c.Region == "":
-		return errors.New("AWS_REGION is not set")
+		return errors.New(c.VarPrefix + "AWS_REGION is not set")
 	case c.Bucket == "":
-		return errors.New("BUCKET_NAME is not set")
+		return errors.New(c.VarPrefix + "BUCKET_NAME is not set")
 	}
 	return nil
+}
+
+// PhotoVarPrefix is what every photo-storage variable is called, minus the rest of its name:
+// `PHOTOS_AWS_ACCESS_KEY_ID`, `PHOTOS_BUCKET_NAME`, and so on.
+//
+// ── Why photographs may not share the seed bucket's variables ──────────────────────────────────
+//
+// **The overwrite hazard.** `AWS_ACCESS_KEY_ID` and its four companions on `cypress-sync` are the
+// **`cypress-cities`** bucket's, set automatically by `flyctl storage create` when that bucket was
+// made, and the seed-publish relay in `server/README.md` depends on them. A `flyctl storage create`
+// run for a photo bucket sets those same names again, in place. Publishing would then be signing
+// with the photo bucket's keys — and it would break silently, because publishing is not something
+// this service does, so nothing here would go red.
+//
+// **The visibility hazard, which stands even without the first.** `cypress-cities` is public-read:
+// it serves anonymous GETs for every key on its dedicated domain. A photograph stored there is
+// fetchable by uuid with no credential at all, so `photoData`'s visibility check — the thing that
+// keeps a `pending` photograph private to its contributor, and a withdrawn one gone — would be
+// decoration. Photographs need a bucket that is not public-read; that is a different bucket, which
+// is a different set of keys.
+const PhotoVarPrefix = "PHOTOS_"
+
+// PhotoConfig reads the photo bucket's coordinates.
+//
+// A named constructor rather than a flag on `Config`, so the prefix cannot be forgotten at a call
+// site: there is exactly one way to build a photo presigner and it is spelled here.
+func PhotoConfig(getenv func(string) string) Config {
+	return Config{
+		AccessKeyID:     getenv(PhotoVarPrefix + "AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: getenv(PhotoVarPrefix + "AWS_SECRET_ACCESS_KEY"),
+		Endpoint:        getenv(PhotoVarPrefix + "AWS_ENDPOINT_URL_S3"),
+		Region:          getenv(PhotoVarPrefix + "AWS_REGION"),
+		Bucket:          getenv(PhotoVarPrefix + "BUCKET_NAME"),
+		VarPrefix:       PhotoVarPrefix,
+	}.trimmed()
+}
+
+// trimmed returns the config with surrounding whitespace removed from every value.
+//
+// Not exported: there is exactly one place a `Config` is built from the environment and it applies
+// this, so a second caller would mean a second source of these values.
+func (c Config) trimmed() Config {
+	return Config{
+		AccessKeyID:     strings.TrimSpace(c.AccessKeyID),
+		SecretAccessKey: strings.TrimSpace(c.SecretAccessKey),
+		Endpoint:        strings.TrimSpace(c.Endpoint),
+		Region:          strings.TrimSpace(c.Region),
+		Bucket:          strings.TrimSpace(c.Bucket),
+		VarPrefix:       c.VarPrefix,
+	}
 }
 
 // Presigner mints presigned URLs.

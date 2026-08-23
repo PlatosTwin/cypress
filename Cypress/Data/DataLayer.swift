@@ -106,6 +106,14 @@ public struct DataLayer: Sendable {
     ///     on the same machine would find and read as a signed-in account. `SessionTests` already
     ///     names that hazard and answers it with a per-run service name; this parameter is the same
     ///     answer for the composition root.
+    ///   - storageSession: the **unauthenticated** session a photo binary travels on. Defaults to
+    ///     `.shared`, which is what ships.
+    ///
+    ///     A parameter for the same reason `credentials` is one, and not tidiness. The binary goes
+    ///     straight to a presigned URL on the storage host rather than through this service (spec
+    ///     §1.1 step 4), so it is the one call in the send path that does not go through
+    ///     `transport` — and a test of the photo send that could not supply this would be reaching
+    ///     the real network for every `PUT`, from the suite, on whoever's machine ran it.
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
@@ -113,7 +121,8 @@ public struct DataLayer: Sendable {
         transport: (any AuthorizedTransport)? = nil,
         authHTTP: (any AuthHTTP)? = nil,
         remoteAccess: RemoteAccess = .resolved,
-        credentials: any CredentialStore = KeychainCredentialStore()
+        credentials: any CredentialStore = KeychainCredentialStore(),
+        storageSession: URLSession = .shared
     ) async throws -> DataLayer {
         let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: seedURL)
 
@@ -269,6 +278,7 @@ public struct DataLayer: Sendable {
         let remote = RemoteAPI(
             baseURL: baseURL,
             transport: authorized,
+            session: storageSession,
             pendingOutboxKeys: {
                 try await queue.read { connection in
                     try OutboxStore().unsentClientUUIDs(connection: connection)

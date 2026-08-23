@@ -449,14 +449,18 @@ struct PhotoDeletionTests {
             try OutboxStore().enqueue(item, connection: connection)
         }
         #expect(try await Self.rowCount(
-            "SELECT COUNT(*) AS n FROM outbox WHERE json_array_length(photo_paths) = 1", in: store
+            "SELECT COUNT(*) AS n FROM outbox_photos", in: store
         ) == 1, "fixture: nothing queued")
 
         let outcome = try await api.deletePhoto(id: photo)
 
         #expect(outcome.dequeuedBinaries == 1, "the queue kept a path to a deleted photograph")
         #expect(try await Self.rowCount(
-            "SELECT COUNT(*) AS n FROM outbox WHERE kind = 'visit' AND json_array_length(photo_paths) = 0",
+            """
+            SELECT COUNT(*) AS n FROM outbox
+             WHERE kind = 'visit'
+               AND NOT EXISTS (SELECT 1 FROM outbox_photos WHERE outbox_id = outbox.id)
+            """,
             in: store
         ) == 1)
         // The visit itself is still queued: the person deleted a picture, not the record of having

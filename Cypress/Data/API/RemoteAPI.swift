@@ -363,7 +363,10 @@ public struct RemoteAPI: CypressAPI {
             // exact and public, so a photo location adds nothing a public surface needs and does add
             // a second, independent record of where the contributor was standing.
             publicLat: request.publicCoordinate?.latitude,
-            publicLon: request.publicCoordinate?.longitude
+            publicLon: request.publicCoordinate?.longitude,
+            // The binary's own id, so a begin retried after a flap finds the row it already made
+            // instead of making a second photograph (ERRATA E264).
+            clientUUID: request.idempotencyKey
         )
         let data = try await transport.send(try self.request("photos/begin", method: "POST", body: body))
         let response = try decode(BeginPhotoResponse.self, from: data)

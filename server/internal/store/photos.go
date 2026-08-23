@@ -39,6 +39,39 @@ type NewPhoto struct {
 	PublicLat       *float64
 	PublicLon       *float64
 	StorageKey      string
+	// ClientUUID is the binary's own client-minted id, and the key this service dedupes `begin` on
+	// (`003_photo_idempotency_key.sql`). Nil from a client that does not send one — which is every
+	// build before the send path — and such a begin is not idempotent, exactly as it never was.
+	ClientUUID *uuid.UUID
+}
+
+// BegunPhoto is what a begin settled on: the row, and whether this call is the one that created it.
+//
+// `Existing` is not decoration. The handler presigns against the storage key that is actually on the
+// row, and on a replay that is the **first** call's key rather than the one this call just
+// generated. Presigning the fresh key would hand the client a URL to an object no `photos` row
+// names, so the bytes would land somewhere nothing ever reads and the photograph would be collected
+// after 72 h as "never arrived".
+type BegunPhoto struct {
+	ID         uuid.UUID
+	StorageKey string
+	Existing   bool
+	// Moderation and ApprovalReason are the **row's**, not a recomputation from the caller.
+	//
+	// The handler used to synthesize them from `who` on every answer, which is right for an insert
+	// and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account without
+	// touching `moderation_state`, so a device-begin, a sign-in that claims, then a replay reported
+	// `approved`/`auto_approved_launch` while the row still held `pending`.
+	//
+	// **Nothing on the client reads this, and that is not a reason to leave it wrong.**
+	// `BeginPhotoResponse` decodes `photo_id` and `presigned_put_url` and no other key, which
+	// `beginPhotoResponse` and `RemoteAPI.beginPhotoUpload` both say. These two fields exist for one
+	// stated purpose — so the upload's own log records which rule published the photograph — and a
+	// synthesized value defeats exactly that purpose, naming the *caller's* rule rather than the
+	// row's. It is wrong precisely in the case the field is interesting: when the two disagree
+	// (#116 r3, and r4 for the harm this comment first claimed and could not support).
+	Moderation     string
+	ApprovalReason *string
 }
 
 // BeginPhoto reserves the photo record and decides its moderation state on the spot.
@@ -54,7 +87,21 @@ type NewPhoto struct {
 // and to nobody else. That is `isVisibleToItsContributor` doing exactly what ERRATA E37 designed it
 // to do, and it makes screen 15's drawn promise — "An account backs them up and lets them join each
 // tree's public timeline" — literally true rather than needing new copy.
-func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) error {
+// ── Idempotency, and why the lookup comes first ────────────────────────────────────────────────
+//
+// With a `ClientUUID` this is retryable: the key is looked up before anything is inserted, and a
+// begin that has already been answered returns the row it made. Migration 003 states the defect this
+// closes — a begin whose answer went missing had no way to ask "did that land?", and asking again
+// made a second photograph.
+//
+// The lookup is first rather than relying on `ON CONFLICT DO NOTHING`, because the two are not the
+// same answer: the conflict arm tells you the insert did nothing, but not *which* row won, and the
+// caller needs that row's storage key to presign against. `BegunPhoto.Existing` says why.
+//
+// Both run in one transaction, so a second call arriving between the lookup and the insert loses the
+// race at the unique index rather than duplicating the row — the index is the authority, and the
+// lookup is the fast path that also tells the caller what it needs.
+func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (BegunPhoto, error) {
 	state := "pending"
 	var reason *ApprovalReason
 	if owner.UserID != nil {
@@ -63,16 +110,84 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) err
 		reason = &auto
 	}
 	now := s.now()
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO photos
-		    (id, tree_uuid, visit_client_uuid, user_id, device_id, shot_type,
-		     moderation_state, approval_reason, captured_at, width, height,
-		     public_lat, public_lon, storage_key, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
-	`, photo.ID, photo.TreeUUID, photo.VisitClientUUID, owner.UserID, owner.DeviceID,
-		photo.ShotType, state, reason, photo.CapturedAt, photo.Width, photo.Height,
-		photo.PublicLat, photo.PublicLon, photo.StorageKey, now)
-	return err
+
+	var begun BegunPhoto
+	err := s.Tx(ctx, func(tx pgx.Tx) error {
+		if photo.ClientUUID != nil {
+			var id uuid.UUID
+			var key string
+			var deletedAt *time.Time
+			var moderation string
+			var approvalReason *string
+			err := tx.QueryRow(ctx, `
+				SELECT id, storage_key, deleted_at, moderation_state, approval_reason FROM photos
+				 WHERE client_uuid = $1
+				   AND (($2::uuid IS NOT NULL AND user_id = $2)
+				     OR ($3::uuid IS NOT NULL AND device_id = $3))
+			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key, &deletedAt, &moderation, &approvalReason)
+			if err == nil {
+				// ── A replay for a photograph that has since been withdrawn ──────────────────
+				//
+				// **Refused, and this is the honest one of the two available answers.** Without
+				// this arm the replay returned the tombstoned row together with a *fresh presigned
+				// PUT*, so a client still holding that upload would write the bytes and record the
+				// send as a success — after the contributor had deleted the picture. That is
+				// ERRATA E147's harm arriving through the one door that opens after the deletion
+				// gate, and it is worse here than anywhere else because nothing in this service
+				// deletes an object: bytes written after a withdrawal stay written (the obligation
+				// this round records in `docs/errata-pending/`).
+				//
+				// The alternative — mint a fresh row and let the upload proceed — was considered
+				// and is wrong twice. It resurrects something a person asked to be gone, and it
+				// cannot work anyway: the unique index does not exclude tombstoned rows, so the key
+				// is still taken and the insert would be refused.
+				//
+				// `ErrPhotoWithdrawn` rather than `ErrNotFound` so the caller can say the true
+				// thing; the handler maps it to `not_found`, which is non-retryable, so the client
+				// stops rather than spending 48 h re-asking for a photograph that is gone.
+				// **`rejected` refuses on the same argument as `deleted_at`** (#116 review N16).
+				// `RejectPhoto` is the operator takedown and it moves `moderation_state` without
+				// setting `deleted_at`, so a replay after a takedown was still answered with a
+				// fresh presigned PUT and the bytes landed — the same door F2 closed, reached from
+				// the operator's side instead of the contributor's. It matters for exactly the
+				// reason F2 does: nothing in this service deletes an object, so bytes written after
+				// a takedown stay written.
+				//
+				// Both are the same answer to the caller because they are the same fact about the
+				// upload: this photograph is not going to be published, so its bytes are not wanted.
+				if deletedAt != nil || moderation == "rejected" {
+					return ErrPhotoWithdrawn
+				}
+				begun = BegunPhoto{
+					ID: id, StorageKey: key, Existing: true,
+					Moderation: moderation, ApprovalReason: approvalReason,
+				}
+				return nil
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+
+		_, err := tx.Exec(ctx, `
+			INSERT INTO photos
+			    (id, tree_uuid, visit_client_uuid, user_id, device_id, shot_type,
+			     moderation_state, approval_reason, captured_at, width, height,
+			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+		`, photo.ID, photo.TreeUUID, photo.VisitClientUUID, owner.UserID, owner.DeviceID,
+			photo.ShotType, state, reason, photo.CapturedAt, photo.Width, photo.Height,
+			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now)
+		if err != nil {
+			return err
+		}
+		begun = BegunPhoto{
+			ID: photo.ID, StorageKey: photo.StorageKey,
+			Moderation: state, ApprovalReason: (*string)(reason),
+		}
+		return nil
+	})
+	return begun, err
 }
 
 // PhotoRecord is a stored photograph, as the read routes need it.
@@ -201,6 +316,14 @@ func (s *Store) RejectPhoto(ctx context.Context, id uuid.UUID) error {
 // The caller maps it to `forbidden` — non-retryable, so the item fails on the spot rather than
 // spending 48 h on an answer that will not change.
 var ErrNotOwned = errors.New("photo belongs to another contributor")
+
+// ErrPhotoWithdrawn is returned when a begin replays a key whose photograph has been deleted.
+//
+// A separate error from ErrNotFound because the two are different facts and only one of them is
+// about a key this service has seen: "there is no such photograph" and "there was, and its
+// contributor took it back" lead to the same HTTP status by choice rather than by accident. See
+// BeginPhoto for why the answer is a refusal and not a fresh row.
+var ErrPhotoWithdrawn = errors.New("photo was withdrawn by its contributor")
 
 // withdrawPhoto tombstones one photograph inside an already-open transaction.
 //

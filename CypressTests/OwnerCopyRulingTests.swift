@@ -26,12 +26,16 @@ struct OwnerCopyRulingTests {
 
     // MARK: - Ruling 2 · the storage sentence, one body for both arms
 
+    /// The second clause changed in the photo-send round, which owner ruling 2 of 2026-08-14
+    /// anticipated: the sink that makes "photos stay on this phone" false is the one that round
+    /// landed. **The new clause is a proposal pending ratification** — it is pinned here so that it
+    /// cannot drift unnoticed while it waits, not because it is settled.
     @Test("the account block draws the ruled storage sentence")
     func theAccountBlockDrawsTheRuledSentence() {
         #expect(
             AccountCopy.storageBody
-                == "Check-ins and notes sync to your grove. Photos stay on this phone until you "
-                + "choose to share them."
+                == "Check-ins and notes sync to your grove. Photos you add from now on upload too; "
+                + "older ones stay on this phone."
         )
     }
 
@@ -91,14 +95,72 @@ struct OwnerCopyRulingTests {
         // The control: a scan that found no methods would pass the assertion below by seeing
         // nothing, which is this project's signature false green.
         #expect(!methods.isEmpty, "the scan bounded the protocol and found no methods in it at all")
+
+        // ── What this guard pins now, and why it changed shape ─────────────────────────────────
+        //
+        // It used to assert `methods.count == 1`, i.e. that the send side had no photo method at
+        // all. That was the right pin while the sentence was the only thing holding, and its own
+        // message named the exit: "the owner said in ruling 2 of 2026-08-14 that the round which
+        // lands the photo sink revisits the sentence. This is that round."
+        //
+        // The sink has landed, so a count is no longer the invariant — the **pairing** is. The
+        // promise `AccountCopy.storageBody` makes is only false if a photograph can actually leave,
+        // so the two facts have to agree in one direction or the other, and this asserts exactly
+        // that: if the send side can carry a binary, the copy must not still say it cannot. Written
+        // as a biconditional rather than as a new fixed expectation, so that reverting the sink
+        // reverts the requirement instead of leaving a stale assertion behind.
+        let carriesPhoto = methods.contains { $0.lowercased().contains("photo") }
+        // **The claim, not the retired literal** (#116 review N6). Matching the exact old sentence
+        // pinned the wording this round happens to have removed, so a differently-worded promise
+        // that photographs stay put would pass the guard vacuously — and since the section is
+        // explicitly awaiting a copy decision, a reword is the likeliest thing to happen to it.
+        //
+        // So the question is asked twice, from both sides, and the copy has to answer consistently:
+        // does it say photographs stay on the device, and does it say they travel? A sentence that
+        // does neither is also a failure — it would leave the app silent about photographs while
+        // the sink uploads them.
+        //
+        // **The literal, not the file**, still: `AccountSection.swift` quotes the retired sentence
+        // in the doc comment explaining why it was retired, so a `contains` over the source would
+        // find the old promise in the prose recording its own removal.
+        // **Clause by clause, because the true sentence contains both halves.** R77 makes the
+        // promise a split one — new photographs upload, older ones do not — so any guard that
+        // simply looked for "stay on this phone" anywhere in the body would fire on the correct
+        // copy. What is actually under test is narrower and is the thing a person reads: **does the
+        // clause that talks about photographs say they can leave?**
+        //
+        // A stays-put-only wording fails this however it is phrased, because such a sentence has no
+        // verb of travel in its photograph clause — which is what makes this pin the claim rather
+        // than the particular words this round happened to choose.
+        //
+        // Limits, stated rather than implied: it is a keyword rule over English, so a wording that
+        // avoided all five verbs would slip past it. It is a tripwire for a reworded promise, not a
+        // proof, and the exact sentence is separately pinned by the test above.
+        let clauses = AccountCopy.storageBody
+            .lowercased()
+            .components(separatedBy: CharacterSet(charactersIn: ".;"))
+            .filter { $0.contains("photo") }
+        let travelVerbs = ["upload", "sync", "share", "back up", "backed up"]
+        // **A negated travel verb is not a travel claim** (#116 review N11). "Photos are never
+        // uploaded from this phone" contains "upload", and the first version of this scan read that
+        // as travel — passing the guard while the sentence promised exactly what the sink makes
+        // false. It is the wording a careful copywriter is *most* likely to produce, because it is
+        // the natural way to say the thing this round removed.
+        let negators = ["never", "not ", "n't", "no longer", "without"]
+        let photographsTravel = !clauses.isEmpty && clauses.contains { clause in
+            travelVerbs.contains { clause.contains($0) } && !negators.contains { clause.contains($0) }
+        }
+
+        let claimsPhotosStayOnDevice = !photographsTravel
         #expect(
-            methods.count == 1 && methods[0].hasPrefix("func sync("),
+            carriesPhoto != claimsPhotosStayOnDevice,
             """
-            `OutboxSendSink` now declares \(methods) — the send side has grown a method beyond \
-            `sync`. If that method carries a photograph, `AccountCopy.storageBody`'s second clause \
-            ("Photos stay on this phone until you choose to share them") is no longer true, and the \
-            owner said in ruling 2 of 2026-08-14 that the round which lands the photo sink revisits \
-            the sentence. This is that round.
+            `OutboxSendSink` declares \(methods) and `AccountCopy.storageBody` \
+            \(claimsPhotosStayOnDevice ? "still says" : "no longer says") photos stay on this \
+            phone. Those two cannot both be true: a send sink that carries a binary means a \
+            photograph leaves, and the sentence promises it does not. Owner ruling 2 of \
+            2026-08-14 says the round landing the photo sink revisits the sentence — change the \
+            copy or remove the method, do not leave the app saying something it does not do.
             """
         )
 

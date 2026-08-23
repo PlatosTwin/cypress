@@ -196,14 +196,17 @@ public struct AccountDeletion {
         // no `photos` row at all, so the query above cannot see it, and a deletion that missed it
         // would leave the one photograph the person took most recently.
         //
-        // `json_each` over `photo_paths`, tolerating both shapes the column has held: v2 rewrote the
-        // bare-string rows into objects, and `OutboxPhoto` still decodes the old form, so this reads
-        // it too rather than trusting that the migration reached every row.
+        // A join onto `outbox_photos` since `AppSchema` v18, where the binaries stopped being
+        // elements of a JSON column and became rows. `path IS NOT NULL` is not a tidiness filter: an
+        // *applied* binary has no staged file left — the apply moved it into the app container,
+        // where it is named by `photos.local_path` and has therefore already been collected by the
+        // statement above. A NULL here means "counted", not "missing".
         let staged = try connection.cachedStatement("""
-            SELECT COALESCE(json_extract(element.value, '$.path'),
-                            CASE WHEN json_type(element.value) = 'text' THEN element.value END) AS path
-              FROM outbox, json_each(outbox.photo_paths) AS element
+            SELECT outbox_photos.path AS path
+              FROM outbox
+              JOIN outbox_photos ON outbox_photos.outbox_id = outbox.id
              WHERE json_extract(outbox.payload, '$.userID') = :user COLLATE NOCASE
+               AND outbox_photos.path IS NOT NULL
             """)
         _ = try staged.bind([":user": userID.uuidString])
         bytes.absolutePaths += try staged.fetchAll { try $0.stringIfPresent("path") }.compactMap { $0 }

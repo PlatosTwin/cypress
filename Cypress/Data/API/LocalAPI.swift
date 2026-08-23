@@ -1890,11 +1890,14 @@ public actor LocalAPI: CypressAPI {
             // have done something it did not do — and thrown here, before a byte is touched, so
             // neither answer costs the photograph.
             guard counts.photos == 1 else { throw APIError.notFound }
-            if let path = subject.localPath {
-                counts.stagedBinaries = try OutboxStore().discardStagedPhoto(
-                    atPath: path, at: moment, connection: connection
-                )
-            }
+            // **Unconditional now, and keyed on the photograph rather than on its file.** It used
+            // to run only `if let path = subject.localPath`, which meant a photograph whose staged
+            // file had already been consumed by the apply left its queue row behind — and that row
+            // then wedged the whole item permanently (#116 review F1; see `discardPhoto`). The path
+            // is still passed, because before the apply it is the only handle there is.
+            counts.stagedBinaries = try OutboxStore().discardPhoto(
+                id: id, stagedPath: subject.localPath, at: moment, connection: connection
+            )
             // Spec §3.4, and **after** the tombstone `UPDATE` has matched, which is the whole of
             // PR #94's ordering: until `counts.photos == 1` this method has no claim on the
             // photograph, and queueing a withdrawal it might still be refused would be the row

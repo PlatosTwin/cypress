@@ -65,7 +65,10 @@ struct DataLayerWiringTests {
             databaseURL: try databaseURL(),
             seedURL: nil,
             baseURL: URL(string: "https://cypress-sync.invalid/api/v1")!,
-            transport: transport
+            transport: transport,
+            // The binary's `PUT` does not go through `transport` — it goes straight to storage at a
+            // presigned URL (spec §1.1 step 4). Without this the suite would reach the real network.
+            storageSession: StubStorageProtocol.session()
         )
     }
 
@@ -282,6 +285,17 @@ struct DataLayerWiringTests {
             photos: [OutboxPhoto(path: staged.path, shotType: .fullTree)]
         )
         transport.answer("POST /sync", with: Self.syncAccepting(visit.clientUUID))
+
+        // The photo half of the send path, which the note's `POST /sync` does not cover: a begin, a
+        // destination on the storage host, and the receipt that closes the 72 h grace window.
+        let photoID = UUID()
+        let destination = URL(string: "https://storage.invalid/photos/\(UUID().uuidString).jpg")!
+        StubStorageProtocol.park(destination)
+        transport.answer(
+            "POST /photos/begin",
+            with: #"{"photo_id":"\#(photoID.uuidString)","presigned_put_url":"\#(destination.absoluteString)","moderation_state":"approved"}"#
+        )
+        transport.answer("POST /photos/\(photoID.uuidString)/received", with: #"{"received":true}"#)
 
         // Metered.
         let metered = try await data.outbox.drain(photoUploadsAllowed: false)

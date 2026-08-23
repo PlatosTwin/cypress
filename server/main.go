@@ -83,13 +83,18 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	storageConfig := storage.Config{
-		AccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
-		SecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		Endpoint:        os.Getenv("AWS_ENDPOINT_URL_S3"),
-		Region:          os.Getenv("AWS_REGION"),
-		Bucket:          os.Getenv("BUCKET_NAME"),
-	}
+	// **The photo bucket, not the seed bucket.** The only thing this service presigns is a
+	// photograph, and photographs must not live in `cypress-cities`: that bucket is public-read, so a
+	// key there is fetchable anonymously and every visibility rule on a photograph would be
+	// decoration. `storage.PhotoVarPrefix` carries the whole argument, including why these variables
+	// may not be the `AWS_*` ones the seed publish depends on.
+	//
+	// **Refusing to boot is the intended behaviour when they are unset**, and it is the loud half of
+	// this seam. A service that started without them would accept `POST /photos/begin`, fail at the
+	// presign, and hand a contributor `server_error` for a deployment mistake; and the only quieter
+	// alternative — falling back to the seed bucket — is the privacy failure above, reached by
+	// default rather than by decision.
+	storageConfig := storage.PhotoConfig(os.Getenv)
 	if err := storageConfig.Validate(); err != nil {
 		return err
 	}

@@ -254,13 +254,16 @@ struct PrivateReminderTests {
         #expect(queue.first?.item.state == .failed)
         #expect(queue.first?.item.failCount == 3)
         #expect(queue.first?.item.lastError == "no signal")
-        #expect(queue.first?.item.photos == [OutboxPhoto(path: "/tmp/pending.jpg", shotType: .trunk)])
+        // By path and framing: `AppSchema` v18 mints `OutboxPhoto.id` for every binary it migrates,
+        // so comparing whole values would compare two random UUIDs.
+        #expect(queue.first?.item.photos.map(\.path) == ["/tmp/pending.jpg"])
+        #expect(queue.first?.item.photos.map(\.shotType) == [.trunk])
 
         // The new vocabulary is storable and the old one still is.
         try connection.execute("""
-            INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, local_applied,
+            INSERT INTO outbox (id, kind, client_uuid, payload, state, local_applied,
                 window_started_at, created_at, updated_at)
-            VALUES ('\(UUID().uuidString)','private_reminder','\(UUID().uuidString)','{}','[]','pending',0,
+            VALUES ('\(UUID().uuidString)','private_reminder','\(UUID().uuidString)','{}','pending',0,
                 '\(now)','\(now)','\(now)')
             """)
         #expect(try OutboxStore().allItems(connection: connection).count == 2)

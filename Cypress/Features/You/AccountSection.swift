@@ -260,11 +260,25 @@ enum AccountCopy {
     /// **Both of its clauses are checkable, which is the point of it.**
     /// - *Check-ins and notes sync to your grove* — `DataLayer.boot` wires `APIOutboxSendSink` over
     ///   `RemoteAPI`, and `GET /me/grove` is the far side of it under either credential.
-    /// - *Photos stay on this phone until you choose to share them* — the outbox has no photo sink.
-    ///   `OutboxQueue` holds binaries and the send half was deliberately left out of the wiring
-    ///   round (ERRATA E264, and the server prerequisite the #158 wiring entry records). **When the
-    ///   photo sink lands, this sentence stops being true and that round revisits it** — the owner
-    ///   said so in the same ruling, so it is written here rather than left for someone to notice.
+    /// - *Photos you add from now on upload too; older ones stay on this phone* — `OutboxSendSink`
+    ///   carries `uploadPhoto` since the send round, and `AppSchema` v18 marks every binary staged
+    ///   before that migration `sendable = 0`, which is RULINGS **R77** ("no retroactive photo
+    ///   upload"). Both halves of the clause are checkable, which is the point of the sentence.
+    ///
+    /// **This clause replaced "Photos stay on this phone until you choose to share them", which the
+    /// photo send path made false.** Owner ruling 2 of 2026-08-14 said the round landing the photo
+    /// sink revisits the sentence; this is that round. `OwnerCopyRulingTests` now pins the *pairing*
+    /// rather than the absence — a send sink that can carry a binary and a sentence promising photos
+    /// stay put cannot both be in the tree at once, in either direction.
+    ///
+    /// **It is a proposal awaiting ratification; the alternatives are in the round's PR.** It is
+    /// written in rather than left open because the alternative to choosing was shipping a sentence
+    /// that is not true. If the owner picks differently, that is a copy change and nothing else.
+    ///
+    /// **It becomes true at deploy, not at merge.** The service refuses to boot without the photo
+    /// bucket's credentials (`storage.PhotoVarPrefix`), so until that bucket exists an upload fails
+    /// and screen 17 shows a retry row — honestly, but it is not the state this sentence describes.
+    /// The order the PR asks for is bucket, then deploy, then this build.
     ///
     /// **One body for both arms.** It is the same sentence whether or not this phone is signed in,
     /// because both halves of it are true of both, so `signedOut` draws it too rather than leaving
@@ -275,8 +289,8 @@ enum AccountCopy {
     /// still true (`User.publicAttribution` cannot be turned on anywhere in the app — ERRATA E100).
     /// It is not lost: `YouCopy.privacyBody` is where the You tab says it, one section down.
     static let storageBody =
-        "Check-ins and notes sync to your grove. Photos stay on this phone until you choose to "
-        + "share them."
+        "Check-ins and notes sync to your grove. Photos you add from now on upload too; older ones "
+        + "stay on this phone."
 
     static let signOutTitle = "Sign out"
     /// Says the part a person cannot see: signing out is not a deletion, and it is not a one-way

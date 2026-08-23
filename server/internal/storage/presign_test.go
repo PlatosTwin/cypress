@@ -173,3 +173,76 @@ func signatureOf(t *testing.T, signed string) string {
 	}
 	return parsed.Query().Get("X-Amz-Signature")
 }
+
+// TestValidateRejectsWhitespaceOnlyValues is the small thing #116's review found while confirming
+// the boot refusal held.
+//
+// A secret set to a stray space is what a copy-paste from a dashboard produces. Accepting it would
+// let the service boot and then fail every presign at runtime — a contributor gets `server_error`
+// for a deployment mistake, which is the outcome the boot refusal exists to prevent.
+func TestValidateRejectsWhitespaceOnlyValues(t *testing.T) {
+	full := func() Config {
+		return Config{
+			AccessKeyID: "a", SecretAccessKey: "s", Endpoint: "https://e",
+			Region: "r", Bucket: "b", VarPrefix: PhotoVarPrefix,
+		}
+	}
+	// The control: the same config with real values must pass, so a failure below is about the
+	// whitespace and not about the fixture.
+	if err := full().Validate(); err != nil {
+		t.Fatalf("control: a fully configured Config was refused: %v", err)
+	}
+
+	blanks := map[string]func(*Config){
+		"PHOTOS_AWS_ACCESS_KEY_ID":     func(c *Config) { c.AccessKeyID = "  " },
+		"PHOTOS_AWS_SECRET_ACCESS_KEY": func(c *Config) { c.SecretAccessKey = "\t" },
+		"PHOTOS_AWS_ENDPOINT_URL_S3":   func(c *Config) { c.Endpoint = "\n" },
+		"PHOTOS_AWS_REGION":            func(c *Config) { c.Region = " \n " },
+		"PHOTOS_BUCKET_NAME":           func(c *Config) { c.Bucket = " " },
+	}
+	for name, blank := range blanks {
+		config := full()
+		blank(&config)
+		err := config.Validate()
+		if err == nil {
+			t.Fatalf("%s was whitespace-only and accepted", name)
+		}
+		if !strings.Contains(err.Error(), name) {
+			t.Fatalf("%s was refused as %q, which does not name the variable to go and set", name, err)
+		}
+	}
+}
+
+// TestPhotoConfigTrimsWhatTheCallerReceives is #116's review N15.
+//
+// `Validate` trimmed a local copy on a value receiver, so the caller kept the padded value and
+// handed it to `NewPresigner` anyway — a padded secret passed validation and then broke every
+// presign at runtime, the exact outcome the trim was added to prevent. So the property is not
+// "validation accepts it" but **what the constructor hands back**.
+func TestPhotoConfigTrimsWhatTheCallerReceives(t *testing.T) {
+	padded := map[string]string{
+		"PHOTOS_AWS_ACCESS_KEY_ID":     "  AKIA  ",
+		"PHOTOS_AWS_SECRET_ACCESS_KEY": "\tsecret\n",
+		"PHOTOS_AWS_ENDPOINT_URL_S3":   " https://fly.storage.tigris.dev ",
+		"PHOTOS_AWS_REGION":            "\nauto\n",
+		"PHOTOS_BUCKET_NAME":           "  cypress-photos  ",
+	}
+	config := PhotoConfig(func(key string) string { return padded[key] })
+
+	if err := config.Validate(); err != nil {
+		t.Fatalf("a padded but present config was refused: %v", err)
+	}
+	for name, got := range map[string]string{
+		"AccessKeyID": config.AccessKeyID, "SecretAccessKey": config.SecretAccessKey,
+		"Endpoint": config.Endpoint, "Region": config.Region, "Bucket": config.Bucket,
+	} {
+		if got != strings.TrimSpace(got) {
+			t.Fatalf("%s is %q — the padding reached the caller, so it reaches the signature too",
+				name, got)
+		}
+	}
+	// The one that would actually break a presign: a bucket with a space in the host segment.
+	if config.Bucket != "cypress-photos" {
+		t.Fatalf("Bucket = %q, want %q", config.Bucket, "cypress-photos")
+	}
+}

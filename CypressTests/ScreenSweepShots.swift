@@ -425,6 +425,9 @@ struct ScreenSweepShots {
                         OutboxPreviewFixtures.visit,
                         OutboxPreviewFixtures.checkIn,
                         OutboxPreviewFixtures.expiredMeasurement,
+                        // The photo-send round's proposed state, in the sweep so the owner sees it
+                        // beside the states it has to live with rather than on its own.
+                        OutboxPreviewFixtures.photoStillGoing,
                         OutboxPreviewFixtures.syncedVisit,
                         OutboxPreviewFixtures.syncedCare,
                     ]),

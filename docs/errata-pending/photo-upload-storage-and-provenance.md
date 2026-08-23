@@ -121,3 +121,43 @@ consults for authorization. The order is chosen for the first.
 
 Latent today: no photograph reaches the service, so no withdrawal can be refused for this reason
 yet. It becomes reachable on the first day uploads work, which is why it is written down now.
+
+---
+
+## 3 · The byte-deletion obligation the send round creates, and does not discharge
+
+Recorded as an obligation of the **photo-send round**, per the owner's approval of a private photo
+bucket on 2026-08-22. Tombstone-only deletion was accepted *because* the bucket is private; this
+entry is the record of what that acceptance defers rather than settles.
+
+Once a photograph uploads, deleting it does three things and not a fourth:
+
+1. the local row is tombstoned and its `local_path` stripped (`ContributionStore.deletePhoto`);
+2. a `photo_withdrawal` reaches the service and tombstones the server row, so `GET /photos/{id}`
+   stops minting a presign and the photograph stops being served (this round's `withdrawPhoto`);
+3. the queued binary is dropped from `outbox_photos`, so a deletion between the shutter and the
+   drain cannot publish afterwards.
+
+**The bytes stay in the bucket.** Nothing in `server/` deletes an object — no `DeleteObject`, no
+presigned DELETE, no sweeper — so `photos/<uuid>.jpg` outlives every deletion path there is:
+contributor withdrawal, operator takedown, and both account-deletion doors, `EraseEverything`
+included.
+
+**Why that is tolerable now and not indefinitely.** On a private bucket the only way to read an
+object is a presigned URL, and the one place that mints them (`photoData`) evaluates visibility
+first — so a withdrawn photograph is unreachable through the API, and "deleted" is true from every
+angle a person or a client can observe. What remains is bytes at rest that nobody asked to keep:
+an operator with bucket credentials can still see them, they accrue storage cost forever, and
+"erase everything" does not literally erase. None of those is an exposure; all of them are a
+promise not yet fully kept.
+
+**What closing it needs**, so the next round does not re-derive it:
+
+- an object-delete on the `storage` package (the presigner signs `PUT` and `GET` only today);
+- a call to it from the three tombstone sites, ordered *after* the row is tombstoned — the row is
+  what makes the photograph unreachable, and a delete that ran first would leave a live row
+  pointing at nothing if the object-delete failed;
+- a sweeper for the 72 h grace window, which is already unclaimed: `bytes_received_at` is the
+  cursor and nothing reads it, so a begin whose binary never arrives leaves a permanent phantom;
+- a per-account byte purge for `DELETE /me`, which needs no new query — every `storage_key` for a
+  user is one indexed read on `photos.user_id` — only the delete.

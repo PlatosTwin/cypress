@@ -243,6 +243,8 @@ struct BeginPhotoBody: Encodable {
     let height: Int?
     let publicLat: Double?
     let publicLon: Double?
+    /// `PhotoUploadRequest.idempotencyKey` — the key `POST /photos/begin` dedupes on.
+    let clientUUID: UUID?
 
     enum CodingKeys: String, CodingKey {
         case treeUUID = "tree_uuid"
@@ -252,6 +254,7 @@ struct BeginPhotoBody: Encodable {
         case width, height
         case publicLat = "public_lat"
         case publicLon = "public_lon"
+        case clientUUID = "client_uuid"
     }
 }
 
