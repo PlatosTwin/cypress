@@ -432,6 +432,7 @@ public actor OutboxQueue {
         // zero, which is exactly what stops `markDoneIfComplete` from settling the item — the row
         // stays visible and retryable rather than quietly becoming `done`. Nothing is reported as
         // sent that was not sent.
+        var itemsWithUnsentPhotos: [UUID: Int] = [:]
         if let send {
             for index in carrying.indices {
                 let entry = carrying[index]
@@ -477,6 +478,9 @@ public actor OutboxQueue {
                             )
                         }
                         report.photosFailed += 1
+                        // Counted per item, because the sentence screen 17 draws says how many
+                        // photographs are outstanding, not how many attempts failed.
+                        itemsWithUnsentPhotos[record.id, default: 0] += 1
                         // Stop at the first failure for this item. The next one is overwhelmingly
                         // likely to fail the same way, and a drain that kept going would spend the
                         // whole batch's time discovering that.
@@ -527,6 +531,26 @@ public actor OutboxQueue {
                     )
                 }
                 report.awaitingWifi += 1
+                continue
+            }
+
+            // A binary the service would not take. The note is sent — that is the clause the
+            // sentence leads with — and the photograph is still owed, so the row says so and waits
+            // rather than settling or failing.
+            //
+            // **This is the reschedule `awaitingWifi` above already makes, for the other reason a
+            // binary can be outstanding.** Without it the row would sit there saying nothing while
+            // `markDoneIfComplete` quietly declined to match, which is the one thing screen 17
+            // promises it will never do.
+            if let outstanding = itemsWithUnsentPhotos[record.id] {
+                try await queue.write { connection in
+                    try store.reschedule(
+                        record.id,
+                        reason: OutboxFailureReason.photoNotSentYet(photoCount: outstanding),
+                        at: settledAt,
+                        connection: connection
+                    )
+                }
                 continue
             }
 

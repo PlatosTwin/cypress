@@ -48,6 +48,32 @@ public enum OutboxFailureReason {
     /// answer for — whether the record joins the tree's public timeline.
     public static let moderationDeclined = "This was reviewed and won't be shared."
 
+    /// The note went and the photograph did not — a state that could not exist before the photo
+    /// send path, and the one screen 17 would otherwise draw silently.
+    ///
+    /// **Modelled on `awaitingWifi` deliberately, down to the shape of the sentence.** That one
+    /// already says the true and reassuring half first ("The note is saved"), because the thing a
+    /// person fears when a row does not clear is that their writing is gone. This says the same
+    /// thing about the same pair, for the other reason a binary can be outstanding.
+    ///
+    /// **Not a failure sentence, and the row it appears on is not `retry`.** The item is `waiting`:
+    /// the binary keeps its `outbox_photos` row, so the item cannot settle, and the next drain
+    /// tries it again. `refusedTerminally` would be wrong twice over — the note *was* sent, and the
+    /// photograph has not given up.
+    ///
+    /// "hasn't gone through yet" rather than "failed": the app cannot tell a person which of the
+    /// several reasons it was, and "yet" is the part that is certainly true.
+    ///
+    /// **PROPOSED, pending the owner's ratification** (round proposes, owner ratifies). It is
+    /// implemented rather than left blank because the alternative is a row that says nothing while
+    /// something is outstanding, which is the one thing screen 17 promises never to do: "Nothing
+    /// here disappears silently. An item that cannot sync says so, says why, and waits for you."
+    public static func photoNotSentYet(photoCount: Int) -> String {
+        photoCount == 1
+            ? "The note is sent. One photo hasn't gone through yet."
+            : "The note is sent. \(photoCount) photos haven't gone through yet."
+    }
+
     public static func awaitingWifi(photoCount: Int) -> String {
         photoCount == 1
             ? "The note is saved. One photo is waiting for wi-fi."

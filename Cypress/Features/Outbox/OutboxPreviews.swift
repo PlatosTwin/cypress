@@ -135,6 +135,29 @@ enum OutboxPreviewFixtures {
         )
     }
 
+    /// **The state the photo send path creates: the note went, the photograph did not.**
+    ///
+    /// PROPOSED, pending the owner's ratification. It draws as `waiting` and not `retry` — the note
+    /// was accepted and the binary has not given up — so the only new thing on the screen is the
+    /// sentence. That is the whole of the proposal: no fourth row state, which the owner already
+    /// refused once when ruling 3 of 2026-08-14 removed `stopped`.
+    static var photoStillGoing: OutboxStore.Record {
+        record(
+            .visit(Visit(
+                treeID: ginkgoID,
+                attribution: attribution,
+                note: "Second flush of leaves",
+                gpsAccuracyM: 5,
+                capturedAt: at(11, 20)
+            )),
+            photos: [OutboxPhoto(path: "/tmp/cypress-preview-3.jpg", shotType: .fullTree)],
+            reason: OutboxFailureReason.photoNotSentYet(photoCount: 1),
+            createdAt: at(11, 20),
+            updatedAt: at(11, 41),
+            sequence: 6
+        )
+    }
+
     /// The other terminal state: the API said no in a way that will not change.
     static var rejectedCare: OutboxStore.Record {
         record(

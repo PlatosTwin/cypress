@@ -199,6 +199,43 @@ struct PhotoSendPathTests {
         )
     }
 
+    // MARK: - 4b. The row says why, which is what screen 17 promises
+
+    /// Screen 17's footnote is a promise: "Nothing here disappears silently. An item that cannot
+    /// sync says so, says why, and waits for you."
+    ///
+    /// The photo send path creates the first state that could break it — the note sent, the
+    /// photograph not — because the failure is recorded against the *binary* and the item is
+    /// neither failed nor done. Without a sentence the row would sit in `waiting` explaining
+    /// nothing, indefinitely.
+    ///
+    /// **PROPOSED copy, pending ratification.** What is pinned here is that the row says *something*
+    /// true and names the photograph; the exact wording is the owner's to choose, and if it changes
+    /// this assertion changes with it.
+    @Test("an item whose photograph would not send says so, and is not drawn as failed")
+    func anUnsentPhotographSaysWhy() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        _ = try await queue.enqueue(
+            .visit(Self.visit()),
+            photos: [OutboxPhoto(path: try Self.stagedFile("saysWhy"), shotType: .fullTree)]
+        )
+        _ = try await queue.drain()
+
+        let record = try #require(try await queue.records().first)
+        let reason = try #require(record.item.lastError, "the row is outstanding and says nothing")
+        #expect(
+            reason == OutboxFailureReason.photoNotSentYet(photoCount: 1),
+            "the row says \(reason)"
+        )
+        // Not `retry`: the note went and the photograph has not given up. `OutboxPresentation` draws
+        // `retry` only for `.failed`, so this is the assertion that keeps the row in `waiting`.
+        #expect(record.item.state != .failed, "an unsent photograph drew the note as terminally failed")
+    }
+
     // MARK: - 5. The binary's idempotency key is the row's own id
 
     /// Server migration 003 dedupes `POST /photos/begin` on the key the client mints, so the key has
