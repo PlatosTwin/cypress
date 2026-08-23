@@ -37,6 +37,76 @@ struct BundleContractTests {
         #expect(bytes > 50_000_000, "the seed is \(bytes) bytes — that is a truncated copy, not 195,309 trees")
     }
 
+    // MARK: - What the seed inside the bundle is allowed to be
+
+    /// **Which cities the app carries, and which arrive as downloads.**
+    ///
+    /// The bundled seed and the *published* fused seed were the same file: `Tools/fetch_seed.sh`
+    /// wrote one download into both `Cypress/Resources/` and `Fixtures/seed/`, so whatever the
+    /// bucket last advertised is what the next build shipped inside the app. That was survivable
+    /// while every published city was also a city worth carrying. It stopped being survivable when
+    /// New York landed — 1,097,382 trees, 706 MB — and the app would have handed every tester five
+    /// boroughs inside the download while the Cities screen offered those same boroughs as
+    /// downloads it would then refuse, because `CityInstallState` never offers a bundled city.
+    ///
+    /// The owner's ruling is that the bundle stays at pre-New-York scope: San Francisco and central
+    /// San Jose in the app, every other city over the wire. `Fixtures/seed/pinned-seed.json` is the
+    /// mechanism — it names the exact artifact, and `Tools/fetch_seed.sh` refuses a file whose
+    /// `seed_meta.id_spaces_in_file` disagrees with it.
+    ///
+    /// **This is the second signature, and it is not the same check.** The pin governs what a
+    /// *fetch* places; this governs what the *built app* actually contains, whichever way the file
+    /// got there — a hand-copied seed, a stale worktree, a `CYPRESS_SEED_SOURCE=live` run somebody
+    /// forgot they exported. Two files have to change to widen the app's scope, and both changes are
+    /// legible in a diff.
+    ///
+    /// **`Bundle.main`, deliberately, not the test bundle.** The unit suite runs hosted in the app,
+    /// so `Bundle.main` IS the shipping bundle; `BundledCityTests` prefers its own bundle because it
+    /// wants whichever seed it can reach, and this test wants the one that ships or nothing.
+    ///
+    /// It is not written in terms of `SeedCorpus`. The corpus adapts to whatever seed is attached —
+    /// it would have selected the three-city entry and passed, green, against the 706 MB bundle this
+    /// exists to refuse.
+    @Test("the app bundles San Francisco and San Jose; every other city arrives as a download")
+    func bundledSeedHoldsOnlyTheRuledScope() throws {
+        let cities = SeedCities.inBundle(.main).map(\.id).sorted()
+        #expect(
+            cities == ["sf", "us-ca-sj"],
+            """
+            the bundled seed holds \(cities). The app is ruled to carry San Francisco and central \
+            San Jose and nothing else — New York's five boroughs, and every city after them, reach \
+            a reader through the Cities screen. Check Fixtures/seed/pinned-seed.json names the \
+            pre-New-York artifact, then re-run Tools/fetch_seed.sh.
+            """
+        )
+    }
+
+    /// **The app's download size, stated as a fact about the build rather than a hope.**
+    ///
+    /// A ceiling and not a pin: a legitimate refresh of the same two cities moves the byte count by
+    /// megabytes, and pinning it would go red on every rebuild. What no legitimate change to the
+    /// *ruled scope* does is multiply it — the fused seed carrying New York is 706,535,424 bytes,
+    /// against 108,249,088 for the two California cities, and a bundle over this line is a bundle
+    /// carrying something the app was not meant to carry.
+    ///
+    /// Distinct from the scope assertion above, which is why both are here: that one answers "which
+    /// cities", this one answers "how big is the thing a tester downloads". A seed could pass either
+    /// and fail the other — `Tools/build_seed.py`'s `city_raw` passthrough alone is ~74 MB on the
+    /// same two cities.
+    @Test("the bundled seed stays a hundred-megabyte download, not a seven-hundred-megabyte one")
+    func bundledSeedStaysWithinTheAppSizeRuling() throws {
+        let url = try #require(SeedDatabase.urlInBundle(), "no seed in the app bundle")
+        let bytes = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
+        #expect(
+            bytes < 200_000_000,
+            """
+            the bundled seed is \(bytes) bytes. The two California cities are 108,249,088; the fused \
+            seed carrying New York is 706,535,424. A bundle this size is one a tester waits for and \
+            did not ask for — the boroughs are meant to arrive from the Cities screen.
+            """
+        )
+    }
+
     // MARK: - The fonts
 
     /// Read from Info.plist rather than hardcoded. A hardcoded list would keep passing after someone
