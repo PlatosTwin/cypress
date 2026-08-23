@@ -100,13 +100,36 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 		if photo.ClientUUID != nil {
 			var id uuid.UUID
 			var key string
+			var deletedAt *time.Time
 			err := tx.QueryRow(ctx, `
-				SELECT id, storage_key FROM photos
+				SELECT id, storage_key, deleted_at FROM photos
 				 WHERE client_uuid = $1
 				   AND (($2::uuid IS NOT NULL AND user_id = $2)
 				     OR ($3::uuid IS NOT NULL AND device_id = $3))
-			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key)
+			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key, &deletedAt)
 			if err == nil {
+				// ── A replay for a photograph that has since been withdrawn ──────────────────
+				//
+				// **Refused, and this is the honest one of the two available answers.** Without
+				// this arm the replay returned the tombstoned row together with a *fresh presigned
+				// PUT*, so a client still holding that upload would write the bytes and record the
+				// send as a success — after the contributor had deleted the picture. That is
+				// ERRATA E147's harm arriving through the one door that opens after the deletion
+				// gate, and it is worse here than anywhere else because nothing in this service
+				// deletes an object: bytes written after a withdrawal stay written (the obligation
+				// this round records in `docs/errata-pending/`).
+				//
+				// The alternative — mint a fresh row and let the upload proceed — was considered
+				// and is wrong twice. It resurrects something a person asked to be gone, and it
+				// cannot work anyway: the unique index does not exclude tombstoned rows, so the key
+				// is still taken and the insert would be refused.
+				//
+				// `ErrPhotoWithdrawn` rather than `ErrNotFound` so the caller can say the true
+				// thing; the handler maps it to `not_found`, which is non-retryable, so the client
+				// stops rather than spending 48 h re-asking for a photograph that is gone.
+				if deletedAt != nil {
+					return ErrPhotoWithdrawn
+				}
 				begun = BegunPhoto{ID: id, StorageKey: key, Existing: true}
 				return nil
 			}
@@ -259,6 +282,14 @@ func (s *Store) RejectPhoto(ctx context.Context, id uuid.UUID) error {
 // The caller maps it to `forbidden` — non-retryable, so the item fails on the spot rather than
 // spending 48 h on an answer that will not change.
 var ErrNotOwned = errors.New("photo belongs to another contributor")
+
+// ErrPhotoWithdrawn is returned when a begin replays a key whose photograph has been deleted.
+//
+// A separate error from ErrNotFound because the two are different facts and only one of them is
+// about a key this service has seen: "there is no such photograph" and "there was, and its
+// contributor took it back" lead to the same HTTP status by choice rather than by accident. See
+// BeginPhoto for why the answer is a refusal and not a fresh row.
+var ErrPhotoWithdrawn = errors.New("photo was withdrawn by its contributor")
 
 // withdrawPhoto tombstones one photograph inside an already-open transaction.
 //

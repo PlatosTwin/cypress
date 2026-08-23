@@ -38,6 +38,23 @@
 -- turning somebody else's key into a denial of service against a photograph, and leaking that the
 -- key exists. Scoping makes "already begun" a question only ever asked within one owner.
 --
+-- ── The consequence of scoping, named rather than discovered later ────────────────────────────
+--
+-- Per-owner keys mean one binary CAN produce two rows if the same `client_uuid` is begun first by a
+-- device and then by an account: to this table those are two contributors, and refusing the second
+-- would be exactly the cross-owner refusal the scoping exists to prevent. Measured in #116's review.
+--
+-- It is correct, and the reason is that the two owners are not really two: signing in calls
+-- `POST /devices/claim`, and `store.ClaimDevice` re-homes that installation's photographs onto the
+-- account in the same statement that claims it — so by the time an account-owned begin can happen,
+-- the device's earlier row already belongs to the account and the dedupe finds it. The same probe
+-- with a claim produces one row.
+--
+-- What is left is the window where an installation signs in **without** claiming, which no shipping
+-- path does. The honest description is that idempotency is per-owner and identity migration is what
+-- keeps that from being visible; if a future path ever signs in without claiming, this is the line
+-- that says what it will cost.
+--
 -- Partial (`WHERE client_uuid IS NOT NULL`) so the pre-existing rows, which all have NULL, do not
 -- collide with each other. Two indexes rather than one over `COALESCE(user_id, device_id)` because
 -- `photos` has exactly one owner by CHECK and the two arms are separate columns; a coalesced index

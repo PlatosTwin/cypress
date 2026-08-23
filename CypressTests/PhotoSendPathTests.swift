@@ -197,6 +197,77 @@ struct PhotoSendPathTests {
             offeredAfter == offeredBeforeDeletion,
             "the send sink was offered a photograph the contributor had already deleted"
         )
+
+        // ── The assertion this test was one short of, and what its absence cost ────────────────
+        //
+        // Everything above is about the *sink*, and all of it stayed green while the item wedged
+        // permanently: the orphaned `outbox_photos` row kept `photos_outstanding` at 1, so
+        // `markDoneIfComplete` never matched, phase B3 skipped the item without recording a reason,
+        // and the row sat in `uploading` forever still saying "One photo hasn't gone through yet"
+        // about a photograph the contributor had deleted — with no retry affordance, because
+        // `retry` requires `failed`. #116's review found it by measuring five consecutive drains.
+        //
+        // So the item is asserted too, and it is asserted **after more drains than one**: a single
+        // drain cannot tell "settled" from "not yet reached", and the defect's whole signature was
+        // that repetition changed nothing.
+        for _ in 0..<4 { _ = try await queue.drain() }
+
+        let settled = try #require(try await queue.records().first)
+        let outstanding = try await store.queue.read { connection in
+            try OutboxStore().outstandingPhotoCount(for: settled.id, connection: connection)
+        }
+        #expect(outstanding == 0, "the withdrawn photograph is still outstanding after five drains")
+        #expect(
+            settled.item.state == .done,
+            """
+            the item is \(settled.item.state) after five drains, and its reason reads \
+            \(settled.item.lastError ?? "nothing") — a withdrawn photograph must not wedge the \
+            mutation it rode on, and it must not leave a sentence promising a photograph in flight
+            """
+        )
+    }
+
+    // MARK: - 3b. R77's second gate, on its own
+
+    /// #116's review N1: removing `AND sendable = 1` from `sendablePhotos` left the whole 1653-test
+    /// suite green, because gate 1 — `settleAppliedPhoto`'s delete — had already removed the row
+    /// before that statement could be reached. Documenting an uncovered guard is not covering it,
+    /// and the stated reason both gates exist is that one guard is one edit away from none.
+    ///
+    /// So this reaches gate 2 by stepping **around** gate 1 rather than by disabling it: the binary
+    /// is applied while it is still sendable, so the delete does not fire, and only then is it
+    /// marked local-only. That is not a contrivance — it is the shape of the v18 migration itself,
+    /// which marks rows `sendable = 0` that are already in the queue.
+    @Test("a binary marked local-only after its apply is still never offered to the send sink")
+    func gateTwoAloneRefusesALocalOnlyBinary() async throws {
+        let store = try await CypressStore.inMemory()
+        let apply = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
+        let queue = OutboxQueue(queue: store.queue, apply: apply, send: send)
+
+        _ = try await queue.enqueue(
+            .visit(Self.visit()),
+            photos: [OutboxPhoto(path: try Self.stagedFile("gate2"), shotType: .fullTree)]
+        )
+
+        // Applied while sendable, so gate 1 keeps the row. The send fails, which is what leaves it
+        // `applied` and outstanding rather than completed.
+        _ = try await queue.drain()
+        let offeredBefore = await send.sentPhotos.count
+        #expect(offeredBefore == 1, "fixture: gate 1 removed the row, so gate 2 is not under test")
+
+        // Now it becomes local-only, exactly as v18 marks a pre-existing binary.
+        try await store.queue.write { connection in
+            try connection.execute("UPDATE outbox_photos SET sendable = 0")
+        }
+        await send.setScript(.allSucceed)
+        let report = try await queue.drain()
+
+        #expect(report.photosSent == 0, "gate 2 let a local-only binary through; R77 forbids it")
+        #expect(
+            await send.sentPhotos.count == offeredBefore,
+            "the send sink was offered a binary R77 keeps on the device"
+        )
     }
 
     // MARK: - 4b. The row says why, which is what screen 17 promises

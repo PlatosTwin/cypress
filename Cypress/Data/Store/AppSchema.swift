@@ -1755,6 +1755,46 @@ public enum AppSchema {
     /// apply like they are today. Only binaries staged after this migration carry `sendable = 1`.
     private static func applyV18(_ connection: SQLiteConnection) throws {
         guard try tableDefinition(named: "outbox_photos", connection: connection).isEmpty else { return }
+
+        // ── Refuse before moving anything, rather than dropping what will not parse ────────────
+        //
+        // The first version of this migration filtered unrecoverable elements out with a
+        // `WHERE … IS NOT NULL`, and computed `photos_outstanding` from the survivors — so an item
+        // carrying one good binary and one malformed one migrated to a single row, settled `done`,
+        // and satisfied "zero loss is a schema invariant" by forgetting the loss. #116's review
+        // measured five shapes that vanished: an object with no `path`, `path: null`, a JSON null,
+        // a number, and the mixed row that is the frightening one because it looks fine afterwards.
+        //
+        // Not reachable through the app today — `OutboxPhoto.path` is non-optional — and that is
+        // deliberately not the defense. A migration runs once, unattended, on somebody's own phone;
+        // what it discards is gone with nothing left to notice it by. Refusing turns a silent
+        // contribution loss into a crash that names the row, and the data is still on the device
+        // for the build that fixes it.
+        let malformed = try connection.prepare("""
+            SELECT COUNT(*) AS n,
+                   COALESCE(group_concat(DISTINCT outbox_id), '') AS items
+              FROM (
+                    SELECT outbox.id AS outbox_id
+                      FROM outbox, json_each(outbox.photo_paths)
+                     WHERE COALESCE(json_extract(value, '$.path'),
+                                    CASE WHEN json_type(value) = 'text' THEN value END) IS NULL
+                   )
+            """)
+        defer { malformed.finalize() }
+        if let found = try malformed.fetchOne({ row in
+            (count: try row.int("n"), items: try row.string("items"))
+        }), found.count > 0 {
+            throw MigrationError.unmigratableData(
+                migration: 18,
+                detail: """
+                    \(found.count) queued photo element(s) carry no recoverable path, on outbox \
+                    row(s) \(found.items). Each is a contribution's photograph; dropping them \
+                    would settle those items `done` with the binaries gone and nothing recording \
+                    that they were lost. Repair the rows and re-run.
+                    """
+            )
+        }
+
         try connection.execute("""
             -- ── Order matters here, and getting it wrong silently empties the queue ───────────
             --
@@ -1903,16 +1943,12 @@ public enum AppSchema {
             INSERT INTO outbox_photos_staged (outbox_id, path, shot_type, created_at, updated_at)
             SELECT outbox.id,
                    -- A bare-string element is a path; v2 rewrote those into objects, and this reads
-                   -- both rather than trusting that the rewrite reached every row. A row whose path
-                   -- could not be recovered either way is dropped by the `WHERE` below instead of
-                   -- becoming a NULL that the `state = 'pending'` CHECK would refuse outright.
+                   -- both rather than trusting the rewrite reached every row.
                    COALESCE(json_extract(value, '$.path'),
                             CASE WHEN json_type(value) = 'text' THEN value END),
                    COALESCE(json_extract(value, '$.shotType'), 'other'),
                    outbox.created_at, outbox.updated_at
-              FROM outbox, json_each(outbox.photo_paths)
-             WHERE COALESCE(json_extract(value, '$.path'),
-                            CASE WHEN json_type(value) = 'text' THEN value END) IS NOT NULL;
+              FROM outbox, json_each(outbox.photo_paths);
 
             UPDATE outbox_per_photo
                SET photos_outstanding = (
@@ -1960,6 +1996,26 @@ public enum AppSchema {
             BEGIN
                 UPDATE outbox SET photos_outstanding = photos_outstanding - 1
                  WHERE id = OLD.outbox_id;
+            END;
+
+            -- The third case, which the first two do not cover and which #116's review measured:
+            -- `UPDATE outbox_photos SET outbox_id = …` moved a row between items and left **both**
+            -- counters wrong, silently. One item could then settle `done` with a binary
+            -- outstanding, and the other could never settle at all.
+            --
+            -- **Forbidden rather than counted.** Maintaining the counter across a move would be
+            -- three more lines and would make reassignment look supported; nothing in this codebase
+            -- moves a binary between mutations, and there is no reading of the queue in which that
+            -- is a sensible thing to do — a photograph belongs to the mutation it was taken for. A
+            -- future author who needs it gets a loud, specific error rather than a drifting count,
+            -- which is the failure mode a denormalized counter exists to prevent in the first
+            -- place. The comment above says the triggers make the invariant true rather than merely
+            -- maintained; this is the trigger that makes that claim honest.
+            CREATE TRIGGER outbox_photos_never_reassigned
+            BEFORE UPDATE OF outbox_id ON outbox_photos
+            WHEN NEW.outbox_id <> OLD.outbox_id
+            BEGIN
+                SELECT RAISE(ABORT, 'outbox_photos.outbox_id is immutable: moving a binary would drift outbox.photos_outstanding on both sides');
             END;
             """)
     }

@@ -214,6 +214,27 @@ public enum DataGates {
             // `outbox_photos` and this counter — kept by that migration's two triggers — is what a
             // CHECK can read; SQLite CHECKs cannot hold a subquery. The invariant is v1's and is
             // unchanged: zero loss is a schema rule, not a convention.
+            // A binary cannot be moved between items: the counter both triggers maintain has no
+            // third arm, so a reassignment would leave one item able to settle with work
+            // outstanding and another unable to settle at all (`AppSchema` v18).
+            await rejects("outbox_photos row reassigned to another item", """
+                INSERT INTO outbox (id, kind, client_uuid, payload, state, local_applied,
+                    window_started_at, created_at, updated_at)
+                VALUES ('11111111-1111-4111-8111-111111111111','visit',
+                    '\(UUID().uuidString)','{}','pending',1,'\(now)','\(now)','\(now)');
+                INSERT INTO outbox (id, kind, client_uuid, payload, state, local_applied,
+                    window_started_at, created_at, updated_at)
+                VALUES ('22222222-2222-4222-8222-222222222222','visit',
+                    '\(UUID().uuidString)','{}','pending',1,'\(now)','\(now)','\(now)');
+                INSERT INTO outbox_photos (id, outbox_id, path, shot_type, state, sendable,
+                    created_at, updated_at)
+                VALUES ('33333333-3333-4333-8333-333333333333',
+                    '11111111-1111-4111-8111-111111111111','/tmp/move.jpg','full_tree','pending',1,
+                    '\(now)','\(now)');
+                UPDATE outbox_photos SET outbox_id = '22222222-2222-4222-8222-222222222222'
+                 WHERE id = '33333333-3333-4333-8333-333333333333';
+                """)
+
             await rejects("outbox row marked done with photos pending", """
                 INSERT INTO outbox (id, kind, client_uuid, payload, photos_outstanding, state,
                     local_applied, window_started_at, created_at, updated_at)

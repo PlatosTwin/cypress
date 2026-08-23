@@ -448,7 +448,13 @@ public actor OutboxQueue {
                 }
 
                 let pending = try await queue.write { connection in
-                    try store.sendablePhotos(for: record.id, connection: connection)
+                    // A withdrawn photograph's row goes first, so that refusing to send it does not
+                    // also mean refusing to ever finish the item (#116 review F1). This is the
+                    // drain-side half of that repair; `LocalAPI.deletePhoto` is the direct one.
+                    try store.discardWithdrawnPhotos(
+                        for: record.id, at: entry.settledAt, connection: connection
+                    )
+                    return try store.sendablePhotos(for: record.id, connection: connection)
                 }
                 guard !pending.isEmpty else { continue }
                 guard photoUploadsAllowed else {

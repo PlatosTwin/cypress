@@ -241,7 +241,93 @@ credential and neither changes behaviour — the first is what Fly sets anyway, 
 | `APPLE_PRIVATE_KEY` | yes | The `.p8` file's full PEM text, newlines and all. Read as-is; a value whose newlines were flattened to `\n` is also accepted. |
 | `APPLE_BUNDLE_ID` | no | `app.cypress.Cypress`. In `fly.toml` `[env]`, not in secrets — it is in every copy of the app. |
 | `OPERATOR_TOKEN` | yes | Authorizes the takedown route. Required: a takedown with no credential configured is a takedown that cannot be performed. |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `BUCKET_NAME` | yes | Already app secrets, set by `flyctl storage create` (see above). |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `BUCKET_NAME` | no | The **`cypress-cities`** bucket's, set as app secrets by `flyctl storage create`. The service itself no longer reads them — only the seed-publish relay does — but they must not be disturbed, which is the whole reason the photo bucket has its own names below. |
+| `PHOTOS_AWS_ACCESS_KEY_ID`, `PHOTOS_AWS_SECRET_ACCESS_KEY`, `PHOTOS_AWS_ENDPOINT_URL_S3`, `PHOTOS_AWS_REGION`, `PHOTOS_BUCKET_NAME` | yes | The **private photo bucket's**. The service refuses to boot without all five (`storage.PhotoConfig`), and each refusal names the variable it is missing. See "Provisioning the photo bucket" below — photographs may not share `cypress-cities`, which is public-read. |
+
+## Provisioning the photo bucket
+
+**Not yet done.** The service refuses to boot until it is, and these are the only commands that do
+it safely. Run them **as written**, including the `cd`.
+
+### Why the obvious command is the wrong one
+
+`flyctl storage create` provisions a Tigris bucket **and injects that bucket's credentials into an
+app as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` and
+`BUCKET_NAME`**. There is no flag that suppresses the injection. With no `--app`, flyctl resolves the
+target from `fly.toml` in the working directory — and `server/fly.toml` line 3 is
+`app = 'cypress-sync'`. So running it from `server/`, which is where every other command in this file
+is run from, overwrites the `cypress-cities` credentials the seed-publish relay depends on. It would
+break publishing **silently**: publishing is not something this service does, so nothing here goes
+red, and the next publish fails with `InvalidAccessKeyId` (ticket #248's symptom, from a new cause).
+
+### 1 · Create the bucket where no `fly.toml` can be found
+
+```sh
+cd "$(mktemp -d)"      # a directory with no fly.toml — this is the protection, not a formality
+test ! -e fly.toml || { echo "REFUSING: a fly.toml is reachable here"; exit 1; }
+fly storage create --name cypress-photos --org personal
+```
+
+`cd "$(mktemp -d)"` is what makes the injection impossible: with no `fly.toml` to read and no `--app`
+given, flyctl has no app to resolve and cannot write a secret onto one. The `test` line is there so
+that a shell which somehow started elsewhere stops rather than proceeds — the failure mode being
+guarded against is silent, so the guard is explicit. **If flyctl interactively offers to attach the
+bucket to an app, decline.** Copy the five values it prints; they are the new bucket's.
+
+### 2 · Prove the new bucket is private, with a control that proves the check works
+
+Public-read is the entire reason photographs get a second bucket, so this is verified rather than
+assumed — and verified with a **calibrated** command, because the obvious one passes vacuously.
+Anonymous reads are served only on the dedicated `*.t3.tigrisbucket.io` domain; the S3 API endpoints
+return 403 even for a public bucket, so a check aimed at `fly.storage.tigris.dev` "passes" for a
+world-readable bucket.
+
+```sh
+# Put one throwaway object in the new bucket first — a 404 on an absent key would also look private.
+printf 'probe' > /tmp/probe.txt
+aws s3 cp /tmp/probe.txt s3://cypress-photos/probe.txt --profile cypress-photos-tigris
+
+# THE CONTROL, run first: a bucket that IS public must answer 200 here. If this does not print 200,
+# the check itself is broken (wrong domain, no network, DNS) and the result below means nothing.
+curl -s -o /dev/null -w 'control cypress-cities: %{http_code}\n' \
+  https://cypress-cities.t3.tigrisbucket.io/manifest.json
+
+# THE CHECK: the new bucket must NOT answer 200 for the object that is definitely there.
+curl -s -o /dev/null -w 'photos bucket:        %{http_code}\n' \
+  https://cypress-photos.t3.tigrisbucket.io/probe.txt
+
+aws s3 rm s3://cypress-photos/probe.txt --profile cypress-photos-tigris
+```
+
+Expected: `control cypress-cities: 200` and `photos bucket: 403` (or 401). **A 200 on the second line
+means the bucket is public-read and must not be used for photographs** — every visibility rule on a
+photograph would be decoration, since the storage key is `photos/<uuid>.jpg` and that uuid travels to
+every device that reads the tree profile. A non-200 control means the test is broken; fix it before
+reading the second line at all.
+
+### 3 · Set the secrets under the photo prefix, on the app
+
+```sh
+fly secrets set --app cypress-sync \
+  PHOTOS_AWS_ACCESS_KEY_ID='…'      PHOTOS_AWS_SECRET_ACCESS_KEY='…' \
+  PHOTOS_AWS_ENDPOINT_URL_S3='…'    PHOTOS_AWS_REGION='…' \
+  PHOTOS_BUCKET_NAME='cypress-photos'
+```
+
+`--app cypress-sync` is explicit here and safe here: `fly secrets set` writes exactly the names given
+and nothing else, so naming the app is precise rather than dangerous. It is the *implicit* resolution
+in step 1 that had to be prevented.
+
+### 4 · Confirm nothing else moved
+
+```sh
+fly secrets list --app cypress-sync
+```
+
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` and `BUCKET_NAME`
+must show their **original digests** — `fly secrets list` prints a digest per secret, so an unchanged
+digest is evidence and an unchanged *name* is not. If any of the five changed, the seed-publish
+relay is broken: restore them from the Tigris dashboard's `cypress-cities` keys before deploying.
 
 ## Tests
 
@@ -303,7 +389,11 @@ a Postgres that do not exist yet. What it will need:
    depends on it), then `fly postgres attach --app cypress-sync`, which sets `DATABASE_URL`.
 2. **Secrets**, in one `fly secrets set`: `SESSION_SIGNING_KEY` (32+ random bytes),
    `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `OPERATOR_TOKEN`. The `AWS_*` and
-   `BUCKET_NAME` values are already set on the app.
+   `BUCKET_NAME` values are already set on the app — they are `cypress-cities`', and nothing here
+   should touch them.
+2b. **The five `PHOTOS_*` secrets**, which do *not* exist yet and which the service refuses to boot
+   without. See "Provisioning the photo bucket" below; that section is the only supported way to
+   create them, and it exists because the obvious command clobbers the `AWS_*` above.
 3. **An Apple `.p8` key** with Sign in with Apple enabled, and the Service ID / key configured in
    the Apple Developer account. Nothing in this repository can create one.
 4. **The deploy itself**, unchanged from the placeholder's:

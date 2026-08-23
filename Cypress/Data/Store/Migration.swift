@@ -30,6 +30,13 @@ public enum MigrationError: Error, CustomStringConvertible {
     /// The database is newer than this build of the app knows about. Refusing is the only safe
     /// answer: running an old app's queries against a newer schema silently returns wrong rows.
     case databaseIsAhead(databaseVersion: Int32, highestKnown: Int32)
+    /// A migration met data it cannot carry across, and refused rather than dropping it.
+    ///
+    /// **Refusing is the point.** A migration is where silent loss hides: it runs once, unattended,
+    /// on a person's own device, and whatever it quietly discards is discarded permanently with
+    /// nothing left to notice it by. A crash that names the row is recoverable — the data is still
+    /// there, and the next build can carry it — while a successful migration that dropped it is not.
+    case unmigratableData(migration: Int32, detail: String)
 
     public var description: String {
         switch self {
@@ -39,6 +46,8 @@ public enum MigrationError: Error, CustomStringConvertible {
             return "migration version \(version) must be >= 1; 0 means 'unmigrated'"
         case let .databaseIsAhead(databaseVersion, highestKnown):
             return "database is at user_version \(databaseVersion) but this build knows only up to \(highestKnown)"
+        case let .unmigratableData(migration, detail):
+            return "migration v\(migration) refused to run rather than lose data: \(detail)"
         }
     }
 }

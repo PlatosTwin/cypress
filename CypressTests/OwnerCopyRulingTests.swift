@@ -110,12 +110,41 @@ struct OwnerCopyRulingTests {
         // as a biconditional rather than as a new fixed expectation, so that reverting the sink
         // reverts the requirement instead of leaving a stale assertion behind.
         let carriesPhoto = methods.contains { $0.lowercased().contains("photo") }
-        // **The literal, not the file.** `AccountSection.swift` quotes the retired sentence in the
-        // doc comment that explains why it was retired, so a `contains` over the source would find
-        // the old promise in the prose recording its own removal and report the opposite of the
-        // truth. Reading `AccountCopy.storageBody` asks the drawn value.
-        let claimsPhotosStayOnDevice =
-            AccountCopy.storageBody.contains("Photos stay on this phone until you choose to")
+        // **The claim, not the retired literal** (#116 review N6). Matching the exact old sentence
+        // pinned the wording this round happens to have removed, so a differently-worded promise
+        // that photographs stay put would pass the guard vacuously — and since the section is
+        // explicitly awaiting a copy decision, a reword is the likeliest thing to happen to it.
+        //
+        // So the question is asked twice, from both sides, and the copy has to answer consistently:
+        // does it say photographs stay on the device, and does it say they travel? A sentence that
+        // does neither is also a failure — it would leave the app silent about photographs while
+        // the sink uploads them.
+        //
+        // **The literal, not the file**, still: `AccountSection.swift` quotes the retired sentence
+        // in the doc comment explaining why it was retired, so a `contains` over the source would
+        // find the old promise in the prose recording its own removal.
+        // **Clause by clause, because the true sentence contains both halves.** R77 makes the
+        // promise a split one — new photographs upload, older ones do not — so any guard that
+        // simply looked for "stay on this phone" anywhere in the body would fire on the correct
+        // copy. What is actually under test is narrower and is the thing a person reads: **does the
+        // clause that talks about photographs say they can leave?**
+        //
+        // A stays-put-only wording fails this however it is phrased, because such a sentence has no
+        // verb of travel in its photograph clause — which is what makes this pin the claim rather
+        // than the particular words this round happened to choose.
+        //
+        // Limits, stated rather than implied: it is a keyword rule over English, so a wording that
+        // avoided all five verbs would slip past it. It is a tripwire for a reworded promise, not a
+        // proof, and the exact sentence is separately pinned by the test above.
+        let clauses = AccountCopy.storageBody
+            .lowercased()
+            .components(separatedBy: CharacterSet(charactersIn: ".;"))
+            .filter { $0.contains("photo") }
+        let travelVerbs = ["upload", "sync", "share", "back up", "backed up"]
+        let photographsTravel = !clauses.isEmpty
+            && clauses.contains { clause in travelVerbs.contains { clause.contains($0) } }
+
+        let claimsPhotosStayOnDevice = !photographsTravel
         #expect(
             carriesPhoto != claimsPhotosStayOnDevice,
             """

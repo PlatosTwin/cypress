@@ -92,6 +92,11 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 		StorageKey:      storageKey,
 		ClientUUID:      request.ClientUUID,
 	}, who.owner())
+	if errors.Is(err, store.ErrPhotoWithdrawn) {
+		// Non-retryable, so a client still holding this upload stops asking rather than spending
+		// 48 h on a photograph its own contributor deleted. See `store.BeginPhoto`.
+		return apierr.New(apierr.NotFound, "That photo is not here.")
+	}
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}

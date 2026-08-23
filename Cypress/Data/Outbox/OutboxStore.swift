@@ -210,21 +210,53 @@ public struct OutboxStore {
     /// The mutation the binary rode on is left in the queue. A visit is not a photograph: the person
     /// asked to delete the picture, not the record of having stood in front of the tree.
     ///
+    /// ── It matches on the photograph's **id** as well as its staged path, and the id is the arm
+    /// that matters ────────────────────────────────────────────────────────────────────────────
+    ///
+    /// Keying on `path` alone was correct while a binary was only ever staged. It stopped being
+    /// correct when `AppSchema` v18 gave a binary a second half of its life: `markPhotoApplied`
+    /// sets `path = NULL` once the apply has moved the bytes into the container, so from that
+    /// moment nothing in this table can be found by path at all.
+    ///
+    /// **What that cost, measured in #116's review rather than reasoned about.** A photograph
+    /// withdrawn after its apply left its `outbox_photos` row behind forever. `sendablePhotos`
+    /// refused it (correctly — it is tombstoned), so phase B3 skipped the item entirely and never
+    /// even recorded a reason; `photos_outstanding` stayed at 1, so `markDoneIfComplete` never
+    /// matched; and the item sat in `uploading` across five consecutive drains still displaying
+    /// "One photo hasn't gone through yet" — a sentence promising a photograph in flight, about one
+    /// the contributor had deleted. The retry button could not clear it either, because `retry`
+    /// requires `failed` and this row was never failed. It was reachable in two ordinary steps: one
+    /// send fails for want of signal, then the person deletes the picture.
+    ///
+    /// So the match is `photo_id = :photo OR path = :path`, and the two arms are the binary's two
+    /// lives. `:path` is still needed on its own: before the apply there is no `photo_id` to match.
+    ///
     /// - Returns: how many queued rows were carrying it.
     @discardableResult
-    public func discardStagedPhoto(atPath path: String, at date: Date, connection: SQLiteConnection) throws -> Int {
+    public func discardPhoto(
+        id photoID: UUID,
+        stagedPath path: String?,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> Int {
         // The items that were carrying it, read before the delete because after it there is nothing
         // left to name them. The return value is a count of *rows carrying the binary*, which is
         // what the caller reports, and it stays that even though the delete is now on another table.
-        let owners = try connection.cachedStatement(
-            "SELECT DISTINCT outbox_id FROM outbox_photos WHERE path = :path"
-        )
-        _ = try owners.bind(path, forName: ":path")
+        let owners = try connection.cachedStatement("""
+            SELECT DISTINCT outbox_id FROM outbox_photos
+             WHERE photo_id = :photo COLLATE NOCASE
+                OR (:path IS NOT NULL AND path = :path)
+            """)
+        _ = try owners.bind([":photo": photoID, ":path": path])
         let ids = try owners.fetchAll { try $0.uuid("outbox_id") }
         _ = try owners.reset()
 
-        let statement = try connection.cachedStatement("DELETE FROM outbox_photos WHERE path = :path")
-        _ = try statement.bind(path, forName: ":path")
+        let statement = try connection.cachedStatement("""
+            DELETE FROM outbox_photos
+             WHERE photo_id = :photo COLLATE NOCASE
+                OR (:path IS NOT NULL AND path = :path)
+            """)
+        _ = try statement.bind([":photo": photoID, ":path": path])
         try statement.run()
         _ = try statement.reset()
 
@@ -535,6 +567,40 @@ public struct OutboxStore {
             """)
         _ = try statement.bind(id, forName: ":item")
         return try statement.fetchAll(Self.decodePhotoRow)
+    }
+
+    /// Drops the queue rows of binaries whose photograph has been withdrawn.
+    ///
+    /// **The drain's own half of the F1 repair, and the half that does not depend on which door the
+    /// deletion came through.** `LocalAPI.deletePhoto` calls `discardPhoto`, which is the direct
+    /// route; this is what makes the queue converge anyway when a row is tombstoned by any other
+    /// means — an operator takedown reaching this device, a future sync-down, a repair script.
+    /// Without it the drain's correct refusal to send a withdrawn photograph (`sendablePhotos`)
+    /// becomes a permanent wedge: the row is never sendable and never removed, so the item's
+    /// `photos_outstanding` never reaches zero and it can never settle.
+    ///
+    /// Only `applied` rows, and only against a tombstone. A `pending` row still has a staged file
+    /// and is the apply's business, and a photograph that simply has no `photos` row yet is not a
+    /// withdrawn one — the same distinction `sendablePhotos` draws, written the same way so the two
+    /// cannot disagree about what "withdrawn" means.
+    ///
+    /// - Returns: how many rows were dropped.
+    @discardableResult
+    public func discardWithdrawnPhotos(for id: UUID, at date: Date, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            DELETE FROM outbox_photos
+             WHERE outbox_id = :item AND state = 'applied'
+               AND EXISTS (
+                     SELECT 1 FROM photos
+                      WHERE photos.id = outbox_photos.photo_id AND photos.deleted_at IS NOT NULL
+                   )
+            """)
+        _ = try statement.bind(id, forName: ":item")
+        try statement.run()
+        let dropped = connection.changes
+        _ = try statement.reset()
+        if dropped > 0 { try touch(id, at: date, connection: connection) }
+        return dropped
     }
 
     /// The binaries an item still owes something for, whatever that something is. Used to decide
