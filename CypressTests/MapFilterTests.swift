@@ -331,18 +331,29 @@ struct MapFilterTests {
         // 1 · Most rows carry no planting date, which is why the control is bucketed by decade and
         // why its blind spot was worth a sentence until R41 ruled the sentence out.
         let undatedShare = Double(total - dated) / Double(total)
-        #expect(
-            undatedShare > 0.75 && undatedShare < 0.85,
-            "planting-date coverage moved: \(undatedShare) of \(total) rows are undated. The year filter's decade buckets were sized against roughly four in five being unjudgeable (E175, E176); re-read MapFilter.swift's header before repinning this."
-        )
+        if let band = corpus.undatedShareBand {
+            #expect(
+                band.contains(undatedShare),
+                "planting-date coverage moved: \(undatedShare) of \(total) rows are undated, outside \(band) for the \(corpus.source) corpus. The year filter's decade buckets were sized against roughly four in five being unjudgeable (E175, E176); re-read MapFilter.swift's header before repinning this."
+            )
+        }
 
         // 2 · Vacant sites are a large enough share of the map to be worth their own filter (#179),
         // which is the premise ROADMAP §1 and RULINGS R7 argue from.
+        //
+        // **The band is keyed by corpus because the argument is, and the s17 publish proved it.**
+        // New York publishes no vacant planting sites whatsoever, so the whole-corpus share fell
+        // from 0.12184 to 0.02206 the moment its 898,643 rows landed — while inside `sf`, where
+        // #179's argument was actually made, it is unmoved at 0.08503. Widening one band to hold
+        // both would have left a range so loose it asserted nothing, which is how a share check
+        // stops noticing that a city stopped publishing vacant sites at all.
         let vacantShare = Double(vacant) / Double(total)
-        #expect(
-            vacantShare > 0.08 && vacantShare < 0.18,
-            "vacant planting sites are now \(vacantShare) of \(total) rows. #179 exists because they are a large minority of the map; if this moved a lot, that argument moved."
-        )
+        if let band = corpus.vacantShareBand {
+            #expect(
+                band.contains(vacantShare),
+                "vacant planting sites are now \(vacantShare) of \(total) rows, outside \(band) for the \(corpus.source) corpus. #179 exists because they are a large minority of the map; if this moved a lot, that argument moved."
+            )
+        }
 
         // 3 · **The premise of task #178**: a lot of vacant sites carry a planting date, so the
         // year filter had a large wrong answer to give and the exclusion is not theoretical. If

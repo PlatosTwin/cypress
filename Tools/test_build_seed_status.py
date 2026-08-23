@@ -42,11 +42,14 @@ from inventory_contract import (  # noqa: E402
     KindBasis,
 )
 from build_seed import (  # noqa: E402
+    NORMALISED_SEED_COLUMNS,
     REGION_ROW_INDEX,
     REGIONS,
     STATUS_FOR_CONDITION,
     TREE_COLUMNS,
+    canonical_case_map,
     check_rows_from,
+    normalise_case,
     resolve_region_ids,
     status_for_record,
 )
@@ -492,6 +495,97 @@ check(_stop is not None and "7" in _stop,
 check(_resolve([_row("us-ny-nyc", "Queens")], _nyc_keys) is None,
       "a record naming its borough did not resolve against the borough keys, so the checks "
       "above prove nothing about `None` in particular")
+
+# --------------------------------------------------------------------------
+# THE #95 FOLD, PINNED AT ITS INDEX.
+#
+# `normalise_case` rewrites values inside `tree_rows` by column index. It once
+# computed those indices from its own hand-written copy of the row layout, and
+# when `region_id` was inserted at index 6 for s17 every index from 6 onward
+# went one too small: the fold read `address` where it meant `site_type` and
+# `verification_state` where it meant `legal_status`. It matched nothing,
+# rewrote nothing, and reported `case_normalised_values = 0` -- which reads
+# exactly like "there was nothing to fold". The published s17 seed shipped with
+# the unfolded pairs and the seed contract caught it a publish later.
+#
+# THE SPECIMEN IS BUILT TO CATCH THAT DRIFT SPECIFICALLY, not merely to exercise
+# the fold. One row carries the literal string `Park strip` in `address` -- a
+# column deliberately NOT in NORMALISED_SEED_COLUMNS, and the exact column the
+# broken index read when it meant `site_type`. So if the index slips by one
+# again, the fold rewrites that address and the control below fails, whichever
+# way the slip goes.
+# --------------------------------------------------------------------------
+
+
+def _tree_row(**values) -> list:
+    """A `tree_rows` row of the right width, addressed by column NAME."""
+    row = [None] * len(TREE_COLUMNS)
+    for name, value in values.items():
+        row[TREE_COLUMNS.index(name)] = value
+    return row
+
+
+_fold_rows = [
+    # The majority spellings, which decide the canonical form.
+    _tree_row(plant_type="Tree", site_type="Park Strip", address="100 Main St"),
+    _tree_row(plant_type="Tree", site_type="Park Strip", address="200 Main St"),
+    # The variants the fold must merge -- one per column, so the two counts are
+    # distinguishable and a fold that moved only one of them cannot pass.
+    _tree_row(plant_type="tree", site_type="Park Strip", address="300 Main St"),
+    # The trap: `address` holds the string `site_type`'s mapping would match,
+    # and `address` is the column the historical off-by-one actually read.
+    _tree_row(plant_type="Tree", site_type="Park strip", address="Park strip"),
+]
+_fold_counts = {column: {} for column in NORMALISED_SEED_COLUMNS}
+for _row in _fold_rows:
+    for _column in NORMALISED_SEED_COLUMNS:
+        _value = _row[TREE_COLUMNS.index(_column)]
+        if _value:
+            _fold_counts[_column][_value] = _fold_counts[_column].get(_value, 0) + 1
+
+_fold_log: list[str] = []
+_fold_changed = normalise_case(_fold_rows, _fold_counts, _fold_log.append)
+
+check(_fold_changed == 2,
+      f"the fold rewrote {_fold_changed} values over a specimen carrying exactly two case "
+      "variants (one plant_type, one site_type); 0 is the signature of the index drift the "
+      "published s17 seed shipped with")
+check(_fold_rows[2][TREE_COLUMNS.index("plant_type")] == "Tree",
+      "the fold left plant_type spelled 'tree' beside 'Tree', which is the pair #95 exists "
+      "to remove")
+check(_fold_rows[3][TREE_COLUMNS.index("site_type")] == "Park Strip",
+      "the fold left site_type spelled 'Park strip' beside 'Park Strip'")
+
+# THE CONTROL, and the reason the specimen looks like this. `address` is not a
+# normalised column, so it must survive verbatim -- including the row whose
+# address is the very string site_type's mapping replaces. This is what goes red
+# if the index slips by one in either direction.
+check(_fold_rows[3][TREE_COLUMNS.index("address")] == "Park strip",
+      "the fold rewrote `address`, which is not in NORMALISED_SEED_COLUMNS -- the column index "
+      "has drifted off TREE_COLUMNS again, exactly as it did when region_id landed")
+
+# The fold's own report is part of the contract: `over 0 rows` beside a non-empty
+# mapping is what the defect looked like in the build log, and nobody read it.
+check(any("plant_type" in line and "over 1 rows" in line for line in _fold_log),
+      f"the fold did not report folding one plant_type row; it said {_fold_log}")
+check(any("site_type" in line and "over 1 rows" in line for line in _fold_log),
+      f"the fold did not report folding one site_type row; it said {_fold_log}")
+
+# Calibration in the other direction: a corpus with no variant folds nothing and
+# says nothing, so the assertions above are about variants and not about the
+# function always reporting something.
+_clean_rows = [_tree_row(plant_type="Tree", site_type="Park Strip", address="100 Main St")]
+_clean_counts = {column: {} for column in NORMALISED_SEED_COLUMNS}
+_clean_counts["plant_type"] = {"Tree": 1}
+_clean_counts["site_type"] = {"Park Strip": 1}
+_clean_log: list[str] = []
+check(normalise_case(_clean_rows, _clean_counts, _clean_log.append) == 0 and not _clean_log,
+      "a corpus with no case variant still reported a fold, so the counts above prove nothing")
+
+# And the mapping itself picks the commonest spelling, which is what makes the
+# fold reproducible across rebuilds rather than dependent on row order.
+check(canonical_case_map({"Tree": 2, "tree": 1}) == {"Tree": "Tree", "tree": "Tree"},
+      "canonical_case_map did not choose the commonest spelling as the winner")
 
 # --------------------------------------------------------------------------
 
