@@ -34,12 +34,12 @@ sys.path.insert(0, HERE)
 import publish_cities  # noqa: E402
 from publish_cities import (  # noqa: E402
     COVERAGE_KEYS,
-    LEGACY_MANIFEST_FORMAT,
     MANIFEST_FORMAT,
-    MANIFEST_V1_NAME,
     MANIFEST_V2_NAME,
+    RETIRED_MANIFEST_V1_NAME,
     SEED_SCHEMA_VERSION,
     coverage_for,
+    write_upload_sh,
 )
 
 FAILURES: list[str] = []
@@ -296,9 +296,20 @@ check(SEED_SCHEMA_VERSION == 17,
       f"is 17; a published file this build writes would be refused by the app that reads it")
 check(MANIFEST_FORMAT == 2,
       f"MANIFEST_FORMAT is {MANIFEST_FORMAT}, but CityManifest.knownFormat is 2")
-check(LEGACY_MANIFEST_FORMAT == 1,
-      "the legacy manifest stopped being format 1, which is the only format an unupdated "
-      "install reads (RULING D8)")
+
+# The retired name is still spelled the way the frozen object in the bucket is
+# spelled. Fails if: someone "tidied" the constant after retirement -- the guard
+# below and the app's archival fallback both name this exact object, and a
+# renamed constant would silently stop matching the file it is about.
+check(RETIRED_MANIFEST_V1_NAME == "manifest.json",
+      f"RETIRED_MANIFEST_V1_NAME is {RETIRED_MANIFEST_V1_NAME!r}; the frozen format-1 "
+      f"object in the bucket is named manifest.json and CityDownloader.legacyManifestName "
+      f"still fetches that name")
+check(not hasattr(publish_cities, "MANIFEST_V1_NAME"),
+      "publish_cities still exports MANIFEST_V1_NAME, the name it wrote format 1 under; "
+      "retirement means the writable constant is gone, not renamed")
+check(not hasattr(publish_cities, "LEGACY_MANIFEST_FORMAT"),
+      "publish_cities still exports LEGACY_MANIFEST_FORMAT; nothing emits format 1 any more")
 
 # --------------------------------------------------------------------------
 # 3. The publish itself, end to end, against the two-borough fixture
@@ -316,8 +327,6 @@ try:
     if result.returncode == 0:
         with open(os.path.join(out, MANIFEST_V2_NAME)) as fh:
             v2 = json.load(fh)
-        with open(os.path.join(out, MANIFEST_V1_NAME)) as fh:
-            v1 = json.load(fh)
 
         # -- 3a. one pack per region, not per id space. THE POINT OF THE ROUND.
         # Fails if: the publisher went back to narrowing on id_space, which would
@@ -361,24 +370,26 @@ try:
                   f"/{queens['id']}.sqlite"),
               f"a borough pack's path is not keyed on its pack id: {queens['path']}")
 
-        # -- 3e. RULING D8: the format-1 manifest lists WHOLE CITIES ONLY
-        # Fails if: a borough leaks into the format-1 list, where a reader with no
-        # concept of a region would draw "Queens" as a city with its own civic
-        # identity. This is the entire point of dual-publishing.
-        check(v1["manifest_format"] == LEGACY_MANIFEST_FORMAT,
-              f"{MANIFEST_V1_NAME} is format {v1['manifest_format']}, not 1; every unupdated "
-              f"install would lose the whole Cities screen")
+        # -- 3e. FORMAT 1 IS RETIRED: the publish writes ONE catalogue.
+        # Fails if: `write_manifest_v1` comes back, or a merge restores the
+        # `legacy_entries` block. This is the whole subject of the retirement
+        # round, and it is an assertion about a FILE the publisher did not write
+        # rather than about a flag it set.
         check(v2["manifest_format"] == MANIFEST_FORMAT,
               f"{MANIFEST_V2_NAME} is format {v2['manifest_format']}, not {MANIFEST_FORMAT}")
-        legacy_ids = [c["id"] for c in v1["cities"]]
-        check(legacy_ids == ["sf"],
-              f"the format-1 manifest lists {legacy_ids}; it must list city-level packs only")
+        written = sorted(f for f in os.listdir(out) if f.endswith(".json"))
+        check(written == [MANIFEST_V2_NAME],
+              f"the publish wrote {written}; format 1 is retired, so {MANIFEST_V2_NAME} must "
+              f"be the only catalogue in the output")
+        check(not os.path.exists(os.path.join(out, RETIRED_MANIFEST_V1_NAME)),
+              f"{RETIRED_MANIFEST_V1_NAME} was written; the copy in the bucket is FROZEN and "
+              f"a fresh one beside it is the artifact that could overwrite it")
 
-        # -- 3f. every pack named by either manifest exists and hashes as claimed
-        for name, doc in ((MANIFEST_V1_NAME, v1), (MANIFEST_V2_NAME, v2)):
-            for entry in doc["cities"]:
-                p = os.path.join(out, entry["path"])
-                check(os.path.exists(p), f"{name} names {entry['path']}, which was not written")
+        # -- 3f. every pack the manifest names exists
+        for entry in v2["cities"]:
+            p = os.path.join(out, entry["path"])
+            check(os.path.exists(p),
+                  f"{MANIFEST_V2_NAME} names {entry['path']}, which was not written")
 
         # -- 3g. a borough pack carries its own region row and no other
         # Fails if: `dim_region` was not narrowed, so a Queens pack would ship
@@ -727,6 +738,111 @@ try:
           f"packs were written before the region resolution failed: {packs_written(out)}")
 finally:
     shutil.rmtree(workdir, ignore_errors=True)
+
+# --------------------------------------------------------------------------
+# 6. A STALE FORMAT-1 MANIFEST IN --out STOPS THE RUN
+# --------------------------------------------------------------------------
+# The retirement guard, calibrated in both directions. `--out` is only cleared of
+# `cities/`, so a dist/ left over from a dual-publish round still carries that
+# round's manifest.json -- and an operator uploading dist/ by hand would rewrite
+# the FROZEN object in the bucket with an older truth.
+#
+# Fails if: the guard is removed, or is turned into a silent cleanup step. Both
+# directions are exercised because the passing case here is the entire body of
+# section 3 above -- a guard that refused every run would also make section 3 red,
+# but a guard that refused NO run would leave section 3 green, and only the first
+# half below can tell those apart.
+
+workdir = tempfile.mkdtemp(prefix="test-publish-stale-v1-")
+try:
+    db = os.path.join(workdir, "seed.sqlite")
+    out = os.path.join(workdir, "dist")
+    build_fixture(db, meta_extra={"coverage_us-ny-nyc": "full"})
+
+    # -- 6a. RED: a stale format-1 object present, and the run must refuse.
+    os.makedirs(out, exist_ok=True)
+    stale = os.path.join(out, RETIRED_MANIFEST_V1_NAME)
+    with open(stale, "w") as fh:
+        json.dump({"manifest_format": 1, "cities": []}, fh)
+    result = run_publisher(db, out)
+    check(result.returncode != 0,
+          "the publisher finished with a retired format-1 manifest.json sitting in --out; "
+          "that file is what an operator would upload over the frozen object")
+    check(RETIRED_MANIFEST_V1_NAME in result.stderr,
+          f"the refusal does not name the offending file: {result.stderr.strip()[:220]}")
+    check("frozen" in result.stderr.lower(),
+          f"the refusal does not say WHY the stale file matters -- that the bucket's copy is "
+          f"frozen: {result.stderr.strip()[:220]}")
+    check(os.path.exists(stale),
+          "the guard DELETED the stale manifest instead of refusing; a guard that removes its "
+          "own subject can never fail again")
+
+    # -- 6b. GREEN: remove it, and the identical run succeeds.
+    # Without this half, a guard that refused unconditionally would look correct.
+    #
+    # Guarded rather than a bare `os.remove`: if the guard under test has been
+    # turned into a silent cleanup, the file is already gone here and a bare
+    # remove raises FileNotFoundError -- killing the run before the summary, so
+    # the operator would see a traceback from THIS file instead of 6a's named
+    # diagnosis of the actual defect. Found by red-proofing that exact mutation.
+    if os.path.exists(stale):
+        os.remove(stale)
+    result = run_publisher(db, out)
+    check(result.returncode == 0,
+          f"the same publish failed once the stale file was removed, so the guard is not "
+          f"reacting to that file:\n{result.stderr.strip()[:400]}")
+    check(not os.path.exists(stale),
+          "a format-1 manifest reappeared in --out after a clean run")
+finally:
+    shutil.rmtree(workdir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+# 7. upload.sh NEVER TOUCHES THE RETIRED OBJECT
+# --------------------------------------------------------------------------
+# The publisher not WRITING format 1 and the upload script not UPLOADING it are
+# two different properties, and only the second one can overwrite the frozen copy
+# in the bucket. `write_upload_sh` was documented as extracted so it could be
+# exercised directly (#248) and until this round nothing exercised it.
+
+upload_dir = tempfile.mkdtemp(prefix="test-publish-upload-")
+try:
+    fake_entries = [
+        {"id": "sf", "path": "cities/sf/s17-r2026-08-22-abcd1234/sf.sqlite"},
+        {"id": "us-ny-nyc-queens",
+         "path": "cities/us-ny-nyc-queens/s17-r2026-08-22-abcd1234/us-ny-nyc-queens.sqlite"},
+    ]
+    script_path = write_upload_sh(upload_dir, fake_entries, "seed/abcd1234/cypress-seed.sqlite")
+    with open(script_path) as fh:
+        script = fh.read()
+
+    # Fails if: the legacy manifest is uploaded or verified again. Checked against
+    # the whole script rather than one line, because either an `aws s3 cp` or a
+    # `curl ... | cmp` naming it would be a write or a claim about the frozen file.
+    offending = [ln for ln in script.splitlines()
+                 if RETIRED_MANIFEST_V1_NAME in ln and "manifest-v2.json" not in ln]
+    check(offending == [],
+          f"upload.sh still references the retired {RETIRED_MANIFEST_V1_NAME}: {offending}")
+
+    # Calibration: the same search DOES find the live manifest, so an empty result
+    # above means "absent" rather than "the search matches nothing".
+    v2_lines = [ln for ln in script.splitlines() if MANIFEST_V2_NAME in ln]
+    check(len(v2_lines) >= 2,
+          f"upload.sh does not both upload and verify {MANIFEST_V2_NAME}; the check above "
+          f"cannot be trusted to find a filename at all. Found: {v2_lines}")
+
+    # R37.2's ordering: every immutable file lands before the mutable catalogue
+    # that names it. Fails if: the manifest upload drifts above the pack uploads.
+    cp_lines = [ln for ln in script.splitlines() if ln.startswith("aws s3 cp")]
+    check(MANIFEST_V2_NAME in cp_lines[-1],
+          f"the manifest is not the LAST object uploaded; a reader could see a catalogue "
+          f"naming files that are not there yet. Last cp: {cp_lines[-1]!r}")
+    check(len(cp_lines) == len(fake_entries) + 2,
+          f"upload.sh uploads {len(cp_lines)} objects for {len(fake_entries)} packs; expected "
+          f"one per pack plus the seed plus one manifest")
+finally:
+    shutil.rmtree(upload_dir, ignore_errors=True)
+
 
 # --------------------------------------------------------------------------
 
