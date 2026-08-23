@@ -190,10 +190,11 @@ MANIFEST_FORMAT = 2
 # a new name instead, and `manifest.json` kept its format-1 shape listing
 # whole-city packs only.
 #
-# The window has closed. The owner retired format 1 on 2026-08-23, overriding
-# the trigger the s17 round had recorded (the publish AFTER New York); see
-# `docs/rulings-pending/format1-retirement.md`. The NYC publish of 2026-08-23 is
-# therefore the last format-1 object there will ever be.
+# The window has closed. The owner retired format 1 on 2026-08-23, overriding the
+# trigger the s17 round had recorded (the publish AFTER New York) -- the ruling
+# that retires format 1 immediately and freezes rather than deletes the published
+# object. The NYC publish of 2026-08-23 is therefore the last format-1 object
+# there will ever be.
 #
 # THE FROZEN OBJECT IS NOT DELETED, AND THAT IS THE POINT. `manifest.json` stays
 # in the bucket exactly as that publish left it, serving builds <= 47 a catalogue
@@ -613,6 +614,18 @@ def main() -> None:
     ap.add_argument("--base-url", default="https://cypress-cities.t3.tigrisbucket.io")
     args = ap.parse_args()
 
+    # BEFORE ANYTHING IS WRITTEN, and deliberately before the input checks too.
+    # The same guard runs again after the manifest is written, and the two catch
+    # different things: this one catches a stale format-1 object the operator
+    # brought with them, the late one catches THIS SCRIPT writing one itself.
+    #
+    # Only the early call can keep a refused run from leaving output behind.
+    # Refusing at the end hands the operator a staging directory that looks
+    # complete -- packs, seed copy, fresh manifest -- sitting beside the very
+    # artifact that made the run illegal, which is a worse state to be in than
+    # the one the guard exists to prevent.
+    assert_no_legacy_manifest(args.out)
+
     if not os.path.exists(args.db):
         fail(f"no seed at {args.db} -- run Tools/build_seed.py or "
              "Tools/setup_worktree.sh first", 3)
@@ -979,8 +992,12 @@ def main() -> None:
         if os.path.getsize(full) != entry["bytes"]:
             fail(f"{name}: {entry['id']}: manifest byte size does not match the file")
 
-    # Format 1 is retired: nothing in --out may carry the retired name.
-    assert_no_legacy_manifest(args.out)
+    # The second call. The first ran before any write, so an operator's stale
+    # object never gets this far; what is left for this one is a REGRESSION IN
+    # THIS FILE -- a restored `write_manifest_v1`, or a merge bringing the
+    # legacy block back. Cheap, and it fails the run that produced the file
+    # rather than the next one.
+    assert_no_legacy_manifest(args.out, when="after")
 
     upload_sh = write_upload_sh(args.out, entries, seed_rel)
 
@@ -991,14 +1008,26 @@ def main() -> None:
     print("OK")
 
 
-def assert_no_legacy_manifest(out_dir: str) -> None:
-    """Refuse to finish a publish whose output directory holds a format-1 manifest.
+def assert_no_legacy_manifest(out_dir: str, when: str = "before") -> None:
+    """Refuse a publish whose output directory holds a format-1 manifest.
 
-    NOT a cleanup step, deliberately. Deleting the stale file here would make this
-    check unable to fail, which is the failure mode this repository keeps paying
-    for -- a guard that is green because it removed its own subject. It refuses and
-    names the fix instead, so the operator sees that a stale artifact was sitting
-    beside the fresh one.
+    `when` is "before" or "after" the run's own writes, and it selects the
+    diagnosis rather than the check: the same file means "you brought this" at the
+    first call site and "this script produced this" at the second, and those have
+    opposite fixes.
+
+    CALLED TWICE, and the placement is the point. Once at the very top of `main`,
+    before a single byte is written, and once after the manifest is written. The
+    early call is what keeps a refused run from leaving output behind -- refusing
+    only at the end would hand the operator a staging directory that looks
+    complete, sitting beside the artifact that made the run illegal. The late call
+    costs one `stat` and catches the other author of that file: this script itself,
+    if `write_manifest_v1` is ever restored by a merge.
+
+    NOT a cleanup step, deliberately. Deleting the stale file would make this check
+    unable to fail, which is the failure mode this repository keeps paying for -- a
+    guard that is green because it removed its own subject. It refuses and names
+    the fix instead.
 
     What it is guarding: `--out` is only cleared of `cities/`, so a dist/ left over
     from a dual-publish round still carries that round's `manifest.json`. Uploading
@@ -1006,11 +1035,21 @@ def assert_no_legacy_manifest(out_dir: str) -> None:
     the one mutation retirement is supposed to make impossible.
     """
     stale = os.path.join(out_dir, RETIRED_MANIFEST_V1_NAME)
-    if os.path.exists(stale):
-        fail(f"{stale} exists, and format 1 is retired -- this publisher no longer "
-             f"writes it. It is left over from a dual-publish round. Delete it "
-             f"(`rm {stale}`) and re-run: the copy in the bucket is FROZEN and must "
-             f"not be overwritten by a newer run's idea of a format-1 catalogue.")
+    if not os.path.exists(stale):
+        return
+    # The two call sites diagnose the SAME file to two different causes, and
+    # telling the operator the wrong one sends them looking in the wrong place.
+    # Before any write, the file predates this run. After, this run made it.
+    if when == "before":
+        cause = (f"It is left over from an earlier round, when format 1 was still "
+                 f"published. Delete it (`rm {stale}`) and re-run.")
+    else:
+        cause = ("THIS RUN WROTE IT, which is a defect in Tools/publish_cities.py "
+                 "-- the format-1 writer has been restored, most likely by a merge. "
+                 "Do not delete the file and re-run; fix the publisher.")
+    fail(f"{stale} exists, and format 1 is retired -- this publisher no longer writes "
+         f"it. {cause} The copy in the bucket is FROZEN and must not be overwritten "
+         f"by a newer run's idea of a format-1 catalogue.")
 
 
 def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,

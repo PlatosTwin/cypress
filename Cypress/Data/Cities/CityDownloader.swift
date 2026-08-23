@@ -119,14 +119,27 @@ public struct CityDownloader: Sendable {
     /// `legacyManifestName` for what that covers now that format 1 is retired and the live
     /// bucket always carries a format-2 catalog.
     ///
-    /// **The fallback is on "the object is not there", and on nothing else.** A 404 (or a missing
-    /// `file://` fixture) means the publisher has not run since format 2 landed, which is a
-    /// transitional fact about the bucket and is recoverable. A 500, a timeout, a truncated body
+    /// **The fallback is on "the object is not there", and on nothing else.** That the object is
+    /// absent is a fact about the *bucket* and is recoverable; a 500, a timeout, a truncated body
     /// or a manifest that does not decode are all facts about *this fetch*, and retrying them
     /// against a different path would turn one honest error into a second confusing one — and
-    /// would quietly downgrade a reader to the whole-cities-only catalog on a transient blip. So
-    /// only `.unacceptableStatus(404)` and a file-not-found `URLError` reach the second attempt;
-    /// everything else propagates from the first.
+    /// would quietly downgrade a reader to the whole-cities-only catalog on a transient blip.
+    ///
+    /// `isNotFound` is the exact predicate, and absence has **four** spellings here, not one:
+    /// `.unacceptableStatus(404)`, `.unacceptableStatus(403)`, a `URLError` of
+    /// `.fileDoesNotExist` or `.resourceUnavailable`, and a Cocoa `NSFileReadNoSuchFileError`
+    /// (how `file://` fixtures report a missing file). Everything else propagates from the first
+    /// attempt.
+    ///
+    /// **`403` is deliberate and is the one that looks like a bug.** An S3-compatible store
+    /// answers `403` rather than `404` for a key the caller may not enumerate, and Tigris has
+    /// served `HEAD 200` beside `GET 403` on the same key (server/README.md) — so on the public
+    /// domain, an object that was simply never published can arrive as `403`. A fallback watching
+    /// `404` alone was dead code exactly where it was needed. It cannot mask an authorization
+    /// failure because there is nothing to authorize: every request from this type is anonymous,
+    /// so `403` and `404` carry the same information. And a genuinely private bucket still
+    /// surfaces, because the fallback fetch answers `403` too and *its* error propagates. Ruled
+    /// in the s17 round; see `isNotFound`'s own documentation for the full argument.
     public func fetchManifest() async throws -> CityManifest {
         do {
             return try await fetchManifest(named: Self.manifestName)

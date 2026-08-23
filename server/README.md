@@ -54,9 +54,10 @@ to paste keys per-publish is the exact failure #248 records twice. An agent with
 
 1. Put the `dist/` files on a temporary release on this repo (`gh release create
    seed-relay-tmp … --prerelease --latest=false`): one pack per published region, the fused
-   seed, and `manifest-v2.json`. That was four files at s16 and is eight after New York, so
-   count them off `manifest-v2.json` rather than from memory. **Never `manifest.json`** — it is
-   retired and the bucket's copy is frozen (step 3).
+   seed, and `manifest-v2.json` — **the number of packs the manifest lists, plus two**. Four
+   assets at s16 (2 packs); nine after New York (7 packs). Count them off the manifest rather
+   than from memory, and note it is deliberately not the same number as step 3 checks.
+   **Never `manifest.json`** — it is retired and the bucket's copy is frozen (step 3).
    The bytes are public-by-design — they are about to be served anonymously from the bucket.
 2. Launch a throwaway worker on the `cypress-sync` app, which inherits the bucket secrets as
    env: `alpine:3.20`, ~512 MB, entrypoint `sh -c` with command `sleep 3600` (the MCP runner
@@ -64,8 +65,11 @@ to paste keys per-publish is the exact failure #248 records twice. An agent with
 3. `exec` has a ~30 s transport ceiling: run every long step detached
    (`nohup sh -c '… && touch /tmp/x.done || touch /tmp/x.fail' &`) and poll the marker files.
    Steps: `apk add --no-cache aws-cli`; `wget` the release assets; `sha256sum -c` against
-   the hashes in `manifest-v2.json` (write the sums file with one `echo` per line — `printf
-   '\n'` mangles through the nested quoting); `aws s3 cp` each to its manifest path with
+   the hashes in `manifest-v2.json` — **one hash per pack, plus one for the seed**, so eight
+   after New York and one fewer than the assets you uploaded in step 1: a manifest states no
+   hash of itself, and it is verified in step 4 by `cmp` instead. (Write the sums file with one
+   `echo` per line — `printf '\n'` mangles through the nested quoting.) `aws s3 cp` each to its
+   manifest path with
    `--endpoint-url $AWS_ENDPOINT_URL_S3`, cities and seed first, manifest LAST with
    `--content-type application/json`. Never print any `AWS_*` value — names only.
 

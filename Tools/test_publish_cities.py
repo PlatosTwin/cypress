@@ -773,9 +773,34 @@ try:
     check("frozen" in result.stderr.lower(),
           f"the refusal does not say WHY the stale file matters -- that the bucket's copy is "
           f"frozen: {result.stderr.strip()[:220]}")
+    # The diagnosis must match the call site. This file arrived with the operator,
+    # so the fix is `rm` -- telling them instead that the publisher is broken sends
+    # them to read code that is fine. The two causes have opposite fixes, which is
+    # why the message is chosen rather than shared.
+    check("THIS RUN WROTE IT" not in result.stderr,
+          f"the early guard blamed the publisher for a file the operator brought: "
+          f"{result.stderr.strip()[:220]}")
+    check(f"rm {stale}" in result.stderr,
+          f"the refusal does not give the operator the command that fixes it: "
+          f"{result.stderr.strip()[:220]}")
     check(os.path.exists(stale),
           "the guard DELETED the stale manifest instead of refusing; a guard that removes its "
           "own subject can never fail again")
+
+    # -- 6a-ii. A REFUSED RUN WROTE NOTHING.
+    # The guard runs before any write for this reason. Refusing only at the end
+    # still exits non-zero -- every check above would pass -- while leaving packs,
+    # a seed copy and a fresh manifest on disk: a staging directory that looks
+    # complete, sitting beside the artifact that made the run illegal. Nothing in
+    # 6a can tell those two apart, which is why this is measured separately.
+    #
+    # Fails if: the early call is removed and only the late one survives.
+    check(packs_written(out) == [],
+          f"the refused run wrote packs: {packs_written(out)}")
+    leftovers = sorted(f for f in os.listdir(out) if f != RETIRED_MANIFEST_V1_NAME)
+    check(leftovers == [],
+          f"the refused run left {leftovers} in the output directory; a refusal must write "
+          f"nothing, or the operator is handed a staging dir that looks publishable")
 
     # -- 6b. GREEN: remove it, and the identical run succeeds.
     # Without this half, a guard that refused unconditionally would look correct.
