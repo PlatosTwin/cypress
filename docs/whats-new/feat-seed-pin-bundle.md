@@ -26,4 +26,4 @@
 # shipped, every borough would have been inside the app and none of them downloadable. The two
 # notes ride the same build deliberately.
 
-Cypress carries San Francisco and San Jose inside the app. Every other city, New York's five boroughs included, downloads from the Cities screen when you want it, so the app itself stays a small install however many cities we add.
+Cypress carries San Francisco and San Jose inside the app. Every other city, New York's five boroughs included, downloads from the Cities screen, so the app itself stays a small install.
