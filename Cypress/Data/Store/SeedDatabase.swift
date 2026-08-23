@@ -86,8 +86,19 @@ public enum SeedDatabase {
     ///
     /// **A pure addition, the way 15 was and 16 was not.** Nothing is dropped and no existing
     /// column moves, so an s16 file still opens, still attaches, still searches and still names
-    /// its city — the read layer asks `hasRegions` and falls back to what s16 shipped. The
-    /// standing-dead change that rides this generation (RULING D17) needed no schema change at
+    /// its city — and it needs no fallback to do any of that, because **nothing in this app reads
+    /// a region.** `dim_region` and `trees.region_id` exist for the *publisher*:
+    /// `Tools/publish_cities.py` narrows a pack on them. `SeedSchema.hasRegions` is introspected
+    /// and then read by no query in `Cypress/` — grep it and the only hits are its own
+    /// declaration and the line that computes it.
+    ///
+    /// That is a stronger compatibility statement than a fallback would be, and it is now
+    /// load-bearing rather than incidental: the app deliberately bundles an s16 seed while
+    /// attaching s17 packs beside it, so "an s16 bundle loses nothing" has to stay true and has
+    /// to stay checkable. The day a query does read a region, this is the paragraph where the
+    /// fallback gets designed, and this sentence is what has to change before it ships.
+    ///
+    /// The standing-dead change that rides this generation (RULING D17) needed no schema change at
     /// all: `trees.status` has permitted `dead_reported` since long before it, and what was
     /// missing was a Python contract field, not a column.
     public static let newestKnownSchemaVersion = 17
@@ -239,8 +250,10 @@ public struct SeedSchema: Equatable, Sendable {
     ///
     /// A seed or city file built before this pass is still readable and still correct: every row
     /// in it belongs to the one region its id space is, which is exactly what an s16 file's
-    /// `dim_city` already says. The read layer falls back to the city, never to a fabricated
-    /// region — see the note on `SeedCities.coverage`.
+    /// `dim_city` already says. **No fallback is needed and none is written** — no query in
+    /// `Cypress/` reads this flag or either of the things it reports on, so an s16 file loses
+    /// nothing by lacking them. See the note on `newestKnownSchemaVersion`'s **17**, which is
+    /// where that stops being an accident if it ever does.
     ///
     /// **This flag is about the FILE, not about the manifest.** `CityManifest.knownFormats` is a
     /// separate version space (the envelope) and moves independently; the app can be reading an

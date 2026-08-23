@@ -90,12 +90,28 @@ statement order.
 
 **Ruled: the order stays** (orchestrator, under overnight authority, on the review's N1).
 
-Swapping the two checks is not a free win, and the case it breaks is the legitimate one. After
-`Anonymize` runs, an account's photographs have `user_id = NULL` — the leaving door's whole promise.
-A withdrawal that account queued *before* deleting is still in the queue and still due to drain, and
-under ownership-first it would meet a row it no longer owns and be told `forbidden`: a permanent red
-row on screen 17, shown to the one person unambiguously entitled to that deletion, for doing it in
-an order the app itself supports.
+Swapping the two checks is not a free win, and the case it breaks is legitimate — but it is a
+**narrower** case than the first draft of this clause claimed, and the difference is worth stating
+because the wrong version reads as a stronger argument than the evidence supports.
+
+**What the order does *not* protect.** A withdrawal the account queued before deleting, and which
+the device *declared*, never reaches `withdrawPhoto` at all: `LocalAPI` hands its `client_uuid` to
+`DELETE /me` through `pendingOutboxKeys`, `DeleteAccount` writes it into `anonymized_contributions`,
+and `Store.Apply` consults that table **first** — before the contribution insert, and long before
+any ownership question. It answers `duplicate`. Measured by #113's review; the mechanism is visible
+in `internal/store/sync.go`, where the tombstone `SELECT EXISTS` is the opening statement of the
+transaction. So for a declared item the order inside `withdrawPhoto` is irrelevant, and citing it
+was an unverified "why".
+
+**What the order does protect** is the item the tombstone set does not name — measured `applied`,
+and it would be `forbidden` under ownership-first. `unsentClientUUIDs` is a snapshot of *this
+device's* queue at the moment of the call (`remote_sent = 0 AND state <> 'done'`), so two ordinary
+things fall outside it: a withdrawal queued after that snapshot was taken, and a withdrawal sitting
+in a **second device's** outbox, which the deleting device never had visibility of. After
+`Anonymize` those photographs have `user_id = NULL` — the leaving door's whole promise — so
+ownership-first would meet a row the contributor no longer owns and refuse it: a permanent red row
+on screen 17, shown to the one person unambiguously entitled to that deletion, for having two
+phones.
 
 What the current order costs is bounded and quiet by comparison. The stranger's `applied` is true in
 every respect a client can observe — the photograph is genuinely not served, to them or to anyone —
