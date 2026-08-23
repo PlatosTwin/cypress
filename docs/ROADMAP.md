@@ -239,22 +239,24 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
-**Retire the format-1 manifest.** Owner decision, 2026-08-22, taken when the NYC publish round was
-authorized; it closes the "deliberately UNSCHEDULED" item the s17 round left behind, and the full
-reasoning is in that round's pending ruling on dual publishing. The clock has three ticks: **build
-48** is the first TestFlight build that reads `manifest-v2.json`; **the NYC publish** writes both
-objects and is the last publish that writes format 1; **the publish after NYC** writes format 2
-only. RULING D8's "one release cycle" is that interval — so an install that never updated past
-build 48 keeps a working Cities screen through the whole of the NYC publish and loses it only at
-the next one, rather than at the publish that first has something new to offer it.
+**Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
+setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full
+reasoning, and what it supersedes, in `docs/rulings-pending/format1-retirement.md`.
 
-The work belongs to whichever round publishes after NYC, and it is small and enumerable: delete
-`write_manifest_v1`, `MANIFEST_V1_NAME` and the `level == "city"` filter from
-`Tools/publish_cities.py`, stop uploading the legacy object, and remove
-`CityDownloader.fetchManifest`'s fallback to it. **`CityManifest.knownFormats` keeps `1`** — a
-reader that meets a stale cached format-1 object should still read it; what retires is writing one,
-not reading one. Scheduled by trigger rather than by date, and the trigger is a publish, not a
-build.
+`Tools/publish_cities.py` no longer writes `manifest.json` and `dist/upload.sh` no longer uploads
+or verifies it, so the NYC publish of 2026-08-23 is the last format-1 object there will ever be.
+**The published object is frozen, not deleted** — it still names two immutable city packs that are
+still served (checked anonymously, with a 404 control), so an install that never updated past build
+47 keeps a working Cities screen and simply stops receiving anything newer.
+
+Two departures from the enumeration this entry previously carried, both deliberate:
+`CityDownloader.fetchManifest`'s fallback to the legacy name is **kept** rather than removed — its
+remaining job is any base URL that is not the live bucket (an archived mirror, a fixture directory),
+and every shipped build 48–55 has it compiled in regardless. And the publisher gained a guard it did
+not have: it refuses a `--out` still holding a format-1 manifest from a dual-publish round, because
+`--out` only clears `cities/` and that leftover file is the one artifact an operator could upload
+over the frozen object. **`CityManifest.knownFormats` keeps `1`**, as previously planned — what
+retired is writing a format-1 manifest, never reading one.
 
 **City-inventory disputes.** Owner ruling, 2026-08-21, refined the same day (both in RULINGS
 **R79**, which carries the full spec): city data must be

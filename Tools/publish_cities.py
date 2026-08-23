@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
 publish_cities.py -- split the fused seed into versioned per-city SQLite files
-plus a manifest.json, ready for upload to the `cypress-cities` Tigris bucket.
+plus a manifest-v2.json, ready for upload to the `cypress-cities` Tigris bucket.
+
+ONE CATALOGUE, NOT TWO. This tool wrote a second, format-1 `manifest.json` beside
+it during RULING D8's dual-publish window. That window closed on 2026-08-23 by
+the owner's decision and the format-1 object is retired: never written again,
+never deleted from the bucket. See `MANIFEST_V2_NAME` for what "retired" means
+for the copy that is already published, and why the old name is still reserved.
 
 R36 (docs/RULINGS.md) makes the base layer "versioned per-city SQLite files
 published by the ingest pipeline to object storage with a manifest". This is
@@ -13,16 +19,20 @@ talks to any upstream source itself.
 
     --db        the fused seed (default: Fixtures/seed/cypress-seed.sqlite,
                 resolved against the repo root this script lives in)
-    --out       output directory (default: dist/). Cleared of a previous run's
-                cities/ tree and manifest.json before writing; nothing else in
-                it is touched.
+    --out       output directory (default: dist/). Only the previous run's
+                cities/ tree is cleared; manifest-v2.json, upload.sh and the
+                seed/ copy are overwritten in place, and nothing else in it is
+                touched. A leftover format-1 manifest.json from a dual-publish
+                round is NOT cleared -- the run refuses until it is removed by
+                hand (`assert_no_legacy_manifest`).
     --base-url  informational only; recorded in the manifest as `base_url_hint`
                 so a reader of the artifact knows where it was headed. The app
                 must NOT read it -- the app's base URL is app configuration.
 
 Exit codes:
-    0  every per-city file built, verified, and described in manifest.json
-    1  a verification failed -- nothing in --out should be trusted
+    0  every per-city file built, verified, and described in manifest-v2.json
+    1  a verification failed -- nothing in --out should be trusted. Also the
+       code for a --out still holding a retired format-1 manifest.json
     3  a required input was missing
 
 WHAT GOES IN A CITY FILE. Each output starts as a byte-copy of the fused seed
@@ -81,7 +91,7 @@ VERSIONING (delegated decision -- RULINGS R37):
                   "s14-r2026-07-31-d3e3d229".
                   This is the immutable path segment on object storage:
                   cities/<id>/<version>/<id>.sqlite. A given version is
-                  write-once; only manifest.json ever changes in place. The
+                  write-once; only manifest-v2.json ever changes in place. The
                   app treats it as an OPAQUE string compared by equality
                   (RULINGS R43), so lengthening the grammar is safe on the
                   reader's side -- but never shorten or reorder it without
@@ -168,43 +178,49 @@ SEED_SCHEMA_VERSION = 17
 # three. That is what a format bump is for.
 MANIFEST_FORMAT = 2
 
-# The format-1 envelope, still published beside it. See `MANIFEST_V1_NAME`.
-LEGACY_MANIFEST_FORMAT = 1
-
-# RULING D8 -- DUAL-PUBLISH FOR ONE RELEASE CYCLE, AND WHY THE OLD NAME IS THE
-# OLD FORMAT RATHER THAN THE NEW ONE.
+# FORMAT 1 IS RETIRED: THIS PUBLISHER NO LONGER WRITES IT.
 #
-# `CityManifest.decode` refuses an unknown format outright, before reading
-# anything else. That is correct -- guessing at a future format's meaning is how
-# a reader silently mis-installs a file -- but it means the day format 2
-# publishes at the path every shipped build already fetches, EVERY UNUPDATED
-# INSTALL loses the whole Cities screen at once and shows "Couldn't check what's
-# available." That is a self-inflicted outage on readers who did nothing.
+# The history, because the name below is reserved rather than free. RULING D8
+# dual-published for one release cycle, and the reason the OLD name kept the OLD
+# format is worth keeping: `CityManifest.decode` refuses an unknown format
+# outright, before reading anything else -- correct, since guessing at a future
+# format's meaning is how a reader silently mis-installs a file -- so publishing
+# format 2 at the path every shipped build already fetched would have taken the
+# whole Cities screen offline for every unupdated install at once. Format 2 took
+# a new name instead, and `manifest.json` kept its format-1 shape listing
+# whole-city packs only.
 #
-# So `manifest.json` -- the path every existing build hard-codes -- keeps its
-# format-1 shape and lists whole-city packs only, and format 2 publishes beside
-# it under a new name that only a build that understands it asks for. An old
-# install therefore keeps a working screen; the s17 files it lists are refused
-# per-city as `needsNewerApp`, which is a truthful sentence about one city
-# rather than a dead screen.
+# The window has closed. The owner retired format 1 on 2026-08-23, overriding the
+# trigger the s17 round had recorded (the publish AFTER New York) -- the ruling
+# that retires format 1 immediately and freezes rather than deletes the published
+# object. The NYC publish of 2026-08-23 is therefore the last format-1 object
+# there will ever be.
 #
-# The window is one release cycle, at which point the format-1 object stops
-# being written. It costs a few kilobytes.
+# THE FROZEN OBJECT IS NOT DELETED, AND THAT IS THE POINT. `manifest.json` stays
+# in the bucket exactly as that publish left it, serving builds <= 47 a catalogue
+# that is stale but TRUE: it names two city-level packs at immutable
+# `cities/<id>/<version>/` paths, and those objects are write-once (R37.2) and
+# remain live -- verified by anonymous GET in this round's pull request. An
+# unupdated install keeps a working Cities screen; what it stops receiving is
+# anything published after that date. Retirement ends the WRITING of format 1,
+# never the deletion of what was written -- deleting it would turn a stale screen
+# into a dead one, which is the outage D8 existed to prevent.
 #
-# R37.2 SAYS "ONLY manifest.json IS EVER REWRITTEN IN PLACE", AND THERE ARE NOW
-# TWO SUCH OBJECTS. Worth stating plainly rather than letting the ruling quietly
-# become inaccurate: the property R37.2 is protecting is that every object
-# holding DATA is write-once and hash-verified, and that the mutable surface is
-# small, enumerable, and carries no bytes a reader trusts without checking. That
-# still holds -- both manifests are catalogues, neither is content-addressed by
-# anything, and every file either one names is still immutable and still verified
-# by sha256 before a byte is kept. What changed is the count, from one to two,
-# for one release cycle.
+# So the name below is RESERVED, not free. `main` refuses to finish a run that
+# leaves an object under it in `--out` (`assert_no_legacy_manifest`), because the
+# only way one gets there now is a stale dist/ from a dual-publish round -- and a
+# stale format-1 catalogue sitting beside a fresh format-2 one is the single
+# artifact an operator could upload by hand and thereby rewrite the frozen object
+# with an older truth.
 #
-# The ordering rule that follows from it is unchanged and is why `upload.sh`
-# writes both manifests LAST: files upload before the manifest that names them.
+# R37.2's "only manifest.json is ever rewritten in place" now reads as
+# `manifest-v2.json`: one mutable catalogue again, holding no bytes a reader
+# trusts without a sha256 check. `upload.sh` still writes it LAST -- files upload
+# before the manifest that names them.
 MANIFEST_V2_NAME = "manifest-v2.json"
-MANIFEST_V1_NAME = "manifest.json"
+
+# The retired name. Never written by this tool again; only checked for absence.
+RETIRED_MANIFEST_V1_NAME = "manifest.json"
 
 # Display names are civic facts, entered by hand on purpose: an id with no
 # entry here fails the run loudly rather than shipping an invented or derived
@@ -598,6 +614,18 @@ def main() -> None:
     ap.add_argument("--base-url", default="https://cypress-cities.t3.tigrisbucket.io")
     args = ap.parse_args()
 
+    # BEFORE ANYTHING IS WRITTEN, and deliberately before the input checks too.
+    # The same guard runs again after the manifest is written, and the two catch
+    # different things: this one catches a stale format-1 object the operator
+    # brought with them, the late one catches THIS SCRIPT writing one itself.
+    #
+    # Only the early call can keep a refused run from leaving output behind.
+    # Refusing at the end hands the operator a staging directory that looks
+    # complete -- packs, seed copy, fresh manifest -- sitting beside the very
+    # artifact that made the run illegal, which is a worse state to be in than
+    # the one the guard exists to prevent.
+    assert_no_legacy_manifest(args.out)
+
     if not os.path.exists(args.db):
         fail(f"no seed at {args.db} -- run Tools/build_seed.py or "
              "Tools/setup_worktree.sh first", 3)
@@ -946,68 +974,93 @@ def main() -> None:
 
     manifest = {"manifest_format": MANIFEST_FORMAT, **envelope, "cities": entries}
 
-    # ---- RULING D8's second object: the format-1 manifest, whole cities only --
-    # `city`-level packs and nothing else. A format-1 reader has no concept of a
-    # region, so listing a borough to it would be handing it something it would
-    # confidently mis-describe -- it would draw "Queens" as a city with its own
-    # civic identity. Filtering is the whole of what makes the old format still
-    # TRUE rather than merely still parseable.
-    #
-    # The entries are otherwise unchanged, `region` key included: a format-1
-    # reader ignores keys it does not know (R37.4), so carrying it costs nothing
-    # and removing it would mean maintaining two entry shapes.
-    legacy_entries = [e for e in entries if e["region"]["level"] == "city"]
-    if not legacy_entries:
-        fail("no city-level pack to publish in the format-1 manifest; RULING D8 "
-             "requires unupdated installs keep a working catalogue")
-    legacy_manifest = {
-        "manifest_format": LEGACY_MANIFEST_FORMAT, **envelope, "cities": legacy_entries,
-    }
-
     manifest_path = os.path.join(args.out, MANIFEST_V2_NAME)
-    legacy_path = os.path.join(args.out, MANIFEST_V1_NAME)
-    for path, doc in ((manifest_path, manifest), (legacy_path, legacy_manifest)):
-        with open(path, "w") as f:
-            json.dump(doc, f, indent=2, sort_keys=False)
-            f.write("\n")
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2, sort_keys=False)
+        f.write("\n")
 
-    # ---- verify each manifest against the files it describes ----
-    # Both of them, read back off disk. The format-1 object is a smaller list of
-    # the same entries, and "it is a subset so it must be fine" is exactly the
-    # reasoning that stops being true the day the filter above gains a condition.
-    for path in (manifest_path, legacy_path):
-        with open(path) as f:
-            readback = json.load(f)
-        name = os.path.basename(path)
-        for entry in readback["cities"]:
-            full = os.path.join(args.out, entry["path"])
-            if sha256_of(full) != entry["sha256"]:
-                fail(f"{name}: {entry['id']}: manifest sha256 does not match the file")
-            if os.path.getsize(full) != entry["bytes"]:
-                fail(f"{name}: {entry['id']}: manifest byte size does not match the file")
+    # ---- verify the manifest against the files it describes ----
+    # Read back off disk rather than asserting against the dict just written: the
+    # question is what the FILE says, which is what will be uploaded.
+    with open(manifest_path) as f:
+        readback = json.load(f)
+    name = os.path.basename(manifest_path)
+    for entry in readback["cities"]:
+        full = os.path.join(args.out, entry["path"])
+        if sha256_of(full) != entry["sha256"]:
+            fail(f"{name}: {entry['id']}: manifest sha256 does not match the file")
+        if os.path.getsize(full) != entry["bytes"]:
+            fail(f"{name}: {entry['id']}: manifest byte size does not match the file")
 
-    # Uploads every pack, not just the ones the format-1 list names -- the
-    # objects have to exist before either manifest names them.
-    upload_sh = write_upload_sh(args.out, entries, seed_rel,
-                                manifests=(MANIFEST_V2_NAME, MANIFEST_V1_NAME))
+    # The second call. The first ran before any write, so an operator's stale
+    # object never gets this far; what is left for this one is a REGRESSION IN
+    # THIS FILE -- a restored `write_manifest_v1`, or a merge bringing the
+    # legacy block back. Cheap, and it fails the run that produced the file
+    # rather than the next one.
+    assert_no_legacy_manifest(args.out, when="after")
+
+    upload_sh = write_upload_sh(args.out, entries, seed_rel)
 
     print(f"\nmanifest: {manifest_path}  (format {MANIFEST_FORMAT}, "
           f"{len(entries)} pack(s))")
-    print(f"          {legacy_path}  (format {LEGACY_MANIFEST_FORMAT}, "
-          f"{len(legacy_entries)} whole-city pack(s), RULING D8)")
     print(f"upload:   {upload_sh}  (run only with the CYPRESS_TIGRIS_PROFILE / "
           "cypress-tigris AWS profile configured)")
     print("OK")
 
 
+def assert_no_legacy_manifest(out_dir: str, when: str = "before") -> None:
+    """Refuse a publish whose output directory holds a format-1 manifest.
+
+    `when` is "before" or "after" the run's own writes, and it selects the
+    diagnosis rather than the check: the same file means "you brought this" at the
+    first call site and "this script produced this" at the second, and those have
+    opposite fixes.
+
+    CALLED TWICE, and the placement is the point. Once at the very top of `main`,
+    before a single byte is written, and once after the manifest is written. The
+    early call is what keeps a refused run from leaving output behind -- refusing
+    only at the end would hand the operator a staging directory that looks
+    complete, sitting beside the artifact that made the run illegal. The late call
+    costs one `stat` and catches the other author of that file: this script itself,
+    if `write_manifest_v1` is ever restored by a merge.
+
+    NOT a cleanup step, deliberately. Deleting the stale file would make this check
+    unable to fail, which is the failure mode this repository keeps paying for -- a
+    guard that is green because it removed its own subject. It refuses and names
+    the fix instead.
+
+    What it is guarding: `--out` is only cleared of `cities/`, so a dist/ left over
+    from a dual-publish round still carries that round's `manifest.json`. Uploading
+    it by hand would rewrite the frozen object in the bucket with an older truth --
+    the one mutation retirement is supposed to make impossible.
+    """
+    stale = os.path.join(out_dir, RETIRED_MANIFEST_V1_NAME)
+    if not os.path.exists(stale):
+        return
+    # The two call sites diagnose the SAME file to two different causes, and
+    # telling the operator the wrong one sends them looking in the wrong place.
+    # Before any write, the file predates this run. After, this run made it.
+    if when == "before":
+        cause = (f"It is left over from an earlier round, when format 1 was still "
+                 f"published. Delete it (`rm {stale}`) and re-run.")
+    else:
+        cause = ("THIS RUN WROTE IT, which is a defect in Tools/publish_cities.py "
+                 "-- the format-1 writer has been restored, most likely by a merge. "
+                 "Do not delete the file and re-run; fix the publisher.")
+    fail(f"{stale} exists, and format 1 is retired -- this publisher no longer writes "
+         f"it. {cause} The copy in the bucket is FROZEN and must not be overwritten "
+         f"by a newer run's idea of a format-1 catalogue.")
+
+
 def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,
-                    manifests: tuple = (MANIFEST_V2_NAME, MANIFEST_V1_NAME)) -> str:
+                    manifest_name: str = MANIFEST_V2_NAME) -> str:
     """Write dist/upload.sh. Pulled out of main() so it can be exercised (and
     red-proofed -- #248) against synthetic entries without rebuilding the seed.
 
-    `manifests` is every manifest object to upload and verify. RULING D8 puts two
-    of them in the bucket for one release cycle; both are mutable objects that
-    must land AFTER the immutable files they name, which is the ordering below.
+    `manifest_name` is the single mutable catalogue object, uploaded AFTER the
+    immutable files it names -- the ordering below, and R37.2's rule. It was a
+    tuple of two during RULING D8's dual-publish window; format 1 is retired and
+    the frozen object in the bucket is never uploaded again.
     """
     upload_sh = os.path.join(out_dir, "upload.sh")
     with open(upload_sh, "w") as f:
@@ -1070,22 +1123,19 @@ def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,
                     f'--endpoint-url "$ENDPOINT" --profile "$PROFILE"\n')
         f.write(f'aws s3 cp "{seed_rel}" "$BUCKET/{seed_rel}" '
                 f'--endpoint-url "$ENDPOINT" --profile "$PROFILE"\n')
-        # LAST, and in this order. R37.2: files upload before the manifest that
-        # names them. With two manifests the newest format goes first, so the
-        # window in which a format-2 reader can see a catalogue that a format-1
-        # reader cannot is the shorter of the two possible windows.
-        for name in manifests:
-            f.write(f'aws s3 cp {name} "$BUCKET/{name}" '
-                    '--endpoint-url "$ENDPOINT" --profile "$PROFILE" '
-                    '--content-type application/json\n')
+        # LAST. R37.2: files upload before the manifest that names them. One
+        # catalogue again since format 1 retired, so there is no ordering between
+        # manifests left to get wrong.
+        f.write(f'aws s3 cp {manifest_name} "$BUCKET/{manifest_name}" '
+                '--endpoint-url "$ENDPOINT" --profile "$PROFILE" '
+                '--content-type application/json\n')
         f.write("# Verify anonymous READ (GET, not HEAD: Tigris has returned\n")
         f.write("# HEAD 200 alongside GET 403). One-byte range GETs on the\n")
         f.write("# public domain; -f fails the script on any non-2xx.\n")
         for entry in entries:
             f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{entry["path"]}"\n')
         f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{seed_rel}"\n')
-        for name in manifests:
-            f.write(f'curl -fsS "$PUBLIC/{name}" | cmp - {name}\n')
+        f.write(f'curl -fsS "$PUBLIC/{manifest_name}" | cmp - {manifest_name}\n')
         f.write('echo "anonymous GET verified on $PUBLIC"\n')
     os.chmod(upload_sh, 0o755)
     return upload_sh
