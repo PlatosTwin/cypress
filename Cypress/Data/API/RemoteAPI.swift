@@ -545,6 +545,19 @@ public struct RemoteAPI: CypressAPI {
     /// keys that are still in this device's queue — so it is deliberately not mapped onto
     /// `discardedOutboxItems`, which counts what the local half discarded. Two different acts.
     ///
+    /// ── The one arm where a throw does not mean "not deleted" ──────────────────────────────────
+    ///
+    /// The response is decoded **after** the request succeeded, so a decode failure throws on a
+    /// deletion the service has already performed. `RoutedAPI.deleteAccount` reads any throw from
+    /// here as "abort, touch nothing locally", and the sheet then says nothing was deleted — while
+    /// the account is in fact gone on the far side. It is reachable only through contract skew: a
+    /// 2xx whose body is not `DeleteAccountResponse`, which today means a client and a service that
+    /// disagree about this route. It self-corrects in the direction of the deletion, by the same
+    /// path the header above describes — the next request presenting that session is refused — so
+    /// the person ends up signed out rather than stranded. Written down because the symptom
+    /// ("it says it failed but my account is gone") reads as a defect in the opposite component
+    /// from the one that has it.
+    ///
     /// - Throws: `RemoteSurface.communityHalfOnly` when no `pendingOutboxKeys` provider was
     ///   injected — see that property for why an empty array is not an acceptable substitute.
     @discardableResult

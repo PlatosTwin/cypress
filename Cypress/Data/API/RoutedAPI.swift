@@ -189,10 +189,26 @@ public struct RoutedAPI: CypressAPI {
 
     /// Who is signed in, for `deleteAccount` and nothing else.
     ///
-    /// **Injected, nil by default, and nil means "route deletion local"** — which is exactly the
-    /// behavior every caller had before this seam existed, so a preview double or a test that
-    /// constructs a router without it keeps the local path rather than acquiring a remote failure
-    /// mode it was never written for.
+    /// **Injected, nil by default, and nil means "route deletion local"** — the behavior every
+    /// caller had before this seam existed.
+    ///
+    /// ── Three things produce a nil, and the third is not a test ────────────────────────────────
+    ///
+    /// 1. **A router constructed without the argument** — previews, screenshot fixtures, and the
+    ///    tests that predate the seam. They keep the local path rather than acquiring a remote
+    ///    failure mode they were never written for.
+    /// 2. **`DataLayer.boot` with the gate explicitly off**, which is how the UI suite runs.
+    /// 3. **`DataLayer.boot` in an ordinary DEBUG build with `CYPRESS_REMOTE` unset**, which is
+    ///    every developer's default. `RemoteAccess.resolved` returns `.disabled` when the variable
+    ///    is absent under `#if DEBUG`, `allowsNetwork` is `self == .live`, and `boot` fills this
+    ///    only when `allowsNetwork` — so **a signed-in developer deleting their account on a debug
+    ///    build takes the pure-local path and the service keeps the account.** That is the gate
+    ///    working as designed rather than a defect, and it is written down here because the
+    ///    behavior is invisible from this file and surprising from any other.
+    ///
+    /// **A release build is unconditionally `.live`** — the `#else` arm of `RemoteAccess.resolved`
+    /// does not consult the environment — so shipping deletion is always remote-first. `DataLayer`
+    /// carries the argument for why the gate is honored here at all; it is not repeated.
     ///
     /// It is a provider rather than a stored `Bool` because the answer changes underneath this
     /// struct: `RoutedAPI` is a value type held by every screen, and a session can end between the
@@ -200,11 +216,6 @@ public struct RoutedAPI: CypressAPI {
     /// accessor whose answer matches what the *next request* would actually act on — it returns nil
     /// for a stored session whose refresh token has expired — so asking it here is asking the
     /// question the deletion is about to depend on.
-    ///
-    /// `DataLayer.boot` fills it, and fills it **only when the network gate is open**, for the
-    /// reason the send sink is omitted under the same condition: a refusing transport would turn
-    /// every deletion into a failure a UI test would then be asserting against a network that is
-    /// not there.
     public let signedInUserID: (@Sendable () async -> UUID?)?
 
     public init(
@@ -383,6 +394,22 @@ public struct RoutedAPI: CypressAPI {
     ///   deletion sheet can draw: nothing was deleted.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        // ── What this guard reads, and what the screen above it reads ──────────────────────────
+        //
+        // Two different sources answer "is somebody signed in": this asks the **session**
+        // (`AppSession.signedInUserID`, the Keychain), and the sheet that raised this call is drawn
+        // from the **store** (`AccountModel.isSignedIn`, `app_state.currentUserID`). A person the
+        // app draws as signed in, whose session is gone, therefore deletes locally — correctly,
+        // since there is no credential left to delete on the service with.
+        //
+        // Two mechanisms keep that skew from persisting, and both were read rather than assumed:
+        // `SessionRestore.reconcile` answers `.endSignedOut(userID: stored)` for `(.some, nil)` —
+        // store says signed in, Keychain says nothing — so the next boot ends the local half; and
+        // `DataLayer.boot` registers `onSessionEnded { try? await local.signOut() }`, so a session
+        // the service refuses ends the local half in the same run without waiting for a launch.
+        //
+        // That is the extent of what is verified here: the two convergence paths exist and run in
+        // the direction of signed-out. It is not a claim that no in-run window exists.
         guard let signedInUserID, await signedInUserID() != nil else {
             return try await local.deleteAccount(choice)
         }
