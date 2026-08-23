@@ -54,6 +54,24 @@ final class AccountModel {
     /// in on.
     private let api: LocalAPI?
 
+    /// The router, for the one call on this model that must reach the service.
+    ///
+    /// **Why a second dependency rather than swapping the first.** Everything else this model does
+    /// — the reminders, the account link — is a `LocalAPI` route deliberately kept off `CypressAPI`
+    /// (see that protocol's header), so `api` cannot simply become the router. Deletion is the one
+    /// method that is on both, and since the owner's ruling of 2026-08-23 it is the one that must go
+    /// through `RoutedAPI`, which sends `DELETE /me` before it touches this phone.
+    ///
+    /// **This was the other half of ERRATA E272's finding, and the half that is easy to miss:**
+    /// pointing `RoutedAPI.deleteAccount` at the service changes nothing on its own, because this
+    /// model was never holding the router. `RootView` passes `data.local` above and `data.api` here;
+    /// the two arguments are one line apart and reach two different deletions.
+    ///
+    /// Nil falls back to `api`, so a model built the old way — every preview and every test that
+    /// predates this — keeps the local deletion it was written against rather than silently
+    /// acquiring a network dependency.
+    private let router: (any CypressAPI)?
+
     /// The credentials half of the same account, so that leaving one leaves both.
     ///
     /// ── Why this model gained a second dependency, and what was wrong without it ───────────────
@@ -103,9 +121,24 @@ final class AccountModel {
     /// on `Delete account` cannot start a second deletion against a store the first one is emptying.
     private(set) var isBusy = false
 
-    init(api: LocalAPI?, session: AppSession? = nil) {
+    /// Whether the **last** deletion attempt failed and deleted nothing.
+    ///
+    /// `remindersFailed`'s distinction, applied to a write: "the account is gone" and "we could not
+    /// delete it" are different facts, and a sheet that dismissed on both would say the first while
+    /// meaning the second. Since the owner's ruling of 2026-08-23 the deletion reaches
+    /// `DELETE /me` first and aborts on failure, so this state is reachable by anyone who taps the
+    /// destructive button on a phone with no signal — the commonest place to delete an account is
+    /// not necessarily a place with bars.
+    ///
+    /// **Cleared at the start of every attempt**, so it always describes the attempt the person just
+    /// made rather than one they have since retried. A deletion that succeeds leaves it false and
+    /// takes the whole account section with it.
+    private(set) var deletionFailed = false
+
+    init(api: LocalAPI?, session: AppSession? = nil, router: (any CypressAPI)? = nil) {
         self.api = api
         self.session = session
+        self.router = router
     }
 
     /// Read the account and the reminders. Called from the You tab's `.task` and again whenever a
@@ -210,12 +243,13 @@ final class AccountModel {
     /// discarded at the call site. So the deletion goes first and the credentials follow it only when
     /// it returned something.
     ///
-    /// **This is also the order the wire will need** (review of this PR, F5). Nothing sends
-    /// `DELETE /me` today — `RoutedAPI.deleteAccount` routes local — so credential-first cost nothing
-    /// yet. On the day that route is wired it would cost everything: the request that performs the
+    /// **This is also the order the wire needs, and the wire is now here** (review of PR #84, F5).
+    /// That review predicted it: credential-first cost nothing while the deletion was local, and
+    /// "on the day that route is wired it would cost everything — the request that performs the
     /// deletion authenticates with the session, and dropping the session first makes the remote
-    /// deletion unauthenticatable. The ordering here is what that day needs, arrived at for a reason
-    /// that is already true.
+    /// deletion unauthenticatable." This is that day. The ordering did not have to change, which is
+    /// what it was arranged for; `forgetEverything()` still runs only after an outcome came back,
+    /// and the outcome now cannot come back unless the service deleted the account first.
     ///
     /// **What this leaves open, stated rather than implied.** If the deletion succeeds and
     /// `forgetEverything()` then throws, this app holds credentials for an account whose local
@@ -227,18 +261,35 @@ final class AccountModel {
     /// failure it replaces was destroying two credentials on every deletion that did nothing.
     ///
     /// **Ruled by the owner on 2026-08-15: accepted and documented, and closed by wiring
-    /// `DELETE /me`** in a follow-up round rather than by adding a rule here. Once the deletion
-    /// reaches the service the account is gone on the far side, so a session that survived a failed
-    /// Keychain removal is one the service refuses at the next request — which runs `AppSession`'s
+    /// `DELETE /me`** in a follow-up round rather than by adding a rule here. **That round is this
+    /// one**, and the closure works as the ruling described: the deletion now reaches the service
+    /// first, so the account is gone on the far side, and a session that survived a failed Keychain
+    /// removal is one the service refuses at the next request — which runs `AppSession`'s
     /// involuntary-discard path and, through `onSessionEnded`, ends the local half in the same run.
-    /// The race becomes self-correcting, in the direction of the deletion.
+    /// The race is self-correcting, in the direction of the deletion.
+    ///
+    /// It closes only for a **signed-in** deletion, which is the only kind that had the residual:
+    /// a local-only deletion never minted a session for a Keychain removal to fail on.
     @discardableResult
     func deleteAccount(_ choice: AccountDeletionChoice) async -> AccountDeletion.Outcome? {
         guard let api, !isBusy else { return nil }
         isBusy = true
+        deletionFailed = false
         defer { isBusy = false }
-        let outcome = try? await api.deleteAccount(choice)
+
+        // `router` since the owner's ruling of 2026-08-23: `RoutedAPI.deleteAccount` sends
+        // `DELETE /me` and only then deletes on this phone, so a signed-in deletion that never
+        // reached the service deletes nothing anywhere. `api` is the fallback for a model built
+        // without a router — a preview, a screenshot fixture — where the local path is the whole of
+        // what exists. See `router`.
+        let route: any CypressAPI = router ?? api
+        let outcome = try? await route.deleteAccount(choice)
         if outcome != nil { try? await session?.forgetEverything() }
+
+        // Set before `load()` rather than after, so the flag and the `isSignedIn` it will be drawn
+        // beside are published in the same pass. A failed deletion leaves `isSignedIn` true, which
+        // is what keeps the sheet up (`AccountSection` dismisses on the account going away).
+        deletionFailed = outcome == nil
         await load()
         return outcome
     }

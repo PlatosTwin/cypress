@@ -287,7 +287,24 @@ public struct DataLayer: Sendable {
         )
 
         let readLog = RemoteReadLog()
-        let api = RoutedAPI(local: local, remote: remote, log: readLog)
+
+        // `RoutedAPI.deleteAccount` sends `DELETE /me` before it deletes anything on the phone (the
+        // owner's ruling of 2026-08-23, closing ERRATA E272), and this is how it knows there is an
+        // account to send about. Signed out, the deletion stays local — `me.go` refuses a device
+        // credential, so asking would turn a working local deletion into a refusal.
+        //
+        // **Only when the gate is open**, for the send sink's reason two blocks down: with
+        // `RefusingTransport` behind it every deletion would fail, and abort-on-failure would then
+        // leave a local-only build unable to delete an account at all.
+        // Written as a statement rather than a ternary in the argument list: the two branches have
+        // different closure types before the annotation is applied, and the expression checker gives
+        // up on it rather than reporting anything useful.
+        var signedInUserID: (@Sendable () async -> UUID?)?
+        if access.allowsNetwork {
+            signedInUserID = { await session.signedInUserID }
+        }
+
+        let api = RoutedAPI(local: local, remote: remote, log: readLog, signedInUserID: signedInUserID)
 
         // ── Two sinks, and this is the round that wires the second (RULINGS R72 §1) ─────────────
         //

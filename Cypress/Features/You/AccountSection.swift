@@ -44,6 +44,10 @@ struct AccountSection: View {
     /// Whether a sign-out or a deletion is in flight; the rows stop accepting taps while it is.
     var isBusy = false
 
+    /// Whether the last deletion attempt failed and deleted nothing. Drawn inside the sheet, beside
+    /// the button that will retry it — see `AccountDeletionSheet.hasFailed`.
+    var deletionFailed = false
+
     var onSignIn: () -> Void = {}
     var onSignOut: () -> Void = {}
     /// Reached **only** from inside `AccountDeletionSheet`, and always carrying the door the person
@@ -108,12 +112,28 @@ struct AccountSection: View {
             AccountDeletionSheet(
                 choice: $deletionChoice,
                 isBusy: isBusy,
-                onDelete: { choice in
-                    isConfirmingDeletion = false
-                    onDelete(choice)
-                },
+                hasFailed: deletionFailed,
+                onDelete: onDelete,
                 onCancel: { isConfirmingDeletion = false }
             )
+        }
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // The sheet closes when the account goes away, and **not** on the tap that asks for it.
+        //
+        // It used to close on the tap: `onDelete` set this false before calling out. That was right
+        // while a deletion was a local transaction that could not really fail, and it is wrong now
+        // that the deletion reaches `DELETE /me` first and aborts when the service cannot be
+        // reached (the owner's ruling of 2026-08-23). Dismissing optimistically would have drawn
+        // the You tab of a signed-in account over a deletion that did nothing, with the failure
+        // reported nowhere — this project's signature failure mode applied to a destructive act.
+        //
+        // So the success signal is the account itself disappearing, which is a fact rather than an
+        // intention, and it arrives through `isSignedIn` because `AccountModel.load()` re-reads the
+        // store after every attempt. A failure leaves the account standing, the sheet up, and
+        // `hasFailed` true beside the button that retries it.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        .onChange(of: isSignedIn) { _, stillSignedIn in
+            if !stillSignedIn { isConfirmingDeletion = false }
         }
     }
 

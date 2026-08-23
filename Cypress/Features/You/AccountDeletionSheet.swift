@@ -47,6 +47,15 @@ struct AccountDeletionSheet: View {
     /// Whether a deletion is already in flight. Everything stops accepting taps while it is.
     var isBusy = false
 
+    /// Whether the last attempt failed and deleted nothing.
+    ///
+    /// **Gate 4, and it is the only one that is not about restraint.** The other three keep a person
+    /// from deleting more than they meant to; this one keeps the app from claiming a deletion it did
+    /// not perform. It became reachable when the deletion started reaching the service before the
+    /// phone (the owner's ruling of 2026-08-23): a tap in a park with no signal now deletes nothing,
+    /// and a sheet that dismissed on it would have said the account was gone.
+    var hasFailed = false
+
     /// Called with the chosen door, and only from behind gate 2 or gate 3 above.
     var onDelete: (AccountDeletionChoice) -> Void = { _ in }
 
@@ -155,6 +164,8 @@ struct AccountDeletionSheet: View {
 
     private var actions: some View {
         VStack(spacing: AccountDeletionMetrics.actionGap) {
+            if hasFailed { failureLine }
+
             DeleteButton(
                 title: AccountDeletionCopy.confirmAction(for: choice),
                 isDestructiveDoor: choice == .eraseEverything,
@@ -173,6 +184,29 @@ struct AccountDeletionSheet: View {
             .cypressHitArea()
             .disabled(isBusy)
         }
+    }
+
+    /// What the sheet says when the deletion did not happen.
+    ///
+    /// Directly above the button that retries it, because the retry *is* that button — there is no
+    /// queue behind a deletion and nothing happens later. Drawn in the hazard register the
+    /// destructive door already uses rather than in a new one; this app has no red, and a message
+    /// saying nothing was deleted is not an error state to be alarmed by so much as a fact to act
+    /// on. `AccountDeletionCopy` owns the words, like every other string on this sheet.
+    private var failureLine: some View {
+        Text(AccountDeletionCopy.failedBody)
+            .font(CypressFont.body125)
+            .foregroundStyle(CypressColor.textInk)
+            .lineSpacing(CypressFont.LineSpacing.body125)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, YouMetrics.settingPaddingV)
+            .padding(.horizontal, YouMetrics.settingPaddingH)
+            .background {
+                RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                    .fill(CypressColor.hazardPanelFill)
+            }
+            .cypressBorder(CypressColor.hazardPanelBorder, radius: CypressRadius.cardSm)
     }
 
     /// The one place a tap can become a deletion, and it deletes nothing on the destructive door —
