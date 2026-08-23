@@ -46,15 +46,29 @@ type Mutation struct {
 	// contributor standing under it would be invited to add again.
 	//
 	// Eight of those nine are recorded because this service *could not* materialize them; the ninth,
-	// `photo_withdrawal`, is recorded because there is nothing here yet to withdraw. The difference
-	// matters to whoever adds the next branch beside this field, and it is spelled out beside
-	// `syncKinds` in `internal/api/sync.go`.
+	// `photo_withdrawal`, now materializes through `WithdrawnPhotoID` below. The difference matters
+	// to whoever adds the next branch beside this field, and it is spelled out beside `syncKinds` in
+	// `internal/api/sync.go`.
 	//
 	// It travels inside the mutation so the two rows land in **one transaction**. Calling `AddTree`
 	// beside `Apply` would leave a window in which the tree is on the map and the contribution that
 	// says who added it is not, or the reverse — and the reverse is the one that matters, because
 	// a retry would then hit the contribution dedupe and never insert the tree.
 	CommunityTree *NewCommunityTree
+	// WithdrawnPhotoID is set only for kind `photo_withdrawal`: the photograph the contributor took
+	// back on their phone, which this service tombstones so it stops being served to everybody else.
+	//
+	// **It travels inside the mutation for the reason `CommunityTree` does, pointing the other way.**
+	// The tombstone and the contribution that records the withdrawal land in one transaction, so
+	// there is no window in which the photograph is gone and the record of who withdrew it is not —
+	// and, more importantly, none in which the contribution is recorded, the client's retry is
+	// therefore deduped away, and the photograph is *still being served*. That second window is the
+	// one that matters here: it is ERRATA E280's failure reached by a different route, and a
+	// separate call beside `Apply` would open it on any error between the two.
+	//
+	// It is a pointer rather than a bare id so that "this kind carries no photograph" stays
+	// unrepresentable-by-accident, the same way `CommunityTree` does it.
+	WithdrawnPhotoID *uuid.UUID
 }
 
 // ApplyOutcome is what happened to one mutation.
@@ -125,6 +139,14 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		}
 		if mutation.CommunityTree != nil {
 			return insertCommunityTree(ctx, tx, *mutation.CommunityTree, owner, now)
+		}
+		// **After the dedupe, deliberately.** A replayed withdrawal returns `Duplicate` above and
+		// never reaches here, which is right: the first pass tombstoned the photograph, and a second
+		// pass has nothing to add. `withdrawPhoto` is idempotent anyway — it treats an
+		// already-tombstoned row as a success — so the two guards agree rather than depending on
+		// each other.
+		if mutation.WithdrawnPhotoID != nil {
+			return withdrawPhoto(ctx, tx, *mutation.WithdrawnPhotoID, owner, now)
 		}
 		return nil
 	})

@@ -186,6 +186,72 @@ func (s *Store) RejectPhoto(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// ErrNotOwned is returned by the sync-path withdrawal when the photograph is here and is somebody
+// else's.
+//
+// It exists because that path needs a **third** answer, and `DeletePhotoByContributor` only has
+// two. There, "absent" and "not yours" are deliberately the same answer — `ErrNotFound`, so a
+// refusal cannot confirm to a stranger that the row exists. A `photo_withdrawal` arriving on
+// `POST /sync` is asked a different question, and collapsing the two answers would make it lie:
+// "this service never held that photograph" is a success that changes nothing, while "it is here
+// and it is not yours" must not be reported to the client as a removal. Screen 17 renders an
+// applied withdrawal as "Photo removed"; answering that while `GET /photos/{id}` keeps serving the
+// bytes is precisely the failure ERRATA E280 exists to prevent.
+//
+// The caller maps it to `forbidden` — non-retryable, so the item fails on the spot rather than
+// spending 48 h on an answer that will not change.
+var ErrNotOwned = errors.New("photo belongs to another contributor")
+
+// withdrawPhoto tombstones one photograph inside an already-open transaction.
+//
+// **It reads before it writes, which `DeletePhotoByContributor` does not have to.** That method can
+// let one `UPDATE` carry both the ownership gate and the write, because it collapses "absent" and
+// "not yours" into one answer anyway. This one has to tell those apart before it decides, so the
+// row is fetched first and the three cases are separated explicitly:
+//
+//   - **no row** — nothing to withdraw. This is the shipping state ERRATA E264 describes: no
+//     photograph reaches this service, so every withdrawal that arrives today lands here. It is a
+//     success, and the contribution row is still recorded — the record of the act is the point.
+//   - **already tombstoned** — success, changing nothing. A drain that replays a withdrawal after a
+//     flap must not fail on the second pass.
+//   - **present and not this identity's** — `ErrNotOwned`, above.
+//
+// **Ownership here is the two columns this service has, and that is not the same rule the client
+// applies.** RULINGS R82 gave the client's removal predicate a third arm, `taken_on_device`, so a
+// photograph this installation took stays its own to unmake whatever account holds it. This table
+// has no provenance column — `001_initial.sql` gives `photos` a `user_id` and a `device_id` and
+// nothing else — so a photograph taken on this device and owned by an account that is no longer
+// signed in is deletable locally and `ErrNotOwned` here. That divergence is real, it is reachable,
+// and it is recorded rather than guessed at: inventing a provenance column to match would be a
+// migration nobody ruled on, and silently succeeding would be the E280 lie. See the round's PR.
+func withdrawPhoto(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner, now time.Time) error {
+	var userID, deviceID *uuid.UUID
+	var deletedAt *time.Time
+	err := tx.QueryRow(ctx, `
+		SELECT user_id, device_id, deleted_at FROM photos WHERE id = $1
+	`, id).Scan(&userID, &deviceID, &deletedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if deletedAt != nil {
+		return nil
+	}
+
+	owned := (owner.UserID != nil && userID != nil && *userID == *owner.UserID) ||
+		(owner.DeviceID != nil && deviceID != nil && *deviceID == *owner.DeviceID)
+	if !owned {
+		return ErrNotOwned
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE photos SET deleted_at = $2, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL
+	`, id, now)
+	return err
+}
+
 // DeletePhotoByContributor is `deletePhoto(id:)` — the contributor taking their own photograph back.
 //
 // Under the auto-approve rule this stops being a convenience and becomes the first line of the

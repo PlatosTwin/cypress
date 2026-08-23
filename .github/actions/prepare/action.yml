@@ -53,10 +53,19 @@ runs:
 
     # ── The seed ───────────────────────────────────────────────────────────────────────
     # ~103 MB, git-ignored, and mandatory: without it 13 tests fail on `seedURL -> nil` and the
-    # app ships empty. Resolved from the published manifest and verified by sha256 — see
-    # Tools/fetch_seed.sh for why a fixed "latest" path is not safe.
+    # app ships empty. Resolved from `Fixtures/seed/pinned-seed.json` — the seed version THIS
+    # commit builds against — and verified by sha256. See Tools/fetch_seed.sh for why neither a
+    # fixed "latest" path nor the live manifest is safe here.
+    #
+    # `CYPRESS_SEED_SOURCE: pin` is the script's own default and is stated anyway. It is the one
+    # line that makes CI's determinism a property of this file rather than of a default somebody
+    # could change later: a runner resolving the seed live compiles against whatever the bucket
+    # advertises that minute, which is exactly how the s17 publish turned main red retroactively
+    # on 2026-08-22, from commits that had already been green. Never set this to `live` here.
     - name: Fetch and verify the seed
       shell: bash
+      env:
+        CYPRESS_SEED_SOURCE: pin
       run: bash Tools/fetch_seed.sh "$GITHUB_WORKSPACE"
 
     # ── A device ───────────────────────────────────────────────────────────────────────

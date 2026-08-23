@@ -18,10 +18,13 @@ import Testing
 ///                 export's 12,260 vacant planting sites, which that layer has no category for.
 ///                 145,837 records. What shipped between #91 and #129.
 /// - `sf_city` **with `us-ca-sj` in `id_spaces_in_file`** — the same, fused with central San Jose.
-///                 198,625 records. What shipped between #129 and the s17 publish.
+///                 198,625 records. **What ships, and what CI runs**: seed `c9a440b2`, which
+///                 `Fixtures/seed/pinned-seed.json` names and `Tools/fetch_seed.sh` resolves.
 /// - `sf_city` **with `us-ca-sj` and `us-ny-nyc`** — the same again, fused with all five boroughs of
-///                 New York City. 1,097,382 records. **What ships**, and what `Tools/fetch_seed.sh`
-///                 resolves from the live manifest.
+///                 New York City. 1,097,382 records. **The published fused seed** — the publisher's
+///                 input, from which the per-borough packs are narrowed. It is not bundled and CI
+///                 does not build against it; the app carries the two California cities and New York
+///                 arrives as downloaded packs. This entry is exercised by a publish round.
 ///
 /// **`sf_city` / `sf_datasf` are the v14 vocabulary.** The column values were bare `city` and
 /// `datasf` before that pass renamed them (`InventoryContractTests` documents the rename), and
@@ -321,6 +324,13 @@ struct SeedCorpus: Sendable {
     /// **San Francisco as above, plus central San Jose.** What ships after #129, built with
     /// `--source city --sj-extent downtown`.
     ///
+    /// **This is the corpus the app bundles and the suite runs against**, on every machine: seed
+    /// `c9a440b2`, named by `Fixtures/seed/pinned-seed.json`, fetched by `Tools/fetch_seed.sh` and
+    /// copied by `Tools/setup_worktree.sh`. It briefly stopped being either — the s17 publish moved
+    /// the live manifest and CI began building against the three-city fused seed with no commit
+    /// anywhere — which is what the pin exists to prevent. Bundling stays here on the owner's
+    /// ruling: New York is 706 MB and arrives as downloaded packs, not inside the install.
+    ///
     /// **52,788 San Jose rows on top of San Francisco's 145,837**, out of a 344,879-record corpus
     /// that was read and validated in full. Ingesting and shipping are two decisions (ERRATA E176):
     /// what a phone gets is a contiguous window over central San Jose — downtown, SoFA, Japantown,
@@ -410,11 +420,16 @@ struct SeedCorpus: Sendable {
     }
 
     /// **San Francisco and central San Jose as above, plus all five boroughs of New York City.**
-    /// What ships after the s17 publish. **Every number below holds on two artifacts and was
-    /// measured on both, on 2026-08-22:**
+    /// The **published fused seed** — the publisher's input, which every per-borough pack is
+    /// narrowed from. It is deliberately not what the app bundles and not what CI builds against:
+    /// the bundle is held at pre-New-York scope and `Tools/fetch_seed.sh` resolves the pinned
+    /// `c9a440b2` above, so this entry speaks for an artifact a publish round reads rather than one
+    /// the suite meets on every run. **Every number below holds on two artifacts and was measured on
+    /// both, on 2026-08-22:**
     ///
-    /// - **`ac7b1ccc`** (706,535,424 bytes, sha256 `ac7b1cccd7de413c…`) — **what is live**, and what
-    ///   `Tools/fetch_seed.sh` resolves. It repairs the `#95` case-normalisation defect the first
+    /// - **`ac7b1ccc`** (706,535,424 bytes, sha256 `ac7b1cccd7de413c…`) — **what is live on the
+    ///   bucket**, and what `CYPRESS_SEED_SOURCE=live Tools/fetch_seed.sh` resolves. It repairs the
+    ///   `#95` case-normalisation defect the first
     ///   s17 artifact shipped with, and was built from the *same* cached extracts so that fix is the
     ///   only difference.
     /// - **`4f6ebaaa`** (706,535,424 bytes, sha256 `4f6ebaaad8c94bde…`) — what the s17 publish first

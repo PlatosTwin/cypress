@@ -471,8 +471,8 @@ public struct ContributionStore {
     /// photograph and being allowed to unmake it are the same claim about who took it.
     ///
     /// So this statement **calls `removalPredicate()`** rather than restating it. Convergence that
-    /// has to be maintained by hand is not convergence: a fourth copy of the rule would drift the
-    /// way that function's own comment says three copies drift, and it would drift silently, since
+    /// has to be maintained by hand is not convergence: a fifth copy of the rule would drift the
+    /// way that function's own comment says four copies drift, and it would drift silently, since
     /// nothing compares the two strings. Sharing makes the agreement structural — the arms below
     /// are described here because they are what the shared rule says, not because this statement
     /// says them.
@@ -498,8 +498,8 @@ public struct ContributionStore {
 
         // **`removalPredicate()` itself, called rather than restated** (RULINGS R82). The doc comment
         // above says this column and the removal gate are the same question with the same shape; a
-        // hand-written fourth copy of that shape would be the drift `removalPredicate`'s own comment
-        // exists to prevent — "three copies of a permission rule is how one of them drifts" — and it
+        // hand-written fifth copy of that shape would be the drift `removalPredicate`'s own comment
+        // exists to prevent — "four copies of a permission rule is how one of them drifts" — and it
         // would drift silently, because nothing compares the two strings. Sharing the string makes
         // the agreement structural: a change to the rule reaches the hero read and the three
         // removal sites together, and the tests on both sides go red together.
@@ -726,7 +726,7 @@ public struct ContributionStore {
     /// else about the rule changes at that call site, which is what makes it a caller rather than a
     /// fifth copy.
     ///
-    /// **Three copies of a permission rule is how one of them drifts**, and the two in
+    /// **Four copies of a permission rule is how one of them drifts**, and the two in
     /// `deletePhoto` have to agree exactly or a deletion tombstones the photograph and leaves the
     /// votes on it, or refuses the photograph after removing them. `prefix` is the table alias the
     /// vote statement needs (`p.`) and nothing else; it is a literal at both call sites, never a
