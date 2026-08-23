@@ -151,6 +151,10 @@ Considered, and rejected on three grounds, in order:
 
 ### R??? — The corrective republish of 2026-08-22 does not start the format-1 retirement clock
 
+> **SUPERSEDED 2026-08-23 by the owner** — see `docs/rulings-pending/format1-retirement.md`.
+> Format 1 was retired outright on 2026-08-23, so which publish would have started the clock no
+> longer arises. Kept as the record of what stood until then; do not act on the last paragraph.
+
 **Date:** 2026-08-22. **Decided by:** owner. **Implemented by:** nothing — recorded only.
 
 RULING D8 dual-publishes `manifest.json` (format 1) beside `manifest-v2.json` (format 2) so an
