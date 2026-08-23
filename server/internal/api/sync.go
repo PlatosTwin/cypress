@@ -86,16 +86,29 @@ type wireLatLon struct {
 	Longitude float64 `json:"longitude"`
 }
 
+// photoWithdrawalPayload is `PhotoWithdrawal` as the client encodes it
+// (`Cypress/Data/Outbox/CommunityMutations.swift`: keys stay the Swift property names).
+//
+// `clientUUID` and `attribution` are on the wire and deliberately not read here, for the reason
+// `addTreePayload` gives about its own `clientUUID`: the envelope is the authority on the item's key
+// and on who sent it, and a second copy of either is a second place for one fact to be wrong. The
+// ownership gate this kind needs is applied against the *photograph's* row in `withdrawPhoto`, not
+// against anything the payload claims about itself.
+type photoWithdrawalPayload struct {
+	PhotoID uuid.UUID `json:"photoID"`
+	TreeID  uuid.UUID `json:"treeID"`
+}
+
 // syncKinds is every kind this service accepts on `POST /sync`.
 //
 // The first six are BUILD-PLAN §4's. The ten after them are spec §3.4's nine mutations — the
 // review-dismissal pair is one entry in that list and two kinds here, for the reason
 // `002_community_mutation_kinds.sql` gives.
 //
-// **A kind in this map is accepted, recorded, and — for nine of the ten — not materialized.** That
+// **A kind in this map is accepted, recorded, and — for eight of the ten — not materialized.** That
 // is not a shortfall against the older kinds: five of the six above have no materialized table
-// either, and `contributions` is the record. `add_tree` is the exception and says why in
-// `store.Mutation.CommunityTree`.
+// either, and `contributions` is the record. Two are exceptions: `add_tree`, which says why in
+// `store.Mutation.CommunityTree`, and `photo_withdrawal`, which says why below.
 //
 // The other nine are not one group and the reason differs:
 //
@@ -107,26 +120,25 @@ type wireLatLon struct {
 //     moderation surface a web deliverable. Recording the act and refusing to guess at its effect is
 //     the honest half; guessing would move somebody's species on an unadjudicated say-so.
 //
-//   - **`photo_withdrawal` is different, and the earlier version of this comment said otherwise.**
-//     This service has all three pieces already: the `photos` table (`001_initial.sql`, read by
-//     `store.PhotosForTree` into every `GET /trees/{id}`), the store method
-//     `Store.DeletePhotoByContributor(ctx, id, owner)` — which takes exactly the `owner` this
-//     handler holds — and the route `DELETE /photos/{id}` (`photos.go`), whose header cites RULINGS
-//     R72 ruling 5 and ERRATA E147: "the person who took it has to be able to take it back."
-//     Wiring it here would be one branch beside `insertCommunityTree`.
+//   - **`photo_withdrawal` is the second that materializes, and it no longer waits on the upload.**
+//     Two earlier versions of this comment were wrong in opposite directions: the first filed it
+//     with the eight this service cannot evaluate, and the second — correcting that — deferred it
+//     on the grounds that there is nothing here yet to withdraw. The second reasoning was sound and
+//     its conclusion has expired. It ends with "the round that wires photo upload must wire
+//     `DeletePhotoByContributor` in the same change", and this is that round.
 //
-//     **It is deferred because there is nothing here yet to withdraw.** No photograph reaches this
-//     service in the shipping build: `OutboxSendSink` carries no photo method, and the apply sink's
-//     `uploadPhoto` is `APIOutboxTransport` over `LocalAPI`, which moves the file inside the app
-//     container. A withdrawal sent today would name bytes this service has never held. Wiring the
-//     upload and wiring this deletion are one round and it is not this one.
+//     It materializes through `store.Mutation.WithdrawnPhotoID`, in the same transaction as the
+//     contribution, and it answers in three ways rather than two — see `store.withdrawPhoto`. The
+//     one worth naming here is that a photograph which is present and **somebody else's** is
+//     `forbidden` rather than a quiet success: an applied withdrawal is drawn on screen 17 as
+//     "Photo removed", and saying that while `GET /photos/{id}` keeps serving the bytes is ERRATA
+//     **E280**, this project's signature failure applied to a deletion.
 //
-//     **The round that wires photo upload must wire `DeletePhotoByContributor` in the same change**,
-//     because the moment uploads work this path is wrong *and tells the contributor otherwise*: the
-//     row drains, reaches `done`, and screen 17 reads "Photo removed" as sent while
-//     `GET /photos/{id}` keeps serving the bytes to every other device. That is this project's
-//     signature failure applied to a deletion. Recorded as ERRATA **E280**; no test asserts
-//     anything about a `photo_withdrawal` reaching this service today, in either direction.
+//     **What is still true from the deferral:** a withdrawal arriving today names bytes this service
+//     has never held, because the client's send path for binaries is not built (ERRATA E264 —
+//     `OutboxSendSink` still carries no photo method). That is a success that changes nothing, and
+//     it is the case `withdrawPhoto` handles first. Wiring it before the upload is deliberate: the
+//     harmless direction to be early in is the one where the deletion works and the upload does not.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,
@@ -341,22 +353,57 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		}
 	}
 
+	// ── `photo_withdrawal` — the second kind that materializes ─────────────────────────────────
+	//
+	// It is wired here because the round that wires photo *upload* had to wire it in the same
+	// change, and this is that round. The obligation is ERRATA E280's and it is not stylistic: the
+	// moment a photograph can reach this service, a withdrawal that only records itself becomes a
+	// lie the contributor is shown. The row drains, reaches `done`, screen 17 reads "Photo removed",
+	// and `GET /photos/{id}` keeps handing the bytes to every other device.
+	//
+	// `treeID` is checked against the envelope's `tree_uuid` for the reason `add_tree` checks its
+	// own: a disagreement is a malformed item, and picking one of the two would file the withdrawal
+	// against a tree the photograph does not belong to.
+	var withdrawnPhotoID *uuid.UUID
+	if item.Kind == "photo_withdrawal" {
+		var payload photoWithdrawalPayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.PhotoID.IsNil() {
+			return failed(apierr.ValidationFailed, "That item named no photo.")
+		}
+		if payload.TreeID != item.TreeUUID {
+			return failed(apierr.ValidationFailed,
+				"That item disagrees with itself about which tree it belongs to.")
+		}
+		withdrawnPhotoID = &payload.PhotoID
+	}
+
 	occurredAt := item.OccurredAt
 	if occurredAt.IsZero() {
 		occurredAt = s.Store.Now()
 	}
 
 	outcome, err := s.Store.Apply(r.Context(), store.Mutation{
-		ClientUUID:    item.ClientUUID,
-		Kind:          item.Kind,
-		TreeUUID:      item.TreeUUID,
-		Payload:       item.Payload,
-		OccurredAt:    occurredAt,
-		IsFavorite:    isFavorite,
-		CommunityTree: addition,
+		ClientUUID:       item.ClientUUID,
+		Kind:             item.Kind,
+		TreeUUID:         item.TreeUUID,
+		Payload:          item.Payload,
+		OccurredAt:       occurredAt,
+		IsFavorite:       isFavorite,
+		CommunityTree:    addition,
+		WithdrawnPhotoID: withdrawnPhotoID,
 	}, owner)
 
 	switch {
+	case errors.Is(err, store.ErrNotOwned):
+		// The photograph is here and it is somebody else's. `forbidden` for the reason the ownership
+		// gate above uses it — non-retryable, so the item fails now instead of spending 48 h on an
+		// answer that will not change — and *not* a success, which is the whole point: reporting a
+		// removal that did not happen is what E280 is about. See `store.ErrNotOwned` for why this is
+		// reachable rather than theoretical (RULINGS R82's provenance arm has no column here).
+		return failed(apierr.Forbidden, "That photo belongs to a different contributor.")
 	case errors.Is(err, store.ErrTombstoned):
 		// The tombstone, answering exactly as the dedupe does. An item accepted after its account
 		// was deleted must not resurrect it, and it must not be an *error* either: a retryable code
