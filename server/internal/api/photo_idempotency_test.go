@@ -26,9 +26,12 @@ import (
 // behaviour for this test and it makes the count redundant, not load-bearing.
 //
 // The count survives here as a **control**, not as the property: it is what proves the two begins
-// landed at all, calibrated first against a case whose answer is known (two different keys must
-// make two rows). Where the row count genuinely *is* the property is the two index tests below,
-// which insert past the lookup on purpose.
+// landed at all, calibrated first against a case whose answer is known — two **keyless** begins,
+// which carry no `client_uuid` for anything to dedupe on, must make two rows.
+//
+// The two index tests below do not count rows at all; they assert that a direct INSERT past the
+// lookup is refused, which is a different instrument for a different question. So no test in this
+// file treats the row count as its property, and this comment used to say two of them did.
 
 func beginWithKey(t *testing.T, h *harness, bearer string, tree uuid.UUID, key *uuid.UUID) beginPhotoResponse {
 	t.Helper()
@@ -372,8 +375,12 @@ func TestTheDeviceScopedUniqueIndexRefusesADuplicateKey(t *testing.T) {
 // The synthesis line was pre-existing; the replay path that exposes it is what this round ships.
 // `ClaimDevice` re-homes a device's photographs onto the account without touching
 // `moderation_state`, so the sequence below produced a response saying `approved` about a row that
-// still held `pending`. The client evaluates `isPubliclyVisible` from this payload, so the app
-// claimed the photograph was publicly visible until the next `treeProfile` read said otherwise.
+// still held `pending`.
+//
+// **No client reads these fields** — `BeginPhotoResponse` decodes only `photo_id` and
+// `presigned_put_url`. What the wrong value costs is the one thing the fields are for: the upload's
+// log would record the rule that applied to the caller rather than the rule that published the
+// photograph, and only ever in the case where those differ.
 //
 // The assertion compares the response to **the row**, rather than to a literal, so it keeps holding
 // if the launch rule's verdict for a fresh begin ever changes.
@@ -410,9 +417,9 @@ func TestAReplayReportsTheRowsModerationStateNotTheCallers(t *testing.T) {
 		t.Fatal("fixture: the claim did not re-home the photograph, so no replay happened")
 	}
 	if replay.Moderation != *stored {
-		t.Fatalf("the replay reported %q while the row holds %q — the client reads "+
-			"isPubliclyVisible from this, so it would claim a visibility the service does not have",
-			replay.Moderation, *stored)
+		t.Fatalf("the replay reported %q while the row holds %q — the response names the rule that "+
+			"applied to the caller rather than the one that published this photograph, which is the "+
+			"one thing the field exists to record", replay.Moderation, *stored)
 	}
 	wantReason := ""
 	if storedReason != nil {

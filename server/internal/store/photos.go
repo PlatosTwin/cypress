@@ -61,9 +61,15 @@ type BegunPhoto struct {
 	// The handler used to synthesize them from `who` on every answer, which is right for an insert
 	// and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account without
 	// touching `moderation_state`, so a device-begin, a sign-in that claims, then a replay reported
-	// `approved`/`auto_approved_launch` while the row still held `pending`. The client evaluates
-	// `isPubliclyVisible` from this payload, so the app claimed public visibility until the next
-	// `treeProfile` read contradicted it (#116 r3).
+	// `approved`/`auto_approved_launch` while the row still held `pending`.
+	//
+	// **Nothing on the client reads this, and that is not a reason to leave it wrong.**
+	// `BeginPhotoResponse` decodes `photo_id` and `presigned_put_url` and no other key, which
+	// `beginPhotoResponse` and `RemoteAPI.beginPhotoUpload` both say. These two fields exist for one
+	// stated purpose — so the upload's own log records which rule published the photograph — and a
+	// synthesized value defeats exactly that purpose, naming the *caller's* rule rather than the
+	// row's. It is wrong precisely in the case the field is interesting: when the two disagree
+	// (#116 r3, and r4 for the harm this comment first claimed and could not support).
 	Moderation     string
 	ApprovalReason *string
 }
