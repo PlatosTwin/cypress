@@ -63,7 +63,7 @@ struct VisitPreviewAPI: CypressAPI {
 /// A transport that accepts nothing, so a preview never writes anywhere real.
 struct VisitPreviewTransport: OutboxTransport {
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { [] }
-    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {}
+    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID { UUID() }
 }
 
 // MARK: - Fixtures

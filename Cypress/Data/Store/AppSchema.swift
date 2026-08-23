@@ -47,7 +47,8 @@ public enum AppSchema {
         Migration(version: 14, name: "a species claim can be corrected, and the correction keeps it", migrate: applyV14),
         Migration(version: 15, name: "applying a mutation locally and sending it are two facts", migrate: applyV15),
         Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16),
-        Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17)
+        Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17),
+        Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18)
     ]
 
     /// The version a freshly migrated database reports.
@@ -1710,6 +1711,166 @@ public enum AppSchema {
 
             CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
             CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+            """)
+    }
+
+    // MARK: - v18
+
+    /// A staged binary stops being an element of a JSON array and becomes a row, because applying it
+    /// and sending it are two facts and an array element can only hold one (ERRATA **E264**).
+    ///
+    /// ── What was wrong with the column ─────────────────────────────────────────────────────────
+    ///
+    /// `outbox.photo_paths` held the binaries a row still owed, and the drain's only verb was
+    /// *remove*: `apply.uploadPhoto` ingested the file into the app container and the path came out
+    /// of the array. That is a complete description of a world with one sink. With two it loses the
+    /// photograph — by the time a send could run there is nothing at the path, because the apply
+    /// consumed it, and re-running the apply to get it back writes the `photos` row a second time.
+    /// E264 names the three things a send needs that the array cannot carry: a source the remote can
+    /// still read after ingest, per-photo completion rather than the row-wide flag pair v15 added,
+    /// and somewhere to say whether a failed send holds the row out of `done`.
+    ///
+    /// A row per binary carries all three. `photo_id` is the local `photos.id` the apply minted,
+    /// which is how the send finds bytes that are no longer at `path`; `state` is that photograph's
+    /// own progress and not its item's; and the item's `done` still cannot be reached while any of
+    /// its binaries is outstanding, because `photos_outstanding` says so in a CHECK.
+    ///
+    /// ── Why a counter column and two triggers rather than a subquery ───────────────────────────
+    ///
+    /// `CHECK (state <> 'done' OR (local_applied = 1 AND json_array_length(photo_paths) = 0))` is
+    /// v1's, and its comment is "zero loss is a schema invariant, not a convention". SQLite CHECK
+    /// constraints cannot contain a subquery, so the same sentence about a *table* has to be written
+    /// against a column: `photos_outstanding` is that column, and the two triggers are what make it
+    /// true rather than merely maintained. Moving the invariant into `markDoneIfComplete`'s `WHERE`
+    /// instead would have demoted it to exactly the convention that comment refuses.
+    ///
+    /// ── `sendable = 0` on every row this migration writes, which is RULINGS R77 ────────────────
+    ///
+    /// The binaries already in the queue when this runs were staged by a build with no send path.
+    /// R77 is explicit that pre-existing photo binaries stay on device — "no retroactive photo
+    /// upload, not now and not as a later phase of the photo send-path work" — and a migration that
+    /// carried them over as sendable would be exactly the backfill it forbids, performed silently,
+    /// on rows the contributor cannot see. They are migrated (dropping them would lose a
+    /// contribution) and they are migrated **local-only**: still applied, never sent, and deleted on
+    /// apply like they are today. Only binaries staged after this migration carry `sendable = 1`.
+    private static func applyV18(_ connection: SQLiteConnection) throws {
+        guard try tableDefinition(named: "outbox_photos", connection: connection).isEmpty else { return }
+        try connection.execute("""
+            CREATE TABLE outbox_photos (
+                -- Client-minted and stable for the life of the binary. It is also the idempotency
+                -- key `POST /photos/begin` dedupes on, which is why it is minted here rather than
+                -- server-side: a begin that is retried after a flap must land on the row it already
+                -- created instead of a second one (E264).
+                id              TEXT PRIMARY KEY,
+                outbox_id       TEXT NOT NULL REFERENCES outbox(id) ON DELETE CASCADE,
+                -- Where the binary is staged. NULL the moment the apply consumes the file, which is
+                -- the fact that made a path-keyed array unable to describe a sent photograph.
+                path            TEXT,
+                shot_type       TEXT NOT NULL
+                                CHECK (shot_type IN ('full_tree','trunk','leaf','other')),
+                -- The local `photos.id` the apply minted. This is the source a send reads: the
+                -- container copy outlives the staged file, and this column is what names it.
+                photo_id        TEXT REFERENCES photos(id),
+                state           TEXT NOT NULL DEFAULT 'pending'
+                                CHECK (state IN ('pending','applied')),
+                -- R77. Set to 0 by this migration for everything already queued; 1 for everything
+                -- staged after it. A local-only binary is deleted when it is applied.
+                sendable        INTEGER NOT NULL DEFAULT 1 CHECK (sendable IN (0,1)),
+                fail_count      INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error      TEXT,
+                last_error_code TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL,
+                -- A binary nobody has applied yet must still be somewhere on disk.
+                CHECK (state <> 'pending' OR path IS NOT NULL),
+                -- An applied binary must name the row the apply wrote, or the send has no source.
+                CHECK (state <> 'applied' OR photo_id IS NOT NULL)
+            );
+            CREATE INDEX IF NOT EXISTS idx_outbox_photos_item ON outbox_photos(outbox_id);
+            CREATE INDEX IF NOT EXISTS idx_outbox_photos_state ON outbox_photos(state, sendable);
+
+            CREATE TABLE outbox_per_photo (
+                seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                TEXT NOT NULL UNIQUE,
+                kind              TEXT NOT NULL CHECK (kind IN (
+                                      'visit','observation','measurement','care_event',
+                                      'favorite_toggle','private_reminder',
+                                      'add_tree','species_claim','species_correction',
+                                      'wrong_species_report','never_existed_report',
+                                      'species_review_dismissal','record_review_dismissal',
+                                      'photo_vote','photo_withdrawal','hazard_redirect')),
+                client_uuid       TEXT NOT NULL UNIQUE,
+                payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                -- v1's `json_array_length(photo_paths)`, as a number a CHECK can read. Maintained by
+                -- the two triggers below; never written by hand.
+                photos_outstanding INTEGER NOT NULL DEFAULT 0 CHECK (photos_outstanding >= 0),
+                state             TEXT NOT NULL DEFAULT 'pending'
+                                  CHECK (state IN ('pending','uploading','failed','done')),
+                fail_count        INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error        TEXT,
+                last_error_code   TEXT,
+                local_applied     INTEGER NOT NULL DEFAULT 0 CHECK (local_applied IN (0,1)),
+                remote_sent       INTEGER NOT NULL DEFAULT 0 CHECK (remote_sent IN (0,1)),
+                window_started_at TEXT NOT NULL,
+                next_attempt_at   TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                -- v1's sentence, against the counter instead of the array. Zero loss is still a
+                -- schema invariant.
+                CHECK (state <> 'done' OR (local_applied = 1 AND photos_outstanding = 0)),
+                CHECK (remote_sent = 0 OR local_applied = 1)
+            );
+
+            INSERT INTO outbox_per_photo
+                (seq, id, kind, client_uuid, payload, photos_outstanding, state, fail_count,
+                 last_error, last_error_code, local_applied, remote_sent, window_started_at,
+                 next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, 0, state, fail_count,
+                   last_error, last_error_code, local_applied, remote_sent, window_started_at,
+                   next_attempt_at, created_at, updated_at
+              FROM outbox;
+
+            -- Every staged binary in the queue becomes a row, local-only per R77. `hex(randomblob)`
+            -- is the id: these rows never reach a server, so the value only has to be unique, and
+            -- SQLite has no uuid() to call.
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, state, sendable,
+                 created_at, updated_at)
+            SELECT lower(hex(randomblob(16))), outbox.id,
+                   json_extract(value, '$.path'),
+                   COALESCE(json_extract(value, '$.shotType'), 'other'),
+                   NULL, 'pending', 0,
+                   outbox.created_at, outbox.updated_at
+              FROM outbox, json_each(outbox.photo_paths);
+
+            UPDATE outbox_per_photo
+               SET photos_outstanding = (
+                     SELECT COUNT(*) FROM outbox_photos
+                      WHERE outbox_photos.outbox_id = outbox_per_photo.id
+                   );
+
+            DROP TABLE outbox;
+            ALTER TABLE outbox_per_photo RENAME TO outbox;
+
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
+            CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+
+            -- The counter's two halves. Written as triggers rather than kept in step by the store so
+            -- that a future writer cannot add a third insertion site and forget one, which is the
+            -- failure mode a denormalized count exists to have.
+            CREATE TRIGGER outbox_photos_counted_in
+            AFTER INSERT ON outbox_photos
+            BEGIN
+                UPDATE outbox SET photos_outstanding = photos_outstanding + 1
+                 WHERE id = NEW.outbox_id;
+            END;
+
+            CREATE TRIGGER outbox_photos_counted_out
+            AFTER DELETE ON outbox_photos
+            BEGIN
+                UPDATE outbox SET photos_outstanding = photos_outstanding - 1
+                 WHERE id = OLD.outbox_id;
+            END;
             """)
     }
 

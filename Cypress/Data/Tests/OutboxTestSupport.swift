@@ -140,10 +140,22 @@ public enum OutboxTestSupport {
             return SyncResult(clientUUID: item.clientUUID, status: .applied)
         }
 
-        public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
+        @discardableResult
+        public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID {
             if script == .photosFail { throw URLError(.networkConnectionLost) }
             uploadedPhotos.append(photo)
+            // A distinct id per call, because `LocalAPI.beginPhotoUpload` mints one per call.
+            // Returning a single constant would let a test pass while the drain filed every binary
+            // against one `photos` row — the duplicate `AppSchema` v18 exists to prevent, hidden by
+            // the double rather than caught by it.
+            let photoID = UUID()
+            appliedPhotoIDs[photo.id] = photoID
+            return photoID
         }
+
+        /// What `uploadPhoto` returned, keyed by the staged binary's own id. Lets a test assert the
+        /// send half was handed the id the apply half actually wrote.
+        public private(set) var appliedPhotoIDs: [UUID: UUID] = [:]
     }
 
     /// A scripted **send** sink, for the half of a drain that talks to a server (RULINGS R72 §1).
@@ -159,6 +171,12 @@ public enum OutboxTestSupport {
         /// Every `clientUUID` offered, in order, across every call. Retries repeat entries.
         public private(set) var offered: [UUID] = []
         public private(set) var syncCallCount = 0
+        /// Every binary this sink was asked to send, in order. Retries repeat entries, which is how
+        /// a test tells "sent once" from "sent again after a flap".
+        public private(set) var sentPhotos: [OutboxStore.PhotoRow] = []
+        /// The container paths it was handed. A send that was given a *staged* path would be reading
+        /// a file the apply already consumed, so the value is worth asserting rather than assuming.
+        public private(set) var sentPhotoPaths: [String] = []
 
         public init(script: Script = .allSucceed) {
             self.script = script
@@ -207,6 +225,14 @@ public enum OutboxTestSupport {
             }
             accepted.insert(item.clientUUID)
             return SyncResult(clientUUID: item.clientUUID, status: .applied)
+        }
+
+        /// The send half of a binary. `.photosFail` fails it here, which is the state a test needs to
+        /// assert that a refused photograph does not take its note down with it.
+        public func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {
+            sentPhotos.append(photo)
+            if script == .photosFail { throw URLError(.networkConnectionLost) }
+            if let path = photo.containerPath { sentPhotoPaths.append(path) }
         }
     }
 

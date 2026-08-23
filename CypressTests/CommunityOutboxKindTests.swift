@@ -414,17 +414,23 @@ struct CommunityOutboxKindTests {
             return try await inner.sync(items)
         }
 
-        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
+        @discardableResult
+        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID {
             try await inner.uploadPhoto(photo, for: item)
         }
     }
 
     private actor CountingSend: OutboxSendSink {
         private(set) var offered: [UUID] = []
+        private(set) var photosOffered: [UUID] = []
 
         func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
             offered.append(contentsOf: items.map(\.clientUUID))
             return items.map { SyncResult(clientUUID: $0.clientUUID, status: .applied) }
+        }
+
+        func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {
+            photosOffered.append(photo.id)
         }
     }
 

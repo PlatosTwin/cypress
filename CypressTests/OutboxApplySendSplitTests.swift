@@ -58,7 +58,8 @@ struct OutboxApplySendSplitTests {
             return try await inner.sync(items)
         }
 
-        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
+        @discardableResult
+        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID {
             try await inner.uploadPhoto(photo, for: item)
         }
     }
@@ -68,6 +69,8 @@ struct OutboxApplySendSplitTests {
         func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
             items.map { SyncResult(clientUUID: $0.clientUUID, status: .duplicate) }
         }
+
+        func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {}
     }
 
     // MARK: - 1. With no send sink, nothing changed

@@ -17,9 +17,16 @@ import Foundation
 public protocol OutboxTransport: Sendable {
     /// `POST /sync`. One result per item, matched on `clientUUID`.
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult]
-    /// Uploads one photo binary, with the shot type it was framed as. Gated by the wifi-only
-    /// toggle; the JSON above never is.
-    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws
+    /// Commits one photo binary to this device, with the shot type it was framed as. Gated by the
+    /// wifi-only toggle; the JSON above never is.
+    ///
+    /// **Returns the local `photos.id` it wrote**, which since `AppSchema` v18 is not bookkeeping:
+    /// this call consumes the staged file, so that id is the only remaining handle on the
+    /// photograph's bytes, and it is what a send reads (`OutboxStore.PhotoRow.photoID`). The id was
+    /// available all along and thrown away, which is half of why ERRATA **E264** says no send path
+    /// could be built on top of this call.
+    @discardableResult
+    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID
 }
 
 /// The **send** sink: the retryable half of a drain, and the half `OutboxRetryPolicy` was written
@@ -30,17 +37,23 @@ public protocol OutboxTransport: Sendable {
 /// about the local half wires, and because with it `nil` the queue's observable behavior is exactly
 /// what it was before the split.
 ///
-/// **It carries `sync` and deliberately not `uploadPhoto`, which is a scope statement and not an
-/// omission.** The apply sink's photo upload is a *move*: `LocalAPI.uploadPhoto` strips the
-/// metadata into the app container and then removes the staged file, so by the time a send sink
-/// could run there is nothing at `OutboxPhoto.path` left to send, and `beginPhotoUpload` mints a
-/// fresh `photos` row per call, so re-running the local half to keep the bytes around would
-/// duplicate the record. Sending binaries needs per-photo completion tracking and a source the
-/// remote can still read — its own design, its own migration and its own ticket. The protocol has
-/// no photo method so that a future author has to add one rather than inherit a silent no-op, which
-/// is the failure ERRATA E125 records paying for once already.
+/// **It carries a photo method now, and the three things it was waiting for all exist.** This
+/// protocol deliberately had none, because the apply sink's photo upload is a *move*:
+/// `LocalAPI.uploadPhoto` strips the metadata into the app container and removes the staged file, so
+/// there was nothing at `OutboxPhoto.path` left to send, and `beginPhotoUpload` minted a fresh
+/// `photos` row per call, so keeping the bytes by re-applying would duplicate the record. ERRATA
+/// **E264** named what was missing: a source the remote can still read after ingest, per-photo
+/// completion tracking, and a decision about whether a failed send holds the row out of `done`.
 ///
-/// **This argument is about the send side only.** It is not a licence to gate the *apply* sink's
+/// `AppSchema` v18 supplies the first two — a binary is a row, and it keeps the local `photos.id`
+/// after its staged file is gone — and server migration 003 supplies the retryability that made the
+/// third answerable. The answer to the third is **no**: a photograph that will not send does not
+/// hold its note hostage, exactly as the wi-fi deferral does not. See `drain`'s phase B3.
+///
+/// The method is a requirement rather than a defaulted extension, for the reason the absence was:
+/// ERRATA **E125** is what a protocol requirement satisfied by a silent default costs here.
+///
+/// **This is about the send side only.** It is still not a licence to gate the *apply* sink's
 /// `uploadPhoto` on a send — the first draft of this split did exactly that, and an offline drain
 /// then committed the note and never the photograph. See the `OutboxQueue` type doc.
 public protocol OutboxSendSink: Sendable {
@@ -48,6 +61,13 @@ public protocol OutboxSendSink: Sendable {
     /// `duplicate` is a success here for the same reason it is on the apply side: the server dedupes
     /// on `client_uuid` exactly as the local unique index does.
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult]
+
+    /// Sends one already-applied binary: `POST /photos/begin`, the `PUT` to storage, then the
+    /// receipt.
+    ///
+    /// The row carries its own idempotency key (`PhotoRow.id`), so this is safe to call again after
+    /// a flap — which is what makes it retryable at all, and is server migration 003.
+    func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws
 }
 
 /// What one drain pass did. Returned for tests and for the outbox screen's summary line.
@@ -62,6 +82,14 @@ public struct DrainReport: Sendable, Equatable {
     /// makes "the local write still happened" separable from "it went somewhere" in a test — and
     /// which is no longer the shipping wiring's answer (`DataLayer.boot`).
     public var sent = 0
+    /// Photo binaries a send sink accepted on this pass (`AppSchema` v18).
+    ///
+    /// Counted apart from `sent` because they succeed and fail apart: a note can be accepted while
+    /// its photograph is not, which is the whole of phase B3's contract.
+    public var photosSent = 0
+    /// Binaries whose send was refused or unreachable on this pass. Their rows stay outstanding, so
+    /// their item stays out of `done`.
+    public var photosFailed = 0
 }
 
 /// The local-first mutation queue.
@@ -320,13 +348,15 @@ public actor OutboxQueue {
             var photoFailure: Error?
             for photo in record.item.photos {
                 do {
-                    // The apply sink only. `OutboxSendSink` carries no photo method and says why:
-                    // the staged file is consumed by this call.
-                    try await apply.uploadPhoto(photo, for: record.item)
+                    // The apply sink, and the id it returns is the whole reason a send is possible:
+                    // this call consumes the staged file, so `photos.id` becomes the only handle on
+                    // the bytes (`AppSchema` v18, ERRATA E264).
+                    let photoID = try await apply.uploadPhoto(photo, for: record.item)
                     try await queue.write { connection in
-                        try store.removePhoto(
-                            atPath: photo.path,
-                            from: record.id,
+                        try store.settleAppliedPhoto(
+                            id: photo.id,
+                            photoID: photoID,
+                            sendSinkWired: send != nil,
                             at: entry.settledAt,
                             connection: connection
                         )
@@ -359,6 +389,80 @@ public actor OutboxQueue {
                     for result in results { sendResults[result.clientUUID] = result }
                 } catch {
                     sendFailure = error
+                }
+            }
+        }
+
+        // --- Phase B3: send the binaries whose local commit is done.
+        //
+        // **After the JSON send and before the row settles**, which is the only place it can go. The
+        // photograph's own `POST /photos/begin` names a tree the service has to already know about,
+        // and for an `add_tree` that fact arrives in phase C; running the binaries first would ask
+        // the service to reserve a photograph for a tree it has never heard of.
+        //
+        // **A binary that will not send does not fail its item, and this is the answer to the third
+        // question ERRATA E264 left open** ("whether a binary that failed to send should hold its
+        // row out of `done`"). It does not. The note is a contribution in its own right — it is
+        // already applied locally and, by this line, already accepted by the service — and holding it
+        // in the queue over a photograph would eventually expire the *whole item* at the 48 h cap,
+        // losing the note to protect the picture. That is the trade screen 17's wi-fi deferral
+        // already makes in the other direction ("The note is saved. One photo is waiting"), and this
+        // is the same sentence for a different reason.
+        //
+        // So a failed binary keeps its `outbox_photos` row, which keeps `photos_outstanding` above
+        // zero, which is exactly what stops `markDoneIfComplete` from settling the item — the row
+        // stays visible and retryable rather than quietly becoming `done`. Nothing is reported as
+        // sent that was not sent.
+        if let send {
+            for index in carrying.indices {
+                let entry = carrying[index]
+                let record = entry.record
+
+                // **Only for an item the service has actually accepted.** A photograph's own begin
+                // names a tree, and for an `add_tree` the service learns that tree in phase C above.
+                // Sending the binary for an item whose JSON was refused — or never got an answer —
+                // would reserve a photograph against a tree that is not there.
+                if !record.remoteSent {
+                    guard sendFailure == nil, sendResults[record.item.clientUUID]?.isSuccess == true
+                    else { continue }
+                }
+
+                let pending = try await queue.write { connection in
+                    try store.sendablePhotos(for: record.id, connection: connection)
+                }
+                guard !pending.isEmpty else { continue }
+                guard photoUploadsAllowed else {
+                    carrying[index].photosAwaitingWifi = true
+                    continue
+                }
+
+                for photo in pending {
+                    do {
+                        try await send.uploadPhoto(photo, for: record.item)
+                        try await queue.write { connection in
+                            try store.completePhoto(id: photo.id, connection: connection)
+                        }
+                        report.photosSent += 1
+                    } catch {
+                        // Recorded against the binary, not the item: the note is already applied and
+                        // accepted, and failing the item would put it back in a retry window whose
+                        // 48 h cap eventually expires the whole thing.
+                        try await queue.write { connection in
+                            try store.recordPhotoFailure(
+                                id: photo.id,
+                                failCount: photo.failCount + 1,
+                                reason: OutboxFailureReason.sentence(for: error),
+                                code: error as? APIError,
+                                at: entry.settledAt,
+                                connection: connection
+                            )
+                        }
+                        report.photosFailed += 1
+                        // Stop at the first failure for this item. The next one is overwhelmingly
+                        // likely to fail the same way, and a drain that kept going would spend the
+                        // whole batch's time discovering that.
+                        break
+                    }
                 }
             }
         }
@@ -618,7 +722,8 @@ public struct APIOutboxTransport: OutboxTransport {
         try await api.sync(items)
     }
 
-    public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws {
+    @discardableResult
+    public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID {
         // §6 splits this in two: POST /photos/begin reserves the id and the destination, then the
         // client PUTs the binary there. The ticket is therefore minted per upload; `LocalAPI` makes
         // it a move inside the app container.
@@ -655,6 +760,9 @@ public struct APIOutboxTransport: OutboxTransport {
             )
         )
         try await api.uploadPhoto(at: photo.path, ticket: ticket)
+        // The local `photos.id`. It was always here and always discarded; returning it is what lets
+        // a send find the bytes after this call has consumed the staged file (`AppSchema` v18).
+        return ticket.photoID
     }
 }
 
@@ -686,5 +794,52 @@ public struct APIOutboxSendSink: OutboxSendSink {
 
     public func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
         try await remote.sync(items)
+    }
+
+    /// The send half of a photograph: `POST /photos/begin`, the `PUT` to storage, then the receipt.
+    ///
+    /// ── Why this reads `containerPath` and not `path` ──────────────────────────────────────────
+    ///
+    /// By the time this runs the staged file is gone — the apply moved it into the app container —
+    /// so the source is `photos.local_path`, which `OutboxStore.sendablePhotos` resolves. That is
+    /// the first of ERRATA **E264**'s three missing pieces, and the reason a send could not simply
+    /// be bolted onto the old drain.
+    ///
+    /// ── The idempotency key is the row's own id ────────────────────────────────────────────────
+    ///
+    /// `photo.id` is minted on device when the shutter closes and never changes, so a begin replayed
+    /// after a flap lands on the row it already made rather than creating a second photograph
+    /// (server migration 003). Without it this method could not be retried at all, and every
+    /// failure would be terminal for the picture.
+    public func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {
+        guard let containerPath = photo.containerPath else {
+            // `sendablePhotos` already refuses a row with no container copy, so this is unreachable
+            // through the drain. Written closed anyway: the alternative reading of "no bytes" is to
+            // begin an upload for a photograph that does not exist, which reserves a row the 72 h
+            // sweep would then have to collect.
+            throw APIError.notFound
+        }
+        let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
+        let size = PhotoBinary.pixelSize(atPath: containerPath)
+
+        let ticket = try await remote.beginPhotoUpload(
+            PhotoUploadRequest(
+                treeID: payload.treeID,
+                visitID: {
+                    if case let .visit(visit) = payload { return visit.id }
+                    return nil
+                }(),
+                shotType: photo.shotType,
+                localPath: containerPath,
+                capturedAt: item.createdAt,
+                width: size?.width,
+                height: size?.height,
+                // Deliberately no `publicCoordinate`, for the reason ERRATA E42 gives on the apply
+                // side: the tree's pin is already exact and public, and a photo location is a second,
+                // independent record of where the contributor was standing.
+                idempotencyKey: photo.id
+            )
+        )
+        try await remote.uploadPhoto(at: containerPath, ticket: ticket)
     }
 }
