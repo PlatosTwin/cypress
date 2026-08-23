@@ -298,8 +298,8 @@ struct CityDownloadSection: Equatable, Identifiable {
         // suppressed the screen draws `New York City` twice in a row, in the same micro-label idiom,
         // with nothing between them saying that the first is installed and the second is not.
         // Photographed on the device at 402 pt with Manhattan and Staten Island installed. An empty
-        // heading says nothing; two identical adjacent headings say something false. See the pending
-        // ruling for the alternatives put to the owner.
+        // heading says nothing; two identical adjacent headings say something false. See the PR for
+        // the four alternatives put to the owner.
         var sections = [CityDownloadSection(id: key, title: heading, rows: ungrouped)]
         for parentID in groupOrder {
             let packs = grouped[parentID] ?? []
