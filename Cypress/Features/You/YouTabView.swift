@@ -140,6 +140,7 @@ struct YouTabView: View {
                 isSignedIn: account.isSignedIn,
                 link: account.link,
                 isBusy: account.isBusy,
+                deletionFailed: account.deletionFailed,
                 onSignIn: { router?.present(.accountAsk) },
                 onSignOut: { Task { await account.signOut() } },
                 onDelete: { choice in Task { await account.deleteAccount(choice) } }

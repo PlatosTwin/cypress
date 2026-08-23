@@ -66,7 +66,14 @@ struct RootView: View {
         // see `AccountModel.session`. Without it the You tab's sign-out kept the Keychain item, so
         // the bearer stayed the account's after the tap and `SessionRestore` signed the person back
         // in on the next launch.
-        _account = State(wrappedValue: AccountModel(api: data.local, session: data.session))
+        // `router:` is `data.api` and not `data.local`, and the difference is the whole of what
+        // ERRATA E272 found: `RoutedAPI.deleteAccount` is the only route that sends `DELETE /me`,
+        // and this model held the local API alone, so a deletion never left the phone. The other two
+        // arguments stay local — the reminders and the account link are `LocalAPI` routes that are
+        // deliberately not on `CypressAPI`. See `AccountModel.router`.
+        _account = State(
+            wrappedValue: AccountModel(api: data.local, session: data.session, router: data.api)
+        )
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
     }
 

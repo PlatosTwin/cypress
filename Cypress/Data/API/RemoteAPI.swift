@@ -102,8 +102,15 @@ public struct RemoteAPI: CypressAPI {
     /// **refuses** rather than sending an empty array, because an empty array is the claim that
     /// nothing is queued and R3's stated failure mode is deleting differently from what was asked.
     ///
-    /// The composition root is what has both. Wiring it is the account step (spec §10 step 5), not
-    /// this one.
+    /// The composition root is what has both, and **it fills this** — `DataLayer.boot` passes a
+    /// provider that reads the outbox table.
+    ///
+    /// This line used to end "wiring it is the account step (spec §10 step 5), not this one", and
+    /// that sentence outlived the round it described: step 5 landed, the seam was filled, and
+    /// `RoutedAPI.deleteAccount` went on routing local anyway — so `DELETE /me` had a working
+    /// implementation and no shipping caller. ERRATA **E272** recorded the gap; the owner's ruling
+    /// of 2026-08-23 closed it by pointing the router at this method. The default stays nil, because
+    /// a `RemoteAPI` built without a queue behind it still must not claim that nothing is queued.
     public let pendingOutboxKeys: (@Sendable () async throws -> [UUID])?
 
     public init(
@@ -537,6 +544,19 @@ public struct RemoteAPI: CypressAPI {
     /// `tombstones` has no field on `Outcome` at all — it counts marks the *service* wrote, over
     /// keys that are still in this device's queue — so it is deliberately not mapped onto
     /// `discardedOutboxItems`, which counts what the local half discarded. Two different acts.
+    ///
+    /// ── The one arm where a throw does not mean "not deleted" ──────────────────────────────────
+    ///
+    /// The response is decoded **after** the request succeeded, so a decode failure throws on a
+    /// deletion the service has already performed. `RoutedAPI.deleteAccount` reads any throw from
+    /// here as "abort, touch nothing locally", and the sheet then says nothing was deleted — while
+    /// the account is in fact gone on the far side. It is reachable only through contract skew: a
+    /// 2xx whose body is not `DeleteAccountResponse`, which today means a client and a service that
+    /// disagree about this route. It self-corrects in the direction of the deletion, by the same
+    /// path the header above describes — the next request presenting that session is refused — so
+    /// the person ends up signed out rather than stranded. Written down because the symptom
+    /// ("it says it failed but my account is gone") reads as a defect in the opposite component
+    /// from the one that has it.
     ///
     /// - Throws: `RemoteSurface.communityHalfOnly` when no `pendingOutboxKeys` provider was
     ///   injected — see that property for why an empty array is not an acceptable substitute.
