@@ -596,7 +596,14 @@ struct RoutedAPITests {
                 Photo(id: mine, treeID: treeID, shotType: .fullTree, capturedAt: Date(timeIntervalSince1970: 1_700_000_000))
             ]),
             ownPhotoIDs: [mine],
-            deletablePhotoIDs: [mine]
+            deletablePhotoIDs: [mine],
+            // Not decoration. `statusProvenance` is a **local** fact — this device's
+            // `tree_status_overrides` table, which the service has no view of — so the merge has to
+            // carry it over from `mine` the way it carries `tree` itself. It defaults to `.record`
+            // on the initializer, which means a *dropped* argument in the merge compiles silently.
+            // See `treeProfileMergeKeepsThisDevicesStatusProvenance` below for what that would put
+            // on screen.
+            statusProvenance: .communityReview
         )
 
         let transport = ScriptedTransport()
@@ -628,8 +635,79 @@ struct RoutedAPITests {
         // This device's own photograph is still its own, and still deletable.
         #expect(profile.isOwnPhoto(try #require(profile.photos.items.first { $0.id == mine })))
         #expect(profile.deletablePhotoIDs == [mine])
+        #expect(
+            profile.statusProvenance == .communityReview,
+            "the merge dropped a fact only this device holds"
+        )
 
         #expect(await log.outcome(of: .treeProfile) == .live)
+    }
+
+    /// **`RoutedAPI` is the shipping path, and the merge rebuilds the payload field by field.**
+    ///
+    /// `DataLayer` wires `RoutedAPI(local:remote:log:)`, so every profile read goes through the
+    /// reconstruction above whenever the service answers. That reconstruction lists its arguments by
+    /// name, and `TreeProfile.init` gives `statusProvenance` a `.record` default — so a line deleted
+    /// from it compiles, and the whole unit target stays green while the live app quietly
+    /// re-attributes a death.
+    ///
+    /// This asserts the **visible** consequence rather than the field alone, because the field is
+    /// only interesting for what it makes the screen say. A community-confirmed death that comes back
+    /// from the merge as `.record` renders as *"Recorded dead in the …"* over a city inventory that
+    /// never said any such thing — the mirror of the falsehood this whole change is about, arriving
+    /// one layer above where `ModerationTests` watches for it.
+    ///
+    /// The remote half is scripted to answer, because a fallback returns `mine` untouched and would
+    /// pass no matter what the merge does.
+    @Test("the merge keeps a status provenance only this device can know")
+    func treeProfileMergeKeepsThisDevicesStatusProvenance() async throws {
+        let treeID = UUID()
+        // **A city-import row, deliberately.** This is the case the whole change turns on: an
+        // inventory row that shipped `alive` and was confirmed dead by a reviewer *here*. Its
+        // `source` is identical to a row the city itself published as dead, so if the merge loses the
+        // provenance the notice does not merely go vague — it names the inventory as the author of a
+        // death the inventory never recorded, which is the mirror of the falsehood being fixed.
+        var tree = Self.tree(treeID)
+        tree.status = .deadReported
+        tree.source = .cityImport
+
+        var local = LocalDouble()
+        local.profile = TreeProfile(
+            tree: tree,
+            inventorySource: InventorySource(
+                id: "testburgh_register",
+                name: "Testburgh municipal tree register",
+                url: "",
+                snapshotDate: nil
+            ),
+            // What a real `confirmReview` leaves behind: the seed says `alive`, the override says
+            // dead, and only this device holds the row that explains which.
+            statusProvenance: .communityReview
+        )
+
+        let transport = ScriptedTransport()
+        transport.answer(
+            "GET /trees/\(treeID.uuidString)",
+            with: """
+            {"tree_uuid":"\(treeID.uuidString)","photos":[],
+             "photo_count":0,"visit_count":0,"own_photo_ids":[],"deletable_photo_ids":[]}
+            """
+        )
+
+        let log = RemoteReadLog()
+        let profile = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log)
+            .treeProfile(id: treeID)
+
+        #expect(await log.outcome(of: .treeProfile) == .live, "this test proves nothing on the fallback path")
+        #expect(profile.statusProvenance == .communityReview)
+
+        let notice = try #require(TreeProfilePresentation(profile: profile).deadNotice)
+        #expect(notice.text.contains("community reviewer"))
+        #expect(
+            !notice.text.contains("Testburgh municipal tree register"),
+            "the merge credited the city's inventory with a death a reviewer here confirmed"
+        )
+        #expect(notice.leadIn == TreeProfilePresentation.deadNoticeConfirmedLeadIn)
     }
 
     /// R-required's fallback: the phone's profile, unchanged, and a mark saying it is "this tree as

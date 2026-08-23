@@ -628,7 +628,11 @@ public struct RoutedAPI: CypressAPI {
             photoTallies: mine.photoTallies,
             inventorySource: mine.inventorySource,
             speciesCorrection: mine.speciesCorrection,
-            recordDefect: mine.recordDefect
+            recordDefect: mine.recordDefect,
+            // The local answer, like `tree` itself: `tree_status_overrides` is this device's table
+            // and the service has no view of it. Taking the remote half's value here would let a
+            // merge quietly un-attribute a death this phone's reviewer confirmed.
+            statusProvenance: mine.statusProvenance
         )
     }
 

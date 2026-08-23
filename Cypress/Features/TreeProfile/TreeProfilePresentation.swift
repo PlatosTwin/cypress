@@ -158,37 +158,112 @@ struct TreeProfilePresentation {
     /// such status cannot be added without answering the question. See ERRATA (E95).
     var acceptsContributions: Bool { tree.status.acceptsNewContributions }
 
-    /// The sentence a confirmed-dead tree's profile says about itself, or nil (ERRATA E170).
+    /// The lead-in and sentence a dead tree's profile says about itself, or nil (ERRATA E170).
     ///
     /// ── Why a profile needed a sentence and not just a badge ───────────────────────────────
     /// `dead_reported` is the one status this screen renders that a reader cannot infer from anything
     /// else on it. A memorial announces itself — screen 19, no CTA, no check-in, a `REMOVED` badge. A
-    /// confirmed-dead tree renders as an ordinary profile with every button live, because
+    /// dead tree renders as an ordinary profile with every button live, because
     /// `TreeStatus.deadReported.acceptsNewContributions` is `true` and that is deliberate: a dead
     /// street tree is a hazard, and reporting it is the single most useful thing a passer-by can do.
     /// So the screen was silently identical to a live tree nobody had checked in on.
     ///
     /// The `DEAD` badge alone would not do it. A badge is a word, and the word this one needs is
-    /// three facts: somebody reported it, a reviewer agreed, and the buttons below are still meant
-    /// for you. The last of those is why the sentence ends where it does.
+    /// three facts: who says the tree is dead, that it is still standing, and that the buttons below
+    /// are still meant for you. The last of those is why the sentence ends where it does.
+    ///
+    /// ── The first of those three facts was a falsehood waiting for a publish (finding F7) ──────
+    /// This property used to guard on the status **alone** and return one sentence: *"Reported dead,
+    /// and a community reviewer confirmed it."* It asked *what* the status is and never *who said
+    /// so*. Every `dead_reported` row that had ever existed came out of the review queue, so the
+    /// sentence was true of every row ever shipped — and seed generation s17 is what made it false,
+    /// because `build_seed.status_for_record` maps a source-stated `Dead` condition onto the status
+    /// and NYC Parks publishes it on 10,635 rows. A reader opening one would have been told a
+    /// community reviewer confirmed something no community member has ever seen.
+    ///
+    /// So the question the notice asks is now **`statusProvenance`**, not `status` — and not
+    /// `TreeSource` either. `source` cannot answer it in either direction: an inventory row that
+    /// shipped `alive` and was then confirmed dead by a reviewer here is a `city_import` row whose
+    /// death is the community's, and that arm has existed since E170.
+    ///
+    /// **The naming arm names the inventory the row is actually from**, through the same
+    /// `InventorySource.name` the subtitle and the provenance line read (R28), so a second city
+    /// publishing a `Dead` condition needs no code here. The literal `NYC` never appears: naming a
+    /// city the row does not name is the defect this whole family is about.
     ///
     /// **Not "the city has been told."** Nothing tells the city — see `CommunityNote`'s header and
     /// DECISIONS §3.3 — and this is the surface where that temptation is strongest, because "dead"
-    /// is the status a reader most wants to believe somebody official is acting on.
-    var deadNotice: String? {
+    /// is the status a reader most wants to believe somebody official is acting on. Note the
+    /// direction of the city arm below: it says the death was recorded *in* the city's inventory,
+    /// which is a statement about a file that already exists, and says nothing about anybody acting.
+    var deadNotice: DeadNotice? {
         guard tree.status == .deadReported else { return nil }
-        return Self.deadNoticeText
+        switch profile.statusProvenance {
+        case .communityReview:
+            return DeadNotice(leadIn: Self.deadNoticeConfirmedLeadIn, text: Self.deadNoticeConfirmed)
+        case .record:
+            // The record's own status. A city row's publisher can be named; a community row's
+            // cannot, because no inventory lists it — and that arm gets the sentence that credits
+            // nobody rather than a guess at which of the two paths put it there. Unreachable today
+            // (`addTree` writes `alive`, and only an override moves a status afterwards), and
+            // written anyway: an arm that has to invent an attributor is exactly what F7 was.
+            guard tree.source == .cityImport else {
+                return DeadNotice(leadIn: Self.deadNoticeReportedLeadIn, text: Self.deadNoticeReported)
+            }
+            return DeadNotice(
+                leadIn: Self.deadNoticeListedLeadIn,
+                text: Self.deadNoticeListed(
+                    inventory: profile.inventorySource?.name ?? CityRecordCopy.unnamedCityInventory
+                )
+            )
+        }
     }
 
-    /// **NOT SPECIFIED** — SCREENS.md draws no confirmed-dead profile.
-    static let deadNoticeText = """
+    /// A notice and the bolded word it opens with, carried together.
+    ///
+    /// One value rather than two properties, because the *pair* is what has to stay true.
+    /// `Confirmed dead:` over a sentence about a city's file, or `Listed dead:` over a sentence about
+    /// a reviewer, is the same falsehood F7 was — reassembled by a view. A caller cannot take one
+    /// arm's lead-in and another arm's text without writing the mismatch out by hand.
+    struct DeadNotice: Equatable {
+        /// The bolded front, in `recognitionTip`'s shape — the one Callout lead-in this screen
+        /// already draws.
+        let leadIn: String
+        let text: String
+    }
+
+    /// **NOT SPECIFIED** — SCREENS.md draws no dead profile at all, in any of these three states.
+    ///
+    /// The community arm is the sentence E170 shipped, unchanged: it was never wrong about the rows
+    /// it was written for.
+    static let deadNoticeConfirmed = """
         Reported dead, and a community reviewer confirmed it. It is still standing, so anything you \
         see here is still worth reporting.
         """
+    static let deadNoticeConfirmedLeadIn = "Confirmed dead:"
 
-    /// The bolded front of `deadNotice`, in `recognitionTip`'s shape — the one Callout lead-in this
-    /// screen already draws.
-    static let deadNoticeLeadIn = "Confirmed dead:"
+    /// The city arm. `inventory` is `InventorySource.name` — `NYC Parks Forestry Tree Points`,
+    /// `SF Public Works street tree inventory` — or `CityRecordCopy.unnamedCityInventory` on a seed
+    /// whose receipt cannot name one, which is the fallback the subtitle already takes and for the
+    /// same reason: naming the category we can derive is not the defect; naming a city we cannot is.
+    ///
+    /// **"Recorded", not "confirmed".** The city wrote it down in a file, on a day; nobody went and
+    /// looked on the reader's behalf. The second half of the sentence is why that matters — the tree
+    /// is still standing, and what the reader can see is still worth sending.
+    static func deadNoticeListed(inventory: String) -> String {
+        """
+        Recorded dead in the \(inventory). It is still standing, so anything you see here is still \
+        worth reporting.
+        """
+    }
+    static let deadNoticeListedLeadIn = "Listed dead:"
+
+    /// The arm that attributes the death to nobody, for a record whose status came neither from a
+    /// review on this device nor from an inventory. It states what the record states and no more.
+    static let deadNoticeReported = """
+        Reported dead. It is still standing, so anything you see here is still worth reporting.
+        """
+    static let deadNoticeReportedLeadIn = "Reported dead:"
 
     // MARK: - Quad action row (C8)
 
