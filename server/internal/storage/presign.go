@@ -33,28 +33,72 @@ import (
 // These are the names `flyctl storage create` already set as app secrets on `cypress-sync`
 // (server/README.md). They are not in this repository and must never be.
 type Config struct {
-	AccessKeyID     string // AWS_ACCESS_KEY_ID
-	SecretAccessKey string // AWS_SECRET_ACCESS_KEY
-	Endpoint        string // AWS_ENDPOINT_URL_S3, e.g. https://fly.storage.tigris.dev
-	Region          string // AWS_REGION
-	Bucket          string // BUCKET_NAME
+	AccessKeyID     string // …AWS_ACCESS_KEY_ID
+	SecretAccessKey string // …AWS_SECRET_ACCESS_KEY
+	Endpoint        string // …AWS_ENDPOINT_URL_S3, e.g. https://fly.storage.tigris.dev
+	Region          string // …AWS_REGION
+	Bucket          string // …BUCKET_NAME
+	// VarPrefix is what the five variables above are actually called, minus their common tail. Empty
+	// for the original set; `PhotoVarPrefix` for the photo bucket. It exists so a refusal names the
+	// variable somebody has to go and set.
+	VarPrefix string
 }
 
-// Validate reports the first missing field.
+// Validate reports the first missing field, naming the environment variable it came from.
+//
+// **The names are built from `VarPrefix` rather than written as literals**, because there are two
+// buckets now and telling somebody to set `AWS_ACCESS_KEY_ID` when the empty one is
+// `PHOTOS_AWS_ACCESS_KEY_ID` sends them to change the credential that was already working — and that
+// credential is the seed publish's.
 func (c Config) Validate() error {
 	switch {
 	case c.AccessKeyID == "":
-		return errors.New("AWS_ACCESS_KEY_ID is not set")
+		return errors.New(c.VarPrefix + "AWS_ACCESS_KEY_ID is not set")
 	case c.SecretAccessKey == "":
-		return errors.New("AWS_SECRET_ACCESS_KEY is not set")
+		return errors.New(c.VarPrefix + "AWS_SECRET_ACCESS_KEY is not set")
 	case c.Endpoint == "":
-		return errors.New("AWS_ENDPOINT_URL_S3 is not set")
+		return errors.New(c.VarPrefix + "AWS_ENDPOINT_URL_S3 is not set")
 	case c.Region == "":
-		return errors.New("AWS_REGION is not set")
+		return errors.New(c.VarPrefix + "AWS_REGION is not set")
 	case c.Bucket == "":
-		return errors.New("BUCKET_NAME is not set")
+		return errors.New(c.VarPrefix + "BUCKET_NAME is not set")
 	}
 	return nil
+}
+
+// PhotoVarPrefix is what every photo-storage variable is called, minus the rest of its name:
+// `PHOTOS_AWS_ACCESS_KEY_ID`, `PHOTOS_BUCKET_NAME`, and so on.
+//
+// ── Why photographs may not share the seed bucket's variables ──────────────────────────────────
+//
+// **The overwrite hazard.** `AWS_ACCESS_KEY_ID` and its four companions on `cypress-sync` are the
+// **`cypress-cities`** bucket's, set automatically by `flyctl storage create` when that bucket was
+// made, and the seed-publish relay in `server/README.md` depends on them. A `flyctl storage create`
+// run for a photo bucket sets those same names again, in place. Publishing would then be signing
+// with the photo bucket's keys — and it would break silently, because publishing is not something
+// this service does, so nothing here would go red.
+//
+// **The visibility hazard, which stands even without the first.** `cypress-cities` is public-read:
+// it serves anonymous GETs for every key on its dedicated domain. A photograph stored there is
+// fetchable by uuid with no credential at all, so `photoData`'s visibility check — the thing that
+// keeps a `pending` photograph private to its contributor, and a withdrawn one gone — would be
+// decoration. Photographs need a bucket that is not public-read; that is a different bucket, which
+// is a different set of keys.
+const PhotoVarPrefix = "PHOTOS_"
+
+// PhotoConfig reads the photo bucket's coordinates.
+//
+// A named constructor rather than a flag on `Config`, so the prefix cannot be forgotten at a call
+// site: there is exactly one way to build a photo presigner and it is spelled here.
+func PhotoConfig(getenv func(string) string) Config {
+	return Config{
+		AccessKeyID:     getenv(PhotoVarPrefix + "AWS_ACCESS_KEY_ID"),
+		SecretAccessKey: getenv(PhotoVarPrefix + "AWS_SECRET_ACCESS_KEY"),
+		Endpoint:        getenv(PhotoVarPrefix + "AWS_ENDPOINT_URL_S3"),
+		Region:          getenv(PhotoVarPrefix + "AWS_REGION"),
+		Bucket:          getenv(PhotoVarPrefix + "BUCKET_NAME"),
+		VarPrefix:       PhotoVarPrefix,
+	}
 }
 
 // Presigner mints presigned URLs.

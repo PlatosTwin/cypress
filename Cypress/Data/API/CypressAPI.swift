@@ -1112,6 +1112,17 @@ public struct PhotoUploadRequest: Hashable, Sendable {
     public let height: Int?
     /// Snapped to the 25 m public grid before it reaches here (A7, BUILD-PLAN §10).
     public let publicCoordinate: Coordinate?
+    /// The binary's own client-minted id (`OutboxPhoto.id`), which the service dedupes `begin` on.
+    ///
+    /// **Without it a begin cannot be retried**, which is the concrete blocker ERRATA **E264**
+    /// records against a photo send path: the handler minted a fresh `photos.id` per call, so a
+    /// begin replayed after a flap created a *second* photograph instead of finding the first. With
+    /// it the retry is the same request and lands on the same row.
+    ///
+    /// Optional because the **apply** sink has no use for one — `LocalAPI` is a move inside the app
+    /// container and dedupes on nothing — and passing a key there would imply a remote idempotency
+    /// that call does not have.
+    public let idempotencyKey: UUID?
 
     public init(
         treeID: UUID,
@@ -1121,7 +1132,8 @@ public struct PhotoUploadRequest: Hashable, Sendable {
         capturedAt: Date,
         width: Int? = nil,
         height: Int? = nil,
-        publicCoordinate: Coordinate? = nil
+        publicCoordinate: Coordinate? = nil,
+        idempotencyKey: UUID? = nil
     ) {
         self.treeID = treeID
         self.visitID = visitID
@@ -1131,6 +1143,7 @@ public struct PhotoUploadRequest: Hashable, Sendable {
         self.width = width
         self.height = height
         self.publicCoordinate = publicCoordinate
+        self.idempotencyKey = idempotencyKey
     }
 }
 

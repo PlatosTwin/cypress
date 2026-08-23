@@ -27,6 +27,13 @@ type beginPhotoRequest struct {
 	// PublicLat/Lon are snapped to the 25 m public grid before they reach here (A7, BUILD-PLAN §10).
 	PublicLat *float64 `json:"public_lat"`
 	PublicLon *float64 `json:"public_lon"`
+	// ClientUUID is the binary's own id on the phone (`OutboxPhoto.id`), and the key this route
+	// dedupes on — see `003_photo_idempotency_key.sql` for the defect that closes.
+	//
+	// Optional, so a client that predates the send path is unchanged: it sends no key, gets no
+	// idempotency, and behaves exactly as it did. A begin with no key is not an error, it is the old
+	// contract.
+	ClientUUID *uuid.UUID `json:"client_uuid"`
 }
 
 // beginPhotoResponse is `PhotoUploadTicket`: `{photo_id, presigned_put_url}` (BUILD-PLAN §6).
@@ -66,12 +73,13 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 	// a phone appears in a URL that will be handed out.
 	storageKey := "photos/" + photoID.String() + ".jpg"
 
-	destination, err := s.Presigner.PresignPut(storageKey, presignLifetime)
-	if err != nil {
-		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
-	}
-
-	err = s.Store.BeginPhoto(r.Context(), store.NewPhoto{
+	// **The store runs before the presign, which reverses the original order and is the point.** With
+	// an idempotency key a begin can be a replay, and a replay's row already has a storage key — the
+	// one the *first* call minted. Presigning `storageKey` first would, on a replay, hand back a URL
+	// for an object no row names: the client would PUT its bytes there, `received` would close the
+	// grace window on a row whose own key is still empty, and the photograph would be collected
+	// after 72 h as never arrived. So the row decides the key and the presign follows it.
+	begun, err := s.Store.BeginPhoto(r.Context(), store.NewPhoto{
 		ID:              photoID,
 		TreeUUID:        request.TreeUUID,
 		VisitClientUUID: request.VisitClientUUID,
@@ -82,12 +90,21 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 		PublicLat:       request.PublicLat,
 		PublicLon:       request.PublicLon,
 		StorageKey:      storageKey,
+		ClientUUID:      request.ClientUUID,
 	}, who.owner())
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
-	response := beginPhotoResponse{PhotoID: photoID, Destination: destination, Moderation: "pending"}
+	// A **fresh** destination on a replay, deliberately: a presign expires, and the reason a client
+	// is calling begin a second time is that time passed. Returning the original URL would answer
+	// the retry with something already dead.
+	destination, err := s.Presigner.PresignPut(begun.StorageKey, presignLifetime)
+	if err != nil {
+		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+	}
+
+	response := beginPhotoResponse{PhotoID: begun.ID, Destination: destination, Moderation: "pending"}
 	if who.isUser() {
 		response.Moderation = "approved"
 		response.ApprovalReason = string(store.AutoApprovedLaunch)

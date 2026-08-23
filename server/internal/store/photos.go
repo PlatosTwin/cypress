@@ -39,6 +39,23 @@ type NewPhoto struct {
 	PublicLat       *float64
 	PublicLon       *float64
 	StorageKey      string
+	// ClientUUID is the binary's own client-minted id, and the key this service dedupes `begin` on
+	// (`003_photo_idempotency_key.sql`). Nil from a client that does not send one — which is every
+	// build before the send path — and such a begin is not idempotent, exactly as it never was.
+	ClientUUID *uuid.UUID
+}
+
+// BegunPhoto is what a begin settled on: the row, and whether this call is the one that created it.
+//
+// `Existing` is not decoration. The handler presigns against the storage key that is actually on the
+// row, and on a replay that is the **first** call's key rather than the one this call just
+// generated. Presigning the fresh key would hand the client a URL to an object no `photos` row
+// names, so the bytes would land somewhere nothing ever reads and the photograph would be collected
+// after 72 h as "never arrived".
+type BegunPhoto struct {
+	ID         uuid.UUID
+	StorageKey string
+	Existing   bool
 }
 
 // BeginPhoto reserves the photo record and decides its moderation state on the spot.
@@ -54,7 +71,21 @@ type NewPhoto struct {
 // and to nobody else. That is `isVisibleToItsContributor` doing exactly what ERRATA E37 designed it
 // to do, and it makes screen 15's drawn promise — "An account backs them up and lets them join each
 // tree's public timeline" — literally true rather than needing new copy.
-func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) error {
+// ── Idempotency, and why the lookup comes first ────────────────────────────────────────────────
+//
+// With a `ClientUUID` this is retryable: the key is looked up before anything is inserted, and a
+// begin that has already been answered returns the row it made. Migration 003 states the defect this
+// closes — a begin whose answer went missing had no way to ask "did that land?", and asking again
+// made a second photograph.
+//
+// The lookup is first rather than relying on `ON CONFLICT DO NOTHING`, because the two are not the
+// same answer: the conflict arm tells you the insert did nothing, but not *which* row won, and the
+// caller needs that row's storage key to presign against. `BegunPhoto.Existing` says why.
+//
+// Both run in one transaction, so a second call arriving between the lookup and the insert loses the
+// race at the unique index rather than duplicating the row — the index is the authority, and the
+// lookup is the fast path that also tells the caller what it needs.
+func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (BegunPhoto, error) {
 	state := "pending"
 	var reason *ApprovalReason
 	if owner.UserID != nil {
@@ -63,16 +94,43 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) err
 		reason = &auto
 	}
 	now := s.now()
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO photos
-		    (id, tree_uuid, visit_client_uuid, user_id, device_id, shot_type,
-		     moderation_state, approval_reason, captured_at, width, height,
-		     public_lat, public_lon, storage_key, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)
-	`, photo.ID, photo.TreeUUID, photo.VisitClientUUID, owner.UserID, owner.DeviceID,
-		photo.ShotType, state, reason, photo.CapturedAt, photo.Width, photo.Height,
-		photo.PublicLat, photo.PublicLon, photo.StorageKey, now)
-	return err
+
+	var begun BegunPhoto
+	err := s.Tx(ctx, func(tx pgx.Tx) error {
+		if photo.ClientUUID != nil {
+			var id uuid.UUID
+			var key string
+			err := tx.QueryRow(ctx, `
+				SELECT id, storage_key FROM photos
+				 WHERE client_uuid = $1
+				   AND (($2::uuid IS NOT NULL AND user_id = $2)
+				     OR ($3::uuid IS NOT NULL AND device_id = $3))
+			`, photo.ClientUUID, owner.UserID, owner.DeviceID).Scan(&id, &key)
+			if err == nil {
+				begun = BegunPhoto{ID: id, StorageKey: key, Existing: true}
+				return nil
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return err
+			}
+		}
+
+		_, err := tx.Exec(ctx, `
+			INSERT INTO photos
+			    (id, tree_uuid, visit_client_uuid, user_id, device_id, shot_type,
+			     moderation_state, approval_reason, captured_at, width, height,
+			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+		`, photo.ID, photo.TreeUUID, photo.VisitClientUUID, owner.UserID, owner.DeviceID,
+			photo.ShotType, state, reason, photo.CapturedAt, photo.Width, photo.Height,
+			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now)
+		if err != nil {
+			return err
+		}
+		begun = BegunPhoto{ID: photo.ID, StorageKey: photo.StorageKey}
+		return nil
+	})
+	return begun, err
 }
 
 // PhotoRecord is a stored photograph, as the read routes need it.

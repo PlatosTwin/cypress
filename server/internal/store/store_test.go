@@ -424,7 +424,7 @@ func TestSignedInPhotoIsApprovedWithAReason(t *testing.T) {
 		ID: uuid.New(), TreeUUID: uuid.New(), ShotType: "full_tree",
 		CapturedAt: time.Now().UTC(), StorageKey: "photos/a.jpg",
 	}
-	if err := store.BeginPhoto(context.Background(), photo, UserOwner(user.ID)); err != nil {
+	if _, err := store.BeginPhoto(context.Background(), photo, UserOwner(user.ID)); err != nil {
 		t.Fatalf("beginning photo: %v", err)
 	}
 	stored, err := store.Photo(context.Background(), photo.ID)
@@ -450,7 +450,7 @@ func TestAnonymousDevicePhotoStaysPendingAndPrivate(t *testing.T) {
 		ID: uuid.New(), TreeUUID: uuid.New(), ShotType: "trunk",
 		CapturedAt: time.Now().UTC(), StorageKey: "photos/b.jpg",
 	}
-	if err := store.BeginPhoto(context.Background(), photo, DeviceOwner(deviceID)); err != nil {
+	if _, err := store.BeginPhoto(context.Background(), photo, DeviceOwner(deviceID)); err != nil {
 		t.Fatalf("beginning photo: %v", err)
 	}
 	stored, err := store.Photo(context.Background(), photo.ID)
@@ -492,7 +492,7 @@ func TestOperatorTakedownMovesAPhotoToRejected(t *testing.T) {
 		ID: uuid.New(), TreeUUID: uuid.New(), ShotType: "full_tree",
 		CapturedAt: time.Now().UTC(), StorageKey: "photos/c.jpg",
 	}
-	if err := store.BeginPhoto(context.Background(), photo, UserOwner(user.ID)); err != nil {
+	if _, err := store.BeginPhoto(context.Background(), photo, UserOwner(user.ID)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RejectPhoto(context.Background(), photo.ID); err != nil {
