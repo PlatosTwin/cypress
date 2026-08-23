@@ -22,13 +22,20 @@ struct StatusBadge: View {
         case planted(year: Int)
         /// `REMOVED` — the memorial state.
         case removed
-        /// `DEAD` — a tree a lead has confirmed dead (ERRATA E170).
+        /// `DEAD` — a `dead_reported` tree, whoever says so (ERRATA E170).
+        ///
+        /// **The badge is deliberately silent about who.** It used to read "a tree a lead has
+        /// confirmed dead", which was true of every row that had ever existed and stopped being true
+        /// the day a city inventory could publish the status itself — seed generation s17 maps a
+        /// source-stated `Dead` condition onto it, and NYC Parks publishes that on 10,635 rows. The
+        /// word on the badge is `Dead` either way, so the badge needed no arm; the sentence under it
+        /// did, and `TreeProfilePresentation.deadNotice` is where the attribution now lives.
         ///
         /// **Not a second way of saying `removed`.** A `dead_reported` tree is still standing over a
         /// pavement: it keeps its profile, its REPORT and CARE buttons and its pin
         /// (`TreeStatus.deadReported.acceptsNewContributions`). The badge exists because that profile
-        /// otherwise says nothing at all about a status somebody confirmed — it looked exactly like a
-        /// live tree with no check-ins.
+        /// otherwise says nothing at all about the status — it looked exactly like a live tree with
+        /// no check-ins.
         case deadReported
 
         var text: String {
