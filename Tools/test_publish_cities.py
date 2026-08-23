@@ -823,6 +823,61 @@ finally:
 
 
 # --------------------------------------------------------------------------
+# 6c. THE LATE SITE'S DIAGNOSIS, ASSERTED POSITIVELY
+# --------------------------------------------------------------------------
+# Everything above pins the late message only NEGATIVELY -- 6a asserts the early
+# refusal does *not* say "THIS RUN WROTE IT". Replacing the whole `when="after"`
+# cause string with garbage therefore left the suite green: the swap red-proof
+# only fails because swapping makes the EARLY site emit the after-text, which
+# says nothing about whether that text is still correct. Adversarial review found
+# this; the check below is the positive half.
+#
+# Called directly rather than through a publish, because the shipping publisher
+# cannot reach the late refusal -- that is the whole point of the early guard.
+# The only way to exercise the second call site is to call it.
+#
+# Fails if: the after-branch stops naming what the operator must do -- that this
+# run produced the file, which file to fix, and that deleting it is the wrong
+# move. Those three are the difference between the two diagnoses, and sending an
+# operator to `rm` a file the publisher will just rewrite is the failure this
+# prevents.
+probe_dir = tempfile.mkdtemp(prefix="test-publish-late-msg-")
+try:
+    with open(os.path.join(probe_dir, RETIRED_MANIFEST_V1_NAME), "w") as fh:
+        json.dump({"manifest_format": 1, "cities": []}, fh)
+
+    captured, exit_code = io.StringIO(), None
+    with contextlib.redirect_stderr(captured):
+        try:
+            publish_cities.assert_no_legacy_manifest(probe_dir, when="after")
+        except SystemExit as exc:
+            exit_code = exc.code
+    late_msg = captured.getvalue()
+
+    check(exit_code == 1,
+          f"the late guard exited {exit_code!r}, not 1; a self-write regression must fail the "
+          f"run that produced the file")
+    check("THIS RUN WROTE IT" in late_msg,
+          f"the late refusal does not say the run itself wrote the file: {late_msg.strip()[:220]}")
+    check("Tools/publish_cities.py" in late_msg,
+          f"the late refusal does not name the file to fix: {late_msg.strip()[:220]}")
+    check("fix the publisher" in late_msg,
+          f"the late refusal does not tell the operator to fix the publisher rather than delete "
+          f"and re-run: {late_msg.strip()[:220]}")
+    check(RETIRED_MANIFEST_V1_NAME in late_msg,
+          f"the late refusal does not name the offending file: {late_msg.strip()[:220]}")
+
+    # Mutual exclusivity, stated from this side too: the late message must not
+    # carry the EARLY site's cause. Without this, widening both branches to one
+    # string containing every phrase would satisfy every check above.
+    check("left over from an earlier round" not in late_msg,
+          f"the late refusal carries the early site's diagnosis, so the two are no longer "
+          f"distinguishable: {late_msg.strip()[:220]}")
+finally:
+    shutil.rmtree(probe_dir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 # 7. upload.sh NEVER TOUCHES THE RETIRED OBJECT
 # --------------------------------------------------------------------------
 # The publisher not WRITING format 1 and the upload script not UPLOADING it are
