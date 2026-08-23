@@ -355,9 +355,8 @@ struct SeedCorpus: Sendable {
     /// - **`4f6ebaaa`** (706,535,424 bytes, sha256 `4f6ebaaad8c94bde…`) — what the s17 publish put
     ///   on the bucket, and what `Tools/fetch_seed.sh` resolves as of this writing.
     /// - **`ac7b1ccc`** (706,535,424 bytes, sha256 `ac7b1cccd7de413c…`) — the corrective rebuild
-    ///   that repairs the `#95` case-normalisation defect `4f6ebaaa` shipped with (see
-    ///   `docs/errata-pending/seed-case-normalisation-off-by-one.md`), built from the *same* cached
-    ///   extracts so that fix is the only difference.
+    ///   that repairs the `#95` case-normalisation defect `4f6ebaaa` shipped with, built from the
+    ///   *same* cached extracts so that fix is the only difference.
     ///
     /// **Not one row count moves between them**, which is the point. The fix rewrites three field
     /// *values* (`tree` → `Tree`, `Park strip` → `Park Strip` in two columns) and moves
