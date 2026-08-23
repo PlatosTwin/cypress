@@ -207,10 +207,15 @@ struct TreeProfileView: View {
                     // under it should be read (ERRATA E170). `.memorial` is the Callout style screen
                     // 19 uses for the same job — saying what state a record is in — and this is the
                     // other status that needs saying. The buttons below stay live; see `deadNotice`.
+                    //
+                    // Both halves come off the one value, deliberately: which lead-in belongs over
+                    // which sentence is a provenance question the presentation has already answered
+                    // (finding F7), and a view that reached for a static lead-in beside a branched
+                    // sentence is how the two would come apart again.
                     Callout(
-                        " " + notice,
+                        " " + notice.text,
                         style: .memorial,
-                        leadIn: TreeProfilePresentation.deadNoticeLeadIn
+                        leadIn: notice.leadIn
                     )
                     .padding(.horizontal, CypressSpacing.gutter)
                     .padding(.top, TreeProfileMetrics.blockGap)

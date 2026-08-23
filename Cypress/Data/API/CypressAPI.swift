@@ -904,6 +904,19 @@ public struct TreeProfile: Hashable, Sendable {
     /// rather than offering one that would be refused.
     public let recordDefect: RecordDefectOffer
 
+    /// **Who put `tree.status` where it is** — the record's own publisher, or a review on this device.
+    ///
+    /// `LocalAPI.treeProfile` layers `tree_status_overrides` onto the status it read, and the two
+    /// origins are indistinguishable afterwards: the field holds one `TreeStatus` and the row it came
+    /// from is gone. Anything that wants to say *who* — and the confirmed-dead notice is the one
+    /// surface that does — has to be told here, because the answer is a read of a second table and a
+    /// presentation may not reach past `CypressAPI` for it (ARCHITECTURE §4).
+    ///
+    /// `.record` for every stub and every preview, which is the safe direction in the strong sense:
+    /// it credits nobody, so a payload that simply does not know cannot be read as evidence that a
+    /// community reviewer confirmed anything. See `TreeStatusProvenance`.
+    public let statusProvenance: TreeStatusProvenance
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -924,7 +937,8 @@ public struct TreeProfile: Hashable, Sendable {
         photoTallies: [UUID: PhotoTally] = [:],
         inventorySource: InventorySource? = nil,
         speciesCorrection: SpeciesCorrectionOffer = .unavailable,
-        recordDefect: RecordDefectOffer = .unavailable
+        recordDefect: RecordDefectOffer = .unavailable,
+        statusProvenance: TreeStatusProvenance = .record
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -946,6 +960,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.inventorySource = inventorySource
         self.speciesCorrection = speciesCorrection
         self.recordDefect = recordDefect
+        self.statusProvenance = statusProvenance
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took
