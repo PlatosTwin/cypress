@@ -34,10 +34,18 @@ decision, taken with the owner"; the point recorded here is that one of the two 
 requires code that does not exist — object deletion, and a sweeper for the 72 h grace window
 that `bytes_received_at` already tracks and nothing collects.
 
-**It is also the hook the account-deletion round needs.** A per-account purge of photo storage
-cannot be written until there is an object-deletion path at all, and the enumeration it needs —
-every `storage_key` for a user — is a single indexed query on `photos.user_id`, so the purge is
-tractable by construction. What it is missing is the delete, not the query.
+**The account purge is already correct at the row level and cannot be correct at the byte level.**
+Checked rather than assumed: `Store.Anonymize`'s two doors both handle photographs, and both write
+`UPDATE photos SET deleted_at = …, user_id = NULL, anonymized_at = …` — including
+`EraseEverything`, which `DELETE`s contributions outright. So the deletion round's obligation on
+`photos` rows is discharged and does not need re-building.
+
+What no door does — because no code anywhere does it — is remove the object. **"Erase everything"
+does not erase the photograph's bytes**, and on a public-read bucket those bytes stay anonymously
+fetchable by uuid after the account is gone. That is the sharpest form of the decision in this
+section, and it is the only part of the purge that is still owed. The enumeration a byte-purge
+needs is already there — every `storage_key` for a user is one indexed query on `photos.user_id` —
+so what is missing is the delete, not the query, and not the schema.
 
 ## 2 · The client can delete a photograph the server will refuse to withdraw, and the two rules cannot currently agree
 
