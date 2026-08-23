@@ -1756,6 +1756,26 @@ public enum AppSchema {
     private static func applyV18(_ connection: SQLiteConnection) throws {
         guard try tableDefinition(named: "outbox_photos", connection: connection).isEmpty else { return }
         try connection.execute("""
+            -- ── Order matters here, and getting it wrong silently empties the queue ───────────
+            --
+            -- `outbox_photos.outbox_id` is `ON DELETE CASCADE` against `outbox`, and this migration
+            -- **drops** `outbox` as part of rebuilding it. Under `PRAGMA foreign_keys = ON` that
+            -- drop performs an implicit delete of every row first, so a child table populated
+            -- before the drop has its rows cascaded away by it — the binaries are migrated
+            -- perfectly and then deleted, and the only symptom is an empty `photos` list on every
+            -- queued item. Measured, not theorised: it is exactly how this migration first failed.
+            --
+            -- So the binaries are parked in a table with no foreign key, the rebuild happens, and
+            -- `outbox_photos` is created and filled afterwards — by which time its parent is the
+            -- final `outbox` and the cascade has nothing to fire on.
+            CREATE TABLE outbox_photos_staged (
+                outbox_id  TEXT NOT NULL,
+                path       TEXT,
+                shot_type  TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE outbox_photos (
                 -- Client-minted and stable for the life of the binary. It is also the idempotency
                 -- key `POST /photos/begin` dedupes on, which is why it is minted here rather than
@@ -1770,7 +1790,28 @@ public enum AppSchema {
                                 CHECK (shot_type IN ('full_tree','trunk','leaf','other')),
                 -- The local `photos.id` the apply minted. This is the source a send reads: the
                 -- container copy outlives the staged file, and this column is what names it.
-                photo_id        TEXT REFERENCES photos(id),
+                --
+                -- **Deliberately not a foreign key**, which is the opposite of what the rest of this
+                -- schema does and needs its reason stated. `photos` is not this column's parent in
+                -- the sense a FK means: a queued binary's whole purpose is to survive independently
+                -- of the row it points at, and the two ways that row can go are both ordinary.
+                -- `ContributionStore.deletePhoto` tombstones it, and `AccountDeletion`'s erasing
+                -- door removes rows around it, and under `PRAGMA foreign_keys = ON` a RESTRICT
+                -- reference would turn either of those into a failure whose cause is a *queue* row.
+                -- A deletion refusing because something has not synced yet is precisely the coupling
+                -- an outbox exists to avoid.
+                --
+                -- The reference is validated where it is used instead: `sendablePhotos` joins
+                -- `photos` and requires `deleted_at IS NULL AND local_path IS NOT NULL`, so a binary
+                -- whose photograph has gone is simply not sendable. That is a stronger gate than a
+                -- FK — it also refuses a row that still exists but has been withdrawn, which a FK
+                -- would happily keep.
+                photo_id        TEXT,
+                -- Where the apply put the binary inside the app container, which is the source a
+                -- send reads. Recorded here rather than looked up through `photos.local_path`
+                -- because the queue's own source should not depend on another table's shape — and
+                -- because the apply sink already knows it: it is the destination its ticket named.
+                container_path  TEXT,
                 state           TEXT NOT NULL DEFAULT 'pending'
                                 CHECK (state IN ('pending','applied')),
                 -- R77. Set to 0 by this migration for everything already queued; 1 for everything
@@ -1784,7 +1825,7 @@ public enum AppSchema {
                 -- A binary nobody has applied yet must still be somewhere on disk.
                 CHECK (state <> 'pending' OR path IS NOT NULL),
                 -- An applied binary must name the row the apply wrote, or the send has no source.
-                CHECK (state <> 'applied' OR photo_id IS NOT NULL)
+                CHECK (state <> 'applied' OR (photo_id IS NOT NULL AND container_path IS NOT NULL))
             );
             CREATE INDEX IF NOT EXISTS idx_outbox_photos_item ON outbox_photos(outbox_id);
             CREATE INDEX IF NOT EXISTS idx_outbox_photos_state ON outbox_photos(state, sendable);
@@ -1801,6 +1842,26 @@ public enum AppSchema {
                                       'photo_vote','photo_withdrawal','hazard_redirect')),
                 client_uuid       TEXT NOT NULL UNIQUE,
                 payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                -- ── `photo_paths` is dead and cannot be dropped ────────────────────────────────
+                --
+                -- Nothing reads or writes it after this migration; the binaries live in
+                -- `outbox_photos` now. It survives because **earlier migrations still name it**, and
+                -- a migration is frozen once it has run anywhere. v2's body is
+                -- `UPDATE outbox SET photo_paths = … WHERE EXISTS (… json_each(outbox.photo_paths) …)`,
+                -- and SQLite resolves that column at prepare time, so against a table without it the
+                -- statement fails outright — its `WHERE EXISTS` guard never gets the chance to
+                -- decide there is nothing to do.
+                --
+                -- That is not hypothetical, and `DataGates` is what proves it: the migration gate
+                -- sets `user_version = 0` on a fully migrated database and replays every step,
+                -- because a run interrupted between a migration's DDL and its version bump has to
+                -- replay cleanly. For this migration that interruption leaves v18's tables in place
+                -- and the counter at 17, and the replay then runs v2 against them. Dropping the
+                -- column turns that recovery into a database nobody can open.
+                --
+                -- v18 blanks it to `'[]'` rather than leaving stale JSON, so a replayed v2 finds no
+                -- bare-string element and correctly does nothing.
+                photo_paths       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(photo_paths)),
                 -- v1's `json_array_length(photo_paths)`, as a number a CHECK can read. Maintained by
                 -- the two triggers below; never written by hand.
                 photos_outstanding INTEGER NOT NULL DEFAULT 0 CHECK (photos_outstanding >= 0),
@@ -1822,31 +1883,41 @@ public enum AppSchema {
             );
 
             INSERT INTO outbox_per_photo
-                (seq, id, kind, client_uuid, payload, photos_outstanding, state, fail_count,
-                 last_error, last_error_code, local_applied, remote_sent, window_started_at,
-                 next_attempt_at, created_at, updated_at)
-            SELECT seq, id, kind, client_uuid, payload, 0, state, fail_count,
-                   last_error, last_error_code, local_applied, remote_sent, window_started_at,
-                   next_attempt_at, created_at, updated_at
+                (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding, state,
+                 fail_count, last_error, last_error_code, local_applied, remote_sent,
+                 window_started_at, next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, '[]', 0, state,
+                   fail_count, last_error, last_error_code, local_applied, remote_sent,
+                   window_started_at, next_attempt_at, created_at, updated_at
               FROM outbox;
 
-            -- Every staged binary in the queue becomes a row, local-only per R77. `hex(randomblob)`
-            -- is the id: these rows never reach a server, so the value only has to be unique, and
-            -- SQLite has no uuid() to call.
-            INSERT INTO outbox_photos
-                (id, outbox_id, path, shot_type, photo_id, state, sendable,
-                 created_at, updated_at)
-            SELECT lower(hex(randomblob(16))), outbox.id,
-                   json_extract(value, '$.path'),
+            -- Every staged binary in the queue becomes a row, local-only per R77.
+            --
+            -- **The id is punctuated into UUID form rather than left as bare hex** — the same trap
+            -- `backfillSpeciesAssertions` above avoids by dropping into Swift. `hex(randomblob(16))`
+            -- is 32 hex characters with no dashes, `UUID(uuidString:)` refuses that, and so
+            -- `SQLiteRow.uuid("id")` throws on every row this migration writes: the queue stops
+            -- being readable at all. Measured rather than reasoned about — it failed in exactly that
+            -- way, "column 'id' held 'a787d66c…', which is not a UUID". The value only has to be
+            -- unique, but it also has to be the shape every reader already expects.
+            INSERT INTO outbox_photos_staged (outbox_id, path, shot_type, created_at, updated_at)
+            SELECT outbox.id,
+                   -- A bare-string element is a path; v2 rewrote those into objects, and this reads
+                   -- both rather than trusting that the rewrite reached every row. A row whose path
+                   -- could not be recovered either way is dropped by the `WHERE` below instead of
+                   -- becoming a NULL that the `state = 'pending'` CHECK would refuse outright.
+                   COALESCE(json_extract(value, '$.path'),
+                            CASE WHEN json_type(value) = 'text' THEN value END),
                    COALESCE(json_extract(value, '$.shotType'), 'other'),
-                   NULL, 'pending', 0,
                    outbox.created_at, outbox.updated_at
-              FROM outbox, json_each(outbox.photo_paths);
+              FROM outbox, json_each(outbox.photo_paths)
+             WHERE COALESCE(json_extract(value, '$.path'),
+                            CASE WHEN json_type(value) = 'text' THEN value END) IS NOT NULL;
 
             UPDATE outbox_per_photo
                SET photos_outstanding = (
-                     SELECT COUNT(*) FROM outbox_photos
-                      WHERE outbox_photos.outbox_id = outbox_per_photo.id
+                     SELECT COUNT(*) FROM outbox_photos_staged
+                      WHERE outbox_photos_staged.outbox_id = outbox_per_photo.id
                    );
 
             DROP TABLE outbox;
@@ -1854,6 +1925,25 @@ public enum AppSchema {
 
             CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
             CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+
+            -- Now that `outbox` is the rebuilt table, the parked binaries can take their real rows:
+            -- the cascade above has already happened and has nothing left to fire on.
+            --
+            -- **The id is punctuated into UUID form rather than left as bare hex** — the same trap
+            -- `backfillSpeciesAssertions` avoids by dropping into Swift. `hex(randomblob(16))` is 32
+            -- hex characters with no dashes, `UUID(uuidString:)` refuses that, and so
+            -- `SQLiteRow.uuid("id")` throws on every row this migration writes: the queue stops
+            -- being readable at all. Measured — it failed in exactly that way, "column 'id' held
+            -- 'a787d66c…', which is not a UUID".
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 created_at, updated_at)
+            SELECT substr(h, 1, 8) || '-' || substr(h, 9, 4) || '-' || substr(h, 13, 4) || '-'
+                       || substr(h, 17, 4) || '-' || substr(h, 21, 12),
+                   outbox_id, path, shot_type, NULL, NULL, 'pending', 0, created_at, updated_at
+              FROM (SELECT hex(randomblob(16)) AS h, * FROM outbox_photos_staged);
+
+            DROP TABLE outbox_photos_staged;
 
             -- The counter's two halves. Written as triggers rather than kept in step by the store so
             -- that a future writer cannot add a third insertion site and forget one, which is the

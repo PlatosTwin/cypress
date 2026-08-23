@@ -45,7 +45,9 @@ struct CheckInPreviewAPI: CypressAPI {
 /// A transport that accepts nothing, so a preview never writes anywhere real.
 struct CheckInPreviewTransport: OutboxTransport {
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { [] }
-    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID { UUID() }
+    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
+        AppliedPhoto(photoID: UUID(), containerPath: photo.path)
+    }
 }
 
 enum CheckInPreviewFixtures {

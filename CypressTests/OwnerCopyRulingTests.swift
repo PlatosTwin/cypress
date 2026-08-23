@@ -26,12 +26,16 @@ struct OwnerCopyRulingTests {
 
     // MARK: - Ruling 2 · the storage sentence, one body for both arms
 
+    /// The second clause changed in the photo-send round, which owner ruling 2 of 2026-08-14
+    /// anticipated: the sink that makes "photos stay on this phone" false is the one that round
+    /// landed. **The new clause is a proposal pending ratification** — it is pinned here so that it
+    /// cannot drift unnoticed while it waits, not because it is settled.
     @Test("the account block draws the ruled storage sentence")
     func theAccountBlockDrawsTheRuledSentence() {
         #expect(
             AccountCopy.storageBody
-                == "Check-ins and notes sync to your grove. Photos stay on this phone until you "
-                + "choose to share them."
+                == "Check-ins and notes sync to your grove. Photos you add from now on upload too; "
+                + "older ones stay on this phone."
         )
     }
 
@@ -91,14 +95,36 @@ struct OwnerCopyRulingTests {
         // The control: a scan that found no methods would pass the assertion below by seeing
         // nothing, which is this project's signature false green.
         #expect(!methods.isEmpty, "the scan bounded the protocol and found no methods in it at all")
+
+        // ── What this guard pins now, and why it changed shape ─────────────────────────────────
+        //
+        // It used to assert `methods.count == 1`, i.e. that the send side had no photo method at
+        // all. That was the right pin while the sentence was the only thing holding, and its own
+        // message named the exit: "the owner said in ruling 2 of 2026-08-14 that the round which
+        // lands the photo sink revisits the sentence. This is that round."
+        //
+        // The sink has landed, so a count is no longer the invariant — the **pairing** is. The
+        // promise `AccountCopy.storageBody` makes is only false if a photograph can actually leave,
+        // so the two facts have to agree in one direction or the other, and this asserts exactly
+        // that: if the send side can carry a binary, the copy must not still say it cannot. Written
+        // as a biconditional rather than as a new fixed expectation, so that reverting the sink
+        // reverts the requirement instead of leaving a stale assertion behind.
+        let carriesPhoto = methods.contains { $0.lowercased().contains("photo") }
+        // **The literal, not the file.** `AccountSection.swift` quotes the retired sentence in the
+        // doc comment that explains why it was retired, so a `contains` over the source would find
+        // the old promise in the prose recording its own removal and report the opposite of the
+        // truth. Reading `AccountCopy.storageBody` asks the drawn value.
+        let claimsPhotosStayOnDevice =
+            AccountCopy.storageBody.contains("Photos stay on this phone until you choose to")
         #expect(
-            methods.count == 1 && methods[0].hasPrefix("func sync("),
+            carriesPhoto != claimsPhotosStayOnDevice,
             """
-            `OutboxSendSink` now declares \(methods) — the send side has grown a method beyond \
-            `sync`. If that method carries a photograph, `AccountCopy.storageBody`'s second clause \
-            ("Photos stay on this phone until you choose to share them") is no longer true, and the \
-            owner said in ruling 2 of 2026-08-14 that the round which lands the photo sink revisits \
-            the sentence. This is that round.
+            `OutboxSendSink` declares \(methods) and `AccountCopy.storageBody` \
+            \(claimsPhotosStayOnDevice ? "still says" : "no longer says") photos stay on this \
+            phone. Those two cannot both be true: a send sink that carries a binary means a \
+            photograph leaves, and the sentence promises it does not. Owner ruling 2 of \
+            2026-08-14 says the round landing the photo sink revisits the sentence — change the \
+            copy or remove the method, do not leave the app saying something it does not do.
             """
         )
 

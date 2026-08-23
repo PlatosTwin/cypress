@@ -26,7 +26,25 @@ public protocol OutboxTransport: Sendable {
     /// available all along and thrown away, which is half of why ERRATA **E264** says no send path
     /// could be built on top of this call.
     @discardableResult
-    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID
+    func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto
+}
+
+/// What committing a binary to this device produced: the row it wrote, and where the bytes now are.
+///
+/// **Both halves are things only the apply sink knows, and both used to be thrown away.** The
+/// staged file is consumed by the apply, so after it the photograph exists at a container path
+/// under a `photos.id` — and ERRATA **E264** names exactly those two as what a send has no way to
+/// reach. Returning them is what makes a second sink possible at all.
+public struct AppliedPhoto: Sendable, Equatable {
+    /// The local `photos` row the apply wrote.
+    public let photoID: UUID
+    /// Where the binary is inside the app container.
+    public let containerPath: String
+
+    public init(photoID: UUID, containerPath: String) {
+        self.photoID = photoID
+        self.containerPath = containerPath
+    }
 }
 
 /// The **send** sink: the retryable half of a drain, and the half `OutboxRetryPolicy` was written
@@ -351,11 +369,12 @@ public actor OutboxQueue {
                     // The apply sink, and the id it returns is the whole reason a send is possible:
                     // this call consumes the staged file, so `photos.id` becomes the only handle on
                     // the bytes (`AppSchema` v18, ERRATA E264).
-                    let photoID = try await apply.uploadPhoto(photo, for: record.item)
+                    let applied = try await apply.uploadPhoto(photo, for: record.item)
                     try await queue.write { connection in
                         try store.settleAppliedPhoto(
                             id: photo.id,
-                            photoID: photoID,
+                            photoID: applied.photoID,
+                            containerPath: applied.containerPath,
                             sendSinkWired: send != nil,
                             at: entry.settledAt,
                             connection: connection
@@ -723,7 +742,7 @@ public struct APIOutboxTransport: OutboxTransport {
     }
 
     @discardableResult
-    public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID {
+    public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
         // §6 splits this in two: POST /photos/begin reserves the id and the destination, then the
         // client PUTs the binary there. The ticket is therefore minted per upload; `LocalAPI` makes
         // it a move inside the app container.
@@ -760,9 +779,10 @@ public struct APIOutboxTransport: OutboxTransport {
             )
         )
         try await api.uploadPhoto(at: photo.path, ticket: ticket)
-        // The local `photos.id`. It was always here and always discarded; returning it is what lets
-        // a send find the bytes after this call has consumed the staged file (`AppSchema` v18).
-        return ticket.photoID
+        // Both facts were always here and both were discarded. Through `LocalAPI` the ticket's
+        // `destination` **is** the container file the binary was just moved to, so this is the path
+        // a send reads once the staged one is gone (`AppSchema` v18, ERRATA E264).
+        return AppliedPhoto(photoID: ticket.photoID, containerPath: ticket.destination.path)
     }
 }
 

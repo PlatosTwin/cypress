@@ -184,9 +184,9 @@ struct CommunityOutboxKindTests {
         // And the widening actually happened — otherwise "nothing was enqueued" is true for the
         // uninteresting reason that the migration did nothing at all.
         try connection.execute("""
-            INSERT INTO outbox (id, kind, client_uuid, payload, photo_paths, state, fail_count,
+            INSERT INTO outbox (id, kind, client_uuid, payload, state, fail_count,
                 local_applied, remote_sent, window_started_at, created_at, updated_at)
-            VALUES ('\(UUID().uuidString)','add_tree','\(UUID().uuidString)','{}','[]','pending',0,
+            VALUES ('\(UUID().uuidString)','add_tree','\(UUID().uuidString)','{}','pending',0,
                 1,0,'\(moment)','\(moment)','\(moment)');
             """)
     }
@@ -415,7 +415,7 @@ struct CommunityOutboxKindTests {
         }
 
         @discardableResult
-        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID {
+        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
             try await inner.uploadPhoto(photo, for: item)
         }
     }

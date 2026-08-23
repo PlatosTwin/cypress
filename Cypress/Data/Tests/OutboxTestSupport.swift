@@ -141,16 +141,23 @@ public enum OutboxTestSupport {
         }
 
         @discardableResult
-        public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> UUID {
+        public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
             if script == .photosFail { throw URLError(.networkConnectionLost) }
             uploadedPhotos.append(photo)
             // A distinct id per call, because `LocalAPI.beginPhotoUpload` mints one per call.
             // Returning a single constant would let a test pass while the drain filed every binary
             // against one `photos` row — the duplicate `AppSchema` v18 exists to prevent, hidden by
             // the double rather than caught by it.
-            let photoID = UUID()
-            appliedPhotoIDs[photo.id] = photoID
-            return photoID
+            //
+            // The container path is derived from that id for the same reason: the real apply moves
+            // the file somewhere new, so a double that echoed `photo.path` back would let a send
+            // read the staged file and hide the bug where the drain never recorded the move.
+            let applied = AppliedPhoto(
+                photoID: UUID(),
+                containerPath: "/tmp/cypress-container/\(UUID().uuidString).jpg"
+            )
+            appliedPhotoIDs[photo.id] = applied.photoID
+            return applied
         }
 
         /// What `uploadPhoto` returned, keyed by the staged binary's own id. Lets a test assert the

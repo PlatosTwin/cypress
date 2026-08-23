@@ -503,22 +503,27 @@ public struct OutboxStore {
     /// applied, deleted, and never offered here. `photo_id IS NOT NULL` is redundant against the
     /// table's own CHECK and is written anyway, because this is the statement whose result is handed
     /// to a network call and the alternative to a redundant predicate is a force-unwrap.
-    /// **The join onto `photos` is a gate, not a convenience.** A photograph the contributor deleted
-    /// between the apply and the send has a tombstoned row with `local_path` nulled
-    /// (`ContributionStore.deletePhoto` strips it), so it drops out here and is never sent. Without
-    /// that predicate the queue would publish a picture somebody had already taken back — ERRATA
-    /// **E147**'s harm, arriving through the one door that opens after the deletion gate has run.
+    /// **The `NOT EXISTS` is a gate, not tidiness.** A photograph the contributor deleted between
+    /// the apply and the send has a tombstoned `photos` row, and sending it anyway would publish a
+    /// picture somebody had already taken back — ERRATA **E147**'s harm, arriving through the one
+    /// door that opens *after* the deletion gate has run.
+    ///
+    /// Written as `NOT EXISTS (… deleted_at IS NOT NULL)` rather than as a join requiring a live
+    /// row, because those differ on the case that matters: a binary whose `photos` row is missing
+    /// entirely is not a withdrawn photograph, it is a queue whose apply sink is not `LocalAPI` —
+    /// which is every test double, and refusing those would make this path untestable except
+    /// end-to-end. Absent means "nothing says it was withdrawn"; present-and-tombstoned means it
+    /// was.
     public func sendablePhotos(for id: UUID, connection: SQLiteConnection) throws -> [PhotoRow] {
         let statement = try connection.cachedStatement("""
-            SELECT op.id AS id, op.outbox_id AS outbox_id, op.path AS path,
-                   op.shot_type AS shot_type, op.photo_id AS photo_id, op.state AS state,
-                   op.sendable AS sendable, op.fail_count AS fail_count,
-                   p.local_path AS container_path
-              FROM outbox_photos op
-              JOIN photos p ON p.id = op.photo_id
-             WHERE op.outbox_id = :item AND op.state = 'applied' AND op.sendable = 1
-               AND p.deleted_at IS NULL AND p.local_path IS NOT NULL
-             ORDER BY op.rowid
+            SELECT * FROM outbox_photos
+             WHERE outbox_id = :item AND state = 'applied' AND sendable = 1
+               AND photo_id IS NOT NULL AND container_path IS NOT NULL
+               AND NOT EXISTS (
+                     SELECT 1 FROM photos
+                      WHERE photos.id = outbox_photos.photo_id AND photos.deleted_at IS NOT NULL
+                   )
+             ORDER BY rowid
             """)
         _ = try statement.bind(id, forName: ":item")
         return try statement.fetchAll(Self.decodePhotoRow)
@@ -589,15 +594,17 @@ public struct OutboxStore {
     public func markPhotoApplied(
         id: UUID,
         photoID: UUID,
+        containerPath: String,
         at date: Date,
         connection: SQLiteConnection
     ) throws {
         let statement = try connection.cachedStatement("""
             UPDATE outbox_photos
-               SET state = 'applied', photo_id = :photo, path = NULL, updated_at = :now
+               SET state = 'applied', photo_id = :photo, container_path = :container,
+                   path = NULL, updated_at = :now
              WHERE id = :id AND state = 'pending'
             """)
-        _ = try statement.bind([":id": id, ":photo": photoID, ":now": date])
+        _ = try statement.bind([":id": id, ":photo": photoID, ":container": containerPath, ":now": date])
         try statement.run()
         _ = try statement.reset()
     }
@@ -623,6 +630,7 @@ public struct OutboxStore {
     public func settleAppliedPhoto(
         id: UUID,
         photoID: UUID,
+        containerPath: String,
         sendSinkWired: Bool,
         at date: Date,
         connection: SQLiteConnection
@@ -634,7 +642,9 @@ public struct OutboxStore {
             try completePhoto(id: id, connection: connection)
             return
         }
-        try markPhotoApplied(id: id, photoID: photoID, at: date, connection: connection)
+        try markPhotoApplied(
+            id: id, photoID: photoID, containerPath: containerPath, at: date, connection: connection
+        )
         let localOnly = try connection.cachedStatement(
             "DELETE FROM outbox_photos WHERE id = :id AND sendable = 0"
         )
