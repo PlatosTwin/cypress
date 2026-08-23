@@ -1,7 +1,9 @@
 # The case-normalisation pass went one column out of step when `region_id` landed
 
-**Status: the published s17 seed carries the defect. It cannot be cleared by any change in this
-repository — it needs a seed rebuild and a republish.**
+**Status: the published s17 seed (`4f6ebaaa`) carries the defect. The corrective rebuild
+(`ac7b1ccc`) is built and verified in staging; the owner has given the GO and the orchestrator runs
+the relay publish. `unit` goes green the moment that artifact is live — it is already green against
+it locally.**
 
 `Tools/build_seed.py`'s #95 pass folds case-variant spellings in the five columns the app compares
 against a string literal (`NORMALISED_SEED_COLUMNS`). It rewrites those values in place inside the
@@ -50,18 +52,45 @@ defect the gate was written for, and the gate caught it.
 
 ## What was done, and what was not
 
-`Tools/build_seed.py` now derives `column_index` from `TREE_COLUMNS`, so the next build folds these.
+`Tools/build_seed.py` now derives `column_index` from `TREE_COLUMNS`.
 
 **The gate was not touched.** `DataGates.seedContract`'s #95 assertion is correct about the
-published file and stays red until a rebuild replaces it. Silencing it — an allowlist, a widened
-predicate, a skip keyed on the id space — would have removed the only thing that noticed, and the
-finding here is that a fold reporting `0` looked identical to a fold with nothing to do.
+published file and stays red until the corrected artifact replaces it. Silencing it — an allowlist,
+a widened predicate, a skip keyed on the id space — would have removed the only thing that noticed,
+and the finding here is that a fold reporting `0` looked identical to a fold with nothing to do.
+
+## The corrective rebuild, and what it proves
+
+Rebuilt from the **same cached extracts** the s17 publish used, so the index fix is the only
+difference. New build id **`ac7b1ccc`**, sha256 `ac7b1cccd7de413c…`, 706,535,424 bytes.
+
+The builder's own log is the clearest statement of both the defect and the repair:
+
+    s17 (4f6ebaaa):  #95 plant_type: folded 2 case-variant spelling(s) over 0 rows
+                     #95 site_type:  folded 1 case-variant spelling(s) over 0 rows
+    corrected:       #95 plant_type: folded 2 case-variant spelling(s) over 2 rows
+                     #95 site_type:  folded 1 case-variant spelling(s) over 1 rows
+
+It had always *found* the variants — `case_counts` was right all along — and rewrote none of them.
+
+**No row count moves.** All 30 counts compared (per id space, per status, every city column, the
+R*Tree, `species_assertions`, the D18 invariants) are identical between the two files, and
+`case_normalised_values` 0 → 3 is the *only* differing `seed_meta` key. The only counts that shift
+are `COUNT(DISTINCT plant_type)` 18 → 16 and `COUNT(DISTINCT site_type)` 44 → 43 — the folded
+variants merging into their canonical spellings, which is the repair itself. Nothing in the app or
+the suite reads either.
+
+`Tools/verify_seed.py` returns byte-identical results on the corrected artifact and the published
+one (fused 42/44; `sf` pack 44/44; the six non-SF packs 41/44). **Those shortfalls are pre-existing
+and were confirmed against the published file as a control** — three checks in that script still
+assume San Francisco is the only id space (`zero trees outside the SF bbox`, `every tree uuid ==
+uuidv5(NS_TREE, TreeID)`, and the R*Tree superset probe that uses the SF window). That is the same
+family as the two gates this round extended in `DataGates`, and it is the third instance: a
+San-Francisco-shaped assumption left behind by a multi-city seed. Worth its own round.
 
 ## What still needs deciding
 
-A rebuild and republish is a publish round, with a migration author named for it, and it is not
-this round's to make. Until then CI's `unit` job cannot be fully green on the published seed. The
-open question is whether the seed contract should also assert that
+The open question is whether the seed contract should also assert that
 `seed_meta.case_normalised_values` is *plausible* rather than merely present — a fold that reports
 zero over a corpus of a million rows drawn from three publishers is itself suspicious, and that
 assertion would have caught this at build time rather than one publish later.

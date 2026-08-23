@@ -349,14 +349,27 @@ struct SeedCorpus: Sendable {
     }
 
     /// **San Francisco and central San Jose as above, plus all five boroughs of New York City.**
-    /// What ships after the s17 publish, measured from **seed `4f6ebaaa` on 2026-08-22** — the file
-    /// `Tools/fetch_seed.sh` resolves from the live manifest (706,535,424 bytes, sha256
-    /// `4f6ebaaad8c94bde…`), which is what CI's `unit` job builds against.
+    /// What ships after the s17 publish. **Every number below holds on two artifacts and was
+    /// measured on both, on 2026-08-22:**
     ///
-    /// **Every number below was counted from that file, and each query was calibrated first by
-    /// reproducing `cityWithSanJose`'s shipped literal from the previous seed.** None was copied out
-    /// of a failure message: a failing expectation prints the reading of the instrument under
-    /// suspicion, which is the one number in the room that has not been checked.
+    /// - **`4f6ebaaa`** (706,535,424 bytes, sha256 `4f6ebaaad8c94bde…`) — what the s17 publish put
+    ///   on the bucket, and what `Tools/fetch_seed.sh` resolves as of this writing.
+    /// - **`ac7b1ccc`** (706,535,424 bytes, sha256 `ac7b1cccd7de413c…`) — the corrective rebuild
+    ///   that repairs the `#95` case-normalisation defect `4f6ebaaa` shipped with (see
+    ///   `docs/errata-pending/seed-case-normalisation-off-by-one.md`), built from the *same* cached
+    ///   extracts so that fix is the only difference.
+    ///
+    /// **Not one row count moves between them**, which is the point. The fix rewrites three field
+    /// *values* (`tree` → `Tree`, `Park strip` → `Park Strip` in two columns) and moves
+    /// `seed_meta.case_normalised_values` from 0 to 3. The only counts that shift at all are
+    /// `COUNT(DISTINCT plant_type)` 18 → 16 and `COUNT(DISTINCT site_type)` 44 → 43, and nothing in
+    /// this file or the suite reads either. So every literal below carries the same provenance for
+    /// both files, and this entry is correct before and after the corrective publish.
+    ///
+    /// **Each query was calibrated first by reproducing `cityWithSanJose`'s shipped literal from the
+    /// previous seed.** None was copied out of a failure message: a failing expectation prints the
+    /// reading of the instrument under suspicion, which is the one number in the room that has not
+    /// been checked.
     ///
     /// ── What moved, and why it is not all New York ────────────────────────────────────────────
     /// **The s17 publish re-read San Francisco and San Jose too** (`inventory_sf_city_snapshot_on`
