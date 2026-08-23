@@ -935,4 +935,94 @@ struct AccountDeletionTests {
         defer { survivors.finalize() }
         #expect(try survivors.fetchOne { try $0.int("n") } == 1, "the rebuild lost the votes it copied")
     }
+
+    // MARK: - 8. Through the router, against a real store (ERRATA E272)
+
+    /// Everything above proves what the *local* half does. These two prove **whether it runs at
+    /// all**, over the same tables, because the owner's ruling of 2026-08-23 put `DELETE /me` in
+    /// front of it: a deletion that cannot reach the service deletes nothing here.
+    ///
+    /// `RoutedAPITests` pins the ordering against a double. This pins the rows, because "nothing was
+    /// deleted" is a claim about rows and a double cannot be wrong about them in the way a store can.
+
+    /// A router over the real signed-in `LocalAPI`, with a scripted service in front of it.
+    private static func routed(api: LocalAPI, transport: ScriptedTransport) -> RoutedAPI {
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { [] }
+        )
+        return RoutedAPI(local: api, remote: remote, signedInUserID: { userID })
+    }
+
+    @Test("a service that refuses leaves every row where it was")
+    func aRefusedDeletionLeavesTheRowsAlone() async throws {
+        let (store, api) = try await Self.signedIn()
+        let tree = try await Self.makeTree(api: api, in: store)
+        let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
+        try await Self.writeContributions(treeID: tree.id, attribution: attribution, in: store)
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                PrivateReminder(owner: .user(Self.userID), treeID: tree.id, category: .uprooted),
+                connection: connection
+            )
+        }
+
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", throwing: APIError.serverError)
+
+        await #expect(throws: APIError.serverError) {
+            _ = try await Self.routed(api: api, transport: transport).deleteAccount(.eraseEverything)
+        }
+
+        // Every table the erasing door would have emptied still holds its row, still attributed.
+        for table in ["visits", "observations", "measurements", "care_events"] {
+            #expect(
+                try await Self.attributed(table, to: Self.userID, in: store) == 1,
+                "\(table) was deleted after the service refused the deletion"
+            )
+        }
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM private_reminders WHERE user_id = '\(Self.userID.uuidString)'", in: store
+        ) == 1, "the reminders went with a deletion that never happened")
+
+        // And the account is still signed in, so the sheet has something to retry against.
+        #expect(
+            try await store.appState(.currentUserID) == Self.userID.uuidString,
+            "the deletion signed the person out of an account it did not delete"
+        )
+    }
+
+    @Test("a service that accepts is followed by the whole local deletion")
+    func anAcceptedDeletionRunsTheLocalHalf() async throws {
+        let (store, api) = try await Self.signedIn()
+        let tree = try await Self.makeTree(api: api, in: store)
+        let attribution = Attribution(userID: Self.userID, deviceID: Self.deviceID)
+        try await Self.writeContributions(treeID: tree.id, attribution: attribution, in: store)
+
+        let transport = ScriptedTransport()
+        transport.answer(
+            "DELETE /me",
+            with: #"{"deleted":true,"choice":"leave_records","contributions":4,"photos":0,"tombstones":0}"#
+        )
+
+        let outcome = try await Self.routed(api: api, transport: transport).deleteAccount(.leaveRecords)
+
+        #expect(transport.call("DELETE /me") != nil, "the service was not asked")
+        #expect(outcome.choice == .leaveRecords)
+
+        // R3's local behavior, unchanged by the wire now in front of it: the rows stay, nulled.
+        for table in ["visits", "observations", "measurements", "care_events"] {
+            #expect(
+                try await Self.attributed(table, to: Self.userID, in: store) == 0,
+                "\(table) still names the deleted account"
+            )
+            #expect(
+                try await Self.scalar("SELECT COUNT(*) AS n FROM \(table)", in: store) == 1,
+                "\(table)'s row was destroyed by the door that keeps it"
+            )
+        }
+        #expect(try await store.appState(.currentUserID) == nil, "the account survived its own deletion")
+    }
 }

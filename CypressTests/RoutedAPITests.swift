@@ -23,6 +23,28 @@ import Testing
 
 // MARK: - The local side
 
+/// Every `deleteAccount` that reached the phone, in order.
+///
+/// A reference type because `LocalDouble` is a struct and `RoutedAPI` holds its own copy of it: a
+/// plain `var` counter would be incremented on a value the test cannot see, and the assertion "the
+/// local half did not run" would pass whether or not it had. That assertion is the whole of the
+/// abort-on-failure ruling, so it gets a seam that can actually be wrong.
+final class DeletionRecorder: @unchecked Sendable {
+
+    private let lock = NSLock()
+    private var recorded: [AccountDeletionChoice] = []
+
+    var choices: [AccountDeletionChoice] {
+        lock.lock(); defer { lock.unlock() }
+        return recorded
+    }
+
+    func record(_ choice: AccountDeletionChoice) {
+        lock.lock(); defer { lock.unlock() }
+        recorded.append(choice)
+    }
+}
+
 /// A `CypressAPI` standing in for the phone.
 ///
 /// It answers only what the router asks of the local side and inherits the protocol's defaults for
@@ -41,6 +63,12 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
     var photoBytes: [UUID: Data] = [:]
     var content: MapContent = .pins([])
     var nearby: [NearbyTree] = []
+
+    /// What reached the phone's `deleteAccount`. See `DeletionRecorder`.
+    var deletions = DeletionRecorder()
+
+    /// Makes the phone's half of a deletion fail, for the one arm that is not transactional.
+    var deletionError: (any Error)?
 
     func mapContent(in viewport: MapViewport) async throws -> MapContent { content }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { nearby }
@@ -92,8 +120,13 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { journalPage }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
     func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        deletions.record(choice)
+        if let deletionError { throw deletionError }
         var outcome = AccountDeletion.Outcome()
         outcome.choice = choice
+        // A number no remote response carries, so a test can tell the local outcome from a
+        // remote one that was mapped over it.
+        outcome.deletedPrivateReminders = 7
         return outcome
     }
     func deviceContributions() async throws -> DeviceContributions { .none }
@@ -836,5 +869,145 @@ struct RoutedAPITests {
 
         #expect(await log.outcome(of: .mapMembership) != nil)
         #expect(await log.outcome(of: .treeProfile) == nil, "a read nobody performed reported an outcome")
+    }
+
+    // MARK: - Deletion: remote first, and nothing local unless the service said yes
+
+    /// ERRATA **E272**, closed by the owner's ruling of 2026-08-23.
+    ///
+    /// The router used to send this to the phone, so an account deleted in the You tab was deleted
+    /// here and left standing on the service. It now sends `DELETE /me` **first** and runs the local
+    /// half only on success. The four tests below are the two doors against the two answers, and the
+    /// property they share is the one the ruling turns on: **on a failure the phone is untouched.**
+    ///
+    /// `deletions.choices` is what makes that assertable — see `DeletionRecorder` for why a struct
+    /// double could not have carried it.
+
+    /// A signed-in remote, with the outbox seam filled so `RemoteAPI.deleteAccount` does not refuse.
+    static func signedInRouter(
+        local: LocalDouble,
+        transport: ScriptedTransport,
+        queued: [UUID] = []
+    ) -> RoutedAPI {
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { queued }
+        )
+        return RoutedAPI(local: local, remote: remote, signedInUserID: { Self.accountID })
+    }
+
+    static let accountID = UUID(uuidString: "0E000000-0000-4000-8000-00000000E272")!
+
+    static func deletionAccepted(_ choice: AccountDeletionChoice) -> String {
+        """
+        {"deleted":true,"choice":"\(choice.rawValue)","contributions":3,"photos":1,"tombstones":2}
+        """
+    }
+
+    @Test("a signed-in deletion reaches the service before it reaches the phone", arguments: AccountDeletionChoice.allCases)
+    func aSignedInDeletionReachesTheServiceFirst(choice: AccountDeletionChoice) async throws {
+        let local = LocalDouble()
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", with: Self.deletionAccepted(choice))
+        let queued = UUID()
+
+        let outcome = try await Self.signedInRouter(local: local, transport: transport, queued: [queued])
+            .deleteAccount(choice)
+
+        let sent = try #require(transport.call("DELETE /me"), "the deletion never left the phone")
+        let body = try #require(sent.body).asJSONObject()
+        #expect(body["choice"] as? String == choice.rawValue, "the service was told a different door")
+        #expect(
+            (body["pending_client_uuids"] as? [String]) == [queued.uuidString],
+            "the queued keys did not travel, so work in flight could resurrect the account"
+        )
+
+        #expect(local.deletions.choices == [choice], "the phone's half did not run after the service accepted")
+        #expect(outcome.choice == choice)
+        #expect(
+            outcome.deletedPrivateReminders == 7,
+            "the returned outcome is not the local one — a remote tally was mapped over it"
+        )
+    }
+
+    /// **The ruling, stated as a test.** The owner chose abort-on-failure over delete-locally-anyway
+    /// because the other order destroys somebody's records on the phone while their account stands
+    /// on the service, silently and with nothing left that could retry.
+    @Test("a deletion the service refused deletes nothing on the phone", arguments: AccountDeletionChoice.allCases)
+    func aRefusedDeletionDeletesNothingLocally(choice: AccountDeletionChoice) async throws {
+        let local = LocalDouble()
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", throwing: APIError.serverError)
+
+        await #expect(throws: APIError.serverError) {
+            _ = try await Self.signedInRouter(local: local, transport: transport).deleteAccount(choice)
+        }
+
+        #expect(
+            local.deletions.choices.isEmpty,
+            "the phone deleted the account after the service refused — the failure mode the ruling forbids"
+        )
+        #expect(transport.call("DELETE /me") != nil, "fixture: the deletion should have been attempted")
+    }
+
+    /// The signed-out arm, which is not a fallback: there is no account on the service to delete, so
+    /// asking would turn a working local deletion into `me.go`'s `forbidden`.
+    @Test("a signed-out deletion stays on the phone and never asks the service")
+    func aSignedOutDeletionStaysLocal() async throws {
+        let local = LocalDouble()
+        let transport = ScriptedTransport()
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { [] }
+        )
+        let router = RoutedAPI(local: local, remote: remote, signedInUserID: { nil })
+
+        let outcome = try await router.deleteAccount(.leaveRecords)
+
+        #expect(outcome.choice == .leaveRecords)
+        #expect(local.deletions.choices == [.leaveRecords])
+        #expect(transport.calls.isEmpty, "a signed-out deletion asked the service to delete an account it has none of")
+    }
+
+    /// A router built without the seam — every preview, and every test written before it existed —
+    /// keeps the local path rather than acquiring a remote failure mode.
+    @Test("no signed-in provider means the deletion is local")
+    func noProviderMeansLocal() async throws {
+        let local = LocalDouble()
+        let transport = ScriptedTransport()
+        let router = RoutedAPI(local: local, remote: Self.remote(transport))
+
+        _ = try await router.deleteAccount(.eraseEverything)
+
+        #expect(local.deletions.choices == [.eraseEverything])
+        #expect(transport.calls.isEmpty)
+    }
+
+    /// The arm that is not transactional, pinned so the order cannot be quietly reversed: when the
+    /// *local* half throws, the service has already deleted and the error still reaches the caller.
+    @Test("a local failure after a successful remote deletion still throws")
+    func aLocalFailureAfterTheRemoteStillThrows() async throws {
+        var local = LocalDouble()
+        local.deletionError = APIError.notFound
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", with: Self.deletionAccepted(.leaveRecords))
+
+        await #expect(throws: APIError.notFound) {
+            _ = try await Self.signedInRouter(local: local, transport: transport).deleteAccount(.leaveRecords)
+        }
+
+        #expect(transport.call("DELETE /me") != nil, "the service was never asked, so this is not the arm under test")
+        #expect(local.deletions.choices == [.leaveRecords], "the local half was never attempted")
+    }
+}
+
+private extension Data {
+    /// The request body as a dictionary, for asserting what went on the wire.
+    func asJSONObject() -> [String: Any] {
+        (try? JSONSerialization.jsonObject(with: self)) as? [String: Any] ?? [:]
     }
 }

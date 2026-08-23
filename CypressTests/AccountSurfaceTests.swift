@@ -236,6 +236,67 @@ struct AccountSurfaceTests {
         #expect(try await data.store.appState(.accountLicenseVersion) == nil, "a deleted account's consent record survived")
     }
 
+    /// The failure the You tab has to be able to say out loud (ERRATA **E272**, the owner's ruling
+    /// of 2026-08-23).
+    ///
+    /// Deletion reaches `DELETE /me` before it touches this phone and aborts when the service cannot
+    /// be reached, so the destructive tap can now do nothing at all — and the surface that used to
+    /// dismiss on the tap would have drawn a signed-out You tab over an account that still exists.
+    /// `deletionFailed` is what the sheet reads to stay up and say so; `isSignedIn` staying true is
+    /// what keeps the sheet from dismissing itself.
+    @Test("a deletion the service refused leaves the account, and says it failed")
+    func aRefusedDeletionSaysSo() async throws {
+        let data = try await Self.bootInMemory()
+        let tree = try await Self.addTree(data)
+        let link = Self.link(data)
+
+        try await link(AccountLinkRequest(provider: .apple, acceptsLicense: true))
+        let signedInAs = try #require(await data.local.userID)
+        _ = try await data.local.savePrivateReminder(PrivateReminder(
+            owner: .user(signedInAs),
+            treeID: tree.id,
+            category: .hangingOrBrokenLimb
+        ))
+
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", throwing: APIError.serverError)
+        let router = RoutedAPI(
+            local: data.local,
+            remote: RemoteAPI(
+                baseURL: URL(string: "https://service.invalid/api/v1")!,
+                transport: transport,
+                session: .shared,
+                pendingOutboxKeys: { [] }
+            ),
+            signedInUserID: { signedInAs }
+        )
+
+        let account = AccountModel(api: data.local, session: data.session, router: router)
+        await account.load()
+        #expect(account.deletionFailed == false, "fixture: nothing has been attempted yet")
+
+        let outcome = await account.deleteAccount(.eraseEverything)
+
+        #expect(outcome == nil, "a deletion the service refused reported an outcome")
+        #expect(account.deletionFailed, "the failure is invisible to the sheet")
+        #expect(account.isSignedIn, "the account was signed out by a deletion that did not happen")
+        #expect(account.reminders.count == 1, "the reminder went with a deletion that never ran")
+        #expect(try await Self.reminderRowCount(data.store) == 1)
+        #expect(account.isBusy == false, "the surface is stuck busy and cannot be retried")
+
+        // Retrying against a service that accepts clears the flag and completes the deletion — the
+        // person's way out of this state is the button that is still on screen.
+        transport.answer(
+            "DELETE /me",
+            with: #"{"deleted":true,"choice":"erase_everything","contributions":0,"photos":0,"tombstones":0}"#
+        )
+        let retried = try #require(await account.deleteAccount(.eraseEverything))
+
+        #expect(retried.deletedPrivateReminders == 1, "the retry did not run R3's local half")
+        #expect(account.deletionFailed == false, "the failure survived a deletion that worked")
+        #expect(account.isSignedIn == false)
+    }
+
     /// A deleted account must not be resumable. `signedOutUserID` exists so a sign-out can be
     /// undone; if deletion left it behind, the next sign-in would resume an account whose rows
     /// `AccountDeletion` had already emptied — signed in as a ghost.
