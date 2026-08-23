@@ -295,3 +295,27 @@ plumbing dropped in `LocalAPI`, and the city arm hardcoding `NYC Parks Forestry 
 `StatusBadge.Kind.deadReported`'s doc-comment went false on the same day and is corrected with it: it
 read *"a tree a lead has confirmed dead"*. The badge word is `Dead` either way, so the badge needed no
 arm — only the sentence under it did.
+
+**A second, older defect surfaced by the same sentence: `InventorySource.name` could be empty.**
+Adversarial review of the repair (finding F2) found that `init?(seedMeta:)` guarded the *id* for
+emptiness and not the *name*, where its per-inventory sibling `init?(id:seedMeta:)` has always guarded
+both. A receipt carrying `trees_source_name` present-and-empty therefore produced a value that was not
+nil and could not be said, so every `?? unnamedCityInventory` fallback in the app was bypassed by a
+value that needed it most.
+
+This predates the repair by a long way — it is the shape of the four-surfaces-say-SF defect (E181),
+one level down — but the repair is what made it a broken *sentence* rather than a missing subtitle
+element: `Recorded dead in the .` The city-record provenance line had the same hole in the same
+receipt, rendering `From the , 26 July 2026.`
+
+**One guard in the initializer closes every surface**, and the sibling the reviewer named
+(`CityRecordCopy.recordSource`) is covered by it rather than needing its own fix: both shipping
+construction paths run through this initializer — `init?(id:seedMeta:)` falls through to it whenever
+the per-inventory name is absent or empty, and `CypressStore` builds inventories through no other
+route. The memberwise `init(id:name:url:snapshotDate:)` is deliberately left unguarded and has no
+shipping caller; it is not a decoding boundary, and a caller passing `""` there is stating one.
+
+Nil rather than a fallback to `id`, because `InventorySource.id` is documented *"Not shown to
+anyone"*, and every caller already has a correct path for an inventory it cannot name — the same
+discipline `snapshotDate` keeps for an absent date. An *absent* name key still yields `id` and is
+unaffected, so this can only fire on a receipt that wrote the key empty.

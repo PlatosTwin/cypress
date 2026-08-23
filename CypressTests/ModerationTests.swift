@@ -230,6 +230,20 @@ struct ModerationTests {
         // in shipping code that writes `tree_status_overrides` — is what reaches the presentation as
         // `.communityReview`. Without this, every arm of that suite could be correct over a value
         // nothing sets, which is the shape of guard this project keeps producing.
+        //
+        // **This tree is `source == .community`, and the case the fix is really about is not**
+        // (review finding N1). `makeTree` goes through `addTree`, so the inventory row that shipped
+        // `alive` and was confirmed dead here — a `city_import` row whose death is the community's —
+        // is asserted only at the value level, in `DeadNoticeProvenanceTests`. It is not asserted
+        // here because this harness is `CypressStore.inMemory()` with no seed attached: there is no
+        // city row to confirm anything about, and manufacturing one would mean writing to a database
+        // the app holds read-only.
+        //
+        // What makes the gap harmless is a property of the code rather than of the fixture:
+        // `LocalAPI.treeProfile`'s override lookup does not branch on `source` at all — it reads
+        // `tree_status_overrides` by tree id and nothing else — so the two sources cannot diverge on
+        // this path without that lookup being rewritten. If it ever grows a `source` condition, this
+        // is the test that needs the second case.
         #expect(profile.statusProvenance == .communityReview)
         #expect(try #require(presentation.deadNotice).text.contains("community reviewer"))
     }

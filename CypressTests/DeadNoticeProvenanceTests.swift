@@ -145,6 +145,47 @@ struct DeadNoticeProvenanceTests {
         #expect(!notice.text.lowercased().contains("community reviewer"))
     }
 
+    /// **An inventory whose receipt names it with an empty string is unnameable too**, and used not
+    /// to be treated as such (review finding F2).
+    ///
+    /// `InventorySource.init?(seedMeta:)` built a value whose `name` was `""`, because it guarded the
+    /// id for emptiness and not the name — where its per-inventory sibling has always guarded both.
+    /// The value was not nil, so the `?? unnamedCityInventory` fallback below never fired and the
+    /// sentence read *"Recorded dead in the ."*
+    ///
+    /// Driven through the real initializer rather than by handing the presentation an
+    /// `InventorySource(name: "")`, because the defect was in the decode and a fixture would have
+    /// asserted around it. The receipt below is the shape a build writes: a source id, a name key
+    /// present and empty.
+    @Test("a receipt naming the inventory with an empty string falls back too")
+    func emptyInventoryNameFallsBack() throws {
+        #expect(
+            InventorySource(seedMeta: ["trees_source": "sf_city", "trees_source_name": ""]) == nil,
+            "an inventory with no sayable name is not an answer"
+        )
+        // Calibration: the same receipt with a name really does build one, so the nil above is the
+        // empty name being refused and not the receipt being unreadable.
+        let named = try #require(
+            InventorySource(seedMeta: ["trees_source": "sf_city", "trees_source_name": "Testburgh register"])
+        )
+        #expect(named.name == "Testburgh register")
+
+        // And an absent key still yields the id, unchanged — this must not have widened into
+        // "a receipt without the name key is unreadable".
+        #expect(InventorySource(seedMeta: ["trees_source": "sf_city"])?.name == "sf_city")
+
+        // The consequence on the surface F2 was raised about.
+        let notice = try #require(
+            Self.presentation(
+                source: .cityImport,
+                provenance: .record,
+                inventory: InventorySource(seedMeta: ["trees_source": "sf_city", "trees_source_name": ""])
+            ).deadNotice
+        )
+        #expect(notice.text.contains(CityRecordCopy.unnamedCityInventory))
+        #expect(!notice.text.contains("the ."), "the sentence lost its object")
+    }
+
     // MARK: - The pair cannot come apart
 
     /// The lead-in and the sentence travel as one value. A view that drew `Confirmed dead:` over the
@@ -207,18 +248,27 @@ struct DeadNoticeProvenanceTests {
 
     /// No city's name is written into the copy. The round that fixes F7 is the round most likely to
     /// hardcode `NYC`, because NYC is the publish that forced it.
+    ///
+    /// **The lead-ins are scanned with the sentences (review finding N2).** They were not, and
+    /// `Listed dead:` is the string most likely to acquire a city if the copy moves — it is the one
+    /// piece of this notice that names the *act* of a publisher rather than the publisher, so
+    /// "Listed dead in NYC:" is a plausible edit that the sentence-only scan would have waved past.
     @Test("the copy names no city of its own")
     func copyHardcodesNoCity() {
         let arms = [
             TreeProfilePresentation.deadNoticeConfirmed,
             TreeProfilePresentation.deadNoticeReported,
-            TreeProfilePresentation.deadNoticeListed(inventory: Self.inventoryName)
+            TreeProfilePresentation.deadNoticeListed(inventory: Self.inventoryName),
+            TreeProfilePresentation.deadNoticeConfirmedLeadIn,
+            TreeProfilePresentation.deadNoticeReportedLeadIn,
+            TreeProfilePresentation.deadNoticeListedLeadIn
         ]
         for arm in arms {
             let text = arm.lowercased()
             #expect(!text.contains("nyc"))
             #expect(!text.contains("new york"))
             #expect(!text.contains("san francisco"))
+            #expect(!text.contains("san jose"))
             #expect(!text.contains("parks"))
         }
     }
