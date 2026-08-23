@@ -503,6 +503,14 @@ public struct OutboxStore {
     /// applied, deleted, and never offered here. `photo_id IS NOT NULL` is redundant against the
     /// table's own CHECK and is written anyway, because this is the statement whose result is handed
     /// to a network call and the alternative to a redundant predicate is a force-unwrap.
+    /// **`sendable = 1` here is the second of two R77 gates, and it is not redundant.** The first is
+    /// `settleAppliedPhoto`, which deletes a local-only binary the moment it is applied, so in the
+    /// ordinary flow no `sendable = 0` row ever reaches this statement. Measured, when red-proving:
+    /// removing *this* predicate alone changes nothing, because the delete has already run — and
+    /// removing the delete alone leaves the binary unsent, because this predicate catches it. Each
+    /// covers the other's failure, which is why both stay: R77 is a ruling about photographs
+    /// leaving the device, and one guard for it is one edit away from none.
+    ///
     /// **The `NOT EXISTS` is a gate, not tidiness.** A photograph the contributor deleted between
     /// the apply and the send has a tombstoned `photos` row, and sending it anyway would publish a
     /// picture somebody had already taken back — ERRATA **E147**'s harm, arriving through the one
