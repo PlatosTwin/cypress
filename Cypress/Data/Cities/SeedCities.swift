@@ -15,6 +15,9 @@ import SQLite3
 /// - **which cities** — `id_spaces.id`;
 /// - **the name** — `dim_city.display_name` joined through `id_spaces.city_id` (s16), falling back
 ///   to `id_spaces.short_name` (s15) and then to nothing at all. Never composed from the id;
+/// - **the pack's own name** — `dim_region.display_name` for this file's `publish_pack_id` (s17).
+///   A different fact from the one above and the reason `dim_region` exists: the city a tree is in
+///   is `New York City`, the pack a reader downloaded is `Manhattan`. Nil before s17;
 /// - **the record date** — `Tools/publish_cities.py`'s own `content_rev_for` rule, applied to a
 ///   different file. The publisher pairs `seed_meta.inventory_<tag>_id_space` with
 ///   `inventory_<tag>_snapshot_on` and takes the newest; so does `contentRev(forIDSpace:seedMeta:)`
@@ -38,22 +41,75 @@ public enum SeedCities {
     /// precisely how the `Download` button came back for a bundled city — see
     /// `CityInstallState.bundled`.
     public struct City: Equatable, Sendable {
-        /// `id_spaces.id` — `sf`, `us-ca-sj`. The same key the manifest and the library use.
+        /// `id_spaces.id` — `sf`, `us-ca-sj`, `us-ny-nyc`. **The city**, and since format 2 that is
+        /// no longer the same thing as the published pack (see `packID`).
         public let id: String
+        /// `seed_meta.publish_pack_id` — the id the *pack* is published and installed under:
+        /// `us-ny-nyc-manhattan` for a borough, and the same string as `id` for a whole-city pack.
+        /// Nil in the fused bundled seed, which no publisher ever narrowed.
+        ///
+        /// **This field exists because a lookup keyed on `id` silently missed every borough.**
+        /// `CityLibrary.installedCities()` knows a pack by its install directory — the pack id —
+        /// and matched it against `id`, the id space. For `sf` those are one string and the read
+        /// worked; for `us-ny-nyc-manhattan` they are not, so `contentRev` and
+        /// `publishedSchemaVersion` came back nil and update detection fell back to comparing
+        /// version strings — which is exactly the defect the stamped receipt was added to fix, still
+        /// live for the city the tester reported it against. See `CityLibrary.installedCities()`.
+        public let packID: String?
         /// The city's own name as the file states it, or nil when the file is too old to carry one.
         public let displayName: String?
+        /// **The name of the PACK, as the pack itself states it** — `dim_region.display_name` for
+        /// the row whose `pack_id` is this file's `publish_pack_id`. `Manhattan` where
+        /// `displayName` says `New York City`, and the same string as `displayName` for a
+        /// whole-city pack, whose region repeats its city's name by construction
+        /// (`Tools/build_seed.py`'s `REGIONS`, and the note there on why it repeats rather than
+        /// joins).
+        ///
+        /// Nil for a file that carries no `dim_region` — every pack published before the s17
+        /// generation — and nil for one no `publish_pack_id` names, which is the fused bundled
+        /// seed, whose several regions belong to no single pack.
+        ///
+        /// **This is the offline answer to "what is this pack called", and it is not the
+        /// manifest's.** `Tools/publish_cities.py` refuses a publish whose `DISPLAY_NAMES` entry
+        /// disagrees with the seed's own `dim_region.display_name`, so the string read here is the
+        /// same string the manifest entry carries — read out of the file, with no manifest
+        /// persisted (R43 §3) and nothing derived from an id (DECISIONS constraint 15).
+        public let packDisplayName: String?
         /// The newest snapshot date among this city's inventories, by the publisher's rule, or nil
         /// when the file's own receipt does not support one.
+        ///
+        /// **In a published city file this is the publisher's own `publish_content_rev`**, which it
+        /// writes into `seed_meta` for exactly the pack it just narrowed; the per-inventory rule
+        /// below is the fallback, and the only thing the *bundled* seed can answer with. Both
+        /// name the same fact — see `contentRev(forIDSpace:seedMeta:idSpaceCount:)`.
         public let contentRev: String?
         /// The shipped extent's word (`downtown`), or nil for full coverage — the same meaning, from
         /// the same `seed_meta` keys, that the manifest's `coverage` field carries.
         public let coverage: String?
+        /// `seed_meta.publish_schema_version` — the seed generation the publisher stamped into this
+        /// file. Nil in the bundled seed, which `publish_cities.py` never touched.
+        ///
+        /// Read for one reason: **`content_rev` alone cannot tell a re-publish from a new schema
+        /// generation.** A city republished at the same record date under a newer generation is a
+        /// genuine update; the same date under the same generation is not. See `CityInstallState`.
+        public let publishedSchemaVersion: Int?
 
-        public init(id: String, displayName: String?, contentRev: String?, coverage: String? = nil) {
+        public init(
+            id: String,
+            displayName: String?,
+            contentRev: String?,
+            coverage: String? = nil,
+            publishedSchemaVersion: Int? = nil,
+            packID: String? = nil,
+            packDisplayName: String? = nil
+        ) {
             self.id = id
             self.displayName = displayName
             self.contentRev = contentRev
             self.coverage = coverage
+            self.publishedSchemaVersion = publishedSchemaVersion
+            self.packID = packID
+            self.packDisplayName = packDisplayName
         }
     }
 
@@ -124,14 +180,56 @@ public enum SeedCities {
         }
 
         let meta = try seedMeta(from: connection)
+        let publishedSchemaVersion = meta["publish_schema_version"].flatMap(Int.init)
+        // Guarded on a single id space for the same reason `contentRev` is: the stamped key names
+        // one pack, and a file holding two id spaces has no single row to attribute it to.
+        let packID = named.count == 1
+            ? meta["publish_pack_id"].flatMap { $0.isEmpty ? nil : $0 }
+            : nil
+        let packDisplayName = try packID.flatMap {
+            try regionDisplayName(from: connection, packID: $0)
+        }
         return named.map {
             City(
                 id: $0.id,
                 displayName: $0.displayName,
-                contentRev: contentRev(forIDSpace: $0.id, seedMeta: meta),
-                coverage: coverage(forIDSpace: $0.id, seedMeta: meta)
+                contentRev: contentRev(
+                    forIDSpace: $0.id, seedMeta: meta, idSpaceCount: named.count
+                ),
+                coverage: coverage(forIDSpace: $0.id, seedMeta: meta),
+                publishedSchemaVersion: publishedSchemaVersion,
+                packID: packID,
+                packDisplayName: packDisplayName
             )
         }
+    }
+
+    /// `dim_region.display_name` for one `pack_id` — the pack's own name, read out of the pack.
+    ///
+    /// **Capability-detected, like every other read in this type.** `dim_region` arrived with the
+    /// s17 generation; a file without it answers nil and its caller falls back, exactly as a
+    /// pre-s16 file falls back for `dim_city`. The narrower `SeedSchema.hasRegions` is not the
+    /// right question here: it is `&&`-ed with `trees.region_id` because *that* flag is about
+    /// joining a tree to its region, and this read joins nothing — a published pack whose one
+    /// region row is intact can name itself whether or not its tree rows carry the key.
+    ///
+    /// **Keyed on `pack_id`, which is UNIQUE**, so this is one indexed lookup and it cannot be
+    /// ambiguous. Not "the single surviving row": `publish_cities.py` does narrow `dim_region` to
+    /// exactly one row per pack (it fails the publish otherwise), but taking whatever row is there
+    /// would also answer for a file the publisher never narrowed, and the answer would name some
+    /// other pack.
+    private static func regionDisplayName(
+        from connection: SQLiteConnection,
+        packID: String
+    ) throws -> String? {
+        guard try connection.tableExists("dim_region") else { return nil }
+        let statement = try connection.prepare(
+            "SELECT display_name FROM dim_region WHERE pack_id = ?"
+        )
+        defer { statement.finalize() }
+        _ = try statement.bind([packID])
+        return try statement.fetchOne { try $0.stringIfPresent("display_name") }?
+            .flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// `seed_meta` as a dictionary, or empty when the file predates the build receipt.
@@ -167,7 +265,29 @@ public enum SeedCities {
     /// publish; this method's is to return nil, because refusing to answer is not something a read
     /// on a reader's phone can usefully do. **Nil therefore means "no date", never "no city",** and
     /// a caller that reads it as absence re-opens the defect this whole type exists to close.
-    static func contentRev(forIDSpace space: String, seedMeta: [String: String]) -> String? {
+    ///
+    /// **`publish_content_rev` wins when the file is one pack**, and that is not a shortcut around
+    /// the rule — it is the publisher's own answer to it. `Tools/publish_cities.py` computes
+    /// `content_rev_for(space, …)` for the pack it has just narrowed and writes the result into
+    /// `seed_meta.publish_content_rev` (its `additions` block), so the stamped value *is* this rule
+    /// applied by the program that owns it, and it is the same string the manifest entry carries.
+    /// Reading it back beats re-deriving it, for a reason that cost a tester report: the narrowed
+    /// file's surviving `inventory_*_snapshot_on` keys are the **fused** build receipt, not the
+    /// pack's, so a borough split can re-derive a date that never described this pack.
+    ///
+    /// **Guarded on a single id space** (`idSpaceCount == 1`), because the stamped key names one
+    /// pack and a file holding two id spaces has no single answer to attribute it to. R37.3 narrows
+    /// every published file to one, so the guard is satisfied wherever the key exists; the fused
+    /// bundled seed holds two id spaces and carries no `publish_*` key at all, and falls through to
+    /// the per-inventory rule below, which is the only thing it can answer with.
+    static func contentRev(
+        forIDSpace space: String,
+        seedMeta: [String: String],
+        idSpaceCount: Int = 1
+    ) -> String? {
+        if idSpaceCount == 1, let stamped = seedMeta["publish_content_rev"], !stamped.isEmpty {
+            return stamped
+        }
         let prefix = "inventory_"
         let suffix = "_id_space"
         var dates: [String] = []

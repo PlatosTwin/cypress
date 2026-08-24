@@ -56,15 +56,64 @@ public enum CityInstallState: Equatable, Sendable {
         }
     }
 
+    /// Whether the device already holds a copy of this city — downloaded, or inside the app bundle.
+    ///
+    /// **Stated here, beside `allowsDownload`, because it is the same kind of fact**: a property of
+    /// the state rather than of the row that draws it, so the Cities screen's sectioning and its
+    /// buttons cannot come to different conclusions about what is on the phone. The two are not
+    /// opposites — `.updateAvailable` and `.bundledOutdated` are both on the device *and* worth
+    /// fetching, which is exactly the pair a reader needs told apart.
+    public var isOnDevice: Bool {
+        switch self {
+        case .installedCurrent, .updateAvailable, .bundled, .bundledOutdated:
+            return true
+        case .notInstalled:
+            return false
+        case let .needsNewerApp(installedVersion):
+            // The published file is refused; an older compatible copy is still on the phone, and
+            // that copy is the whole reason this case carries a version at all.
+            return installedVersion != nil
+        }
+    }
+
     /// - Parameter bundled: the city as the app's own bundle holds it (`SeedCities`), or nil when
     ///   the bundle does not hold it.
     ///
     ///   **A whole `City`, not its date.** Passing `String?` here is what let presence and freshness
     ///   collapse into one `nil`; a caller cannot hand this parameter a record date without also
     ///   handing it a city, so the collapse is no longer expressible. See `.bundled`.
+    /// - Parameters:
+    ///   - installedContentRev: the record date the installed copy actually holds, read out of its
+    ///     own `seed_meta` (`CityLibrary.InstalledCity.contentRev`).
+    ///   - installedSchemaVersion: the generation stamped into that same copy.
+    ///
+    ///   **Why a version-string comparison was not enough, and what these two are for.** R37.2 said
+    ///   update detection is string equality on `version`, and R60 then appended a `build_id` to
+    ///   that string — *the first 8 hex of the source seed's sha256*, a fact about the 108 MB fused
+    ///   seed a pack was cut from and not about the pack. So re-running the publisher over a
+    ///   rebuilt seed changes `version` for **every** city while changing no city's data, and every
+    ///   device holding any of them is told an update is available for bytes it already has.
+    ///
+    ///   Measured, not theorized: a tester downloaded Manhattan at
+    ///   `s17-r2026-08-22-4f6ebaaa` and was offered an update to `s17-r2026-08-22-ac7b1ccc`
+    ///   minutes later — same generation, same record date, different source seed — and filed it as
+    ///   a bug (build 49, 2026-08-23). It is one.
+    ///
+    ///   The comparison therefore asks what an update would actually buy: a newer **record**, or a
+    ///   newer **generation**. Both are read from keys the publisher writes for the purpose —
+    ///   `content_rev` and `schema_version` in the manifest, `publish_content_rev` and
+    ///   `publish_schema_version` in the file — so **nothing here parses a version string**, which
+    ///   is the property `CityManifest.City.version`'s own comment asks callers to preserve.
+    ///
+    ///   **Missing facts fall back to string equality**, which is the safe direction: an update
+    ///   offered needlessly costs bytes, an update withheld wrongly costs a stale inventory with
+    ///   nothing on screen to explain it. A copy installed before this was recorded, or a file whose
+    ///   receipt does not answer, therefore behaves exactly as it did before.
     public init(
         published: CityManifest.City,
         installedVersion: String?,
+        installedContentRev: String? = nil,
+        installedSchemaVersion: Int? = nil,
         bundled: SeedCities.City? = nil,
         newestKnownSchemaVersion: Int = SeedDatabase.newestKnownSchemaVersion
     ) {
@@ -86,7 +135,12 @@ public enum CityInstallState: Equatable, Sendable {
         } else if let installedVersion {
             // A downloaded copy shadows the bundle (the `active-city` marker points at it), so its
             // version — a full R37 string, not just a date — is the fact worth stating.
-            self = installedVersion == published.version
+            self = Self.installedIsCurrent(
+                published: published,
+                installedVersion: installedVersion,
+                installedContentRev: installedContentRev,
+                installedSchemaVersion: installedSchemaVersion
+            )
                 ? .installedCurrent(installedVersion: installedVersion)
                 : .updateAvailable(installedVersion: installedVersion)
         } else if let bundled {
@@ -112,5 +166,34 @@ public enum CityInstallState: Equatable, Sendable {
         } else {
             self = .notInstalled
         }
+    }
+
+    /// Whether the installed copy already holds what the published entry offers.
+    ///
+    /// Two ways to be current, in order of what they cost to establish:
+    ///
+    /// 1. **The version strings match.** R37.2's original rule, unchanged and still first — when it
+    ///    says yes there is nothing more to ask.
+    /// 2. **The record date and the generation both match.** The strings differ, so *something*
+    ///    about the publish differed; this decides whether that something was the data. Both halves
+    ///    are required and both must be *known* — a nil on either side is not a match, because "the
+    ///    file did not say" and "the file said the same thing" are different answers and only one of
+    ///    them justifies withholding an update.
+    ///
+    /// The published record date is `content_rev`, its own manifest key since #156; the installed
+    /// one is `publish_content_rev`, written into every published file by `publish_cities.py`. No
+    /// substring of `version` is examined on either side.
+    private static func installedIsCurrent(
+        published: CityManifest.City,
+        installedVersion: String,
+        installedContentRev: String?,
+        installedSchemaVersion: Int?
+    ) -> Bool {
+        if installedVersion == published.version { return true }
+        guard let installedContentRev, let publishedContentRev = published.contentRev,
+              let installedSchemaVersion
+        else { return false }
+        return installedContentRev == publishedContentRev
+            && installedSchemaVersion == published.schemaVersion
     }
 }
