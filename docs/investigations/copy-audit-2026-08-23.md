@@ -31,7 +31,7 @@ sentence is a deliberate forward promise, not an oversight; it was screened, rai
 
 | # | Ruling | Where it landed |
 | --- | --- | --- |
-| 5 | **Every rewrite in §5's table is approved as proposed**, with one modification: R7 ships as `First photo · six people know this tree` — **`know`, not the proposed `knew`**, the owner's explicit verbatim wording | §5, and the dispositions in §11 |
+| 5 | **Every rewrite in §5's table is approved as proposed**, with one modification: R7 ships as `First photo · six people know this tree` — **`know`, not the proposed `knew`**, the owner's explicit verbatim wording | §5, and the list of which rewrites shipped at the foot of §2 |
 | 6 | **Ruling 3 extends to the four footnotes §4a named as untouched.** All four go | §4b below |
 | 7 | **Exception to ruling 6: R9's fact moves inline.** `DBH is measured at 1.4 m above the ground.` survives, in screen 16's §2 under the control that selects DBH; the slot dies | §4b, and `MeasureCopy.dbhHelp` |
 | 8 | **R10 dies entirely** — the confirmation dialog already says it, and says it at the moment it applies | `MeasureCopy.anomalyShrunkTrunk` is now the only place that question is asked |
@@ -171,15 +171,32 @@ Stated so the gap is on the record rather than implied:
 | **Total user-facing strings screened** | **965** |
 | **KILL** — narrative holdover, delete outright | **11** items / **13** strings — *ruled, landed* |
 | **REWRITE** — useful purpose, wrong voice or now untrue | **25** — *23 implemented; R26 withdrawn, R15 died as a kill* |
-| **KEEP** | **929** |
+| **KEEP** | **928** |
 | Additionally removed under ruling 3 (footnote slot) | **1** — `CareLogCopy.footnote`, a KEEP the owner overrode |
 | Additionally removed under ruling 6 (the same slot, four more sites) | **4** — §4b |
 
-Numbered **K1–K11** and **R1–R27** below. That is 38 numbers over **36 distinct strings**: R14
-and R16 are the same two strings as K10 and K8, offered as rewrites rather than deletions so the
-owner has both options on one line. 11 + 25 = 36.
+Numbered **K1–K11** and **R1–R27** below: **38 numbers over 37 distinct strings.**
 
-Of the 36, **20 are load-bearing for tests** (§8), and **22 are specified verbatim in
+**The KEEP figure is 965 − 37, and it was recounted rather than carried forward** (PR #119 review,
+finding N2 — this table said **929** while §6 below said **928**, and both were written in the same
+phase-1 commit, so one of them was always wrong). The recount, and the trap in it:
+
+- The eleven **K** numbers cover **13 strings**, not 11. K10 and K11 each take a Moments *subtitle*
+  down with the row's title, which is ruling 1's own wording ("11 numbered items = **13 strings**").
+- The twenty-seven **R** numbers cover **24 strings that are not already in that 13**. Three R
+  numbers name a string the kills already account for: R14 is K10's title, **R15 is K10's
+  subtitle** (`ActivityPresentation.swift:460`, `Apr 3 · four visitors caught the bright new tips`),
+  and R16 is K8's sentence stated as a rewrite of the composed line.
+- 13 + 24 = **37 distinct strings** disposed. 965 − 37 = **928**.
+
+**The 929 came from counting kills as items and rewrites as strings in the same subtraction** —
+`11 + 25 = 36`, then 965 − 36 — which drops the two subtitles and misses that R15 is one of them.
+The two bases are one apart twice over and happened to land one apart in total. The itemized 25
+in the REWRITE row above is a count of R numbers minus R14/R16 and is left as phase 1 wrote it;
+it is *not* the number that belongs in this subtraction, which is why the derivation is spelled
+out here instead of a figure being swapped silently.
+
+Of the 37, **20 are load-bearing for tests** (§8), and **22 are specified verbatim in
 `SCREENS.md`** (§7, corrected during implementation) — which is the DECISIONS constraint-21
 territory the ROADMAP item anticipated, and the reason nothing was reworded silently.
 
