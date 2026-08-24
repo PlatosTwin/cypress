@@ -328,7 +328,12 @@ struct BundledCityTests {
             downloadingFraction: nil, lastAttemptFailed: false
         )
         #expect(row.affordances == [.download])
-        #expect(row.stateLine == "Newer record available · included copy is 2026-07-31")
+        // Both facts, possession first. The offer used to be this row's only line, which read as
+        // the screen offering to sell a reader a city already inside the app they were holding —
+        // filed as exactly that by a tester on build 49 (`CityDownloadsFeedbackTests`).
+        #expect(row.stateLine == "Included in the app · record as of 2026-07-31")
+        #expect(row.detailLine == "A newer record is available to download.")
+        #expect(row.isOnDevice)
     }
 
     /// The ways "you already have this" is reached, each landing on `.bundled`: parity, a published

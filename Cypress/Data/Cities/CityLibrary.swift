@@ -66,13 +66,27 @@ public struct CityLibrary: Sendable {
         public let version: String
         public let fileURL: URL
         public let bytes: Int64
-        /// The city's own name, read out of the installed file (`dim_city.display_name`, s16+).
-        /// Nil for a file too old to carry one — the caller then falls back to the id, which is
-        /// what every offline row said before this existed.
+        /// **The name of this pack**, read out of the installed file: `dim_region.display_name`
+        /// for the pack's own row (s17+), falling back to the city's `dim_city.display_name`
+        /// (s16+) where the pack *is* its whole city. Nil for a file too old to carry either —
+        /// the caller then falls back to the id, which is what every offline row said before this
+        /// existed.
         public let displayName: String?
         /// The shipped extent's word, read out of the same file's `seed_meta`. Nil for full
         /// coverage — the same meaning the manifest's `coverage` field carries.
         public let coverage: String?
+        /// The record date this copy actually holds (`seed_meta.publish_content_rev`), read from the
+        /// file rather than parsed out of the directory name it sits in.
+        ///
+        /// **This is what makes "is there an update?" answerable without splitting a version
+        /// string.** `CityManifest.City.version`'s own comment forbids the split, and R60 made the
+        /// string end in a `build_id` that is a hash of the whole 108 MB *source seed* — so a
+        /// re-publish changes every city's version while changing no city's data. See
+        /// `CityInstallState`.
+        public let contentRev: String?
+        /// The seed generation stamped into this copy (`seed_meta.publish_schema_version`), for the
+        /// half of the same comparison `contentRev` cannot make on its own.
+        public let publishedSchemaVersion: Int?
 
         public init(
             id: String,
@@ -80,7 +94,9 @@ public struct CityLibrary: Sendable {
             fileURL: URL,
             bytes: Int64,
             displayName: String? = nil,
-            coverage: String? = nil
+            coverage: String? = nil,
+            contentRev: String? = nil,
+            publishedSchemaVersion: Int? = nil
         ) {
             self.id = id
             self.version = version
@@ -88,6 +104,8 @@ public struct CityLibrary: Sendable {
             self.bytes = bytes
             self.displayName = displayName
             self.coverage = coverage
+            self.contentRev = contentRev
+            self.publishedSchemaVersion = publishedSchemaVersion
         }
     }
 
@@ -117,12 +135,31 @@ public struct CityLibrary: Sendable {
     /// Every city on disk, by id. Rendered directly when the manifest is unreachable — the
     /// offline screen is disk facts alone.
     ///
-    /// **The display name is one of those disk facts now.** Since s16 every published city file
-    /// carries `dim_city.display_name`, narrowed to that city's single row by
+    /// **The display name is one of those disk facts now, for a whole-city pack.** Since s16 every
+    /// published city file carries `dim_city.display_name`, narrowed to that city's single row by
     /// `Tools/publish_cities.py`, so reading it here costs one read-only open per installed city
     /// and stops an offline reader being shown `us-ca-sj` where their own phone says `San Jose`.
     /// The open is bounded — this method is called on screen load and after an install or a
     /// remove, never per render — and a file that cannot answer simply has no name.
+    ///
+    /// **A borough pack names itself, and it does not need the manifest to.** `dim_city` answers a
+    /// different question — `us-ny-nyc-manhattan.sqlite` carries the *city*'s row, which reads
+    /// `New York City`, and titling five borough rows with it would say the same thing five times.
+    /// The pack's own name is in the same file: `dim_region.display_name`, keyed by the `pack_id`
+    /// this directory is named after (`SeedCities.City.packDisplayName`). That is one indexed
+    /// lookup, no manifest persisted (R43 §3), and no name derived from an id (DECISIONS
+    /// constraint 15) — the publisher refuses a run whose manifest name disagrees with it, so it
+    /// is the same string the catalog would have shown had it been reachable.
+    ///
+    /// This corrects a claim that stood here in review round 2: that *nothing anywhere in the file
+    /// says "Manhattan"* and that *only the manifest knows a pack's display name*. Both were
+    /// false — `dim_region` shipped with the s17 generation and is in every published pack — and
+    /// the reader was shown `us-ny-nyc-manhattan` offline on the strength of them.
+    ///
+    /// **The fallback is what a pre-s17 pack gets**, and it is the previous rule unchanged: the
+    /// city's name, but only where the file's row describes this pack (`packID == id`, or an id
+    /// space that equals it), so a borough published before `dim_region` still keeps its id rather
+    /// than wearing its city's name.
     public func installedCities() -> [InstalledCity] {
         guard let ids = try? FileManager.default.contentsOfDirectory(
             at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
@@ -136,13 +173,35 @@ public struct CityLibrary: Sendable {
                 let url = fileURL(id: id, version: version)
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let bytes = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-                // A city file holds exactly one id space (R37.3 narrows it), so the name for this
-                // id is whichever row the file carries — matched on the id rather than assumed to
-                // be first, because assuming would be wrong the day a pack holds two.
-                let named = SeedCities.read(fileAt: url).first { $0.id == id }
+                // **`id` here is the PACK id — the install directory — and the rows a city file
+                // holds are keyed by ID SPACE.** For a whole-city pack those are the same string
+                // (`sf`), which is why matching on the id looked right and worked for a year; for a
+                // borough they are not (`us-ny-nyc-manhattan` against `us-ny-nyc`), so that match
+                // found nothing and every borough's receipt came back nil — see
+                // `SeedCities.City.packID` for what that cost.
+                //
+                // Resolved in the order of what each answer is worth: the pack's own stamped id
+                // first, then an id space that happens to equal it, then — since R37.3 narrows every
+                // published file to exactly one id space — the single row a one-space file has,
+                // which is what a pack published before `publish_pack_id` existed can offer. A file
+                // holding two id spaces (the fused bundled seed) matches none of the three and is
+                // left alone, because there is no single row to attribute the pack to.
+                let cities = SeedCities.read(fileAt: url)
+                let named = cities.first { $0.packID == id }
+                    ?? cities.first { $0.id == id }
+                    ?? (cities.count == 1 ? cities.first : nil)
+                // The pack's own name first. `dim_city`'s name is the *city*'s, so it is only an
+                // acceptable second choice for a pack that is its whole city — exactly the case
+                // where the id space equals the pack id.
+                let namesThisPack = named?.id == id
+                let title = named?.packDisplayName
+                    ?? (namesThisPack ? named?.displayName : nil)
                 return InstalledCity(
                     id: id, version: version, fileURL: url, bytes: bytes,
-                    displayName: named?.displayName, coverage: named?.coverage
+                    displayName: title,
+                    coverage: named?.coverage,
+                    contentRev: named?.contentRev,
+                    publishedSchemaVersion: named?.publishedSchemaVersion
                 )
             }
             .sorted { $0.id < $1.id }
