@@ -448,9 +448,11 @@ struct CityDownloadRow: Equatable, Identifiable {
             // carries the display name and it is unreachable". That reasoning was correct when it
             // was written and stopped being correct at s16: `dim_city.display_name` is inside every
             // published city file, narrowed to that city's single row by `publish_cities.py`, so
-            // the disk does know the name now (`SeedCities`). The id survives as the fallback for a
-            // file too old to carry one — still never a prettier name this layer made up
-            // (DECISIONS constraint 15).
+            // the disk does know the name now (`SeedCities`). s17 added the half that `dim_city`
+            // could never answer — `dim_region.display_name`, the name of the *pack* — so a
+            // borough reads `Manhattan` here offline rather than `us-ny-nyc-manhattan`. The id
+            // survives as the fallback for a file too old to carry either — still never a prettier
+            // name this layer made up (DECISIONS constraint 15).
             title: installed.displayName ?? installed.id,
             // Same argument as the title, one line down: R43 §3 lists coverage as a city card's
             // second line, and since s16 the installed file's own `seed_meta` states it. A row that

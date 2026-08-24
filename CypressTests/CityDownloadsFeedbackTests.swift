@@ -12,8 +12,10 @@ import Testing
 ///
 /// Nothing here touches the network. The downloader is exercised against `file://` fixtures and
 /// against an in-process `URLProtocol` serving http (`CityBucketFixtureProtocol`) — the second
-/// because a `file://` fixture cannot observe download progress at all, measured; no port is opened
-/// and no packet leaves the machine either way. Every other fact is a pure value.
+/// because it lets a test choose the transfer's pacing, which a file URL does not
+/// (`progressIsReportedDuringTheTransfer` says what was measured, and corrects the claim that a
+/// file URL reports no progress at all). No port is opened and no packet leaves the machine either
+/// way. Every other fact is a pure value.
 @Suite("Cities screen — tester feedback")
 struct CityDownloadsFeedbackTests {
 
@@ -241,6 +243,11 @@ struct CityDownloadsFeedbackTests {
     /// The divergence between those two keys is the whole fixture: it is what
     /// `Tools/publish_cities.py` writes for every borough, and it is what a lookup keyed on the id
     /// space silently missed.
+    ///
+    /// **`regionName` is the s17 `dim_region` row, and it defaults to absent on purpose** — the
+    /// default fixture is a pre-s17 pack, which is what the fallback tests need. A caller that
+    /// passes one gets the table `Tools/build_seed.py` creates and `publish_cities.py` narrows to
+    /// a single row: the pack's own name, keyed by the pack id.
     @discardableResult
     static func installBoroughPack(
         in library: CityLibrary,
@@ -248,7 +255,8 @@ struct CityDownloadsFeedbackTests {
         idSpace: String = "us-ny-nyc",
         version: String = "s17-r2026-08-22-4f6ebaaa",
         contentRev: String = "2026-08-22",
-        schemaVersion: Int = 17
+        schemaVersion: Int = 17,
+        regionName: String? = nil
     ) throws -> URL {
         let file = library.fileURL(id: packID, version: version)
         try FileManager.default.createDirectory(
@@ -269,6 +277,18 @@ struct CityDownloadsFeedbackTests {
             INSERT INTO seed_meta VALUES ('inventory_nyc_points_id_space', '\(idSpace)');
             INSERT INTO seed_meta VALUES ('inventory_nyc_points_snapshot_on', '2026-06-01');
             """)
+        if let regionName {
+            // `pack_id` UNIQUE and one surviving row, exactly as `publish_cities.py` leaves it
+            // (`DELETE FROM dim_region WHERE id != ?`, then a count check that fails the publish
+            // if anything else survived).
+            try connection.execute("""
+                CREATE TABLE dim_region (
+                    id INTEGER PRIMARY KEY, pack_id TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL, level TEXT NOT NULL, city_id INTEGER NOT NULL
+                );
+                INSERT INTO dim_region VALUES (3, '\(packID)', '\(regionName)', 'borough', 1);
+                """)
+        }
         return file
     }
 
@@ -292,8 +312,9 @@ struct CityDownloadsFeedbackTests {
         #expect(installed.id == "us-ny-nyc-manhattan")
         #expect(installed.contentRev == "2026-08-22")
         #expect(installed.publishedSchemaVersion == 17)
-        // The name in the file is the CITY's. A borough keeps its id rather than five rows all
-        // reading `New York City` — see `CityLibrary.installedCities()`.
+        // This fixture is a PRE-s17 pack: no `dim_region`, so nothing in it names the pack. The
+        // only name it holds is the CITY's, and a borough does not wear it — see
+        // `CityLibrary.installedCities()`. The s17 case is `boroughTitlesItselfFromItsOwnPack`.
         #expect(installed.displayName == nil)
     }
 
@@ -313,6 +334,108 @@ struct CityDownloadsFeedbackTests {
         #expect(installed.contentRev == "2026-08-22")
         #expect(installed.publishedSchemaVersion == 17)
         #expect(installed.displayName == "New York City")  // the fixture's dim_city row
+    }
+
+    // MARK: - Review round 2, F4: a borough names itself, offline, out of its own pack
+
+    /// **A downloaded borough is titled `Manhattan`, from the file, with no manifest anywhere.**
+    ///
+    /// The claim this replaces was that nothing in `us-ny-nyc-manhattan.sqlite` says "Manhattan"
+    /// and that only the manifest knows a pack's display name. `dim_region` shipped with the s17
+    /// generation and is in every published pack; `publish_cities.py` narrows it to the pack's own
+    /// row and refuses a publish whose manifest name disagrees with it.
+    ///
+    /// The `dim_city` row in this fixture still reads `New York City`, which is what makes the
+    /// assertion discriminating: a lookup that fell back to the city's name would produce that
+    /// string, and this test would fail rather than quietly agree.
+    @Test("a downloaded borough titles itself from its own pack, not from its city")
+    func boroughTitlesItselfFromItsOwnPack() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cities-region-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = CityLibrary(rootURL: root)
+        try Self.installBoroughPack(in: library, regionName: "Manhattan")
+
+        let installed = try #require(library.installedCities().first)
+        #expect(installed.id == "us-ny-nyc-manhattan")
+        #expect(
+            installed.displayName == "Manhattan",
+            "the pack's own dim_region row was not read: \(String(describing: installed.displayName))"
+        )
+        // The receipt is unaffected — this read is beside it, not instead of it.
+        #expect(installed.contentRev == "2026-08-22")
+    }
+
+    /// The same fact through **the whole screen, with the catalog unreachable** — which is the only
+    /// configuration where this matters, because a reachable manifest supplies the name anyway.
+    ///
+    /// The bucket URL points at a directory that does not exist, so `load()` lands on
+    /// `.unavailable` and every row is disk facts alone.
+    @MainActor
+    @Test("offline, the borough's card reads Manhattan rather than its id")
+    func offlineBoroughCardReadsItsPackName() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cities-region-model-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let library = CityLibrary(rootURL: root.appendingPathComponent("lib", isDirectory: true))
+        try Self.installBoroughPack(in: library, regionName: "Manhattan")
+
+        let model = CityDownloadsModel(
+            library: library,
+            downloader: CityDownloader(
+                baseURL: root.appendingPathComponent("no-such-bucket", isDirectory: true)
+            ),
+            bundledCities: [],
+            onInventoryChange: {}
+        )
+        await model.load()
+
+        #expect(model.catalog == .unavailable, "the manifest was reachable, so this proves nothing")
+        let manhattan = try #require(model.rows.first { $0.id == "us-ny-nyc-manhattan" })
+        #expect(manhattan.title == "Manhattan", "the offline card is titled \(manhattan.title)")
+        #expect(manhattan.isOnDevice)
+    }
+
+    /// A whole-city pack reads its name from `dim_region` too, and the fixture's `dim_city` says
+    /// something else on purpose — so this pins *which* table answered, not merely that a name
+    /// arrived. The pack is its own region (`REGIONS` gives San Francisco one `city`-level row),
+    /// and `dim_region.display_name` repeats the city's name there by construction.
+    @Test("a whole-city pack is titled by its own region row as well")
+    func wholeCityPackIsTitledByItsRegionRow() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cities-region-city-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = CityLibrary(rootURL: root)
+        // `dim_city` in this fixture reads `New York City` whatever the pack is called.
+        try Self.installBoroughPack(
+            in: library, packID: "sf", idSpace: "sf", regionName: "San Francisco"
+        )
+
+        let installed = try #require(library.installedCities().first)
+        #expect(installed.displayName == "San Francisco")
+    }
+
+    /// **The fallback, and the reason the lookup is keyed rather than "the one row there".** A file
+    /// whose `dim_region` names some *other* pack must not lend its name to this one; the pack then
+    /// has no name of its own and the id survives, exactly as for a pre-s17 pack.
+    @Test("a region row naming another pack is not borrowed")
+    func aForeignRegionRowIsNotBorrowed() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cities-region-foreign-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = CityLibrary(rootURL: root)
+        let file = try Self.installBoroughPack(in: library, regionName: "Manhattan")
+        // Re-key the one row onto a different pack, leaving everything else alone.
+        let connection = try SQLiteConnection(path: file.path)
+        try connection.execute("UPDATE dim_region SET pack_id = 'us-ny-nyc-queens'")
+
+        let installed = try #require(library.installedCities().first)
+        #expect(
+            installed.displayName == nil,
+            "Queens's name was worn by Manhattan: \(String(describing: installed.displayName))"
+        )
     }
 
     /// **The tester's exact case, end to end through the screen's model.**
@@ -843,10 +966,15 @@ struct CityDownloadsFeedbackTests {
     /// whole of a 199 MB transfer, which is exactly what makes a reader conclude a download is
     /// stuck.
     ///
-    /// **A `file://` fixture cannot guard this.** Measured: a file URL reports 0 progress callbacks
-    /// through the healthy path too, so a test built on one would be green either way — the house
-    /// failure mode. The bucket here is an in-process `URLProtocol` serving http in 64 KiB chunks;
-    /// nothing leaves the machine.
+    /// **The harness is http, and the reason is pacing rather than the scheme.** A `file://`
+    /// fixture does report progress through this path — measured on iPhone 16 Pro over this same
+    /// 2 MB body: 8 `didWriteData` calls to a bare delegate, and 9 fractions out of `downloadCity`
+    /// over a `file://` base. So the "0 callbacks over `file://`" this comment claimed in review
+    /// round 2 was false; that 0 was the async convenience's, which reports nothing over either
+    /// scheme. What a file URL will not do is let the *test* choose the pacing. The bucket here is an in-process `URLProtocol` handing over 64 KiB at a
+    /// time, so the monotone run of fractions asserted below describes a transfer whose shape is
+    /// known, rather than whatever the filesystem happened to do that morning. Nothing leaves the
+    /// machine either way.
     @Test("the download ring is told how far along the transfer is", .timeLimit(.minutes(1)))
     func progressIsReportedDuringTheTransfer() async throws {
         let dir = FileManager.default.temporaryDirectory
@@ -1014,6 +1142,103 @@ struct CityDownloadsFeedbackTests {
             "Cancel drew R43 §3's failure line — failedCityID is \(String(describing: model.failedCityID))"
         )
     }
+
+    /// **A transfer cancelled *before* it is resumed still settles, and nothing in the suite used
+    /// to look** (review round 2, N8).
+    ///
+    /// `downloadFile`'s `onCancel` hands the cancellation to the delegate rather than calling
+    /// `task.cancel()` directly, so `start` can decline to begin a transfer the reader called off.
+    /// The comment on it used to cite `cancelDoesNotRenderFailure` as having measured a hang here;
+    /// that test cancels *after* the download starts and cannot reach this ordering, which is why
+    /// this one exists.
+    ///
+    /// **What it pins and what it does not.** It pins the reader-visible behaviour: entering
+    /// `downloadCity` already cancelled ends as a cancellation, promptly. It does *not* claim the
+    /// handshake is the only thing standing between here and a hang — probed, a download task
+    /// cancelled and never resumed still delivers `didCompleteWithError(-999)`, so URLSession would
+    /// answer the continuation too. The value of the guard is that no transfer is begun; the value
+    /// of this test is that the path is exercised at all, which it previously was not.
+    ///
+    /// **The cancellation is issued from inside the task, before the call.** `Task { … }` then
+    /// `transfer.cancel()` from outside is a race — the body may already be past the point that
+    /// matters — and a racy probe of an ordering is a probe of nothing.
+    ///
+    /// **The bucket stalls, and that is load-bearing.** A 64 KiB body over a bucket that completes
+    /// would finish in microseconds whatever this code did, so "it settled quickly" would be true
+    /// of anything. This body is served and then never finished: the only way out is cancellation.
+    ///
+    /// Measured at 0.02 s; the bounded wait below is 5 s, a hang detector rather than a performance
+    /// assertion.
+    @Test("a download cancelled before it starts settles rather than hanging",
+          .timeLimit(.minutes(1)))
+    func preCancelledDownloadSettlesPromptly() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cities-precancel-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let payload = Self.payload(bytes: 64 * 1024)
+        let city = CityManifest.City(
+            id: "us-ny-nyc-manhattan", displayName: "Manhattan", coverage: "full", treeCount: 1,
+            schemaVersion: 17, version: "s17-r2026-08-22-ac7b1ccc",
+            path: "cities/us-ny-nyc-manhattan/v/us-ny-nyc-manhattan.sqlite",
+            bytes: Int64(payload.count),
+            sha256: SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+        )
+        let (downloader, session) = Self.httpBucket(payload: payload, for: city, stalls: true)
+        defer { session.finishTasksAndInvalidate() }
+
+        let staging = dir.appendingPathComponent("staging", isDirectory: true)
+        let outcome = OutcomeBox()
+        let transfer = Task {
+            // Cancelled before `downloadCity` is ever called, with no window in between.
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                _ = try await downloader.downloadCity(city, to: staging)
+                outcome.settle(.some(nil))
+            } catch {
+                outcome.settle(.some(error))
+            }
+        }
+        defer { transfer.cancel() }
+
+        // Bounded foreground wait — 250 × 20 ms — so a hang fails in five seconds with a legible
+        // message instead of sitting until the time limit.
+        for _ in 0..<250 {
+            if outcome.result != nil { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let settled = try #require(
+            outcome.result,
+            "a download cancelled before it was resumed never settled — the continuation is parked"
+        )
+        let error = try #require(settled, "a pre-cancelled download returned a verified file")
+        #expect(
+            CityDownloader.isCancellation(error),
+            "a pre-cancelled download threw \(error), which the screen reads as a failure"
+        )
+    }
+}
+
+/// A settled-or-not box for a download run on its own task, written from that task and read from
+/// the test's. `Optional<Optional>`: the outer says whether it settled at all, the inner carries
+/// the error, or nil for a download that returned a file.
+final class OutcomeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: ((any Error)?)?
+
+    func settle(_ error: ((any Error)?)?) {
+        lock.lock()
+        value = error
+        lock.unlock()
+    }
+
+    var result: ((any Error)?)? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
 }
 
 /// A thread-safe list of the fractions the progress ring was told, because the delegate reports
@@ -1035,13 +1260,17 @@ final class FractionLog: @unchecked Sendable {
     }
 }
 
-/// An in-process http bucket: the one transport that can observe download progress.
+/// An in-process http bucket: a transfer whose pacing the test chooses.
 ///
-/// **A `file://` fixture reports zero `didWriteData` callbacks even through a healthy
-/// implementation** (measured on iPhone 16 Pro), so the suite's existing file fixtures cannot guard
-/// the Cities screen's progress ring — they are green either way. This serves a parked body over
-/// `https` in 64 KiB chunks, entirely inside the process; nothing leaves the machine and no port is
-/// opened.
+/// **A `file://` fixture does deliver `didWriteData` through the classic download task** — 8 calls
+/// for a 2 MB body, measured. The claim that it reports zero was a measurement of the async
+/// convenience, which reports zero over every scheme; `progressIsReportedDuringTheTransfer` carries
+/// the correction and the numbers. What a file URL will not do is hand the bytes over at a rate the
+/// test picked. This serves a parked body over `https` in
+/// 64 KiB chunks, entirely inside the process; nothing leaves the machine and no port is opened.
+///
+/// **It also serves a transfer that never ends** (`stalls`), which is the only way to hold a
+/// download open long enough to cancel one deliberately.
 ///
 /// **Nothing clears the table between tests, deliberately.** `URLProtocol` state is process-wide
 /// and Swift Testing runs suites in parallel; a `reset()` here is what once wiped another suite's

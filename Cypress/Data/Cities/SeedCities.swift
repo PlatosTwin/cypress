@@ -15,6 +15,9 @@ import SQLite3
 /// - **which cities** — `id_spaces.id`;
 /// - **the name** — `dim_city.display_name` joined through `id_spaces.city_id` (s16), falling back
 ///   to `id_spaces.short_name` (s15) and then to nothing at all. Never composed from the id;
+/// - **the pack's own name** — `dim_region.display_name` for this file's `publish_pack_id` (s17).
+///   A different fact from the one above and the reason `dim_region` exists: the city a tree is in
+///   is `New York City`, the pack a reader downloaded is `Manhattan`. Nil before s17;
 /// - **the record date** — `Tools/publish_cities.py`'s own `content_rev_for` rule, applied to a
 ///   different file. The publisher pairs `seed_meta.inventory_<tag>_id_space` with
 ///   `inventory_<tag>_snapshot_on` and takes the newest; so does `contentRev(forIDSpace:seedMeta:)`
@@ -55,6 +58,23 @@ public enum SeedCities {
         public let packID: String?
         /// The city's own name as the file states it, or nil when the file is too old to carry one.
         public let displayName: String?
+        /// **The name of the PACK, as the pack itself states it** — `dim_region.display_name` for
+        /// the row whose `pack_id` is this file's `publish_pack_id`. `Manhattan` where
+        /// `displayName` says `New York City`, and the same string as `displayName` for a
+        /// whole-city pack, whose region repeats its city's name by construction
+        /// (`Tools/build_seed.py`'s `REGIONS`, and the note there on why it repeats rather than
+        /// joins).
+        ///
+        /// Nil for a file that carries no `dim_region` — every pack published before the s17
+        /// generation — and nil for one no `publish_pack_id` names, which is the fused bundled
+        /// seed, whose several regions belong to no single pack.
+        ///
+        /// **This is the offline answer to "what is this pack called", and it is not the
+        /// manifest's.** `Tools/publish_cities.py` refuses a publish whose `DISPLAY_NAMES` entry
+        /// disagrees with the seed's own `dim_region.display_name`, so the string read here is the
+        /// same string the manifest entry carries — read out of the file, with no manifest
+        /// persisted (R43 §3) and nothing derived from an id (DECISIONS constraint 15).
+        public let packDisplayName: String?
         /// The newest snapshot date among this city's inventories, by the publisher's rule, or nil
         /// when the file's own receipt does not support one.
         ///
@@ -80,7 +100,8 @@ public enum SeedCities {
             contentRev: String?,
             coverage: String? = nil,
             publishedSchemaVersion: Int? = nil,
-            packID: String? = nil
+            packID: String? = nil,
+            packDisplayName: String? = nil
         ) {
             self.id = id
             self.displayName = displayName
@@ -88,6 +109,7 @@ public enum SeedCities {
             self.coverage = coverage
             self.publishedSchemaVersion = publishedSchemaVersion
             self.packID = packID
+            self.packDisplayName = packDisplayName
         }
     }
 
@@ -164,6 +186,9 @@ public enum SeedCities {
         let packID = named.count == 1
             ? meta["publish_pack_id"].flatMap { $0.isEmpty ? nil : $0 }
             : nil
+        let packDisplayName = try packID.flatMap {
+            try regionDisplayName(from: connection, packID: $0)
+        }
         return named.map {
             City(
                 id: $0.id,
@@ -173,9 +198,38 @@ public enum SeedCities {
                 ),
                 coverage: coverage(forIDSpace: $0.id, seedMeta: meta),
                 publishedSchemaVersion: publishedSchemaVersion,
-                packID: packID
+                packID: packID,
+                packDisplayName: packDisplayName
             )
         }
+    }
+
+    /// `dim_region.display_name` for one `pack_id` — the pack's own name, read out of the pack.
+    ///
+    /// **Capability-detected, like every other read in this type.** `dim_region` arrived with the
+    /// s17 generation; a file without it answers nil and its caller falls back, exactly as a
+    /// pre-s16 file falls back for `dim_city`. The narrower `SeedSchema.hasRegions` is not the
+    /// right question here: it is `&&`-ed with `trees.region_id` because *that* flag is about
+    /// joining a tree to its region, and this read joins nothing — a published pack whose one
+    /// region row is intact can name itself whether or not its tree rows carry the key.
+    ///
+    /// **Keyed on `pack_id`, which is UNIQUE**, so this is one indexed lookup and it cannot be
+    /// ambiguous. Not "the single surviving row": `publish_cities.py` does narrow `dim_region` to
+    /// exactly one row per pack (it fails the publish otherwise), but taking whatever row is there
+    /// would also answer for a file the publisher never narrowed, and the answer would name some
+    /// other pack.
+    private static func regionDisplayName(
+        from connection: SQLiteConnection,
+        packID: String
+    ) throws -> String? {
+        guard try connection.tableExists("dim_region") else { return nil }
+        let statement = try connection.prepare(
+            "SELECT display_name FROM dim_region WHERE pack_id = ?"
+        )
+        defer { statement.finalize() }
+        _ = try statement.bind([packID])
+        return try statement.fetchOne { try $0.stringIfPresent("display_name") }?
+            .flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// `seed_meta` as a dictionary, or empty when the file predates the build receipt.

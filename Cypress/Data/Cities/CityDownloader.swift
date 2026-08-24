@@ -272,10 +272,15 @@ public struct CityDownloader: Sendable {
     ///    `didWriteData` at all** — 0 calls, against 4 calls reaching the full byte count through
     ///    the classic task with the same delegate object, the same session and the same body. This
     ///    is what made the Cities screen's determinate ring (R43 §3) sit at 0 % for a whole 199 MB
-    ///    transfer, and it is invisible to a `file://` fixture, which reports 0 callbacks even
-    ///    through the healthy path.
-    ///    `CityDownloadsFeedbackTests.progressIsReportedDuringTheTransfer` serves http in-process
-    ///    for exactly that reason.
+    ///    transfer.
+    ///    `CityDownloadsFeedbackTests.progressIsReportedDuringTheTransfer` serves http in-process,
+    ///    and **the reason is pacing, not the scheme.** A `file://` fixture *does* deliver
+    ///    `didWriteData` through this path: measured on iPhone 16 Pro over a 2 MB body, 8 calls to
+    ///    a bare delegate on a classic task, and 9 progress fractions out of `downloadCity` itself
+    ///    over a `file://` base. The async convenience reported 0 over that same file URL — which
+    ///    is the zero an earlier version of this comment attributed to the scheme. It belongs to
+    ///    the convenience, and it is a zero over http too. What a file URL will not do is hand the
+    ///    bytes over at a rate a test chose; the in-process `URLProtocol` serves 64 KiB at a time.
     /// 2. **A delegate created with a completion handler is never consulted.** A task made by
     ///    `downloadTask(with:completionHandler:)` measured 0 progress calls even with a
     ///    *session*-level delegate, so the continuation below is resumed from
@@ -302,14 +307,29 @@ public struct CityDownloader: Sendable {
                 delegate.start(continuation, resuming: task)
             }
         } onCancel: {
-            // **Not `task.cancel()` directly, and the difference is a hang.** `onCancel` runs
-            // immediately when the enclosing Swift task is *already* cancelled — before the
-            // operation body, so before the transfer is resumed. Cancelling a URLSession task that
-            // was never resumed produces no completion callback at all, and the continuation is
-            // never resumed either: the download sits at `Downloading…` forever, which is the state
-            // pressing `Cancel` puts it in on a slow screen. Measured, in
-            // `cancelDoesNotRenderFailure`. The delegate owns the flag, so `start` can decline to
-            // resume a transfer that has already been called off.
+            // **Not `task.cancel()` directly: the delegate is told, so `start` can decline to
+            // BEGIN a transfer the reader already called off.** `onCancel` runs immediately when
+            // the enclosing Swift task is *already* cancelled — before the operation body, so
+            // before `task.resume()` — and that ordering is what the flag is for. Nothing is
+            // fetched for a download nobody is waiting for any more.
+            //
+            // **This is defensive, and the hang it used to claim is not real.** An earlier version
+            // of this comment said a URLSession task cancelled before it was resumed "produces no
+            // completion callback at all", so the continuation would sit parked forever, and cited
+            // `cancelDoesNotRenderFailure` as the measurement. Both halves were wrong. That test
+            // cancels *after* the transfer starts, so it never reaches this ordering (review round
+            // 2 found this); and the claim itself is false — probed on iPhone 16 Pro, a download
+            // task cancelled and never resumed still delivers `didCompleteWithError` with
+            // `NSURLErrorCancelled (-999)`, within a second. Review round 2 independently replaced
+            // this whole handshake with the naive form and measured 0.022 s over the in-process
+            // bucket and a thrown `URLError` against the live 199 MB object — no hang in either.
+            //
+            // So the continuation has two possible answers here, not one, and the point is that it
+            // takes exactly one: `finish` clears it under the lock, so whichever of `start`'s
+            // refusal and URLSession's own `-999` arrives second finds nothing to resume.
+            // `preCancelledDownloadSettlesPromptly` pins the behaviour a reader gets — a
+            // `downloadCity` entered already cancelled settles as a cancellation rather than
+            // hanging, over a transport that never completes on its own.
             delegate.cancel(task)
         }
     }
@@ -402,9 +422,14 @@ public struct CityDownloader: Sendable {
             lock.unlock()
         }
 
-        /// Cancels the transfer, and remembers that it was cancelled. A task that had already been
-        /// resumed completes through `didCompleteWithError`; one that had not never calls back at
-        /// all, and `start` answers for it.
+        /// Cancels the transfer, and remembers that it was cancelled — the flag being the half
+        /// `task.cancel()` cannot do, since it is what stops `start` from beginning a transfer
+        /// nobody is waiting for.
+        ///
+        /// Both a resumed and a never-resumed task complete through `didCompleteWithError` with
+        /// `NSURLErrorCancelled` (probed, not assumed — see `downloadFile`'s `onCancel`), so that
+        /// callback and `start`'s own refusal race to answer the continuation. `finish` is what
+        /// makes the race harmless.
         func cancel(_ task: URLSessionDownloadTask) {
             lock.lock()
             isCancelled = true
