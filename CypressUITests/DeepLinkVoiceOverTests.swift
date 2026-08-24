@@ -62,17 +62,24 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
     /// but C16's tab item carries the same words on *every* tab root, so `app.staticTexts` finds it
     /// on the You tab as readily as on the grove. Measured, not reasoned: pointing this case at
     /// `you` with that anchor **passed**, which is a test that cannot fail for the thing it exists
-    /// to check. `Your grove is empty` fails the other way — the seeded device has a grove.
+    /// to check.
     ///
-    /// So the anchor is §3's progress caption, which is `GroveCopy`'s alone. Red-proved the same
-    /// way: pointed at `you`, it fails with "'you can recognize' never appeared".
+    /// So the anchor is §3's progress caption, which is `GroveCopy`'s alone — **and the empty
+    /// grove's own sentence beside it, because the caption alone was a report on the device.**
     ///
-    /// **Its one weakness, stated rather than discovered later:** the caption renders only when the
-    /// ring does, so a device whose grove is empty would fail here on a healthy build. That is a
-    /// property of the seed, not of a contribution, and it is why the empty-state string is the
-    /// wrong anchor rather than the right one — but it is a state dependence the footnote did not
-    /// have, and it is the real cost of removing that sentence.
-    func testGroveTab()      { check("grove",         anchor: "you can recognize", pushed: false) }
+    /// That weakness was stated when the caption was chosen ("a device whose grove is empty would
+    /// fail here on a healthy build") and shipped anyway. It failed on the first CI run of that
+    /// change, on a clean runner, while passing on the author's simulator — which had recognized a
+    /// species in some earlier test. The E216 family exactly: the UI suite inherits the device's
+    /// state, and naming a hazard in a comment is not guarding it.
+    ///
+    /// Both sentences belong to screen 08 and to no other, so arrival is still proved by a sentence
+    /// only this screen says. What is no longer asserted is *which* of the screen's two legitimate
+    /// states this device is in, which this suite was never about. Red-proved the way the caption
+    /// was: pointed at `you`, carrying both anchors, it fails.
+    func testGroveTab() {
+        check("grove", anyOf: ["you can recognize", "Your grove is empty"], pushed: false)
+    }
     func testJournalTab()    { check("journal",       anchor: "Almanac",          pushed: false) }
     func testYouTab()        { check("you",           anchor: "Your contributions", pushed: false) }
 
