@@ -517,6 +517,18 @@ two places it did not predict:
   rewrites removed. Both now calibrate against a specimen instead, so the control survives the
   corpus.
 
+**The kills cost one UI anchor, and the replacement cost a CI round.** `DeepLinkVoiceOverTests
+.testGroveTab` had anchored on screen 08's footnote (`Quiet collecting`), which K5 deleted. Phase 2A
+re-anchored it on §3's progress caption and wrote down, in the same comment, that the caption
+renders only when the grove has a recognized species — "a device whose grove is empty would fail
+here on a healthy build" — and shipped it. It passed on the author's simulator, which had recognized
+one in an earlier test, and failed on CI's clean runner at the first opportunity. E216's family
+exactly, and a demonstration that naming a hazard in a comment is not guarding it. The anchor now
+carries both of the screen's legitimate states, and the fix was proved by erasing the device to
+reach CI's condition and watching the pre-fix anchor fail there. **The real cost of removing a
+footnote is that a test anchored on it needs a state-independent replacement, and the empty-state
+sentence is half of one.**
+
 **Where a phrasing assertion could become a fact assertion, it did.** Three cases:
 
 | Test | Was | Is |
