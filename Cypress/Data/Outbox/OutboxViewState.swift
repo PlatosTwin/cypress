@@ -3,9 +3,10 @@ import Observation
 
 /// The "says why" line on screen 17.
 ///
-/// Screen 17's footnote is the contract this type implements: "Nothing here disappears silently. An
-/// item that cannot sync says so, says why, and waits for you." Every failure path produces a
-/// sentence a volunteer standing on a pavement can act on.
+/// The contract this type implements: nothing disappears silently — an item that cannot sync says
+/// so, says why, and waits. Screen 17 used to print that as a footnote and no longer does (copy
+/// audit, 2026-08-23, owner ruling); the rule outlived the sentence, and every failure path here
+/// still produces something a volunteer standing on a pavement can act on.
 ///
 /// Copy rules (ARCHITECTURE §5.7): prose is sentence case, and there are no spaces around em
 /// dashes — which is easiest to honor by not reaching for one.

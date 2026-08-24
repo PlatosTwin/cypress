@@ -98,9 +98,14 @@ struct ActivityScreen: View {
                     // — it is the screen's closing space above the home indicator, and without it
                     // the photo strip sits on the edge.
                 }
+                // The closing space goes on **before** the `minHeight` frame, not after. Padding a
+                // view that has already been sized to the viewport makes the scroll content
+                // `proxy.size.height + 36`, which is a permanent overhang on a screen with nothing
+                // to scroll. Inside the frame it is space the viewport already accounts for.
+                // Every sibling column orders it this way; `ScrollOverhangGuardTests` pins it.
+                .padding(.bottom, CypressSpacing.bottomFootnote)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
-                .padding(.bottom, CypressSpacing.bottomFootnote)
             }
             .scrollBounceBehavior(.basedOnSize)
         }

@@ -367,9 +367,11 @@ struct GrovePresentationTests {
             neighborhood: Self.neighborhood(totalling: 40)
         )
         let progress = try #require(subject.progress)
-        // Every string the screen *derives*. The footnote is excluded because it is the fixed
-        // disclaimer and says the word "streaks" on purpose — it is asserted separately, verbatim,
-        // in `emptyGroveRendersNothing`.
+        // Every string the screen *derives*. This list used to exclude the footnote, which was the
+        // fixed disclaimer and said the word "streaks" on purpose; the copy audit of 2026-08-23
+        // removed it (owner ruling), so there is no longer an exclusion to explain — these three
+        // are all of them. `GroveCopy.emptyGrove` is fixed rather than derived and draws only on a
+        // grove with nothing in it, which this subject is not.
         let derived = [progress.headline, progress.caption, try #require(subject.celebration).body]
 
         for line in derived {

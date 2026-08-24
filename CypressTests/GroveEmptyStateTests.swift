@@ -58,8 +58,10 @@ struct GroveEmptyStateTests {
     // MARK: - The claim only a renderer can decide
 
     /// The real empty grove against a real `GroveView` that never finished loading — the only
-    /// "nothing between the tab row and the footnote" this suite trusts, because it is produced by
-    /// the same code the fixed screen runs rather than reconstructed by hand. A control render of
+    /// "nothing below the tab row" this suite trusts, because it is produced by the same code the
+    /// fixed screen runs rather than reconstructed by hand. The footnote that used to close that
+    /// column was removed by the copy audit of 2026-08-23 (owner ruling), so an unloaded screen is
+    /// now the title and the tab row and nothing else. A control render of
     /// each proves the harness stable before the disagreement between them means anything
     /// (`FailedReadTests.groveFailureDraws`'s own reasoning).
     @Test("The empty-grove sentence draws something an unloaded screen does not")
@@ -74,8 +76,8 @@ struct GroveEmptyStateTests {
         #expect(
             sentence != unloaded,
             """
-            the empty grove rendered identically to a screen that never finished loading (title, \
-            tab row, footnote, nothing between) — E48's sentence is not reaching the screen
+            the empty grove rendered identically to a screen that never finished loading (title \
+            and tab row, nothing below them) — E48's sentence is not reaching the screen
             """
         )
     }

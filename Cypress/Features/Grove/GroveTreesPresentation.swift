@@ -22,10 +22,14 @@
 //
 //  ── What this list is allowed to say ──────────────────────────────────────────────────────────
 //  **NOT SPECIFIED**: SCREENS.md 08 draws the pill and not the panel behind it, so there is no
-//  layout, no row and no copy. The nearest specified thing is the screen it sits on, and screen 08's
-//  own footnote is the specification: "Quiet collecting. There are no streaks and no leaderboards."
+//  layout, no row and no copy. The nearest specified thing was the screen it sits on: screen 08
+//  carried the footnote "Quiet collecting. There are no streaks and no leaderboards.", and that
+//  sentence is what this list was written against. The copy audit of 2026-08-23 removed the
+//  footnote (owner ruling) and SCREENS.md 08 §6 is struck to match, so the sentence is no longer
+//  drawn anywhere — but the rule it stated is DECISIONS D1's, which is where it came from and where
+//  it still stands. Nothing below was derived from the footnote's presence on the screen.
 //
-//  The tally is the one thing here that had to be argued against that footnote rather than derived
+//  The tally is the one thing here that had to be argued against that rule rather than derived
 //  from it, and the argument is in `GroveRecord`, beside the type that carries it: never public,
 //  never compared, never a reward, never summed across the grove, and never the thing the list is
 //  ordered by. What is drawn is a description of one relationship with one tree, which is a

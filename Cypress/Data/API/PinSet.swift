@@ -6,10 +6,13 @@ import Foundation
 /// ── Why this type exists ──────────────────────────────────────────────────────────────────
 /// Screen 12 printed two counts and offered one record each. `Where eyes are needed` said
 /// `9 young trees with no visits since planting`, its button said `Walk the nine`, and the button
-/// opened *one* tree's profile — so the cold profile it landed on ended with the line "This is the
-/// almanac's 'walk the nine' list, one tree at a time", which is the app apologizing in copy for a
-/// missing destination. `Where a tree could go` (RULINGS R10, ERRATA E121) shipped the same defect
-/// four commits later: `1,474 empty planting sites`, tapping through to the nearest basin.
+/// opened *one* tree's profile — so the cold profile it landed on then ended with the line "This is
+/// the almanac's 'walk the nine' list, one tree at a time", which was the app apologizing in copy
+/// for a missing destination. **That line is no longer drawn**: the copy audit of 2026-08-23 struck
+/// it (owner ruling), which removes the apology and not the reason this type exists — the
+/// destination is what this type supplies. `Where a tree could go` (RULINGS R10, ERRATA E121)
+/// shipped the same defect four commits later: `1,474 empty planting sites`, tapping through to the
+/// nearest basin.
 ///
 /// Neither row answered the question it raised, which is *where*. Both are spatial claims — one of
 /// them ("All nine are within a 15-minute walk") is a claim about distance — so the destination is a

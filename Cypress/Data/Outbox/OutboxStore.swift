@@ -421,8 +421,9 @@ public struct OutboxStore {
 
     /// Recovers rows left `uploading` by a process that died mid-drain.
     ///
-    /// Nothing disappears silently (screen 17's footnote), and that has to survive a crash: an item
-    /// stuck in `uploading` would never be picked up again by the due-items query.
+    /// Nothing disappears silently — screen 17's rule, no longer printed on it (copy audit,
+    /// 2026-08-23) and no less binding — and that has to survive a crash: an item stuck in
+    /// `uploading` would never be picked up again by the due-items query.
     @discardableResult
     public func recoverInterrupted(at date: Date, connection: SQLiteConnection) throws -> Int {
         let statement = try connection.cachedStatement("""

@@ -7,10 +7,15 @@
 //  "Unsent field work gets a real screen, not a toast." Everything below turns one `OutboxSnapshot`
 //  into what that screen draws, and every judgment in it is about whether a sentence is true.
 //
-//  ── 1. The footnote is the contract ───────────────────────────────────────────────────────
-//  §6: "Nothing here disappears silently. An item that cannot sync says so, says why, and waits for
-//  you." `OutboxFailureReason` already writes the "says why" line for every failure path, so this
-//  file never authors one — it decides which rows carry theirs and how a terminal row is told from a
+//  ── 1. The contract the screen no longer states ───────────────────────────────────────────
+//  Nothing here disappears silently: an item that cannot sync says so, says why, and waits. That
+//  was §6's footnote until the copy audit of 2026-08-23 struck it (owner ruling — see the §6 mark
+//  further down this file). Striking the sentence changed nothing about what this file owes; the
+//  rule is implemented below and asserted by `OutboxPresentationTests`, which is where a rule
+//  belongs.
+//
+//  `OutboxFailureReason` already writes the "says why" line for every failure path, so this file
+//  never authors one — it decides which rows carry theirs and how a terminal row is told from a
 //  transient one.
 //
 //  ── 2. Terminal is not transient ─────────────────────────────────────────────────────────

@@ -463,8 +463,22 @@ public enum AlmanacWindow {
     /// weeks and change nothing else. Recorded in ERRATA rather than chosen silently.
     public static let springMonths = 3...5
 
-    /// "The first two summers decide whether a street tree makes it" (§4's own body copy), read as
-    /// the two years after planting.
+    /// **A tree counts as young for two years after planting. This is a product threshold and it is
+    /// not sourced.**
+    ///
+    /// This comment used to justify the number with §4's own body copy — "The first two summers
+    /// decide whether a street tree makes it" — and the copy audit of 2026-08-23 struck that
+    /// sentence (owner ruling) precisely because the app cannot source an arboricultural claim
+    /// (DECISIONS constraint 15). A justification that was not good enough to print is not good
+    /// enough to reason from, so it is gone from here as well, and nothing has been put in its
+    /// place. Nothing sources it: SCREENS.md 12 §4 draws `9 young trees with no visits since
+    /// planting` without defining young, DECISIONS D1 says "young trees unvisited since planting"
+    /// and stops, and no ERRATA entry records this window the way the entry above records
+    /// `springMonths`. Checked, rather than assumed, before this comment was rewritten.
+    ///
+    /// **The number and its behavior are unchanged, deliberately.** Moving it would change which
+    /// trees screen 12 asks people to walk to, which is a product decision and not a comment's to
+    /// make. All that changed is that the comment stopped claiming a basis it does not have.
     public static let youngTreeYears = 2
 
     /// The current calendar year's start, for "First bloom **of the year**".

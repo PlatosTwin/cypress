@@ -114,8 +114,9 @@ public struct DrainReport: Sendable, Equatable {
 ///
 /// "The outbox is the feature, not a network workaround" (ARCHITECTURE §4): every mutation is
 /// written here first and only then attempted, which is true even though `LocalAPI` is on the other
-/// side today. Nothing here disappears silently — an item that cannot sync says so, says why, and
-/// waits (screen 17).
+/// side today. Nothing here disappears silently: an item that cannot sync says so, says why, and
+/// waits. Screen 17 is where a volunteer sees that happen, though it no longer says so in words
+/// (copy audit, 2026-08-23).
 ///
 /// # Two sinks, in order
 ///
