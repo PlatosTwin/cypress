@@ -15,8 +15,19 @@ that publish step. It consumes the ingest pipeline's OUTPUT -- the fused seed
 Tools/build_seed.py writes to Fixtures/seed/cypress-seed.sqlite -- and never
 talks to any upstream source itself.
 
-    python3 Tools/publish_cities.py [--db PATH] [--out DIR] [--base-url URL]
+    python3 Tools/publish_cities.py --previous-manifest live|none|PATH|URL
+                                   [--republish]
+                                   [--db PATH] [--out DIR] [--base-url URL]
 
+    --previous-manifest
+                REQUIRED. The catalogue this publish follows, so that a
+                same-day republish advances `content_rev` instead of reusing
+                it. `live` fetches the manifest currently serving readers;
+                `none` asserts there is no previous publish. See
+                `load_previous_entries` for why this has no default.
+    --republish advance `content_rev` even though the source seed is unchanged.
+                The remedy for devices stuck on a superseded publish of the same
+                record date -- see the block above `bump_content_rev`.
     --db        the fused seed (default: Fixtures/seed/cypress-seed.sqlite,
                 resolved against the repo root this script lives in)
     --out       output directory (default: dist/). Only the previous run's
@@ -72,9 +83,22 @@ VERSIONING (delegated decision -- RULINGS R37):
                   rather than inventing a parallel one. Bump it when
                   Fixtures/seed/schema.sql changes shape.
   content_rev     YYYY-MM-DD, the newest upstream snapshot date among the
-                  city's own inventories (seed_meta inventory_*_snapshot_on).
-                  Derived from data, never from the wall clock, so re-running
-                  the publisher over the same seed yields the same version.
+                  city's own inventories (seed_meta inventory_*_snapshot_on),
+                  OPTIONALLY followed by a two-digit same-day counter
+                  (`2026-08-22.02`). Derived from data, never from the wall
+                  clock, so re-running the publisher over the same seed yields
+                  the same version.
+                  The counter exists because the derived date is a fact about
+                  the UPSTREAM SNAPSHOT and therefore cannot advance when a
+                  publish is corrected the same day -- which made the app judge
+                  every device from the superseded publish "current" and never
+                  offer it the fix. See the block above `bump_content_rev` for
+                  the defect, the ruling, and why the counter is zero-padded.
+                  NOTE that `seed_meta.trees_snapshot_on` -- the date the APP
+                  PARSES and shows as "city record as of" -- keeps the bare
+                  derived date and never carries the counter. The counter lives
+                  only where the app compares (`publish_content_rev` and the
+                  manifest's `content_rev`), never where it parses.
   build_id        the first 8 hex of the SOURCE SEED's sha256. Added by task
                   #197 / RULINGS R60, which amends R37.2. Without it the two
                   fields above name the CITY's data, never the build, so an
@@ -371,10 +395,215 @@ def content_rev_for(space: str, fused_meta: dict[str, str]) -> str:
     return max(dates)
 
 
-def build_city_file(src: str, dest: str, region: dict) -> dict:
+# ── SAME-DAY REPUBLISH: THE COUNTER THAT KEEPS content_rev UNIQUE ─────────────
+#
+# THE DEFECT THIS EXISTS TO PREVENT (owner-confirmed from a live device,
+# 2026-08-24). The corrective republish of 2026-08-22 went out the same day as
+# the publish it corrected -- source seed 4f6ebaaa, then ac7b1ccc -- and
+# `content_rev_for` derives from the seed's INVENTORY SNAPSHOT DATES, which had
+# not moved. Both publishes therefore carried `content_rev` "2026-08-22", and
+# R60's `build_id` was the only part of the version string that differed.
+#
+# That is fatal to update detection, because the app deliberately does NOT
+# compare version strings when they differ. `CityInstallState.installedIsCurrent`
+# (Cypress/Data/Cities/CityInstallState.swift:186) falls back to
+# `content_rev` + `schema_version` equality, precisely so that re-running the
+# publisher over a rebuilt seed does not offer every device an update to bytes it
+# already holds. With both revisions "2026-08-22" and both generations 17, a
+# phone holding `s17-r2026-08-22-4f6ebaaa` is judged CURRENT against a live
+# `s17-r2026-08-22-ac7b1ccc` -- no Update button, no way to reach the corrected
+# data. Observed on the owner's phone: Manhattan, `Installed`, no affordance.
+#
+# THE RULE (owner's decision, 2026-08-24, recorded in docs/rulings-pending/):
+# a republish must advance `content_rev`. Where the derived date cannot advance
+# -- because it is a fact about the upstream snapshot, not about the publish --
+# a counter is appended.
+#
+# ── WHY ZERO-PADDED, WHICH IS NOT WHAT THE EXAMPLE SAID ──────────────────────
+# The decision's worked example was `2026-08-22.2`. Written that way the scheme
+# breaks at the tenth same-day publish, and it breaks SILENTLY, in the one
+# comparison the app makes on this value that is not equality:
+#
+#     "2026-08-22.10" < "2026-08-22.2"        # lexicographic, and WRONG
+#
+# `CityInstallState`'s `.bundledOutdated` branch (CityInstallState.swift:159-161)
+# asks `publishedRev > bundledRev` as a STRING, on the stated grounds that "both
+# revisions are the ISO dates `content_rev_for` produces, where lexicographic
+# order is date order". A suffix must not break that sentence. Two zero-padded
+# digits keep string order and publish order the same thing:
+#
+#     "2026-08-22" < "2026-08-22.02" < ... < "2026-08-22.99" < "2026-08-23"
+#
+# The first inequality holds because a prefix sorts before its extension; the
+# last because '.' is never reached -- the day digits decide at index 9. Both are
+# pinned by `test_publish_cities.py`, including the `.10`/`.02` case, because a
+# property nothing measures is a property that lasts until the next edit.
+#
+# The counter starts at 02 and means what the example meant: the Nth publish of
+# this record date. There is no `.01`; a bare date IS the first.
+#
+# NINETY-NINE IS A REFUSAL, NOT A WRAP. `bump_content_rev` fails at 100 rather
+# than emitting `.100`, which would sort below `.99` and re-open the defect from
+# the other end. A hundred publishes of one record date is a runaway, and the
+# right response to one is to stop.
+REV_COUNTER_DIGITS = 2
+REV_COUNTER_MAX = 10 ** REV_COUNTER_DIGITS - 1
+
+
+def split_content_rev(rev: str) -> tuple[str, int]:
+    """`"2026-08-22.02"` -> `("2026-08-22", 2)`; `"2026-08-22"` -> `(..., 1)`.
+
+    The bare date is counter 1 -- the first publish of that record date -- so
+    callers never special-case the unsuffixed form. Anything after the first `.`
+    that is not a run of digits is not a counter this tool wrote, and is refused
+    rather than guessed at: a rev of an unrecognised shape means the previous
+    publish came from a different scheme, and continuing from a value we cannot
+    order is how an out-of-order rev gets published.
+    """
+    base, dot, suffix = rev.partition(".")
+    if not dot:
+        return rev, 1
+    if not suffix.isdigit():
+        fail(f"previous content_rev {rev!r} has a suffix {suffix!r} that is not a "
+             f"counter this publisher wrote. Refusing to guess its order.", 3)
+    return base, int(suffix)
+
+
+def format_content_rev(base: str, counter: int) -> str:
+    """The inverse of `split_content_rev`. Counter 1 is the bare date."""
+    if counter <= 1:
+        return base
+    if counter > REV_COUNTER_MAX:
+        fail(f"{base}: this would be publish #{counter} of one record date, and the "
+             f"counter is {REV_COUNTER_DIGITS} digits so that lexicographic order stays "
+             f"publish order (.{REV_COUNTER_MAX + 1:0{REV_COUNTER_DIGITS + 1}d} would sort "
+             f"BELOW .{REV_COUNTER_MAX}). Stop and report: a hundred publishes of one "
+             f"upstream snapshot is a runaway, not a number to widen the field for.")
+    return f"{base}.{counter:0{REV_COUNTER_DIGITS}d}"
+
+
+def bump_content_rev(pack: str, derived: str, previous: dict | None,
+                     build_id: str, schema_version: int,
+                     republish: bool) -> str:
+    """The `content_rev` this pack publishes under, given what is already live.
+
+    `derived` is `content_rev_for`'s answer -- a bare ISO day, always. `previous`
+    is this pack's entry in the previous manifest, or None if it has never
+    published. The return value is `derived`, or `derived` with a counter.
+
+    Four cases, and the interesting one is the third:
+
+    1. **Never published.** Nothing to collide with; the derived date stands.
+    2. **The record date advanced.** `2026-08-23` against a previous
+       `2026-08-22.02` -- the date already distinguishes the publishes and a
+       counter would only make it uglier. Reset to bare.
+    3. **The record date did not move.** This is the defect's shape. If the
+       content is the same (same source seed, same generation) the publish is a
+       REPRODUCTION and must be byte-identical, so the previous rev is returned
+       unchanged -- the determinism promise in this file's header depends on it.
+       Otherwise the counter advances, which is the whole point of this function.
+    4. **The record date went BACKWARDS.** Refused. Publishing an earlier rev
+       over a later one would leave the live catalogue claiming a record it does
+       not hold, and would invert the `.bundledOutdated` comparison. It means the
+       seed was rebuilt from an older upstream snapshot, which is a thing to
+       notice, not a thing to paper over.
+
+    `republish=True` forces case 3 to advance even when the content is identical.
+    That is what this round needs and it is deliberately NOT the default: the
+    remedy for stuck devices is republishing the SAME corrected bytes under a new
+    rev, and nothing derived from those bytes can tell that apart from a
+    re-run.
+    """
+    if previous is None:
+        return derived
+    prev_rev = previous.get("content_rev")
+    if not prev_rev:
+        # A previous entry with no `content_rev` at all -- a format-1 era entry,
+        # or one from before #156 added the key. Nothing to collide with and
+        # nothing to count from.
+        return derived
+    prev_base, prev_counter = split_content_rev(prev_rev)
+    if derived > prev_base:
+        return derived
+    if derived < prev_base:
+        fail(f"{pack}: the seed derives content_rev {derived!r} but the previous publish "
+             f"is {prev_rev!r}, which is NEWER. A record date that goes backwards means "
+             f"this seed was built from an older upstream snapshot than the one already "
+             f"live. Publishing it would put an earlier record at a later path and invert "
+             f"every date comparison the app makes on this value. Stop and report.", 3)
+    same_content = (
+        previous.get("version") == f"s{schema_version}-r{prev_rev}-{build_id}"
+    )
+    if same_content and not republish:
+        # Byte-for-byte the publish that is already live. Reproducing it must
+        # reproduce its version string too, or `--out` stops being comparable to
+        # the bucket and this tool's determinism claim becomes false.
+        return prev_rev
+    return format_content_rev(prev_base, prev_counter + 1)
+
+
+LIVE_MANIFEST_URL = "https://cypress-cities.t3.tigrisbucket.io/manifest-v2.json"
+
+
+def load_previous_entries(source: str) -> dict[str, dict]:
+    """The previous publish's manifest entries, keyed by pack id.
+
+    `source` is one of:
+
+      `live`  fetch the catalogue that is actually serving readers right now
+      `none`  assert there is no previous publish (a first publish, or a
+              sandbox run that must not reach the network)
+      a path or an http(s) URL to a manifest-v2.json
+
+    THERE IS NO DEFAULT, ON PURPOSE. A default of `live` puts a network fetch
+    inside every test and every sandbox build; a default of `none` is worse,
+    because it makes the same-day guard silently absent for exactly the operator
+    who runs this tool the way they always have -- a guard that is green because
+    it was not looking. `--previous-manifest` is required so that "what am I
+    republishing over?" is answered out loud, in the command, every time.
+    """
+    if source == "none":
+        print("previous manifest: NONE (asserted by --previous-manifest none) -- "
+              "no same-day republish check will run")
+        return {}
+    if source == "live":
+        source = LIVE_MANIFEST_URL
+    if source.startswith("http://") or source.startswith("https://"):
+        # Cache-busted for the same reason server/README.md's verification step
+        # is: a catalogue read through a cache can be older than the objects it
+        # is being compared against.
+        import urllib.request
+        url = f"{source}{'&' if '?' in source else '?'}cb={int(datetime.now().timestamp())}"
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                previous = json.loads(response.read().decode())
+        except Exception as error:  # noqa: BLE001 -- any failure is the same answer
+            fail(f"could not read the previous manifest from {source}: "
+                 f"{type(error).__name__}: {error}. This is NOT a reason to publish "
+                 f"anyway -- without it this run cannot tell a same-day republish from "
+                 f"a first publish, which is the defect of 2026-08-22. Retry, pass a "
+                 f"downloaded copy with --previous-manifest <path>, or state that there "
+                 f"is no previous publish with --previous-manifest none.", 3)
+    else:
+        if not os.path.exists(source):
+            fail(f"no previous manifest at {source}", 3)
+        with open(source) as f:
+            previous = json.load(f)
+    entries = {e["id"]: e for e in previous.get("cities", [])}
+    print(f"previous manifest: {source} ({len(entries)} pack(s), generated "
+          f"{previous.get('generated_at', 'at an unstated time')})")
+    return entries
+
+
+def build_city_file(src: str, dest: str, region: dict, rev: str) -> dict:
     """Copy the fused seed to dest, narrow it to one region, verify, and measure.
 
     Returns the measured facts for the manifest entry. Any failed check exits.
+
+    `rev` is the content revision this pack publishes under -- `content_rev_for`'s
+    derived date, possibly carrying a same-day counter (`bump_content_rev`). It
+    is passed in rather than derived here because the counter depends on what is
+    already live, which is a fact about the BUCKET and not about this file.
 
     ── s17: THIS NARROWS ON `region_id`, NOT ON `id_space` ──────────────────────
     The two are the same cut for a one-region city and are not the same cut for
@@ -461,7 +690,34 @@ def build_city_file(src: str, dest: str, region: dict) -> dict:
         con.commit()
 
         fused_meta = meta(con)
-        rev = content_rev_for(space, fused_meta)
+        # The DERIVED date, which is what the reader is shown, and the REVISION,
+        # which is what the app versions on. They are the same string until a
+        # same-day republish appends a counter, and keeping them apart from then
+        # on is the reason this change needs no app change at all.
+        #
+        # `trees_snapshot_on` IS PARSED AS A CALENDAR DAY BY THE APP, and a
+        # suffixed value would not parse. Two sites, both measured against this
+        # tree rather than assumed:
+        #
+        #   Cypress/Core/Models/InventorySource.swift:101 -- `snapshotDate` is
+        #   `date(fromISODay:)` over this key, a strict `yyyy-MM-dd` formatter
+        #   ("deliberately not ISO8601DateFormatter", its own note says), so
+        #   "2026-08-22.02" yields nil and the city-record provenance line loses
+        #   its date.
+        #
+        #   Cypress/Data/Tests/DataGates.swift:1420 -- the seed contract expects
+        #   exactly that `snapshotDate != nil`, naming the key in its message.
+        #   Every published pack would fail it.
+        #
+        # So the counter goes ONLY where the app compares and never where it
+        # parses: `publish_content_rev` below, and the manifest's `content_rev`.
+        # `trees_snapshot_on` keeps the bare upstream date, which is also the
+        # honest answer -- the upstream snapshot did not move, that is the whole
+        # reason a counter was needed.
+        snapshot_on = content_rev_for(space, fused_meta)
+        if split_content_rev(rev)[0] != snapshot_on:
+            fail(f"{pack}: publishing under content_rev {rev!r} whose base does not match "
+                 f"the date this file derives ({snapshot_on!r})")
         (count,) = cur.execute("SELECT COUNT(*) FROM trees").fetchone()
         if count == 0:
             fail(f"{pack}: zero trees survived the split")
@@ -500,7 +756,8 @@ def build_city_file(src: str, dest: str, region: dict) -> dict:
         rewrites = {
             "id_spaces_in_file": space,
             "rows_kept": str(count),
-            "trees_snapshot_on": rev,
+            # The bare derived date, never `rev` -- see `snapshot_on` above.
+            "trees_snapshot_on": snapshot_on,
             **rows_from,
         }
         additions = {
@@ -612,6 +869,21 @@ def main() -> None:
     # Tigris denies anonymous GET on the S3 API endpoints (fly.storage.tigris.dev,
     # t3.storage.dev) even when the bucket is public -- verified 2026-08-01.
     ap.add_argument("--base-url", default="https://cypress-cities.t3.tigrisbucket.io")
+    # REQUIRED, and `load_previous_entries` says why there is no default.
+    ap.add_argument("--previous-manifest", required=True, metavar="live|none|PATH|URL",
+                    help="the catalogue this publish follows, so a same-day republish "
+                         "can advance content_rev instead of reusing it. `live` fetches "
+                         f"{LIVE_MANIFEST_URL}; `none` asserts there is no previous "
+                         "publish.")
+    # The remedy for devices stuck on a superseded publish of the SAME record
+    # date: republish identical bytes under an advanced content_rev so the app's
+    # `content_rev` + `schema_version` comparison stops calling them current.
+    # Nothing derived from the seed can tell this apart from an ordinary re-run,
+    # which is why it is a flag and not an inference.
+    ap.add_argument("--republish", action="store_true",
+                    help="advance content_rev even though the source seed is unchanged "
+                         "(un-sticks devices installed from a superseded publish of the "
+                         "same record date)")
     args = ap.parse_args()
 
     # BEFORE ANYTHING IS WRITTEN, and deliberately before the input checks too.
@@ -736,6 +1008,14 @@ def main() -> None:
     # Hashed once, up front: it is both the manifest's source_seed receipt and (R60) the
     # build_id inside every version string, and those two must never disagree.
     source_seed_sha = sha256_of(args.db)
+
+    # WHAT IS ALREADY LIVE, read before a single pack is written, because it
+    # decides every pack's version string and therefore every pack's path.
+    previous_entries = load_previous_entries(args.previous_manifest)
+    if args.republish and not previous_entries:
+        fail("--republish advances content_rev past the previous publish, and this run "
+             "has no previous publish to advance past (--previous-manifest resolved to "
+             "no entries). Point it at the catalogue you are republishing over.", 3)
 
     # EVERY REGION THAT HOLDS ROWS MUST BE PUBLISHED, AND EVERY PUBLISHED REGION
     # MUST HOLD ROWS. `trees.region_id` is NOT NULL, so a row cannot be in no
@@ -868,8 +1148,25 @@ def main() -> None:
     for region in regions:
         pack = region["pack_id"]
         space = region["id_space"]
-        rev_preview = content_rev_for(space, fused_meta_src)
+        derived_rev = content_rev_for(space, fused_meta_src)
+        # THE COUNTER IS DECIDED HERE, BEFORE THE PATH IS NAMED, because it is
+        # part of the version and the version is the immutable path segment.
+        rev_preview = bump_content_rev(
+            pack=pack, derived=derived_rev, previous=previous_entries.get(pack),
+            build_id=build_id, schema_version=SEED_SCHEMA_VERSION,
+            republish=args.republish,
+        )
+        if rev_preview != derived_rev:
+            print(f"  {pack}: content_rev {derived_rev} is already published; "
+                  f"this publish advances it to {rev_preview}")
         version = f"s{SEED_SCHEMA_VERSION}-r{rev_preview}-{build_id}"
+        # R37.2's write-once promise, checked rather than trusted. If the path
+        # this run is about to write is one the previous manifest already names,
+        # the counter did not do its job and an immutable object is about to be
+        # rewritten with different bytes -- which is the failure R37.2 exists to
+        # forbid, and the one a reader has no way to detect.
+        prior = previous_entries.get(pack)
+        prior_sha = prior.get("sha256") if prior and prior.get("version") == version else None
         # PATHS ARE KEYED ON THE PACK, NOT THE ID SPACE, and this is the only
         # shape that can hold five boroughs of one id space.
         #
@@ -887,7 +1184,7 @@ def main() -> None:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
 
         print(f"building {rel_path} ...")
-        facts = build_city_file(args.db, dest, region)
+        facts = build_city_file(args.db, dest, region, rev_preview)
         if facts["content_rev"] != rev_preview:
             fail(f"{pack}: content_rev drifted during the build")
         if facts["tree_count"] != fused_counts[region["id"]]:
@@ -897,6 +1194,20 @@ def main() -> None:
         size = os.path.getsize(dest)
         digest = sha256_of(dest)
         print(f"  {facts['tree_count']:>7} trees  {size / 1e6:7.1f} MB  sha256 {digest[:16]}...")
+
+        # R37.2 WRITE-ONCE, ASSERTED AGAINST THE ARTIFACT. `prior_sha` is set only
+        # when the previous manifest already names THIS EXACT version -- i.e. this
+        # run is about to upload to a path that is already occupied. That is legal
+        # for a reproduction and forbidden for anything else, and the hash is what
+        # tells them apart. A silent mismatch here is the worst outcome available:
+        # every device that already downloaded the old bytes keeps them, believes
+        # they are the published ones, and no comparison the app makes can notice.
+        if prior_sha is not None and prior_sha != digest:
+            fail(f"{pack}: {rel_path} is already published with sha256 "
+                 f"{prior_sha[:16]}... and this run produced {digest[:16]}.... R37.2 "
+                 f"makes that path write-once. The content changed without content_rev "
+                 f"changing -- if this is a corrective republish, pass --republish so the "
+                 f"revision advances instead of the object being rewritten.")
 
         entries.append({
             "id": pack,
