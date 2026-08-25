@@ -189,6 +189,96 @@ rather than settled here.
   the only verbs the screen needs anywhere are `Download`, `Update`, `Remove` and `Cancel`, and
   `Use` leaves the vocabulary entirely.
 
+## Ratified by the owner, 2026-08-24/25
+
+Recorded by the orchestrator from the owner's own window. Each of these was open in the list
+below when this entry was written; each is now settled, and the implementation is built on them.
+
+- **D9 — downloaded IS the active set.** A downloaded city is in the union; there is no separate
+  active toggle. The screen's vocabulary is `Download`, `Update`, `Remove` and `Cancel`; `Use`
+  and `In use` leave it entirely. The `active-city` marker is retired (`CityLibrary`), and a
+  device carrying one from an older build has it deleted on the next launch.
+- **D1 — shadowing at whole-city / id-space granularity.** A downloaded copy of a bundled city
+  shadows every bundled row of that id space. **Bundle only**: a pack never shadows another pack,
+  because the five New York boroughs share the id space `us-ny-nyc` and an id-space rule applied
+  between packs would delete Brooklyn the moment Manhattan was installed.
+- **D2 — the proposed screen, as proposed.** The built-in card draws no affordance at all;
+  bundled cities are nested under it with the three state lines exactly as written; non-bundled
+  packs keep their own cards. The copy lands verbatim.
+- **D5 — the installed set is capped, with honest copy.** Headroom is checked at open against the
+  platform's actual attach limit (`SQLITE_LIMIT_ATTACHED`, read off the live connection — never
+  hard-coded), and at the cap the `Download` button is replaced by `Remove a city to download
+  another.` An *update* is never withheld: it reuses the slot that city already holds.
+- **D3 — the opening camera.** A location fix inside any live inventory wins; failing that, the
+  camera this install was last left on; failing that, the largest downloaded inventory. With
+  nothing downloaded it degrades to today's behaviour exactly.
+- **D4 — per-city aggregates stay per-city.** The Journal's `City` segment and the almanac keep
+  resolving an id space from the nearest tree. No cross-inventory aggregate is opened.
+- **D10 — `content_rev` in copy.** The rendered sentence strips any publisher counter suffix (a
+  bare date), and **every comparison keeps the full opaque string**. The live catalogue has
+  carried revisions like `2026-08-22.02` on all seven packs since the republish of 2026-08-25, so
+  both halves are exercised against the shipping shape rather than a fixture.
+
+## Proposed by this round, for the orchestrator to adjudicate
+
+D6, D7 and D8 were delegated to the implementation. What follows is what was built and why.
+
+### D6 — the canonical species catalogue
+
+**Chosen: one canonical catalogue, materialized at open into `temp.species`, keyed by
+`species.uuid`, with a per-arm translation table mapping that arm's local `species_current` onto
+it.** Every existing `JOIN species s ON s.id = t.species_current` and `GROUP BY s.id` keeps
+working unchanged.
+
+The premise was checked before it was built on. `Tools/build_seed.py` assigns `species.id` as
+`len(species_by_key) + 1` in **first-encounter order while it streams its sources**, so two builds
+over different city sets number the same species differently — the bundle is built from San
+Francisco and San Jose, the packs are cut from a fused seed that also holds New York. The ids
+cannot be assumed to agree, and `species.uuid` (a `uuid5` of the scientific name) can.
+
+Two alternatives were rejected on measurement:
+
+- **Leave species per-arm and re-key every join to `uuid`.** Correct, and it produces the ideal
+  narrowed plan (`SEARCH s USING COVERING INDEX sqlite_autoindex_species_1` then
+  `SEARCH t USING INDEX idx_trees_species_current`) — but it is fifteen join sites across five
+  query files, and it moves a species list's grouping key in every one of them.
+- **Offset species ids per arm, as tree ids are offset.** The join `s.id = t.species_current`
+  then compares two arithmetic expressions and stops being sargable.
+
+Measured against an arm whose species numbering was deliberately **permuted**: the narrowed
+viewport still resolves through `idx_trees_species_current` on every arm, because the `LEFT JOIN`
+converts to an inner one under the caller's `WHERE` and the planner drives from the translation
+table. `CumulativeInventoryTests` carries that fixture, and its red-proof — assuming the two files
+agree — names the pack's Ginkgo `Platanus acerifolia`.
+
+### D7 — `CityInstallState`'s shape
+
+**Chosen: one new case, `.bundledUpdated(installedContentRev:updateAvailable:)`, and the bundle
+tested before the installed copy.**
+
+The ordering defect is fixed by asking `bundled` first. Reordering alone would have been the wrong
+fix and would have hidden the downloaded copy instead: a bundled city *with* a downloaded copy is
+a real state, it is the one decision 4 is about, and the enum had no case for it. The
+`updateAvailable` flag is a payload rather than a fourth case because what the reader sees is one
+city with one record and at most one offer.
+
+`isBundledCity` is stated on the type beside `isOnDevice` and `allowsDownload`, so the screen's
+sectioning, its buttons and its copy cannot reach different conclusions about the same city.
+
+### D8 — the removal lifecycle
+
+**Chosen: a whole-layer reboot, and it is stated rather than hidden.** Adding or removing an arm
+rebuilds the views over a different set of schemas and renumbers the canonical species catalogue.
+Dropping and recreating in place would have to get both right on a connection other code may be
+mid-read on; booting again gets them right by construction and is the path every launch already
+takes. `CityDownloadsModel` therefore calls `onInventoryChange()` on **every** completed install
+and every removal, where it used to call it only when the active choice moved.
+
+Two justifications for clearing the statement cache were written and then **withdrawn after
+measurement** — SQLite re-prepares a cached statement when the schema changes under it, and it does
+not refuse a `DETACH` for a statement that is merely prepared. The clear is kept as a defensive
+measure and `InventoryUnion.tearDownEverything` records that it is one.
+
 ## What this entry does not decide
 
 Collected for the orchestrator. Each is a question this round declined to answer for itself.
