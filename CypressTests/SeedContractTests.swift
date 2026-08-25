@@ -34,13 +34,27 @@ struct SeedContractTests {
         #expect(failures.isEmpty, "\(failures.count) gate failures:\n\(failures.joined(separator: "\n"))")
     }
 
-    @Test("the seed is attached read-only and cannot be written")
+    /// **Aimed at the file, not at the view over it.**
+    ///
+    /// This used to write to `\(SeedDatabase.schemaName).trees`, which is now the union's view, and
+    /// SQLite refuses a write to a view whatever the files behind it permit — `cannot modify trees
+    /// because it is a view`. The assertion would have stayed green with every inventory opened
+    /// read-write, which is the one failure it exists to catch. It writes to each attached arm
+    /// instead, where `mode=ro&immutable=1` is the thing being tested.
+    @Test("every attached inventory is read-only and cannot be written")
     func seedIsReadOnly() async throws {
         let seedURL = try #require(Self.seedURL, "no seed database; set CYPRESS_SEED_PATH")
         let store = try await CypressStore.inMemory(seedURL: seedURL)
-        await #expect(throws: (any Error).self) {
-            try await store.queue.withConnection { connection in
-                try connection.execute("UPDATE \(SeedDatabase.schemaName).trees SET status = 'removed' WHERE id = 1")
+        let arms = try #require(store.inventory?.arms)
+        #expect(!arms.isEmpty, "no inventory is attached, so this test wrote to nothing")
+
+        for arm in arms {
+            await #expect(throws: (any Error).self, "inventory '\(arm.id)' accepted a write") {
+                try await store.queue.withConnection { connection in
+                    try connection.execute(
+                        "UPDATE \(arm.schemaName).trees SET status = 'removed' WHERE id = 1"
+                    )
+                }
             }
         }
     }
