@@ -109,14 +109,50 @@ public struct InventoryUnion: Sendable, Equatable {
     /// is good enough for that, and San Francisco is not.
     public let openingCenter: Coordinate?
 
-    /// Files the caller offered that could not be attached, with the reason. A bad pack is skipped
-    /// rather than fatal: launching without one downloaded city beats not launching, which is the
-    /// same posture the boot path has always taken for an unreadable choice.
+    /// Files the caller offered that this build could not read, with the reason. A bad pack is
+    /// skipped rather than fatal: launching without one downloaded city beats not launching, which
+    /// is the same posture the boot path has always taken for an unreadable choice.
+    ///
+    /// **A pack reaches this list from either phase, and the second one is why it exists.** Refusing
+    /// a file whose `ATTACH` throws was always easy — the file is not a database and nothing has been
+    /// built on it yet. The harder case is a file that attaches, introspects, passes
+    /// `CityLibrary.validateCityFile`, and then throws while its rows are being folded into the
+    /// canonical catalogs, because by then the failure is halfway through a shared table. See
+    /// `build`.
     public let refused: [RefusedInventory]
 
     public struct RefusedInventory: Sendable, Equatable {
         public let id: String
         public let reason: String
+    }
+
+    /// A failure that one arm's own contribution caused, carrying the arm so `build` can refuse
+    /// **that pack** instead of the launch.
+    ///
+    /// Not public and not part of the union's vocabulary: it exists for the few statement-sized
+    /// steps between `build` and the SQL, and `build` converts every one of them into a
+    /// `RefusedInventory` before returning.
+    struct ArmFailure: Error {
+        let id: String
+        let isBundled: Bool
+        let underlying: any Error
+    }
+
+    /// Runs one arm's contribution to a shared catalog, tagging any failure with the arm that
+    /// caused it.
+    ///
+    /// Every per-arm statement in `InventoryUnionSQL` goes through this. That is what makes the
+    /// catalog phase attributable at all: the statements write into `temp`, so the error SQLite
+    /// raises names a `temp` table and says nothing about which of nine files supplied the row that
+    /// could not be read.
+    static func contributing<T>(_ arm: InventoryArm, _ body: () throws -> T) throws -> T {
+        do {
+            return try body()
+        } catch let failure as ArmFailure {
+            throw failure
+        } catch {
+            throw ArmFailure(id: arm.id, isBundled: arm.isBundled, underlying: error)
+        }
     }
 
     // MARK: - Building
@@ -125,66 +161,118 @@ public struct InventoryUnion: Sendable, Equatable {
     ///
     /// `files` is taken in the order given except that the bundled file is moved to ordinal 0.
     /// Attaching happens outside any transaction, which `ATTACH` requires.
+    ///
+    /// # A pack may not take the launch down, and it used to be able to
+    ///
+    /// The attach loop below has always refused a bad file and carried on. The catalog and view
+    /// phases did **not**: they ran after it and outside it, so a pack that attached cleanly and
+    /// then threw while its species or neighborhoods were being merged propagated all the way out
+    /// through `CypressStore.open` and `DataLayer.boot` to `AppModel.phase = .failed`. The app never
+    /// reached a booted state, so the Cities screen — the only place a reader can delete that pack —
+    /// was unreachable, and the only recovery was deleting the app.
+    ///
+    /// It is reachable with a file `CityLibrary.validateCityFile` accepts, because that check is a
+    /// **shape** check: `SeedSchema.introspect` asks for four tables by name and three `trees`
+    /// columns, and looks at no column of `species` or `neighborhoods` at all. A pack whose
+    /// `neighborhoods` is missing `geom_geojson` passes every gate and then answers
+    /// `no such column: n.geom_geojson` from inside `createNeighborhoods`.
+    ///
+    /// **So the whole per-arm pipeline is contained, not just the attach.** A catalog step that
+    /// throws is attributed to the arm whose rows it was reading (`contributing`), that file is
+    /// refused exactly as a bad attach is, `temp` is torn down, and the union is built again over
+    /// the survivors. Renumbering is why it rebuilds rather than patching: an arm's ordinal is
+    /// baked into every id the union computes, so dropping arm 1 of three renumbers arm 2 — and
+    /// rebuilding gets that right by construction. The retry costs a pass per bad file, on a path
+    /// no shipping pack has ever taken.
+    ///
+    /// **The bundled arm is the exception and is deliberately still fatal.** It is the app's own
+    /// build artifact, `SeedContractTests` gates it, there is no reader action that could remove it,
+    /// and a union with no bundled arm is not a degraded app — it is an app with no map. A failure
+    /// there is a build defect and it should stop the build, not be swallowed at launch.
     public static func build(
         _ files: [InventoryFile],
         on connection: SQLiteConnection
     ) throws -> InventoryUnion {
         let ordered = files.filter(\.isBundled) + files.filter { !$0.isBundled }
+        var candidates = ordered
+        /// Files the catalog phase threw on, accumulated across retries. Kept apart from the attach
+        /// refusals because those are recomputed on every pass and these are not.
+        var rejected: [String: String] = [:]
 
-        var arms: [InventoryArm] = []
-        var refused: [RefusedInventory] = []
+        while true {
+            var arms: [InventoryArm] = []
+            var reasons = rejected
 
-        for file in ordered {
-            let ordinal = arms.count
-            let schemaName = "inv\(ordinal)"
-            do {
-                guard FileManager.default.fileExists(atPath: file.url.path) else {
-                    throw SeedDatabase.LocationError.notFoundAtPath(file.url)
-                }
-                try connection.attach(
-                    uri: SeedDatabase.readOnlyURI(for: file.url), as: schemaName
-                )
-                let schema = try SeedSchema.introspect(connection, schema: schemaName)
-                arms.append(
-                    InventoryArm(
-                        id: file.id,
-                        ordinal: ordinal,
-                        schemaName: schemaName,
-                        isBundled: file.isBundled,
-                        schema: schema,
-                        idSpaces: try idSpaces(in: schemaName, schema: schema, on: connection),
-                        treeColumns: Set(
-                            try connection.columnNames(ofTable: "trees", in: schemaName)
-                        ),
-                        rtreeColumns: Set(
-                            try connection.columnNames(ofTable: "trees_rtree", in: schemaName)
-                        ),
-                        hasSoftDeletedTrees: try hasSoftDeletes(in: schemaName, on: connection),
-                        shadowed: []
+            for file in candidates {
+                let ordinal = arms.count
+                let schemaName = "inv\(ordinal)"
+                do {
+                    guard FileManager.default.fileExists(atPath: file.url.path) else {
+                        throw SeedDatabase.LocationError.notFoundAtPath(file.url)
+                    }
+                    try connection.attach(
+                        uri: SeedDatabase.readOnlyURI(for: file.url), as: schemaName
                     )
-                )
-            } catch {
-                // The attach may or may not have landed before the introspection threw; detaching
-                // an unattached schema is itself an error, so this asks rather than assumes.
-                if (try? connection.attachedSchemas())?.contains(schemaName) == true {
-                    try? connection.detach(schemaName)
+                    let schema = try SeedSchema.introspect(connection, schema: schemaName)
+                    arms.append(
+                        InventoryArm(
+                            id: file.id,
+                            ordinal: ordinal,
+                            schemaName: schemaName,
+                            isBundled: file.isBundled,
+                            schema: schema,
+                            idSpaces: try idSpaces(in: schemaName, schema: schema, on: connection),
+                            treeColumns: Set(
+                                try connection.columnNames(ofTable: "trees", in: schemaName)
+                            ),
+                            rtreeColumns: Set(
+                                try connection.columnNames(ofTable: "trees_rtree", in: schemaName)
+                            ),
+                            hasSoftDeletedTrees: try hasSoftDeletes(in: schemaName, on: connection),
+                            shadowed: []
+                        )
+                    )
+                } catch {
+                    // The attach may or may not have landed before the introspection threw;
+                    // detaching an unattached schema is itself an error, so this asks rather than
+                    // assumes.
+                    if (try? connection.attachedSchemas())?.contains(schemaName) == true {
+                        try? connection.detach(schemaName)
+                    }
+                    reasons[file.id] = "\(error)"
                 }
-                refused.append(RefusedInventory(id: file.id, reason: "\(error)"))
+            }
+
+            do {
+                let shadowed = try applyShadowing(to: arms, on: connection)
+                try createCanonicalCatalogs(arms: shadowed, on: connection)
+                try createViews(arms: shadowed, on: connection)
+
+                let schema = try SeedSchema.introspect(
+                    connection, schema: SeedDatabase.schemaName
+                )
+                return InventoryUnion(
+                    arms: shadowed,
+                    schema: schema,
+                    hasSoftDeletedTrees: shadowed.contains(where: \.hasSoftDeletedTrees),
+                    openingCenter: try openingCenter(among: shadowed, on: connection),
+                    // Emitted in the caller's own file order, so two runs over one set of files
+                    // produce the same list whichever phase refused which file.
+                    refused: ordered.compactMap { file in
+                        reasons[file.id].map { RefusedInventory(id: file.id, reason: $0) }
+                    }
+                )
+            } catch let failure as ArmFailure where !failure.isBundled {
+                rejected[failure.id] = "\(failure.underlying)"
+                candidates.removeAll { $0.id == failure.id }
+                try tearDownEverything(on: connection)
+            } catch let failure as ArmFailure {
+                // The bundled arm. Unwrapped so the caller sees the SQLite error it would have seen
+                // before this containment existed, rather than a wrapper naming a file it cannot act
+                // on.
+                throw failure.underlying
             }
         }
-
-        arms = try applyShadowing(to: arms, on: connection)
-        try createCanonicalCatalogs(arms: arms, on: connection)
-        try createViews(arms: arms, on: connection)
-
-        let schema = try SeedSchema.introspect(connection, schema: SeedDatabase.schemaName)
-        return InventoryUnion(
-            arms: arms,
-            schema: schema,
-            hasSoftDeletedTrees: arms.contains(where: \.hasSoftDeletedTrees),
-            openingCenter: try openingCenter(among: arms, on: connection),
-            refused: refused
-        )
     }
 
     /// Drops every view and table this type created and detaches every arm.
@@ -210,20 +298,53 @@ public struct InventoryUnion: Sendable, Equatable {
 
     /// The same teardown, derived from the connection rather than from a value the caller kept.
     ///
-    /// Which schemas are attached is a fact the connection already holds, so asking it is both
-    /// simpler and more robust than trusting a record of what was attached: a build that threw
-    /// half-way leaves arms behind that no `InventoryUnion` value describes.
+    /// **Nothing here is a written-down list, and that is the fix for a defect this type shipped
+    /// with.** The teardown used to drop a hand-maintained `materializedNames` array that had to
+    /// mirror everything `createCanonicalCatalogs` creates — and it diverged in the very commit that
+    /// introduced it, omitting `dim_region`. The leak was invisible until something rebuilt on the
+    /// *same* connection: `temp.dim_region` survived the teardown and the next build answered
+    /// `table dim_region already exists`. The app never saw it, because every boot makes a new
+    /// `DatabaseQueue` and therefore a new connection with an empty `temp` — but `SeedDatabase.detach`
+    /// exists precisely for callers that do not, and a rebuild between reads is what a removal is.
+    ///
+    /// So both halves are asked of the connection instead of remembered. What `temp` holds is in
+    /// `temp.sqlite_master`, and which schemas are attached is in `attachedSchemas()`. A list that
+    /// cannot be written down cannot fall behind the creator, which is a stronger guarantee than a
+    /// test comparing two lists — there is only one list now, and SQLite keeps it.
+    /// `CumulativeInventoryTests.tearingDownLeavesTempEmptyForTheNextBuild` pins the property
+    /// against an arm that carries `dim_region`, which is every published pack.
+    ///
+    /// Views before tables, because a view reads them — SQLite does not enforce that order, and
+    /// stating it costs nothing. `sqlite_`-prefixed names are SQLite's own (`sqlite_autoindex_…`)
+    /// and are dropped by the table they belong to; naming one in a `DROP` is an error.
     public static func tearDownEverything(on connection: SQLiteConnection) throws {
         connection.clearStatementCache()
-        for name in viewNames {
-            try? connection.execute("DROP VIEW IF EXISTS \(SeedDatabase.schemaName).\(name)")
-        }
-        for name in materializedNames {
-            try? connection.execute("DROP TABLE IF EXISTS \(SeedDatabase.schemaName).\(name)")
+        let temp = SeedDatabase.schemaName
+        for (type, name) in (try? ownObjects(in: temp, on: connection)) ?? [] {
+            try? connection.execute("DROP \(type) IF EXISTS \(temp).\(name)")
         }
         let attached = (try? connection.attachedSchemas()) ?? []
         for schema in attached where schema.hasPrefix("inv") {
             try? connection.detach(schema)
+        }
+    }
+
+    /// Every view and table in one schema, views first, with the keyword that drops it.
+    ///
+    /// Read straight out of SQLite's own catalog. The `type` column already spells `view` / `table`,
+    /// so the `DROP` keyword comes from the same row as the name and the two cannot disagree.
+    static func ownObjects(
+        in schema: String,
+        on connection: SQLiteConnection
+    ) throws -> [(type: String, name: String)] {
+        let statement = try connection.prepare("""
+        SELECT type AS type, name AS name FROM \(schema).sqlite_master
+         WHERE type IN ('view', 'table') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
+         ORDER BY CASE type WHEN 'view' THEN 0 ELSE 1 END, name
+        """)
+        defer { statement.finalize() }
+        return try statement.fetchAll {
+            (type: try $0.string("type").uppercased(), name: try $0.string("name"))
         }
     }
 
@@ -357,24 +478,11 @@ public struct InventoryUnion: Sendable, Equatable {
     }
 
     // MARK: - Names
-
-    /// Every view this type creates. `tearDown` drops them first, because they read the tables.
-    static let viewNames = ["trees", "trees_geo", "trees_rtree", "species_assertions"]
-
-    /// Every table this type materializes.
-    ///
-    /// **Tables rather than views, and the reason is the planner.** `species` is joined and grouped
-    /// by from a dozen call sites and searched through four indexes that
-    /// `SpeciesSearchTests.searchStaysOnItsCoveringIndexes` and
-    /// `CivicShortNameTests.queryPlanMatchesTheProfileQuery` pin **by name**; a compound view has
-    /// none of them, and `CREATE TABLE … AS SELECT` copies columns while dropping every constraint
-    /// those names are derived from. Materializing 731 species, 21,179 trigram rows, 41
-    /// neighborhoods and six rows of dimension tables costs milliseconds once, at open.
-    static let materializedNames = [
-        "species", "species_trigrams", "neighborhoods", "dim_city", "id_spaces",
-        "inventories", "species_map", "seed_meta",
-        "cypress_species_xlat", "cypress_hood_xlat"
-    ]
+    //
+    // **There is deliberately no list of what this type creates.** There was one — `viewNames` and
+    // `materializedNames` — and `tearDownEverything` records what it cost. Why the catalogs are
+    // tables rather than views is in `InventoryUnionSQL`'s own header, where the creating code is;
+    // what to drop is asked of SQLite.
 }
 
 /// One attached inventory file.

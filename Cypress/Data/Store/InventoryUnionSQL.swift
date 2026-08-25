@@ -35,6 +35,13 @@ extension InventoryUnion {
     /// *within* a file, and two cities may each have a `Downtown` — merging those would put San
     /// Jose's trees in a San Francisco neighborhood. Species are shared authored content and merge;
     /// neighborhoods are city data and do not.
+    ///
+    /// **Every statement that reads an arm is wrapped in `InventoryUnion.contributing`**, so a
+    /// failure carries the file that caused it back to `build` and is refused as that file rather
+    /// than as the launch. This is the phase that made a bad pack fatal, and the reason is visible
+    /// in the shape of the code: the statements below write into `temp` and read from `invN`, so
+    /// SQLite's own error names the destination and says nothing about the source. Nothing here may
+    /// call `connection.execute` against an arm outside a `contributing` block.
     static func createCanonicalCatalogs(
         arms: [InventoryArm],
         on connection: SQLiteConnection
@@ -56,51 +63,68 @@ extension InventoryUnion {
         on connection: SQLiteConnection
     ) throws {
         let temp = SeedDatabase.schemaName
-        // `uuid TEXT NOT NULL UNIQUE` is what makes SQLite name the index
-        // `sqlite_autoindex_species_1`, which `TreeQueries.speciesRowIDs` and
-        // `SpeciesQueries.projection` both document as the plan they run on. A file in the original
-        // TEXT-primary-key shape has no `uuid` column at all and gets no such constraint, exactly
-        // as it has none today.
-        var constraints = ["id": "PRIMARY KEY"]
-        if first.schema.speciesIdentityColumn == "uuid" { constraints["uuid"] = "NOT NULL UNIQUE" }
-        try mirrorTable("species", from: first, inlineConstraints: constraints, on: connection)
+        let (columns, list) = try InventoryUnion.contributing(first) {
+            // `uuid TEXT NOT NULL UNIQUE` is what makes SQLite name the index
+            // `sqlite_autoindex_species_1`, which `TreeQueries.speciesRowIDs` and
+            // `SpeciesQueries.projection` both document as the plan they run on. A file in the
+            // original TEXT-primary-key shape has no `uuid` column at all and gets no such
+            // constraint, exactly as it has none today.
+            var constraints = ["id": "PRIMARY KEY"]
+            if first.schema.speciesIdentityColumn == "uuid" {
+                constraints["uuid"] = "NOT NULL UNIQUE"
+            }
+            try mirrorTable("species", from: first, inlineConstraints: constraints, on: connection)
 
-        let columns = try connection.columnNames(ofTable: "species", in: temp)
-        let list = columns.joined(separator: ", ")
-        // See `renumbered(_:)`: a table whose only column is `id` projects nothing after it, and
-        // `SELECT x, FROM t` is a syntax error rather than an empty projection.
-        try connection.execute("""
-        INSERT INTO \(temp).species (\(list)) SELECT \(list) FROM \(first.schemaName).species
-        """)
-
-        // Later arms contribute only species the catalog does not already know, numbered above
-        // the current maximum. `ROW_NUMBER() OVER (ORDER BY s.id)` makes that deterministic, so two
-        // runs over the same files build the same catalog.
-        let tail = Self.renumbered(columns, alias: "s")
-        for arm in arms.dropFirst() {
+            let columns = try connection.columnNames(ofTable: "species", in: temp)
+            let list = columns.joined(separator: ", ")
+            // See `renumbered(_:)`: a table whose only column is `id` projects nothing after it, and
+            // `SELECT x, FROM t` is a syntax error rather than an empty projection.
             try connection.execute("""
-            INSERT INTO \(temp).species (\(list))
-            SELECT (SELECT COALESCE(MAX(id), 0) FROM \(temp).species)
-                   + ROW_NUMBER() OVER (ORDER BY s.id)\(tail)
-              FROM \(arm.schemaName).species s
-             WHERE s.\(arm.schema.speciesIdentityColumn)
-                   NOT IN (SELECT \(first.schema.speciesIdentityColumn) FROM \(temp).species)
+            INSERT INTO \(temp).species (\(list)) SELECT \(list) FROM \(first.schemaName).species
             """)
+            return (columns, list)
         }
 
         // The three named indexes the files carry, each created only if the column it names is
         // actually there. Same posture as the view's projection: ask the file what it has. A
         // fixture whose `species` is `(id, uuid)` is a legitimate inventory — it simply has no
         // scientific name to index.
+        //
+        // **Created before the later arms insert, and that ordering is load-bearing.**
+        // `idx_species_scientific_name` is UNIQUE. Built afterwards, a pack carrying a species whose
+        // `uuid` and `scientific_name` disagree with the catalog's makes the `CREATE UNIQUE INDEX`
+        // throw — a statement that belongs to no arm, at a point where the offending rows are
+        // already merged and unattributable. Built first, the same pack's own `INSERT` is what
+        // fails, inside its own `contributing` block, so the file that caused it is the file that is
+        // refused. Maintaining three indexes across 731 rows is not a cost worth trading that for.
         let indexed: [(String, String, Bool)] = [
             ("idx_species_scientific_name", "scientific_name", true),
             ("idx_species_common_name", "common_name", false),
             ("idx_species_curated", "curated", false)
         ]
         for (name, column, unique) in indexed where columns.contains(column) {
-            try connection.execute(
-                "CREATE \(unique ? "UNIQUE " : "")INDEX \(temp).\(name) ON species(\(column))"
-            )
+            try InventoryUnion.contributing(first) {
+                try connection.execute(
+                    "CREATE \(unique ? "UNIQUE " : "")INDEX \(temp).\(name) ON species(\(column))"
+                )
+            }
+        }
+
+        // Later arms contribute only species the catalog does not already know, numbered above
+        // the current maximum. `ROW_NUMBER() OVER (ORDER BY s.id)` makes that deterministic, so two
+        // runs over the same files build the same catalog.
+        let tail = Self.renumbered(columns, alias: "s")
+        for arm in arms.dropFirst() {
+            try InventoryUnion.contributing(arm) {
+                try connection.execute("""
+                INSERT INTO \(temp).species (\(list))
+                SELECT (SELECT COALESCE(MAX(id), 0) FROM \(temp).species)
+                       + ROW_NUMBER() OVER (ORDER BY s.id)\(tail)
+                  FROM \(arm.schemaName).species s
+                 WHERE s.\(arm.schema.speciesIdentityColumn)
+                       NOT IN (SELECT \(first.schema.speciesIdentityColumn) FROM \(temp).species)
+                """)
+            }
         }
     }
 
@@ -129,13 +153,15 @@ extension InventoryUnion {
         ) WITHOUT ROWID
         """)
         for arm in arms {
-            let identity = arm.schema.speciesIdentityColumn
-            try connection.execute("""
-            INSERT INTO \(temp).cypress_species_xlat (inv, local_id, canon_id, uuid)
-            SELECT \(arm.ordinal), s.id, c.id, c.\(identity)
-              FROM \(arm.schemaName).species s
-              JOIN \(temp).species c ON c.\(identity) = s.\(identity)
-            """)
+            try InventoryUnion.contributing(arm) {
+                let identity = arm.schema.speciesIdentityColumn
+                try connection.execute("""
+                INSERT INTO \(temp).cypress_species_xlat (inv, local_id, canon_id, uuid)
+                SELECT \(arm.ordinal), s.id, c.id, c.\(identity)
+                  FROM \(arm.schemaName).species s
+                  JOIN \(temp).species c ON c.\(identity) = s.\(identity)
+                """)
+            }
         }
     }
 
@@ -161,13 +187,15 @@ extension InventoryUnion {
         ) WITHOUT ROWID
         """)
         for arm in arms where arm.schema.hasSpeciesTrigrams {
-            try connection.execute("""
-            INSERT OR IGNORE INTO \(temp).species_trigrams (trigram, species_id)
-            SELECT g.trigram, x.canon_id
-              FROM \(arm.schemaName).species_trigrams g
-              JOIN \(temp).cypress_species_xlat x
-                ON x.inv = \(arm.ordinal) AND x.local_id = g.species_id
-            """)
+            try InventoryUnion.contributing(arm) {
+                try connection.execute("""
+                INSERT OR IGNORE INTO \(temp).species_trigrams (trigram, species_id)
+                SELECT g.trigram, x.canon_id
+                  FROM \(arm.schemaName).species_trigrams g
+                  JOIN \(temp).cypress_species_xlat x
+                    ON x.inv = \(arm.ordinal) AND x.local_id = g.species_id
+                """)
+            }
         }
     }
 
@@ -185,9 +213,14 @@ extension InventoryUnion {
         on connection: SQLiteConnection
     ) throws {
         let temp = SeedDatabase.schemaName
-        try mirrorTable(
-            "neighborhoods", from: first, inlineConstraints: ["id": "PRIMARY KEY"], on: connection
-        )
+        let (list, tail) = try InventoryUnion.contributing(first) {
+            try mirrorTable(
+                "neighborhoods", from: first, inlineConstraints: ["id": "PRIMARY KEY"],
+                on: connection
+            )
+            let columns = try connection.columnNames(ofTable: "neighborhoods", in: temp)
+            return (columns.joined(separator: ", "), Self.renumbered(columns, alias: "n"))
+        }
         try connection.execute("""
         CREATE TABLE \(temp).cypress_hood_xlat (
             inv INTEGER NOT NULL, local_id INTEGER NOT NULL, canon_id INTEGER NOT NULL,
@@ -195,23 +228,28 @@ extension InventoryUnion {
         ) WITHOUT ROWID
         """)
 
-        let columns = try connection.columnNames(ofTable: "neighborhoods", in: temp)
-        let list = columns.joined(separator: ", ")
-        let tail = Self.renumbered(columns, alias: "n")
         for arm in arms {
-            let offset = try scalar(
-                "SELECT COALESCE(MAX(id), 0) AS n FROM \(temp).neighborhoods", on: connection
-            )
-            try connection.execute("""
-            INSERT INTO \(temp).neighborhoods (\(list))
-            SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY n.id)\(tail)
-              FROM \(arm.schemaName).neighborhoods n
-            """)
-            try connection.execute("""
-            INSERT INTO \(temp).cypress_hood_xlat (inv, local_id, canon_id)
-            SELECT \(arm.ordinal), n.id, \(offset) + ROW_NUMBER() OVER (ORDER BY n.id)
-              FROM \(arm.schemaName).neighborhoods n
-            """)
+            // **The column list comes from the first arm and the rows come from this one**, which
+            // is exactly where a pack that is one column short of the bundle throws:
+            // `no such column: n.geom_geojson`. `CityLibrary.validateCityFile` cannot see it — it
+            // checks four table names and three `trees` columns and never looks at `neighborhoods` —
+            // so this is where such a file is finally refused, and it is refused as *this* file
+            // rather than as the boot.
+            try InventoryUnion.contributing(arm) {
+                let offset = try scalar(
+                    "SELECT COALESCE(MAX(id), 0) AS n FROM \(temp).neighborhoods", on: connection
+                )
+                try connection.execute("""
+                INSERT INTO \(temp).neighborhoods (\(list))
+                SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY n.id)\(tail)
+                  FROM \(arm.schemaName).neighborhoods n
+                """)
+                try connection.execute("""
+                INSERT INTO \(temp).cypress_hood_xlat (inv, local_id, canon_id)
+                SELECT \(arm.ordinal), n.id, \(offset) + ROW_NUMBER() OVER (ORDER BY n.id)
+                  FROM \(arm.schemaName).neighborhoods n
+                """)
+            }
         }
     }
 
@@ -235,22 +273,27 @@ extension InventoryUnion {
         let temp = SeedDatabase.schemaName
 
         if let first = arms.first(where: { $0.schema.hasDimCity }) {
-            try mirrorTable(
-                "dim_city", from: first,
-                inlineConstraints: ["id": "PRIMARY KEY", "slug": "NOT NULL UNIQUE"], on: connection
-            )
-            let columns = try connection.columnNames(ofTable: "dim_city", in: temp)
+            let columns = try InventoryUnion.contributing(first) {
+                try mirrorTable(
+                    "dim_city", from: first,
+                    inlineConstraints: ["id": "PRIMARY KEY", "slug": "NOT NULL UNIQUE"],
+                    on: connection
+                )
+                return try connection.columnNames(ofTable: "dim_city", in: temp)
+            }
             let tail = Self.renumbered(columns, alias: "d")
             for arm in arms where arm.schema.hasDimCity {
-                let offset = try scalar(
-                    "SELECT COALESCE(MAX(id), 0) AS n FROM \(temp).dim_city", on: connection
-                )
-                try connection.execute("""
-                INSERT INTO \(temp).dim_city (\(columns.joined(separator: ", ")))
-                SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY d.id)\(tail)
-                  FROM \(arm.schemaName).dim_city d
-                 WHERE d.slug NOT IN (SELECT slug FROM \(temp).dim_city)
-                """)
+                try InventoryUnion.contributing(arm) {
+                    let offset = try scalar(
+                        "SELECT COALESCE(MAX(id), 0) AS n FROM \(temp).dim_city", on: connection
+                    )
+                    try connection.execute("""
+                    INSERT INTO \(temp).dim_city (\(columns.joined(separator: ", ")))
+                    SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY d.id)\(tail)
+                      FROM \(arm.schemaName).dim_city d
+                     WHERE d.slug NOT IN (SELECT slug FROM \(temp).dim_city)
+                    """)
+                }
             }
         }
 
@@ -258,36 +301,45 @@ extension InventoryUnion {
         // `id_spaces.short_name` and no `trees.id_space` at all — that shape is exactly what
         // `CivicShortNameTests` exists for — and gating this on `hasIdSpace` hid the very column
         // `SeedSchema.hasCivicShortNames` is read from.
-        let withIDSpaces = try arms.filter {
-            try connection.tableExists("id_spaces", in: $0.schemaName)
-        }
+        let withIDSpaces = try armsCarrying("id_spaces", among: arms, on: connection)
         if let first = withIDSpaces.first {
-            try mirrorTable(
-                "id_spaces", from: first, inlineConstraints: ["id": "PRIMARY KEY"], on: connection
-            )
-            let columns = try connection.columnNames(ofTable: "id_spaces", in: temp)
+            let columns = try InventoryUnion.contributing(first) {
+                try mirrorTable(
+                    "id_spaces", from: first, inlineConstraints: ["id": "PRIMARY KEY"],
+                    on: connection
+                )
+                return try connection.columnNames(ofTable: "id_spaces", in: temp)
+            }
             for arm in withIDSpaces {
-                // Asked of the arm rather than inferred from the first one: `city_id` arrived with
-                // s16, and an s15 file beside an s16 one is a configuration this build supports.
-                let armColumns = try connection.columnNames(ofTable: "id_spaces", in: arm.schemaName)
-                let select = columns.map { column -> String in
-                    guard column == "city_id" else {
-                        return armColumns.contains(column) ? "s.\(column)" : "NULL"
-                    }
-                    guard armColumns.contains("city_id"), arm.schema.hasDimCity else { return "NULL" }
-                    // The one column that points into a table this build just renumbered, so it is
-                    // re-pointed through the slug, which is the key that survives the renumbering.
-                    return """
-                    (SELECT c.id FROM \(temp).dim_city c
-                       JOIN \(arm.schemaName).dim_city d2 ON d2.slug = c.slug
-                      WHERE d2.id = s.city_id)
-                    """
-                }.joined(separator: ", ")
-                try connection.execute("""
-                INSERT INTO \(temp).id_spaces (\(columns.joined(separator: ", ")))
-                SELECT \(select) FROM \(arm.schemaName).id_spaces s
-                 WHERE s.id NOT IN (SELECT id FROM \(temp).id_spaces)
-                """)
+                try InventoryUnion.contributing(arm) {
+                    // Asked of the arm rather than inferred from the first one: `city_id` arrived
+                    // with s16, and an s15 file beside an s16 one is a configuration this build
+                    // supports.
+                    let armColumns = try connection.columnNames(
+                        ofTable: "id_spaces", in: arm.schemaName
+                    )
+                    let select = columns.map { column -> String in
+                        guard column == "city_id" else {
+                            return armColumns.contains(column) ? "s.\(column)" : "NULL"
+                        }
+                        guard armColumns.contains("city_id"), arm.schema.hasDimCity else {
+                            return "NULL"
+                        }
+                        // The one column that points into a table this build just renumbered, so it
+                        // is re-pointed through the slug, which is the key that survives the
+                        // renumbering.
+                        return """
+                        (SELECT c.id FROM \(temp).dim_city c
+                           JOIN \(arm.schemaName).dim_city d2 ON d2.slug = c.slug
+                          WHERE d2.id = s.city_id)
+                        """
+                    }.joined(separator: ", ")
+                    try connection.execute("""
+                    INSERT INTO \(temp).id_spaces (\(columns.joined(separator: ", ")))
+                    SELECT \(select) FROM \(arm.schemaName).id_spaces s
+                     WHERE s.id NOT IN (SELECT id FROM \(temp).id_spaces)
+                    """)
+                }
             }
 
             try mirrorFirstWins(
@@ -322,6 +374,15 @@ extension InventoryUnion {
 
     // MARK: - Views
 
+    /// **Not a boot-failure vector, and it was checked rather than assumed.** SQLite accepts a
+    /// `CREATE VIEW` over a missing table or a missing column and resolves the references at query
+    /// time, so none of the four statements below can throw on account of an arm's shape. That is
+    /// why the containment `createCanonicalCatalogs` carries stops here: there is no per-arm
+    /// statement to attribute, because there is no per-arm statement.
+    ///
+    /// The projections defend themselves anyway — `treesSQL` and `treesRtreeSQL` name a column only
+    /// when that arm has it — so what reaches a reader through a malformed arm is `NULL`, not an
+    /// error at the next map pan.
     static func createViews(arms: [InventoryArm], on connection: SQLiteConnection) throws {
         guard !arms.isEmpty else { return }
         let temp = SeedDatabase.schemaName
@@ -551,19 +612,44 @@ extension InventoryUnion {
         on connection: SQLiteConnection
     ) throws {
         let temp = SeedDatabase.schemaName
-        let present = try arms.filter { try connection.tableExists(table, in: $0.schemaName) }
+        let present = try armsCarrying(table, among: arms, on: connection)
         guard let first = present.first else { return }
-        try mirrorTable(table, from: first, inlineConstraints: inlineConstraints, on: connection)
-        let columns = try connection.columnNames(ofTable: table, in: temp)
-        let list = columns.joined(separator: ", ")
-        for arm in present {
-            try connection.execute("""
-            INSERT INTO \(temp).\(table) (\(list))
-            SELECT \(columns.map { "d.\($0)" }.joined(separator: ", "))
-              FROM \(arm.schemaName).\(table) d
-             WHERE d.\(key) NOT IN (SELECT \(key) FROM \(temp).\(table))
-            """)
+        let (columns, list) = try InventoryUnion.contributing(first) {
+            try mirrorTable(table, from: first, inlineConstraints: inlineConstraints, on: connection)
+            let columns = try connection.columnNames(ofTable: table, in: temp)
+            return (columns, columns.joined(separator: ", "))
         }
+        for arm in present {
+            try InventoryUnion.contributing(arm) {
+                try connection.execute("""
+                INSERT INTO \(temp).\(table) (\(list))
+                SELECT \(columns.map { "d.\($0)" }.joined(separator: ", "))
+                  FROM \(arm.schemaName).\(table) d
+                 WHERE d.\(key) NOT IN (SELECT \(key) FROM \(temp).\(table))
+                """)
+            }
+        }
+    }
+
+    /// The arms that carry one table, each `tableExists` question attributed to the arm it is asked
+    /// of.
+    ///
+    /// Written as a loop rather than `try arms.filter { … }` for exactly that reason: a throwing
+    /// `filter` closure loses which element was being tested, and that element is the whole answer
+    /// `build` needs to refuse a pack instead of a launch.
+    private static func armsCarrying(
+        _ table: String,
+        among arms: [InventoryArm],
+        on connection: SQLiteConnection
+    ) throws -> [InventoryArm] {
+        var present: [InventoryArm] = []
+        for arm in arms {
+            let carries = try InventoryUnion.contributing(arm) {
+                try connection.tableExists(table, in: arm.schemaName)
+            }
+            if carries { present.append(arm) }
+        }
+        return present
     }
 
     /// The columns after `id`, aliased and prefixed with the comma that separates them from the

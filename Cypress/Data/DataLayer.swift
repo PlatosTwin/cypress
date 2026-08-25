@@ -363,11 +363,20 @@ public struct DataLayer: Sendable {
     /// RULINGS R43 §1 permitted exactly one attach. The union reverses that: what is on disk is
     /// what is drawn, and there is no choice left to resolve.
     ///
-    /// **Nothing here can stop the app launching.** `CityLibrary.installedInventoryFiles()` has
-    /// already refused any file this build cannot read, and `InventoryUnion.build` skips an arm
-    /// whose attach throws rather than failing the boot — so a corrupt pack costs that one city and
-    /// nothing else. The Cities screen still lists it, because it is still on disk, and the reader
-    /// can remove it.
+    /// **No downloaded pack can stop the app launching**, and the sentence has to be that narrow.
+    ///
+    /// `CityLibrary.installedInventoryFiles()` refuses a file whose *shape* this build cannot read,
+    /// and `InventoryUnion.build` refuses one that fails anywhere in its own pipeline — the attach,
+    /// the introspection, or the catalog merge that runs after both. A refused pack costs that one
+    /// city and nothing else: the boot continues over the survivors, the Cities screen still lists
+    /// the file because it is still on disk, its row says it could not be read, and the reader can
+    /// remove it. That last clause is what the guarantee is *for*, and it is why the refusal has to
+    /// happen here rather than at `phase = .failed` — the screen that fixes it lives inside the
+    /// booted layer.
+    ///
+    /// **The bundled seed is not covered by that and is not meant to be.** It is this repository's
+    /// own build artifact, gated by `SeedContractTests`, and there is no reader action that could
+    /// repair or remove it. A failure on arm 0 propagates.
     ///
     /// The bundled seed goes **first**, which fixes it at arm ordinal 0 and leaves every bundled
     /// tree's union-wide id equal to the id it has always had.

@@ -149,8 +149,15 @@ public final class CypressStore: Sendable {
     /// reason a nil `seedURL` always was: the outbox, the profile of a community-added tree and
     /// every write path work without an inventory, and only the map is empty.
     ///
-    /// A file that cannot be attached is **skipped, not fatal** — `InventoryUnion.refused` records
-    /// why. Launching without one downloaded city beats not launching.
+    /// A **downloaded** file this build cannot read is skipped, not fatal — `InventoryUnion.refused`
+    /// records why. Launching without one downloaded city beats not launching.
+    ///
+    /// "Cannot be attached" would understate it, and the understatement was a defect: the refusal
+    /// covers the whole of `InventoryUnion.build`, including the catalog merge that runs long after
+    /// the `ATTACH` succeeded. A pack can pass every shape check and still throw there, and when it
+    /// did, the boot failed and the screen that could have removed it was behind the boot.
+    ///
+    /// The bundled seed is not in that bargain — see `InventoryUnion.build`.
     public static func open(
         databaseURL: URL? = nil,
         inventories: [InventoryFile],

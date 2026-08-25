@@ -38,13 +38,21 @@ struct CumulativeInventoryTests {
     }
 
     /// A seed shaped like the real one in every column the union reads.
+    ///
+    /// - Parameter packID: when given, the file is shaped like a **published s17 pack** — it carries
+    ///   `dim_region` and a `trees.region_id`, which every one of the seven live packs does and
+    ///   which the default fixture here deliberately does not (the bundled seed is s16). The
+    ///   difference is not cosmetic: `dim_region` is the catalog the union's teardown once failed to
+    ///   drop, so a test about teardown that used the default shape would examine the one file shape
+    ///   the defect could not reach.
     static func seed(
         at url: URL,
         trees: [TreeRow],
         species: [SpeciesRow],
         neighborhoods: [(id: Int64, name: String)] = [],
         publishSchemaVersion: Int = 17,
-        contentRev: String? = nil
+        contentRev: String? = nil,
+        packID: String? = nil
     ) throws {
         let connection = try SQLiteConnection(path: url.path)
         try connection.execute("""
@@ -164,6 +172,24 @@ struct CumulativeInventoryTests {
             try connection.execute("""
                 INSERT INTO trees_rtree VALUES
                 (\(tree.id), \(tree.lat), \(tree.lat), \(tree.lon), \(tree.lon))
+                """)
+        }
+
+        // The s17 pack dimension, in the shape `Tools/publish_cities.py` writes: one `dim_region`
+        // row per pack, keyed by `pack_id`, and a `trees.region_id` pointing at it. Added after the
+        // rows because the column is what makes this an s17 file, not what makes the rows valid.
+        if let packID {
+            let cityID = abs((trees.first?.idSpace ?? "sf").hashValue % 1000) + 1
+            try connection.execute("""
+                CREATE TABLE dim_region (
+                    id INTEGER PRIMARY KEY, pack_id TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL, level TEXT NOT NULL,
+                    city_id INTEGER NOT NULL REFERENCES dim_city(id),
+                    CHECK (level IN ('city','borough','extent'))
+                );
+                INSERT INTO dim_region VALUES (1, '\(packID)', '\(packID)', 'city', \(cityID));
+                ALTER TABLE trees ADD COLUMN region_id INTEGER REFERENCES dim_region(id);
+                UPDATE trees SET region_id = 1;
                 """)
         }
         try connection.execute("ANALYZE")
@@ -814,7 +840,7 @@ struct CumulativeInventoryTests {
         #expect(abs(center.latitude - 40.75) < 0.01, "opened at \(center), not on the larger pack")
         #expect(abs(center.longitude - -73.98) < 0.01, "opened at \(center)")
 
-        // And the region built from it is centerd there rather than on San Francisco.
+        // And the region built from it is centered there rather than on San Francisco.
         let region = MapOpening.openingRegion(remembered: nil, downloadedCityCenter: center)
         #expect(abs(region.center.latitude - 40.75) < 0.01)
         // A remembered camera still wins over it — D3's second clause outranks the third.
@@ -950,6 +976,74 @@ struct CumulativeInventoryTests {
             store, "SELECT COUNT(*) AS n FROM temp.trees WHERE inv = 1"
         )
         #expect(armOne == 0, "the rebuilt union still returns rows for the detached file")
+    }
+
+    /// **Teardown leaves `temp` empty, so the next build on this connection has room.**
+    ///
+    /// The union used to drop a hand-written list of table names, and the list was missing
+    /// `dim_region` — which is in **every** published pack, all seven of them s17. Nothing noticed,
+    /// because the app makes a new connection per boot and a new connection's `temp` is empty
+    /// anyway; the leak only bites a caller that tears down and builds again on one connection,
+    /// which is what `SeedDatabase.detach` is for and what a removal between reads is.
+    ///
+    /// **The fixture has to be the shape the defect lived in.** A first version of this probe used
+    /// the default s16-shaped fixture, rebuilt bundle-only, and passed — with the defect present.
+    /// Both halves of that were wrong: no arm carried `dim_region`, so nothing leaked, and a
+    /// bundle-only rebuild never reaches `mirrorFirstWins` at all. The arm below is a published
+    /// pack's shape and the rebuild carries it too.
+    ///
+    /// The first assertion is the calibration: `dim_region` is *there* before the teardown. Without
+    /// it, "temp is empty afterwards" is equally true of a union that never created it.
+    @Test("tearing down leaves temp empty for the next build on the same connection")
+    func tearingDownLeavesTempEmptyForTheNextBuild() async throws {
+        let dir = try Self.tempDir()
+        let bundleURL = dir.appendingPathComponent("bundle.sqlite")
+        let packURL = dir.appendingPathComponent("pack.sqlite")
+        try Self.seed(
+            at: bundleURL,
+            trees: [TreeRow(id: 1, idSpace: "sf", lat: 37.7, lon: -122.4, speciesID: 1)],
+            species: [Self.plane]
+        )
+        try Self.seed(
+            at: packURL,
+            trees: (1...2).map {
+                TreeRow(id: Int64($0), idSpace: "us-ny-nyc", lat: 40.7, lon: -74.0, speciesID: 1)
+            },
+            species: [Self.plane],
+            packID: "us-ny-nyc-manhattan"
+        )
+
+        let files = [Self.file(bundleURL, bundled: true), Self.file(packURL, id: "manhattan")]
+        let store = try await CypressStore.inMemory(inventories: files)
+
+        try await store.queue.withConnection { connection in
+            // Calibration. If this is empty the rest of the test is asserting nothing.
+            let before = try InventoryUnion.ownObjects(
+                in: SeedDatabase.schemaName, on: connection
+            ).map(\.name)
+            #expect(
+                before.contains("dim_region"),
+                "the fixture never built temp.dim_region, so this test cannot see the leak it is "
+                    + "about; temp holds \(before)"
+            )
+
+            let union = try #require(store.inventory)
+            try InventoryUnion.tearDown(union, on: connection)
+
+            let after = try InventoryUnion.ownObjects(in: SeedDatabase.schemaName, on: connection)
+            #expect(
+                after.isEmpty,
+                "the teardown left \(after.map(\.name)) behind in temp; the next build on this "
+                    + "connection collides with them"
+            )
+
+            // The failure this actually causes, asserted as itself rather than inferred from the
+            // list above: building again over the same pack must not throw.
+            _ = try InventoryUnion.build(files, on: connection)
+        }
+
+        let rebuilt = try await Self.count(store, "SELECT COUNT(*) AS n FROM temp.trees")
+        #expect(rebuilt == 3, "the rebuilt union does not answer for both files")
     }
 
     /// A file this build cannot read is **skipped, not fatal**: the rest of the union opens.

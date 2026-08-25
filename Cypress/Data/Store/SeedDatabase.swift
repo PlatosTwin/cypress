@@ -168,6 +168,13 @@ public enum SeedDatabase {
     /// Written against the connection rather than against an `InventoryUnion` value so a caller
     /// that never kept one — every test that called `detach(from:)` before this type existed — can
     /// still clean up.
+    ///
+    /// **"Whatever it turned out to hold" is meant literally, and it was once false.**
+    /// `InventoryUnion.tearDownEverything` reads `temp.sqlite_master` rather than a written-down
+    /// list of table names, so a catalog a newer generation adds is dropped by the same code that
+    /// dropped the old ones. The version that carried a list omitted `dim_region` and left it
+    /// behind for the next build on this connection to collide with — that entry's own comment has
+    /// the account.
     public static func detach(from connection: SQLiteConnection) throws {
         try InventoryUnion.tearDownEverything(on: connection)
     }

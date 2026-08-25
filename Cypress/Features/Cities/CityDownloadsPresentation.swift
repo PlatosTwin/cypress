@@ -589,19 +589,6 @@ struct CityDownloadRow: Equatable, Identifiable {
         )
     }
 
-    /// A city the app bundle holds and the catalog could not be reached to describe — or does not
-    /// list at all. Disk facts alone, and the only honest thing to say is that you have it.
-    ///
-    /// No affordance: `Use` for the bundle belongs to the built-in card, which attaches the whole
-    /// fused file rather than one of the cities inside it (R43 §1 — exactly one inventory is
-    /// attached, always).
-    ///
-    /// **Coverage is drawn here, from the file.** This row is a city card by R43 §3's definition,
-    /// and that ruling lists coverage as a card's second line without conditioning it on where the
-    /// facts came from; §3.3 lists coverage as one of the four things Stage 0 derives from the
-    /// bundle, and §6.1 — the text D5 approved *as scoped* — repeats it. It was briefly omitted on
-    /// the argument that an offline row had never drawn one, which was true of `installedOffline`
-    /// and not of this row: San Jose's downtown-only limit was the one fact available and unstated.
     /// A bundled city whose rows a downloaded copy has replaced, described from **disk facts
     /// alone** — the offline twin of `CityInstallState.bundledUpdated`.
     ///
@@ -626,6 +613,19 @@ struct CityDownloadRow: Equatable, Identifiable {
         )
     }
 
+    /// A city the app bundle holds and the catalog could not be reached to describe — or does not
+    /// list at all. Disk facts alone, and the only honest thing to say is that you have it.
+    ///
+    /// **No affordance at all.** A bundled city cannot be added, and it cannot be removed while the
+    /// app carries it; nothing this row could offer would be true. The card it nests inside says
+    /// `Ships with the app and cannot be removed`, which is the operative fact for this entry too.
+    ///
+    /// **Coverage is drawn here, from the file.** This row is a city card by R43 §3's definition,
+    /// and that ruling lists coverage as a card's second line without conditioning it on where the
+    /// facts came from; §3.3 lists coverage as one of the four things Stage 0 derives from the
+    /// bundle, and §6.1 — the text D5 approved *as scoped* — repeats it. It was briefly omitted on
+    /// the argument that an offline row had never drawn one, which was true of `installedOffline`
+    /// and not of this row: San Jose's downtown-only limit was the one fact available and unstated.
     static func bundled(_ city: SeedCities.City) -> CityDownloadRow {
         CityDownloadRow(
             id: city.id,
