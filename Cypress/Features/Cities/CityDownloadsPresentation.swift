@@ -14,7 +14,13 @@ enum CityDownloadsCopy {
     // You tab section (ruling §2).
     static let youSectionLabel = "City data"
     static let youRowTitle = "Cities"
-    static let youRowSubtitle = "Download city inventories and choose the one the map draws"
+    /// **"choose the one the map draws" left with the choice** (RULING D9). Every downloaded city
+    /// is drawn, so there is nothing to choose between.
+    ///
+    /// Caught by looking at the running You tab. This door's subtitle is the one string about the
+    /// Cities screen that is not *on* the Cities screen, so rewriting that screen's vocabulary left
+    /// it behind — nothing in the feature's own copy pointed at it, and no test named it.
+    static let youRowSubtitle = "Download city inventories to add them to the map"
 
     // The built-in inventory card (ruling §3).
     static let builtInTitle = "Built-in inventory"
