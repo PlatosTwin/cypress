@@ -16,6 +16,33 @@ authority for anything below it.
    seed carries.
 2. **`Use` becomes add/remove of a pack from the active set**, not an exclusive switch.
 
+### The second half, recorded later the same day
+
+Also the owner's, on seeing the Cities screen on a device:
+
+> SF and SJC should not be showing Use if they ship by default — it is confusing and terrible UX
+> to show what that screen shows.
+
+3. **A city the built-in inventory covers never presents a `Use` affordance, and never appears as
+   a second, parallel city entry beside the built-in card.** The bundled copy is always part of the
+   union.
+4. **A downloaded newer copy of a bundled city is an update to that city's data, not a peer
+   inventory.** It is presented inside that city's own entry as an update state, and removing the
+   downloaded copy returns the entry to the bundled record.
+5. **The built-in card and any per-city entry may never contradict each other** — no `In use` above
+   a sibling `Use`.
+
+### The state that was ruled out, confirmed against the code
+
+The screen really does draw what the ruling describes, and it does so by a path worth naming
+because the fix has to go through it. `CityInstallState.init` tests `installedVersion` **before**
+it tests `bundled`, so the moment a downloaded copy of San Francisco exists the `bundled` argument
+is never consulted: the row resolves to `.installedCurrent` or `.updateAvailable` and
+`CityDownloadRow.decide` draws `Installed · <version>` with `Use` and `Remove` — beside a built-in
+card that is simultaneously saying `Includes San Francisco and San Jose` and `In use`. The
+`.bundled` and `.bundledOutdated` cases, which exist precisely to stop a bundled city being offered
+as a download, are unreachable for any city that has ever been downloaded once.
+
 ## What it supersedes
 
 **RULINGS R43 §1 in full.** That section rules that "exactly one inventory is attached, always
@@ -34,7 +61,14 @@ on §1 and no longer stand on their own:
   holding the city id; absent means built-in" describes one id, and the set is now plural.
 - **`CityInstallState.bundled` / `.bundledOutdated`.** Both are documented on the premise that "a
   downloaded copy shadows the bundled one through the existing `active-city` marker, with no new
-  mechanism". Under a union there is no shadowing unless one is designed (D1).
+  mechanism". Under a union there is no shadowing unless one is designed — and decision 4 above is
+  that design: the shadow is per bundled city, and it is what makes a downloaded copy an update
+  rather than a peer.
+
+Decisions 3–5 additionally supersede the R43 §1-era `Use` / `In use` presentation **for bundled
+cities specifically**, which is a narrower thing than decisions 1–2 supersede: R43 §1 is reversed
+for downloaded packs by the union, and reversed for bundled cities by the rule that they were never
+a separate choice to begin with.
 
 ## What the code says the decision has to reckon with
 
@@ -125,22 +159,62 @@ species row as `species_current` in another, or the species list shows 731 speci
 inventory and every group-by splits. Which file's catalog is canonical, and whether the
 translation happens inside the view or at the query boundary, is D6.
 
+## Proposed: what the Cities screen becomes
+
+Written under R43 §3's delegated-authority pattern, which is how that ruling's own affordance
+table was produced: the screen has no mock, so the ruling is the mock. **These are proposals for
+ratification, not decisions.** Anything the decisions above do not determine is in the list below
+rather than settled here.
+
+**One card per thing the reader can act on, and a bundled city is not one of them.**
+
+- **The built-in card** keeps its title and its `Includes …` line and **draws no affordance at
+  all** — not `Use`, not `In use`, not `Remove`. It cannot be switched off, so a control that
+  says otherwise is the contradiction decision 5 forbids. `Ships with the app and cannot be
+  removed` already says the operative fact and needs no button under it.
+- **A bundled city gets one entry, nested under the built-in card**, in the `isCityGroup` idiom
+  `CityDownloadSection` already draws for a city's packs. Never a peer card in `On this phone`,
+  which is decision 3. Its state line is one of three:
+  - `Included in the app · record as of <rev>` — the bundle's own copy is what the map draws;
+  - `Included in the app · record as of <rev>` with `A newer record is available.` beneath and one
+    `Update` button — the catalog is ahead, and the verb is `Update` rather than `Download`
+    because decision 4 makes it one;
+  - `Updated · record as of <rev>` with `Revert to the included copy` — a downloaded copy has
+    replaced the bundled rows for this city.
+- **`Remove` is not the word for undoing that update.** It reads as removing the city, and the
+  city cannot be removed; what is removed is the newer copy, and the entry returns to the bundled
+  record. That is decision 4's second clause and it needs its own verb.
+- **A pack the bundle does not cover** — the five New York boroughs today — keeps its own card and
+  loses `Use` and `In use` along with everything else. See D9: if downloaded means in the union,
+  the only verbs the screen needs anywhere are `Download`, `Update`, `Remove` and `Cancel`, and
+  `Use` leaves the vocabulary entirely.
+
 ## What this entry does not decide
 
-Collected for the orchestrator. Each is a question this round declined to answer for itself: the
-first two because they are product decisions, the rest because the code and the mocks do not
-determine them.
+Collected for the orchestrator. Each is a question this round declined to answer for itself.
 
-- **D1 — Shadowing.** Does the bundled seed stay in the union on ground a downloaded pack covers?
-  If it is shadowed, at what granularity — id space, published region, or per tree? Note that the
-  bundled seed is s16-shaped: it carries `dim_city` and **no `dim_region`**, so it cannot be
-  shadowed at region granularity without a seed rebuild. Id-space granularity is sufficient for
-  today's catalog and would not be sufficient for a borough pack whose city the bundle carried.
-- **D2 — The Cities screen.** Add/remove is a set of states no mock covers, and R43 §3 was written
-  as the mock for exactly that reason. What each row offers, what the built-in inventory's card
-  offers when it can no longer be the exclusive choice, and whether the built-in inventory can be
-  removed from the set at all, are unanswered. DECISIONS constraint 21 makes this a stop-and-ask
-  and this round is stopping on it.
+- **D1 — Shadowing granularity.** Decision 4 settles *that* a downloaded copy of a bundled city
+  shadows the bundled rows. At what granularity is still open: id space, published region, or per
+  tree. The bundled seed is s16-shaped — it carries `dim_city` and **no `dim_region`** — so it
+  cannot be shadowed at region granularity without a seed rebuild. Id-space granularity is
+  sufficient for today's catalog, because the only two packs that overlap the bundle are whole-city
+  packs whose pack id *is* their id space; it would not be sufficient for a borough pack whose city
+  the bundle carried.
+- **D2 — The screen copy above.** Proposed, not ruled. The three state lines, the `Update` verb for
+  a bundled city, and the wording that undoes an update are the parts to ratify or replace.
+- **D9 — Is the active set the installed set?** Decision 1 says the union is "the bundled seed plus
+  every downloaded city pack", which reads as *downloaded ⇒ in the union*. Decision 2 says `Use`
+  becomes "add/remove of a pack from the active set", which reads as a set a pack can be out of
+  while still on disk. Both cannot be true. **This round recommends the first**: downloading a pack
+  is what puts it in the union, `Remove` is what takes it out, and there is no third state to
+  explain — which is also the reading that makes the confusing screen the owner ruled out
+  unconstructible. If the second is meant instead, `CityLibrary`'s marker becomes a set of ids and
+  every row acquires a fourth state.
+- **D10 — `content_rev` in copy.** The comparison already treats it as an opaque ordered string
+  (`CityInstallState` compares `publishedRev > bundledRev` on `String`, and splits no version).
+  The *copy* does not: `record as of <rev>` renders it as a date. With same-day republishes becoming
+  visible to update detection, a rev that is no longer a bare date will read oddly in that sentence,
+  and the sentence is what needs a decision, not the comparison.
 - **D3 — What "active" means to the map and to the test harness.** `Tools/run_tests.sh` refuses a
   run on a leftover `active-city` marker and on a camera with no seed tree within 250 m of it
   (E202, E216). Both are single-inventory notions. The opening camera's choice among several live
@@ -149,13 +223,14 @@ determine them.
   the nearest tree and predicates every count on it, which still holds under a union. Whether the
   Journal's `City` segment and the almanac should now be able to speak about more than the city the
   reader is standing in is a separate question, and this entry does not open it.
-- **D5 — The attach cap.** Ten attached databases. Is the active set capped, and what does a row
-  say when the reader adds the eleventh?
+- **D5 — The attach cap.** Ten attached databases. Bundle plus seven packs is eight, plus `main`.
+  Is the installed set capped, and what does a row say at the cap?
 - **D6 — The canonical species catalog.** See above.
-- **D7 — `CityInstallState`.** `.bundled` and `.bundledOutdated` both mean "you already have this,
-  through the bundle". Under a union the second one's `Download` button buys a fresher copy of
-  ground the reader already sees, which is a different promise from the one the case was written
-  for.
+- **D7 — `CityInstallState`'s shape.** Decision 4 settles what the states *mean*; it does not settle
+  the type. The ordering defect named earlier — `installedVersion` tested before `bundled`, so a
+  bundled city that has ever been downloaded can never reach `.bundled` again — has to be fixed
+  whichever way the rest goes, and the fix is more than reordering two branches: a bundled city with
+  a downloaded copy is a state the enum has no case for, and it is the state decision 4 is about.
 - **D8 — Removal while contributing.** Removing a pack from the set has to rebuild the view and
   invalidate every cached prepared statement built against the old one. That is mechanical, but it
   is a lifecycle the current code has no equivalent of: today a switch reboots `DataLayer` whole.
