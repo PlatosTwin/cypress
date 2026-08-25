@@ -145,13 +145,18 @@ struct CumulativeInventoryTests {
         for tree in trees {
             let species = tree.speciesID.map(String.init) ?? "NULL"
             let hood = neighborhoods.first.map { String($0.id) } ?? "NULL"
+            // A real uuid, because `TreeQueries.decodePin` parses one and a fixture that hands it
+            // `sf-1` fails on the fixture rather than on the union. Derived from the id space and
+            // the row id so it is stable across runs and distinct across arms — two files that
+            // gave one tree two identities would hide a de-duplication defect.
+            let uuid = Self.uuid(space: tree.idSpace, id: tree.id)
             try connection.execute("""
                 INSERT INTO trees (
                     id, uuid, id_space, external_ref, source, inventory_source, lat, lon,
                     neighborhood_id, status, species_current, verification_state,
                     created_at, updated_at
                 ) VALUES (
-                    \(tree.id), '\(tree.idSpace)-\(tree.id)', '\(tree.idSpace)', '\(tree.id)',
+                    \(tree.id), '\(uuid)', '\(tree.idSpace)', '\(tree.id)',
                     'city_import', '\(tree.idSpace)_src', \(tree.lat), \(tree.lon),
                     \(hood), 'alive', \(species), 'city_record', 'x', 'x'
                 )
@@ -162,6 +167,13 @@ struct CumulativeInventoryTests {
                 """)
         }
         try connection.execute("ANALYZE")
+    }
+
+    /// A stable, distinct uuid per `(id space, row id)`. Deterministic so a rerun compares equal.
+    static func uuid(space: String, id: Int64) -> String {
+        let tail = String(format: "%012d", id)
+        let head = String(format: "%08x", abs(space.hashValue) % 0xFFFF_FFFF)
+        return "\(head)-0000-4000-8000-\(tail)"
     }
 
     /// The two species every fixture shares, by uuid. Their *ids* are what a divergent arm changes.
@@ -579,30 +591,54 @@ struct CumulativeInventoryTests {
         let queries = TreeQueries(
             schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees
         )
-        let viewport = MapViewport(
-            bounds: BoundingBox(
-                minLatitude: 37.69, maxLatitude: 37.72,
-                minLongitude: -122.42, maxLongitude: -122.39
-            ),
-            zoom: 18
+        let bounds = BoundingBox(
+            minLatitude: 37.69, maxLatitude: 37.72,
+            minLongitude: -122.42, maxLongitude: -122.39
         )
 
-        let pins = try await store.queue.read { connection in
-            try queries.pins(in: viewport, connection: connection)
-        }
-        #expect(pins.items.count == 4, "the union drew \(pins.items.count) pins for four trees")
-        #expect(
-            Set(pins.items.compactMap(\.speciesID)).count == 2,
-            "both arms' species should be represented: \(pins.items.map(\.speciesID))"
-        )
-
-        // The gridded path, forced: one cell per tree at this cell size, and every winner hydrates.
+        // **The gridded path, forced.** `pinLimit: 2` against four trees is what makes
+        // `pins(in:)` grid the viewport and then hydrate the winners, which is the only path that
+        // reaches `pins(rowIDs:)`. Left at the default budget these four trees come back through
+        // the un-gridded query and the hydration this test is named for never runs — which is
+        // exactly what an earlier version of it did, and a break that hydrated from the wrong arm
+        // stayed green.
+        let gridded = MapViewport(bounds: bounds, zoom: 18, pinLimit: 2, markerCellPoints: 44)
         let cells = try await store.queue.read { connection in
-            try queries.markerCells(in: viewport, cellPoints: 1, connection: connection)
+            try queries.markerCells(in: gridded, cellPoints: 1, connection: connection)
         }
         #expect(cells.count == 4, "the grid produced \(cells.count) cells for four trees")
         let arms = Set(cells.map { InventoryUnion.decomposedID($0.rowID).ordinal })
         #expect(arms == [0, 1], "the winners came from \(arms), not from both inventories")
+
+        let sampled = try await store.queue.read { connection in
+            try queries.pins(in: gridded, connection: connection)
+        }
+        // Every winner hydrates, exactly once, into the tree it actually is. A hydration that
+        // ignored the arm would read id 1 out of *both* files and hand back duplicates; one that
+        // read the wrong file would hand back the other city's tree under this one's id.
+        #expect(
+            sampled.items.count == 4,
+            "hydration returned \(sampled.items.count) pins for four winning cells"
+        )
+        let expected = Set(
+            [("sf", Int64(1)), ("sf", 2), ("us-ny-nyc", 1), ("us-ny-nyc", 2)]
+                .map { Self.uuid(space: $0.0, id: $0.1).lowercased() }
+        )
+        #expect(
+            Set(sampled.items.map { $0.id.uuidString.lowercased() }) == expected,
+            "hydration produced the wrong trees: \(sampled.items.map(\.id))"
+        )
+        // Both arms' species survive the round trip, so a pin drawn from arm 1 is arm 1's tree.
+        #expect(
+            Set(sampled.items.compactMap(\.speciesID)).count == 2,
+            "both arms' species should be represented: \(sampled.items.map(\.speciesID))"
+        )
+
+        // And the un-gridded path over the same box still answers for both inventories.
+        let whole = try await store.queue.read { connection in
+            try queries.pins(in: MapViewport(bounds: bounds, zoom: 18), connection: connection)
+        }
+        #expect(whole.items.count == 4, "the union drew \(whole.items.count) pins for four trees")
     }
 
     // MARK: - The attach cap (RULING D5)
