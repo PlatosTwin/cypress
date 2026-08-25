@@ -149,6 +149,11 @@ extension InventoryUnion {
         on connection: SQLiteConnection
     ) throws {
         let temp = SeedDatabase.schemaName
+        // **Only when some arm actually carries one.** Creating it unconditionally would make
+        // `SeedSchema.hasSpeciesTrigrams` read true for a union of files that have no trigram
+        // index, and the species search would take the similarity path against an empty table
+        // instead of the substring fallback ERRATA E165 shipped.
+        guard arms.contains(where: { $0.schema.hasSpeciesTrigrams }) else { return }
         try connection.execute("""
         CREATE TABLE \(temp).species_trigrams (
             trigram TEXT NOT NULL, species_id INTEGER NOT NULL,
@@ -249,12 +254,19 @@ extension InventoryUnion {
             }
         }
 
-        if let first = arms.first(where: { $0.schema.hasIdSpace }) {
+        // **Mirrored on the TABLE being there, not on `trees.id_space`.** A file can carry
+        // `id_spaces.short_name` and no `trees.id_space` at all — that shape is exactly what
+        // `CivicShortNameTests` exists for — and gating this on `hasIdSpace` hid the very column
+        // `SeedSchema.hasCivicShortNames` is read from.
+        let withIDSpaces = try arms.filter {
+            try connection.tableExists("id_spaces", in: $0.schemaName)
+        }
+        if let first = withIDSpaces.first {
             try mirrorTable(
                 "id_spaces", from: first, inlineConstraints: ["id": "PRIMARY KEY"], on: connection
             )
             let columns = try connection.columnNames(ofTable: "id_spaces", in: temp)
-            for arm in arms where arm.schema.hasIdSpace {
+            for arm in withIDSpaces {
                 // Asked of the arm rather than inferred from the first one: `city_id` arrived with
                 // s16, and an s15 file beside an s16 one is a configuration this build supports.
                 let armColumns = try connection.columnNames(ofTable: "id_spaces", in: arm.schemaName)
@@ -279,10 +291,17 @@ extension InventoryUnion {
             }
 
             try mirrorFirstWins(
-                "inventories", key: "id", arms: arms.filter { $0.schema.hasIdSpace },
+                "inventories", key: "id", arms: withIDSpaces,
                 inlineConstraints: ["id": "PRIMARY KEY"], on: connection
             )
         }
+
+        // `dim_region` — the s17 pack dimension. Keyed on `pack_id`, which is a pack's identity
+        // and deliberately not `dim_city.slug`.
+        try mirrorFirstWins(
+            "dim_region", key: "pack_id", arms: arms,
+            inlineConstraints: ["id": "PRIMARY KEY", "pack_id": "NOT NULL UNIQUE"], on: connection
+        )
 
         try mirrorFirstWins(
             "species_map", key: "qspecies_string", arms: arms,
@@ -320,22 +339,37 @@ extension InventoryUnion {
     /// An arm that predates a column projects `NULL` for it rather than being refused — the same
     /// posture `SeedSchema` takes everywhere else.
     static func treesSQL(arms: [InventoryArm]) -> String {
-        arms.map { arm in
+        // **A column is projected when SOME arm has it, and omitted entirely when none does.**
+        //
+        // Two rules in one, and both are load-bearing. A `UNION ALL` needs every arm to project the
+        // same columns, so an arm that predates one projects `NULL` for it rather than naming it —
+        // without that, `CREATE VIEW` over an older generation throws `no such column` and takes
+        // the whole union down. But a column NO arm has must not appear either, because
+        // `SeedSchema.introspect` reads the view to decide what the inventory carries: project a
+        // NULL `id_space` for a file that has none and `hasIdSpace` reads true, the profile query
+        // joins `id_spaces`, and a half-migrated file starts claiming a shape it does not have.
+        // `CivicShortNameTests`, `DimCityTests` and `RegionGenerationTests` each pin one of those
+        // shapes.
+        let present = arms.reduce(into: Set<String>()) { $0.formUnion($1.treeColumns) }
+        func has(_ column: String) -> Bool { present.contains(column) }
+        return arms.map { arm in
             let s = arm.schema
-            // A column this file does not have is projected as `NULL` rather than named — see
-            // `InventoryArm.treeColumns`. Without it a `CREATE VIEW` over an older generation
-            // throws `no such column` and takes the whole union with it.
             func tree(_ column: String) -> String {
                 arm.treeColumns.contains(column) ? "t.\(column)" : "NULL"
+            }
+            /// A column and its alias, or nothing at all when the union does not carry it.
+            func optional(_ column: String) -> String {
+                has(column) ? "\(tree(column)) AS \(column)," : ""
             }
             return """
             SELECT \(arm.ordinal) AS inv, t.id AS local_id,
                    (\(InventoryUnion.armStride) * \(arm.ordinal) + t.id) AS id,
                    t.\(s.treeIdentityColumn) AS uuid,
-                   \(tree("id_space")) AS id_space,
+                   \(optional("id_space"))
+                   \(optional("region_id"))
                    \(tree("external_ref")) AS external_ref,
                    \(tree("source")) AS source,
-                   \(tree("inventory_source")) AS inventory_source,
+                   \(optional("inventory_source"))
                    t.lat AS lat, t.lon AS lon,
                    \(tree("address")) AS address, \(tree("site_type")) AS site_type,
                    \(arm.treeColumns.contains("neighborhood_id") ? "hx.canon_id" : "NULL")
@@ -347,14 +381,16 @@ extension InventoryUnion {
                        AS species_uuid,
                    \(tree("planted_year")) AS planted_year, \(tree("planted_on")) AS planted_on,
                    \(tree("dbh_city_cm_min")) AS dbh_city_cm_min, \(tree("dbh_city_cm_max")) AS dbh_city_cm_max,
-                   \(arm.treeColumns.contains("site_lineage")
-                       ? "(\(InventoryUnion.armStride) * \(arm.ordinal) + t.site_lineage)"
-                       : "NULL") AS site_lineage,
+                   \(has("site_lineage")
+                       ? (arm.treeColumns.contains("site_lineage")
+                          ? "(\(InventoryUnion.armStride) * \(arm.ordinal) + t.site_lineage) AS site_lineage,"
+                          : "NULL AS site_lineage,")
+                       : "")
                    \(tree("verification_state")) AS verification_state,
                    \(tree("legal_status")) AS legal_status, \(tree("caretaker")) AS caretaker,
                    \(tree("care_assistant")) AS care_assistant, \(tree("plant_type")) AS plant_type,
                    \(tree("plot_size")) AS plot_size, \(tree("permit_notes")) AS permit_notes,
-                   \(tree("city_raw")) AS city_raw,
+                   \(optional("city_raw"))
                    \(tree("created_at")) AS created_at, \(tree("updated_at")) AS updated_at,
                    \(tree("deleted_at")) AS deleted_at
               FROM \(arm.schemaName).trees t
