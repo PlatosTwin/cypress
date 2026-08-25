@@ -1,6 +1,6 @@
 import Foundation
 
-/// The SQL half of `InventoryUnion`: the catalogues it materializes and the views over them.
+/// The SQL half of `InventoryUnion`: the catalogs it materializes and the views over them.
 ///
 /// Split from the type itself because it is text generation and nothing else — every function here
 /// takes arms and returns a statement, so the shapes it produces can be read as SQL rather than
@@ -24,7 +24,7 @@ import Foundation
 /// once, at open.
 extension InventoryUnion {
 
-    // MARK: - Catalogues
+    // MARK: - Catalogs
 
     /// Materializes every small table and the two translations that map each arm's own integers
     /// onto them.
@@ -35,7 +35,7 @@ extension InventoryUnion {
     /// *within* a file, and two cities may each have a `Downtown` — merging those would put San
     /// Jose's trees in a San Francisco neighborhood. Species are shared authored content and merge;
     /// neighborhoods are city data and do not.
-    static func createCanonicalCatalogues(
+    static func createCanonicalCatalogs(
         arms: [InventoryArm],
         on connection: SQLiteConnection
     ) throws {
@@ -73,9 +73,9 @@ extension InventoryUnion {
         INSERT INTO \(temp).species (\(list)) SELECT \(list) FROM \(first.schemaName).species
         """)
 
-        // Later arms contribute only species the catalogue does not already know, numbered above
+        // Later arms contribute only species the catalog does not already know, numbered above
         // the current maximum. `ROW_NUMBER() OVER (ORDER BY s.id)` makes that deterministic, so two
-        // runs over the same files build the same catalogue.
+        // runs over the same files build the same catalog.
         let tail = Self.renumbered(columns, alias: "s")
         for arm in arms.dropFirst() {
             try connection.execute("""
@@ -173,7 +173,7 @@ extension InventoryUnion {
 
     // MARK: Neighborhoods
 
-    /// Every arm's neighborhoods, appended whole and renumbered — see `createCanonicalCatalogues`
+    /// Every arm's neighborhoods, appended whole and renumbered — see `createCanonicalCatalogs`
     /// for why they are not merged by name.
     ///
     /// The offset is read back between arms rather than computed inside the statement, so the

@@ -147,7 +147,7 @@ enum CityDownloadsCopy {
     /// whole — `CityInstallState` compares `publishedRev > bundledRev` on the full value and splits
     /// nothing. Only this one rendering trims, because the sentence it lands in says `record as of`
     /// and a same-day republish spells that record `2026-08-22.02`, which reads as a version where
-    /// a date is promised. The live catalogue carries exactly that on all seven packs since the
+    /// a date is promised. The live catalog carries exactly that on all seven packs since the
     /// republish of 2026-08-25.
     ///
     /// **It trims only what it recognizes.** A bare `2026-08-22` is returned unchanged, and so is
@@ -583,7 +583,7 @@ struct CityDownloadRow: Equatable, Identifiable {
             isFailure: false,
             progress: nil,
             isOnDevice: true,
-            // A downloaded pack is in the union whether or not the catalogue can be reached to
+            // A downloaded pack is in the union whether or not the catalog can be reached to
             // describe it, so the only question an offline row can put is whether to keep it.
             affordances: [.remove]
         )
@@ -605,7 +605,7 @@ struct CityDownloadRow: Equatable, Identifiable {
     /// A bundled city whose rows a downloaded copy has replaced, described from **disk facts
     /// alone** — the offline twin of `CityInstallState.bundledUpdated`.
     ///
-    /// The catalogue is what decides whether an even newer record exists, so an offline row cannot
+    /// The catalog is what decides whether an even newer record exists, so an offline row cannot
     /// offer `Update` and does not pretend to. What it can say is which record is drawing and how
     /// to go back, and both are read out of the installed file's own receipt.
     static func bundledUpdatedOffline(

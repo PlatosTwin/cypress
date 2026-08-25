@@ -72,7 +72,7 @@ public enum CityInstallState: Equatable, Sendable {
         case .notInstalled, .updateAvailable, .bundledOutdated:
             return true
         case let .bundledUpdated(_, updateAvailable):
-            // A downloaded copy that is itself behind the catalogue. The fetch buys a newer record
+            // A downloaded copy that is itself behind the catalog. The fetch buys a newer record
             // for a city already on the phone, which is the same trade `.bundledOutdated` offers
             // one step earlier.
             return updateAvailable
@@ -213,7 +213,7 @@ public enum CityInstallState: Equatable, Sendable {
                 // looking at and offers to undo it — never `Remove`, which would read as removing a
                 // city the app cannot remove.
                 //
-                // Whether *that copy* is itself behind the catalogue is the same question
+                // Whether *that copy* is itself behind the catalog is the same question
                 // `.updateAvailable` asks, asked with the same helper, so a bundled city and a
                 // non-bundled pack cannot come to different conclusions about identical facts.
                 self = .bundledUpdated(

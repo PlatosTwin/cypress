@@ -55,7 +55,7 @@ public struct DataLayer: Sendable {
     ///
     /// Held so the composition root can draw `RemoteAccess.complaint` — a mistyped `CYPRESS_REMOTE`
     /// must be visible rather than silently safe (`DebugLocationOverride`'s rule) — and so a test
-    /// can assert what `boot` actually decided instead of inferring it from behaviour.
+    /// can assert what `boot` actually decided instead of inferring it from behavior.
     ///
     /// `RootView.runDebugEntryPoints()` is where it is drawn, first of the three launch-gate
     /// complaints. That sentence was a promise with nothing behind it until round-4 review pointed
@@ -329,7 +329,7 @@ public struct DataLayer: Sendable {
         //
         // **The send sink is omitted entirely when the gate is off**, rather than pointed at a
         // refusing transport. A refusing send sink would still count failures, move rows onto the
-        // backoff and put reasons on screen 17 — observable behaviour a UI test would then be
+        // backoff and put reasons on screen 17 — observable behavior a UI test would then be
         // asserting against a network that is not there. Omitting it restores exactly the wiring
         // every build before #158 shipped, which is the one the UI suite was green on.
         let outbox = OutboxQueue(

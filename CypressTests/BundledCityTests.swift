@@ -391,7 +391,7 @@ struct BundledCityTests {
             id: "sf", displayName: "San Francisco", contentRev: "2026-07-31"
         )
 
-        // The copy on disk holds what the catalogue offers: nothing further to fetch.
+        // The copy on disk holds what the catalog offers: nothing further to fetch.
         let current = CityInstallState(
             published: sf, installedVersion: sf.version,
             installedContentRev: "2026-08-20", installedSchemaVersion: sf.schemaVersion,

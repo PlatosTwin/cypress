@@ -514,12 +514,12 @@ struct CumulativeInventoryTests {
         SELECT COUNT(*) AS n FROM temp.species_trigrams g
          WHERE NOT EXISTS (SELECT 1 FROM temp.species s WHERE s.id = g.species_id)
         """)
-        #expect(orphanTrigrams == 0, "a trigram points at a species the catalogue does not have")
+        #expect(orphanTrigrams == 0, "a trigram points at a species the catalog does not have")
     }
 
-    /// A species only the pack carries is **added** to the catalogue rather than dropped, so search
+    /// A species only the pack carries is **added** to the catalog rather than dropped, so search
     /// and the species list cover the union rather than the first arm.
-    @Test("a species only one arm knows joins the canonical catalogue")
+    @Test("a species only one arm knows joins the canonical catalog")
     func aSpeciesOnlyOneArmKnowsIsKept() async throws {
         let dir = try Self.tempDir()
         let bundleURL = dir.appendingPathComponent("bundle.sqlite")
@@ -543,8 +543,8 @@ struct CumulativeInventoryTests {
         let store = try await Self.store([
             Self.file(bundleURL, bundled: true), Self.file(packURL, id: "manhattan")
         ])
-        let catalogue = try await Self.count(store, "SELECT COUNT(*) AS n FROM temp.species")
-        #expect(catalogue == 2, "the pack's own species was dropped, or the shared one duplicated")
+        let catalog = try await Self.count(store, "SELECT COUNT(*) AS n FROM temp.species")
+        #expect(catalog == 2, "the pack's own species was dropped, or the shared one duplicated")
         let honeyLocustTrees = try await Self.count(store, """
         SELECT COUNT(*) AS n FROM temp.trees t JOIN temp.species s ON s.id = t.species_current
          WHERE s.scientific_name = 'Gleditsia triacanthos'
@@ -659,7 +659,7 @@ struct CumulativeInventoryTests {
             store.attachedDatabaseLimit >= 2,
             "SQLITE_LIMIT_ATTACHED is \(store.attachedDatabaseLimit); the bundle alone fills it"
         )
-        // The shipping catalogue is the bundle plus seven packs. If this ever fails, the cap copy
+        // The shipping catalog is the bundle plus seven packs. If this ever fails, the cap copy
         // is doing real work and the number in `docs/` has moved.
         #expect(
             store.attachedDatabaseLimit >= 8,
@@ -706,7 +706,7 @@ struct CumulativeInventoryTests {
 
     /// **The counter suffix comes off in copy, and nothing else does.**
     ///
-    /// The live catalogue carries `2026-08-22.02` on all seven packs since the republish, so the
+    /// The live catalog carries `2026-08-22.02` on all seven packs since the republish, so the
     /// first case is the shipping one rather than a hypothetical.
     @Test("a record date renders without its publisher counter, and only when it is one")
     func recordDateStripsOnlyTheCounter() {
@@ -770,8 +770,8 @@ struct CumulativeInventoryTests {
 
     /// With only the bundle attached there is no third clause to apply, and the map opens exactly
     /// where it always did.
-    @Test("the opening centre is nil with only the bundle, and the largest pack's otherwise")
-    func openingCentreFollowsTheLargestDownloadedInventory() async throws {
+    @Test("the opening center is nil with only the bundle, and the largest pack's otherwise")
+    func openingCenterFollowsTheLargestDownloadedInventory() async throws {
         let dir = try Self.tempDir()
         let bundleURL = dir.appendingPathComponent("bundle.sqlite")
         let small = dir.appendingPathComponent("small.sqlite")
@@ -800,7 +800,7 @@ struct CumulativeInventoryTests {
         let bundleOnly = try await Self.store([Self.file(bundleURL, bundled: true)])
         #expect(
             bundleOnly.inventory?.openingCenter == nil,
-            "a bundle-only launch computed an opening centre; it must degrade to the default"
+            "a bundle-only launch computed an opening center; it must degrade to the default"
         )
 
         let withPacks = try await Self.store([
@@ -814,7 +814,7 @@ struct CumulativeInventoryTests {
         #expect(abs(center.latitude - 40.75) < 0.01, "opened at \(center), not on the larger pack")
         #expect(abs(center.longitude - -73.98) < 0.01, "opened at \(center)")
 
-        // And the region built from it is centred there rather than on San Francisco.
+        // And the region built from it is centerd there rather than on San Francisco.
         let region = MapOpening.openingRegion(remembered: nil, downloadedCityCenter: center)
         #expect(abs(region.center.latitude - 40.75) < 0.01)
         // A remembered camera still wins over it — D3's second clause outranks the third.

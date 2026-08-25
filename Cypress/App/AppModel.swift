@@ -42,7 +42,7 @@ final class AppModel {
     ///
     /// **A whole-layer reboot, deliberately, and it is the honest one.** Adding or removing an arm
     /// invalidates more than the files: the union's views are rebuilt over a different set of
-    /// schemas, the canonical species catalogue is renumbered, and every prepared statement in the
+    /// schemas, the canonical species catalog is renumbered, and every prepared statement in the
     /// connection's cache was compiled against the old views. Dropping and recreating in place
     /// would have to get all three right at once, on a connection other code may be mid-read on;
     /// booting again gets them right by construction, and it is the path every launch already

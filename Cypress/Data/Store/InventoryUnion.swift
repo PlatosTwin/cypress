@@ -27,7 +27,7 @@ import Foundation
 /// first-encounter order while `Tools/build_seed.py` streams its sources, so two builds over
 /// different city sets number the same species differently. A literal union would let one file's
 /// `species_current = 24` join another file's row 24 and put the wrong name on the tree. The
-/// answer is a canonical catalogue materialized at open, keyed by uuid, plus a per-arm translation
+/// answer is a canonical catalog materialized at open, keyed by uuid, plus a per-arm translation
 /// table — see `canonicalSpeciesSQL`. Every existing `JOIN species s ON s.id = t.species_current`
 /// and `GROUP BY s.id` then keeps working unchanged, which is why this shape was chosen over
 /// re-keying fifteen join sites to uuid.
@@ -96,13 +96,13 @@ public struct InventoryUnion: Sendable, Equatable {
     /// D3's order is: a location fix inside any live inventory wins; failing that, the camera this
     /// install was last left on; failing that, the largest downloaded inventory. This is the third
     /// clause, and it is the only one the union had to supply — the first two are
-    /// `MapOpening.openingRegion`'s existing behaviour and are unchanged by this round.
+    /// `MapOpening.openingRegion`'s existing behavior and are unchanged by this round.
     ///
-    /// **Nil is the whole of "degrades to today's behaviour".** With no downloaded city there is no
+    /// **Nil is the whole of "degrades to today's behavior".** With no downloaded city there is no
     /// third clause to apply, `MapLayout.defaultCenter` answers exactly as it always has, and a
     /// launch in the shipping configuration pays nothing to compute this.
     ///
-    /// The centre is the mean of that arm's own coordinates — measured at 41 ms over 145,837 rows,
+    /// The center is the mean of that arm's own coordinates — measured at 41 ms over 145,837 rows,
     /// once, at open, off the main thread. A mean rather than the densest cell: the cell would be a
     /// better answer and costs a grouped scan of the whole arm, and what this decides is where a
     /// reader who downloaded Manhattan and has never opened the map lands. The middle of Manhattan
@@ -121,7 +121,7 @@ public struct InventoryUnion: Sendable, Equatable {
 
     // MARK: - Building
 
-    /// Attaches every file, builds the canonical catalogues and creates the views.
+    /// Attaches every file, builds the canonical catalogs and creates the views.
     ///
     /// `files` is taken in the order given except that the bundled file is moved to ordinal 0.
     /// Attaching happens outside any transaction, which `ATTACH` requires.
@@ -174,7 +174,7 @@ public struct InventoryUnion: Sendable, Equatable {
         }
 
         arms = try applyShadowing(to: arms, on: connection)
-        try createCanonicalCatalogues(arms: arms, on: connection)
+        try createCanonicalCatalogs(arms: arms, on: connection)
         try createViews(arms: arms, on: connection)
 
         let schema = try SeedSchema.introspect(connection, schema: SeedDatabase.schemaName)

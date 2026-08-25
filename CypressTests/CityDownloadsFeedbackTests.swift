@@ -1184,7 +1184,7 @@ struct CityDownloadsFeedbackTests {
     /// that test cancels *after* the download starts and cannot reach this ordering, which is why
     /// this one exists.
     ///
-    /// **What it pins and what it does not.** It pins the reader-visible behaviour: entering
+    /// **What it pins and what it does not.** It pins the reader-visible behavior: entering
     /// `downloadCity` already cancelled ends as a cancellation, promptly. It does *not* claim the
     /// handshake is the only thing standing between here and a hang — probed, a download task
     /// cancelled and never resumed still delivers `didCompleteWithError(-999)`, so URLSession would

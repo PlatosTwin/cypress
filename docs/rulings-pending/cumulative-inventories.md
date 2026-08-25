@@ -211,11 +211,11 @@ below when this entry was written; each is now settled, and the implementation i
   another.` An *update* is never withheld: it reuses the slot that city already holds.
 - **D3 — the opening camera.** A location fix inside any live inventory wins; failing that, the
   camera this install was last left on; failing that, the largest downloaded inventory. With
-  nothing downloaded it degrades to today's behaviour exactly.
+  nothing downloaded it degrades to today's behavior exactly.
 - **D4 — per-city aggregates stay per-city.** The Journal's `City` segment and the almanac keep
   resolving an id space from the nearest tree. No cross-inventory aggregate is opened.
 - **D10 — `content_rev` in copy.** The rendered sentence strips any publisher counter suffix (a
-  bare date), and **every comparison keeps the full opaque string**. The live catalogue has
+  bare date), and **every comparison keeps the full opaque string**. The live catalog has
   carried revisions like `2026-08-22.02` on all seven packs since the republish of 2026-08-25, so
   both halves are exercised against the shipping shape rather than a fixture.
 
@@ -223,9 +223,9 @@ below when this entry was written; each is now settled, and the implementation i
 
 D6, D7 and D8 were delegated to the implementation. What follows is what was built and why.
 
-### D6 — the canonical species catalogue
+### D6 — the canonical species catalog
 
-**Chosen: one canonical catalogue, materialized at open into `temp.species`, keyed by
+**Chosen: one canonical catalog, materialized at open into `temp.species`, keyed by
 `species.uuid`, with a per-arm translation table mapping that arm's local `species_current` onto
 it.** Every existing `JOIN species s ON s.id = t.species_current` and `GROUP BY s.id` keeps
 working unchanged.
@@ -268,7 +268,7 @@ sectioning, its buttons and its copy cannot reach different conclusions about th
 ### D8 — the removal lifecycle
 
 **Chosen: a whole-layer reboot, and it is stated rather than hidden.** Adding or removing an arm
-rebuilds the views over a different set of schemas and renumbers the canonical species catalogue.
+rebuilds the views over a different set of schemas and renumbers the canonical species catalog.
 Dropping and recreating in place would have to get both right on a connection other code may be
 mid-read on; booting again gets them right by construction and is the path every launch already
 takes. `CityDownloadsModel` therefore calls `onInventoryChange()` on **every** completed install

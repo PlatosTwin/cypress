@@ -558,7 +558,7 @@ public struct TreeQueries {
         // constant inside each arm and `t.local_id` is that arm's own rowid alias.
         //
         // The statement text is constant across arms and camera changes, so `cachedStatement` still
-        // holds one prepared copy; what varies is two bindings. Today's catalogue puts every winner
+        // holds one prepared copy; what varies is two bindings. Today's catalog puts every winner
         // in one or two arms.
         let statement = try connection.cachedStatement("""
         SELECT \(pinColumns)

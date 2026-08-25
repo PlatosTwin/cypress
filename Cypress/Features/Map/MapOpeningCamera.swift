@@ -361,7 +361,7 @@ enum MapOpening {
     /// nothing downloaded it is reached on exactly the launches it always was.
     ///
     /// - Parameter downloadedCityCenter: `InventoryUnion.openingCenter`. Nil when the bundled seed
-    ///   is the only inventory, which is what makes this degrade to the previous behaviour rather
+    ///   is the only inventory, which is what makes this degrade to the previous behavior rather
     ///   than approximate it.
     static func openingRegion(
         remembered: MapCameraMemory.Snapshot?,
