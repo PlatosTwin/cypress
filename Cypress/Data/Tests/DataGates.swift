@@ -1029,12 +1029,31 @@ public enum DataGates {
             into: &failures
         )
 
-        // Every tree joins to exactly one rectangle.
-        let orphanedTrees = try await count("""
-            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).trees t
-             WHERE NOT EXISTS (SELECT 1 FROM \(SeedDatabase.schemaName).trees_rtree r WHERE r.id = t.\(schema.rtreeJoinColumn))
-            """)
-        expect(orphanedTrees == 0, "seed contract: \(orphanedTrees) trees have no R*Tree rectangle", into: &failures)
+        // Every tree joins to exactly one rectangle — **asked of each inventory FILE, arm by arm.**
+        //
+        // Written against `temp.trees` this is quadratic and does not finish: the union's
+        // `trees_rtree` is a view over the arms' virtual tables, so `NOT EXISTS (… r.id = t.id)`
+        // has no index to seek and scans the whole rtree view once per tree row. Against the
+        // shipped seed that is 198,625² page reads, which presents as a 99 %-CPU hang in the unit
+        // suite rather than as a slow test. Aimed at the arm, each `r.id` lookup is the rtree's own
+        // integer primary key again.
+        //
+        // It is also the more honest question: the invariant belongs to a published file, and a
+        // file that satisfies it does not stop satisfying it because another one was attached.
+        for arm in store.inventory?.arms ?? [] {
+            let orphaned = try await count("""
+                SELECT COUNT(*) AS n FROM \(arm.schemaName).trees t
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM \(arm.schemaName).trees_rtree r
+                      WHERE r.id = t.\(arm.schema.rtreeJoinColumn)
+                 )
+                """)
+            expect(
+                orphaned == 0,
+                "seed contract: \(orphaned) trees in '\(arm.id)' have no R*Tree rectangle",
+                into: &failures
+            )
+        }
 
         // Identity is present, unique, and parses as a UUID.
         let badUUIDs = try await count("""
@@ -1129,13 +1148,26 @@ public enum DataGates {
             into: &failures
         )
 
-        // Species assertions point at real rows.
-        let danglingAssertions = try await count("""
-            SELECT COUNT(*) AS n FROM \(SeedDatabase.schemaName).species_assertions a
-             WHERE NOT EXISTS (SELECT 1 FROM \(SeedDatabase.schemaName).trees t WHERE t.id = a.tree_id)
-                OR NOT EXISTS (SELECT 1 FROM \(SeedDatabase.schemaName).species s WHERE s.id = a.species_id)
-            """)
-        expect(danglingAssertions == 0, "seed contract: \(danglingAssertions) species assertions dangle", into: &failures)
+        // Species assertions point at real rows — **arm by arm, for the reason the R*Tree check
+        // above gives at length**: through the union's views neither `t.id` nor `s.id` has an
+        // index to seek, so each of the 173,538 assertions would scan 198,625 trees. Against the
+        // files it is two integer-primary-key lookups per row, which is what it always was.
+        for arm in store.inventory?.arms ?? [] {
+            let dangling = try await count("""
+                SELECT COUNT(*) AS n FROM \(arm.schemaName).species_assertions a
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM \(arm.schemaName).trees t WHERE t.id = a.tree_id
+                 )
+                    OR NOT EXISTS (
+                     SELECT 1 FROM \(arm.schemaName).species s WHERE s.id = a.species_id
+                 )
+                """)
+            expect(
+                dangling == 0,
+                "seed contract: \(dangling) species assertions dangle in '\(arm.id)'",
+                into: &failures
+            )
+        }
 
         // --- Query plans. Every hot query must resolve through an index.
         let queries = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
@@ -1153,10 +1185,18 @@ public enum DataGates {
                     "idx_trees_lat_lon"
                 ),
                 (
+                    // **`trees_geo`, because that is the relation a clustered viewport reads.**
+                    // The union's full `trees` carries `species_current` and a neighborhood id,
+                    // and a compound view's width is paid per row — SQLite materializes it as a
+                    // co-routine and does not prune columns the outer query never asks for — so
+                    // the covering index is lost the moment this reads the wide view.
+                    // `TreeQueries.geometrySource` is where the app makes the same choice, and
+                    // `MapQueryPlanTests` explains the SQL it actually emits rather than this
+                    // paraphrase of it (ERRATA E130).
                     "viewport clusters",
                     """
                     SELECT CAST((t.lat + 90.0) / 0.002 AS INTEGER) cy, COUNT(*) n
-                      FROM \(SeedDatabase.schemaName).trees t
+                      FROM \(SeedDatabase.schemaName).trees_geo t
                      WHERE t.lat BETWEEN 37.69 AND 37.85 AND t.lon BETWEEN -122.54 AND -122.33
                      GROUP BY cy
                     """,
@@ -1223,7 +1263,8 @@ public enum DataGates {
             let unchecked = try connection.prepare("""
                 SELECT COUNT(*) AS n
                   FROM \(SeedDatabase.schemaName).trees_rtree r
-                  JOIN \(SeedDatabase.schemaName).trees t ON t.\(schema.rtreeJoinColumn) = r.id
+                  JOIN \(SeedDatabase.schemaName).trees t
+                    ON t.inv = r.inv AND t.local_id = r.id
                  WHERE r.max_lat >= :minLat AND r.min_lat <= :maxLat
                    AND r.max_lon >= :minLon AND r.min_lon <= :maxLon
                    AND t.deleted_at IS NULL
