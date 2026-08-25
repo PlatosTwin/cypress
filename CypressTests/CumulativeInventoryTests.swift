@@ -830,12 +830,20 @@ struct CumulativeInventoryTests {
 
     // MARK: - Lifecycle (RULING D8)
 
-    /// **Removing an inventory tears the union down and rebuilds it**, and the prepared statements
-    /// compiled against the old views do not survive into the new ones.
+    /// **Removing an inventory tears the union down and rebuilds it**, and the rebuilt union
+    /// answers for the file set it was given rather than for the one before it.
     ///
-    /// The app does this by re-booting `DataLayer` whole (`AppModel.reboot`). What is asserted here
-    /// is the property that makes the reboot correct: a second union over a different file set
-    /// answers for that set and nothing lingers from the first.
+    /// The app does this by re-booting `DataLayer` whole (`AppModel.reboot`); this asserts the
+    /// property that makes the reboot correct.
+    ///
+    /// **What it deliberately does NOT claim is anything about the statement cache.** An earlier
+    /// version of this comment said the statements compiled against the old views "do not
+    /// survive", and its red-proof — removing `clearStatementCache()` from the teardown — stayed
+    /// green. So did a second one that removed the clear from `SQLiteConnection.detach` as well.
+    /// SQLite re-prepares a cached statement when the schema changes under it, and it does not
+    /// refuse a `DETACH` for a statement that is merely prepared. The clear is defensive and this
+    /// test does not pretend to demonstrate a need for it — see `InventoryUnion.tearDownEverything`,
+    /// where both withdrawn justifications are recorded.
     @Test("a rebuilt union answers for the new file set, with no stale statement")
     func rebuildingTheUnionDropsEverythingBehindIt() async throws {
         let dir = try Self.tempDir()
@@ -874,7 +882,7 @@ struct CumulativeInventoryTests {
         let armOne = try await Self.count(
             store, "SELECT COUNT(*) AS n FROM temp.trees WHERE inv = 1"
         )
-        #expect(armOne == 0, "a statement cached against the old views survived the rebuild")
+        #expect(armOne == 0, "the rebuilt union still returns rows for the detached file")
     }
 
     /// A file this build cannot read is **skipped, not fatal**: the rest of the union opens.

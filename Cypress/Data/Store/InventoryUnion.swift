@@ -189,9 +189,21 @@ public struct InventoryUnion: Sendable, Equatable {
 
     /// Drops every view and table this type created and detaches every arm.
     ///
-    /// The statement cache is cleared first and by `detach` again per arm: a prepared statement
-    /// compiled against a view that is about to stop existing is exactly the stale handle
-    /// RULINGS D8 is about.
+    /// **The statement cache is cleared defensively, and neither reason it is easy to give for it
+    /// survived being checked.**
+    ///
+    /// Two claims were written here and both were measured and withdrawn. *"A statement compiled
+    /// against a view that is about to stop existing is a stale handle"* — it is not: SQLite
+    /// re-prepares a cached statement by itself when the schema changes under it, and a rebuilt
+    /// union answers correctly with this line removed. *"A live prepared statement makes `DETACH`
+    /// fail"* — not for a merely prepared one: with the clear removed here **and** from
+    /// `SQLiteConnection.detach`, every arm still detached and the suite stayed green. SQLite
+    /// refuses a `DETACH` for a statement that is mid-step, which a rebuild between reads is not.
+    ///
+    /// It is kept because it costs nothing at the one moment the whole layer is being replaced, and
+    /// because it removes the class of question rather than leaving it to a reasoning step. What it
+    /// must not carry is a justification nothing tests — the comment is the thing being corrected
+    /// here, not the code.
     public static func tearDown(_ union: InventoryUnion, on connection: SQLiteConnection) throws {
         try tearDownEverything(on: connection)
     }
