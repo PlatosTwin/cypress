@@ -648,7 +648,7 @@ struct TreeProfilePresentation {
     /// It is drawn exactly when a photograph *could* be added — `acceptsContributions` gates it — and
     /// `LocationPrompt` (E123) already settled that a dashed-ring card in this vocabulary is tappable
     /// when a user action would fill it. A camera glyph inside a dashed frame, sitting above a button
-    /// that says "Be the first to photograph this tree", is the most photograph-shaped hole in the
+    /// that says "Add the first photo of this tree", is the most photograph-shaped hole in the
     /// app; leaving it inert made it the one dashed card here that refused the tap.
     ///
     /// The hint, not the label: the label is the well's own sentence, which states the fact, and R2's
@@ -731,9 +731,15 @@ struct TreeProfilePresentation {
 
     // MARK: - Primary action
 
-    /// Verbatim from 03 and 14.
+    /// What the button does, on both arms.
+    ///
+    /// **No longer verbatim from 03 and 14.** The mock's `Visit · say hello with a photo` and
+    /// `Be the first to photograph this tree` were rewritten by the copy audit of 2026-08-23
+    /// (R3/R4, owner-approved): the first is the demo-era voice on the most-visited screen in the
+    /// app, and the second reads as a prize for arriving early rather than as a description of the
+    /// tap. `SCREENS.md` 746 and 1231 are struck to match, so the mock cannot restore them.
     var ctaTitle: String {
-        isCold ? "Be the first to photograph this tree" : "Visit · say hello with a photo"
+        isCold ? "Add the first photo of this tree" : "Visit · add a photo"
     }
 
     // MARK: - Secondary action (screen 05)
@@ -1313,42 +1319,23 @@ struct TreeProfilePresentation {
     /// puts under the stat grid keeps landing under whatever is genuinely last.
     var showsCityDetails: Bool { landContextNote != nil || showsCityRecordSection }
 
-    // MARK: - Cold-start footnote
-
-    /// 14's footnote, verbatim — minus its first sentence when that sentence would be false.
-    ///
-    /// The drawn copy reads `A young tree nobody has visited. This is the almanac’s “walk the nine”
-    /// list, one tree at a time.` The second sentence is true of every cold profile. The first is a
-    /// claim about *this* tree, and D8 puts this variant in front of every tree in the city
-    /// inventory, including 1890s cypresses. So the age claim renders only where the city record
-    /// supports it, and nothing is reworded to cover the gap.
-    ///
-    /// **Judgment call, not in the spec:** `recentPlantingWindowYears`. SCREENS.md says nothing
-    /// about what makes a tree "young"; ten years is a street-tree establishment horizon and is
-    /// named here so it can be argued with in one place.
-    ///
-    /// **ERRATA E129 kept this sentence and changed what it describes.** Until E129 the almanac's
-    /// `Walk the nine` button opened one tree's profile, so "one tree at a time" was not a
-    /// description of a list — it was the whole destination, and this footnote was the app explaining
-    /// a missing screen from inside the wrong one. The button now opens a map of all nine and a tap on
-    /// a pin lands here, so the reader arriving at this sentence has seen the list and chosen one tree
-    /// of it. The words are unchanged because they are specified verbatim (SCREENS.md 14 §7) and are
-    /// now simply true; deleting a drawn string because the route around it improved would be a design
-    /// change, and this round had no standing to take one.
-    var coldStartFootnote: String {
-        guard isCold else { return "" }
-        let almanac = "This is the almanac’s “walk the nine” list, one tree at a time."
-        guard isRecentPlanting else { return almanac }
-        return "A young tree nobody has visited. " + almanac
-    }
-
-    static let recentPlantingWindowYears = 10
-
-    private var isRecentPlanting: Bool {
-        guard let plantedYear = tree.plantedYear else { return false }
-        let thisYear = calendar.component(.year, from: now)
-        return thisYear - plantedYear <= TreeProfilePresentation.recentPlantingWindowYears
-    }
+    // MARK: - Cold-start footnote (removed 2026-08-23)
+    //
+    // Screen 14 §7 drew `A young tree nobody has visited. This is the almanac's "walk the nine"
+    // list, one tree at a time.` — the sentence the owner named when he ordered the copy audit, as
+    // the example of the app narrating itself. It is gone, with SCREENS.md 14 §7 struck to match.
+    //
+    // **Read this before restoring it from the mock, because it was nearly kept twice.** ERRATA
+    // E129 changed what the sentence described (the `Walk the nine` button used to open one tree's
+    // profile; it now opens a map of all nine) and kept the words on the grounds that they were
+    // specified verbatim and had become true — "deleting a drawn string because the route around it
+    // improved would be a design change, and this round had no standing to take one." The copy
+    // audit is the round with that standing: the owner ruled on 2026-08-23 that a line explaining
+    // the app's own navigation to the reader comes out whether or not it is true.
+    //
+    // Gone with it: `recentPlantingWindowYears` (a ten-year establishment horizon that existed only
+    // to decide whether the first sentence was safe to draw) and `isRecentPlanting`. `isCold` is
+    // untouched — it gates the quad-action row and the CTA variant, and seven tests turn on it.
 
     // MARK: - Filtered series
 

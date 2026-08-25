@@ -3,10 +3,12 @@ import Foundation
 /// The payload behind `GET /me/grove`'s Species tab — screen 08, "Species you know".
 ///
 /// Private by default (D11): there is no query here that could return another contributor's grove,
-/// and nothing on this payload is ever published. The screen it feeds prints "There are no streaks
-/// and no leaderboards" in its own footnote, and the shape of this type is what makes that true —
-/// it carries species and dates, and no count of anybody's visits, photographs or care events (D1,
-/// ARCHITECTURE §5.1).
+/// and nothing on this payload is ever published. No streaks and no leaderboards — screen 08 said
+/// so in a §6 footnote until the copy audit of 2026-08-23 removed it (owner ruling), and the rule
+/// was never the sentence's: it is D1's, and the shape of this type is what makes it true. This
+/// carries species and dates, and no count of anybody's visits, photographs or care events (D1,
+/// ARCHITECTURE §5.1), so there is nothing here to rank a contributor by whether or not a screen
+/// says there is not.
 ///
 /// **Why the two halves are separate.** The screen shows a ring reading `12 of 40 species` over the
 /// caption `you can recognize in the Outer Sunset`, so the numerator is a fact about the

@@ -284,7 +284,9 @@ struct MeasurePresentation {
         return MeasureCopy.verdict(delta: delta, unit: draft.unit, span: span)
     }
 
-    /// The "sure about that?" of 16's footnote, or nil.
+    /// The "sure about that?" 16's footnote used to describe, or nil. It is the only place that
+    /// question is asked now — the footnote that announced it came out in the copy audit of
+    /// 2026-08-23 (R10).
     ///
     /// SCREENS.md §5 gap 10 lists this as described in copy only, with no drawing. It is built as a
     /// **line above the CTA rather than a dialog that gates the save**, because a gate would
@@ -321,18 +323,15 @@ struct MeasurePresentation {
         }
     }
 
-    // MARK: §7 Footnote
+    // MARK: §2's DBH help
 
-    /// 16 §7, verbatim, minus its first sentence when that sentence is not about this reading.
+    /// `MeasureCopy.dbhHelp` when a trunk is being measured, and nothing over a height.
     ///
-    /// `Taken at 1.4 m` is the DBH convention (BUILD-PLAN §4 `measurement_height_m … for dbh`), and
-    /// `TreeMeasurement.height` carries no measurement height at all, by construction. Printing it
-    /// over a height reading would describe a column that row does not have. The second sentence
-    /// stands on both, because `anomaly` above is what it describes.
-    var footnote: String {
-        draft.kind == .dbh
-            ? MeasureCopy.footnoteDBH + " " + MeasureCopy.footnoteAnomaly
-            : MeasureCopy.footnoteAnomaly
+    /// This is what is left of §7's footnote after the copy audit of 2026-08-23: the slot is gone
+    /// and the 1.4 m moved up beside the control it describes. The arm is the footnote's own —
+    /// `TreeMeasurement.height` has no measurement height, so the sentence is not printed over one.
+    var dbhHelp: String? {
+        draft.kind == .dbh ? MeasureCopy.dbhHelp : nil
     }
 
     // MARK: Helpers
@@ -424,8 +423,8 @@ enum MeasureCopy {
 
     // MARK: The "sure about that?" states (§5 gap 10)
 
-    /// **NOT SPECIFIED.** A trunk that shrank is the case 16's footnote names out loud. The sentence
-    /// asks and then gets out of the way: submission is never blocked (DECISIONS §2.5).
+    /// **NOT SPECIFIED.** A trunk that shrank is the case 16's footnote used to name out loud. The
+    /// sentence asks and then gets out of the way: submission is never blocked (DECISIONS §2.5).
     static let anomalyShrunkTrunk = "Sure about that? That is smaller than the last reading. Save it anyway if that is what the tape says."
     /// The same question for a height, which shrinks for reasons a trunk does not (a lost limb).
     static let anomalyShrunk = "Sure about that? That is smaller than the last reading. Save it anyway if that is what you measured."
@@ -448,12 +447,25 @@ enum MeasureCopy {
     /// assumed good" (`CoreEntity`, D6).
     static let chartNoticeNoFix = "Without a location fix the reading is saved but stays off the growth chart."
 
-    // MARK: §7's footnote
+    // MARK: §7's footnote — removed, and the one fact it carried
 
-    /// §7's first sentence, verbatim. DBH only; a height carries no measurement height at all.
-    static let footnoteDBH = "Taken at 1.4 m, tape in one hand."
-    /// §7's second sentence, verbatim, including its typographic quotes. It describes `anomaly`.
-    static let footnoteAnomaly = "A shrinking trunk gets a “sure about that?” before it saves."
+    /// The DBH convention, drawn under the control that selects it.
+    ///
+    /// **This is §7's first sentence, rewritten and moved** (copy audit of 2026-08-23: R9, plus the
+    /// same day's ruling that the footnote slot itself comes out). `Taken at 1.4 m, tape in one
+    /// hand.` was one fact and one pose. The fact is the 1.4 m — it is what makes two readings of
+    /// one trunk comparable — and the owner ruled that it survives inline while the slot dies.
+    ///
+    /// It sits in §2 rather than at the foot of the screen because it defines what §2's segmented
+    /// control selects, and it draws only on the DBH arm: `TreeMeasurement.height` carries no
+    /// measurement height at all (BUILD-PLAN §4, `measurement_height_m … for dbh`), so over a
+    /// height reading it would describe a column that row does not have.
+    static let dbhHelp = "DBH is measured at 1.4 m above the ground."
+
+    // §7's second sentence — `A shrinking trunk gets a “sure about that?” before it saves.` — is
+    // gone with no replacement (R10). `anomalyShrunkTrunk` puts that question on the screen at the
+    // moment it applies, which is where a reader can act on it; the footnote described the state to
+    // everybody who was not in it.
 
     // MARK: Failure
 
@@ -553,9 +565,14 @@ enum MeasureMetrics {
     /// §5: each key is `padding:14px 0`.
     static let keyPaddingV: CGFloat = 14
     /// §6: `margin-top:auto; padding:14px 18px 8px`.
+    ///
+    /// The `8px` was the gap down to §7's footnote. The footnote came out in the copy audit of
+    /// 2026-08-23 and the CTA now carries `CypressSpacing.bottomFootnote` instead, so `ctaBottom`
+    /// survives only as the gap above the chart notice, which is the other thing that sits against
+    /// the CTA.
     static let ctaTop: CGFloat = 14
     static let ctaGutter: CGFloat = 18
     static let ctaBottom: CGFloat = 8
-    /// §7: `padding:0 24px 36px`.
-    static let footnoteGutter: CGFloat = 24
+    // §7's `padding:0 24px 36px` went with the footnote in the same audit. The 36pt survives as the
+    // screen's closing space, on the CTA block.
 }

@@ -648,7 +648,10 @@ enum VisitAddTreeCopy {
     /// is the failure mode `VisitAddTreeModel.species` argues this whole row must avoid.
     static func species(_ species: Species?) -> String {
         guard let species else {
-            return "No species will be recorded. An unnamed tree is still a tree on the map."
+            // R11, copy audit of 2026-08-23: the second sentence used to read "An unnamed tree is
+            // still a tree on the map" — an aphorism where the row's job is to say what the record
+            // will hold. The reassurance it carries is the same either way.
+            return "No species will be recorded. The tree still goes on the map."
         }
         let name = species.commonName.isEmpty ? species.scientificName : species.commonName
         return "This will be recorded as your claim that it is a \(name) — "
@@ -670,7 +673,10 @@ enum VisitAddTreeCopy {
     /// not let a reader forget that between tapping a chip and pressing the CTA.
     static func land(_ context: LandContext?) -> String {
         guard let context else {
-            return "Where it stands will not be recorded. The tree goes on the map either way."
+            // R12, copy audit of 2026-08-23. `The tree goes on the map either way.` came off: it
+            // is `species(_:)`'s reassurance said a second time on the same form, one row down,
+            // about a different unanswered question. Once is the sentence; twice is coaxing.
+            return "Where it stands will not be recorded."
         }
         return "This will be recorded as your answer that it stands "
             + "\(LandContextCopy.standing(context))."
@@ -695,10 +701,17 @@ enum VisitAddTreeCopy {
     static let footnote =
         "Recorded as community-added and unverified, on this phone."
 
-    static let noPhoto = "A photo is what makes this a record of a tree rather than a pin."
-    static let noLocationPending = "Waiting for a fix. A tree is a place, so it cannot be added without one."
+    /// Why the CTA is disabled, in the three cases where it is.
+    ///
+    /// All three were rewritten by the copy audit of 2026-08-23 (R13, R17, R18, owner-approved).
+    /// Each used to argue for its own rule — `A photo is what makes this a record of a tree rather
+    /// than a pin`, and `a tree is a place` twice, in two of the three. A disabled control has to
+    /// say what would enable it; the aphorism was the app defending the requirement to somebody who
+    /// had already met it or could not.
+    static let noPhoto = "A photo is required to add a tree."
+    static let noLocationPending = "Waiting for a location fix. A tree cannot be added without one."
     static let noLocationDenied =
-        "Cypress cannot see where you are, and a tree is a place. Turn location on in Settings to add one."
+        "Cypress cannot see where you are. Turn location on in Settings to add a tree."
 
     static func photoNotStored(_ error: Error) -> String {
         "That photo could not be saved to this phone: \(error.localizedDescription)"

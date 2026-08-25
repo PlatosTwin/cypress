@@ -119,8 +119,12 @@ struct MeasureScreen: View {
                     if let anomaly = presentation.anomaly { anomalyLine(anomaly) }
                     if let notice = presentation.chartNotice { chartNotice(notice) }
                     if saveFailed { failureLine }
+
+                    // §7's footnote stood under the CTA and was removed by the copy audit of
+                    // 2026-08-23 (owner ruling). Its 1.4 m did not go with it — the fact moved up
+                    // to §2 as `dbhHelp` — and neither did the 36pt it carried, which is the
+                    // screen's closing space above the home indicator and now sits on the CTA.
                     ctaBlock
-                    footnote
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
@@ -162,6 +166,15 @@ struct MeasureScreen: View {
                 label: MeasureCopy.kindSegment,
                 size: .large
             )
+            // What §7's footnote used to say about DBH, under the control that selects it (copy
+            // audit of 2026-08-23, R9). Drawn in the footnote's own type, because it is the same
+            // register — a fact the reader may already know, placed where it is needed.
+            if let help = presentation.dbhHelp {
+                Text(help)
+                    .cypressBody135(color: CypressColor.textFaintAlt)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(.top, MeasureMetrics.firstSectionTop)
         .padding(.horizontal, CypressSpacing.gutterLabel)
@@ -266,19 +279,13 @@ struct MeasureScreen: View {
         }
         .padding(.top, MeasureMetrics.ctaTop)
         .padding(.horizontal, MeasureMetrics.ctaGutter)
-        .padding(.bottom, MeasureMetrics.ctaBottom)
+        // `ctaBottom` was the gap down to §7's footnote; with the footnote gone the CTA closes the
+        // screen and takes over the 36pt it carried above the home indicator.
+        .padding(.bottom, CypressSpacing.bottomFootnote)
     }
 
-    // MARK: - §7 Footnote
-
-    private var footnote: some View {
-        Text(presentation.footnote)
-            .cypressBody135(color: CypressColor.textFaintAlt)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, MeasureMetrics.footnoteGutter)
-            .padding(.bottom, CypressSpacing.bottomFootnote)
-    }
+    // §7's footnote block was removed by the copy audit of 2026-08-23 (owner ruling); SCREENS.md 16
+    // §7 is struck to match. Its 1.4 m survives in `kindSection` — see `MeasureCopy.dbhHelp`.
 
     // MARK: - The states SCREENS.md does not draw
 

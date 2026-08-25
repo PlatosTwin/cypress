@@ -106,7 +106,10 @@ struct AlmanacPresentationTests {
     /// at once. If a block is added to the view without being added here the sweep silently stops
     /// covering it, which is why the view draws nothing that is not on the presentation.
     private static func renderedStrings(_ presentation: AlmanacPresentation) -> [String] {
-        var strings: [String] = [presentation.footnote]
+        // §5's footnote used to open this list and was removed by the copy audit of 2026-08-23,
+        // so a screen with nothing on it now renders nothing at all — which is what the two
+        // expectations below assert, and it is a stronger statement than the one they replaced.
+        var strings: [String] = []
         if let name = presentation.neighborhoodName { strings.append(name) }
         // R29's qualifier under the header, present only for a fallback area.
         if let note = presentation.areaNote { strings.append(note) }
@@ -130,7 +133,9 @@ struct AlmanacPresentationTests {
         }
         if let coverage = presentation.coverage {
             strings.append(coverage.title)
-            strings.append(coverage.body)
+            // Optional since the copy audit of 2026-08-23; a card with no body contributes no
+            // string here rather than an empty one, so the sweeps below see exactly what is drawn.
+            if let body = coverage.body { strings.append(body) }
             strings.append(coverage.ctaTitle)
         }
         return strings
@@ -165,11 +170,13 @@ struct AlmanacPresentationTests {
         // not determine would be the screen's first lie (A4, ERRATA E44).
         //
         // **It used to be the footnote alone**, and that was the defect ERRATA E182 is about: a
-        // finished read that resolved nothing drew the same picture as a read still in flight. The
-        // two sentences beside the footnote are what a reader standing outside the record now gets.
+        // finished read that resolved nothing drew the same picture as a read still in flight.
+        // These two sentences are what a reader standing outside the record gets — and since the
+        // copy audit of 2026-08-23 took the footnote away they are the *only* thing on the screen,
+        // so E182's fix is now load-bearing rather than additional.
         #expect(
             Self.renderedStrings(presentation)
-                == [AlmanacCopy.footnote, AlmanacCopy.outOfRangeTitle, AlmanacCopy.outOfRangeBody]
+                == [AlmanacCopy.outOfRangeTitle, AlmanacCopy.outOfRangeBody]
         )
     }
 
@@ -200,8 +207,9 @@ struct AlmanacPresentationTests {
         let strings = Self.renderedStrings(presentation)
         #expect(!Self.containsAZero(strings), "a zero reached the screen: \(strings)")
         // The neighborhood is known, so its name is still the header's — that is a fact, not an
-        // aggregate, and §5.6 does not reach it.
-        #expect(strings == [AlmanacCopy.footnote, "Sunset/Parkside"])
+        // aggregate, and §5.6 does not reach it. Since the copy audit of 2026-08-23 it is the whole
+        // screen: the footnote that used to accompany it here is gone.
+        #expect(strings == ["Sunset/Parkside"])
     }
 
     // MARK: - A9 · bloom sightings need 1
@@ -438,13 +446,19 @@ struct AlmanacPresentationTests {
             AlmanacNeighborhood(area: .named("Sunset/Parkside"), coverage: Self.coverage(9, farthestM: 900))
         )
         #expect(close.coverage?.title == "9 young trees with no visits since planting")
-        #expect(close.coverage?.body.contains("All nine are within a 15-minute walk.") == true)
+        #expect(close.coverage?.body == "All nine are within a 15-minute walk.")
         #expect(close.coverage?.ctaTitle == "Walk the nine")
 
+        // **Absent, not fallen back to.** Until the copy audit of 2026-08-23 an unchecked walk left
+        // the body reading `The first two summers decide whether a street tree makes it.` — an
+        // arboricultural claim the app cannot source. The owner killed it, so what a card with an
+        // unproven walking distance now has is a title and a button, and this is the assertion that
+        // says so. The card itself must survive: dropping the body must not drop the destination.
         let spread = Self.present(
             AlmanacNeighborhood(area: .named("Sunset/Parkside"), coverage: Self.coverage(17, farthestM: 4_100))
         )
-        #expect(spread.coverage?.body == "The first two summers decide whether a street tree makes it.")
+        #expect(spread.coverage != nil, "the card vanished with its body")
+        #expect(spread.coverage?.body == nil)
         #expect(spread.coverage?.ctaTitle == "Walk the seventeen")
     }
 
@@ -455,7 +469,7 @@ struct AlmanacPresentationTests {
         )
         #expect(presentation.coverage?.title == "1 young tree with no visit since planting")
         #expect(presentation.coverage?.ctaTitle == "Walk to it")
-        #expect(presentation.coverage?.body.contains("It is within a 15-minute walk.") == true)
+        #expect(presentation.coverage?.body == "It is within a 15-minute walk.")
     }
 
     /// **This test used to assert the defect** (ERRATA E129). It read
@@ -518,12 +532,10 @@ struct AlmanacPresentationTests {
 
     // MARK: - D1
 
-    /// The footnote is the specification of this screen, so it is pinned verbatim: if the almanac
-    /// ever acquires a rank or a counter, this sentence becomes a lie before any test fails.
-    @Test("the footnote says what the screen is, verbatim")
-    func footnoteIsVerbatim() {
-        #expect(AlmanacCopy.footnote == "No ranks, no counters. The almanac notices trees, not scores.")
-    }
+    // `footnoteIsVerbatim` pinned `No ranks, no counters. The almanac notices trees, not scores.`
+    // and went with the sentence in the copy audit of 2026-08-23. Its subject was the promise; what
+    // guards the rule now is `nothingCountsContributions` below, which is the promise checked
+    // against every string the screen draws rather than restated in one of them.
 
     /// No surface on this screen counts what anybody did. The bloom row's headcount counts *people*,
     /// which A8 permits; nothing counts occasions.
@@ -540,9 +552,16 @@ struct AlmanacPresentationTests {
             )
         )
         let forbidden = ["visits by", "photos", "check-ins", "contributions", "streak", "rank", "leaderboard"]
-        // The footnote is exempt because it is the promise rather than a breach of it: "No ranks,
-        // no counters" is the only place on this screen those words are allowed to appear.
-        for string in Self.renderedStrings(presentation) where string != AlmanacCopy.footnote {
+        // **The exemption is gone because its subject is.** `where string != AlmanacCopy.footnote`
+        // excluded the one string allowed to contain "rank" and "leaderboard" — it said there were
+        // none. The copy audit of 2026-08-23 removed the footnote, so the clause had nothing left
+        // to exclude and `renderedStrings` no longer produces it either.
+        //
+        // **This is a no-op, not a strengthening**, and it is written down as one: coverage is
+        // identical before and after, since the exempted string and the exemption were removed
+        // together. Claiming otherwise would be the kind of comment this project has been bitten
+        // by.
+        for string in Self.renderedStrings(presentation) {
             for word in forbidden {
                 #expect(
                     !string.lowercased().contains(word),

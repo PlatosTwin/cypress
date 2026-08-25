@@ -96,8 +96,11 @@ struct VisitSavedView: View {
                 routeMap
                 primaryCTA
                 secondaryActions
-                footnote
+                // §-last's footnote stood here and was removed by the copy audit of 2026-08-23
+                // (owner ruling). Its 36pt bottom padding was the screen's closing space rather
+                // than part of the sentence, so it moves to the column.
             }
+            .padding(.bottom, CypressSpacing.bottomFootnote)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(CypressColor.surfaceScreen)
@@ -263,18 +266,11 @@ struct VisitSavedView: View {
         .padding(.top, VisitMetrics.Saved.secondaryTop)
     }
 
-    private var footnote: some View {
-        Text(
-            "Ten check-ins in a row is the real volunteer morning. The save answers the only "
-                + "question that matters: which tree is next."
-        )
-        .cypressBody135(color: CypressColor.textMuted)
-        .lineSpacing(VisitMetrics.Saved.footnoteLineSpacing)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, VisitMetrics.Saved.footnoteHorizontal)
-        .padding(.top, VisitMetrics.Saved.footnoteTop)
-        .padding(.bottom, CypressSpacing.bottomFootnote)
-    }
+    // The footnote — `Ten check-ins in a row is the real volunteer morning. The save answers the
+    // only question that matters: which tree is next.` — was removed by the copy audit of
+    // 2026-08-23 (owner ruling). SCREENS.md 18 is struck to match. It is the same complaint R80
+    // item 6a made about this screen's two buttons: a control, or a sentence, that tells the reader
+    // what he has decided about his morning.
 }
 
 // MARK: - Copy
@@ -304,8 +300,11 @@ enum VisitSavedCopy {
 ///
 /// The pins are placed from **real coordinates**, projected into the box: the route comes from
 /// `treesNear`, so the shape on screen is the shape of the block you are standing on. Done trees
-/// draw as `MapPin.routeDone` — "done trees go quiet" — and the tree just saved draws as the amber
-/// active pin.
+/// draw as `MapPin.routeDone` and the tree just saved draws as the amber active pin.
+///
+/// The mock's corner label — `done trees go quiet` — was removed by the copy audit of 2026-08-23
+/// (owner ruling). The pin styling it captioned is unchanged and needs no caption: `routeDone` is
+/// visibly quieter than `routeActive`, which is the whole of what the label said.
 struct VisitRouteMap: View {
 
     let route: [VisitCandidate]
@@ -342,12 +341,7 @@ struct VisitRouteMap: View {
                             .position(x: point.x, y: point.y)
                     }
 
-                    Text("done trees go quiet")
-                        .font(CypressFont.mono10)
-                        .foregroundStyle(CypressColor.textFaintAlt)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                        .padding(.trailing, VisitMetrics.Saved.routeLabelTrailing)
-                        .padding(.bottom, VisitMetrics.Saved.routeLabelBottom)
+                    // The corner label went in the copy audit of 2026-08-23; see this type's header.
                 }
             }
         }

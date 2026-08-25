@@ -9,6 +9,12 @@
 //  Same house style as `TokenGallery.swift`. Not shipped in any screen; imports nothing outside
 //  DesignSystem and Core.
 //
+//  **The sample text tracks the shipped copy, not the mock.** Several variants below were reworded
+//  by the copy audit of 2026-08-23 (both halves of it), because a gallery is where somebody looks
+//  to see how a component reads — and retired copy sitting in one is a supply of retired copy to
+//  paste back into a screen. Where a sample's sentence was killed outright rather than rewritten,
+//  the variant carries a neutral label and a comment saying so.
+//
 
 import SwiftUI
 
@@ -455,7 +461,7 @@ private struct GalleryC6C7: View {
         GallerySection(number: "C6 / C7", name: "PrimaryButton · SecondaryOutlineButton") {
             VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
                 Variant("primary · standard (03)") {
-                    PrimaryButton("Visit · say hello with a photo", action: {})
+                    PrimaryButton("Visit · add a photo", action: {})
                 }
                 Variant("primary · compact, no shadow (12)") {
                     PrimaryButton("Walk the nine", style: .compact, action: {})
@@ -548,7 +554,7 @@ private struct GalleryC9: View {
                     ActivityRow(
                         leading: .vitality(.poor),
                         label: "Check-in",
-                        detail: " · vitality 2 · a steward confirmed the decline",
+                        detail: " · vitality 2",
                         timestamp: "Mar 2026"
                     )
                 }
@@ -575,7 +581,11 @@ private struct GalleryC10: View {
         (.bloom, "First bloom of the year", "Red flowering gum on 44th Ave · Jan 22, three neighbors saw it"),
         (.elder, "The elder", "Grandmother Cypress · in the city record since 1898"),
         (.newGrowth, "Newest neighbors", "23 trees planted this spring, mostly ginkgo and tea tree"),
-        (.water, "Watered through the dry weeks", "Jun–Aug · five care visits kept it going"),
+        // The mock's second Moments row said `Watered through the dry weeks` / `Jun–Aug · five care
+        // visits kept it going`. The copy audit of 2026-08-23 killed that row; the C10 accent it
+        // demonstrated is still in the catalog, so the sample carries a neutral label instead of
+        // preserving retired copy where somebody could copy it back out.
+        (.water, "Care recorded", "Jun–Aug"),
         (.record, "Seven years on record", "First photo Mar 2019 · six people know this tree"),
     ]
 
@@ -736,9 +746,9 @@ private struct GalleryC14C15: View {
                 }
                 Variant("green · lineage, radius 14 (19)") {
                     Callout(
-                        " When the city replants this site, the new profile will link back here—the site keeps its lineage.",
+                        " If the city replants here, the new tree's profile will link back to this one.",
                         style: .green,
-                        leadIn: "A new tree is coming.",
+                        leadIn: "This site may be replanted.",
                         largePadding: true
                     )
                 }
@@ -751,7 +761,7 @@ private struct GalleryC14C15: View {
                 }
                 Variant("memorial (19)") {
                     Callout(
-                        " This profile is now read-only. Every photo, visit, and check-in stays—a record of the tree that was here.",
+                        " This profile is now read-only. Every photo, visit, and check-in stays.",
                         style: .memorial,
                         leadIn: "Removed by the city, May 2026."
                     )
@@ -827,7 +837,7 @@ private struct GalleryC17: View {
                                 Text("Care log · Monterey Cypress")
                                     .font(CypressFont.sheetTitle)
                                     .foregroundStyle(CypressColor.textInk)
-                                Text("Toggle what you did. Thirty seconds, then back to your walk.")
+                                Text("Toggle what you did.")
                                     .font(CypressFont.body125)
                                     .foregroundStyle(CypressColor.textFaint)
                                 HStack(spacing: CypressSpacing.gapGrid) {
@@ -1127,7 +1137,9 @@ private struct GalleryC24C25: View {
                                 Text("9 young trees with no visits since planting")
                                     .font(CypressFont.body145Bold)
                                     .foregroundStyle(CypressColor.textInk)
-                                Text("The first two summers decide whether a street tree makes it. All nine are within a 15-minute walk.")
+                                // Opening sentence removed by the copy audit of 2026-08-23; this
+                                // is what the card draws now.
+                                Text("All nine are within a 15-minute walk.")
                                     .font(CypressFont.body125)
                                     .foregroundStyle(CypressColor.textMuted)
                                     .fixedSize(horizontal: false, vertical: true)

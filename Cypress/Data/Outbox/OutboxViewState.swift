@@ -3,9 +3,10 @@ import Observation
 
 /// The "says why" line on screen 17.
 ///
-/// Screen 17's footnote is the contract this type implements: "Nothing here disappears silently. An
-/// item that cannot sync says so, says why, and waits for you." Every failure path produces a
-/// sentence a volunteer standing on a pavement can act on.
+/// The contract this type implements: nothing disappears silently — an item that cannot sync says
+/// so, says why, and waits. Screen 17 used to print that as a footnote and no longer does (copy
+/// audit, 2026-08-23, owner ruling); the rule outlived the sentence, and every failure path here
+/// still produces something a volunteer standing on a pavement can act on.
 ///
 /// Copy rules (ARCHITECTURE §5.7): prose is sentence case, and there are no spaces around em
 /// dashes — which is easiest to honor by not reaching for one.
@@ -22,10 +23,10 @@ public enum OutboxFailureReason {
     /// distinguishable from the retryable `sentence(for:)` fallback below — a row that lost its
     /// connection still reads "No connection." and is still trying.
     ///
-    /// What it deliberately stops doing is naming the code. Screen 17's footnote asks an item that
-    /// cannot sync to "say why", and eight per-code sentences were the answer while every one of
-    /// them was drawn; they are still drawn for a row that is *retrying*, and no longer for one the
-    /// service has finished with. That narrowing is the ruling's, recorded rather than inferred —
+    /// What it deliberately stops doing is naming the code. The contract in this type's header asks
+    /// an item that cannot sync to say why, and eight per-code sentences were the answer while every
+    /// one of them was drawn; they are still drawn for a row that is *retrying*, and no longer for
+    /// one the service has finished with. That narrowing is the ruling's, recorded rather than inferred —
     /// see the errata entry for this round.
     ///
     /// **Two codes are not in this class, and both are non-retryable items that DID leave the
@@ -298,8 +299,9 @@ public struct OutboxSnapshot: Sendable, Equatable {
         failedCount = records.filter { $0.item.state == .failed }.count
         syncedRecentlyCount = records.filter { $0.item.state == .done && $0.item.updatedAt >= dayAgo }.count
         // The sentence this count drives is `awaitingWifi(photoCount:)` — "The note is saved. N
-        // photos are waiting for wi-fi." Screen 17's footnote makes that sentence a promise, so
-        // every clause of it has to be true before the count claims it: the note really is saved
+        // photos are waiting for wi-fi." Screen 17's contract — this type's header — makes that
+        // sentence a promise, so every clause of it has to be true before the count claims it: the
+        // note really is saved
         // (`locallyApplied`), binaries really are still on the device, the row is still trying rather
         // than given up on, and the toggle really is what is holding them. The old predicate
         // asserted none of the four and swept up a visit enqueued a moment ago, and a

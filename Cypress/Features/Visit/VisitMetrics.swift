@@ -336,15 +336,12 @@ enum VisitMetrics {
         /// Water band on the right — `width:8%`, `opacity:.75`.
         static let routeWaterFraction: CGFloat = 0.08
         static let routeWaterOpacity: Double = 0.75
-        /// Corner label — `right:16px; bottom:10px`.
-        static let routeLabelTrailing: CGFloat = 16
-        static let routeLabelBottom: CGFloat = 10
+        // The corner label (`right:16px; bottom:10px`) and the footnote paddings
+        // (`16px 24px 36px`) went with the strings they positioned, in the copy audit of
+        // 2026-08-23. The 36pt closing space survives on the column — see `VisitSavedView.body`.
 
-        /// Secondary CTA `padding:10px 16px 0`; footnote `padding:16px 24px 36px`.
+        /// Secondary CTA `padding:10px 16px 0`.
         static let secondaryTop: CGFloat = 10
-        static let footnoteTop: CGFloat = 16
-        static let footnoteHorizontal: CGFloat = 24
-        static let footnoteLineSpacing: CGFloat = 6.5
     }
 }
 

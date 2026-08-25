@@ -57,10 +57,20 @@ struct LandContextScreenTests {
         #expect(subject.landContext == nil)
         #expect(subject.canAdd, "an unanswered land context must not block the add")
         #expect(subject.blockingReason == nil)
-        #expect(
-            VisitAddTreeCopy.land(nil)
-                == "Where it stands will not be recorded. The tree goes on the map either way."
-        )
+        // **The sentence's contract, not its wording.** This was an equality against
+        // `Where it stands will not be recorded. The tree goes on the map either way.` until the
+        // copy audit of 2026-08-23 cut the second sentence (R12) — at which point it failed for a
+        // reason that had nothing to do with whether the field is optional, which is what this test
+        // is for. What has to hold is that the empty form states the consequence and asks for
+        // nothing. `SpeciesClaimTests` holds the same line for the row above this one.
+        let unanswered = VisitAddTreeCopy.land(nil)
+        #expect(!unanswered.isEmpty, "the empty form says nothing at all about the ground")
+        for word in ["missing", "required", "should", "incomplete", "please"] {
+            #expect(
+                !unanswered.lowercased().contains(word),
+                "the unanswered-land sentence pressures the contributor with “\(word)”: \(unanswered)"
+            )
+        }
     }
 
     /// Three chips, and the fourth permitted value is not among them. Both halves are the decision:

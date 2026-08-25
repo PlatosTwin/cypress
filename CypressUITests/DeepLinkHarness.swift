@@ -172,17 +172,48 @@ extension DeepLinkHarness {
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> Bool {
-        let target = app.staticTexts
-            .matching(NSPredicate(format: "label BEGINSWITH %@", anchor))
-            .firstMatch
+        arrive(app, screen: screen, anyOf: [anchor], file: file, line: line)
+    }
+
+    /// The same wait, satisfied by **any one** of several anchors.
+    ///
+    /// **This exists for a screen with two legitimate states and no sentence common to both**, which
+    /// is screen 08: a grove with something in it draws `12 of 40 species` over
+    /// `you can recognize in …`, and a grove with nothing in it draws `Your grove is empty so far.`
+    /// instead (ERRATA E48). Anchoring on either one alone makes the test a report on the device's
+    /// accumulated state — it passes on a simulator that has recognized a species and fails on a
+    /// fresh one, on identical code. That is exactly what happened: the anchor introduced by the
+    /// copy audit of 2026-08-23 passed on the author's device and failed on CI's clean runner, and
+    /// the comment introducing it had predicted the failure without preventing it.
+    ///
+    /// **It is not a weakened assertion.** Arrival is still proved by a sentence that belongs to this
+    /// screen and to no other; what is dropped is the claim about *which* of the screen's states the
+    /// device happens to be in, which this suite was never about. A list whose members are not all
+    /// unique to the screen would be a weakened assertion, so red-prove a new one the way the grove's
+    /// pair was: point the case at another tab root and watch it fail.
+    @discardableResult
+    func arrive(
+        _ app: XCUIApplication,
+        screen: String,
+        anyOf anchors: [String],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Bool {
+        let predicate = NSCompoundPredicate(
+            orPredicateWithSubpredicates: anchors.map {
+                NSPredicate(format: "label BEGINSWITH %@", $0)
+            }
+        )
+        let target = app.staticTexts.matching(predicate).firstMatch
         // Generous: a cold launch opens the database, runs migrations and attaches a 195,309-row seed
         // before the first screen can resolve a record.
         guard target.waitForExistence(timeout: 30) else {
+            let named = anchors.map { "'\($0)'" }.joined(separator: " or ")
             if let failure = deepLinkFailure(app) {
                 XCTFail("\(screen): \(failure)", file: file, line: line)
             } else {
                 XCTFail(
-                    "\(screen): the app launched but '\(anchor)' never appeared in the accessibility "
+                    "\(screen): the app launched but \(named) never appeared in the accessibility "
                         + "tree — either the screen did not open, or its title is not exposed",
                     file: file, line: line
                 )
@@ -200,8 +231,19 @@ extension DeepLinkHarness {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        check(screen, anyOf: [anchor], pushed: pushed, file: file, line: line)
+    }
+
+    /// Arrive on any one of several anchors, then read the tree. See `arrive(_:screen:anyOf:…)`.
+    func check(
+        _ screen: String,
+        anyOf anchors: [String],
+        pushed: Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
         let app = launch(screen)
-        guard arrive(app, screen: screen, anchor: anchor, file: file, line: line) else { return }
+        guard arrive(app, screen: screen, anyOf: anchors, file: file, line: line) else { return }
 
         assertEveryControlIsLabeled(app, screen: screen, file: file, line: line)
 

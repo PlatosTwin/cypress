@@ -246,16 +246,34 @@ struct MemorialPresentationTests {
         #expect(presentation.moments.map(\.timestamp) == ["Jan 2019", "Jan 2026", "Mar 2026", "May 2026"])
     }
 
-    @Test("the steward clause is a provenance claim and needs the column that carries it")
-    func stewardClauseNeedsVerification() {
+    /// **This test ran the other way round until 2026-08-23.** It asserted that an org-verified
+    /// check-in earned ` · a steward confirmed the decline` and that an unverified one did not. The
+    /// copy audit removed the clause (R8): "steward" is a role this app has no concept of — a
+    /// check-in is made by a contributor, and `verification_state` says an *organization* confirmed
+    /// the row, not that a steward did.
+    ///
+    /// What is left is the stronger claim and is worth holding: the row states the vitality and says
+    /// nothing about who stood behind it, on either arm. Re-introducing a provenance clause would
+    /// have to make the two arms differ, which is what this catches.
+    @Test("the check-in row reads the same whoever confirmed it, and names nobody")
+    func theCheckInRowMakesNoProvenanceClaim() {
         let verified = MemorialPresentation(profile: Self.profile(verifiedCheckIn: true), now: Self.now)
-        #expect(
-            verified.moments.first { $0.label == "Check-in" }?.detail
-                == " · vitality 2 · a steward confirmed the decline"
-        )
-
         let unverified = MemorialPresentation(profile: Self.profile(verifiedCheckIn: false), now: Self.now)
-        #expect(unverified.moments.first { $0.label == "Check-in" }?.detail == " · vitality 2")
+
+        let verifiedDetail = verified.moments.first { $0.label == "Check-in" }?.detail
+        let unverifiedDetail = unverified.moments.first { $0.label == "Check-in" }?.detail
+
+        #expect(verifiedDetail == " · vitality 2")
+        #expect(
+            verifiedDetail == unverifiedDetail,
+            "the check-in row differs by verification state: \(verifiedDetail ?? "nil") vs \(unverifiedDetail ?? "nil")"
+        )
+        for role in ["steward", "confirmed", "official", "verified"] {
+            #expect(
+                verifiedDetail?.lowercased().contains(role) != true,
+                "the check-in row claims “\(role)” about whoever made it: \(verifiedDetail ?? "nil")"
+            )
+        }
     }
 
     // MARK: - 3. Counts
@@ -287,17 +305,22 @@ struct MemorialPresentationTests {
         #expect(presentation.bannerLeadIn == "Removed by the city, May 2026.")
     }
 
+    /// The detail lost ` · the record begins` and changed tense in the copy audit of 2026-08-23
+    /// (R7, the owner's own wording): the row is headed `First photo` beside a month, which does not
+    /// need to be told that a record began there. Below the floor the row is now label and date
+    /// alone, so the empty detail below is the clause being dropped, not the row.
     @Test("A8's headcount is floored at three and spelled out")
     func caretakerFloor() {
         let three = MemorialPresentation(profile: Self.profile(caretakers: 3), now: Self.now)
-        #expect(
-            three.moments.first { $0.label == "First photo" }?.detail
-                == " · the record begins · three people came to know it"
-        )
+        let threeRow = three.moments.first { $0.label == "First photo" }
+        #expect(threeRow?.detail == " · three people know this tree")
+        #expect(threeRow?.timestamp.isEmpty == false, "the row lost the date it is hung on")
 
         // Two caretakers: the clause goes, the row stays (DECISIONS constraint 1).
         let two = MemorialPresentation(profile: Self.profile(caretakers: 2), now: Self.now)
-        #expect(two.moments.first { $0.label == "First photo" }?.detail == " · the record begins")
+        let twoRow = two.moments.first { $0.label == "First photo" }
+        #expect(twoRow?.detail == "")
+        #expect(twoRow != nil, "the row went with its clause")
 
         // A page cannot be counted over at all.
         let partialPhotos = Self.photos(4)
@@ -308,10 +331,10 @@ struct MemorialPresentationTests {
             careEvents: Series(items: Self.careEvents(people: 4), isComplete: false),
             ownPhotoIDs: Set(partialPhotos.map(\.id))
         )
-        #expect(
-            MemorialPresentation(profile: partial, now: Self.now)
-                .moments.first { $0.label == "First photo" }?.detail == " · the record begins"
-        )
+        let partialRow = MemorialPresentation(profile: partial, now: Self.now)
+            .moments.first { $0.label == "First photo" }
+        #expect(partialRow?.detail == "")
+        #expect(partialRow != nil, "a page took the whole row rather than the count")
     }
 
     // MARK: - 3b. Photo visibility (ERRATA E215)
@@ -383,8 +406,21 @@ struct MemorialPresentationTests {
     @Test("the lineage callout is not promised where there is no city to replant")
     func lineageOnlyForCityRecords() {
         let city = MemorialPresentation(profile: Self.profile(), now: Self.now)
-        #expect(city.lineageLeadIn == "A new tree is coming.")
-        #expect(city.lineageBody?.hasSuffix("the site keeps its lineage.") == true)
+        #expect(city.lineageLeadIn == "This site may be replanted.")
+        #expect(city.lineageBody?.hasSuffix("will link back to this one.") == true)
+
+        // **The callout may not predict a replanting.** `A new tree is coming.` was the mock's
+        // lead-in and the copy audit of 2026-08-23 removed it (R5/R6): nothing in the record says
+        // the city will replant this site, and a future tense the data cannot support is
+        // ARCHITECTURE §5.4's rule in a different grammar. The conditional is the whole point of
+        // the rewrite, so it is asserted rather than left to the equality above.
+        let lineage = (city.lineageLeadIn ?? "") + (city.lineageBody ?? "")
+        for promise in ["is coming", "will be planted", "will replant", "a new tree is"] {
+            #expect(
+                !lineage.lowercased().contains(promise),
+                "the lineage callout promises a replanting with “\(promise)”: \(lineage)"
+            )
+        }
 
         let community = TreeProfile(
             tree: Tree(
@@ -400,12 +436,36 @@ struct MemorialPresentationTests {
         #expect(presentation.stats.isEmpty, "there is no SF city record for a community-added tree")
     }
 
-    /// ARCHITECTURE §5.7: no spaces around em dashes. Screen 19 carries two of the app's em dashes,
-    /// both un-spaced in the source, and both easy to "fix" into wrongness.
-    @Test("screen 19's em dashes carry no spaces")
+    /// ARCHITECTURE §5.7: no spaces around em dashes.
+    ///
+    /// **Screen 19 carried two of the app's em dashes and now carries none.** Both were in clauses
+    /// the copy audit of 2026-08-23 cut — the banner's `stays—a record of the tree that was here`
+    /// (R2) and the lineage's `link back here—the site keeps its lineage` (R6) — so the old form of
+    /// this test, which asserted `line.contains("—")` as its own calibration, would now fail on the
+    /// calibration rather than on the rule.
+    ///
+    /// The sweep is kept, over more of the screen than before, and the calibration moves to a
+    /// specimen: a line that *does* break the rule, checked against the same expression, so a sweep
+    /// that has stopped being able to see a spaced em dash fails here rather than passing over the
+    /// whole screen.
+    @Test("screen 19's copy carries no spaced em dashes")
     func emDashRule() {
-        for line in [MemorialCopy.bannerBody, MemorialCopy.lineageBody] {
-            #expect(line.contains("—"))
+        let specimen = "a sentence — with a spaced em dash"
+        #expect(specimen.contains(" — "), "the em-dash test cannot see a spaced em dash any more")
+
+        let lines = [
+            MemorialCopy.bannerLeadIn(removedAt: nil),
+            MemorialCopy.bannerBody,
+            MemorialCopy.lineageLeadIn,
+            MemorialCopy.lineageBody,
+            MemorialCopy.firstPhotoDetail(caretakers: 6, locale: Locale(identifier: "en_US")),
+            MemorialCopy.checkInDetail(vitality: .poor),
+            MemorialCopy.cityRecordDetail,
+            MemorialCopy.onRecordLabel,
+            MemorialCopy.years(23)
+        ]
+        for line in lines {
+            #expect(!line.isEmpty, "an empty line in the sweep proves nothing")
             #expect(!line.contains(" — "), "spaced em dash in: \(line)")
         }
     }

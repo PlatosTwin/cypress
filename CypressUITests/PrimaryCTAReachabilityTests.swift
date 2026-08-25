@@ -118,14 +118,14 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
         Target(
             screen: "treeProfile",
             anchor: "Tree",
-            ctaLabels: ["Be the first to photograph this tree", "Visit · say hello with a photo"],
+            ctaLabels: ["Add the first photo of this tree", "Visit · add a photo"],
             note: "screen 03 cold — the CTA is inside the scroll, so at AX5 it is the one most "
                 + "likely to need scrolling to reach"
         ),
         Target(
             screen: "photoHero",
             anchor: "Best photo",
-            ctaLabels: ["Visit · say hello with a photo", "Be the first to photograph this tree"],
+            ctaLabels: ["Visit · add a photo", "Add the first photo of this tree"],
             note: "screen 03 warm — a hero photograph above the CTA changes the scroll length "
                 + "entirely, which is a different geometry from the cold profile"
         ),

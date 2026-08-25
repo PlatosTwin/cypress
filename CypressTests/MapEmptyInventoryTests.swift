@@ -121,13 +121,28 @@ struct MapEmptyInventoryTests {
     @Test("the notice says the trees may exist, and puts the absence on the record")
     func theTreesAreNotDeniedOnlyTheRecordsAre() {
         let words = MapInventoryCopy.title + " " + MapInventoryCopy.message
+        // The clause read `Trees may well stand here, unlisted.` until the copy audit of
+        // 2026-08-23 (R25) made it `Trees may stand here without being listed.` What this test
+        // holds is the hedge and its subject, not the adverb: the trees have to be left standing,
+        // as a possibility the notice raises in so many words.
         #expect(
-            MapInventoryCopy.message.contains("may well stand here"),
+            MapInventoryCopy.message.contains("Trees may stand here"),
             """
             the notice does not say the trees may be standing here; without that clause it reads \
             as "this ground has no trees", which is false of every park in the city
             """
         )
+        // And the message may not say the opposite. **The title is not swept here and must not
+        // be**: it reads `No trees on record here`, and its whole design is that "no trees"
+        // qualified by "on record" is a statement about the record — which is what the assertion
+        // below holds it to. A sweep that included the title would fail on the one line that gets
+        // this right, which is what it did when this check was first written.
+        for denial in ["no trees", "nothing grows", "there are none"] {
+            #expect(
+                !MapInventoryCopy.message.lowercased().contains(denial),
+                "the message denies the trees with “\(denial)”: \(MapInventoryCopy.message)"
+            )
+        }
         // The subject of both sentences is the record, so neither can be read as a claim about
         // the ground. Both halves say so in their own words.
         #expect(MapInventoryCopy.title.contains("on record"))

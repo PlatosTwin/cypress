@@ -256,13 +256,11 @@ struct MemorialPresentation: Equatable {
                     id: observation.id,
                     kind: .checkIn(vitality),
                     label: MemorialCopy.checkInLabel,
-                    detail: MemorialCopy.checkInDetail(
-                        vitality: vitality,
-                        // "a steward confirmed the decline" is a claim about who made the row, and
-                        // `verification_state` is the column that carries it (D12, BUILD-PLAN §5).
-                        // An unverified check-in gets the clause dropped rather than reworded.
-                        isOrgVerified: observation.verificationState == .orgVerified
-                    ),
+                    // The row used to carry a second clause when `verification_state` was
+                    // `orgVerified` — "a steward confirmed the decline", removed by the copy audit
+                    // of 2026-08-23 (R8). Nothing on this row reads the column now, which is why
+                    // `checkInDetail` no longer takes it.
+                    detail: MemorialCopy.checkInDetail(vitality: vitality),
                     timestamp: MemorialCopy.monthYear.string(from: observation.capturedAt)
                 )
             )
@@ -303,7 +301,7 @@ struct MemorialPresentation: Equatable {
         }
     }
 
-    // MARK: - A8, for `six people came to know it`
+    // MARK: - A8, for `six people know this tree`
 
     /// A8: "distinct users with 2 or more care_events or observations on the tree in 24 months;
     /// shown only when 3 or more".
@@ -313,11 +311,15 @@ struct MemorialPresentation: Equatable {
     /// sibling dependency ARCHITECTURE §3 keeps out of `Features/`. That leaves the rule stated
     /// twice, which is worth an entry in ERRATA rather than a shortcut here.
     ///
-    /// **The 24-month window is not applied on a memorial.** A8 wrote it for a living tree, where
-    /// "who knows this tree" is a question about now; a tree removed in 2026 would score zero
-    /// caretakers within two months of its own memorial being read, and the sentence
-    /// (`six people came to know it`, past tense) is about its whole life. So the window is the
-    /// tree's life, and the floor of three is kept exactly.
+    /// **The 24-month window is not applied on a memorial.** A8 wrote it for a living tree, which
+    /// goes on accruing contributions; a removed tree does not, so a rolling window walks every
+    /// memorial to zero and takes the clause off the screen — two years after the removal, always,
+    /// and for no reason a reader could see. The window here is the tree's life, and the floor of
+    /// three is kept exactly.
+    ///
+    /// The clause's tense stopped carrying that argument on 2026-08-23, when the copy audit's R7
+    /// made it `six people know this tree` on the owner's wording. The reason above is the one that
+    /// survives the tense, and it is the reason the window is not applied.
     private static func caretakerCount(profile: TreeProfile, now: Date, calendar: Calendar) -> Int? {
         // A page undercounts, silently and by an amount nothing on screen could hint at.
         guard profile.careEvents.isComplete, profile.observations.isComplete else { return nil }
@@ -431,8 +433,13 @@ enum MemorialCopy {
         return "Removed by the city, \(monthYear.string(from: removedAt))."
     }
 
-    /// The rest of §2, verbatim — leading space and un-spaced em dash included (ARCHITECTURE §5.7).
-    static let bannerBody = " This profile is now read-only. Every photo, visit, and check-in stays—a record of the tree that was here."
+    /// The rest of §2, minus its closing clause. Leading space is in the source.
+    ///
+    /// The mock's `stays—a record of the tree that was here` was cut by the copy audit of
+    /// 2026-08-23 (R2, owner-approved): the clause tells the reader what the screen means rather
+    /// than what it does, and the two facts before it — read-only, and nothing is deleted — are
+    /// the whole of the banner's job. `SCREENS.md` 1401 is struck to match.
+    static let bannerBody = " This profile is now read-only. Every photo, visit, and check-in stays."
 
     // MARK: §3 Identity
 
@@ -483,15 +490,20 @@ enum MemorialCopy {
     static let checkInLabel = "Check-in"
     static let cityRecordLabel = "City record"
 
-    /// ` · the record begins · six people came to know it`.
+    /// ` · six people know this tree`, or nothing.
     ///
     /// The headcount is A8's and is floored at three; below it the clause is dropped and the row
-    /// still draws, exactly as `AlmanacCopy.bloomSubtitle` drops its own. Past tense, because the
-    /// tree is.
+    /// still draws, exactly as `AlmanacCopy.bloomSubtitle` drops its own — which now leaves the row
+    /// as its label and its date, because the mock's ` · the record begins` went with the copy audit
+    /// of 2026-08-23 (R7). A row headed `First photo` beside a month does not need to be told that a
+    /// record began there.
+    ///
+    /// **Present tense, on the owner's explicit wording** (2026-08-23) — which is also the clause
+    /// `ActivityCopy.onRecordSubtitle` and `TreeProfilePresentation.caretakerHeadline` already
+    /// print, so A8's headcount now reads the same on all three screens that draw it.
     static func firstPhotoDetail(caretakers: Int?, locale: Locale) -> String {
-        let opening = " · the record begins"
-        guard let caretakers else { return opening }
-        return "\(opening) · \(spelledOut(caretakers, locale: locale)) people came to know it"
+        guard let caretakers else { return "" }
+        return " · \(spelledOut(caretakers, locale: locale)) people know this tree"
     }
 
     /// ` · “The reddest bloom on the block, every January”` — the visit's own note, in the mock's
@@ -501,16 +513,17 @@ enum MemorialCopy {
         return " · “\(note)”"
     }
 
-    /// ` · vitality 2 · a steward confirmed the decline`.
+    /// ` · vitality 2`.
     ///
-    /// The second clause is a provenance claim and renders only when `verification_state` supports
-    /// it. "the decline" is kept from the mock rather than generalized: a check-in that an org
-    /// confirmed on a tree that was later removed is a decline, and rewriting it into something
-    /// vaguer would be writing new copy for this screen.
-    static func checkInDetail(vitality: Vitality, isOrgVerified: Bool) -> String {
-        let opening = " · vitality \(vitality.rawValue)"
-        guard isOrgVerified else { return opening }
-        return "\(opening) · a steward confirmed the decline"
+    /// **The mock's second clause is gone** (copy audit of 2026-08-23, R8): ` · a steward confirmed
+    /// the decline` named a role this app has no concept of — a check-in is made by a contributor,
+    /// and `verification_state` says an organization confirmed the row, not that a steward did — and
+    /// it read the reading for the reader. The vitality number is the fact and it is already here.
+    ///
+    /// The verification state is no longer a parameter, because the sentence that needed it is the
+    /// only thing that ever asked. `SCREENS.md` 1412 is struck to match.
+    static func checkInDetail(vitality: Vitality) -> String {
+        " · vitality \(vitality.rawValue)"
     }
 
     /// ` · marked removed`. The mock's trailing ` · storm damage` has no column behind it anywhere
@@ -519,9 +532,14 @@ enum MemorialCopy {
 
     // MARK: §5 Lineage
 
-    static let lineageLeadIn = "A new tree is coming."
-    /// Verbatim, leading space and un-spaced em dash included.
-    static let lineageBody = " When the city replants this site, the new profile will link back here—the site keeps its lineage."
+    /// **Not the mock's `A new tree is coming.`** Nothing in the record says the city will replant
+    /// this site; the mock's sentence is a prediction the app has no column for, which is
+    /// ARCHITECTURE §5.4's rule applied to a future tense. Copy audit of 2026-08-23, R5,
+    /// owner-approved.
+    static let lineageLeadIn = "This site may be replanted."
+    /// R6 of the same audit: the conditional the lead-in now sets up, and the link it promises —
+    /// which is a thing this screen really does. Leading space is in the source.
+    static let lineageBody = " If the city replants here, the new tree's profile will link back to this one."
 
     // MARK: §6 Stats
 

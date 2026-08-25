@@ -135,13 +135,11 @@ struct JournalTabView: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    /// The contributions journal, and the footnote that governs it.
+    /// The contributions journal.
     ///
-    /// The list brings no chrome of its own (`JournalListView`), so the scroll view and the footnote
-    /// are this screen's. The footnote is screen 08's, verbatim: "Quiet collecting. There are no
-    /// streaks and no leaderboards." It is on this screen for the reason it is on that one — it is
-    /// the sentence that makes a list of a person's own contributions read as a record rather than a
-    /// scoreboard, and this is the surface most able to break it (D1).
+    /// The list brings no chrome of its own (`JournalListView`), so the scroll view is this
+    /// screen's. It used to close with screen 08's footnote, borrowed verbatim; the copy audit of
+    /// 2026-08-23 removed that footnote from 08 and from here in the same commit (owner ruling).
     private var journal: some View {
         GeometryReader { proxy in
             ScrollView {
@@ -160,16 +158,13 @@ struct JournalTabView: View {
 
                     JournalSection(api: api, onOpenTree: onOpenTree)
 
-                    Spacer(minLength: 0)
-
-                    Text(JournalCopy.footnote)
-                        .font(CypressFont.body12)
-                        .foregroundStyle(CypressColor.textFaintAlt)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, CypressSpacing.labelSectionTop)
-                        .padding(.horizontal, CypressSpacing.gutterLabel)
+                    // The `Spacer(minLength: 0)` here bottom-pinned the footnote and went with it
+                    // (copy audit, 2026-08-23). The `minHeight` frame below still top-aligns a
+                    // short list, which is the only thing the spacer was doing besides that. The
+                    // 14pt that closed the column was the footnote's bottom padding and is kept as
+                    // itself, so the last row does not sit on the tab bar.
                 }
+                .padding(.bottom, CypressSpacing.labelSectionTop)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }

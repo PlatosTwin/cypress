@@ -54,9 +54,11 @@ struct CheckInView: View {
     var body: some View {
         let presentation = model.presentation
 
-        // The card scrolls; the CTA and the footnote do not. SCREENS.md 05 §7 gives the CTA block
+        // The card scrolls; the CTA does not. SCREENS.md 05 §7 gives the CTA block
         // `margin-top:auto`, which in a fixed 812pt mock is the same thing as pinning it — on a real
-        // device with real safe areas, pinning is what that means.
+        // device with real safe areas, pinning is what that means. §8's footnote was pinned under it
+        // until the copy audit of 2026-08-23, which extended the footnote ruling of the same day to
+        // the four sites its first enumeration missed.
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -78,7 +80,6 @@ struct CheckInView: View {
             .scrollBounceBehavior(.basedOnSize)
 
             ctaBlock
-            footnote
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(CypressColor.surfaceScreen)
@@ -338,8 +339,13 @@ struct CheckInView: View {
         }
     }
 
-    // MARK: - 6 · Sticky CTA and footnote
+    // MARK: - 6 · Sticky CTA
 
+    /// **The bottom padding changed with §8's footnote.** It used to be an 8pt gap above that
+    /// footnote, which carried the screen's 36pt closing space itself; with the footnote gone (copy
+    /// audit of 2026-08-23) the CTA block is the last thing on the screen and takes the 36pt over.
+    /// The closing space is not the footnote and does not go with it — every other screen in the app
+    /// has it, and dropping it would run the button onto the home indicator.
     private var ctaBlock: some View {
         VStack(spacing: CypressSpacing.gapRows) {
             if model.saveFailed {
@@ -354,18 +360,7 @@ struct CheckInView: View {
         }
         .padding(.top, CheckInMetrics.ctaTop)
         .padding(.horizontal, CypressSpacing.gutterLabel)
-        .padding(.bottom, CypressSpacing.bottomStickyCTAGap)
-    }
-
-    private var footnote: some View {
-        Text(CheckInCopy.footnote)
-            .font(CypressFont.body12)
-            .foregroundStyle(CypressColor.textFaintAlt)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, CypressSpacing.gutterLabel)
-            .padding(.bottom, CheckInMetrics.footnoteBottom)
+        .padding(.bottom, CypressSpacing.bottomFootnote)
     }
 
     // MARK: - Section chrome

@@ -381,16 +381,18 @@ struct GroveTreesTests {
     /// is the line the tally must not cross.
     @Test("no sentence the Trees pill owns contains a number")
     func noCountsInTheTreesCopy() {
+        // `GroveCopy.footnote` was a fourth member of this list and went with the sentence in the
+        // copy audit of 2026-08-23. The rule it stated is unchanged — see `GrovePresentation`'s
+        // header — and this sweep is what enforces it.
         let owned = [
             GroveCopy.treesEmptyState,
             GroveCopy.treesLoadFailed,
-            GroveCopy.treesExplanation,
-            GroveCopy.footnote
+            GroveCopy.treesExplanation
         ]
         for string in owned {
             #expect(
                 string.rangeOfCharacter(from: .decimalDigits) == nil,
-                "\(string) counts something on the screen whose footnote forbids it"
+                "\(string) counts something on a screen that counts no contributions (D1)"
             )
         }
     }

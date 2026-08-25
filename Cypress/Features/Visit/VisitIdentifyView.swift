@@ -345,8 +345,11 @@ struct VisitDistinguishBanner: View {
     }
 
     var body: some View {
+        // `You can.` came off in the copy audit of 2026-08-23 (R19). The banner's job is to say why
+        // the app is asking; the flattery was the app telling the reader what they are for, over a
+        // choice they are already being shown.
         Callout(
-            " Both are inside the GPS error circle, so the phone cannot tell them apart. You can.",
+            " Both are inside the GPS error circle, so the phone cannot tell them apart.",
             style: .green,
             leadIn: leadIn
         )

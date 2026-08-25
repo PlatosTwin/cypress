@@ -71,14 +71,8 @@ enum ActivitySeriesKind: String, CaseIterable, Identifiable {
     /// the chart, and a shape is not a tally.
     var mayPrintTotal: Bool { self != .care }
 
-    /// The noun the footnote's ceiling sentence uses — `June’s 12 photos set the ceiling.`
-    func countedNoun(_ count: Int) -> String {
-        switch self {
-        case .photos: return count == 1 ? "photo" : "photos"
-        case .checkIns: return count == 1 ? "check-in" : "check-ins"
-        case .care: return count == 1 ? "care visit" : "care visits"
-        }
-    }
+    // `countedNoun` pluralized the noun in §5's footnote (`June’s 12 photos set the ceiling.`) and
+    // had no other caller. It went with the footnote in the copy audit of 2026-08-23.
 }
 
 /// Where a strip cell's placeholder artwork comes from. Same reasoning as `ActivitySeriesKind`:
@@ -112,17 +106,22 @@ struct ActivityPresentation {
     }
 
     /// §2's whole card, which exists only when all three series are whole and something happened.
+    ///
+    /// It carried §5's footnote until the copy audit of 2026-08-23; see `ActivityCopy` for what the
+    /// sentence said and for the one fact that went with it.
     struct Glance {
         /// The mono range in the card header — `2026`.
         let year: String
         let rows: [SeriesRow]
-        /// §5's footnote. Its second sentence is present only when it can be written truthfully.
-        let footnote: String
     }
 
     /// One C10 row of §3's `Moments`.
+    ///
+    /// `Kind` carried `springFlush` and `dryWeeks` until the copy audit of 2026-08-23 removed both
+    /// rows (owner ruling); see `moments` for what they were and why the builders are gone rather
+    /// than dark.
     struct Moment: Identifiable {
-        enum Kind: String { case springFlush, dryWeeks, onRecord }
+        enum Kind: String { case onRecord }
 
         let kind: Kind
         let accent: CypressColor.TileAccent
@@ -194,8 +193,7 @@ struct ActivityPresentation {
 
         return Glance(
             year: String(calendar.component(.year, from: now)),
-            rows: rows,
-            footnote: ActivityCopy.footnote(ceiling: ceiling(in: series, peak: peak))
+            rows: rows
         )
     }
 
@@ -226,103 +224,46 @@ struct ActivityPresentation {
         return counts
     }
 
-    /// Which month set the ceiling, for §5's second sentence — or nil when naming it would print a
-    /// number this screen withholds.
-    ///
-    /// Scanning in `ActivitySeriesKind` order and then by month makes the tie deterministic and puts
-    /// the earliest month of the first series in front, which is the mock's own reading (`June’s 12
-    /// photos`). A ceiling set by the Care row names no month at all: the sentence's whole content
-    /// is a care count, and BUILD-PLAN §4 does not publish one.
-    private func ceiling(
-        in series: [(kind: ActivitySeriesKind, counts: [Int])],
-        peak: Int
-    ) -> (month: String, count: Int, kind: ActivitySeriesKind)? {
-        for entry in series {
-            guard entry.kind.mayPrintTotal else { continue }
-            guard let index = entry.counts.firstIndex(of: peak) else { continue }
-            return (ActivityCopy.monthName(index + 1, calendar: calendar, locale: locale), peak, entry.kind)
-        }
-        return nil
-    }
+    // `ceiling(in:peak:)` named the month that set the shared scale, for §5's footnote's second
+    // sentence. It went with the footnote in the copy audit of 2026-08-23 — deleted rather than
+    // kept, for the reason the killed Moments builders were: it had exactly one caller, and a
+    // helper whose only output was a removed sentence is a dark code path, not a utility. The
+    // `peak` it scanned for is still computed in `glance`, where it sets the bar heights.
 
     // MARK: - §3 Moments
 
-    /// The three C10 rows, in SCREENS.md's order, each present only when the record proves it.
+    /// The C10 rows, in SCREENS.md's order, each present only when the record proves it.
+    ///
+    /// **There is one of them now, and there were three.** The copy audit of 2026-08-23 killed rows
+    /// 1 and 2 by owner ruling. Their titles — `Spring flush noted` and `Watered through the dry
+    /// weeks` — asserted a seasonal narrative nothing in the app detects: the rows keyed off a
+    /// `leaf_out` tag and a count of waterings in named months, and then captioned that arithmetic
+    /// as a season. `Seven years on record` survives because it says what it counts.
+    ///
+    /// The row builders went with the titles rather than being left dark, so there is no dormant
+    /// code path waiting to draw a killed string.
     var moments: [Moment] {
-        [springFlush, dryWeeks, yearsOnRecord].compactMap { $0 }
+        [yearsOnRecord].compactMap { $0 }
     }
 
-    /// `Spring flush noted` · `Apr 3 · four visitors caught the bright new tips`.
-    ///
-    /// A visit carrying `leaf_out` is the record of a spring flush. The tag is validated against the
-    /// species vocabulary at capture (`PhenologyTag.validated(_:for:)`), so D5 is already answered by
-    /// the time a row exists — an evergreen that flushes new growth legitimately carries `leaf_out`,
-    /// and none of them can carry `fall_color`.
-    ///
-    /// The headcount clause is A8's floor applied to a sentence rather than to a row, exactly as
-    /// `AlmanacCopy.bloomSubtitle` applies it: at one or two, naming the number beside the tree and
-    /// the day comes close to naming the person (D11), so the clause is dropped and the date stands
-    /// on its own. On the shipped app it is always dropped, because every contribution is anonymous
-    /// under a device id until the account ask exists (D9).
-    private var springFlush: Moment? {
-        let visits = base.visibleVisits
-        // The claim is "the first one this year", which is a claim about all of them.
-        guard visits.isComplete else { return nil }
-
-        let year = calendar.component(.year, from: now)
-        let flushes = visits.items.filter {
-            $0.phenologyTags.contains(.leafOut) && calendar.component(.year, from: $0.capturedAt) == year
-        }
-        guard let first = flushes.min(by: { $0.capturedAt < $1.capturedAt }) else { return nil }
-
-        let people = Set(flushes.compactMap(\.userID)).count
-        return Moment(
-            kind: .springFlush,
-            accent: .newGrowth,
-            title: ActivityCopy.springFlushTitle,
-            subtitle: ActivityCopy.springFlushSubtitle(
-                seenAt: first.capturedAt,
-                visitors: people,
-                calendar: calendar,
-                locale: locale
-            )
-        )
-    }
-
-    /// `Watered through the dry weeks` · `Jun–Aug`.
-    ///
-    /// SCREENS.md's subtitle is `Jun–Aug · five care visits kept it going`. The second clause is a
-    /// public count of care events and BUILD-PLAN §4 forbids one; see `ActivitySeriesKind
-    /// .mayPrintTotal`. What is left is the span, which is what the title is claiming anyway.
-    ///
-    /// **"Through" is checked rather than asserted.** Waterings inside a single month are not
-    /// watering *through* anything, so the row needs two months of them before it will say so — the
-    /// same shape of check `AlmanacCopy.coverageBody` uses on its fifteen-minute walk.
-    private var dryWeeks: Moment? {
-        let care = base.visibleCareEvents
-        guard care.isComplete else { return nil }
-
-        let year = calendar.component(.year, from: now)
-        let months = care.items.compactMap { event -> Int? in
-            guard event.actions.contains(.watered),
-                  calendar.component(.year, from: event.capturedAt) == year
-            else { return nil }
-            let month = calendar.component(.month, from: event.capturedAt)
-            return ActivityMetrics.dryMonths.contains(month) ? month : nil
-        }
-        let distinct = Set(months).sorted()
-        guard distinct.count >= ActivityMetrics.minimumDryMonths,
-              let first = distinct.first,
-              let last = distinct.last
-        else { return nil }
-
-        return Moment(
-            kind: .dryWeeks,
-            accent: .water,
-            title: ActivityCopy.dryWeeksTitle,
-            subtitle: ActivityCopy.monthRange(from: first, to: last, calendar: calendar, locale: locale)
-        )
-    }
+    // Rows 1 and 2 — `Spring flush noted` and `Watered through the dry weeks`, with their
+    // subtitles `Apr 3 · four visitors caught the bright new tips` and `Jun–Aug` — were removed by
+    // the copy audit of 2026-08-23 (owner ruling). SCREENS.md 13 §3's first two table rows are
+    // struck to match.
+    //
+    // **The builders are deleted rather than left unreferenced**, because a dark builder is how a
+    // killed string comes back: the next reader finds `springFlush` intact, assumes the row was
+    // dropped by accident, and reinstates it. What they did is on the record here instead. Row 1
+    // fired on a visit tagged `leaf_out` in the current year and counted distinct contributors
+    // against A8's floor; row 2 fired on waterings falling in two or more of
+    // `ActivityMetrics.dryMonths` and printed the span, its own doc comment noting that
+    // SCREENS.md's `· five care visits kept it going` was already dropped as a public count
+    // BUILD-PLAN §4 forbids. Neither detection is lost — the visits and care events they read are
+    // still on the timeline and still in the three charts above; what is gone is the screen calling
+    // them a season.
+    //
+    // `ActivityMetrics.dryMonths` and `minimumDryMonths` went with row 2. `PhenologyTag.leafOut` is
+    // untouched: it is stored vocabulary and the check-in screen still writes it.
 
     /// `Seven years on record` · `First photo Mar 2019 · six people know this tree`.
     ///
@@ -431,12 +372,11 @@ enum ActivityCopy {
     static let sameWeekLabel = "Same week, other years"
     static let thisWeekChip = "this week"
 
-    // MARK: §3's three titles
+    // MARK: §3's titles
 
-    /// §3 row 1, verbatim.
-    static let springFlushTitle = "Spring flush noted"
-    /// §3 row 2, verbatim.
-    static let dryWeeksTitle = "Watered through the dry weeks"
+    // Rows 1 and 2 — `Spring flush noted` and `Watered through the dry weeks` — were removed by the
+    // copy audit of 2026-08-23 (owner ruling: they caption arithmetic as a season). SCREENS.md 13
+    // §3's first two table rows are struck to match.
 
     /// §3 row 3 — `Seven years on record`. The mock spells its number out and so does this.
     static func onRecordTitle(years: Int, locale: Locale) -> String {
@@ -447,25 +387,13 @@ enum ActivityCopy {
 
     // MARK: §3's subtitles
 
-    /// `Apr 3 · four visitors caught the bright new tips`.
-    ///
-    /// The headcount clause needs A8's three (`TreeProfilePresentation.caretakerThreshold`). Below
-    /// it the date stands alone: the flush still happened, the screen just stops saying how many
-    /// people were there.
-    static func springFlushSubtitle(seenAt: Date, visitors: Int, calendar: Calendar, locale: Locale) -> String {
-        let day = dayStamp(seenAt, calendar: calendar, locale: locale)
-        guard visitors >= TreeProfilePresentation.caretakerThreshold else { return day }
-        let people = spelledOut(visitors, locale: locale)
-        let noun = visitors == 1 ? "visitor" : "visitors"
-        return "\(day) · \(people) \(noun) caught the bright new tips"
-    }
-
-    /// `Jun–Aug`. An en dash and no spaces (ARCHITECTURE §5.7).
-    static func monthRange(from: Int, to: Int, calendar: Calendar, locale: Locale) -> String {
-        let start = shortMonthName(from, calendar: calendar, locale: locale)
-        guard to != from else { return start }
-        return start + "–" + shortMonthName(to, calendar: calendar, locale: locale)
-    }
+    // Both subtitles went with their rows in the copy audit of 2026-08-23: row 1's
+    // `Apr 3 · four visitors caught the bright new tips`, and row 2's `monthRange(from:to:…)`, which
+    // rendered `Jun–Aug`.
+    //
+    // `monthRange` is deleted rather than kept as a utility because it had exactly one caller — the
+    // dry-weeks row — and `Species.CareNote.monthRange` is a different symbol that a grep for
+    // "monthRange" will find nine times over. Checked by callers, not by name.
 
     /// `First photo Mar 2019 · six people know this tree`.
     ///
@@ -484,27 +412,25 @@ enum ActivityCopy {
         return "\(first) · \(spelledOut(caretakers, locale: locale)) people know this tree"
     }
 
-    // MARK: §5's footnote
-
-    /// `One scale across all three charts, so a tall bar means the same amount everywhere. June’s 12
-    /// photos set the ceiling.`
-    ///
-    /// The first sentence is a fact about the chart above it and is always true, because the shared
-    /// scale is how `glance` is built. The second names the month that set the ceiling and is only
-    /// written when there is a month to name and a number this screen publishes — a ceiling set by
-    /// the Care row leaves the first sentence standing alone (BUILD-PLAN §4).
-    static func footnote(ceiling: (month: String, count: Int, kind: ActivitySeriesKind)?) -> String {
-        let opening = "One scale across all three charts, so a tall bar means the same amount everywhere."
-        guard let ceiling else { return opening }
-        return "\(opening) \(ceiling.month)’s \(ceiling.count) \(ceiling.kind.countedNoun(ceiling.count)) set the ceiling."
-    }
+    // MARK: §5's footnote — removed
+    //
+    // It read `One scale across all three charts, so a tall bar means the same amount everywhere.`,
+    // with a second sentence naming the month that set the ceiling (`June’s 12 photos set the
+    // ceiling.`) when there was a month to name and a number this screen publishes.
+    //
+    // Removed by the copy audit of 2026-08-23, when the owner extended that day's footnote-slot
+    // ruling to the four sites its first enumeration missed. **Unlike screen 16's, this fact was
+    // not moved inline**: the ruling made one exception, for the 1.4 m of `MeasureCopy`, and this
+    // is not it. So the shared scale is now a property of the chart that the chart does not state.
+    // That is a deliberate consequence of the ruling and is written up in the audit document rather
+    // than worked around here.
 
     // MARK: The state SCREENS.md does not draw
 
     /// **NOT SPECIFIED.** SCREENS.md 13 draws one state, the full one, and this is the state every
     /// tree in the shipped app is actually in. Written in the shape `GrowthHistoryCopy.emptyState`
-    /// and `TreeProfilePresentation.coldStartFootnote` already use — state a fact, drop the rest of
-    /// the screen, invent nothing (DECISIONS constraint 21). See ERRATA.
+    /// and `OutboxCopy.emptyState` use — state a fact, drop the rest of the screen, invent nothing
+    /// (DECISIONS constraint 21). See ERRATA.
     static let emptyState = "Nothing has been recorded on this tree yet."
 
     /// **NOT SPECIFIED**, same reasoning as 11's. SCREENS.md 13 draws no failure state.
@@ -556,27 +482,14 @@ enum ActivityCopy {
         return formatter
     }
 
-    /// `June` — the footnote writes the month out.
-    static func monthName(_ month: Int, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        let symbols = formatter.standaloneMonthSymbols ?? TreeProfilePresentation.monthNames
-        guard (1...symbols.count).contains(month) else { return "" }
-        return symbols[month - 1]
-    }
-
-    /// `Jun` — the moments list abbreviates it.
-    static func shortMonthName(_ month: Int, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        let symbols = formatter.shortStandaloneMonthSymbols ?? []
-        guard (1...symbols.count).contains(month) else {
-            return monthName(month, calendar: calendar, locale: locale)
-        }
-        return symbols[month - 1]
-    }
+    // Two month formatters stood here and both are gone.
+    //
+    // `monthName` wrote `June` out for §5's footnote, which the copy audit of 2026-08-23 removed;
+    // `shortMonthName` wrote `Apr` for the `Apr 3 · …` subtitle of a Moments row the first half of
+    // the same audit killed, and had been dead since. Neither is left dark, for the reason that
+    // round gave: a formatter whose only output was a deleted sentence is a dormant path, not a
+    // utility. `ActivityCopy.monthYear` and `TreeProfilePresentation.monthNames` are what the
+    // screen's surviving strings use.
 }
 
 // MARK: - Screen metrics
@@ -608,14 +521,9 @@ enum ActivityMetrics {
 
     // MARK: Thresholds
 
-    /// §3 row 2's window. **NOT SPECIFIED** — the mock states `Jun–Aug` for one tree in one year and
-    /// no rule behind it. San Francisco's dry season is longer than this and its own driest weeks
-    /// are inside it; the narrow reading is the one that cannot overclaim, and it is named here
-    /// rather than buried in a comparison.
-    static let dryMonths: ClosedRange<Int> = 6...8
-
-    /// How many distinct months of watering "through the dry weeks" needs before it is true.
-    static let minimumDryMonths = 2
+    // §3 row 2's window (`dryMonths`, Jun–Aug) and its two-month floor (`minimumDryMonths`) went
+    // with the row in the copy audit of 2026-08-23. Both were **NOT SPECIFIED** guesses standing
+    // behind a sentence about a season, which is the thing the ruling removed.
 
     /// A tree first photographed this year is on record for zero years, and §5.6 does not draw a
     /// zero.
@@ -642,7 +550,6 @@ enum ActivityMetrics {
     static let stripChipInset: CGFloat = 8
     /// §4's current-week tile: `border:2px solid #2F6B4F`.
     static let stripCurrentBorder: CGFloat = 2
-    /// §5: `padding:16px 24px 36px`.
-    static let footnoteTop: CGFloat = 16
-    static let footnotePaddingH: CGFloat = 24
+    // §5's `padding:16px 24px 36px` went with the footnote in the copy audit of 2026-08-23. Only
+    // the 36pt survives, as the screen's closing space on the column — see `ActivityScreen`.
 }

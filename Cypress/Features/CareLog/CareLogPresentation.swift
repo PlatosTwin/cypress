@@ -101,8 +101,13 @@ enum CareLogCopy {
     /// 09 §2's title, before the middle dot.
     static let titleLead = "Care log"
 
-    /// 09 §3, verbatim.
-    static let subtitle = "Toggle what you did. Thirty seconds, then back to your walk."
+    /// 09 §3, minus its second sentence.
+    ///
+    /// `Thirty seconds, then back to your walk.` was cut by the copy audit of 2026-08-23 (R24,
+    /// owner-approved). The first sentence is an instruction about the controls under it; the
+    /// second was a promise about the reader's morning — the same distinction RULINGS R80 item 6a
+    /// drew for screen 18's two buttons, one screen over. `SCREENS.md` 1031 is struck to match.
+    static let subtitle = "Toggle what you did."
 
     /// 09 §5's well copy, verbatim. Since task #168 it is the caption over the always-visible
     /// fields rather than a control — the reveal step was the owner-reported awkwardness. The
@@ -116,12 +121,11 @@ enum CareLogCopy {
     /// 09 §6.
     static let doneCTA = "Done"
 
-    /// 09 §7, verbatim — including the em dash with no spaces around it (ARCHITECTURE §5.7).
-    ///
-    /// PROTOTYPE-FLOW §"Care sheet" records an earlier wording of the same sentence ("…care history,
-    /// kept separate from health observations."). SCREENS.md is the visual truth (ARCHITECTURE §1),
-    /// so this is the one that ships.
-    static let footnote = "This joins the tree’s care history—separate from health observations."
+    // 09 §7's footnote — `This joins the tree's care history—separate from health observations.` —
+    // was removed by the copy audit of 2026-08-23. **This one was a KEEP in the audit and the owner
+    // overrode it**: the ruling is that the footnote *slot* is the demo-era artifact, so it comes
+    // out of every screen that had one rather than being judged sentence by sentence. SCREENS.md 09
+    // §7 is struck to match, as is PROTOTYPE-FLOW's earlier wording of the same sentence.
 
     /// The four actions SCREENS.md 09 §4 draws, in its order.
     ///

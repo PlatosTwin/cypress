@@ -55,7 +55,31 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
     func testShare()         { check("share",         anchor: "Share this tree", pushed: false) }
 
     /// The three tab roots other than the map. No Back, because a tab root has nowhere to go back to.
-    func testGroveTab()      { check("grove",         anchor: "Quiet collecting", pushed: false) }
+    /// The anchor was `Quiet collecting` — screen 08's footnote — until the copy audit of
+    /// 2026-08-23 removed it, and choosing its replacement turned up a live trap worth recording.
+    ///
+    /// **`My Grove` looks like the obvious anchor and is worthless.** It is the screen's own title,
+    /// but C16's tab item carries the same words on *every* tab root, so `app.staticTexts` finds it
+    /// on the You tab as readily as on the grove. Measured, not reasoned: pointing this case at
+    /// `you` with that anchor **passed**, which is a test that cannot fail for the thing it exists
+    /// to check.
+    ///
+    /// So the anchor is §3's progress caption, which is `GroveCopy`'s alone — **and the empty
+    /// grove's own sentence beside it, because the caption alone was a report on the device.**
+    ///
+    /// That weakness was stated when the caption was chosen ("a device whose grove is empty would
+    /// fail here on a healthy build") and shipped anyway. It failed on the first CI run of that
+    /// change, on a clean runner, while passing on the author's simulator — which had recognized a
+    /// species in some earlier test. The E216 family exactly: the UI suite inherits the device's
+    /// state, and naming a hazard in a comment is not guarding it.
+    ///
+    /// Both sentences belong to screen 08 and to no other, so arrival is still proved by a sentence
+    /// only this screen says. What is no longer asserted is *which* of the screen's two legitimate
+    /// states this device is in, which this suite was never about. Red-proved the way the caption
+    /// was: pointed at `you`, carrying both anchors, it fails.
+    func testGroveTab() {
+        check("grove", anyOf: ["you can recognize", "Your grove is empty"], pushed: false)
+    }
     func testJournalTab()    { check("journal",       anchor: "Almanac",          pushed: false) }
     func testYouTab()        { check("you",           anchor: "Your contributions", pushed: false) }
 

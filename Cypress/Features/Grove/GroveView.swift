@@ -59,13 +59,13 @@ struct GroveView: View {
                         case .trees: treesTab
                         }
 
-                        // §6's `margin-top:auto`. The footnote sits at the bottom of the column
-                        // whether the column is full or empty, which is the whole layout of the
-                        // empty grove — and it is drawn on both pills, because "there are no
-                        // streaks and no leaderboards" is the specification of each of them.
-                        Spacer(minLength: 0)
-                        footnote
+                        // §6's `margin-top:auto` existed to bottom-pin the footnote, and the copy
+                        // audit of 2026-08-23 removed the footnote (owner ruling). The spacer goes
+                        // with it: nothing is left to push down, and the `minHeight` frame below
+                        // already top-aligns the column on an empty grove. The 14pt that closed the
+                        // column was the footnote's own bottom padding and is kept as itself.
                     }
+                    .padding(.bottom, CypressSpacing.labelSectionTop)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(minHeight: proxy.size.height, alignment: .top)
                 }
@@ -102,8 +102,9 @@ struct GroveView: View {
                 // ring, the celebration and the grid are each derived from contributions
                 // (`GrovePresentation.isEmpty`), so a device that has made none renders none of
                 // them; this is the sentence that fills the column they would otherwise leave
-                // silent, above §6's bottom-pinned footnote. Same card `treesTab` already draws
-                // for its own empty state, below.
+                // silent, and since the copy audit of 2026-08-23 took §6's footnote out of it (see
+                // the note on the spacer above) it is the only thing under the tab row. Same card
+                // `treesTab` already draws for its own empty state, below.
                 GroveNote(GroveCopy.emptyGrove)
                     .padding(.top, CypressSpacing.labelSectionTop)
                     .padding(.horizontal, CypressSpacing.gutter)
@@ -244,8 +245,8 @@ struct GroveView: View {
 
     /// **NOT SPECIFIED** by SCREENS.md 08, which draws no error state.
     ///
-    /// Without this arm a failed read drew the empty grove — title, tab row, footnote, and a column
-    /// of nothing between them. `GroveModel.Phase` had already refused to conflate those two, on the
+    /// Without this arm a failed read drew the empty grove — title, tab row, and a column of nothing
+    /// between them. `GroveModel.Phase` had already refused to conflate those two, on the
     /// grounds that they look identical and mean opposite things; the view then conflated them
     /// anyway by having only one branch, so the distinction the model paid for was spent nowhere
     /// (ERRATA E126).
@@ -254,9 +255,9 @@ struct GroveView: View {
     /// re-runs the load — rather than a new one, because a reader meeting a second failure should be
     /// meeting a screen they already know how to leave.
     ///
-    /// It sits on §3's gutter, the block it stands in place of, and above §6's footnote, which keeps
-    /// its `margin-top:auto` and stays at the bottom of the column exactly as it does when the grove
-    /// is empty.
+    /// It sits on §3's gutter, the block it stands in place of. §6's footnote used to close the
+    /// column beneath it; the copy audit of 2026-08-23 removed it, so this sentence is now the last
+    /// thing on a failed read.
     private var failure: some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
             Text(GroveCopy.loadFailed)
@@ -294,19 +295,8 @@ struct GroveView: View {
         .padding(.horizontal, CypressSpacing.gutterLabel)
     }
 
-    // MARK: - Footnote
-
-    /// §6: 12px, `text.faintAlt`, centered, `padding:14px 18px`.
-    private var footnote: some View {
-        Text(GroveCopy.footnote)
-            .font(CypressFont.body12)
-            .foregroundStyle(CypressColor.textFaintAlt)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.top, GroveMetrics.footnoteTop)
-            .padding(.bottom, GroveMetrics.footnoteBottom)
-            .padding(.horizontal, CypressSpacing.gutterLabel)
-    }
+    // §6's footnote was removed by the copy audit of 2026-08-23 (owner ruling). SCREENS.md 08 §6 is
+    // struck to match.
 
     // MARK: - Bottom bar
 

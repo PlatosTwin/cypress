@@ -11,8 +11,10 @@
 //  - **D1 / ARCHITECTURE §5.1 — nothing counts a person's actions.** The ring's numerator is how
 //    many *species* the contributor can recognize, not how many visits, photographs or care events
 //    they logged; the tiles carry a species name and no history; `KnownSpecies` has no count on it
-//    at all. The screen's own footnote — "Quiet collecting. There are no streaks and no
-//    leaderboards." — is not decoration, it is the specification of this file.
+//    at all. The screen used to say so in a footnote — "Quiet collecting. There are no streaks and
+//    no leaderboards." — which the copy audit of 2026-08-23 removed by owner ruling. **The rule it
+//    stated is unchanged and is still the specification of this file**; what went is the screen
+//    narrating its own restraint to the reader.
 //  - **D11 — private by default.** Every number here is about the viewer's own device and never
 //    leaves it. There is no comparison to anybody, because there is no other body of data to
 //    compare against; the API has no method that could fetch one.
@@ -135,11 +137,11 @@ struct GrovePresentation: Equatable {
     let celebration: Celebration?
     let tiles: [Tile]
 
-    /// Always drawn. It is the only content the empty grove has, and it is the sentence that makes
-    /// the screen honest whatever else is on it.
-    var footnote: String { GroveCopy.footnote }
+    // §6's footnote was removed by the copy audit of 2026-08-23; see `GroveCopy`. It used to be
+    // the only content an empty grove had, which is why `GroveCopy.emptyGrove` now carries that
+    // screen alone.
 
-    /// Whether anything at all sits between the tab row and the footnote.
+    /// Whether anything at all sits below the tab row.
     ///
     /// BUILD-PLAN §9 M2 requires an "empty grove" and no mock draws one, so what is *absent* here is
     /// the design decision: the ring, the callout and the grid are all derived from contributions,
@@ -305,8 +307,11 @@ enum GroveCopy {
 
     static let screenTitle = "My Grove"
 
-    /// §6, verbatim. Centered, 12px, `text.faintAlt`.
-    static let footnote = "Quiet collecting. There are no streaks and no leaderboards."
+    // §6's footnote — `Quiet collecting. There are no streaks and no leaderboards.` — was removed by
+    // the copy audit of 2026-08-23 (owner ruling: the footnote slot is a demo-era artifact and comes
+    // out of every screen that had one). `JournalCopy.footnote` was an alias of it and went with it,
+    // so the Journal tab lost the same sentence in the same commit. SCREENS.md 08 §6 is struck to
+    // match; do not restore it from the mock.
 
     /// **ERRATA E48, closed.** BUILD-PLAN §9 M2 requires an empty-grove state and neither SCREENS.md
     /// nor any mock gave it a word — E48 flagged the gap and shipped the honest minimum (nothing)
@@ -486,7 +491,6 @@ enum GroveMetrics {
     /// §5: grid `padding:14px 16px 0`.
     static let gridTop: CGFloat = CypressSpacing.labelSectionTop
 
-    /// §6: footnote `padding:14px 18px`, `margin-top:auto`.
-    static let footnoteTop: CGFloat = CypressSpacing.labelSectionTop
-    static let footnoteBottom: CGFloat = CypressSpacing.labelSectionTop
+    // §6's footnote metrics (`padding:14px 18px`, `margin-top:auto`) went with the footnote itself in
+    // the copy audit of 2026-08-23.
 }

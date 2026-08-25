@@ -110,10 +110,13 @@ enum ActivityPreviewFixtures {
 
     /// **SCREENS.md 13's own year**, rebuilt from records rather than from bar heights.
     ///
-    /// The mock draws heights, not counts, and states one count in its footnote: `June’s 12 photos
-    /// set the ceiling`. So the photo month distribution below is chosen to peak at 12 in June and
-    /// to total the drawn `41`; check-ins total the drawn `18`; care totals the drawn `9` and is
-    /// absent in the five months the mock stars.
+    /// The mock draws heights, not counts, and stated exactly one count in words — `June’s 12
+    /// photos set the ceiling`, in the §5 footnote the copy audit of 2026-08-23 struck. **That is
+    /// where the 12 below came from and the strike does not move it**: the bar heights the number
+    /// described are still drawn, so the photo month distribution is still chosen to peak at 12 in
+    /// June and to total the drawn `41`; check-ins total the drawn `18`; care totals the drawn `9`
+    /// and is absent in the five months the mock stars. Recorded here because a fixture whose
+    /// source has been struck from the spec is one nobody can re-derive later.
     static func drawnProfile() -> TreeProfile {
         // June is 11 here and 12 on the chart: the twelfth is the one taken *this* week, which the
         // strip below needs and which `spread` would otherwise place early in the month.
@@ -165,7 +168,9 @@ enum ActivityPreviewFixtures {
 
 // MARK: - Previews
 
-/// The state SCREENS.md 13 draws: the chart card, the moments, the strip and the footnote.
+/// The full state, and every block SCREENS.md 13 still specifies: the chart card, the moments and
+/// the strip. 13 §5 put a footnote under them until the copy audit of 2026-08-23 removed it and
+/// struck the section to match.
 #Preview("13 · tree activity") {
     NavigationStack {
         ActivityScreen(

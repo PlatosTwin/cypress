@@ -175,12 +175,18 @@ struct AlmanacScreen: View {
                         failure
                     }
 
-                    // §5's `margin-top:auto`. The footnote sits at the bottom of the column whether
-                    // the column is full or empty, which is the whole layout of an almanac with
-                    // nothing in it.
-                    Spacer(minLength: 0)
-                    footnote
+                    // §5's `margin-top:auto` existed to bottom-pin the footnote, and the copy audit
+                    // of 2026-08-23 removed the footnote (owner ruling). The spacer goes with it:
+                    // there is nothing left to push down, and the column is already top-aligned by
+                    // the `minHeight` frame below. Leaving it would be a flexible gap holding
+                    // nothing open.
+                    //
+                    // **The 36pt below is not the footnote and stays.** It is the screen's closing
+                    // space above the home indicator; it happened to be spelled as the footnote's
+                    // bottom padding, and deleting it with the sentence would have run the last card
+                    // into the edge.
                 }
+                .padding(.bottom, CypressSpacing.bottomFootnote)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }
@@ -306,8 +312,9 @@ struct AlmanacScreen: View {
     ///
     /// Placed after §3 and before §4 on purpose. §3 says what lives in the neighborhood; this says
     /// where nothing does — two readings of the same canopy — while §4 stays the screen's one
-    /// directed ask, the last thing the reader is left with before the footnote. A plain row before
-    /// §4's amber card also reads as the statement it is rather than as a second ask.
+    /// directed ask and the last block in the column, so it is what the reader is left with. A
+    /// plain row before §4's amber card also reads as the statement it is rather than as a second
+    /// ask.
     @ViewBuilder
     private func vacantSitesBlock(_ presentation: AlmanacPresentation) -> some View {
         if let block = presentation.vacantSites {
@@ -375,17 +382,24 @@ struct AlmanacScreen: View {
                             .foregroundStyle(CypressColor.textInk)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Text(coverage.body)
-                            .font(CypressFont.body125)
-                            .foregroundStyle(CypressColor.textMuted)
-                            .lineSpacing(CypressFont.LineSpacing.body125)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, AlmanacMetrics.coverageBodyTop)
-                            .padding(.bottom, AlmanacMetrics.coverageBodyBottom)
+                        // Optional since the copy audit of 2026-08-23: the body's opening sentence
+                        // was killed, and what is left renders only when it has been checked. On a
+                        // card with no body the CTA takes the gap the body's own bottom margin held
+                        // open, so the button does not move up against the title.
+                        if let body = coverage.body {
+                            Text(body)
+                                .font(CypressFont.body125)
+                                .foregroundStyle(CypressColor.textMuted)
+                                .lineSpacing(CypressFont.LineSpacing.body125)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, AlmanacMetrics.coverageBodyTop)
+                                .padding(.bottom, AlmanacMetrics.coverageBodyBottom)
+                        }
 
                         PrimaryButton(coverage.ctaTitle, style: .compact) {
                             onShowGroup?(coverage.group)
                         }
+                        .padding(.top, coverage.body == nil ? AlmanacMetrics.coverageBodyBottom : 0)
                     }
                 }
             }
@@ -454,18 +468,8 @@ struct AlmanacScreen: View {
         .padding(.horizontal, CypressSpacing.gutter)
     }
 
-    // MARK: - §5 Footnote
-
-    private var footnote: some View {
-        Text(AlmanacCopy.footnote)
-            .font(CypressFont.body12)
-            .foregroundStyle(CypressColor.textFaintAlt)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.top, AlmanacMetrics.footnoteTop)
-            .padding(.bottom, AlmanacMetrics.footnoteBottom)
-            .padding(.horizontal, CypressSpacing.gutterLabel)
-    }
+    // §5's footnote was removed by the copy audit of 2026-08-23 (owner ruling). SCREENS.md 12 §5 is
+    // struck to match, so a future build cannot restore it from the mock.
 }
 
 // MARK: - §3's share row

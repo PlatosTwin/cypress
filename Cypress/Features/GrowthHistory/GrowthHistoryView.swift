@@ -107,8 +107,10 @@ struct GrowthHistoryView: View {
                         addReadingLink
                     }
 
-                    // 6 · SCREENS.md's footnote is deliberately absent. See
-                    // `GrowthHistoryCopy.unrenderedFootnote` and ERRATA (E64).
+                    // 6 · SCREENS.md's footnote was never drawn here (ERRATA E64), and the copy
+                    // audit of 2026-08-23 removed the constant that held it too — see
+                    // `GrowthHistoryCopy` for both halves of that. The 36pt below is the screen's
+                    // closing space, not a footnote's, and predates all of it.
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, CypressSpacing.bottomFootnote)

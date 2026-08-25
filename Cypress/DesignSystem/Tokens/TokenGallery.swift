@@ -16,6 +16,14 @@
 //
 //  Not shipped in any screen. It imports nothing outside DesignSystem.
 //
+//  **The specimen sentences track the shipped copy, not the demo.** Same rule `ComponentGallery`
+//  states and for the same reason: a gallery is where somebody looks to see how something reads,
+//  and retired copy sitting in one is a supply of retired copy to paste back into a screen. The
+//  `body.15` specimen carried `Watered, mulched. Thirty seconds, next tree.` — the demo-era clause
+//  the copy audit of 2026-08-23 struck one screen over (R24) — and now carries a sentence the app
+//  actually draws. Specimens are literals here rather than references because this file imports
+//  nothing outside DesignSystem; they demonstrate a face at a size and pin no copy.
+//
 
 import SwiftUI
 
@@ -264,7 +272,7 @@ struct TokenGallery: View {
                 Text("Hesperocyparis macrocarpa").cypressLatinName()
             }
             labeled(".cypressBody15()") {
-                Text("Watered, mulched. Thirty seconds, next tree.").cypressBody15()
+                Text("DBH is measured at 1.4 m above the ground.").cypressBody15()
             }
             labeled(".cypressBody135()") {
                 Text("In July this tree is usually in full leaf.").cypressBody135()
@@ -731,7 +739,7 @@ private enum TokenGalleryData {
         TypeSample("body.16", "Sans 16/700", CypressFont.body16, "Log this visit"),
         TypeSample("body.15.5", "Sans 15.5/700", CypressFont.body155, "What tree is this?"),
         TypeSample("body.15.5 extrabold", "Sans 15.5/800", CypressFont.body155ExtraBold, "What tree is this?"),
-        TypeSample("body.15", "Sans 15/400", CypressFont.body15, "Watered, mulched. Thirty seconds, next tree."),
+        TypeSample("body.15", "Sans 15/400", CypressFont.body15, "DBH is measured at 1.4 m above the ground."),
         TypeSample("body.15 bold", "Sans 15/700", CypressFont.body15Bold, "Save"),
         TypeSample("body.14.5", "Sans 14.5/400", CypressFont.body145, "Search trees or streets"),
         TypeSample("body.14.5 semibold", "Sans 14.5/600→700", CypressFont.body145SemiBold, "Growth over time"),

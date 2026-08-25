@@ -230,7 +230,6 @@ struct CityPresentationTests {
             CityCopy.loadRetry,
             CityCopy.locationPromptTitle,
             CityCopy.locationPromptSubtitle,
-            CityCopy.footnote,
             CityCopy.recordSince(1898),
             CityCopy.recordSubject(name: nil, species: nil, street: nil),
             CityCopy.contrastSentence(name: "Monterey cypress", localShare: 0.18, cityShare: 0.04, locale: Self.locale)

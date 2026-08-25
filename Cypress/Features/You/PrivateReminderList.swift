@@ -5,12 +5,15 @@
 //  Where a private reminder can be read again (ERRATA E131, on E23's terms).
 //
 //  ── The defect ─────────────────────────────────────────────────────────────────────────────
-//  Screen 06 offers `Save a private reminder for yourself` and confirms `Saved. Your reminder stays
-//  yours alone.` Both were true — the row reaches `private_reminders` and nobody else can read it —
-//  and there was nowhere in the app to read it *yourself*. `LocalAPI.privateReminders(limit:)` had
-//  been written with the correct one-owner query and had no shipping caller, so the whole feature
-//  was a control that acknowledged a save into a drawer with no handle. "Stays yours alone" is only
-//  a promise if it is still yours.
+//  Screen 06 offers `Save a private reminder for yourself` and confirms the save is private to the
+//  person who made it. Both were true — the row reaches `private_reminders` and nobody else can
+//  read it — and there was nowhere in the app to read it *yourself*.
+//  `LocalAPI.privateReminders(limit:)` had been written with the correct one-owner query and had no
+//  shipping caller, so the whole feature was a control that acknowledged a save into a drawer with
+//  no handle. Private is only a promise while the record is still reachable by its owner.
+//
+//  (The confirmation read `Saved. Your reminder stays yours alone.` until the copy audit of
+//  2026-08-23; see `ReportCopy.reminderSaved`.)
 //
 //  ── Why the You tab ────────────────────────────────────────────────────────────────────────
 //  ERRATA E23 settled that these are device-scoped and private, and that ownership moves onto an
@@ -142,16 +145,22 @@ enum PrivateReminderCopy {
     /// coordinate in SCREENS.md — it was the only user-facing string in the app that used one, and
     /// nobody reading the You tab has ever seen a screen number. "Report an issue" is screen 06's
     /// own C1 title and "Call 311 now" is the button above the save, so both halves of the sentence
-    /// are now things a person can have read. The promise at the end is unchanged: it is screen
-    /// 06's confirmation, and it is the whole reason this section exists.
+    /// are now things a person can have read. The privacy fact at the end is still screen 06's
+    /// confirmation and still the whole reason this section exists — it now says it in that
+    /// screen's new words (copy audit of 2026-08-23, R20/R21), as its own sentence rather than as
+    /// a clause hung off the end of a longer one.
     static let emptyState =
         "Nothing saved. A reminder you keep after reporting an issue and calling 311 shows up "
-        + "here, and stays yours alone."
+        + "here. Reminders are private to you."
 
     /// **A read that failed, said as a failure.** Not "nothing saved": that is a sentence about the
     /// person's records, and saying it over a database that could not be read tells somebody their
     /// reminders are gone.
-    static let failedState = "Your reminders could not be read just now. Nothing has been lost—open the You tab again."
+    ///
+    /// Three sentences rather than two since the copy audit of 2026-08-23 (R22). The em dash ran
+    /// the reassurance into the instruction; the reassurance is the load-bearing half and now
+    /// stands on its own.
+    static let failedState = "Your reminders could not be read just now. Nothing has been lost. Open the You tab again."
 
     static func savedLine(at date: Date) -> String {
         "Saved \(date.formatted(date: .abbreviated, time: .omitted))"

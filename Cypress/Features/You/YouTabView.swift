@@ -340,15 +340,18 @@ struct YouTabView: View {
 /// **Every string here is NOT SPECIFIED.** The You tab has no mock and no copy anywhere in the
 /// source documents; only its *contents* are named, by BUILD-PLAN §9. Each is written to state a
 /// fact and stop, which is the shape every other unspecified string in this app uses
-/// (`OutboxCopy.emptyState`, `GrowthHistoryCopy.emptyState`, `TreeProfilePresentation
-/// .coldStartFootnote`). Sentence case, no spaces around em dashes (ARCHITECTURE §5.7).
+/// (`OutboxCopy.emptyState`, `GrowthHistoryCopy.emptyState`, `ActivityCopy.emptyState`). Sentence
+/// case, no spaces around em dashes (ARCHITECTURE §5.7).
 enum YouCopy {
 
     static let screenTitle = "You"
 
     static let contributionsLabel = "Your contributions"
     static let outboxRowTitle = "Outbox"
-    /// Screen 17's footnote is the promise this row is a door to; this is that promise in one line.
+    /// Screen 17's contract is the promise this row is a door to — nothing disappears silently, an
+    /// item that cannot sync says so, says why, and waits — and this is that promise in one line.
+    /// 17 printed it as a footnote until the copy audit of 2026-08-23 (owner ruling); the rule is
+    /// unchanged and is enforced by `OutboxViewState`, not by either sentence.
     static let outboxRowSubtitle = "What is waiting to send, and what has gone"
 
     static let settingsLabel = "Settings"

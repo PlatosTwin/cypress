@@ -163,8 +163,11 @@ enum CheckInCopy {
 
     static let saveCTA = "Save check-in"
 
-    /// Load-bearing, and verbatim. It is the sentence that makes a 90-second card honest.
-    static let footnote = "Everything here is optional. Skip anything and it still counts."
+    // 05 §8's footnote — `Everything here is optional. Skip anything and it still counts.` — was
+    // removed by the copy audit of 2026-08-23, when the owner extended that day's footnote-slot
+    // ruling to the four sites its first enumeration missed. The card's behavior is unchanged and
+    // is what carried the claim: every control on it is optional, `CheckInDraft` requires none of
+    // them, and the CTA is live on an untouched card.
 
     /// The leaf-off state, which BUILD-PLAN §9 lists as a required M2 build ("vitality suppressed
     /// leaf-off state for deciduous species") without giving copy for it.
@@ -299,8 +302,10 @@ enum CheckInMetrics {
     /// `border:2px solid` on the selected row, against `1px` on the rest.
     static let rowBorderSelected: CGFloat = 2
 
-    /// 05 §7: the sticky CTA block — `padding:12px 18px 8px`.
+    /// 05 §7: the sticky CTA block — `padding:12px 18px 8px`. The `8px` was the gap above §8's
+    /// footnote and went with it in the copy audit of 2026-08-23; the CTA block now closes the
+    /// screen and carries `CypressSpacing.bottomFootnote` instead.
     static let ctaTop: CGFloat = 12
-    /// 05 §8: the footnote — `padding:0 18px 36px`.
-    static let footnoteBottom: CGFloat = 36
+    // 05 §8's `padding:0 18px 36px` went with the footnote itself in the copy audit of 2026-08-23.
+    // The 36pt survives as the screen's closing space, on the CTA block — see `CheckInView`.
 }

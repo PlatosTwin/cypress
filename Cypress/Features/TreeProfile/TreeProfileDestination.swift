@@ -8,7 +8,7 @@
 //  ── Why this exists at all ────────────────────────────────────────────────────────────────
 //  A vacant planting site is 12,518 rows of the seed and it has no tree in it. Screen 14 — the cold
 //  profile — asserts one: an empty photo well captioned `No photos of this tree yet` over
-//  `Be the first to photograph this tree`. E107 gave the site its own screen and routed the *map
+//  `Add the first photo of this tree`. E107 gave the site its own screen and routed the *map
 //  card* to it, and named the residue in its own last paragraph: "Entrances other than the map —
 //  the visit flow's nearest-candidate list, a stale link — still land a vacant site on the degraded
 //  profile."

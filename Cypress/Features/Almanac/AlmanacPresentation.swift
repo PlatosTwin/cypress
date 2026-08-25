@@ -102,19 +102,24 @@ struct AlmanacPresentation: Equatable {
     struct Coverage: Equatable {
         /// `9 young trees with no visits since planting`.
         let title: String
-        /// The two-sentence body. The second sentence is present only when it is true.
-        let body: String
+        /// `All nine are within a 15-minute walk.` — present only when it is true, nil otherwise.
+        ///
+        /// This was a two-sentence body until the copy audit of 2026-08-23, whose owner ruling
+        /// killed the opening sentence ("The first two summers decide whether a street tree makes
+        /// it.") as an unattributed arboricultural claim. What is left is the checked half, and the
+        /// checked half is sometimes absent — hence the optional.
+        let body: String?
         /// `Walk the nine`.
         let ctaTitle: String
 
         /// Where the CTA goes: **all nine of them, on a map** (ERRATA E129).
         ///
         /// It used to be `firstTreeID`, one tree, and the justification was screen 14's own footnote
-        /// calling itself "the almanac's 'walk the nine' list, one tree at a time". That footnote is
-        /// specified verbatim (SCREENS.md 14 §7) and it stays; what it could not do is stand in for a
-        /// destination. The button says `Walk the nine`, and a walk is a route between places, so a
-        /// screen showing one place was never it. The footnote now describes the road the reader
-        /// actually took — see `TreeProfilePresentation.coldStartFootnote`.
+        /// calling itself "the almanac's 'walk the nine' list, one tree at a time". What that
+        /// footnote could not do is stand in for a destination: the button says `Walk the nine`, and
+        /// a walk is a route between places, so a screen showing one place was never it. The
+        /// footnote itself was removed by the copy audit of 2026-08-23 (owner ruling), so this is
+        /// now the whole account of why the CTA goes where it goes.
         let group: PinSet
     }
 
@@ -158,11 +163,10 @@ struct AlmanacPresentation: Equatable {
     let coverage: Coverage?
     let vacantSites: VacantBlock?
 
-    /// §5, always drawn. It is the sentence that makes the screen honest whatever else is on it,
-    /// and on a device with no location it is the only thing on it.
-    var footnote: String { AlmanacCopy.footnote }
+    // §5's footnote was removed by the copy audit of 2026-08-23; see `AlmanacCopy`. On a device
+    // with no location it was the only thing on the screen; the location prompt now is.
 
-    /// Whether anything at all sits between the header and the footnote.
+    /// Whether anything at all sits below the header.
     ///
     /// **NOT SPECIFIED.** SCREENS.md 12 draws one state, the full one. What an almanac with nothing
     /// in it looks like is not drawn anywhere, and it is the state most devices are in: no seeded
@@ -448,8 +452,10 @@ enum AlmanacCopy {
     /// §1's title.
     static let screenTitle = "Almanac"
 
-    /// §5, verbatim. Centered, `text.faintAlt`.
-    static let footnote = "No ranks, no counters. The almanac notices trees, not scores."
+    // §5's footnote — `No ranks, no counters. The almanac notices trees, not scores.` — was removed
+    // by the copy audit of 2026-08-23 (owner ruling: the footnote slot is a demo-era artifact and
+    // comes out of every screen that had one). SCREENS.md 12 §5 is struck to match. Do not restore
+    // it from the mock; the mock is the thing that was ruled against.
 
     /// §2's micro-label.
     static let seasonLabel = "This season"
@@ -630,7 +636,7 @@ enum AlmanacCopy {
     /// It says the almanac could not be read, and says nothing at all about the neighborhood —
     /// which is the distinction `AlmanacModel.Phase` exists to keep, and the one this screen can
     /// least afford to lose, its whole subject being what is and is not out there. A screen that
-    /// draws its five blocks away and leaves a footnote is reporting a quiet neighborhood; that
+    /// draws its blocks away and leaves the column bare is reporting a quiet neighborhood; that
     /// report has to be earned by a read that finished.
     static let loadFailed = "This almanac could not be loaded."
     static let loadRetry = "Try again"
@@ -738,18 +744,22 @@ enum AlmanacCopy {
         return "\(trees) with no \(count == 1 ? "visit" : "visits") since planting"
     }
 
-    /// `The first two summers decide whether a street tree makes it. All nine are within a
-    /// 15-minute walk.`
+    /// `All nine are within a 15-minute walk.` — or nothing at all.
     ///
-    /// The first sentence is a fact about street trees and is always true. The second is a claim
-    /// about where the reader is standing, so it is only written when it has been checked — see
-    /// `AlmanacPresentation.coverage`. A sentence that is drawn whether or not it is true is not
-    /// copy, it is decoration.
-    static func coverageBody(count: Int, allWithinWalk: Bool, locale: Locale) -> String {
-        let opening = "The first two summers decide whether a street tree makes it."
-        guard allWithinWalk else { return opening }
+    /// **The opening sentence is gone, and this returns nil where it used to stand alone.** SCREENS
+    /// 12 §4 wrote the body as two sentences, the first being `The first two summers decide whether
+    /// a street tree makes it.` That is an arboricultural claim the app cannot source, which
+    /// DECISIONS constraint 15 forbids inventing; the copy audit of 2026-08-23 killed it by owner
+    /// ruling and struck the line from SCREENS.md.
+    ///
+    /// What remains is a claim about where the reader is standing, so it is only written when it has
+    /// been checked — see `AlmanacPresentation.coverage`. A sentence that is drawn whether or not it
+    /// is true is not copy, it is decoration. When it has not been checked the card now draws its
+    /// title and its button and no body, rather than falling back to a sentence about summers.
+    static func coverageBody(count: Int, allWithinWalk: Bool, locale: Locale) -> String? {
+        guard allWithinWalk else { return nil }
         let subject = count == 1 ? "It is" : "All \(spelledOut(count, locale: locale)) are"
-        return "\(opening) \(subject) within a 15-minute walk."
+        return "\(subject) within a 15-minute walk."
     }
 
     /// `Walk the nine`. One tree reads `Walk to it`, because "walk the one" is not a sentence.
@@ -854,10 +864,13 @@ enum AlmanacMetrics {
     static let compositionRowSpacing: CGFloat = CypressSpacing.gapRows
 
     /// §4: title, then body `margin:4px 0 12px`, then the CTA.
+    ///
+    /// `coverageBodyBottom` is also the gap the CTA takes when there is no body to sit under — see
+    /// `AlmanacView.coverageBlock`, and `AlmanacCopy.coverageBody` for when that happens.
     static let coverageBodyTop: CGFloat = 4
     static let coverageBodyBottom: CGFloat = 12
 
-    /// §5: footnote `padding:16px 18px 36px`, `margin-top:auto`.
-    static let footnoteTop: CGFloat = 16
-    static let footnoteBottom: CGFloat = CypressSpacing.bottomFootnote
+    // §5's footnote metrics (`padding:16px 18px 36px`, `margin-top:auto`) went with the footnote
+    // itself in the copy audit of 2026-08-23. `CityView` drew its own footnote with them and no
+    // longer draws one either.
 }

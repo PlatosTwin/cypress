@@ -48,7 +48,7 @@ The design-tool runtime is `support.js` (`DCLogic`). `setState` is a **React-sty
 | `goIdentify` | "What tree is this?" FAB | `{screen:'identify'}` |
 | `goProfile` | any map pin, map tree card, any identify candidate card, any grove tree row | `{screen:'profile'}` |
 | `goGrove` | map "My Grove" tab; `nextAction` when `treeIdx >= 2` | `{screen:'grove'}` |
-| `goCamera` | profile "Visit · say hello with a photo" | `{screen:'camera', snapped:false, note:'', chips:{'New growth':false,'Cones':false,'Storm damage':false}}` |
+| `goCamera` | profile ~~"Visit · say hello with a photo"~~ "Visit · add a photo" | `{screen:'camera', snapped:false, note:'', chips:{'New growth':false,'Cones':false,'Storm damage':false}}` |
 | `backFromCamera` | camera ✕ | `{screen: treeIdx === 0 ? 'profile' : 'saved'}` (evaluated at render) |
 | `snap` | shutter | `{snapped:true}` |
 | `setNote` | note input `onChange` | `{note: e.target.value}` |
@@ -118,7 +118,7 @@ Chip style bases:
 | Affordance | Result |
 |---|---|
 | Back chevron (over photo header) | `goMap` |
-| "Visit · say hello with a photo" | `goCamera` |
+| ~~"Visit · say hello with a photo"~~ "Visit · add a photo" | `goCamera` |
 | "Care" | `goCare` → care sheet |
 | "Share" | `goShare` → share sheet |
 | "Favorite", "Report", stat cards, foliage strip | **inert** |
@@ -231,7 +231,9 @@ Candidate thumb gradients (all `linear-gradient(170deg,…)` base + 3 radials, b
 - Title: `Grandmother Cypress` (27px Source Serif 4 600) + `THRIVING`.
 - Subtitle: `Monterey Cypress · Hesperocyparis macrocarpa` (italic serif 15px `#66735F`).
 - Callout: `**How to recognize it:** flat, layered crown; tiny scale-like leaves; lemony scent when crushed.` (`background:#EFF3E3;border:1px solid #DFE6CD;color:#41522F`)
-- Primary CTA: `Visit · say hello with a photo`
+- Primary CTA: ~~`Visit · say hello with a photo`~~ `Visit · add a photo`
+  **REWRITTEN — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`), R3. The two
+  handler tables above name the old label as a trigger and are struck to match.
 - Secondary row: `Favorite` · `Care` · `Share` · `Report`
 - Stats: `Height` = `18 m` + badge `est.` (`color:#8A6A2A;background:#F1EAD8`); `DBH` = `64 cm` + badge `taped` (`color:#28623F;background:#E2EFE2`).
 
@@ -247,11 +249,13 @@ Visit rows use a 38px photo thumb; care rows use a 38px `#E2EFE2` tile with a `#
 
 ### Care sheet
 - Title `Care log · {{ treeName }}`
-- Sub `Toggle what you did. Thirty seconds, then back to your walk.`
+- Sub ~~`Toggle what you did. Thirty seconds, then back to your walk.`~~ `Toggle what you did.`
+  **REWRITTEN — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`), R24.
 - Chips: `Watered`, `Mulched`, `Weeded basin`, `Litter cleared`
 - Placeholder box: `Photo or note (optional)` (`1px dashed #C9D1BC`)
 - CTA `Done`
-- Footnote `This joins the tree’s care history, kept separate from health observations.`
+- ~~Footnote `This joins the tree’s care history, kept separate from health observations.`~~
+  **REMOVED — copy audit 2026-08-23** (owner ruling; see `docs/investigations/copy-audit-2026-08-23.md`).
 
 ### Share sheet
 - Title `Share {{ treeName }}`

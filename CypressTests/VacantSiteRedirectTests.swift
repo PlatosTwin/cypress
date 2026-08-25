@@ -8,7 +8,8 @@ import Testing
 /// its own last paragraph: every other entrance — the almanac's rows, the visit flow's open-tree
 /// callback, a stale link — still landed a vacant site on `TreeProfileView`, which is screen 14
 /// asserting a tree that is not there: an empty photo well captioned `No photos of this tree yet`
-/// over `Be the first to photograph this tree`.
+/// over the cold profile's primary CTA — `Add the first photo of this tree` today, and
+/// `Be the first to photograph this tree` when E107 was written.
 ///
 /// The shape of the fix is the thing these tests are really holding. A redirect at one more call
 /// site would pass a test written against that call site and leave the next one broken, which is

@@ -239,8 +239,9 @@ public struct AlmanacQueries {
     /// denominator every share is divided by moves from 11,026 to 11,078. That last number is
     /// RULINGS **R5**, which fixed screen 08's denominator at 215 and ruled it stays there. It
     /// would also throw before it drew: `row.uuid("species_uuid")` on the nameless group raises
-    /// `unexpectedNull`, `AlmanacModel.load()` catches it as `.failed`, and screen 12 renders its
-    /// header and its footnote and nothing between them.
+    /// `unexpectedNull`, `AlmanacModel.load()` catches it as `.failed`, and screen 12 renders
+    /// `AlmanacCopy.loadFailed` and a retry in place of the almanac (ERRATA E126) — so widening
+    /// this join costs the reader the whole screen, not one group.
     public func speciesMix(
         scope: AlmanacScope,
         connection: SQLiteConnection

@@ -14,12 +14,13 @@
 //
 //  **C26 · AvatarStack is not on this screen, and its absence is the finding rather than an
 //  omission.** SCREENS.md 13 does not draw one: 13's parts are a header, a chart card, three C10
-//  rows, a photo strip and a footnote. Nor could one be filled if it were drawn — contribution feeds
-//  are private by default and public attribution is opt-in (D11), `User.isPublicAttributionEffective`
-//  is the only predicate allowed to answer it, and there is no `User` anywhere near this payload
-//  because there is no account system yet and every contribution is anonymous under a device id
-//  (D9). A stack of blank circles on a screen about who has looked after a tree would be worse than
-//  no stack. See ERRATA.
+//  rows and a photo strip — and a §5 footnote, until the copy audit of 2026-08-23 struck it. The
+//  stack is absent from every one of those enumerations, before and after. Nor could one be filled
+//  if it were drawn — contribution feeds are private by default and public attribution is opt-in
+//  (D11), `User.isPublicAttributionEffective` is the only predicate allowed to answer it, and
+//  there is no `User` anywhere near this payload because there is no account system yet and every
+//  contribution is anonymous under a device id (D9). A stack of blank circles on a screen about who
+//  has looked after a tree would be worse than no stack. See ERRATA.
 //
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6). The numbers that remain are
 //  SCREENS.md 13's own margins, named in `ActivityMetrics`.
@@ -89,14 +90,21 @@ struct ActivityScreen: View {
                         }
                     }
 
-                    // §5's footnote sits under the strip. It describes the chart card, so it is
-                    // absent exactly when the card is: a sentence about one scale across three
-                    // charts, printed over no charts, explains nothing.
-                    Spacer(minLength: 0)
-                    if let footnote = presentation?.glance?.footnote {
-                        footnoteBlock(footnote)
-                    }
+                    // §5's footnote sat here, under the strip, and was removed by the copy audit of
+                    // 2026-08-23 (owner ruling). The `Spacer` went with it: it existed only to push
+                    // the footnote to the bottom of a short screen, and the `minHeight` frame below
+                    // is what top-aligns the content either way.
+                    //
+                    // **The 36pt the footnote carried is not the footnote and stays**, on the column
+                    // — it is the screen's closing space above the home indicator, and without it
+                    // the photo strip sits on the edge.
                 }
+                // The closing space goes on **before** the `minHeight` frame, not after. Padding a
+                // view that has already been sized to the viewport makes the scroll content
+                // `proxy.size.height + 36`, which is a permanent overhang on a screen with nothing
+                // to scroll. Inside the frame it is space the viewport already accounts for.
+                // Every sibling column orders it this way; `ScrollOverhangGuardTests` pins it.
+                .padding(.bottom, CypressSpacing.bottomFootnote)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }
@@ -227,18 +235,8 @@ struct ActivityScreen: View {
         }
     }
 
-    // MARK: - §5 Footnote
-
-    private func footnoteBlock(_ text: String) -> some View {
-        Text(text)
-            .cypressBody135(color: CypressColor.textFaintAlt)
-            .lineSpacing(CypressFont.LineSpacing.body135)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, ActivityMetrics.footnoteTop)
-            .padding(.bottom, CypressSpacing.bottomFootnote)
-            .padding(.horizontal, ActivityMetrics.footnotePaddingH)
-    }
+    // §5's footnote block was removed by the copy audit of 2026-08-23 (owner ruling); SCREENS.md 13
+    // §5 is struck to match. See `ActivityCopy`.
 
     // MARK: - The states SCREENS.md does not draw
 

@@ -69,14 +69,18 @@ struct CareLogTests {
 
     // MARK: - Copy
 
-    @Test("the footnote keeps SCREENS.md's wording and its em dash rule")
-    func footnote() {
-        #expect(CareLogCopy.footnote == "This joins the tree’s care history—separate from health observations.")
-        // ARCHITECTURE §5.7: no spaces around em dashes.
-        #expect(CareLogCopy.footnote.contains(" — ") == false)
-        #expect(CareLogCopy.footnote.contains("—"))
+    /// **The footnote is gone and the rules it was checked against are not.**
+    ///
+    /// This test pinned §7's wording — `This joins the tree's care history—separate from health
+    /// observations.` — and used it as the specimen for the em-dash rule and for two content
+    /// sweeps. The copy audit of 2026-08-23 removed the sentence by owner ruling (the footnote
+    /// *slot* is the demo-era artifact, so it comes out of every screen that had one, including the
+    /// ones the audit itself proposed keeping). What is left here is the part that was never about
+    /// that sentence: no sheet copy claims an authority was told, and none of it counts anything.
+    @Test("nothing this sheet says claims an authority was told, or counts what anybody did")
+    func sheetCopyRules() {
         // ARCHITECTURE §5.4: nothing on this sheet says an authority was told anything.
-        let everything = [CareLogCopy.subtitle, CareLogCopy.footnote, CareLogCopy.optionalWell, CareLogCopy.doneCTA]
+        let everything = [CareLogCopy.subtitle, CareLogCopy.optionalWell, CareLogCopy.doneCTA]
             .joined(separator: " ")
             .lowercased()
         for forbidden in ["sent to the city", "routed to", "reported to", "notified"] {
@@ -85,6 +89,62 @@ struct CareLogTests {
         // D1: no count of anything a person did.
         for forbidden in ["streak", "points", "rank", "badge", "times", "total"] {
             #expect(everything.contains(forbidden) == false)
+        }
+    }
+
+    /// Every string screen 09 draws, as one corpus for the sweeps below.
+    ///
+    /// The sheet's own copy, the composed title, the four chip labels, and the extras block's
+    /// strings — the extras are shared with screen 05 and are drawn *here*, which is what puts them
+    /// in this screen's corpus rather than only in 05's. `noteAccessibilityLabel` is included
+    /// because VoiceOver reads it; a rule about how the app writes prose does not stop at the
+    /// strings that are visible.
+    ///
+    /// `saveFailed` is in the list although no state in this suite renders it: it is copy this
+    /// screen owns, and a rule that only covers the happy path is a rule that lapses on the error
+    /// state, which is where prose gets written in a hurry.
+    private static func drawnCopy() -> [String] {
+        [
+            Self.presentation(CareLogDraft()).title,
+            CareLogCopy.titleLead,
+            CareLogCopy.subtitle,
+            CareLogCopy.optionalWell,
+            CareLogCopy.notePrompt,
+            CareLogCopy.doneCTA,
+            CareLogCopy.saveFailed,
+            ContributionExtrasCopy.notePrompt,
+            ContributionExtrasCopy.noteAccessibilityLabel,
+            ContributionExtrasCopy.takePhoto,
+            ContributionExtrasCopy.addFromLibrary,
+            ContributionCameraCopy.doneCTA,
+            ContributionCameraCopy.captureFailed,
+        ] + CareLogCopy.drawnActions.map { CareActionLabel.text(for: $0) }
+    }
+
+    /// ARCHITECTURE §5.7: no spaces around em dashes.
+    ///
+    /// **Restored after the copy audit removed the only string that carried this check** (PR #119
+    /// review, finding N3). The rule used to be asserted against §7's footnote, whose own
+    /// `history—separate` was the specimen proving the sweep could see an em dash at all; the
+    /// footnote went by owner ruling and the rule went with it, silently, because a screen with no
+    /// em dash left on it passes a sweep that is not running.
+    ///
+    /// Calibrated the way `SiteTests.emDashRule` and `MemorialPresentationTests.emDashRule` were
+    /// after the same problem: a specimen run through the sweep's own expression, rather than a
+    /// control asserting the corpus contains an em dash — which is a control that this screen can
+    /// no longer satisfy without putting one back. The second failure this shape of sweep has is
+    /// an empty corpus, which passes every line in it, so the corpus is checked for size and for
+    /// empty members before anything is swept.
+    @Test("nothing this sheet draws spaces an em dash")
+    func emDashRule() {
+        let specimen = "a sentence — with a spaced em dash"
+        #expect(specimen.contains(" — "), "the em-dash sweep cannot see a spaced em dash any more")
+
+        let lines = Self.drawnCopy()
+        #expect(lines.count >= 17, "the corpus lost members: \(lines.count)")
+        for line in lines {
+            #expect(!line.isEmpty, "an empty line in the sweep proves nothing")
+            #expect(!line.contains(" — "), "spaced em dash in: \(line)")
         }
     }
 

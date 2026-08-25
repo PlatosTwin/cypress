@@ -274,13 +274,17 @@ enum ReportCopy {
     static let saveReminder = "Save a private reminder for yourself"
 
     /// **NOT SPECIFIED.** SCREENS.md 06 §5 draws the button and nothing after it, so what a
-    /// successful save looks like is not in the mock. This is the screen's own sentence — the
-    /// disclosure below already says "Your reminder stays yours alone" — rather than new copy, which
-    /// is the least invented answer available (DECISIONS constraint 21). It states what happened and
-    /// stops: the reminder is on this device's own record, and the city still has not been notified,
-    /// which the dashed disclosure directly beneath keeps saying (ARCHITECTURE §5.4). Recorded in
-    /// ERRATA (E23).
-    static let reminderSaved = "Saved. Your reminder stays yours alone."
+    /// successful save looks like is not in the mock. It states what happened and stops: the
+    /// reminder is on this device's own record, and the city still has not been notified, which the
+    /// dashed disclosure directly beneath keeps saying (ARCHITECTURE §5.4). Recorded in ERRATA
+    /// (E23).
+    ///
+    /// The confirmation used to restate the disclosure's `stays yours alone`; the copy audit of
+    /// 2026-08-23 (R20) made it `private to you`, which is the phrasing screen 17 already prints
+    /// for the same fact (`OutboxCopy.detail(for:)`, the `.privateReminder` arm). The disclosure
+    /// below this line is unchanged — it is
+    /// `SCREENS.md`-verbatim and was not in the audit's table.
+    static let reminderSaved = "Saved. This reminder is private to you."
     /// **NOT SPECIFIED**, same note. The reminder is not on disk, so nothing may suggest it is.
     static let reminderFailed = "Not saved. Tap to try again."
 

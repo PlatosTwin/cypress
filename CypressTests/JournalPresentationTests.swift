@@ -134,7 +134,6 @@ struct JournalPresentationTests {
             JournalCopy.journalSegment,
             JournalCopy.almanacSegment,
             JournalCopy.explanation,
-            JournalCopy.footnote,
             JournalCopy.olderNote,
             JournalCopy.olderAction,
             JournalCopy.olderFailed,

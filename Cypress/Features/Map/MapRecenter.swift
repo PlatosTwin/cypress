@@ -280,8 +280,8 @@ enum MapRecenterCopy {
     ///
     /// The shape of the sentence is `VisitAddTreeCopy.noLocationDenied`'s — name the limit, say what
     /// it costs *here*, then the one thing that undoes it — and the middle clause is different
-    /// because the situation is. There a tree could not be added, because a tree is a place; here
-    /// there is simply nowhere to put the camera.
+    /// because the situation is. There a tree cannot be added at all without a fix; here there is
+    /// simply nowhere to put the camera.
     static func refusalTitle(_ availability: MapLocationProvider.Availability) -> String {
         availability == .servicesOff ? "Location Services are off" : "Location is off"
     }
