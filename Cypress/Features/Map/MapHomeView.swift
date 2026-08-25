@@ -71,13 +71,9 @@ struct MapHomeView: View {
     /// screen that reopened on the *last launch's* camera would throw away the pan the reader made
     /// a second ago. The session snapshot is noted by `rememberCamera()` on the same `onDisappear`
     /// the tab switch fires, so it is always written before this can be read.
-    @State private var position: MapCameraRequest = .opening(
-        MapOpening.openingRegion(remembered: MapCameraMemory.shared.openingSnapshot)
-    )
+    @State private var position: MapCameraRequest
     /// The last region MapKit reported, so a cluster tap knows what "two zoom levels in" means.
-    @State private var region = MapOpening.openingRegion(
-        remembered: MapCameraMemory.shared.openingSnapshot
-    )
+    @State private var region: MKCoordinateRegion
     /// One-shot: the first fix recenters the map, later ones must not yank it out from under a pan.
     ///
     /// **Kept, deliberately.** Task #85 was "the map snaps back to your location and cannot be panned
@@ -118,10 +114,25 @@ struct MapHomeView: View {
     // and the view that drew it (task #180), so the parameter, the property and the whole
     // measurement behind them are gone — an unread property carried "just in case" is the #62/E126
     // shape. See `ERRATA E205`.
-    init(api: any CypressAPI, location: MapLocationProvider) {
+    /// - Parameter downloadedCityCenter: where to open when there is no remembered camera and no
+    ///   fix — the middle of the largest downloaded inventory (RULING D3's third clause), or nil
+    ///   when nothing has been downloaded, in which case the map opens exactly where it always did.
+    ///   Passed in from the composition root rather than read from a global, because it is a fact
+    ///   about the attached inventories and `Features` does not hold those.
+    init(
+        api: any CypressAPI,
+        location: MapLocationProvider,
+        downloadedCityCenter: Coordinate? = nil
+    ) {
         self.api = api
         self.location = location
         _model = State(initialValue: MapModel(api: api))
+        let opening = MapOpening.openingRegion(
+            remembered: MapCameraMemory.shared.openingSnapshot,
+            downloadedCityCenter: downloadedCityCenter
+        )
+        _position = State(initialValue: .opening(opening))
+        _region = State(initialValue: opening)
     }
 
     var body: some View {

@@ -448,7 +448,14 @@ struct RootView: View {
             // The provider is handed over rather than made there. Screen 01 used to declare its own
             // `@State` one, which SwiftUI re-initializes on every pass through this body — see
             // `MapHomeView.location`.
-            MapHomeView(api: data.api, location: location)
+            MapHomeView(
+                api: data.api,
+                location: location,
+                // RULING D3's third clause: with no remembered camera and no fix, open on the
+                // largest downloaded inventory rather than on San Francisco. Nil with nothing
+                // downloaded, which is every launch of the shipping configuration.
+                downloadedCityCenter: data.store.inventory?.openingCenter
+            )
         case .grove:
             // Screen 08. The species tile's destination is 07, which is the one entrance
             // SCREENS.md draws for it: "Tapping a tile opens the species page."

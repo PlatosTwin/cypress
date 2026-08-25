@@ -353,9 +353,22 @@ enum MapOpening {
     static let patience: Duration = .seconds(3)
 
     /// Where the map opens.
-    static func openingRegion(remembered: MapCameraMemory.Snapshot?) -> MKCoordinateRegion {
+    ///
+    /// **RULING D3's order, and the third clause is the new one.** A location fix inside any live
+    /// inventory wins and does not come through here — it recenters the map when it arrives. Then
+    /// the camera this install was last left on. Then, only when there is neither, the middle of
+    /// the largest downloaded inventory. `MapLayout.defaultCenter` is what is left, and with
+    /// nothing downloaded it is reached on exactly the launches it always was.
+    ///
+    /// - Parameter downloadedCityCenter: `InventoryUnion.openingCenter`. Nil when the bundled seed
+    ///   is the only inventory, which is what makes this degrade to the previous behaviour rather
+    ///   than approximate it.
+    static func openingRegion(
+        remembered: MapCameraMemory.Snapshot?,
+        downloadedCityCenter: Coordinate? = nil
+    ) -> MKCoordinateRegion {
         guard let remembered else {
-            return MapLayout.region(around: MapLayout.defaultCenter)
+            return MapLayout.region(around: downloadedCityCenter ?? MapLayout.defaultCenter)
         }
         return MKCoordinateRegion(
             center: remembered.center.clLocationCoordinate,
