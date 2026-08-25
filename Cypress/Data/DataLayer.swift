@@ -117,6 +117,7 @@ public struct DataLayer: Sendable {
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
+        inventories: [InventoryFile]? = nil,
         baseURL: URL = SyncService.defaultBaseURL,
         transport: (any AuthorizedTransport)? = nil,
         authHTTP: (any AuthHTTP)? = nil,
@@ -124,7 +125,14 @@ public struct DataLayer: Sendable {
         credentials: any CredentialStore = KeychainCredentialStore(),
         storageSession: URLSession = .shared
     ) async throws -> DataLayer {
-        let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: seedURL)
+        // **`inventories` wins when it is given**, and `seedURL` remains the one-file spelling
+        // every caller that predates the union still uses. They are separate parameters rather than
+        // one, because "no inventory at all" is a state both have to be able to express and a single
+        // optional array could not tell it apart from "the caller did not say".
+        let store = try await CypressStore.open(
+            databaseURL: databaseURL,
+            inventories: inventories ?? seedURL.map { [InventoryFile.bundled(url: $0)] } ?? []
+        )
 
         // The device id is minted once and kept. Anonymous contributions attach to it and migrate
         // to a user at `POST /devices/claim`; regenerating it would orphan them (D9).
@@ -349,25 +357,33 @@ public struct DataLayer: Sendable {
         )
     }
 
-    /// Boots preferring the reader's chosen downloaded city over the bundle (RULINGS R43 §1:
-    /// one inventory attaches, and which one is the reader's choice).
+    /// Boots over **the bundled seed and every downloaded city at once** (RULING D9).
     ///
-    /// `CityLibrary.validatedActiveSeedURL()` has already introspected the file and refused a
-    /// schema generation from the future; what remains is the open itself, and a failure there
-    /// deactivates the choice and boots the bundle — launching without the chosen city beats not
-    /// launching, and the Cities screen then shows the truth (installed, not in use).
-    public static func bootPreferringActiveCity(
+    /// This used to pick one inventory — the reader's marked choice, else the bundle — because
+    /// RULINGS R43 §1 permitted exactly one attach. The union reverses that: what is on disk is
+    /// what is drawn, and there is no choice left to resolve.
+    ///
+    /// **Nothing here can stop the app launching.** `CityLibrary.installedInventoryFiles()` has
+    /// already refused any file this build cannot read, and `InventoryUnion.build` skips an arm
+    /// whose attach throws rather than failing the boot — so a corrupt pack costs that one city and
+    /// nothing else. The Cities screen still lists it, because it is still on disk, and the reader
+    /// can remove it.
+    ///
+    /// The bundled seed goes **first**, which fixes it at arm ordinal 0 and leaves every bundled
+    /// tree's union-wide id equal to the id it has always had.
+    public static func bootOverInstalledCities(
         databaseURL: URL? = nil,
         library: CityLibrary
     ) async throws -> DataLayer {
-        if let cityURL = library.validatedActiveSeedURL() {
-            do {
-                return try await boot(databaseURL: databaseURL, seedURL: cityURL)
-            } catch {
-                try? library.deactivate()
-            }
-        }
-        return try await boot(databaseURL: databaseURL)
+        // A device upgrading from a build that recorded an active choice still carries the marker.
+        // Nothing reads it any more, and this is the one place that runs on every launch.
+        library.discardRetiredActiveMarker()
+
+        let bundled = SeedDatabase.urlInBundle().map { [InventoryFile.bundled(url: $0)] } ?? []
+        return try await boot(
+            databaseURL: databaseURL,
+            inventories: bundled + library.installedInventoryFiles()
+        )
     }
 
     /// Screen 17's model, wired to this layer's outbox and name resolution.

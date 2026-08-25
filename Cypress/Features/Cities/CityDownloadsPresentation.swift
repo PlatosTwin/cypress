@@ -21,12 +21,31 @@ enum CityDownloadsCopy {
     static let builtInSubtitle = "Ships with the app and cannot be removed"
 
     // Affordances.
+    //
+    // **`Use` and `In use` are gone from the vocabulary entirely** (RULING D9). Downloading a city
+    // is what puts it in the union and `Remove` is what takes it out; there is no third state in
+    // which a city is on the phone and not being drawn, so there is no verb for entering or leaving
+    // one. The four below plus `revert` are the whole of what this screen can say.
     static let download = "Download"
     static let update = "Update"
     static let remove = "Remove"
-    static let use = "Use"
     static let cancel = "Cancel"
-    static let inUse = "In use"
+
+    /// **`Remove` is not the word for undoing an update to a bundled city** (RULING D2). It reads
+    /// as removing the city, and the city cannot be removed — what is removed is the newer copy,
+    /// and the entry returns to the bundled record.
+    static let revert = "Revert to the included copy"
+
+    /// What a city says when SQLite has no attachment slot left for it (RULING D5).
+    ///
+    /// **The button is replaced by this sentence rather than disabled beside it**, because a
+    /// greyed-out `Download` states a refusal without stating a remedy. The limit is real — it is
+    /// how many databases one connection may attach — and the only thing the reader can do about it
+    /// is make room, so that is what the row says.
+    ///
+    /// It never appears for an *update*: replacing a city's file uses the slot that city already
+    /// holds.
+    static let atInstallCap = "Remove a city to download another."
 
     // Catalog-level lines.
     static let checking = "Checking what's available…"
@@ -99,11 +118,46 @@ enum CityDownloadsCopy {
     /// known.
     static func bundledLine(contentRev: String?) -> String {
         guard let contentRev else { return bundled }
-        return "\(bundled) · record as of \(contentRev)"
+        return "\(bundled) · record as of \(recordDate(contentRev))"
     }
 
     /// D5's line without its record-date clause.
     static let bundled = "Included in the app"
+
+    /// The line for a bundled city whose rows a downloaded copy has replaced (RULING D2's third
+    /// state). `Updated`, not `Installed`: the reader did not install a city, they refreshed one
+    /// they already had.
+    static func bundledUpdatedLine(contentRev: String?) -> String {
+        guard let contentRev else { return bundledUpdated }
+        return "\(bundledUpdated) · record as of \(recordDate(contentRev))"
+    }
+
+    static let bundledUpdated = "Updated"
+
+    /// **`content_rev` rendered for a reader: the counter suffix comes off, and nothing else does**
+    /// (RULING D10).
+    ///
+    /// The publisher's rev is an opaque ordered string and every *comparison* in this app keeps it
+    /// whole — `CityInstallState` compares `publishedRev > bundledRev` on the full value and splits
+    /// nothing. Only this one rendering trims, because the sentence it lands in says `record as of`
+    /// and a same-day republish spells that record `2026-08-22.02`, which reads as a version where
+    /// a date is promised. The live catalogue carries exactly that on all seven packs since the
+    /// republish of 2026-08-25.
+    ///
+    /// **It trims only what it recognizes.** A bare `2026-08-22` is returned unchanged, and so is
+    /// anything that is not an ISO date followed by a run of digits — this must never invent a date
+    /// out of a string it does not understand, which is the direction that would put a wrong day on
+    /// screen. `CityCopyTests` pins both halves.
+    static func recordDate(_ contentRev: String) -> String {
+        let parts = contentRev.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let date = parts.first, let counter = parts.last,
+              date.count == 10,
+              date.allSatisfy({ $0.isNumber || $0 == "-" }),
+              !counter.isEmpty, counter.allSatisfy(\.isNumber)
+        else { return contentRev }
+        return String(date)
+    }
 
     /// Mirrors `updateLine`'s shape — what is newer, and what you are holding.
     ///
@@ -122,7 +176,11 @@ enum CityDownloadsCopy {
     /// now states it directly above (`Included in the app · record as of 2026-07-31`), and repeating
     /// `included copy is 2026-07-31` under it would print one date twice in two spellings. What is
     /// left is the half the line above cannot say.
-    static let bundledOutdated = "A newer record is available to download."
+    /// **The verb under this line is `Update`, not `Download`** (RULING D2): decision 4 makes a
+    /// newer copy of a bundled city an update to that city's data rather than a second inventory,
+    /// so the sentence no longer names the transfer. It says what is true and lets the button say
+    /// what it does.
+    static let bundledOutdated = "A newer record is available."
 
     /// Which cities the bundled seed holds, named from the seed itself.
     ///
@@ -246,14 +304,47 @@ struct CityDownloadSection: Equatable, Identifiable {
     ///
     /// **A run's own heading is drawn even when every one of its rows grouped**, which is not
     /// obviously right and was decided by looking at the screen — see the comment on `run` below.
+    /// **The `On this phone` run is opened by the built-in card with the cities it holds nested
+    /// underneath it** (RULING D2, decision 3), and only then by anything downloaded.
+    ///
+    /// The three groups partition the on-device rows — the built-in card, the cities inside it, and
+    /// everything else — so no row is dropped and none is drawn twice.
+    /// `CityDownloadsFeedbackTests.everyRowSurvivesSectioning` asserts that against the flattening
+    /// rather than trusting this sentence.
+    ///
+    /// The nested run carries **no heading of its own**. `New York City` over five boroughs earns
+    /// its line because it says which city they are; a heading over the built-in card's own cities
+    /// would only repeat the card immediately above them. The view skips an empty title.
     static func sections(
         from rows: [CityDownloadRow],
         parentCity: (CityDownloadRow) -> (id: String, displayName: String)?
     ) -> [CityDownloadSection] {
-        run(
-            rows.filter(\.isOnDevice),
-            heading: CityDownloadsCopy.onDeviceSection, key: "on-device", parentCity: parentCity
-        ) + run(
+        let onDevice = rows.filter(\.isOnDevice)
+        let builtIn = onDevice.filter { $0.id == CityDownloadRow.builtInID }
+        let insideBuiltIn = onDevice.filter(\.isInsideBuiltIn)
+        let downloaded = onDevice.filter {
+            $0.id != CityDownloadRow.builtInID && !$0.isInsideBuiltIn
+        }
+
+        var sections: [CityDownloadSection] = []
+        if !onDevice.isEmpty {
+            sections.append(
+                CityDownloadSection(
+                    id: "on-device", title: CityDownloadsCopy.onDeviceSection, rows: builtIn
+                )
+            )
+            if !insideBuiltIn.isEmpty {
+                sections.append(
+                    CityDownloadSection(
+                        id: "on-device/included", title: "", isCityGroup: true, rows: insideBuiltIn
+                    )
+                )
+            }
+            sections += run(
+                downloaded, heading: "", key: "on-device-downloaded", parentCity: parentCity
+            )
+        }
+        return sections + run(
             rows.filter { !$0.isOnDevice },
             heading: CityDownloadsCopy.availableSection, key: "available", parentCity: parentCity
         )
@@ -345,14 +436,28 @@ struct CityDownloadRow: Equatable, Identifiable {
     /// the state, and both are what the reader is looking at.
     let isOnDevice: Bool
 
+    /// Whether this row is one of the cities the **built-in inventory** holds, and so belongs
+    /// nested under its card rather than beside it (RULING D2, decision 3).
+    ///
+    /// A bundled city is not something the reader can add or remove, so it is never a peer card in
+    /// `On this phone` — that arrangement is what let the built-in card say `Includes San Francisco`
+    /// while a sibling card offered to `Use` it, which is the contradiction decision 5 forbids.
+    ///
+    /// Read off the install state rather than set by hand at each call site, for the same reason
+    /// `isOnDevice` is: the two facts that decide where a card is filed both come from the one type
+    /// that knows what the device holds.
+    let isInsideBuiltIn: Bool
+
+    /// **Four verbs and a revert, and no way to say `Use`** (RULING D9). Downloaded means in the
+    /// union, so there is no active set to join or leave and no label for having joined it.
     enum Affordance: Equatable {
         case download
         case update
-        case use
         case remove
         case cancel
-        /// Not a button — the state label on the card whose inventory is attached.
-        case inUseLabel
+        /// Undoes an update to a **bundled** city, returning it to the copy inside the app. Not
+        /// `remove` under another name: the city stays, only the newer copy goes.
+        case revert
     }
     let affordances: [Affordance]
 
@@ -368,6 +473,7 @@ struct CityDownloadRow: Equatable, Identifiable {
         isFailure: Bool,
         progress: Double?,
         isOnDevice: Bool = false,
+        isInsideBuiltIn: Bool = false,
         affordances: [Affordance]
     ) {
         self.id = id
@@ -378,6 +484,7 @@ struct CityDownloadRow: Equatable, Identifiable {
         self.isFailure = isFailure
         self.progress = progress
         self.isOnDevice = isOnDevice
+        self.isInsideBuiltIn = isInsideBuiltIn
         self.affordances = affordances
     }
 
@@ -385,12 +492,17 @@ struct CityDownloadRow: Equatable, Identifiable {
 
     // MARK: - Deciding a row
 
-    /// The built-in bundle's card: `Use` when a city is active, the `In use` label otherwise.
+    /// The built-in bundle's card. **It draws no affordance at all** (RULING D2).
+    ///
+    /// Not `Use`, not `In use`, not `Remove`. The bundled inventory cannot be switched off, so a
+    /// control saying otherwise is exactly the contradiction decision 5 forbids — an `In use` label
+    /// above a sibling `Use` was the screen the owner ruled out. `Ships with the app and cannot be
+    /// removed` already states the operative fact and needs no button under it.
     ///
     /// - Parameter cityNames: the names the bundled seed states for the cities it holds, in the
     ///   order they should be read. Empty is a legitimate answer (a test bundle with no seed), and
     ///   the card then says exactly what it said before.
-    static func builtIn(isActive: Bool, cityNames: [String] = []) -> CityDownloadRow {
+    static func builtIn(cityNames: [String] = []) -> CityDownloadRow {
         CityDownloadRow(
             id: builtInID,
             title: CityDownloadsCopy.builtInTitle,
@@ -401,7 +513,8 @@ struct CityDownloadRow: Equatable, Identifiable {
             isFailure: false,
             progress: nil,
             isOnDevice: true,
-            affordances: isActive ? [.inUseLabel] : [.use]
+            isInsideBuiltIn: true,
+            affordances: []
         )
     }
 
@@ -409,7 +522,7 @@ struct CityDownloadRow: Equatable, Identifiable {
     static func published(
         city: CityManifest.City,
         state: CityInstallState,
-        isActive: Bool,
+        hasInstallHeadroom: Bool = true,
         downloadingFraction: Double?,
         lastAttemptFailed: Bool
     ) -> CityDownloadRow {
@@ -420,27 +533,28 @@ struct CityDownloadRow: Equatable, Identifiable {
                 id: city.id, title: city.displayName, coverageNote: coverage,
                 stateLine: CityDownloadsCopy.downloading, detailLine: nil,
                 isFailure: false, progress: downloadingFraction,
-                isOnDevice: state.isOnDevice, affordances: [.cancel]
+                isOnDevice: state.isOnDevice, isInsideBuiltIn: state.isBundledCity,
+                affordances: [.cancel]
             )
         }
         if lastAttemptFailed {
             // The state reverts to whatever was true before the attempt; only the line differs.
-            let base = decide(city: city, state: state, isActive: isActive)
+            let base = decide(city: city, state: state, hasInstallHeadroom: hasInstallHeadroom)
             return CityDownloadRow(
                 id: base.id, title: base.title, coverageNote: base.coverageNote,
                 stateLine: CityDownloadsCopy.downloadFailed, detailLine: nil,
                 isFailure: true, progress: nil,
-                isOnDevice: base.isOnDevice, affordances: base.affordances
+                isOnDevice: base.isOnDevice, isInsideBuiltIn: base.isInsideBuiltIn,
+                affordances: base.affordances
             )
         }
-        return decide(city: city, state: state, isActive: isActive)
+        return decide(city: city, state: state, hasInstallHeadroom: hasInstallHeadroom)
     }
 
     /// An installed city the manifest could not vouch for (offline): disk facts alone, and every
     /// affordance that needs no network.
     static func installedOffline(
-        _ installed: CityLibrary.InstalledCity,
-        isActive: Bool
+        _ installed: CityLibrary.InstalledCity
     ) -> CityDownloadRow {
         CityDownloadRow(
             id: installed.id,
@@ -464,7 +578,9 @@ struct CityDownloadRow: Equatable, Identifiable {
             isFailure: false,
             progress: nil,
             isOnDevice: true,
-            affordances: isActive ? [.inUseLabel, .remove] : [.use, .remove]
+            // A downloaded pack is in the union whether or not the catalogue can be reached to
+            // describe it, so the only question an offline row can put is whether to keep it.
+            affordances: [.remove]
         )
     }
 
@@ -491,6 +607,7 @@ struct CityDownloadRow: Equatable, Identifiable {
             isFailure: false,
             progress: nil,
             isOnDevice: true,
+            isInsideBuiltIn: true,
             affordances: []
         )
     }
@@ -498,46 +615,37 @@ struct CityDownloadRow: Equatable, Identifiable {
     private static func decide(
         city: CityManifest.City,
         state: CityInstallState,
-        isActive: Bool
+        hasInstallHeadroom: Bool
     ) -> CityDownloadRow {
-        let row: (stateLine: String, detail: String?, affordances: [Affordance])
+        var row: (stateLine: String, detail: String?, affordances: [Affordance])
         switch state {
         case .notInstalled:
             row = (CityDownloadsCopy.size(city.bytes), nil, [.download])
         case let .installedCurrent(version):
-            row = (
-                CityDownloadsCopy.installedLine(version: version), nil,
-                isActive ? [.inUseLabel, .remove] : [.use, .remove]
-            )
+            row = (CityDownloadsCopy.installedLine(version: version), nil, [.remove])
         case let .updateAvailable(version):
-            // **`Use` belongs here, and R43 §3's own table left it out.** That table lists
-            // `update available → Update and Remove`, which silently makes an installed city
-            // unusable the moment the catalog moves ahead of it: the copy on disk is complete,
-            // attachable and *not* in use, and the one button that would attach it is missing. R43
-            // §1 already says such a row "shows the city as installed but not in use" — a state
-            // whose whole point is that `Use` is available.
+            // **Two buttons again, because the third one left the vocabulary.** This row used to
+            // draw `Use`, `Update` and `Remove` — three, against R43 §3's "never more than two
+            // visible" — because a downloaded city that was not the active one had to offer a way
+            // to become it. Under RULING D9 there is no such state: the copy on disk is in the union
+            // the moment it lands, so the only questions left are whether to take the newer record
+            // and whether to keep the city at all.
             //
-            // Reported by a tester who hit exactly that (build 49, 2026-08-23): *"I have manhattan
-            // downloaded already and used it once but then I clicked use on the default inventory
-            // and now I can't seem to use manhattan even though it's on my phone"*. The download was
-            // fine; only the affordance was gone.
-            //
-            // **This is the one row that draws three buttons**, against §3's parenthetical "never
-            // more than two visible". Dropping `Remove` instead would strand the other direction —
-            // a city you cannot delete until you have first updated it — and demoting `Update` would
-            // hide the newer record the line above is announcing. The count is the thing that gives,
-            // and it does so for one state; see the PR for the alternatives put to the owner.
+            // The tester report that bought the third button is answered by the union rather than
+            // by this row (build 49, 2026-08-23): *"I have manhattan downloaded already and used it
+            // once but then I clicked use on the default inventory and now I can't seem to use
+            // manhattan even though it's on my phone"*. There is no longer a click that can put a
+            // downloaded city out of use.
             row = (
-                CityDownloadsCopy.updateLine(installedVersion: version), nil,
-                isActive ? [.inUseLabel, .update, .remove] : [.use, .update, .remove]
+                CityDownloadsCopy.updateLine(installedVersion: version), nil, [.update, .remove]
             )
         case let .needsNewerApp(installed):
             if let installed {
-                // The older compatible copy keeps its affordances; only the update is refused.
+                // The older compatible copy is still in the union; only the update is refused.
                 row = (
                     CityDownloadsCopy.installedLine(version: installed),
                     CityDownloadsCopy.needsNewerAppDetail,
-                    isActive ? [.inUseLabel, .remove] : [.use, .remove]
+                    [.remove]
                 )
             } else {
                 // No affordance at all: a button that cannot keep its promise is not drawn.
@@ -550,13 +658,40 @@ struct CityDownloadRow: Equatable, Identifiable {
         case let .bundledOutdated(bundledContentRev):
             // Possession first, offer second — the card says what you have before what you could
             // fetch. Same two facts as before, in the order that stops the row reading as an offer
-            // to sell the reader a city already on the phone. See `bundledOutdatedLine`.
+            // to sell the reader a city already on the phone.
+            //
+            // **The verb is `Update`, not `Download`** (RULING D2), because RULING D4 makes the
+            // newer copy an update to this city's data rather than a second inventory.
             row = (
                 CityDownloadsCopy.bundledLine(contentRev: bundledContentRev),
                 CityDownloadsCopy.bundledOutdated,
-                [.download]
+                [.update]
+            )
+        case let .bundledUpdated(installedContentRev, updateAvailable):
+            // RULING D2's third state. `Revert to the included copy` rather than `Remove`: the city
+            // is not going anywhere, only the newer copy is.
+            row = (
+                CityDownloadsCopy.bundledUpdatedLine(contentRev: installedContentRev),
+                updateAvailable ? CityDownloadsCopy.bundledOutdated : nil,
+                updateAvailable ? [.update, .revert] : [.revert]
             )
         }
+        // ── The attachment cap (RULING D5) ────────────────────────────────────────────────────
+        //
+        // Applied here, after the state decided what the row would otherwise offer, and applied
+        // **only to a fetch that would add an inventory**. A city with no copy on disk needs a slot
+        // of its own; an update replaces the file in the slot that city already occupies, so it is
+        // never withheld — a reader at the cap can still take a newer record for everything they
+        // have. `state.isOnDevice` is the test, because being on the device is exactly what having
+        // a slot means here, and a bundled city's slot is the bundle's own.
+        if !hasInstallHeadroom, !state.isOnDevice, row.affordances.contains(.download) {
+            row = (
+                row.stateLine,
+                CityDownloadsCopy.atInstallCap,
+                row.affordances.filter { $0 != .download }
+            )
+        }
+
         // No branch above may draw a fetching affordance `CityInstallState.allowsDownload` does not
         // permit, and none may withhold one it does. `CityDownloadsModel.download` refuses on that
         // same property, so the button and the transfer cannot disagree — which is what makes a
@@ -568,7 +703,8 @@ struct CityDownloadRow: Equatable, Identifiable {
             id: city.id, title: city.displayName, coverageNote: coverageIfPartial(city.coverage),
             stateLine: row.stateLine, detailLine: row.detail,
             isFailure: false, progress: nil,
-            isOnDevice: state.isOnDevice, affordances: row.affordances
+            isOnDevice: state.isOnDevice, isInsideBuiltIn: state.isBundledCity,
+            affordances: row.affordances
         )
     }
 

@@ -19,7 +19,6 @@ final class CityDownloadsModel {
 
     private(set) var catalog: Catalog = .checking
     private(set) var installed: [CityLibrary.InstalledCity] = []
-    private(set) var activeCityID: String?
     /// The city being downloaded and how far along it is. One at a time (ruling §3).
     private(set) var downloading: (id: String, fraction: Double)?
     /// The most recent attempt that failed, until the next attempt or screen load clears it.
@@ -31,20 +30,41 @@ final class CityDownloadsModel {
     /// the seed once per process — this model is rebuilt on every push and its default argument is
     /// evaluated more often than that, so the caching lives there rather than being asserted here.
     private let bundledCities: [SeedCities.City]
-    /// The composition root's re-boot: tears down `DataLayer` and attaches the (new) choice.
+    /// The composition root's re-boot: tears down `DataLayer` and rebuilds the union over
+    /// whatever is now on disk (RULING D8).
     private let onInventoryChange: () -> Void
+    /// How many inventory files may be attached beside the bundle at once.
+    ///
+    /// **Asked of SQLite at open, never hard-coded** (RULING D5). `SQLITE_LIMIT_ATTACHED` is a
+    /// compile-time constant of whichever library the platform ships — Apple's is 10 — and a number
+    /// written into this file would be a claim nothing rechecks on the day it changes.
+    /// `CypressStore.attachedDatabaseLimit` reads it off the live connection and the composition
+    /// root passes it here.
+    private let installableCityLimit: Int
     private var downloadTask: Task<Void, Never>?
 
     init(
         library: CityLibrary,
         downloader: CityDownloader = CityDownloader(),
         bundledCities: [SeedCities.City] = SeedCities.inMainBundle,
+        installableCityLimit: Int,
         onInventoryChange: @escaping () -> Void
     ) {
         self.library = library
         self.downloader = downloader
         self.bundledCities = bundledCities
+        self.installableCityLimit = installableCityLimit
         self.onInventoryChange = onInventoryChange
+    }
+
+    /// Whether another city can be attached beside the ones already installed (RULING D5).
+    ///
+    /// The bundle occupies one of SQLite's attachment slots and every downloaded pack occupies
+    /// another, so the honest count is what is installed against the limit minus the bundle. An
+    /// *update* to a city already on the phone replaces its file rather than adding one and is
+    /// never blocked by this — see `CityDownloadRow.decide`.
+    var hasInstallHeadroom: Bool {
+        installed.count < installableCityLimit
     }
 
     // MARK: - The screen's rows
@@ -82,9 +102,7 @@ final class CityDownloadsModel {
     }
 
     var rows: [CityDownloadRow] {
-        var rows: [CityDownloadRow] = [
-            .builtIn(isActive: activeCityID == nil, cityNames: bundledCityNames)
-        ]
+        var rows: [CityDownloadRow] = [.builtIn(cityNames: bundledCityNames)]
         let bundledIDs = bundledCities.map(\.id)
         let installedIDs = installed.map(\.id)
         switch catalog {
@@ -103,7 +121,7 @@ final class CityDownloadsModel {
                     return .published(
                         city: city,
                         state: installState(for: city),
-                        isActive: activeCityID == id,
+                        hasInstallHeadroom: hasInstallHeadroom,
                         downloadingFraction: downloading?.id == id ? downloading?.fraction : nil,
                         lastAttemptFailed: failedCityID == id
                     )
@@ -132,7 +150,7 @@ final class CityDownloadsModel {
     /// their precedence from drifting apart again.
     private func diskRow(for id: String) -> CityDownloadRow? {
         if let city = installed.first(where: { $0.id == id }) {
-            return .installedOffline(city, isActive: activeCityID == id)
+            return .installedOffline(city)
         }
         return bundledCities.first { $0.id == id }.map(CityDownloadRow.bundled)
     }
@@ -208,11 +226,11 @@ final class CityDownloadsModel {
                 )
                 try library.install(verifiedFileAt: verified, id: city.id, version: city.version)
                 refreshDiskFacts()
-                // Updating the inventory in use re-attaches it — the reader already made that
-                // choice, and the update is the same choice with fresher data (ruling §1).
-                if activeCityID == city.id {
-                    onInventoryChange()
-                }
+                // **Always, now.** A downloaded city is in the union the moment it lands
+                // (RULING D9), so every completed install changes what the map draws — a first
+                // download adds an arm, and an update to a bundled city replaces the rows it
+                // shadows. There is no longer an install that leaves the read layer alone.
+                onInventoryChange()
             } catch let error where CityDownloader.isCancellation(error) {
                 // Canceled by the reader: the temp file is already gone, nothing to say.
                 //
@@ -235,38 +253,27 @@ final class CityDownloadsModel {
         downloadTask?.cancel()
     }
 
-    /// Attaches a downloaded city — or, with nil, the built-in bundle — by marking the choice
-    /// and re-booting the data layer (ruling §1).
-    func use(_ id: String?) {
-        do {
-            if let id {
-                try library.activate(id: id)
-            } else {
-                try library.deactivate()
-            }
-        } catch {
-            return
-        }
-        activeCityID = library.activeCityID()
-        onInventoryChange()
-    }
-
+    /// Removes a downloaded city, and — for a city the bundle also holds — reverts it to the copy
+    /// inside the app.
+    ///
+    /// **One operation for both affordances**, because they are one operation: what is deleted is
+    /// the downloaded file, and what happens next follows from what is left. For a pack the bundle
+    /// does not carry, the city leaves the union. For one it does, the bundled rows stop being
+    /// shadowed and the city goes back to its included record. `Remove` and `Revert to the included
+    /// copy` are two honest names for that, which is why the screen picks between them rather than
+    /// this method taking a flag.
     func remove(_ id: String) {
-        let wasActive = activeCityID == id
         do {
             try library.remove(id: id)
         } catch {
             return
         }
         refreshDiskFacts()
-        // Removing the inventory in use reverts to the bundle immediately (ruling §3).
-        if wasActive {
-            onInventoryChange()
-        }
+        // **Always** — see `download`. The union just lost an arm, or a shadow.
+        onInventoryChange()
     }
 
     private func refreshDiskFacts() {
         installed = library.installedCities()
-        activeCityID = library.activeCityID()
     }
 }

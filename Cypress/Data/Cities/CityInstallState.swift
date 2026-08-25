@@ -36,9 +36,29 @@ public enum CityInstallState: Equatable, Sendable {
     /// **Being in the bundle is the fact; having a date is a separate, weaker fact.**
     case bundled(contentRev: String?)
     /// Inside the app bundle, and the published file carries a strictly later record date. The
-    /// `Download` button is honest here because it now buys something; the downloaded copy shadows
-    /// the bundled one through the existing `active-city` marker, with no new mechanism.
+    /// `Update` button is honest here because it now buys something.
+    ///
+    /// **What the downloaded copy then does is shadowing, not switching** (RULING D1): it replaces
+    /// the bundled rows of that city's whole id space inside the union, and every *other* bundled
+    /// city stays on the map. The `active-city` marker this comment used to name is gone, with the
+    /// exclusive switch it belonged to (RULING D9).
     case bundledOutdated(bundledContentRev: String)
+
+    /// **Inside the app bundle, and a downloaded copy has replaced the bundled rows for it.**
+    ///
+    /// The state RULING D4 is about and this enum had no case for — which is exactly why
+    /// `CityInstallState.init` could never reach `.bundled` again for a city that had been
+    /// downloaded once, and why San Francisco drew `Installed · <version>` with `Use` and `Remove`
+    /// beside a built-in card simultaneously claiming to include it.
+    ///
+    /// - Parameter installedContentRev: the record date of the copy that is actually drawing, read
+    ///   out of its own `seed_meta`. Optional on the same terms as `.bundled`'s: being on the phone
+    ///   is the fact, and having a date is a separate, weaker one.
+    /// - Parameter updateAvailable: whether the catalog has moved ahead of *that copy* too. A
+    ///   downloaded update can itself go stale and the row has to be able to say so. It is this
+    ///   state's second half rather than a fourth state, because what the reader is looking at is
+    ///   one city with one record and at most one offer.
+    case bundledUpdated(installedContentRev: String?, updateAvailable: Bool)
 
     /// Whether a download of the published file is permitted **at all**.
     ///
@@ -51,6 +71,11 @@ public enum CityInstallState: Equatable, Sendable {
         switch self {
         case .notInstalled, .updateAvailable, .bundledOutdated:
             return true
+        case let .bundledUpdated(_, updateAvailable):
+            // A downloaded copy that is itself behind the catalogue. The fetch buys a newer record
+            // for a city already on the phone, which is the same trade `.bundledOutdated` offers
+            // one step earlier.
+            return updateAvailable
         case .installedCurrent, .needsNewerApp, .bundled:
             return false
         }
@@ -65,7 +90,7 @@ public enum CityInstallState: Equatable, Sendable {
     /// fetching, which is exactly the pair a reader needs told apart.
     public var isOnDevice: Bool {
         switch self {
-        case .installedCurrent, .updateAvailable, .bundled, .bundledOutdated:
+        case .installedCurrent, .updateAvailable, .bundled, .bundledOutdated, .bundledUpdated:
             return true
         case .notInstalled:
             return false
@@ -73,6 +98,22 @@ public enum CityInstallState: Equatable, Sendable {
             // The published file is refused; an older compatible copy is still on the phone, and
             // that copy is the whole reason this case carries a version at all.
             return installedVersion != nil
+        }
+    }
+
+    /// Whether the **app's own bundle** holds this city, in any of the three states it can be in.
+    ///
+    /// Decides where the Cities screen files the card: a bundled city is nested under the built-in
+    /// inventory rather than drawn beside it (RULING D2, decision 3), because it is not something
+    /// the reader can add or remove. Stated here beside `isOnDevice` and `allowsDownload` for the
+    /// same reason those two are — one type knows what the device holds, and the screen's
+    /// sectioning, its buttons and its copy must not reach different conclusions about it.
+    public var isBundledCity: Bool {
+        switch self {
+        case .bundled, .bundledOutdated, .bundledUpdated:
+            return true
+        case .notInstalled, .installedCurrent, .updateAvailable, .needsNewerApp:
+            return false
         }
     }
 
@@ -117,6 +158,20 @@ public enum CityInstallState: Equatable, Sendable {
         bundled: SeedCities.City? = nil,
         newestKnownSchemaVersion: Int = SeedDatabase.newestKnownSchemaVersion
     ) {
+        // ── The bundle is asked FIRST, and that ordering is the defect this round exists to fix ──
+        //
+        // This used to read `else if let installedVersion` *before* `else if let bundled`, so the
+        // moment a downloaded copy of San Francisco existed the `bundled` argument was never
+        // consulted at all: the row resolved to `.installedCurrent` or `.updateAvailable`, and
+        // `CityDownloadRow.decide` drew `Installed · <version>` with `Use` and `Remove` — beside a
+        // built-in card simultaneously saying `Includes San Francisco and San Jose`. The `.bundled`
+        // and `.bundledOutdated` cases, which exist precisely to stop a bundled city being offered
+        // as a download, were unreachable for any city that had ever been downloaded once.
+        //
+        // Reordering alone would have been the wrong fix and would have hidden the downloaded copy
+        // instead: a bundled city *with* a downloaded copy is a real state, it is the one RULING D4
+        // is about, and it needed a case of its own (`.bundledUpdated`). Both halves are here, and
+        // `BundledCityTests` pins the pair.
         if published.schemaVersion > newestKnownSchemaVersion {
             // The schema gate still refuses the download. What changes is what the row *says* when
             // there is nothing to refuse: a bundled city with no downloaded copy is already on the
@@ -127,22 +182,17 @@ public enum CityInstallState: Equatable, Sendable {
             // BOTH a newer schema generation and a newer record, this row keeps `Included in the
             // app` and states neither the format refusal nor the newer record. Revisiting what such
             // a row owes the reader belongs to the round that bumps the published format, not here.
-            if installedVersion == nil, let bundled {
-                self = .bundled(contentRev: bundled.contentRev)
+            if let bundled {
+                // A city the bundle holds is on the phone whether or not a newer copy was ever
+                // downloaded, and neither branch may offer a file this build cannot read.
+                self = installedVersion == nil
+                    ? .bundled(contentRev: bundled.contentRev)
+                    : .bundledUpdated(
+                        installedContentRev: installedContentRev, updateAvailable: false
+                    )
             } else {
                 self = .needsNewerApp(installedVersion: installedVersion)
             }
-        } else if let installedVersion {
-            // A downloaded copy shadows the bundle (the `active-city` marker points at it), so its
-            // version — a full R37 string, not just a date — is the fact worth stating.
-            self = Self.installedIsCurrent(
-                published: published,
-                installedVersion: installedVersion,
-                installedContentRev: installedContentRev,
-                installedSchemaVersion: installedSchemaVersion
-            )
-                ? .installedCurrent(installedVersion: installedVersion)
-                : .updateAvailable(installedVersion: installedVersion)
         } else if let bundled {
             // **`content_rev`, never the version string.** The manifest carries `content_rev` as
             // its own key (it always has; `CityManifest.City` simply did not decode it), so this
@@ -156,13 +206,42 @@ public enum CityInstallState: Equatable, Sendable {
             // lands on `.bundled`, which offers nothing. That is the safe direction in every one of
             // those cases: the cost of withholding a download is a stale record, and the cost of
             // offering one is 81 MB of bytes the reader already has.
-            if let publishedRev = published.contentRev,
-               let bundledRev = bundled.contentRev,
-               publishedRev > bundledRev {
+            if let installedVersion {
+                // **A downloaded copy of a bundled city is an update to that city, not a peer
+                // inventory** (RULING D4). It shadows the bundled rows of that id space inside the
+                // union and nothing else moves, so the row states the record the reader is actually
+                // looking at and offers to undo it — never `Remove`, which would read as removing a
+                // city the app cannot remove.
+                //
+                // Whether *that copy* is itself behind the catalogue is the same question
+                // `.updateAvailable` asks, asked with the same helper, so a bundled city and a
+                // non-bundled pack cannot come to different conclusions about identical facts.
+                self = .bundledUpdated(
+                    installedContentRev: installedContentRev,
+                    updateAvailable: !Self.installedIsCurrent(
+                        published: published,
+                        installedVersion: installedVersion,
+                        installedContentRev: installedContentRev,
+                        installedSchemaVersion: installedSchemaVersion
+                    )
+                )
+            } else if let publishedRev = published.contentRev,
+                      let bundledRev = bundled.contentRev,
+                      publishedRev > bundledRev {
                 self = .bundledOutdated(bundledContentRev: bundledRev)
             } else {
                 self = .bundled(contentRev: bundled.contentRev)
             }
+        } else if let installedVersion {
+            // A pack the bundle does not cover. Its own record is the only one there is.
+            self = Self.installedIsCurrent(
+                published: published,
+                installedVersion: installedVersion,
+                installedContentRev: installedContentRev,
+                installedSchemaVersion: installedSchemaVersion
+            )
+                ? .installedCurrent(installedVersion: installedVersion)
+                : .updateAvailable(installedVersion: installedVersion)
         } else {
             self = .notInstalled
         }

@@ -44,6 +44,15 @@ public final class CypressStore: Sendable {
     /// Where `main` lives, for diagnostics and for the "delete my data" path.
     public let databaseURL: URL
 
+    /// **How many inventory files this connection may attach at once**, asked of SQLite at open
+    /// (RULING D5).
+    ///
+    /// `SQLITE_LIMIT_ATTACHED` is a compile-time constant of whichever library the platform ships,
+    /// and the app links the system one. Read here rather than written down anywhere, because a
+    /// number in a comment is a claim nothing rechecks — and this one reaches a reader as a
+    /// sentence on the Cities screen.
+    public let attachedDatabaseLimit: Int
+
     /// Every inventory file behind `seed`, and how they were reconciled. `nil` when none is
     /// attached — the same state `seed` reports as `nil`, held separately because the Cities screen
     /// and the opening camera ask about the *files* while the query layer asks about the *shape*.
@@ -52,11 +61,13 @@ public final class CypressStore: Sendable {
     private init(
         queue: DatabaseQueue,
         inventory: InventoryUnion?,
+        attachedDatabaseLimit: Int,
         seedMeta: [String: String],
         databaseURL: URL
     ) {
         self.queue = queue
         self.inventory = inventory
+        self.attachedDatabaseLimit = attachedDatabaseLimit
         self.seed = inventory?.schema
         self.seedHasSoftDeletedTrees = inventory?.hasSoftDeletedTrees ?? false
         self.seedProvenance = InventorySource(seedMeta: seedMeta)
@@ -148,17 +159,19 @@ public final class CypressStore: Sendable {
         let url = try databaseURL ?? defaultDatabaseURL()
         let queue = try DatabaseQueue(url: url)
 
-        let (union, seedMeta) = try await queue.withConnection {
-            connection -> (InventoryUnion?, [String: String]) in
+        let (union, limit, seedMeta) = try await queue.withConnection {
+            connection -> (InventoryUnion?, Int, [String: String]) in
             try SchemaMigrator.migrate(migrations, on: connection)
-            guard !inventories.isEmpty else { return (nil, [:]) }
+            let limit = connection.attachedDatabaseLimit
+            guard !inventories.isEmpty else { return (nil, limit, [:]) }
             let union = try InventoryUnion.build(inventories, on: connection)
-            return (union, readSeedMeta(connection: connection))
+            return (union, limit, readSeedMeta(connection: connection))
         }
 
         return CypressStore(
             queue: queue,
             inventory: union,
+            attachedDatabaseLimit: limit,
             seedMeta: seedMeta,
             databaseURL: url
         )
@@ -182,16 +195,18 @@ public final class CypressStore: Sendable {
         migrations: [Migration] = AppSchema.migrations
     ) async throws -> CypressStore {
         let queue = try DatabaseQueue.inMemory()
-        let (union, seedMeta) = try await queue.withConnection {
-            connection -> (InventoryUnion?, [String: String]) in
+        let (union, limit, seedMeta) = try await queue.withConnection {
+            connection -> (InventoryUnion?, Int, [String: String]) in
             try SchemaMigrator.migrate(migrations, on: connection)
-            guard !inventories.isEmpty else { return (nil, [:]) }
+            let limit = connection.attachedDatabaseLimit
+            guard !inventories.isEmpty else { return (nil, limit, [:]) }
             let union = try InventoryUnion.build(inventories, on: connection)
-            return (union, readSeedMeta(connection: connection))
+            return (union, limit, readSeedMeta(connection: connection))
         }
         return CypressStore(
             queue: queue,
             inventory: union,
+            attachedDatabaseLimit: limit,
             seedMeta: seedMeta,
             databaseURL: URL(fileURLWithPath: ":memory:")
         )

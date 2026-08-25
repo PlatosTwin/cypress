@@ -961,6 +961,10 @@ struct RootView: View {
                     downloader: data.remoteAccess.allowsNetwork
                         ? CityDownloader()
                         : CityDownloader(session: OfflineSession.make()),
+                    // How many cities may be attached beside the bundle (RULING D5). Read off the
+                    // live connection at open — `SQLITE_LIMIT_ATTACHED` belongs to whichever SQLite
+                    // the platform ships — and reduced by the one slot the bundle itself holds.
+                    installableCityLimit: max(0, data.store.attachedDatabaseLimit - 1),
                     onInventoryChange: onInventoryChange
                 ),
                 onBack: { router.pop() }

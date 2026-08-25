@@ -30,17 +30,27 @@ final class AppModel {
     func boot() async {
         guard case .booting = phase else { return }
         do {
-            let layer = try await DataLayer.bootPreferringActiveCity(library: CityLibrary.default())
+            let layer = try await DataLayer.bootOverInstalledCities(library: CityLibrary.default())
             phase = .ready(layer)
         } catch {
             phase = .failed(String(describing: error))
         }
     }
 
-    /// Tears the layer down and boots again — the Cities screen calls this after changing which
-    /// inventory is active (RULINGS R43 §1: "switching rebuilds the data
-    /// layer"). Setting the phase back is enough: `CypressApp` renders the booting branch, whose
-    /// `.task` calls `boot()` exactly as it did at launch, and the fresh `DataLayer` gets a fresh
+    /// Tears the layer down and boots again — the Cities screen calls this after any install or
+    /// removal (RULING D8).
+    ///
+    /// **A whole-layer reboot, deliberately, and it is the honest one.** Adding or removing an arm
+    /// invalidates more than the files: the union's views are rebuilt over a different set of
+    /// schemas, the canonical species catalogue is renumbered, and every prepared statement in the
+    /// connection's cache was compiled against the old views. Dropping and recreating in place
+    /// would have to get all three right at once, on a connection other code may be mid-read on;
+    /// booting again gets them right by construction, and it is the path every launch already
+    /// takes. It costs the tens of milliseconds `InventoryUnion.build` measures, once, at the
+    /// moment the reader pressed a button and is already waiting.
+    ///
+    /// Setting the phase back is enough: `CypressApp` renders the booting branch, whose `.task`
+    /// calls `boot()` exactly as it did at launch, and the fresh `DataLayer` gets a fresh
     /// `RootView` because the root is identity-keyed to the store instance.
     func reboot() {
         guard case .ready = phase else { return }

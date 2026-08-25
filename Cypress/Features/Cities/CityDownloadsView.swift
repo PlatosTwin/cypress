@@ -35,9 +35,20 @@ struct CityDownloadsView: View {
                     ForEach(model.sections) { section in
                         // The You tab's micro-label, the same idiom `City data` and the disclaimer
                         // heading already use — a heading, not a new component.
-                        Text(section.title)
-                            .cypressMicroLabel()
-                            .padding(.top, section.isCityGroup ? 0 : CityDownloadsMetrics.sectionTop)
+                        //
+                        // **A section may have no title, and then it draws none** rather than an
+                        // empty line. The cities inside the built-in card are nested under it and a
+                        // heading there would only repeat the card immediately above them
+                        // (`CityDownloadSection.sections`); the downloaded packs below them
+                        // continue the run `On this phone` already opened.
+                        if !section.title.isEmpty {
+                            Text(section.title)
+                                .cypressMicroLabel()
+                                .padding(
+                                    .top,
+                                    section.isCityGroup ? 0 : CityDownloadsMetrics.sectionTop
+                                )
+                        }
 
                         ForEach(section.rows) { row in
                             card(row)
@@ -182,24 +193,21 @@ struct CityDownloadsView: View {
             PrimaryButton(CityDownloadsCopy.update, style: .compact) {
                 if let city = publishedCity(for: row.id) { model.download(city) }
             }
-        case .use:
-            PrimaryButton(CityDownloadsCopy.use, style: .compact) {
-                model.use(row.id == CityDownloadRow.builtInID ? nil : row.id)
-            }
         case .remove:
             SecondaryOutlineButton(CityDownloadsCopy.remove, style: .compact) {
+                model.remove(row.id)
+            }
+        case .revert:
+            // The same operation as `.remove` under the name that is true for a bundled city: what
+            // goes is the downloaded copy, and the city returns to the record inside the app
+            // (RULING D2).
+            SecondaryOutlineButton(CityDownloadsCopy.revert, style: .compact) {
                 model.remove(row.id)
             }
         case .cancel:
             SecondaryOutlineButton(CityDownloadsCopy.cancel, style: .compact) {
                 model.cancelDownload()
             }
-        case .inUseLabel:
-            Text(CityDownloadsCopy.inUse)
-                .font(CypressFont.body145Bold)
-                .foregroundStyle(CypressColor.textMuted)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, CypressSpacing.Component.buttonPaddingSmall)
         }
     }
 
