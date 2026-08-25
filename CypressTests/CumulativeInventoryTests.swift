@@ -828,6 +828,73 @@ struct CumulativeInventoryTests {
         #expect(abs(kept.center.latitude - 1) < 0.000_1, "the remembered camera lost to a fallback")
     }
 
+    // MARK: - The screen's shape (RULING D2)
+
+    /// **The built-in card opens `On this phone`, its own cities are nested under it, and the
+    /// downloaded packs follow.**
+    ///
+    /// Decision 3: a bundled city is never a peer card beside the built-in inventory. Decision 5:
+    /// the built-in card and a per-city entry may never contradict each other — which the old
+    /// screen did by drawing `In use` above a sibling `Use`.
+    @Test("bundled cities nest under the built-in card, and downloaded packs follow them")
+    func bundledCitiesNestUnderTheBuiltInCard() {
+        let sanFrancisco = SeedCities.City(
+            id: "sf", displayName: "San Francisco", contentRev: "2026-07-31"
+        )
+        let manhattan = CityManifest.City(
+            id: "us-ny-nyc-manhattan", displayName: "Manhattan", coverage: "full", treeCount: 1,
+            schemaVersion: 17, version: "s17-r2026-08-22-aaaaaaaa", contentRev: "2026-08-22",
+            path: "x", bytes: 1, sha256: String(repeating: "a", count: 64)
+        )
+        let sfEntry = CityManifest.City(
+            id: "sf", displayName: "San Francisco", coverage: "full", treeCount: 1,
+            schemaVersion: 17, version: "s17-r2026-07-31-aaaaaaaa", contentRev: "2026-07-31",
+            path: "x", bytes: 1, sha256: String(repeating: "a", count: 64)
+        )
+
+        let rows: [CityDownloadRow] = [
+            .builtIn(cityNames: ["San Francisco", "San Jose"]),
+            .published(
+                city: sfEntry,
+                state: CityInstallState(
+                    published: sfEntry, installedVersion: nil, bundled: sanFrancisco,
+                    newestKnownSchemaVersion: 17
+                ),
+                downloadingFraction: nil, lastAttemptFailed: false
+            ),
+            .published(
+                city: manhattan,
+                state: .installedCurrent(installedVersion: manhattan.version),
+                downloadingFraction: nil, lastAttemptFailed: false
+            )
+        ]
+        let sections = CityDownloadSection.sections(from: rows) { _ in nil }
+
+        #expect(sections.count >= 3, "the run collapsed: \(sections.map(\.title))")
+        #expect(sections[0].title == "On this phone")
+        #expect(
+            sections[0].rows.map(\.id) == [CityDownloadRow.builtInID],
+            "the first section holds \(sections[0].rows.map(\.id)); only the built-in card belongs there"
+        )
+        // The bundled city, nested, with no heading of its own.
+        #expect(sections[1].isCityGroup, "the bundled cities are not drawn as a nested group")
+        #expect(sections[1].title.isEmpty, "the nested run drew a heading: '\(sections[1].title)'")
+        #expect(sections[1].rows.map(\.id) == ["sf"])
+        #expect(sections[1].rows.allSatisfy { $0.isInsideBuiltIn })
+        // The downloaded pack is not nested under the built-in inventory; it is its own card.
+        let downloaded = sections.dropFirst(2).flatMap(\.rows)
+        #expect(downloaded.map(\.id) == ["us-ny-nyc-manhattan"])
+        #expect(downloaded.allSatisfy { !$0.isInsideBuiltIn })
+
+        // **Decision 5, as a property of the whole screen**: no card may claim a state another card
+        // contradicts. With `Use`/`In use` gone there is nothing left that could, and the built-in
+        // card draws nothing at all.
+        let everyRow = sections.flatMap(\.rows)
+        #expect(everyRow.count == 3, "sectioning dropped or duplicated a row: \(everyRow.map(\.id))")
+        let builtIn = everyRow.first { $0.id == CityDownloadRow.builtInID }
+        #expect(builtIn?.affordances.isEmpty == true)
+    }
+
     // MARK: - Lifecycle (RULING D8)
 
     /// **Removing an inventory tears the union down and rebuilds it**, and the rebuilt union

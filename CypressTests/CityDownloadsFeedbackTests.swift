@@ -572,8 +572,11 @@ struct CityDownloadsFeedbackTests {
         let row = Self.row(sf, state: .bundledOutdated(bundledContentRev: "2026-07-31"))
 
         #expect(row.stateLine == "Included in the app · record as of 2026-07-31")
-        #expect(row.detailLine == "A newer record is available to download.")
-        #expect(row.affordances == [.download])
+        // **RULING D2 changed both halves of this row.** The sentence no longer names the
+        // transfer, and the verb is `Update` rather than `Download`, because RULING D4 makes a
+        // newer copy of a bundled city an update to that city rather than a second inventory.
+        #expect(row.detailLine == "A newer record is available.")
+        #expect(row.affordances == [.update])
         #expect(row.isOnDevice)
         // The date is stated once, not once per line.
         #expect(row.detailLine?.contains("2026-07-31") == false)
@@ -646,7 +649,12 @@ struct CityDownloadsFeedbackTests {
         #expect(
             sections.map { ($0.title, $0.isCityGroup, $0.rows.map(\.id)) }.map(String.init(describing:))
                 == [
-                    ("On this phone", false, ["built-in", "sf"]),
+                    // **The built-in card opens the run alone** (RULING D2, decision 3), and San
+                    // Francisco — which the bundle holds — is nested under it in an untitled group
+                    // rather than sitting beside it as a peer card. A heading there would only
+                    // repeat the card immediately above it.
+                    ("On this phone", false, ["built-in"]),
+                    ("", true, ["sf"]),
                     // Los Angeles has one pack, so it stays under the umbrella rather than earning
                     // a heading of its own — and the umbrella is drawn because it has that row.
                     ("Available to download", false, ["us-ca-la"]),
@@ -709,7 +717,7 @@ struct CityDownloadsFeedbackTests {
         )
         #expect(
             sections.map(\.title)
-                == ["On this phone", "New York City", "Available to download", "New York City"]
+                == ["On this phone", "", "New York City", "Available to download", "New York City"]
         )
         // No two identical headings are ever adjacent.
         #expect(!zip(sections, sections.dropFirst()).contains { $0.title == $1.title })
@@ -736,7 +744,7 @@ struct CityDownloadsFeedbackTests {
         let sections = CityDownloadSection.sections(
             from: rows, parentCity: Self.parentCity(in: cities)
         )
-        #expect(sections.map(\.title) == ["On this phone", "New York City"])
+        #expect(sections.map(\.title) == ["On this phone", "", "New York City"])
         #expect(
             sections.last?.rows.map(\.id)
                 == ["us-ny-nyc-manhattan", "us-ny-nyc-brooklyn", "us-ny-nyc-queens"]
@@ -783,7 +791,7 @@ struct CityDownloadsFeedbackTests {
         )
         #expect(
             sections.map(\.title)
-                == ["On this phone", "New York City", "Available to download", "New York City"]
+                == ["On this phone", "", "New York City", "Available to download", "New York City"]
         )
         // The identity, not the title, is what `ForEach` uses — two `New York City` sections in one
         // pass must not collide, or SwiftUI resolves the duplicate by dropping rows.
@@ -835,11 +843,19 @@ struct CityDownloadsFeedbackTests {
         let flattened = sections.flatMap(\.rows)
         #expect(flattened.count == rows.count)
         #expect(Set(flattened.map(\.id)) == Set(rows.map(\.id)))
-        // Brooklyn has an update waiting, so it is on the phone and leads rather than being grouped.
+        // The `On this phone` heading now sits over the built-in card alone; the bundled city
+        // nests under it and the downloaded pack follows in the untitled run below (RULING D2).
+        // What this test is about is that nothing is dropped or duplicated on the way, which the
+        // two assertions above check against the flattening.
         #expect(
-            sections.first(where: { $0.title == "On this phone" })?.rows.map(\.id)
-                == ["built-in", "sf", "us-ny-nyc-brooklyn"]
+            sections.first(where: { $0.title == "On this phone" })?.rows.map(\.id) == ["built-in"]
         )
+        // Brooklyn has an update waiting, so it is on the phone — before `Available to download`
+        // and after the bundled cities.
+        let onDeviceIDs = sections
+            .prefix { $0.title != CityDownloadsCopy.availableSection }
+            .flatMap(\.rows).map(\.id)
+        #expect(onDeviceIDs == ["built-in", "sf", "us-ny-nyc-brooklyn"], "\(onDeviceIDs)")
     }
 
     /// An in-flight first download stays under `Available`; an in-flight *update* does not leave the

@@ -67,6 +67,8 @@ extension InventoryUnion {
 
         let columns = try connection.columnNames(ofTable: "species", in: temp)
         let list = columns.joined(separator: ", ")
+        // See `renumbered(_:)`: a table whose only column is `id` projects nothing after it, and
+        // `SELECT x, FROM t` is a syntax error rather than an empty projection.
         try connection.execute("""
         INSERT INTO \(temp).species (\(list)) SELECT \(list) FROM \(first.schemaName).species
         """)
@@ -74,23 +76,32 @@ extension InventoryUnion {
         // Later arms contribute only species the catalogue does not already know, numbered above
         // the current maximum. `ROW_NUMBER() OVER (ORDER BY s.id)` makes that deterministic, so two
         // runs over the same files build the same catalogue.
-        let tail = columns.dropFirst().map { "s.\($0)" }.joined(separator: ", ")
+        let tail = Self.renumbered(columns, alias: "s")
         for arm in arms.dropFirst() {
             try connection.execute("""
             INSERT INTO \(temp).species (\(list))
             SELECT (SELECT COALESCE(MAX(id), 0) FROM \(temp).species)
-                   + ROW_NUMBER() OVER (ORDER BY s.id), \(tail)
+                   + ROW_NUMBER() OVER (ORDER BY s.id)\(tail)
               FROM \(arm.schemaName).species s
              WHERE s.\(arm.schema.speciesIdentityColumn)
                    NOT IN (SELECT \(first.schema.speciesIdentityColumn) FROM \(temp).species)
             """)
         }
 
-        try connection.execute(
-            "CREATE UNIQUE INDEX \(temp).idx_species_scientific_name ON species(scientific_name)"
-        )
-        try connection.execute("CREATE INDEX \(temp).idx_species_common_name ON species(common_name)")
-        try connection.execute("CREATE INDEX \(temp).idx_species_curated ON species(curated)")
+        // The three named indexes the files carry, each created only if the column it names is
+        // actually there. Same posture as the view's projection: ask the file what it has. A
+        // fixture whose `species` is `(id, uuid)` is a legitimate inventory — it simply has no
+        // scientific name to index.
+        let indexed: [(String, String, Bool)] = [
+            ("idx_species_scientific_name", "scientific_name", true),
+            ("idx_species_common_name", "common_name", false),
+            ("idx_species_curated", "curated", false)
+        ]
+        for (name, column, unique) in indexed where columns.contains(column) {
+            try connection.execute(
+                "CREATE \(unique ? "UNIQUE " : "")INDEX \(temp).\(name) ON species(\(column))"
+            )
+        }
     }
 
     /// `(inv, local_id) -> (canonical id, uuid)`.
@@ -181,14 +192,14 @@ extension InventoryUnion {
 
         let columns = try connection.columnNames(ofTable: "neighborhoods", in: temp)
         let list = columns.joined(separator: ", ")
-        let tail = columns.dropFirst().map { "n.\($0)" }.joined(separator: ", ")
+        let tail = Self.renumbered(columns, alias: "n")
         for arm in arms {
             let offset = try scalar(
                 "SELECT COALESCE(MAX(id), 0) AS n FROM \(temp).neighborhoods", on: connection
             )
             try connection.execute("""
             INSERT INTO \(temp).neighborhoods (\(list))
-            SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY n.id), \(tail)
+            SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY n.id)\(tail)
               FROM \(arm.schemaName).neighborhoods n
             """)
             try connection.execute("""
@@ -224,14 +235,14 @@ extension InventoryUnion {
                 inlineConstraints: ["id": "PRIMARY KEY", "slug": "NOT NULL UNIQUE"], on: connection
             )
             let columns = try connection.columnNames(ofTable: "dim_city", in: temp)
-            let tail = columns.dropFirst().map { "d.\($0)" }.joined(separator: ", ")
+            let tail = Self.renumbered(columns, alias: "d")
             for arm in arms where arm.schema.hasDimCity {
                 let offset = try scalar(
                     "SELECT COALESCE(MAX(id), 0) AS n FROM \(temp).dim_city", on: connection
                 )
                 try connection.execute("""
                 INSERT INTO \(temp).dim_city (\(columns.joined(separator: ", ")))
-                SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY d.id), \(tail)
+                SELECT \(offset) + ROW_NUMBER() OVER (ORDER BY d.id)\(tail)
                   FROM \(arm.schemaName).dim_city d
                  WHERE d.slug NOT IN (SELECT slug FROM \(temp).dim_city)
                 """)
@@ -327,10 +338,13 @@ extension InventoryUnion {
                    \(tree("inventory_source")) AS inventory_source,
                    t.lat AS lat, t.lon AS lon,
                    \(tree("address")) AS address, \(tree("site_type")) AS site_type,
-                   hx.canon_id AS neighborhood_id,
+                   \(arm.treeColumns.contains("neighborhood_id") ? "hx.canon_id" : "NULL")
+                       AS neighborhood_id,
                    \(tree("status")) AS status,
-                   sx.canon_id AS species_current,
-                   sx.uuid AS species_uuid,
+                   \(arm.treeColumns.contains("species_current") ? "sx.canon_id" : "NULL")
+                       AS species_current,
+                   \(arm.treeColumns.contains("species_current") ? "sx.uuid" : "NULL")
+                       AS species_uuid,
                    \(tree("planted_year")) AS planted_year, \(tree("planted_on")) AS planted_on,
                    \(tree("dbh_city_cm_min")) AS dbh_city_cm_min, \(tree("dbh_city_cm_max")) AS dbh_city_cm_max,
                    \(arm.treeColumns.contains("site_lineage")
@@ -344,10 +358,18 @@ extension InventoryUnion {
                    \(tree("created_at")) AS created_at, \(tree("updated_at")) AS updated_at,
                    \(tree("deleted_at")) AS deleted_at
               FROM \(arm.schemaName).trees t
-              LEFT JOIN \(SeedDatabase.schemaName).cypress_species_xlat sx
-                     ON sx.inv = \(arm.ordinal) AND sx.local_id = t.species_current
-              LEFT JOIN \(SeedDatabase.schemaName).cypress_hood_xlat hx
-                     ON hx.inv = \(arm.ordinal) AND hx.local_id = t.neighborhood_id
+              \(arm.treeColumns.contains("species_current")
+                ? """
+                  LEFT JOIN \(SeedDatabase.schemaName).cypress_species_xlat sx
+                         ON sx.inv = \(arm.ordinal) AND sx.local_id = t.species_current
+                  """
+                : "")
+              \(arm.treeColumns.contains("neighborhood_id")
+                ? """
+                  LEFT JOIN \(SeedDatabase.schemaName).cypress_hood_xlat hx
+                         ON hx.inv = \(arm.ordinal) AND hx.local_id = t.neighborhood_id
+                  """
+                : "")
              \(whereClause(arm.shadowed, alias: "t"))
             """
         }.joined(separator: "\nUNION ALL\n")
@@ -506,6 +528,17 @@ extension InventoryUnion {
              WHERE d.\(key) NOT IN (SELECT \(key) FROM \(temp).\(table))
             """)
         }
+    }
+
+    /// The columns after `id`, aliased and prefixed with the comma that separates them from the
+    /// renumbered id — or the empty string when there are none.
+    ///
+    /// A table whose only column is `id` is a legitimate inventory shape (a fixture's
+    /// `neighborhoods(id)` is one), and `SELECT x, FROM t` is a syntax error rather than a
+    /// projection of nothing.
+    private static func renumbered(_ columns: [String], alias: String) -> String {
+        let tail = columns.dropFirst().map { "\(alias).\($0)" }.joined(separator: ", ")
+        return tail.isEmpty ? "" : ", \(tail)"
     }
 
     private static func scalar(_ sql: String, on connection: SQLiteConnection) throws -> Int64 {

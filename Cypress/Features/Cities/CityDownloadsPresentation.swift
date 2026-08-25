@@ -513,7 +513,6 @@ struct CityDownloadRow: Equatable, Identifiable {
             isFailure: false,
             progress: nil,
             isOnDevice: true,
-            isInsideBuiltIn: true,
             affordances: []
         )
     }
