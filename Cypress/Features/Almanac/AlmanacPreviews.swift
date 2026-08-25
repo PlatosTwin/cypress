@@ -204,7 +204,13 @@ private enum AlmanacFixtures {
         )
     )
 
-    /// No location fix, so no area. Header, footnote, nothing else.
+    /// A payload carrying no neighborhood, so `hasArea` is false and none of §2–§4 can draw.
+    ///
+    /// What the screen makes of that is decided by the coordinate it is given, not by this fixture,
+    /// which is why the two previews below both use it: with a nil coordinate the screen asks for
+    /// location, and with a fix outside every inventory it draws E182's out-of-range copy. Neither
+    /// leaves the column bare — that was the E126 defect, and §5's footnote is gone besides (copy
+    /// audit, 2026-08-23).
     static let noArea = Almanac.empty
 
     /// **The fallback area** (RULINGS R29): a reader in a city the record holds trees for and

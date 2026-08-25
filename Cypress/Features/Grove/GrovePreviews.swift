@@ -142,7 +142,9 @@ private enum GroveFixtures {
     )
 
     /// A device that has contributed nothing. There is no neighborhood to infer and nothing to
-    /// count, so the screen is its title, its tabs and its footnote.
+    /// count, so no ring, no celebration and no grid — `GrovePresentation.isEmpty`. What draws
+    /// under the tab row is E48's sentence and nothing else; §6's footnote used to close the
+    /// column and was removed by the copy audit of 2026-08-23.
     static let empty = GroveSpecies.empty
 }
 

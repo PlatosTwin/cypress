@@ -93,7 +93,9 @@ struct OutboxPresentationTests {
         #expect(row.state == .retry)
         #expect(row.isTerminal, "an expired item must not draw as a live one")
         #expect(row.showsRetryButton)
-        // It says so and says why (§6's footnote is the contract).
+        // It says so and says why — the contract, which §6 stated in words until the copy audit of
+        // 2026-08-23 removed them. See `everyReasonSaysWhy` and the note above it for where each
+        // clause of it is now asserted.
         #expect(row.reason == OutboxFailureReason.expired)
         #expect(row.reason?.contains("48 hours") == true)
         // And the header stops claiming anything is waiting, because nothing is.

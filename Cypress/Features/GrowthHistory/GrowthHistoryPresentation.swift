@@ -340,9 +340,8 @@ enum GrowthHistoryCopy {
     }
 
     /// **NOT SPECIFIED.** SCREENS.md 11 draws no empty state, and per DECISIONS constraint 21 one is
-    /// not invented — this is a subtraction, in the shape `TreeProfilePresentation.coldStartFootnote`
-    /// already uses: say only what the record supports and drop the rest of the screen. See ERRATA
-    /// (E63).
+    /// not invented — this is a subtraction, in the shape `OutboxCopy.emptyState` uses: say only
+    /// what the record supports and drop the rest of the screen. See ERRATA (E63).
     static let emptyState = "No measurements on this tree yet."
 
     /// **NOT SPECIFIED**, same reasoning. Readings exist, at least one carries a real fix, and none

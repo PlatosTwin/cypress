@@ -312,8 +312,9 @@ struct AlmanacScreen: View {
     ///
     /// Placed after §3 and before §4 on purpose. §3 says what lives in the neighborhood; this says
     /// where nothing does — two readings of the same canopy — while §4 stays the screen's one
-    /// directed ask, the last thing the reader is left with before the footnote. A plain row before
-    /// §4's amber card also reads as the statement it is rather than as a second ask.
+    /// directed ask and the last block in the column, so it is what the reader is left with. A
+    /// plain row before §4's amber card also reads as the statement it is rather than as a second
+    /// ask.
     @ViewBuilder
     private func vacantSitesBlock(_ presentation: AlmanacPresentation) -> some View {
         if let block = presentation.vacantSites {

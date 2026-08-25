@@ -14,12 +14,13 @@
 //
 //  **C26 · AvatarStack is not on this screen, and its absence is the finding rather than an
 //  omission.** SCREENS.md 13 does not draw one: 13's parts are a header, a chart card, three C10
-//  rows, a photo strip and a footnote. Nor could one be filled if it were drawn — contribution feeds
-//  are private by default and public attribution is opt-in (D11), `User.isPublicAttributionEffective`
-//  is the only predicate allowed to answer it, and there is no `User` anywhere near this payload
-//  because there is no account system yet and every contribution is anonymous under a device id
-//  (D9). A stack of blank circles on a screen about who has looked after a tree would be worse than
-//  no stack. See ERRATA.
+//  rows and a photo strip — and a §5 footnote, until the copy audit of 2026-08-23 struck it. The
+//  stack is absent from every one of those enumerations, before and after. Nor could one be filled
+//  if it were drawn — contribution feeds are private by default and public attribution is opt-in
+//  (D11), `User.isPublicAttributionEffective` is the only predicate allowed to answer it, and
+//  there is no `User` anywhere near this payload because there is no account system yet and every
+//  contribution is anonymous under a device id (D9). A stack of blank circles on a screen about who
+//  has looked after a tree would be worse than no stack. See ERRATA.
 //
 //  Not a raw hex or a raw font size in the file (ARCHITECTURE §6). The numbers that remain are
 //  SCREENS.md 13's own margins, named in `ActivityMetrics`.

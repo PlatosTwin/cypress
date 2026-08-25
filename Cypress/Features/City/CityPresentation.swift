@@ -14,7 +14,9 @@
 //  ── The two rules this file exists to keep, both inherited from `AlmanacPresentation` ──────────
 //  - **ARCHITECTURE §5.6 / A9 — an aggregate below its threshold does not render at all.** Every
 //    block here is an optional, exactly as every block on screen 12 is, and `isEmpty` exists so a
-//    caller never has to guess whether there is anything between the header and the footnote.
+//    caller never has to guess whether all three withheld themselves and left the header standing
+//    over nothing. It answers that from the blocks alone, which is why the copy audit's removal of
+//    the screen's closing line (2026-08-23, recorded at the foot of this file) did not touch it.
 //  - **ARCHITECTURE §5.1 / D1 — no counts of user actions, no ranks, no leaderboards.** Every number
 //    on this screen counts trees. Nothing here can be ordered by contributor and nothing here reads
 //    a contributor's identity.

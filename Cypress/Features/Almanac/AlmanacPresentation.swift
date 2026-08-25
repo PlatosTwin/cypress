@@ -636,7 +636,7 @@ enum AlmanacCopy {
     /// It says the almanac could not be read, and says nothing at all about the neighborhood —
     /// which is the distinction `AlmanacModel.Phase` exists to keep, and the one this screen can
     /// least afford to lose, its whole subject being what is and is not out there. A screen that
-    /// draws its five blocks away and leaves a footnote is reporting a quiet neighborhood; that
+    /// draws its blocks away and leaves the column bare is reporting a quiet neighborhood; that
     /// report has to be earned by a read that finished.
     static let loadFailed = "This almanac could not be loaded."
     static let loadRetry = "Try again"

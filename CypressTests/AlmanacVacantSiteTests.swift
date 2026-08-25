@@ -221,7 +221,8 @@ struct AlmanacVacantSiteTests {
 
         // And the group it would add cannot name itself: `SpeciesShare.name` is not optional and
         // `row.uuid("species_uuid")` on this row raises `unexpectedNull`, so `speciesMix` throws,
-        // `AlmanacModel` catches it as `.failed`, and screen 12 draws a header and a footnote.
+        // `AlmanacModel` catches it as `.failed`, and screen 12 draws `AlmanacCopy.loadFailed` and
+        // a retry in place of the almanac (ERRATA E126) — the whole screen, not one group.
         let namelessGroups = try await Self.count(
             """
             SELECT COUNT(*) AS n FROM (

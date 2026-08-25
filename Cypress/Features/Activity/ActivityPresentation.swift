@@ -429,8 +429,8 @@ enum ActivityCopy {
 
     /// **NOT SPECIFIED.** SCREENS.md 13 draws one state, the full one, and this is the state every
     /// tree in the shipped app is actually in. Written in the shape `GrowthHistoryCopy.emptyState`
-    /// and `TreeProfilePresentation.coldStartFootnote` already use — state a fact, drop the rest of
-    /// the screen, invent nothing (DECISIONS constraint 21). See ERRATA.
+    /// and `OutboxCopy.emptyState` use — state a fact, drop the rest of the screen, invent nothing
+    /// (DECISIONS constraint 21). See ERRATA.
     static let emptyState = "Nothing has been recorded on this tree yet."
 
     /// **NOT SPECIFIED**, same reasoning as 11's. SCREENS.md 13 draws no failure state.

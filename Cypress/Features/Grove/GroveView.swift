@@ -102,8 +102,9 @@ struct GroveView: View {
                 // ring, the celebration and the grid are each derived from contributions
                 // (`GrovePresentation.isEmpty`), so a device that has made none renders none of
                 // them; this is the sentence that fills the column they would otherwise leave
-                // silent, above §6's bottom-pinned footnote. Same card `treesTab` already draws
-                // for its own empty state, below.
+                // silent, and since the copy audit of 2026-08-23 took §6's footnote out of it (see
+                // the note on the spacer above) it is the only thing under the tab row. Same card
+                // `treesTab` already draws for its own empty state, below.
                 GroveNote(GroveCopy.emptyGrove)
                     .padding(.top, CypressSpacing.labelSectionTop)
                     .padding(.horizontal, CypressSpacing.gutter)

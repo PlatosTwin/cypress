@@ -852,7 +852,10 @@ struct TreeProfileView: View {
                 cityDetailBlocks(presentation)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // The cold variant's footnote still follows and carries its own closing space.
+            // Exactly one closing space, and the cold column's is not applied here. Warm: this is
+            // the last block, so it carries 03 §9's trailing 30pt, as `statGrid` and `growthLink`
+            // do when they are last instead. Cold: the whole column's 36pt is applied once on the
+            // scroll content in `body`, so adding any here would double it.
             .padding(.bottom, presentation.isCold ? 0 : CypressSpacing.bottomBar)
         }
     }

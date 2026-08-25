@@ -6,8 +6,9 @@
 //  `GroveView.speciesTab` now draws it. `GrovePresentationTests` pins
 //  the two halves a renderer cannot see: the gate (`GrovePresentation.isEmpty`) and the string
 //  (`GroveCopy.emptyGrove`, verbatim). What is left is the one fact only a renderer can decide — that
-//  the sentence actually reaches the screen, in the slot E48 describes, above §6's footnote — and
-//  that is what this file is for.
+//  the sentence actually reaches the screen, in the slot E48 describes, which since the copy audit
+//  of 2026-08-23 removed §6's footnote is the whole of what draws under the tab row — and that is
+//  what this file is for.
 //
 //  ── Why a pixel comparison, and against what ──────────────────────────────────────────────
 //  SwiftUI builds no in-process accessibility tree (`AccessibilityTests.swift`'s own header), so
@@ -20,9 +21,10 @@
 //  "what the chrome looked like before" is not safe enough — both were tried first. A populated
 //  grove already drew a ring and a grid before E48's copy existed and an empty one drew nothing, so
 //  that comparison passes whether or not this ticket's sentence is on screen. A second view
-//  reconstructing `GroveView.body`'s chrome by hand (title, tab row, footnote, nothing between) came
-//  out a measurably different picture from the real screen's own empty rendering *even with the
-//  sentence removed* — some structural detail of the real screen's composition was not reproduced —
+//  reconstructing `GroveView.body`'s chrome by hand — title and tab row, and at the time §6's
+//  footnote under them, with nothing between — came out a measurably different picture from the
+//  real screen's own empty rendering *even with the sentence removed* — some structural detail of
+//  the real screen's composition was not reproduced —
 //  so that comparison was void for the opposite reason: it never agrees with the real screen, so a
 //  disagreement proves nothing either.
 //
