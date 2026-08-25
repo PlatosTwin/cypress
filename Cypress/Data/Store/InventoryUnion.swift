@@ -153,6 +153,12 @@ public struct InventoryUnion: Sendable, Equatable {
                         isBundled: file.isBundled,
                         schema: schema,
                         idSpaces: try idSpaces(in: schemaName, schema: schema, on: connection),
+                        treeColumns: Set(
+                            try connection.columnNames(ofTable: "trees", in: schemaName)
+                        ),
+                        rtreeColumns: Set(
+                            try connection.columnNames(ofTable: "trees_rtree", in: schemaName)
+                        ),
                         hasSoftDeletedTrees: try hasSoftDeletes(in: schemaName, on: connection),
                         shadowed: []
                     )
@@ -372,6 +378,14 @@ public struct InventoryArm: Sendable, Equatable {
     public let schema: SeedSchema
     /// Every id space this file holds rows in, sorted.
     public let idSpaces: [String]
+    /// The columns `trees` actually has in **this** file, and the columns `trees_rtree` has.
+    ///
+    /// **The view projects `NULL` for anything absent rather than naming it and failing.** That is
+    /// the same posture `SeedSchema` takes everywhere else — ask the file what it carries — and it
+    /// is what lets a union include a generation older than the one this build was written for
+    /// without the `CREATE VIEW` itself throwing `no such column`.
+    public let treeColumns: Set<String>
+    public let rtreeColumns: Set<String>
     public let hasSoftDeletedTrees: Bool
     /// The bundled arm's rows a pack now covers (RULING D1). Always empty on a pack.
     public let shadowed: [ShadowedSpace]
@@ -379,8 +393,9 @@ public struct InventoryArm: Sendable, Equatable {
     func shadowing(_ spaces: [ShadowedSpace]) -> InventoryArm {
         InventoryArm(
             id: id, ordinal: ordinal, schemaName: schemaName, isBundled: isBundled,
-            schema: schema, idSpaces: idSpaces, hasSoftDeletedTrees: hasSoftDeletedTrees,
-            shadowed: spaces
+            schema: schema, idSpaces: idSpaces,
+            treeColumns: treeColumns, rtreeColumns: rtreeColumns,
+            hasSoftDeletedTrees: hasSoftDeletedTrees, shadowed: spaces
         )
     }
 }

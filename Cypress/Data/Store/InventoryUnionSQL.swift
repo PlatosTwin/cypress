@@ -311,30 +311,38 @@ extension InventoryUnion {
     static func treesSQL(arms: [InventoryArm]) -> String {
         arms.map { arm in
             let s = arm.schema
+            // A column this file does not have is projected as `NULL` rather than named — see
+            // `InventoryArm.treeColumns`. Without it a `CREATE VIEW` over an older generation
+            // throws `no such column` and takes the whole union with it.
+            func tree(_ column: String) -> String {
+                arm.treeColumns.contains(column) ? "t.\(column)" : "NULL"
+            }
             return """
             SELECT \(arm.ordinal) AS inv, t.id AS local_id,
                    (\(InventoryUnion.armStride) * \(arm.ordinal) + t.id) AS id,
                    t.\(s.treeIdentityColumn) AS uuid,
-                   \(s.hasIdSpace ? "t.id_space" : "NULL") AS id_space,
-                   t.external_ref AS external_ref,
-                   t.source AS source,
-                   \(s.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source,
+                   \(tree("id_space")) AS id_space,
+                   \(tree("external_ref")) AS external_ref,
+                   \(tree("source")) AS source,
+                   \(tree("inventory_source")) AS inventory_source,
                    t.lat AS lat, t.lon AS lon,
-                   t.address AS address, t.site_type AS site_type,
+                   \(tree("address")) AS address, \(tree("site_type")) AS site_type,
                    hx.canon_id AS neighborhood_id,
-                   t.status AS status,
+                   \(tree("status")) AS status,
                    sx.canon_id AS species_current,
                    sx.uuid AS species_uuid,
-                   t.planted_year AS planted_year, t.planted_on AS planted_on,
-                   t.dbh_city_cm_min AS dbh_city_cm_min, t.dbh_city_cm_max AS dbh_city_cm_max,
-                   (\(InventoryUnion.armStride) * \(arm.ordinal) + t.site_lineage) AS site_lineage,
-                   t.verification_state AS verification_state,
-                   t.legal_status AS legal_status, t.caretaker AS caretaker,
-                   t.care_assistant AS care_assistant, t.plant_type AS plant_type,
-                   t.plot_size AS plot_size, t.permit_notes AS permit_notes,
-                   \(s.hasCityRaw ? "t.city_raw" : "NULL") AS city_raw,
-                   t.created_at AS created_at, t.updated_at AS updated_at,
-                   t.deleted_at AS deleted_at
+                   \(tree("planted_year")) AS planted_year, \(tree("planted_on")) AS planted_on,
+                   \(tree("dbh_city_cm_min")) AS dbh_city_cm_min, \(tree("dbh_city_cm_max")) AS dbh_city_cm_max,
+                   \(arm.treeColumns.contains("site_lineage")
+                       ? "(\(InventoryUnion.armStride) * \(arm.ordinal) + t.site_lineage)"
+                       : "NULL") AS site_lineage,
+                   \(tree("verification_state")) AS verification_state,
+                   \(tree("legal_status")) AS legal_status, \(tree("caretaker")) AS caretaker,
+                   \(tree("care_assistant")) AS care_assistant, \(tree("plant_type")) AS plant_type,
+                   \(tree("plot_size")) AS plot_size, \(tree("permit_notes")) AS permit_notes,
+                   \(tree("city_raw")) AS city_raw,
+                   \(tree("created_at")) AS created_at, \(tree("updated_at")) AS updated_at,
+                   \(tree("deleted_at")) AS deleted_at
               FROM \(arm.schemaName).trees t
               LEFT JOIN \(SeedDatabase.schemaName).cypress_species_xlat sx
                      ON sx.inv = \(arm.ordinal) AND sx.local_id = t.species_current
@@ -379,10 +387,13 @@ extension InventoryUnion {
     /// back on `(inv, local_id)` rather than on the composite id, which is not sargable.
     static func treesRtreeSQL(arms: [InventoryArm]) -> String {
         arms.map { arm in
-            """
+            func box(_ column: String) -> String {
+                arm.rtreeColumns.contains(column) ? "r.\(column)" : "NULL"
+            }
+            return """
             SELECT \(arm.ordinal) AS inv, r.id AS id,
-                   r.min_lat AS min_lat, r.max_lat AS max_lat,
-                   r.min_lon AS min_lon, r.max_lon AS max_lon
+                   \(box("min_lat")) AS min_lat, \(box("max_lat")) AS max_lat,
+                   \(box("min_lon")) AS min_lon, \(box("max_lon")) AS max_lon
               FROM \(arm.schemaName).trees_rtree r
             """
         }.joined(separator: "\nUNION ALL\n")
