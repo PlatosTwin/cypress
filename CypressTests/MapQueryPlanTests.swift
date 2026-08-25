@@ -367,21 +367,30 @@ struct MapQueryPlanTests {
     /// not survive a rebuild that forgets to run `ANALYZE`, and `Tools/build_seed.py` is the only
     /// thing that puts it there. Nothing else in the app notices, which is exactly why this is worth
     /// asserting rather than trusting — every other query has one sane plan and gets it either way.
-    @Test("the seed carries the statistics the narrowed queries are planned with")
+    /// **Asked of every attached inventory, one at a time.** `sqlite_stat1` is per file, and it has
+    /// to be: the planner reads the statistics of the database a table lives in, so a downloaded
+    /// pack that shipped without `ANALYZE` is planned blind whatever the bundled seed carries. There
+    /// is no `temp.sqlite_stat1` to ask instead — the union's `trees` is a view, and a view has no
+    /// statistics of its own.
+    @Test("every attached inventory carries the statistics the narrowed queries are planned with")
     func theSeedCarriesItsStatistics() async throws {
         let store = try await Self.store()
+        let arms = try #require(store.inventory?.arms)
+        #expect(!arms.isEmpty, "no inventory is attached, so this gate examined nothing")
 
         try await store.queue.read { connection in
-            let statement = try connection.cachedStatement("""
-            SELECT count(*) AS n
-              FROM \(SeedDatabase.schemaName).sqlite_stat1
-             WHERE tbl = 'trees' AND idx = 'idx_trees_species_current'
-            """)
-            let rows = try statement.fetchOne { try $0.int("n") } ?? 0
-            #expect(
-                rows > 0,
-                "the seed has no ANALYZE statistics for idx_trees_species_current, so a broad species search will be planned blind — run ANALYZE in Tools/build_seed.py"
-            )
+            for arm in arms {
+                let statement = try connection.cachedStatement("""
+                SELECT count(*) AS n
+                  FROM \(arm.schemaName).sqlite_stat1
+                 WHERE tbl = 'trees' AND idx = 'idx_trees_species_current'
+                """)
+                let rows = try statement.fetchOne { try $0.int("n") } ?? 0
+                #expect(
+                    rows > 0,
+                    "inventory '\(arm.id)' has no ANALYZE statistics for idx_trees_species_current, so a broad species search will be planned blind — run ANALYZE in Tools/build_seed.py"
+                )
+            }
         }
     }
 }

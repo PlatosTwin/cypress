@@ -243,23 +243,23 @@ extension InventoryUnion {
                 "id_spaces", from: first, inlineConstraints: ["id": "PRIMARY KEY"], on: connection
             )
             let columns = try connection.columnNames(ofTable: "id_spaces", in: temp)
-            let hasCityID = columns.contains("city_id")
-            let projection = columns.map { column in
-                // The one column that is an id into a table this build just renumbered.
-                column == "city_id"
-                    ? "(SELECT c.id FROM \(temp).dim_city c JOIN %ARM%.dim_city d2 ON d2.slug = c.slug"
-                        + " WHERE d2.id = s.city_id) AS city_id"
-                    : "s.\(column)"
-            }
             for arm in arms where arm.schema.hasIdSpace {
-                let select = projection
-                    .map { $0.replacingOccurrences(of: "%ARM%", with: arm.schemaName) }
-                    .joined(separator: ", ")
-                // A file with `id_spaces` but no `dim_city` has no `city_id` column to re-point.
-                guard !hasCityID || arm.schema.hasDimCity || !(
-                    try connection.columnNames(ofTable: "id_spaces", in: arm.schemaName)
-                        .contains("city_id")
-                ) else { continue }
+                // Asked of the arm rather than inferred from the first one: `city_id` arrived with
+                // s16, and an s15 file beside an s16 one is a configuration this build supports.
+                let armColumns = try connection.columnNames(ofTable: "id_spaces", in: arm.schemaName)
+                let select = columns.map { column -> String in
+                    guard column == "city_id" else {
+                        return armColumns.contains(column) ? "s.\(column)" : "NULL"
+                    }
+                    guard armColumns.contains("city_id"), arm.schema.hasDimCity else { return "NULL" }
+                    // The one column that points into a table this build just renumbered, so it is
+                    // re-pointed through the slug, which is the key that survives the renumbering.
+                    return """
+                    (SELECT c.id FROM \(temp).dim_city c
+                       JOIN \(arm.schemaName).dim_city d2 ON d2.slug = c.slug
+                      WHERE d2.id = s.city_id)
+                    """
+                }.joined(separator: ", ")
                 try connection.execute("""
                 INSERT INTO \(temp).id_spaces (\(columns.joined(separator: ", ")))
                 SELECT \(select) FROM \(arm.schemaName).id_spaces s

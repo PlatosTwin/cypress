@@ -928,16 +928,34 @@ public enum DataGates {
             into: &failures
         )
 
-        // --- The seed is attached read-only. `mode=ro&immutable=1` makes that a property of the
-        // connection rather than a promise in a comment: no DAO bug can corrupt the city inventory,
-        // and no `-wal`/`-shm` sidecar is attempted next to a file inside a read-only app bundle.
-        do {
-            try await store.queue.withConnection { connection in
-                try connection.execute("UPDATE \(SeedDatabase.schemaName).trees SET status = 'removed' WHERE 1 = 0")
+        // --- Every inventory file is attached read-only. `mode=ro&immutable=1` makes that a
+        // property of the connection rather than a promise in a comment: no DAO bug can corrupt a
+        // city inventory, and no `-wal`/`-shm` sidecar is attempted next to a file inside a
+        // read-only app bundle.
+        //
+        // **Written against each arm rather than against `temp.trees`, and that is the whole
+        // point.** The union presents the inventory as a view, and SQLite refuses a write to a view
+        // whatever the files behind it permit — `cannot modify trees because it is a view`. Aimed
+        // at the view, this gate would stay green with every arm opened read-write, which is the
+        // failure it exists to catch. So it is aimed at the files.
+        expect(
+            !(store.inventory?.arms ?? []).isEmpty,
+            "seed contract: no inventory is attached, so the read-only check tested nothing",
+            into: &failures
+        )
+        for arm in store.inventory?.arms ?? [] {
+            do {
+                try await store.queue.withConnection { connection in
+                    try connection.execute(
+                        "UPDATE \(arm.schemaName).trees SET status = 'removed' WHERE 1 = 0"
+                    )
+                }
+                failures.append(
+                    "seed contract: inventory '\(arm.id)' accepted a write; it is not read-only"
+                )
+            } catch {
+                // expected
             }
-            failures.append("seed contract: the attached seed accepted a write; it is not read-only")
-        } catch {
-            // expected
         }
 
         // --- Tables, columns, and the build receipt.
