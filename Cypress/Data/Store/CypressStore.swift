@@ -44,16 +44,21 @@ public final class CypressStore: Sendable {
     /// Where `main` lives, for diagnostics and for the "delete my data" path.
     public let databaseURL: URL
 
+    /// Every inventory file behind `seed`, and how they were reconciled. `nil` when none is
+    /// attached — the same state `seed` reports as `nil`, held separately because the Cities screen
+    /// and the opening camera ask about the *files* while the query layer asks about the *shape*.
+    public let inventory: InventoryUnion?
+
     private init(
         queue: DatabaseQueue,
-        seed: SeedSchema?,
-        seedHasSoftDeletedTrees: Bool,
+        inventory: InventoryUnion?,
         seedMeta: [String: String],
         databaseURL: URL
     ) {
         self.queue = queue
-        self.seed = seed
-        self.seedHasSoftDeletedTrees = seedHasSoftDeletedTrees
+        self.inventory = inventory
+        self.seed = inventory?.schema
+        self.seedHasSoftDeletedTrees = inventory?.hasSoftDeletedTrees ?? false
         self.seedProvenance = InventorySource(seedMeta: seedMeta)
         self.seedInventories = Self.inventories(in: seedMeta)
         self.databaseURL = databaseURL
@@ -119,28 +124,41 @@ public final class CypressStore: Sendable {
         seedURL: URL? = SeedDatabase.urlInBundle(),
         migrations: [Migration] = AppSchema.migrations
     ) async throws -> CypressStore {
+        try await open(
+            databaseURL: databaseURL,
+            inventories: seedURL.map { [InventoryFile.bundled(url: $0)] } ?? [],
+            migrations: migrations
+        )
+    }
+
+    /// Opens the store over **several** inventory files at once.
+    ///
+    /// The bundled seed and every downloaded city pack are attached together and presented to the
+    /// query layer as one inventory (`InventoryUnion`). An empty list is survivable for the same
+    /// reason a nil `seedURL` always was: the outbox, the profile of a community-added tree and
+    /// every write path work without an inventory, and only the map is empty.
+    ///
+    /// A file that cannot be attached is **skipped, not fatal** — `InventoryUnion.refused` records
+    /// why. Launching without one downloaded city beats not launching.
+    public static func open(
+        databaseURL: URL? = nil,
+        inventories: [InventoryFile],
+        migrations: [Migration] = AppSchema.migrations
+    ) async throws -> CypressStore {
         let url = try databaseURL ?? defaultDatabaseURL()
         let queue = try DatabaseQueue(url: url)
 
-        let (schema, hasSoftDeletes, seedMeta) = try await queue.withConnection {
-            connection -> (SeedSchema?, Bool, [String: String]) in
+        let (union, seedMeta) = try await queue.withConnection {
+            connection -> (InventoryUnion?, [String: String]) in
             try SchemaMigrator.migrate(migrations, on: connection)
-
-            guard let seedURL else { return (nil, false, [:]) }
-            let schema = try SeedDatabase.attach(seedURL, to: connection)
-
-            let statement = try connection.prepare(
-                "SELECT EXISTS(SELECT 1 FROM \(SeedDatabase.schemaName).trees WHERE deleted_at IS NOT NULL) AS present"
-            )
-            defer { statement.finalize() }
-            let present = try statement.fetchOne { try $0.bool("present") } ?? false
-            return (schema, present, readSeedMeta(connection: connection))
+            guard !inventories.isEmpty else { return (nil, [:]) }
+            let union = try InventoryUnion.build(inventories, on: connection)
+            return (union, readSeedMeta(connection: connection))
         }
 
         return CypressStore(
             queue: queue,
-            seed: schema,
-            seedHasSoftDeletedTrees: hasSoftDeletes,
+            inventory: union,
             seedMeta: seedMeta,
             databaseURL: url
         )
@@ -152,23 +170,28 @@ public final class CypressStore: Sendable {
         seedURL: URL? = nil,
         migrations: [Migration] = AppSchema.migrations
     ) async throws -> CypressStore {
+        try await inMemory(
+            inventories: seedURL.map { [InventoryFile.bundled(url: $0)] } ?? [],
+            migrations: migrations
+        )
+    }
+
+    /// The same, over several inventory files. Every multi-inventory unit test opens through here.
+    public static func inMemory(
+        inventories: [InventoryFile],
+        migrations: [Migration] = AppSchema.migrations
+    ) async throws -> CypressStore {
         let queue = try DatabaseQueue.inMemory()
-        let (schema, hasSoftDeletes, seedMeta) = try await queue.withConnection {
-            connection -> (SeedSchema?, Bool, [String: String]) in
+        let (union, seedMeta) = try await queue.withConnection {
+            connection -> (InventoryUnion?, [String: String]) in
             try SchemaMigrator.migrate(migrations, on: connection)
-            guard let seedURL else { return (nil, false, [:]) }
-            let schema = try SeedDatabase.attach(seedURL, to: connection)
-            let statement = try connection.prepare(
-                "SELECT EXISTS(SELECT 1 FROM \(SeedDatabase.schemaName).trees WHERE deleted_at IS NOT NULL) AS present"
-            )
-            defer { statement.finalize() }
-            let present = try statement.fetchOne { try $0.bool("present") } ?? false
-            return (schema, present, readSeedMeta(connection: connection))
+            guard !inventories.isEmpty else { return (nil, [:]) }
+            let union = try InventoryUnion.build(inventories, on: connection)
+            return (union, readSeedMeta(connection: connection))
         }
         return CypressStore(
             queue: queue,
-            seed: schema,
-            seedHasSoftDeletedTrees: hasSoftDeletes,
+            inventory: union,
             seedMeta: seedMeta,
             databaseURL: URL(fileURLWithPath: ":memory:")
         )

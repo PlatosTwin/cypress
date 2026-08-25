@@ -44,8 +44,15 @@ import Foundation
 /// bundle directory is not writable, and without `immutable=1` a plain read-only open still wants
 /// to create a shared-memory file next to the database when the file's journal mode says WAL.
 public enum SeedDatabase {
-    /// The attached schema name. All inventory SQL is qualified with it.
-    public static let schemaName = "seed"
+    /// The schema every piece of inventory SQL is qualified with.
+    ///
+    /// **It is `temp`, and it stopped being `seed` when the inventory stopped being one file.**
+    /// Several city files are attached at once now — `inv0`, `inv1`, … — and the query layer reads
+    /// a union of them (`InventoryUnion`). SQLite refuses a view that references an attached
+    /// database from anywhere but `temp` (`view trees cannot reference objects in database inv0`),
+    /// so the union lives there, and every `\(SeedDatabase.schemaName).trees` in the query layer
+    /// keeps the text it always had while resolving to the union rather than to one file.
+    public static let schemaName = "temp"
 
     /// The resource name of the bundled seed, without extension.
     public static let resourceName = "cypress-seed"
@@ -140,7 +147,11 @@ public enum SeedDatabase {
 
     // MARK: - Attaching
 
-    /// Attaches `url` as `seed` and returns the shape it turned out to have.
+    /// Attaches one file as the whole inventory and returns the shape the union turned out to have.
+    ///
+    /// A union of one, which is what the app itself opens when nothing has been downloaded — so the
+    /// dozen tests that call this to read a fixture are exercising the same construction the map
+    /// runs on, rather than a simpler path that exists only for them.
     ///
     /// `ATTACH` cannot run inside a transaction, which is why this takes a bare connection rather
     /// than going through `DatabaseQueue.write`.
@@ -149,12 +160,16 @@ public enum SeedDatabase {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LocationError.notFoundAtPath(url)
         }
-        try connection.attach(uri: readOnlyURI(for: url), as: schemaName)
-        return try SeedSchema.introspect(connection, schema: schemaName)
+        return try InventoryUnion.build([.bundled(url: url)], on: connection).schema
     }
 
+    /// Drops the union and detaches every file under it, whatever it turned out to hold.
+    ///
+    /// Written against the connection rather than against an `InventoryUnion` value so a caller
+    /// that never kept one — every test that called `detach(from:)` before this type existed — can
+    /// still clean up.
     public static func detach(from connection: SQLiteConnection) throws {
-        try connection.detach(schemaName)
+        try InventoryUnion.tearDownEverything(on: connection)
     }
 }
 
