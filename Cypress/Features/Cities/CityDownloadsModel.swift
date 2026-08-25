@@ -149,10 +149,17 @@ final class CityDownloadsModel {
     /// bundled one, else nothing. **One implementation, used by both branches**, which is what keeps
     /// their precedence from drifting apart again.
     private func diskRow(for id: String) -> CityDownloadRow? {
-        if let city = installed.first(where: { $0.id == id }) {
-            return .installedOffline(city)
+        let installedCopy = installed.first { $0.id == id }
+        let bundledCopy = bundledCities.first { $0.id == id }
+        // **A city the bundle holds is a bundled city even with a copy downloaded over it**
+        // (RULING D4), and that has to be true offline too — otherwise losing the network moves a
+        // card out from under the built-in inventory and gives it a `Remove` button for a city the
+        // app cannot remove.
+        if let installedCopy, let bundledCopy {
+            return .bundledUpdatedOffline(installedCopy, bundled: bundledCopy)
         }
-        return bundledCities.first { $0.id == id }.map(CityDownloadRow.bundled)
+        if let installedCopy { return .installedOffline(installedCopy) }
+        return bundledCopy.map(CityDownloadRow.bundled)
     }
 
     /// The one place a city's state is decided, so the row and the `Download` action can never be

@@ -597,6 +597,30 @@ struct CityDownloadRow: Equatable, Identifiable {
     /// bundle, and §6.1 — the text D5 approved *as scoped* — repeats it. It was briefly omitted on
     /// the argument that an offline row had never drawn one, which was true of `installedOffline`
     /// and not of this row: San Jose's downtown-only limit was the one fact available and unstated.
+    /// A bundled city whose rows a downloaded copy has replaced, described from **disk facts
+    /// alone** — the offline twin of `CityInstallState.bundledUpdated`.
+    ///
+    /// The catalogue is what decides whether an even newer record exists, so an offline row cannot
+    /// offer `Update` and does not pretend to. What it can say is which record is drawing and how
+    /// to go back, and both are read out of the installed file's own receipt.
+    static func bundledUpdatedOffline(
+        _ installed: CityLibrary.InstalledCity,
+        bundled: SeedCities.City
+    ) -> CityDownloadRow {
+        CityDownloadRow(
+            id: installed.id,
+            title: installed.displayName ?? bundled.displayName ?? installed.id,
+            coverageNote: coverageIfPartial(installed.coverage ?? bundled.coverage),
+            stateLine: CityDownloadsCopy.bundledUpdatedLine(contentRev: installed.contentRev),
+            detailLine: nil,
+            isFailure: false,
+            progress: nil,
+            isOnDevice: true,
+            isInsideBuiltIn: true,
+            affordances: [.revert]
+        )
+    }
+
     static func bundled(_ city: SeedCities.City) -> CityDownloadRow {
         CityDownloadRow(
             id: city.id,

@@ -227,7 +227,7 @@ struct BundledCityTests {
         #expect(!state.allowsDownload)
 
         let row = CityDownloadRow.published(
-            city: sf, state: state, isActive: false,
+            city: sf, state: state,
             downloadingFraction: nil, lastAttemptFailed: false
         )
         #expect(
@@ -280,7 +280,7 @@ struct BundledCityTests {
 
         // The row: D5's line without the clause the file cannot support, and no borrowed copy.
         let row = CityDownloadRow.published(
-            city: published, state: state, isActive: false,
+            city: published, state: state,
             downloadingFraction: nil, lastAttemptFailed: false
         )
         #expect(row.affordances.isEmpty)
@@ -294,12 +294,13 @@ struct BundledCityTests {
             .write(to: dir.appendingPathComponent("manifest.json"))
         let model = CityDownloadsModel(
             library: library, downloader: CityDownloader(baseURL: dir),
-            bundledCities: [dateless], onInventoryChange: {}
+            bundledCities: [dateless], installableCityLimit: 9, onInventoryChange: {}
         )
 
-        #expect(model.rows.map(\.affordances) == [[.inUseLabel], []], "offline: \(model.rows)")
+        // The built-in card draws nothing at all now (RULING D2), and so does the bundled city.
+        #expect(model.rows.map(\.affordances) == [[], []], "offline: \(model.rows)")
         await model.load()
-        #expect(model.rows.map(\.affordances) == [[.inUseLabel], []], "loaded: \(model.rows)")
+        #expect(model.rows.map(\.affordances) == [[], []], "loaded: \(model.rows)")
         model.download(published)
         #expect(
             model.downloading == nil,
@@ -324,15 +325,17 @@ struct BundledCityTests {
         #expect(state.allowsDownload)
 
         let row = CityDownloadRow.published(
-            city: sf, state: state, isActive: false,
+            city: sf, state: state,
             downloadingFraction: nil, lastAttemptFailed: false
         )
-        #expect(row.affordances == [.download])
+        // **`Update`, not `Download`** (RULING D2): RULING D4 makes the newer copy an update to
+        // this city's data rather than a second inventory to acquire.
+        #expect(row.affordances == [.update])
         // Both facts, possession first. The offer used to be this row's only line, which read as
         // the screen offering to sell a reader a city already inside the app they were holding —
         // filed as exactly that by a tester on build 49 (`CityDownloadsFeedbackTests`).
         #expect(row.stateLine == "Included in the app · record as of 2026-07-31")
-        #expect(row.detailLine == "A newer record is available to download.")
+        #expect(row.detailLine == "A newer record is available.")
         #expect(row.isOnDevice)
     }
 
@@ -369,19 +372,63 @@ struct BundledCityTests {
         #expect(!dateless.allowsDownload)
     }
 
-    /// A downloaded copy shadows the bundled one (the `active-city` marker points at it), so the
-    /// row describes the copy that is actually attachable — not the bundle.
-    @Test("a downloaded copy still wins over the bundled one")
-    func downloadedCopyShadowsTheBundle() {
+    /// **The ordering defect, pinned from both sides** (RULING D7).
+    ///
+    /// `CityInstallState.init` used to test `installedVersion` before `bundled`, so the moment a
+    /// downloaded copy of San Francisco existed the `bundled` argument was never consulted: this
+    /// resolved to `.installedCurrent`, the row drew `Installed · <version>` with `Use` and
+    /// `Remove`, and it sat beside a built-in card simultaneously saying `Includes San Francisco`.
+    /// The old test asserted exactly that and called it correct.
+    ///
+    /// A downloaded copy of a bundled city is now an **update to that city** (RULING D4): it
+    /// shadows the bundled rows of its id space inside the union and the card stays nested under
+    /// the built-in inventory, offering to undo itself rather than to remove a city the app cannot
+    /// remove.
+    @Test("a downloaded copy of a bundled city updates it rather than replacing it")
+    func aDownloadedCopyOfABundledCityIsAnUpdate() {
         let sf = Self.entry(id: "sf", displayName: "San Francisco", contentRev: "2026-08-20")
-        let state = CityInstallState(
-            published: sf, installedVersion: sf.version,
-            bundled: SeedCities.City(
-                id: "sf", displayName: "San Francisco", contentRev: "2026-07-31"
-            ),
-            newestKnownSchemaVersion: 16
+        let bundled = SeedCities.City(
+            id: "sf", displayName: "San Francisco", contentRev: "2026-07-31"
         )
-        #expect(state == .installedCurrent(installedVersion: sf.version))
+
+        // The copy on disk holds what the catalogue offers: nothing further to fetch.
+        let current = CityInstallState(
+            published: sf, installedVersion: sf.version,
+            installedContentRev: "2026-08-20", installedSchemaVersion: sf.schemaVersion,
+            bundled: bundled, newestKnownSchemaVersion: 16
+        )
+        #expect(
+            current == .bundledUpdated(installedContentRev: "2026-08-20", updateAvailable: false)
+        )
+        #expect(!current.allowsDownload)
+        #expect(current.isBundledCity, "a bundled city stopped being one because it was updated")
+
+        let row = CityDownloadRow.published(
+            city: sf, state: current, downloadingFraction: nil, lastAttemptFailed: false
+        )
+        #expect(row.stateLine == "Updated · record as of 2026-08-20")
+        #expect(row.detailLine == nil)
+        #expect(
+            row.affordances == [.revert],
+            "a bundled city offered \(row.affordances); `Remove` is not a verb it may use"
+        )
+        #expect(row.isInsideBuiltIn, "the card left the built-in inventory it belongs under")
+
+        // And a downloaded copy that has itself gone stale offers the newer record as well.
+        let stale = CityInstallState(
+            published: sf, installedVersion: "s16-r2026-08-01-aaaaaaaa",
+            installedContentRev: "2026-08-01", installedSchemaVersion: sf.schemaVersion,
+            bundled: bundled, newestKnownSchemaVersion: 16
+        )
+        #expect(stale == .bundledUpdated(installedContentRev: "2026-08-01", updateAvailable: true))
+        #expect(stale.allowsDownload)
+
+        let staleRow = CityDownloadRow.published(
+            city: sf, state: stale, downloadingFraction: nil, lastAttemptFailed: false
+        )
+        #expect(staleRow.stateLine == "Updated · record as of 2026-08-01")
+        #expect(staleRow.detailLine == "A newer record is available.")
+        #expect(staleRow.affordances == [.update, .revert])
     }
 
     /// The schema gate still refuses the download; what changed is what the row says when there is
@@ -410,7 +457,7 @@ struct BundledCityTests {
         // The owner's ruling, drawn: the record date the reader holds, no format detail, no
         // newer-record claim, and no button.
         let row = CityDownloadRow.published(
-            city: future, state: bundled, isActive: false,
+            city: future, state: bundled,
             downloadingFraction: nil, lastAttemptFailed: false
         )
         #expect(row.stateLine == "Included in the app · record as of 2026-07-31")
@@ -442,23 +489,33 @@ struct BundledCityTests {
             .needsNewerApp(installedVersion: "s16-r2026-06-01-c9a440b2"),
             .bundled(contentRev: "2026-07-31"),
             .bundled(contentRev: nil),
-            .bundledOutdated(bundledContentRev: "2026-07-31")
+            .bundledOutdated(bundledContentRev: "2026-07-31"),
+            .bundledUpdated(installedContentRev: "2026-08-20", updateAvailable: false),
+            .bundledUpdated(installedContentRev: "2026-08-20", updateAvailable: true),
+            .bundledUpdated(installedContentRev: nil, updateAvailable: true)
         ]
 
         for state in states {
-            for isActive in [false, true] {
-                let row = CityDownloadRow.published(
-                    city: city, state: state, isActive: isActive,
-                    downloadingFraction: nil, lastAttemptFailed: false
-                )
-                let fetches = row.affordances.contains(.download)
-                    || row.affordances.contains(.update)
-                #expect(
-                    fetches == state.allowsDownload,
-                    "\(state) draws \(row.affordances) but allowsDownload is \(state.allowsDownload)"
-                )
-            }
+            let row = CityDownloadRow.published(
+                city: city, state: state, downloadingFraction: nil, lastAttemptFailed: false
+            )
+            let fetches = row.affordances.contains(.download)
+                || row.affordances.contains(.update)
+            #expect(
+                fetches == state.allowsDownload,
+                "\(state) draws \(row.affordances) but allowsDownload is \(state.allowsDownload)"
+            )
         }
+
+        // **`Use` and `In use` cannot be drawn by any state**, because the enum no longer has them
+        // (RULING D9). Asserted as a property of the vocabulary rather than of one row: a future
+        // affordance meaning "make this the one the map draws" would be a return of the exclusive
+        // switch the owner ruled out, and it would have to pass here first.
+        #expect(
+            CityDownloadsCopy.download == "Download" && CityDownloadsCopy.update == "Update"
+                && CityDownloadsCopy.remove == "Remove" && CityDownloadsCopy.cancel == "Cancel",
+            "the screen's verbs changed without this gate being reconsidered"
+        )
     }
 
     /// The second consequence in the design's §3.2, which needed a reader to press the button:
@@ -503,7 +560,7 @@ struct BundledCityTests {
         // and then fails the fetch. Disk and bundle both name `sf` at this point.
         let offlineModel = CityDownloadsModel(
             library: library, downloader: CityDownloader(baseURL: dir),
-            bundledCities: bundled, onInventoryChange: {}
+            bundledCities: bundled, installableCityLimit: 9, onInventoryChange: {}
         )
         await offlineModel.load()
         #expect(
@@ -521,8 +578,12 @@ struct BundledCityTests {
         // row, not as an index crash that takes the rest of the suite's output with it.
         let offlineSF = try #require(offlineModel.rows.first { $0.id == "sf" })
         let offlineSJ = try #require(offlineModel.rows.first { $0.id == "us-ca-sj" })
-        // `sf` is the downloaded copy, not the bundled one — it is the copy that can be attached.
-        #expect(offlineSF.stateLine == "Installed · \(sf.version)")
+        // `sf` is in the bundle **and** on disk, so it is a bundled city carrying a newer record
+        // (RULING D4) — offline as well as online, which is what keeps it nested under the
+        // built-in card when the network goes away.
+        #expect(offlineSF.stateLine == "Updated · record as of 2026-07-31")
+        #expect(offlineSF.affordances == [.revert])
+        #expect(offlineSF.isInsideBuiltIn)
         #expect(offlineSJ.stateLine == "Included in the app · record as of 2026-07-31")
         #expect(offlineSJ.coverageNote == "Covers downtown only")
 
@@ -530,7 +591,7 @@ struct BundledCityTests {
         try Data(Self.manifestJSON([sf]).utf8).write(to: dir.appendingPathComponent("manifest.json"))
         let loadedModel = CityDownloadsModel(
             library: library, downloader: CityDownloader(baseURL: dir),
-            bundledCities: bundled, onInventoryChange: {}
+            bundledCities: bundled, installableCityLimit: 9, onInventoryChange: {}
         )
         await loadedModel.load()
         #expect(loadedModel.catalog != .unavailable, "the catalog never loaded")
@@ -539,14 +600,16 @@ struct BundledCityTests {
         #expect(ids == [CityDownloadRow.builtInID, "sf", "us-ca-sj"])
     }
 
-    /// **A downloaded, attached city the catalog no longer lists keeps its affordances.** The loaded
-    /// branch used to go catalog → bundle with the library left out, so this row described the
-    /// *bundled* copy: `In use` and `Remove` disappeared from an 81 MB file that was attached at
-    /// that moment, and `Built-in inventory` drew `Use` while something else was in use.
+    /// **A downloaded city the catalog no longer lists keeps its affordances.** The loaded branch
+    /// used to go catalog → bundle with the library left out, so this row described the *bundled*
+    /// copy and the downloaded 81 MB file lost every button it had.
     ///
-    /// The two paths must agree here, which is the whole reason they now share `diskRow(for:)`.
+    /// The two paths must agree here, which is the whole reason they share `diskRow(for:)`.
+    ///
+    /// The city used here is one the **bundle also holds**, so what it keeps is `Revert to the
+    /// included copy` — RULING D4's verb — rather than `Remove`.
     @MainActor
-    @Test("a delisted but installed city keeps In use and Remove, on both paths")
+    @Test("a delisted but installed city keeps its affordances, on both paths")
     func aDelistedInstalledCityKeepsItsAffordances() async throws {
         let dir = try Self.tempDir()
         let library = CityLibrary(rootURL: dir.appendingPathComponent("library"))
@@ -565,7 +628,6 @@ struct BundledCityTests {
             shipExtentKey: "sj_ship_extent", shipExtent: "downtown"
         )
         try library.install(verifiedFileAt: file, id: "us-ca-sj", version: version)
-        try library.activate(id: "us-ca-sj")
 
         // A catalog listing only San Francisco — `us-ca-sj` delisted, or published later.
         let sf = Self.entry(id: "sf", displayName: "San Francisco", contentRev: "2026-07-31")
@@ -573,25 +635,26 @@ struct BundledCityTests {
 
         let model = CityDownloadsModel(
             library: library, downloader: CityDownloader(baseURL: dir),
-            bundledCities: bundled, onInventoryChange: {}
+            bundledCities: bundled, installableCityLimit: 9, onInventoryChange: {}
         )
         await model.load()
         #expect(
             model.catalog != .unavailable,
             "the catalog never loaded, so this is the offline path and proves the wrong branch"
         )
-        #expect(model.activeCityID == "us-ca-sj")
-
         let row = try #require(model.rows.first { $0.id == "us-ca-sj" })
         #expect(
-            row.affordances == [.inUseLabel, .remove],
-            "the attached downloaded copy lost its affordances to the bundled row: \(row)"
+            row.affordances == [.revert],
+            "the downloaded copy lost its affordances to the bundled row: \(row)"
         )
-        #expect(row.stateLine == "Installed · \(version)")
-        // And exactly one card on the screen claims to be in use — the attached one.
+        #expect(row.stateLine == "Updated · record as of 2026-07-31")
+        #expect(row.isInsideBuiltIn)
+
+        // **And no card anywhere claims to be in use or offers to be used** (RULING D9). The
+        // contradiction the owner ruled out was an `In use` label above a sibling `Use`; the
+        // vocabulary that could express it is gone, and the built-in card draws nothing at all.
         let builtIn = try #require(model.rows.first { $0.id == CityDownloadRow.builtInID })
-        #expect(builtIn.affordances == [.use], "the bundle is not attached; `us-ca-sj` is")
-        #expect(model.rows.filter { $0.affordances.contains(.inUseLabel) }.count == 1)
+        #expect(builtIn.affordances.isEmpty, "the built-in card drew \(builtIn.affordances)")
     }
 
     /// The download action refuses a bundled-current city outright, not merely by declining to draw
@@ -612,7 +675,7 @@ struct BundledCityTests {
 
         let refusing = CityDownloadsModel(
             library: library, downloader: CityDownloader(baseURL: dir),
-            bundledCities: bundled, onInventoryChange: {}
+            bundledCities: bundled, installableCityLimit: 9, onInventoryChange: {}
         )
         refusing.download(sf)
         #expect(refusing.downloading == nil, "a download started for a city that ships in the app")
@@ -621,7 +684,7 @@ struct BundledCityTests {
         // does not hold does start one.
         let permitting = CityDownloadsModel(
             library: library, downloader: CityDownloader(baseURL: dir),
-            bundledCities: bundled, onInventoryChange: {}
+            bundledCities: bundled, installableCityLimit: 9, onInventoryChange: {}
         )
         let elsewhere = Self.entry(
             id: "us-ny-nyc", displayName: "New York", contentRev: "2026-08-20"
@@ -644,19 +707,17 @@ struct BundledCityTests {
                 id: "us-ca-sj", version: "s16-r2026-07-31-c9a440b2",
                 fileURL: URL(fileURLWithPath: "/x"), bytes: 1, displayName: "San Jose",
                 coverage: "downtown"
-            ),
-            isActive: false
+            )
         )
         #expect(named.title == "San Jose")
         #expect(named.coverageNote == "Covers downtown only")
-        #expect(named.affordances == [.use, .remove])
+        #expect(named.affordances == [.remove])
 
         let unnamed = CityDownloadRow.installedOffline(
             CityLibrary.InstalledCity(
                 id: "us-ca-sj", version: "s14-r2026-01-01",
                 fileURL: URL(fileURLWithPath: "/x"), bytes: 1, displayName: nil, coverage: nil
-            ),
-            isActive: false
+            )
         )
         #expect(unnamed.title == "us-ca-sj")
         #expect(unnamed.coverageNote == nil)

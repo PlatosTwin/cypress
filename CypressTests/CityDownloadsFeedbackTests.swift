@@ -62,10 +62,10 @@ struct CityDownloadsFeedbackTests {
     static func row(
         _ city: CityManifest.City,
         state: CityInstallState,
-        isActive: Bool = false
+        hasInstallHeadroom: Bool = true
     ) -> CityDownloadRow {
         .published(
-            city: city, state: state, isActive: isActive,
+            city: city, state: state, hasInstallHeadroom: hasInstallHeadroom,
             downloadingFraction: nil, lastAttemptFailed: false
         )
     }
@@ -82,30 +82,35 @@ struct CityDownloadsFeedbackTests {
 
     // MARK: - Report: "I can't seem to use manhattan even though it's on my phone"
 
-    /// A city that is installed, not in use, and has an update waiting must still offer `Use`.
+    /// **The report is answered by the union rather than by a third button** (RULING D9).
     ///
-    /// R43 §3's table gave this state `Update` and `Remove` only, which strands a complete,
-    /// attachable copy the moment the catalog moves ahead of it — the tester reached that state by
-    /// using Manhattan, switching back to the built-in inventory, and finding no way back.
-    @Test("an installed city with an update waiting can still be used")
-    func updateAvailableStillOffersUse() {
+    /// The tester reached a dead end by using Manhattan, switching back to the built-in inventory,
+    /// and finding no way back — *"I can't seem to use manhattan even though it's on my phone"*.
+    /// The round that received that report added `Use` to this row. This round removes the state
+    /// that made it necessary: a downloaded city is in the union the moment it lands, so there is
+    /// no click that can put it out of use and nothing to offer a way back from.
+    ///
+    /// What is asserted is the stronger property — **no state can reach a row that is on the
+    /// device and undrawable**, because being on the device is what being drawn means now.
+    @Test("an installed city with an update waiting is drawn, with no verb for being drawn")
+    func anInstalledCityIsAlwaysInTheUnion() {
         let manhattan = Self.entry(version: "s17-r2026-08-22-ac7b1ccc", contentRev: "2026-08-22")
         let state = CityInstallState.updateAvailable(installedVersion: "s17-r2026-08-01-1111aaaa")
 
-        let notInUse = Self.row(manhattan, state: state)
-        #expect(notInUse.affordances.contains(.use))
-        #expect(notInUse.affordances == [.use, .update, .remove])
-
-        // In use, the label replaces the button — the same substitution every other state makes.
-        let inUse = Self.row(manhattan, state: state, isActive: true)
-        #expect(inUse.affordances == [.inUseLabel, .update, .remove])
-        #expect(!inUse.affordances.contains(.use))
+        let row = Self.row(manhattan, state: state)
+        #expect(row.affordances == [.update, .remove])
+        #expect(row.isOnDevice, "an installed city is not on the device, so it is not in the union")
     }
 
-    /// The affordance and the action agree: `Use` is drawn for a state whose copy is on the device,
-    /// so the button it draws has something to attach.
-    @Test("every state that offers Use has a copy on the device to attach")
-    func useIsOnlyOfferedForAnOnDeviceCopy() {
+    /// Every state that says a copy is on the device draws only verbs that make sense for a copy
+    /// that is **already being drawn**: take a newer record, or give it up.
+    ///
+    /// This replaces a gate that checked `Use` was never offered for a city with nothing to attach.
+    /// The vocabulary it policed is gone, so the gate polices the vocabulary itself: an affordance
+    /// meaning "make this the one the map draws" would be the exclusive switch returning, and it
+    /// would have to get past this.
+    @Test("an on-device state draws only verbs that suit a city already being drawn")
+    func onDeviceStatesDrawOnlyKeepingVerbs() {
         let city = Self.entry(version: "s17-r2026-08-22-ac7b1ccc", contentRev: "2026-08-22")
         let states: [CityInstallState] = [
             .notInstalled,
@@ -114,12 +119,23 @@ struct CityDownloadsFeedbackTests {
             .needsNewerApp(installedVersion: nil),
             .needsNewerApp(installedVersion: "s17-r2026-08-01-1111aaaa"),
             .bundled(contentRev: "2026-07-31"),
-            .bundledOutdated(bundledContentRev: "2026-07-31")
+            .bundledOutdated(bundledContentRev: "2026-07-31"),
+            .bundledUpdated(installedContentRev: "2026-08-22", updateAvailable: false),
+            .bundledUpdated(installedContentRev: "2026-08-22", updateAvailable: true)
         ]
+        let permitted: Set<CityDownloadRow.Affordance> = [.download, .update, .remove, .revert]
         for state in states {
             let row = Self.row(city, state: state)
-            if row.affordances.contains(.use) {
-                #expect(state.isOnDevice, "Use drawn for \(state), which is not on the device")
+            #expect(
+                Set(row.affordances).isSubset(of: permitted),
+                "\(state) draws \(row.affordances), which is outside the screen's vocabulary"
+            )
+            // `Download` is the one verb that may not appear for a city already held.
+            if state.isOnDevice {
+                #expect(
+                    !row.affordances.contains(.download),
+                    "\(state) offers Download for a city already on the device"
+                )
             }
         }
     }
@@ -388,7 +404,7 @@ struct CityDownloadsFeedbackTests {
                 baseURL: root.appendingPathComponent("no-such-bucket", isDirectory: true)
             ),
             bundledCities: [],
-            onInventoryChange: {}
+            installableCityLimit: 9, onInventoryChange: {}
         )
         await model.load()
 
@@ -468,7 +484,7 @@ struct CityDownloadsFeedbackTests {
             let model = CityDownloadsModel(
                 library: library,
                 downloader: CityDownloader(baseURL: bucket),
-                bundledCities: [],
+                bundledCities: [], installableCityLimit: 9,
                 onInventoryChange: {}
             )
             await model.load()
@@ -481,7 +497,7 @@ struct CityDownloadsFeedbackTests {
         )
         let manhattan = try #require(unchanged.first { $0.id == "us-ny-nyc-manhattan" })
         #expect(manhattan.stateLine == "Installed · s17-r2026-08-22-4f6ebaaa")
-        #expect(manhattan.affordances == [.use, .remove])
+        #expect(manhattan.affordances == [.remove])
 
         // A genuinely newer record still flags — the fix withholds nothing it should offer.
         let newer = await rows(
@@ -489,7 +505,7 @@ struct CityDownloadsFeedbackTests {
         )
         let updated = try #require(newer.first { $0.id == "us-ny-nyc-manhattan" })
         #expect(updated.stateLine == "Update available · s17-r2026-08-22-4f6ebaaa installed")
-        #expect(updated.affordances == [.use, .update, .remove])
+        #expect(updated.affordances == [.update, .remove])
     }
 
     /// A one-entry format-2 catalog listing the Manhattan pack, as the publisher writes it.
@@ -569,21 +585,21 @@ struct CityDownloadsFeedbackTests {
     @Test("the built-in card names the cities it ships")
     func builtInCardNamesItsCities() {
         #expect(
-            CityDownloadRow.builtIn(isActive: true, cityNames: ["San Francisco", "San Jose"])
+            CityDownloadRow.builtIn(cityNames: ["San Francisco", "San Jose"])
                 .detailLine == "Includes San Francisco and San Jose"
         )
         #expect(
-            CityDownloadRow.builtIn(isActive: true, cityNames: ["San Francisco"])
+            CityDownloadRow.builtIn(cityNames: ["San Francisco"])
                 .detailLine == "Includes San Francisco"
         )
         #expect(
             CityDownloadsCopy.builtInCitiesLine(["A", "B", "C"]) == "Includes A, B, and C"
         )
         // A bundle that names nothing says nothing extra, rather than an empty sentence.
-        #expect(CityDownloadRow.builtIn(isActive: true, cityNames: []).detailLine == nil)
+        #expect(CityDownloadRow.builtIn(cityNames: []).detailLine == nil)
         // The ruled subtitle is untouched (R43 §3).
         #expect(
-            CityDownloadRow.builtIn(isActive: true).stateLine
+            CityDownloadRow.builtIn().stateLine
                 == "Ships with the app and cannot be removed"
         )
     }
@@ -611,7 +627,7 @@ struct CityDownloadsFeedbackTests {
             Self.borough("queens", "Queens")
         ]
         let rows: [CityDownloadRow] = [
-            .builtIn(isActive: true, cityNames: ["San Francisco", "San Jose"]),
+            .builtIn(cityNames: ["San Francisco", "San Jose"]),
             Self.row(cities[0], state: .bundledOutdated(bundledContentRev: "2026-07-31")),
             Self.row(cities[1], state: .notInstalled),
             Self.row(cities[2], state: .notInstalled),
@@ -655,7 +671,7 @@ struct CityDownloadsFeedbackTests {
     func umbrellaHeadingSurvivesAFullyGroupedRun() {
         let cities = [Self.borough("manhattan", "Manhattan"), Self.borough("brooklyn", "Brooklyn")]
         let rows: [CityDownloadRow] = [
-            .builtIn(isActive: true, cityNames: ["San Francisco"]),
+            .builtIn(cityNames: ["San Francisco"]),
             Self.row(cities[0], state: .notInstalled),
             Self.row(cities[1], state: .notInstalled)
         ]
@@ -681,7 +697,7 @@ struct CityDownloadsFeedbackTests {
             Self.borough("queens", "Queens")
         ]
         let rows: [CityDownloadRow] = [
-            .builtIn(isActive: true, cityNames: ["San Francisco"]),
+            .builtIn(cityNames: ["San Francisco"]),
             Self.row(cities[0], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[1], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[2], state: .notInstalled),
@@ -711,8 +727,8 @@ struct CityDownloadsFeedbackTests {
             Self.borough("queens", "Queens")
         ]
         let rows: [CityDownloadRow] = [
-            .builtIn(isActive: false, cityNames: ["San Francisco"]),
-            Self.row(cities[0], state: .installedCurrent(installedVersion: "v"), isActive: true),
+            .builtIn(cityNames: ["San Francisco"]),
+            Self.row(cities[0], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[1], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[2], state: .installedCurrent(installedVersion: "v"))
         ]
@@ -735,7 +751,7 @@ struct CityDownloadsFeedbackTests {
     func bothRunsKeepEveryRow() {
         let cities = (1...4).map { Self.borough("b\($0)", "Borough \($0)") }
         let rows: [CityDownloadRow] = [
-            .builtIn(isActive: true, cityNames: []),
+            .builtIn(cityNames: []),
             Self.row(cities[0], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[1], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[2], state: .notInstalled),
@@ -755,7 +771,7 @@ struct CityDownloadsFeedbackTests {
     func sectionIdentitiesAreUniqueAcrossRuns() {
         let cities = (1...4).map { Self.borough("b\($0)", "Borough \($0)") }
         let rows: [CityDownloadRow] = [
-            .builtIn(isActive: true, cityNames: []),
+            .builtIn(cityNames: []),
             Self.row(cities[0], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[1], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[2], state: .notInstalled),
@@ -807,8 +823,8 @@ struct CityDownloadsFeedbackTests {
             Self.borough("brooklyn", "Brooklyn")
         ]
         let rows: [CityDownloadRow] = [
-            .builtIn(isActive: false, cityNames: ["San Francisco"]),
-            Self.row(cities[0], state: .installedCurrent(installedVersion: "v"), isActive: true),
+            .builtIn(cityNames: ["San Francisco"]),
+            Self.row(cities[0], state: .installedCurrent(installedVersion: "v")),
             Self.row(cities[1], state: .notInstalled),
             Self.row(cities[2], state: .updateAvailable(installedVersion: "old"))
         ]
@@ -833,13 +849,13 @@ struct CityDownloadsFeedbackTests {
         let city = Self.entry(version: "s17-r2026-08-22-ac7b1ccc", contentRev: "2026-08-22")
 
         let firstDownload = CityDownloadRow.published(
-            city: city, state: .notInstalled, isActive: false,
+            city: city, state: .notInstalled,
             downloadingFraction: 0.4, lastAttemptFailed: false
         )
         #expect(!firstDownload.isOnDevice)
 
         let updating = CityDownloadRow.published(
-            city: city, state: .updateAvailable(installedVersion: "old"), isActive: false,
+            city: city, state: .updateAvailable(installedVersion: "old"),
             downloadingFraction: 0.4, lastAttemptFailed: false
         )
         #expect(updating.isOnDevice)
@@ -1122,7 +1138,7 @@ struct CityDownloadsFeedbackTests {
             library: CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true)),
             downloader: downloader,
             bundledCities: [],
-            onInventoryChange: {}
+            installableCityLimit: 9, onInventoryChange: {}
         )
         model.download(city)
         #expect(model.downloading?.id == city.id, "the download never started, so nothing was cancelled")
