@@ -367,21 +367,131 @@ struct MapQueryPlanTests {
     /// not survive a rebuild that forgets to run `ANALYZE`, and `Tools/build_seed.py` is the only
     /// thing that puts it there. Nothing else in the app notices, which is exactly why this is worth
     /// asserting rather than trusting — every other query has one sane plan and gets it either way.
-    @Test("the seed carries the statistics the narrowed queries are planned with")
+    /// **Asked of every attached inventory, one at a time** — see `armsWithoutStatistics` for why
+    /// it is per file and why there is nothing in `temp` to ask instead. This suite opens the seed
+    /// alone, so the loop runs once here; `theStatisticsGateRunsOverEveryArm` is where it runs over
+    /// a union and where it is shown to be able to fail on a pack.
+    @Test("every attached inventory carries the statistics the narrowed queries are planned with")
     func theSeedCarriesItsStatistics() async throws {
         let store = try await Self.store()
+        let arms = try #require(store.inventory?.arms)
+        #expect(!arms.isEmpty, "no inventory is attached, so this gate examined nothing")
 
-        try await store.queue.read { connection in
-            let statement = try connection.cachedStatement("""
-            SELECT count(*) AS n
-              FROM \(SeedDatabase.schemaName).sqlite_stat1
-             WHERE tbl = 'trees' AND idx = 'idx_trees_species_current'
-            """)
-            let rows = try statement.fetchOne { try $0.int("n") } ?? 0
-            #expect(
-                rows > 0,
-                "the seed has no ANALYZE statistics for idx_trees_species_current, so a broad species search will be planned blind — run ANALYZE in Tools/build_seed.py"
-            )
+        let missing = try await Self.armsWithoutStatistics(store)
+        #expect(
+            missing.isEmpty,
+            """
+            \(missing) have no ANALYZE statistics for idx_trees_species_current, so a broad \
+            species search is planned blind against them — run ANALYZE in Tools/build_seed.py
+            """
+        )
+    }
+
+    /// **The gate above runs over one arm and always will, so this is where it is put to a union.**
+    ///
+    /// `store()` opens the shipped seed alone, so `theSeedCarriesItsStatistics` loops exactly once,
+    /// over the bundle. That is not vacuous — the `!arms.isEmpty` assertion stops it iterating zero
+    /// times — but the capability the gate was re-aimed *for* is catching a **downloaded pack** that
+    /// shipped without `ANALYZE`, and a loop that never runs at n > 1 has never demonstrated it.
+    ///
+    /// So this asks the same question of two arms, twice, with the answer known in advance both
+    /// times: a pack that ran `ANALYZE` is accepted, and the same pack without it is named. The
+    /// second half is the negative control, and it is here rather than in a red-proof deliberately —
+    /// a red-proof shows the instrument worked on the day somebody ran it, and this shows it works
+    /// on every run.
+    ///
+    /// ── Why the second arm is a COPY of the shipped seed and not a fixture ──────────────────────
+    /// It was a hand-built fixture first, and the union refused it:
+    ///
+    ///     UNIQUE constraint failed: species.scientific_name — while running:
+    ///     INSERT INTO temp.species (…) SELECT … FROM inv1.species s WHERE s.uuid NOT IN (…)
+    ///
+    /// The catalog merges species on `uuid` and the fixture's `Platanus acerifolia` carries a made-up
+    /// one, so it is not recognized as the species the bundle already holds and arrives as a second
+    /// row with the same scientific name. That is the containment in `InventoryUnion.build` doing
+    /// its job — the pack was refused and the boot survived — but it means a fixture cannot stand
+    /// beside the real seed in a union. A copy can, and a copy is also the honest shape here: two
+    /// arms that differ in exactly one fact, the one under test.
+    @Test("the statistics gate is asked of each arm, and can fail on a pack rather than the bundle")
+    func theStatisticsGateRunsOverEveryArm() async throws {
+        let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mapplan-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let analyzed = dir.appendingPathComponent("analyzed.sqlite")
+        let blind = dir.appendingPathComponent("blind.sqlite")
+        try FileManager.default.copyItem(at: seedURL, to: analyzed)
+        try FileManager.default.copyItem(at: seedURL, to: blind)
+        // The one difference. `DELETE` rather than `DROP`, so the arm still *has* the table and this
+        // exercises the row count rather than the table-absent shortcut — a published file whose
+        // `ANALYZE` was withheld can present either way, and the other is covered by the guard in
+        // `armsWithoutStatistics` itself.
+        let scrub = try SQLiteConnection(path: blind.path)
+        try scrub.execute("DELETE FROM sqlite_stat1")
+
+        let good = try await CypressStore.inMemory(inventories: [
+            .bundled(url: seedURL),
+            InventoryFile(id: "manhattan", url: analyzed, isBundled: false)
+        ])
+        #expect(
+            good.inventory?.arms.count == 2,
+            """
+            the union opened \(good.inventory?.arms.count ?? 0) arms, not 2 — the pack was refused, \
+            so this test is back to examining one file and proves nothing about n > 1: \
+            \(good.inventory?.refused ?? [])
+            """
+        )
+        let acceptedMissing = try await Self.armsWithoutStatistics(good)
+        #expect(acceptedMissing.isEmpty, "a pack that ran ANALYZE was reported as missing statistics")
+
+        // The control: the same arrangement with the pack's `ANALYZE` withheld.
+        let bad = try await CypressStore.inMemory(inventories: [
+            .bundled(url: seedURL),
+            InventoryFile(id: "manhattan", url: blind, isBundled: false)
+        ])
+        #expect(bad.inventory?.arms.count == 2, "the un-analyzed pack was refused rather than opened")
+        let caught = try await Self.armsWithoutStatistics(bad)
+        #expect(
+            caught == ["manhattan"],
+            """
+            the gate reported \(caught) for a union whose downloaded pack shipped with no ANALYZE. \
+            It has to be exactly the pack: an empty answer means the gate cannot fail at n > 1, and \
+            an answer naming the bundle means it is reading the wrong file's statistics
+            """
+        )
+    }
+
+    /// Every arm with no `sqlite_stat1` row for `idx_trees_species_current`, by pack id.
+    ///
+    /// **Per file, and it has to be**: the planner reads the statistics of the database a table
+    /// lives in, so a pack that shipped without `ANALYZE` is planned blind whatever the bundled seed
+    /// carries. There is no `temp.sqlite_stat1` to ask instead — the union's `trees` is a view, and a
+    /// view has no statistics of its own. Asking for one is not a green test either: it throws
+    /// `no such table: temp.sqlite_stat1`.
+    ///
+    /// **The table's absence is the answer, not an error**, and that distinction is the whole reason
+    /// this is a function. `ANALYZE` is what *creates* `sqlite_stat1`, so the file this gate exists
+    /// to catch — one published without it — does not have the table to count rows in, and a bare
+    /// `SELECT count(*) FROM invN.sqlite_stat1` against it throws `no such table` before the
+    /// expectation is ever evaluated. A throwing test is a red test, so the gate would not have gone
+    /// *green* over a bad pack — but it would have reported a missing table where the finding is
+    /// "this pack was never analyzed", and it would have taken down every arm after it in the loop.
+    static func armsWithoutStatistics(_ store: CypressStore) async throws -> [String] {
+        let arms = store.inventory?.arms ?? []
+        return try await store.queue.read { connection in
+            try arms.compactMap { arm -> String? in
+                guard try connection.tableExists("sqlite_stat1", in: arm.schemaName) else {
+                    return arm.id
+                }
+                let statement = try connection.cachedStatement("""
+                SELECT count(*) AS n
+                  FROM \(arm.schemaName).sqlite_stat1
+                 WHERE tbl = 'trees' AND idx = 'idx_trees_species_current'
+                """)
+                return (try statement.fetchOne { try $0.int("n") } ?? 0) > 0 ? nil : arm.id
+            }
         }
     }
 }

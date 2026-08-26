@@ -55,7 +55,7 @@ public struct DataLayer: Sendable {
     ///
     /// Held so the composition root can draw `RemoteAccess.complaint` — a mistyped `CYPRESS_REMOTE`
     /// must be visible rather than silently safe (`DebugLocationOverride`'s rule) — and so a test
-    /// can assert what `boot` actually decided instead of inferring it from behaviour.
+    /// can assert what `boot` actually decided instead of inferring it from behavior.
     ///
     /// `RootView.runDebugEntryPoints()` is where it is drawn, first of the three launch-gate
     /// complaints. That sentence was a promise with nothing behind it until round-4 review pointed
@@ -117,6 +117,7 @@ public struct DataLayer: Sendable {
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
+        inventories: [InventoryFile]? = nil,
         baseURL: URL = SyncService.defaultBaseURL,
         transport: (any AuthorizedTransport)? = nil,
         authHTTP: (any AuthHTTP)? = nil,
@@ -124,7 +125,14 @@ public struct DataLayer: Sendable {
         credentials: any CredentialStore = KeychainCredentialStore(),
         storageSession: URLSession = .shared
     ) async throws -> DataLayer {
-        let store = try await CypressStore.open(databaseURL: databaseURL, seedURL: seedURL)
+        // **`inventories` wins when it is given**, and `seedURL` remains the one-file spelling
+        // every caller that predates the union still uses. They are separate parameters rather than
+        // one, because "no inventory at all" is a state both have to be able to express and a single
+        // optional array could not tell it apart from "the caller did not say".
+        let store = try await CypressStore.open(
+            databaseURL: databaseURL,
+            inventories: inventories ?? seedURL.map { [InventoryFile.bundled(url: $0)] } ?? []
+        )
 
         // The device id is minted once and kept. Anonymous contributions attach to it and migrate
         // to a user at `POST /devices/claim`; regenerating it would orphan them (D9).
@@ -321,7 +329,7 @@ public struct DataLayer: Sendable {
         //
         // **The send sink is omitted entirely when the gate is off**, rather than pointed at a
         // refusing transport. A refusing send sink would still count failures, move rows onto the
-        // backoff and put reasons on screen 17 — observable behaviour a UI test would then be
+        // backoff and put reasons on screen 17 — observable behavior a UI test would then be
         // asserting against a network that is not there. Omitting it restores exactly the wiring
         // every build before #158 shipped, which is the one the UI suite was green on.
         let outbox = OutboxQueue(
@@ -349,25 +357,42 @@ public struct DataLayer: Sendable {
         )
     }
 
-    /// Boots preferring the reader's chosen downloaded city over the bundle (RULINGS R43 §1:
-    /// one inventory attaches, and which one is the reader's choice).
+    /// Boots over **the bundled seed and every downloaded city at once**.
     ///
-    /// `CityLibrary.validatedActiveSeedURL()` has already introspected the file and refused a
-    /// schema generation from the future; what remains is the open itself, and a failure there
-    /// deactivates the choice and boots the bundle — launching without the chosen city beats not
-    /// launching, and the Cities screen then shows the truth (installed, not in use).
-    public static func bootPreferringActiveCity(
+    /// This used to pick one inventory — the reader's marked choice, else the bundle — because
+    /// RULINGS R43 §1 permitted exactly one attach. The union reverses that: what is on disk is
+    /// what is drawn, and there is no choice left to resolve.
+    ///
+    /// **No downloaded pack can stop the app launching**, and the sentence has to be that narrow.
+    ///
+    /// `CityLibrary.installedInventoryFiles()` refuses a file whose *shape* this build cannot read,
+    /// and `InventoryUnion.build` refuses one that fails anywhere in its own pipeline — the attach,
+    /// the introspection, or the catalog merge that runs after both. A refused pack costs that one
+    /// city and nothing else: the boot continues over the survivors, the Cities screen still lists
+    /// the file because it is still on disk, its row says it could not be read, and the reader can
+    /// remove it. That last clause is what the guarantee is *for*, and it is why the refusal has to
+    /// happen here rather than at `phase = .failed` — the screen that fixes it lives inside the
+    /// booted layer.
+    ///
+    /// **The bundled seed is not covered by that and is not meant to be.** It is this repository's
+    /// own build artifact, gated by `SeedContractTests`, and there is no reader action that could
+    /// repair or remove it. A failure on arm 0 propagates.
+    ///
+    /// The bundled seed goes **first**, which fixes it at arm ordinal 0 and leaves every bundled
+    /// tree's union-wide id equal to the id it has always had.
+    public static func bootOverInstalledCities(
         databaseURL: URL? = nil,
         library: CityLibrary
     ) async throws -> DataLayer {
-        if let cityURL = library.validatedActiveSeedURL() {
-            do {
-                return try await boot(databaseURL: databaseURL, seedURL: cityURL)
-            } catch {
-                try? library.deactivate()
-            }
-        }
-        return try await boot(databaseURL: databaseURL)
+        // A device upgrading from a build that recorded an active choice still carries the marker.
+        // Nothing reads it any more, and this is the one place that runs on every launch.
+        library.discardRetiredActiveMarker()
+
+        let bundled = SeedDatabase.urlInBundle().map { [InventoryFile.bundled(url: $0)] } ?? []
+        return try await boot(
+            databaseURL: databaseURL,
+            inventories: bundled + library.installedInventoryFiles()
+        )
     }
 
     /// Screen 17's model, wired to this layer's outbox and name resolution.

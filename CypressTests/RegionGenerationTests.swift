@@ -4,13 +4,13 @@ import Testing
 
 /// **The s17 round — `dim_region`, the unit a pack is *published* in.**
 ///
-/// RULING D1 makes New York's published unit the borough. `Tools/publish_cities.py` had always
+/// New York's published unit is the borough. `Tools/publish_cities.py` had always
 /// narrowed the fused seed on `trees.id_space`, and an id space cannot express a unit smaller
 /// than a city, so the publisher needed a finer column to narrow on and a borough needed
 /// somewhere to keep its own name. It could not ride `trees.city_raw`: that column family renders
 /// through `CityRecordPresentation`, whose `caretaker` label reads "Cared for by …", and *Cared
 /// for by Queens* is a sentence the app would be shipping to a reader as fact. So s17 is a real
-/// `dim_region` table plus a NOT NULL `trees.region_id` (RULING D17).
+/// `dim_region` table plus a NOT NULL `trees.region_id`.
 ///
 /// **Three version spaces move in this round and only two of them are here.** This suite is about
 /// `SeedDatabase.newestKnownSchemaVersion` (the published seed/city file, R37.1's `s<n>`, 16 → 17)
@@ -127,7 +127,7 @@ struct RegionGenerationTests {
             })
         }
         #expect(packID == "sf")
-        #expect(level == "city", "a one-region city is level `city`, not a special case (RULING D2)")
+        #expect(level == "city", "a one-region city is level `city`, not a special case")
         #expect(slug == "us-ca-sf")
         #expect(
             packID != slug,
@@ -280,9 +280,10 @@ struct RegionGenerationTests {
         )
     }
 
-    // MARK: - The manifest fallback (the other direction of RULING D8's window)
+    // MARK: - The manifest fallback (the other direction of the dual-publish window)
 
-    /// **A new build against a base URL carrying no format-2 object.** D8 protected an unupdated
+    /// **A new build against a base URL carrying no format-2 object.** That window protected an
+    /// unupdated
     /// *install* against a republished bucket; nothing in it protected a *new build* against a
     /// bucket not yet republished. The live bucket has carried `manifest-v2.json` since
     /// 2026-08-23, so that particular window is closed — what this pins is the fallback's

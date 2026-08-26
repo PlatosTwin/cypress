@@ -44,8 +44,15 @@ import Foundation
 /// bundle directory is not writable, and without `immutable=1` a plain read-only open still wants
 /// to create a shared-memory file next to the database when the file's journal mode says WAL.
 public enum SeedDatabase {
-    /// The attached schema name. All inventory SQL is qualified with it.
-    public static let schemaName = "seed"
+    /// The schema every piece of inventory SQL is qualified with.
+    ///
+    /// **It is `temp`, and it stopped being `seed` when the inventory stopped being one file.**
+    /// Several city files are attached at once now — `inv0`, `inv1`, … — and the query layer reads
+    /// a union of them (`InventoryUnion`). SQLite refuses a view that references an attached
+    /// database from anywhere but `temp` (`view trees cannot reference objects in database inv0`),
+    /// so the union lives there, and every `\(SeedDatabase.schemaName).trees` in the query layer
+    /// keeps the text it always had while resolving to the union rather than to one file.
+    public static let schemaName = "temp"
 
     /// The resource name of the bundled seed, without extension.
     public static let resourceName = "cypress-seed"
@@ -79,10 +86,10 @@ public enum SeedDatabase {
     /// independently rather than assume 16 implies 15's shape — see `SeedSchema.hasDimCity` and
     /// `TreeQueries.treeSQL()`.
     /// **17** (the s17 round) adds `dim_region` — the unit a pack is *published* in — and
-    /// `trees.region_id`, a NOT NULL foreign key into it. RULING D1 makes New York's published
-    /// unit the borough, and `id_space` cannot express a unit smaller than a city, so
+    /// `trees.region_id`, a NOT NULL foreign key into it. New York's published unit is the
+    /// borough, and `id_space` cannot express a unit smaller than a city, so
     /// `Tools/publish_cities.py` narrows on the new column instead. San Francisco and San Jose
-    /// are one `city`-level region each and publish unchanged in meaning (RULING D2).
+    /// are one `city`-level region each and publish unchanged in meaning.
     ///
     /// **A pure addition, the way 15 was and 16 was not.** Nothing is dropped and no existing
     /// column moves, so an s16 file still opens, still attaches, still searches and still names
@@ -98,7 +105,7 @@ public enum SeedDatabase {
     /// to stay checkable. The day a query does read a region, this is the paragraph where the
     /// fallback gets designed, and this sentence is what has to change before it ships.
     ///
-    /// The standing-dead change that rides this generation (RULING D17) needed no schema change at
+    /// The standing-dead change that rides this generation needed no schema change at
     /// all: `trees.status` has permitted `dead_reported` since long before it, and what was
     /// missing was a Python contract field, not a column.
     public static let newestKnownSchemaVersion = 17
@@ -140,7 +147,11 @@ public enum SeedDatabase {
 
     // MARK: - Attaching
 
-    /// Attaches `url` as `seed` and returns the shape it turned out to have.
+    /// Attaches one file as the whole inventory and returns the shape the union turned out to have.
+    ///
+    /// A union of one, which is what the app itself opens when nothing has been downloaded — so the
+    /// dozen tests that call this to read a fixture are exercising the same construction the map
+    /// runs on, rather than a simpler path that exists only for them.
     ///
     /// `ATTACH` cannot run inside a transaction, which is why this takes a bare connection rather
     /// than going through `DatabaseQueue.write`.
@@ -149,12 +160,23 @@ public enum SeedDatabase {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LocationError.notFoundAtPath(url)
         }
-        try connection.attach(uri: readOnlyURI(for: url), as: schemaName)
-        return try SeedSchema.introspect(connection, schema: schemaName)
+        return try InventoryUnion.build([.bundled(url: url)], on: connection).schema
     }
 
+    /// Drops the union and detaches every file under it, whatever it turned out to hold.
+    ///
+    /// Written against the connection rather than against an `InventoryUnion` value so a caller
+    /// that never kept one — every test that called `detach(from:)` before this type existed — can
+    /// still clean up.
+    ///
+    /// **"Whatever it turned out to hold" is meant literally, and it was once false.**
+    /// `InventoryUnion.tearDownEverything` reads `temp.sqlite_master` rather than a written-down
+    /// list of table names, so a catalog a newer generation adds is dropped by the same code that
+    /// dropped the old ones. The version that carried a list omitted `dim_region` and left it
+    /// behind for the next build on this connection to collide with — that entry's own comment has
+    /// the account.
     public static func detach(from connection: SQLiteConnection) throws {
-        try connection.detach(schemaName)
+        try InventoryUnion.tearDownEverything(on: connection)
     }
 }
 
@@ -241,7 +263,7 @@ public struct SeedSchema: Equatable, Sendable {
     /// and to nil for anything older — see `TreeQueries.treeSQL()`.
     public let hasDimCity: Bool
     /// Whether `dim_region` and `trees.region_id` are present — the s17 seed pass, the unit a
-    /// pack is *published* in (RULING D1's borough, RULING D2's one-region city).
+    /// pack is *published* in — a New York borough, or a whole city that is one region on its own.
     ///
     /// **Both together or neither**, the same shape `hasIdSpace` uses and for the same reason:
     /// the column and the table it points at are one generation and are meaningless apart. A

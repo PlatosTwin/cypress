@@ -448,7 +448,15 @@ struct RootView: View {
             // The provider is handed over rather than made there. Screen 01 used to declare its own
             // `@State` one, which SwiftUI re-initializes on every pass through this body — see
             // `MapHomeView.location`.
-            MapHomeView(api: data.api, location: location)
+            MapHomeView(
+                api: data.api,
+                location: location,
+                // The last of the three things the opening camera tries: with no remembered camera
+                // and no location fix, open on the largest downloaded inventory rather than on San
+                // Francisco. Nil with nothing downloaded, which is every launch of the shipping
+                // configuration.
+                downloadedCityCenter: data.store.inventory?.openingCenter
+            )
         case .grove:
             // Screen 08. The species tile's destination is 07, which is the one entrance
             // SCREENS.md draws for it: "Tapping a tile opens the species page."
@@ -961,6 +969,18 @@ struct RootView: View {
                     downloader: data.remoteAccess.allowsNetwork
                         ? CityDownloader()
                         : CityDownloader(session: OfflineSession.make()),
+                    // How many cities may be attached beside the bundle. Read off the
+                    // live connection at open — `SQLITE_LIMIT_ATTACHED` belongs to whichever SQLite
+                    // the platform ships — and reduced by the one slot the bundle itself holds.
+                    installableCityLimit: max(0, data.store.attachedDatabaseLimit - 1),
+                    // **Which downloaded files the read layer actually opened.** A city on disk that
+                    // is not one of these was refused somewhere before the map could read it — a
+                    // shape `CityLibrary.validateCityFile` declined, an attach that threw, or a
+                    // catalog merge that did — and its row says so rather than reporting a version
+                    // nothing is reading. Taken from the live union rather than from a refusal list,
+                    // because only one of the three refusals produces a list and all three produce
+                    // a missing arm.
+                    liveInventoryIDs: Set((data.store.inventory?.arms ?? []).map(\.id)),
                     onInventoryChange: onInventoryChange
                 ),
                 onBack: { router.pop() }

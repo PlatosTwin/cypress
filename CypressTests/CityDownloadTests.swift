@@ -342,49 +342,73 @@ struct CityDownloadTests {
         #expect(library.installedCities().map(\.version) == ["s14-r2026-07-31"])
     }
 
-    // MARK: - Activation and the pre-attach gate
+    // MARK: - What the union attaches, and the pre-attach gate
 
-    @Test("a schema generation from the future never attaches: the marker clears instead")
-    func activationRefusesNewerSchema() async throws {
+    /// **A schema generation from the future is left on disk and left out of the union.**
+    ///
+    /// The gate is the same one that used to clear the `active-city` marker; what changed is what
+    /// it protects. There is no marker to clear now — `installedInventoryFiles()` is
+    /// the whole of the answer, and a file it refuses is simply not among them.
+    ///
+    /// **Refused, not deleted.** The reader paid for those bytes and the reason may be that this
+    /// build is older than the file; a later build may read it perfectly well. It stays on disk,
+    /// `installedCities()` still lists it, and the Cities screen can still remove it deliberately.
+    @Test("a schema generation from the future is refused by the union but kept on disk")
+    func theUnionRefusesANewerSchema() async throws {
         let dir = try Self.tempDir()
         let library = CityLibrary(rootURL: dir.appendingPathComponent("library"))
 
-        // A shape-valid file claiming generation 99: validation must refuse it.
         let fossil = dir.appendingPathComponent("fossil.sqlite")
         try Self.miniSeed(at: fossil, publishSchemaVersion: 99)
         try library.install(verifiedFileAt: fossil, id: "sf", version: "s99-r2026-01-01")
-        try library.activate(id: "sf")
-        #expect(library.validatedActiveSeedURL() == nil)
-        #expect(library.activeCityID() == nil, "a refused activation must clear the marker")
+        #expect(library.installedInventoryFiles().isEmpty, "a file from the future was attached")
+        #expect(
+            library.installedCities().map(\.id) == ["sf"],
+            "a refused file was deleted; the reader paid for those bytes"
+        )
 
-        // The same shape at generation 14 attaches.
+        // The same shape at generation 14 is taken.
         let current = dir.appendingPathComponent("current.sqlite")
         try Self.miniSeed(at: current, publishSchemaVersion: 14, totalRows: 1)
         try library.install(verifiedFileAt: current, id: "sf", version: "s14-r2026-07-31")
-        try library.activate(id: "sf")
-        let resolved = try #require(library.validatedActiveSeedURL())
+        let files = library.installedInventoryFiles()
+        #expect(files.map(\.id) == ["sf"])
+        let resolved = try #require(files.first).url
         #expect(resolved == library.fileURL(id: "sf", version: "s14-r2026-07-31"))
+        #expect(files.allSatisfy { !$0.isBundled }, "a downloaded pack claimed to be the bundle")
 
         // And the resolved file really attaches through the same path the bundle uses.
         let store = try await CypressStore.inMemory(seedURL: resolved)
         #expect(store.seed != nil)
     }
 
-    @Test("a dangling marker resolves to the bundle, not a crash; remove deactivates")
-    func danglingAndRemovedMarkers() throws {
+    /// Removing a city takes it out of what the union would attach, and leaves nothing behind.
+    ///
+    /// The retired `active-city` marker is deleted on sight, so a device upgrading from a build
+    /// that wrote one does not carry a file nothing reads (`discardRetiredActiveMarker`).
+    @Test("removal empties the library, and the retired marker is discarded")
+    func removalAndTheRetiredMarker() throws {
         let dir = try Self.tempDir()
-        let library = CityLibrary(rootURL: dir.appendingPathComponent("library"))
-
-        try library.activate(id: "ghost")
-        #expect(library.validatedActiveSeedURL() == nil)
-        #expect(library.activeCityID() == nil)
+        let root = dir.appendingPathComponent("library")
+        let library = CityLibrary(rootURL: root)
 
         let file = dir.appendingPathComponent("c.sqlite")
         try Self.miniSeed(at: file, publishSchemaVersion: 14)
         try library.install(verifiedFileAt: file, id: "sf", version: "s14-r2026-07-31")
-        try library.activate(id: "sf")
+        #expect(library.installedInventoryFiles().map(\.id) == ["sf"])
+
+        // A marker written by an older build of the app.
+        let marker = root.appendingPathComponent("active-city")
+        try "sf".write(to: marker, atomically: true, encoding: .utf8)
+        #expect(
+            library.installedCities().map(\.id) == ["sf"],
+            "the marker was read as an installed city"
+        )
+        library.discardRetiredActiveMarker()
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+
         try library.remove(id: "sf")
-        #expect(library.activeCityID() == nil)
+        #expect(library.installedInventoryFiles().isEmpty)
         #expect(library.installedCities().isEmpty)
     }
 
@@ -428,12 +452,13 @@ struct CityDownloadTests {
         let sf = manifest.cities[0]
         let sj = manifest.cities[1]
 
-        // Built-in: `Use` when a city is active, the `In use` label otherwise.
-        #expect(CityDownloadRow.builtIn(isActive: true).affordances == [.inUseLabel])
-        #expect(CityDownloadRow.builtIn(isActive: false).affordances == [.use])
+        // **The built-in card draws no affordance at all**. It cannot be switched off,
+        // so a control saying otherwise is the forbidden contradiction — an `In use` label
+        // above a sibling `Use` was the screen the owner ruled out.
+        #expect(CityDownloadRow.builtIn().affordances.isEmpty)
 
         let fresh = CityDownloadRow.published(
-            city: sf, state: .notInstalled, isActive: false,
+            city: sf, state: .notInstalled,
             downloadingFraction: nil, lastAttemptFailed: false
         )
         #expect(fresh.stateLine == "81 MB")
@@ -442,13 +467,13 @@ struct CityDownloadTests {
 
         // Partial coverage is stated in the publisher's word, not invented.
         let partial = CityDownloadRow.published(
-            city: sj, state: .notInstalled, isActive: false,
+            city: sj, state: .notInstalled,
             downloadingFraction: nil, lastAttemptFailed: false
         )
         #expect(partial.coverageNote == "Covers downtown only")
 
         let downloading = CityDownloadRow.published(
-            city: sf, state: .notInstalled, isActive: false,
+            city: sf, state: .notInstalled,
             downloadingFraction: 0.42, lastAttemptFailed: false
         )
         #expect(downloading.affordances == [.cancel])
@@ -457,34 +482,36 @@ struct CityDownloadTests {
 
         // Failure reverts the affordances and says exactly what happened.
         let failed = CityDownloadRow.published(
-            city: sf, state: .notInstalled, isActive: false,
+            city: sf, state: .notInstalled,
             downloadingFraction: nil, lastAttemptFailed: true
         )
         #expect(failed.stateLine == "Download failed. Nothing was changed.")
         #expect(failed.isFailure)
         #expect(failed.affordances == [.download])
 
-        let inUse = CityDownloadRow.published(
-            city: sf, state: .installedCurrent(installedVersion: sf.version), isActive: true,
+        // **No `In use` label and no `Use` button anywhere**: a downloaded city is in
+        // the union, so the only question its row can put is whether to keep it.
+        let installed = CityDownloadRow.published(
+            city: sf, state: .installedCurrent(installedVersion: sf.version),
             downloadingFraction: nil, lastAttemptFailed: false
         )
-        #expect(inUse.affordances == [.inUseLabel, .remove])
-        #expect(inUse.stateLine == "Installed · s14-r2026-07-31")
+        #expect(installed.affordances == [.remove])
+        #expect(installed.stateLine == "Installed · s14-r2026-07-31")
 
         let updatable = CityDownloadRow.published(
-            city: sf, state: .updateAvailable(installedVersion: "s14-r2026-06-01"), isActive: false,
+            city: sf, state: .updateAvailable(installedVersion: "s14-r2026-06-01"),
             downloadingFraction: nil, lastAttemptFailed: false
         )
-        // R43 §3's table says `Update` and `Remove` here. `Use` was added to it this round —
-        // without it an installed, unattached copy has no way back on screen, which is exactly what
-        // a tester hit on build 49 (`CityDownloadsFeedbackTests.updateAvailableStillOffersUse`).
-        // The ruled pair is still present and still in its ruled order.
-        #expect(updatable.affordances == [.use, .update, .remove])
+        // Back to R43 §3's ruled pair. `Use` was added to this row when an installed-but-unattached
+        // copy needed a way back on screen; downloaded means in the union now, so that state does
+        // not exist and the third button goes with it — and the row is inside §3's "never more
+        // than two visible" again.
+        #expect(updatable.affordances == [.update, .remove])
         #expect(updatable.stateLine == "Update available · s14-r2026-06-01 installed")
 
         // A promise no button can keep gets no button (ruling §3).
         let refused = CityDownloadRow.published(
-            city: sf, state: .needsNewerApp(installedVersion: nil), isActive: false,
+            city: sf, state: .needsNewerApp(installedVersion: nil),
             downloadingFraction: nil, lastAttemptFailed: false
         )
         #expect(refused.affordances.isEmpty)
@@ -493,19 +520,18 @@ struct CityDownloadTests {
 
         // …but an older compatible install keeps its affordances; only the update is refused.
         let refusedButInstalled = CityDownloadRow.published(
-            city: sf, state: .needsNewerApp(installedVersion: "s14-r2026-06-01"), isActive: false,
+            city: sf, state: .needsNewerApp(installedVersion: "s14-r2026-06-01"),
             downloadingFraction: nil, lastAttemptFailed: false
         )
-        #expect(refusedButInstalled.affordances == [.use, .remove])
+        #expect(refusedButInstalled.affordances == [.remove])
 
         // Offline: disk facts alone, no-network affordances intact.
         let offline = CityDownloadRow.installedOffline(
             CityLibrary.InstalledCity(
                 id: "sf", version: "s14-r2026-07-31",
                 fileURL: URL(fileURLWithPath: "/x"), bytes: 1
-            ),
-            isActive: true
+            )
         )
-        #expect(offline.affordances == [.inUseLabel, .remove])
+        #expect(offline.affordances == [.remove])
     }
 }

@@ -469,9 +469,10 @@ public struct TreeQueries {
         narrowing: Narrowing,
         connection: SQLiteConnection
     ) throws -> Int {
+        let source = geometrySource(narrowing: narrowing)
         let statement = try connection.cachedStatement("""
         SELECT COUNT(*) AS n
-        \(bboxSource(strategy, joins: "", extraPredicates: "AND t.deleted_at IS NULL \(narrowing.predicate)"))
+        \(bboxSource(strategy, relation: source.relation, joins: "", extraPredicates: "\(source.softDeleted) \(narrowing.predicate)"))
         """)
         _ = try statement.bind(bindings(for: viewport.bounds))
         return try statement.fetchOne { try $0.int("n") } ?? 0
@@ -549,15 +550,40 @@ public struct TreeQueries {
     /// camera change instead of compiling a fresh one per pan.
     private func pins(rowIDs: [Int64], connection: SQLiteConnection) throws -> [TreePin] {
         guard !rowIDs.isEmpty else { return [] }
+        // **One execution per arm the winners came from, and the composite id is never bound.**
+        // `WHERE t.id IN (…)` against the union spells `ordinal * armStride + t.id IN (…)` inside
+        // each arm, which no index can answer — measured as `SCAN t`, a table scan per arm on the
+        // path a thumb drags. Split by arm and the same statement reads
+        // `SEARCH t USING INTEGER PRIMARY KEY (rowid=?)` again, because `t.inv = :inv` folds to a
+        // constant inside each arm and `t.local_id` is that arm's own rowid alias.
+        //
+        // The statement text is constant across arms and camera changes, so `cachedStatement` still
+        // holds one prepared copy; what varies is two bindings. Today's catalog puts every winner
+        // in one or two arms.
         let statement = try connection.cachedStatement("""
         SELECT \(pinColumns)
           FROM \(seed).trees t
-          \(speciesJoin)
-         WHERE t.rowid IN (SELECT value FROM json_each(:rowids))
+         WHERE t.inv = :inv
+           AND t.local_id IN (SELECT value FROM json_each(:rowids))
            AND t.deleted_at IS NULL
         """)
-        _ = try statement.bind("[\(rowIDs.map(String.init).joined(separator: ","))]", forName: ":rowids")
-        return try statement.fetchAll(Self.decodePin)
+
+        var byArm: [Int: [Int64]] = [:]
+        for id in rowIDs {
+            let split = InventoryUnion.decomposedID(id)
+            byArm[split.ordinal, default: []].append(split.localID)
+        }
+
+        var found: [TreePin] = []
+        found.reserveCapacity(rowIDs.count)
+        for ordinal in byArm.keys.sorted() {
+            _ = try statement.bind(ordinal, forName: ":inv")
+            _ = try statement.bind(
+                "[\(byArm[ordinal]!.map(String.init).joined(separator: ","))]", forName: ":rowids"
+            )
+            found.append(contentsOf: try statement.fetchAll(Self.decodePin))
+        }
+        return found
     }
 
     // MARK: - The statements, as text
@@ -570,7 +596,7 @@ public struct TreeQueries {
     func everyPinSQL(_ strategy: SpatialIndexStrategy, narrowing: Narrowing = .none) -> String {
         """
         SELECT \(pinColumns)
-        \(bboxSource(strategy, joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL \(narrowing.predicate)"))
+        \(bboxSource(strategy, relation: "\(seed).trees", joins: "", extraPredicates: "AND t.deleted_at IS NULL \(narrowing.predicate)"))
          LIMIT :limit
         """
     }
@@ -583,10 +609,13 @@ public struct TreeQueries {
     /// cell order, which is latitude order, which is the strip along the bottom edge that this whole
     /// rule exists to stop drawing.
     func markerCellsSQL(_ strategy: SpatialIndexStrategy, narrowing: Narrowing = .none) -> String {
-        let softDeleted = seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
+        let source = geometrySource(narrowing: narrowing)
+        // `MIN(t.id)` rather than `MIN(t.rowid)`: a view has no rowid, and the union's `id` is a
+        // rowid alias arithmetically offset per arm, so it is carried by every entry of every arm's
+        // `idx_trees_lat_lon` and the plan stays covering. `pins(rowIDs:)` splits it back apart.
         return """
-        SELECT MIN(t.rowid) AS marker_rowid, COUNT(*) AS member_count
-        \(bboxSource(strategy, joins: "", extraPredicates: "\(softDeleted) \(narrowing.predicate)"))
+        SELECT MIN(t.id) AS marker_rowid, COUNT(*) AS member_count
+        \(bboxSource(strategy, relation: source.relation, joins: "", extraPredicates: "\(source.softDeleted) \(narrowing.predicate)"))
          GROUP BY CAST((t.lat + 90.0) / :latCell AS INTEGER),
                   CAST((t.lon + 180.0) / :lonCell AS INTEGER)
         """
@@ -599,14 +628,14 @@ public struct TreeQueries {
     /// `+90`/`+180` offsets move every coordinate on Earth into the positive quadrant first, where
     /// truncation *is* floor, so a cell never straddles the equator or the prime meridian.
     func clustersSQL(_ strategy: SpatialIndexStrategy, narrowing: Narrowing = .none) -> String {
-        let softDeleted = seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
+        let source = geometrySource(narrowing: narrowing)
         return """
         SELECT CAST((t.lat + 90.0) / :latCell AS INTEGER) AS cell_y,
                CAST((t.lon + 180.0) / :lonCell AS INTEGER) AS cell_x,
                COUNT(*) AS member_count,
                AVG(t.lat) AS center_lat,
                AVG(t.lon) AS center_lon
-        \(bboxSource(strategy, joins: "", extraPredicates: "\(softDeleted) \(narrowing.predicate)"))
+        \(bboxSource(strategy, relation: source.relation, joins: "", extraPredicates: "\(source.softDeleted) \(narrowing.predicate)"))
          GROUP BY cell_y, cell_x
         """
     }
@@ -766,7 +795,7 @@ public struct TreeQueries {
                s.scientific_name AS species_scientific_name,
                s.common_name AS species_common_name,
                s.id_tips AS species_id_tips
-        \(bboxSource(strategy, joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL \(speciesPredicate)"))
+        \(bboxSource(strategy, relation: "\(seed).trees", joins: speciesJoin, extraPredicates: "AND t.deleted_at IS NULL \(speciesPredicate)"))
          ORDER BY (t.lat - :lat) * (t.lat - :lat)
                 + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
          LIMIT :limit
@@ -932,13 +961,17 @@ public struct TreeQueries {
 
     /// The four facts a `TreePin` carries, plus the species it belongs to. Shared by both pin
     /// queries, so the un-thinned and the gridded answers cannot drift in what they select.
+    /// **The species uuid is read off the tree row, not off a join**, because the union already put
+    /// it there: `InventoryUnion`'s trees view resolves each arm's own `species_current` through
+    /// that arm's translation and projects the uuid beside the canonical id. Joining `species` here
+    /// would be a second lookup for a string the row is already carrying.
     private var pinColumns: String {
         """
         t.\(schema.treeIdentityColumn) AS tree_uuid,
                t.lat AS lat, t.lon AS lon,
                t.status AS status, t.source AS source,
                t.verification_state AS verification_state,
-               s.\(schema.speciesIdentityColumn) AS species_uuid
+               t.species_uuid AS species_uuid
         """
     }
 
@@ -951,22 +984,27 @@ public struct TreeQueries {
     /// both paths, which is what lets the contract test assert the two are interchangeable.
     private func bboxSource(
         _ strategy: SpatialIndexStrategy,
+        relation: String,
         joins: String,
         extraPredicates: String
     ) -> String {
         switch strategy {
         case .coveringIndex:
             return """
-              FROM \(seed).trees t
+              FROM \(relation) t
               \(joins)
              WHERE t.lat BETWEEN :minLat AND :maxLat
                AND t.lon BETWEEN :minLon AND :maxLon
                \(extraPredicates)
             """
         case .rtreePrefilter:
+            // **The join is on `(inv, local_id)`, not on the union's own `id`.** A tree's union id
+            // is `ordinal * armStride + <the file's id>`, so `t.id = r.id` would spell an arithmetic
+            // expression on both sides and neither arm could use its primary key — measured as
+            // `SCAN t`. The pre-filter carries the arm it came from for exactly this join.
             return """
               FROM \(seed).trees_rtree r
-              JOIN \(seed).trees t ON t.\(schema.rtreeJoinColumn) = r.id
+              JOIN \(relation) t ON t.inv = r.inv AND t.local_id = r.id
               \(joins)
              WHERE r.max_lat >= :minLat AND r.min_lat <= :maxLat
                AND r.max_lon >= :minLon AND r.min_lon <= :maxLon
@@ -975,6 +1013,31 @@ public struct TreeQueries {
                \(extraPredicates)
             """
         }
+    }
+
+    /// Which relation a bounding-box query reads, and the soft-delete predicate that belongs with
+    /// it.
+    ///
+    /// `trees_geo` carries exactly the columns `idx_trees_lat_lon` covers — `inv`, `local_id`, the
+    /// union `id`, `lat`, `lon` — and has already excluded soft-deleted rows inside each arm. A
+    /// query that needs nothing else reads it, keeps `COVERING INDEX`, and writes no `deleted_at`
+    /// clause at all. Measured over the whole of San Francisco with a second inventory attached:
+    /// 72–81 ms here against ~100 ms through the full view.
+    ///
+    /// Anything that needs another column — a narrowing on species, year or status, a species join,
+    /// a pin's own status — was going to probe the table whatever this returned, so it reads the
+    /// full `trees` and pays the `deleted_at` clause on the same terms it always did.
+    private func geometrySource(
+        narrowing: Narrowing,
+        joins: String = ""
+    ) -> (relation: String, softDeleted: String) {
+        guard narrowing.isNone, joins.isEmpty else {
+            return (
+                "\(seed).trees",
+                seedHasSoftDeletedTrees ? "AND t.deleted_at IS NULL" : ""
+            )
+        }
+        return ("\(seed).trees_geo", "")
     }
 
     private func bindings(for bounds: BoundingBox) -> [String: SQLiteBindable?] {

@@ -18,10 +18,18 @@
 # - a collision refusal: a dead agent's xcodebuild keeps running, and a second run against the
 #   same simulator or the same worktree fakes "app is not running" / "never appeared" /
 #   "Test run with 0 tests" with no crash report (CLAUDE.md, simulators).
-# - a device-state refusal (E202-A): a leftover `active-city` marker survives reinstall and
-#   points every San-Francisco deep link at the wrong inventory. This one still REFUSES — it is
-#   a live collision with a prior smoke/run, the same family as the xcodebuild collision above,
-#   and there is no "correct" city to pick on the operator's behalf.
+# - a device-state refusal (E202-A): a leftover DOWNLOADED CITY survives reinstall. This one
+#   still REFUSES — it is a live collision with a prior smoke/run, the same family as the
+#   xcodebuild collision above, and there is no "correct" library to pick for the operator.
+#
+#   **It used to key on the `active-city` marker, and the marker is gone** (the cumulative-
+#   inventories round). The hazard it named is gone with it: a downloaded city no longer
+#   REPLACES the inventory, so San Francisco deep links no longer return 0 records because
+#   Manhattan is selected. What replaced it is quieter and is why this still refuses — every
+#   downloaded pack ADDS rows, so species lists, almanac counts and city summaries stop being
+#   the bundle's, and the whole of the rest of this script (`compute_safe_camera` reads the
+#   bundled seed to pick a covered camera) assumes the bundle is the whole inventory. The guard
+#   is what keeps that assumption true rather than merely likely.
 # - a device-state SELF-HEAL (E202-B, E216, #225): a remembered `map.lastCamera` too wide for
 #   THIS screen draws cluster badges where a test waits for tree pins, and a camera narrow
 #   enough but pointed at a patch of the city the inventory does not cover draws nothing at
@@ -126,7 +134,7 @@ read_screen() {
 # Device state (E202). Both leftovers survive `xcodebuild test`, which replaces the app
 # bundle and leaves the data container alone.
 # ---------------------------------------------------------------------------
-ACTIVE_CITY="none"; LAST_CAMERA="none"; CAMERA_ZOOM=""; CONTAINER=""
+INSTALLED_CITIES="none"; LAST_CAMERA="none"; CAMERA_ZOOM=""; CONTAINER=""
 # The remembered camera's four numbers, kept apart from the display string so the checks below
 # can do arithmetic on them rather than re-splitting the header line they print.
 CAM_LAT=""; CAM_LON=""; CAM_LAT_SPAN=""; CAM_LON_SPAN=""
@@ -137,12 +145,19 @@ read_device_state() {
   LAST_CAMERA="none"; CAMERA_ZOOM=""; CAMERA_TREES="n/a"
   CAM_LAT=""; CAM_LON=""; CAM_LAT_SPAN=""; CAM_LON_SPAN=""
   if [ -z "$container" ]; then
-    ACTIVE_CITY="n/a (app not installed)"; LAST_CAMERA="n/a (app not installed)"; return 0
+    INSTALLED_CITIES="n/a (app not installed)"; LAST_CAMERA="n/a (app not installed)"; return 0
   fi
-  local marker="$container/Library/Application Support/Cypress/cities/active-city"
-  if [ -f "$marker" ]; then
-    ACTIVE_CITY="$(tr -d '\n' <"$marker")"
-    [ -n "$ACTIVE_CITY" ] || ACTIVE_CITY="<empty marker file>"
+  # Every downloaded city is an install DIRECTORY under the library root
+  # (`cities/<id>/<version>/<id>.sqlite`), so directories are what is counted. `.staging` and the
+  # retired `active-city` marker are both skipped: the first is not a city and the second is a
+  # file no build reads any more.
+  local citiesdir="$container/Library/Application Support/Cypress/cities"
+  INSTALLED_CITIES="none"
+  if [ -d "$citiesdir" ]; then
+    local found
+    found="$(find "$citiesdir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -exec basename {} \; \
+             2>/dev/null | sort | tr '\n' ',' | sed 's/,$//')"
+    [ -z "$found" ] || INSTALLED_CITIES="$found"
   fi
   local prefs="$container/Library/Preferences/$APP_ID.plist"
   local raw
@@ -554,13 +569,15 @@ heal_camera() {
 }
 
 device_state_check() {
-  case "$ACTIVE_CITY" in
+  case "$INSTALLED_CITIES" in
     none|"n/a"*) ;;
     *)
-      echo "VERIFY-FAIL: this device has city '$ACTIVE_CITY' selected (E202-A)." >&2
-      echo "  Every San-Francisco deep link honestly returns 0 records; 33 of 64 UI tests read as a broken map." >&2
-      echo "  The marker survives reinstall. Clear it with:" >&2
-      echo "    rm -f \"\$(xcrun simctl get_app_container $UDID $APP_ID data)/Library/Application Support/Cypress/cities/active-city\"" >&2
+      echo "VERIFY-FAIL: this device has downloaded cities installed: '$INSTALLED_CITIES' (E202-A)." >&2
+      echo "  Every downloaded pack is attached BESIDE the bundled seed, so species lists, almanac" >&2
+      echo "  counts and city summaries stop being the bundle's — and this script's camera repair" >&2
+      echo "  reads the bundled seed to choose a covered camera. The library survives reinstall." >&2
+      echo "  Clear it with:" >&2
+      echo "    rm -rf \"\$(xcrun simctl get_app_container $UDID $APP_ID data)/Library/Application Support/Cypress/cities\"" >&2
       exit 1 ;;
   esac
   # #225: both camera refusals below now SELF-HEAL instead of exiting. Neither is a live
@@ -673,7 +690,7 @@ read_device_state
   echo "CYPRESS-RUN: worktree $REPO"
   echo "CYPRESS-RUN: head $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
        "$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
-  echo "CYPRESS-RUN: device-state active-city=${ACTIVE_CITY} $(camera_description)"
+  echo "CYPRESS-RUN: device-state installed-cities=${INSTALLED_CITIES} $(camera_description)"
   # #225: legible on its own face whether this device's camera was touched — E202-B's own
   # lesson is that a skip-count (or here, a camera) that changed between two runs of the same
   # tree is reporting a device change, not a code change, and must not be silent about it.

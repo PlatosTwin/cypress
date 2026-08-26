@@ -195,6 +195,21 @@ public final class SQLiteConnection {
         try execute("DETACH DATABASE \(Self.validatedSchemaName(schemaName))")
     }
 
+    /// How many databases this connection may have attached at once, asked of the library rather
+    /// than assumed.
+    ///
+    /// `SQLITE_LIMIT_ATTACHED` is a compile-time constant of whichever SQLite the platform ships,
+    /// and the app links the system one. Apple's is **10** on macOS 15 and on iOS 17–18, measured;
+    /// hard-coding that would be a number in a comment that nothing rechecks, and the Cities
+    /// screen's headroom rule turns it into a sentence a reader sees. `main` and `temp`
+    /// do not count against it — only `ATTACH`ed schemas do.
+    ///
+    /// Passing `-1` asks for the current value without changing it, which is the documented way to
+    /// read a limit.
+    public var attachedDatabaseLimit: Int {
+        Int(sqlite3_limit(handle, SQLITE_LIMIT_ATTACHED, -1))
+    }
+
     /// The schema names currently attached, e.g. `["main", "seed", "temp"]`.
     public func attachedSchemas() throws -> [String] {
         let statement = try prepare("PRAGMA database_list")
@@ -220,6 +235,23 @@ public final class SQLiteConnection {
         defer { statement.finalize() }
         _ = try statement.bind([":table": table, ":schema": schema])
         return try statement.fetchAll { try $0.string("name") }
+    }
+
+    /// Column names paired with their declared types, in declaration order.
+    ///
+    /// `columnNames(ofTable:in:)` answers most questions; this one exists because
+    /// `InventoryUnion` has to *rebuild* a table rather than describe one, and a
+    /// `CREATE TABLE … AS SELECT` copies the columns while dropping every constraint — including
+    /// the `UNIQUE` that gives `sqlite_autoindex_species_1` its name and the plan gates their
+    /// assertion.
+    public func columnDefinitions(
+        ofTable table: String,
+        in schema: String = "main"
+    ) throws -> [(name: String, type: String)] {
+        let statement = try prepare("SELECT name, type FROM pragma_table_info(:table, :schema)")
+        defer { statement.finalize() }
+        _ = try statement.bind([":table": table, ":schema": schema])
+        return try statement.fetchAll { (name: try $0.string("name"), type: try $0.string("type")) }
     }
 
     /// Whether a table (or view, or virtual table) exists in a schema.

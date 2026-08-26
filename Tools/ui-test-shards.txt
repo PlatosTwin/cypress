@@ -210,7 +210,30 @@
 # the file's own standing warning about margins this small applies. What is robust is that either
 # short line beats either long one by ~13s. Re-measure on a single machine before moving it.
 
+# `CityCardContainmentUITests` was added by the PR #120 review round and has never been on CI. Two
+# tests, each one launch and one walk of the You tab's Cities row — the same route
+# `CityDisclaimerUITests` takes, and it costs about the same. Measured alone on the iPhone 16 Pro
+# simulator (EA0AD796-3052-4EE5-A7A8-A1DE807A3653, 402 pt) — a different machine and device from the
+# CI table at the top, exactly as the six entries before it are:
+#
+#   Executed 2 tests, with 0 failures (0 unexpected) in 19.252 (19.256) seconds
+#
+# PLACED ON SHARD 3, and the arithmetic is the one the entry above worked out, with that entry's
+# 17.7s now sitting on Shard 2. Totals as this file's own corrected numbers leave them — Shard 1 at
+# 361.8-363.4s, Shard 2 at 367.8s, Shard 3 at 350.4s, Shard 4 at 362.6s:
+#
+#   this class on Shard 3:  max(367.8, 350.4 + 19.3 = 369.7) = 369.7s   <- placed here
+#   this class on Shard 2:  max(363.4, 367.8 + 19.3 = 387.1) = 387.1s
+#   this class on Shard 1:  max(367.8, 363.4 + 19.3 = 382.7) = 382.7s
+#   this class on Shard 4:  max(367.8, 362.6 + 19.3 = 381.9) = 381.9s
+#
+# Shard 3 is the only line where 19.3s does not clear the current pace-setter by a wide margin, and
+# it wins by ~12s over the next best. That is a larger margin than the coin flips this file warns
+# about, and it survives this class costing half again what it was measured at. **The numbers it is
+# derived from are still one-run snapshots from three different machines**, and the file's standing
+# instruction to re-measure Shards 1 and 4 on one machine is unaffected by this entry.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests
-DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests
+DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests

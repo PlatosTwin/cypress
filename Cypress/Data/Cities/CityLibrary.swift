@@ -1,14 +1,18 @@
 import Foundation
 import SQLite3
 
-/// Downloaded city files on disk: where they live, how one becomes the attached inventory, and
-/// the checks that stand between a byte-verified download and an `ATTACH`.
+/// Downloaded city files on disk: where they live, which of them the union attaches, and the
+/// checks that stand between a byte-verified download and an `ATTACH`.
 ///
-/// **Disk is the record.** The layout mirrors the bucket's immutable scheme (R37.2) under
-/// Application Support — `cities/<id>/<version>/<id>.sqlite` — and "what is installed" is answered
-/// by looking, never by a parallel table that could disagree with the files. The one fact the
-/// layout cannot carry is *which* inventory the reader chose to attach, and that is a marker file
-/// (`active-city`) holding a city id; absent means the built-in bundle. No schema, no migration.
+/// **Disk is the record, and now it is the whole record.** The layout mirrors the bucket's
+/// immutable scheme (R37.2) under Application Support — `cities/<id>/<version>/<id>.sqlite` — and
+/// "what is installed" is answered by looking, never by a parallel table that could disagree with
+/// the files.
+///
+/// The one fact the layout could not carry used to be *which* inventory the reader had chosen, and
+/// that was a marker file holding a city id. **The question itself is gone**: every installed city
+/// is attached, so what is on disk is what is drawn and there is nothing left for a marker to say.
+/// No schema, no migration, and now no marker either.
 ///
 /// A value type over a root URL rather than a service: every method is straight `FileManager`
 /// work, and handing tests their own root in a temp directory is the whole test story.
@@ -55,8 +59,21 @@ public struct CityLibrary: Sendable {
         rootURL.appendingPathComponent(".staging", isDirectory: true)
     }
 
-    private var activeMarkerURL: URL {
+    /// The retired `active-city` marker.
+    ///
+    /// **What went is the choice this file recorded, not merely the file**: a downloaded city is in
+    /// the union the moment it lands, `Remove` is what takes it out, and there is no third
+    /// state for a marker to name. It is still deleted on sight, because a device upgrading from a
+    /// build that wrote one would otherwise carry a stray file at the library root forever —
+    /// `installedCities()` already steps over it, but a leftover nothing reads is a thing the next
+    /// reader has to work out the meaning of.
+    private var retiredActiveMarkerURL: URL {
         rootURL.appendingPathComponent("active-city", isDirectory: false)
+    }
+
+    /// Deletes the retired marker if this device has one. Idempotent, and never fatal.
+    public func discardRetiredActiveMarker() {
+        try? FileManager.default.removeItem(at: retiredActiveMarkerURL)
     }
 
     // MARK: - What is installed
@@ -236,58 +253,39 @@ public struct CityLibrary: Sendable {
         return destination
     }
 
-    /// Deletes a city entirely. Deactivates it first, so a reader of the marker can never resolve
-    /// to a path being deleted out from under it.
+    /// Deletes a city entirely.
+    ///
+    /// The caller re-boots the data layer afterwards, which is what detaches the file
+    /// before it stops existing — `CityDownloadsModel.remove` calls `onInventoryChange()`
+    /// unconditionally for exactly that reason.
     public func remove(id: String) throws {
-        if activeCityID() == id {
-            try deactivate()
-        }
         let cityDir = rootURL.appendingPathComponent(id, isDirectory: true)
         if FileManager.default.fileExists(atPath: cityDir.path) {
             try FileManager.default.removeItem(at: cityDir)
         }
     }
 
-    // MARK: - The active choice
-
-    /// The city the reader chose to attach, or nil for the built-in bundle.
-    public func activeCityID() -> String? {
-        guard let raw = try? String(contentsOf: activeMarkerURL, encoding: .utf8) else { return nil }
-        let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return id.isEmpty ? nil : id
-    }
-
-    public func activate(id: String) throws {
-        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
-        try id.write(to: activeMarkerURL, atomically: true, encoding: .utf8)
-    }
-
-    public func deactivate() throws {
-        if FileManager.default.fileExists(atPath: activeMarkerURL.path) {
-            try FileManager.default.removeItem(at: activeMarkerURL)
-        }
-    }
-
     // MARK: - Boot resolution
 
-    /// Resolves the marker to a seed URL this build may attach, validating the file first. A
-    /// dangling marker (removed city), an unreadable file, or a generation from the future all
-    /// clear the marker and return nil — the caller attaches the bundle and the app launches;
-    /// the Cities screen then shows the city as installed-but-not-in-use, which is the truth.
-    public func validatedActiveSeedURL() -> URL? {
-        guard let id = activeCityID() else { return nil }
-        guard let version = installedVersion(of: id) else {
-            try? deactivate()
-            return nil
-        }
-        let url = fileURL(id: id, version: version)
-        do {
-            try Self.validateCityFile(at: url)
-            return url
-        } catch {
-            try? deactivate()
-            return nil
-        }
+    /// **Every installed city this build can actually read**, as inventory files for the union.
+    ///
+    /// **Downloaded means in the union.** There is no active choice to resolve any more — what
+    /// is on disk is what is attached, and this is the whole of that rule.
+    ///
+    /// A file that does not validate is **left out and left alone**. It is not deleted: the reader
+    /// paid for those bytes, the reason may be that this build is older than the file (a downgrade,
+    /// or a pack published for a newer generation), and a later build may read it perfectly well.
+    /// The Cities screen still lists it from `installedCities()`, so it can be removed deliberately.
+    ///
+    /// Ordered by id, so two launches over the same disk build the same union with the same arm
+    /// ordinals — which is what makes a tree's union-wide id stable across a relaunch.
+    public func installedInventoryFiles() -> [InventoryFile] {
+        installedCities()
+            .sorted { $0.id < $1.id }
+            .compactMap { city in
+                guard (try? Self.validateCityFile(at: city.fileURL)) != nil else { return nil }
+                return InventoryFile(id: city.id, url: city.fileURL, isBundled: false)
+            }
     }
 
     public enum ValidationError: Error, CustomStringConvertible {

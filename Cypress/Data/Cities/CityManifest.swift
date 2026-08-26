@@ -40,9 +40,9 @@ public struct CityManifest: Equatable, Sendable {
     /// it. **Note that R37.4 does not license this**: R37.4 reserves the right to add *keys*
     /// without bumping the format, which is why `region` needed no bump on top of the one the
     /// unit's changed meaning already required. Reading two formats is a separate decision, taken
-    /// for the dual-publish window RULING D8 set. The rule that matters — *never guess at a format
-    /// you do not know* — is unchanged: an unknown format is still refused outright, before
-    /// anything else is read. What changed is that 1 is no longer unknown.
+    /// for the dual-publish window the s17 round opened. The rule that matters — *never guess at
+    /// a format you do not know* — is unchanged: an unknown format is still refused outright,
+    /// before anything else is read. What changed is that 1 is no longer unknown.
     ///
     /// What a format-1 manifest costs a format-2 reader is exactly one thing: `region` is absent,
     /// so `City.region` is nil and every entry is a whole city. That is the truth about a

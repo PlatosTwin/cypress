@@ -141,7 +141,14 @@ struct SQLiteStoreTests {
         let store = try await CypressStore.inMemory()
         let schemas = try await store.queue.read { try $0.attachedSchemas() }
         #expect(schemas.contains("main"))
-        // No seed in this fixture, so nothing is attached under that name.
-        #expect(!schemas.contains(SeedDatabase.schemaName))
+        // **`SeedDatabase.schemaName` is `temp` now**, which every connection has whether or not an
+        // inventory was opened, so its presence proves nothing either way. What proves the two are
+        // separate files is that each inventory is `ATTACH`ed under its own schema — `inv0`,
+        // `inv1`, … — and this fixture opened none, so there are none.
+        #expect(
+            !schemas.contains { $0.hasPrefix("inv") },
+            "no inventory was opened, yet \(schemas) holds one"
+        )
+        #expect(store.inventory == nil)
     }
 }
