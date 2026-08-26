@@ -282,7 +282,7 @@ struct CumulativeInventoryTests {
         #expect(n2 == 7)
     }
 
-    // MARK: - Shadowing (RULING D1)
+    // MARK: - Shadowing
 
     /// **The bundled arm's rows for a downloaded city are excluded by a rowid range** when that
     /// space's ids are contiguous, which is what keeps `idx_trees_lat_lon` covering.
@@ -464,7 +464,7 @@ struct CumulativeInventoryTests {
         #expect(n5 == 6)
     }
 
-    // MARK: - Species (RULING D6)
+    // MARK: - Species
 
     /// **`species.id` is local to its file, and the union has to reconcile it.**
     ///
@@ -671,7 +671,7 @@ struct CumulativeInventoryTests {
         #expect(whole.items.count == 4, "the union drew \(whole.items.count) pins for four trees")
     }
 
-    // MARK: - The attach cap (RULING D5)
+    // MARK: - The attach cap
 
     /// The limit is **asked of SQLite**, never written down. This asserts it is a real, usable
     /// answer rather than a plausible constant — the number reaches a reader as a sentence.
@@ -732,7 +732,7 @@ struct CumulativeInventoryTests {
         #expect(updatable.detailLine == nil)
     }
 
-    // MARK: - Rendering a content_rev (RULING D10)
+    // MARK: - Rendering a content_rev
 
     /// **The counter suffix comes off in copy, and nothing else does.**
     ///
@@ -796,7 +796,7 @@ struct CumulativeInventoryTests {
         #expect(!level.allowsDownload)
     }
 
-    // MARK: - Where the map opens (RULING D3)
+    // MARK: - Where the map opens
 
     /// With only the bundle attached there is no third clause to apply, and the map opens exactly
     /// where it always did.
@@ -858,7 +858,7 @@ struct CumulativeInventoryTests {
         #expect(abs(kept.center.latitude - 1) < 0.000_1, "the remembered camera lost to a fallback")
     }
 
-    // MARK: - The screen's shape (RULING D2)
+    // MARK: - The screen's shape
 
     /// **The built-in card opens `On this phone`, its own cities are drawn INSIDE it, and the
     /// downloaded packs follow as their own cards.**
@@ -930,9 +930,9 @@ struct CumulativeInventoryTests {
         )
         #expect(sections.first?.title == "On this phone")
 
-        // **A bundled city is not a card**, which is the arrangement decision 3 forbids stated as
-        // the thing it forbids. Asserted over the cards rather than over a flag, because a card is
-        // what a peer *is*.
+        // **A bundled city is not a card** — the forbidden arrangement is a bundled city drawn as
+        // a second, parallel entry beside the built-in card, and this is that, stated directly.
+        // Asserted over the cards rather than over a flag, because a card is what a peer *is*.
         #expect(
             !cards.contains { $0.row.id == "sf" },
             "San Francisco is drawn as a card of its own beside the built-in inventory"
@@ -947,7 +947,7 @@ struct CumulativeInventoryTests {
         #expect(builtIn?.affordances.isEmpty == true)
     }
 
-    // MARK: - Lifecycle (RULING D8)
+    // MARK: - Lifecycle
 
     /// **Removing an inventory tears the union down and rebuilds it**, and the rebuilt union
     /// answers for the file set it was given rather than for the one before it.

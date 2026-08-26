@@ -86,10 +86,10 @@ public enum SeedDatabase {
     /// independently rather than assume 16 implies 15's shape — see `SeedSchema.hasDimCity` and
     /// `TreeQueries.treeSQL()`.
     /// **17** (the s17 round) adds `dim_region` — the unit a pack is *published* in — and
-    /// `trees.region_id`, a NOT NULL foreign key into it. RULING D1 makes New York's published
-    /// unit the borough, and `id_space` cannot express a unit smaller than a city, so
+    /// `trees.region_id`, a NOT NULL foreign key into it. New York's published unit is the
+    /// borough, and `id_space` cannot express a unit smaller than a city, so
     /// `Tools/publish_cities.py` narrows on the new column instead. San Francisco and San Jose
-    /// are one `city`-level region each and publish unchanged in meaning (RULING D2).
+    /// are one `city`-level region each and publish unchanged in meaning.
     ///
     /// **A pure addition, the way 15 was and 16 was not.** Nothing is dropped and no existing
     /// column moves, so an s16 file still opens, still attaches, still searches and still names
@@ -105,7 +105,7 @@ public enum SeedDatabase {
     /// to stay checkable. The day a query does read a region, this is the paragraph where the
     /// fallback gets designed, and this sentence is what has to change before it ships.
     ///
-    /// The standing-dead change that rides this generation (RULING D17) needed no schema change at
+    /// The standing-dead change that rides this generation needed no schema change at
     /// all: `trees.status` has permitted `dead_reported` since long before it, and what was
     /// missing was a Python contract field, not a column.
     public static let newestKnownSchemaVersion = 17
@@ -263,7 +263,7 @@ public struct SeedSchema: Equatable, Sendable {
     /// and to nil for anything older — see `TreeQueries.treeSQL()`.
     public let hasDimCity: Bool
     /// Whether `dim_region` and `trees.region_id` are present — the s17 seed pass, the unit a
-    /// pack is *published* in (RULING D1's borough, RULING D2's one-region city).
+    /// pack is *published* in — a New York borough, or a whole city that is one region on its own.
     ///
     /// **Both together or neither**, the same shape `hasIdSpace` uses and for the same reason:
     /// the column and the table it points at are one generation and are meaningless apart. A

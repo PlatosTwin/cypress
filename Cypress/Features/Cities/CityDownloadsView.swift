@@ -240,8 +240,7 @@ struct CityDownloadsView: View {
             }
         case .revert:
             // The same operation as `.remove` under the name that is true for a bundled city: what
-            // goes is the downloaded copy, and the city returns to the record inside the app
-            // (RULING D2).
+            // goes is the downloaded copy, and the city returns to the record inside the app.
             SecondaryOutlineButton(CityDownloadsCopy.revert, style: .compact) {
                 model.remove(row.id)
             }

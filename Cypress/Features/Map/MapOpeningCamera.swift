@@ -354,11 +354,11 @@ enum MapOpening {
 
     /// Where the map opens.
     ///
-    /// **RULING D3's order, and the third clause is the new one.** A location fix inside any live
-    /// inventory wins and does not come through here — it recenters the map when it arrives. Then
-    /// the camera this install was last left on. Then, only when there is neither, the middle of
-    /// the largest downloaded inventory. `MapLayout.defaultCenter` is what is left, and with
-    /// nothing downloaded it is reached on exactly the launches it always was.
+    /// **Three things are tried in order, and the third is the new one.** A location fix inside
+    /// any live inventory wins and does not come through here — it recenters the map when it
+    /// arrives. Then the camera this install was last left on. Then, only when there is neither,
+    /// the middle of the largest downloaded inventory. `MapLayout.defaultCenter` is what is left,
+    /// and with nothing downloaded it is reached on exactly the launches it always was.
     ///
     /// - Parameter downloadedCityCenter: `InventoryUnion.openingCenter`. Nil when the bundled seed
     ///   is the only inventory, which is what makes this degrade to the previous behavior rather

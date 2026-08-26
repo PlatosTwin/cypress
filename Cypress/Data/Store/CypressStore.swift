@@ -44,8 +44,7 @@ public final class CypressStore: Sendable {
     /// Where `main` lives, for diagnostics and for the "delete my data" path.
     public let databaseURL: URL
 
-    /// **How many inventory files this connection may attach at once**, asked of SQLite at open
-    /// (RULING D5).
+    /// **How many inventory files this connection may attach at once**, asked of SQLite at open.
     ///
     /// `SQLITE_LIMIT_ATTACHED` is a compile-time constant of whichever library the platform ships,
     /// and the app links the system one. Read here rather than written down anywhere, because a

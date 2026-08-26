@@ -201,7 +201,7 @@ public final class SQLiteConnection {
     /// `SQLITE_LIMIT_ATTACHED` is a compile-time constant of whichever SQLite the platform ships,
     /// and the app links the system one. Apple's is **10** on macOS 15 and on iOS 17–18, measured;
     /// hard-coding that would be a number in a comment that nothing rechecks, and the Cities
-    /// screen's headroom rule (RULING D5) turns it into a sentence a reader sees. `main` and `temp`
+    /// screen's headroom rule turns it into a sentence a reader sees. `main` and `temp`
     /// do not count against it — only `ATTACH`ed schemas do.
     ///
     /// Passing `-1` asks for the current value without changing it, which is the documented way to

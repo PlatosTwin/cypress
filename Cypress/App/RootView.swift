@@ -451,9 +451,10 @@ struct RootView: View {
             MapHomeView(
                 api: data.api,
                 location: location,
-                // RULING D3's third clause: with no remembered camera and no fix, open on the
-                // largest downloaded inventory rather than on San Francisco. Nil with nothing
-                // downloaded, which is every launch of the shipping configuration.
+                // The last of the three things the opening camera tries: with no remembered camera
+                // and no location fix, open on the largest downloaded inventory rather than on San
+                // Francisco. Nil with nothing downloaded, which is every launch of the shipping
+                // configuration.
                 downloadedCityCenter: data.store.inventory?.openingCenter
             )
         case .grove:
@@ -968,7 +969,7 @@ struct RootView: View {
                     downloader: data.remoteAccess.allowsNetwork
                         ? CityDownloader()
                         : CityDownloader(session: OfflineSession.make()),
-                    // How many cities may be attached beside the bundle (RULING D5). Read off the
+                    // How many cities may be attached beside the bundle. Read off the
                     // live connection at open — `SQLITE_LIMIT_ATTACHED` belongs to whichever SQLite
                     // the platform ships — and reduced by the one slot the bundle itself holds.
                     installableCityLimit: max(0, data.store.attachedDatabaseLimit - 1),

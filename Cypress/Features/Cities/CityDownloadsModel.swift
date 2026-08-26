@@ -31,11 +31,11 @@ final class CityDownloadsModel {
     /// evaluated more often than that, so the caching lives there rather than being asserted here.
     private let bundledCities: [SeedCities.City]
     /// The composition root's re-boot: tears down `DataLayer` and rebuilds the union over
-    /// whatever is now on disk (RULING D8).
+    /// whatever is now on disk.
     private let onInventoryChange: () -> Void
     /// How many inventory files may be attached beside the bundle at once.
     ///
-    /// **Asked of SQLite at open, never hard-coded** (RULING D5). `SQLITE_LIMIT_ATTACHED` is a
+    /// **Asked of SQLite at open, never hard-coded**. `SQLITE_LIMIT_ATTACHED` is a
     /// compile-time constant of whichever library the platform ships — Apple's is 10 — and a number
     /// written into this file would be a claim nothing rechecks on the day it changes.
     /// `CypressStore.attachedDatabaseLimit` reads it off the live connection and the composition
@@ -78,7 +78,7 @@ final class CityDownloadsModel {
         self.onInventoryChange = onInventoryChange
     }
 
-    /// Whether another city can be attached beside the ones already installed (RULING D5).
+    /// Whether another city can be attached beside the ones already installed.
     ///
     /// The bundle occupies one of SQLite's attachment slots and every downloaded pack occupies
     /// another, so the honest count is what is installed against the limit minus the bundle. An
@@ -190,10 +190,10 @@ final class CityDownloadsModel {
     private func diskRow(for id: String) -> CityDownloadRow? {
         let installedCopy = installed.first { $0.id == id }
         let bundledCopy = bundledCities.first { $0.id == id }
-        // **A city the bundle holds is a bundled city even with a copy downloaded over it**
-        // (RULING D4), and that has to be true offline too — otherwise losing the network moves a
-        // card out from under the built-in inventory and gives it a `Remove` button for a city the
-        // app cannot remove.
+        // **A city the bundle holds is a bundled city even with a copy downloaded over it** — the
+        // downloaded copy is an update to that city, not a peer inventory — and that has to be true
+        // offline too, or losing the network moves a card out from under the built-in inventory and
+        // gives it a `Remove` button for a city the app cannot remove.
         if let installedCopy, let bundledCopy {
             return .bundledUpdatedOffline(installedCopy, bundled: bundledCopy)
         }
@@ -272,10 +272,10 @@ final class CityDownloadsModel {
                 )
                 try library.install(verifiedFileAt: verified, id: city.id, version: city.version)
                 refreshDiskFacts()
-                // **Always, now.** A downloaded city is in the union the moment it lands
-                // (RULING D9), so every completed install changes what the map draws — a first
-                // download adds an arm, and an update to a bundled city replaces the rows it
-                // shadows. There is no longer an install that leaves the read layer alone.
+                // **Always, now.** A downloaded city is in the union the moment it lands, so every
+                // completed install changes what the map draws — a first download adds an arm, and
+                // an update to a bundled city replaces the rows it shadows. There is no longer an
+                // install that leaves the read layer alone.
                 onInventoryChange()
             } catch let error where CityDownloader.isCancellation(error) {
                 // Canceled by the reader: the temp file is already gone, nothing to say.

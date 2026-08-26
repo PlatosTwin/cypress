@@ -38,7 +38,7 @@ final class AppModel {
     }
 
     /// Tears the layer down and boots again — the Cities screen calls this after any install or
-    /// removal (RULING D8).
+    /// removal.
     ///
     /// **A whole-layer reboot, deliberately, and it is the honest one.** Adding or removing an arm
     /// invalidates more than the files: the union's views are rebuilt over a different set of

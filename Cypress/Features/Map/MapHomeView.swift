@@ -115,7 +115,7 @@ struct MapHomeView: View {
     // measurement behind them are gone — an unread property carried "just in case" is the #62/E126
     // shape. See `ERRATA E205`.
     /// - Parameter downloadedCityCenter: where to open when there is no remembered camera and no
-    ///   fix — the middle of the largest downloaded inventory (RULING D3's third clause), or nil
+    ///   fix — the middle of the largest downloaded inventory, the last thing tried, or nil
     ///   when nothing has been downloaded, in which case the map opens exactly where it always did.
     ///   Passed in from the composition root rather than read from a global, because it is a fact
     ///   about the attached inventories and `Features` does not hold those.

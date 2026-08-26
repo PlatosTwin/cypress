@@ -357,7 +357,7 @@ public struct DataLayer: Sendable {
         )
     }
 
-    /// Boots over **the bundled seed and every downloaded city at once** (RULING D9).
+    /// Boots over **the bundled seed and every downloaded city at once**.
     ///
     /// This used to pick one inventory — the reader's marked choice, else the bundle — because
     /// RULINGS R43 §1 permitted exactly one attach. The union reverses that: what is on disk is

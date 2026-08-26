@@ -60,6 +60,17 @@ enum PendingCitationGuard {
     /// path under either is citing a document whose number does not exist yet.
     private static let directories = ["errata", "rulings"].map { $0 + "-" + qualifier }
 
+    /// A ruling cited by a decision **letter** — the word `RULING` followed by a `D` and a number
+    /// — which names no numbered document.
+    ///
+    /// Assembled at runtime for the reason every needle in this file is: so the file carries no
+    /// literal instance of the shape it looks for and is swept on the same terms as every other.
+    ///
+    /// `\s+` rather than a single space, so a double space between the two words is caught too, and
+    /// `\b` after the digits so `RULINGS R43 §D2` — a sub-section of a document that has a number —
+    /// is not.
+    private static let letterCitation = #"\bRUL"# + "ING" + #"S?\s+D\d+\b"#
+
     /// Every hit in one file's text.
     ///
     /// The window is two lines wide because the real sites wrap. A match is attributed to the line
@@ -90,6 +101,25 @@ enum PendingCitationGuard {
                         text: line.trimmingCharacters(in: .whitespaces))
                 )
             }
+        }
+        return found
+    }
+
+    /// Every decision-letter citation in one file's text, one hit per line that carries one.
+    ///
+    /// Line-scoped rather than windowed, unlike `hits(in:path:)`: this shape is four tokens wide and
+    /// does not wrap the way `<qualifier> ruling` did.
+    static func letterCitations(in source: String, path: String) -> [Hit] {
+        guard let expression = try? NSRegularExpression(
+            pattern: letterCitation, options: [.caseInsensitive]
+        ) else { return [] }
+        var found: [Hit] = []
+        for (index, line) in source.components(separatedBy: "\n").enumerated() {
+            let range = NSRange(location: 0, length: (line as NSString).length)
+            guard expression.firstMatch(in: line, range: range) != nil else { continue }
+            found.append(
+                Hit(path: path, line: index + 1, text: line.trimmingCharacters(in: .whitespaces))
+            )
         }
         return found
     }
@@ -242,5 +272,92 @@ struct PendingCitationGuardTests {
             in: "/// recorded in RULINGS R42 §1.\n/// and in ERRATA E192.", path: "clean.swift"
         )
         #expect(clean.isEmpty, "the scanner flagged a numbered citation: \(clean)")
+    }
+
+    // MARK: - 4. The other unresolvable citation: a decision LETTER
+
+    /// **A citation can name no document without ever using the word for one.**
+    ///
+    /// Sections 1–3 catch a comment that defers to a document by its unnumbered status, in the
+    /// words that say so. They do not catch the shape this repository actually shipped 76 of: the
+    /// word `RULING` followed by a decision *letter*, taken from a branch entry's own internal
+    /// lettering and written as though it were a number. Nothing about it looks unresolved — it reads exactly like `RULINGS R43` —
+    /// and it resolves to nothing at all: `docs/RULINGS.md` is numbered and has no lettered entry,
+    /// while the merge-time sweep the pending files describe is **filename-based**, rewriting
+    /// comments that cite the pending file by name. Not one of the 76 did.
+    ///
+    /// **And the letters collide, which is why the fix is not a smarter sweep.** Two rounds' entries
+    /// were live in this tree at once, and the first letter meant "shadow the bundle at id-space
+    /// granularity" in `InventoryUnion` and "New York's published unit is the borough" in
+    /// `SeedDatabase`; the eighth meant "removal reboots the whole layer" in one file and "the
+    /// manifest dual-publish window" in another. A mechanical rewrite onto one document's number
+    /// would have silently given half of them the wrong document. Some sites did not even mean a `D`-lettered
+    /// decision — they meant the *numbered* decisions 1–5 in the same entry's prose, which are a
+    /// different list.
+    ///
+    /// So the rule is the one CLAUDE.md already states for a comment: **say the constraint.** A
+    /// sentence that states what is true needs no lookup and cannot go stale when a number is
+    /// assigned. Provenance for the round lives in the pending entry and in the PR, where it can be
+    /// rewritten once.
+    @Test("no comment cites a ruling by a decision letter, which resolves to no document")
+    func noCitationNamesADecisionLetter() throws {
+        let root = AppSourceLiterals.repositoryRoot()
+        var hits: [PendingCitationGuard.Hit] = []
+        for file in PendingCitationGuard.sourceFiles(root: root) {
+            let source = try String(contentsOf: file.url, encoding: .utf8)
+            hits += PendingCitationGuard.letterCitations(in: source, path: file.relative)
+        }
+
+        #expect(
+            hits.isEmpty,
+            """
+            \(hits.count) comment(s) cite a ruling by a decision LETTER. `docs/RULINGS.md` is \
+            numbered, so a decision letter resolves to nothing — and the merge-time sweep rewrites \
+            citations of a pending FILENAME, which these are not. Two rounds' entries have already \
+            used the same letters for different decisions, so there is no safe mechanical rewrite \
+            either. State the constraint instead: a sentence that says what is true resolves \
+            without a lookup (CLAUDE.md, "Numbering and shared files").
+            \(hits.map { "  \($0.path):\($0.line)  \($0.text)" }.joined(separator: "\n"))
+            """
+        )
+    }
+
+    /// The calibration for the sweep above, planted and found.
+    ///
+    /// Section 4 asserts an absence, and a scanner that matches nothing reports the same absence —
+    /// this repository's signature false green. So the same scanner is pointed at source carrying
+    /// citations it must find and at the near-misses it must not, and the needles are assembled from
+    /// fragments so **this file is not exempt from its own rule**: no literal here spells the shape.
+    @Test("the letter scanner finds a planted citation, and leaves a numbered one alone")
+    func theLetterScannerIsCalibrated() {
+        let word = "RUL" + "ING"
+        let plural = word + "S"
+        let found = """
+        /// nested under its card rather than beside it (\(word) D2, decision 3).
+        // MARK: - Shadowing (\(word) D1)
+        /// **Where the map should open** (\(plural) D3), or nil when
+        /// lower case, because a scan that is case sensitive is a scan with a hole: \
+        \(word.lowercased()) d10.
+        """
+        #expect(
+            PendingCitationGuard.letterCitations(in: found, path: "planted.swift").map(\.line)
+                == [1, 2, 3, 4],
+            """
+            the planted citations were not all found: \
+            \(PendingCitationGuard.letterCitations(in: found, path: "planted.swift"))
+            """
+        )
+
+        // The near-misses. A numbered citation, a section reference that happens to carry a `D`,
+        // and the word `decision` — which is a different list in the same documents and is not what
+        // this rule is about.
+        let clean = """
+        /// drawn exactly as \(plural) R43 specifies (§§2-3).
+        /// the sub-section \(plural) R43 §D2 would be fine, if it existed.
+        /// (`docs/design-proposals/2026-08-14-city-data-distribution.md`, decision D5).
+        /// \(word) R82's hero.
+        """
+        let missed = PendingCitationGuard.letterCitations(in: clean, path: "clean.swift")
+        #expect(missed.isEmpty, "the letter scanner flagged a resolvable citation: \(missed)")
     }
 }

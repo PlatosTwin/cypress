@@ -297,7 +297,7 @@ struct BundledCityTests {
             bundledCities: [dateless], installableCityLimit: 9, onInventoryChange: {}
         )
 
-        // The built-in card draws nothing at all now (RULING D2), and so does the bundled city.
+        // The built-in card draws nothing at all now, and so does the bundled city.
         #expect(model.rows.map(\.affordances) == [[], []], "offline: \(model.rows)")
         await model.load()
         #expect(model.rows.map(\.affordances) == [[], []], "loaded: \(model.rows)")
@@ -328,8 +328,8 @@ struct BundledCityTests {
             city: sf, state: state,
             downloadingFraction: nil, lastAttemptFailed: false
         )
-        // **`Update`, not `Download`** (RULING D2): RULING D4 makes the newer copy an update to
-        // this city's data rather than a second inventory to acquire.
+        // **`Update`, not `Download`**: a newer copy of a bundled city is an update to that
+        // city's data rather than a second inventory to acquire.
         #expect(row.affordances == [.update])
         // Both facts, possession first. The offer used to be this row's only line, which read as
         // the screen offering to sell a reader a city already inside the app they were holding —
@@ -372,7 +372,7 @@ struct BundledCityTests {
         #expect(!dateless.allowsDownload)
     }
 
-    /// **The ordering defect, pinned from both sides** (RULING D7).
+    /// **The ordering defect, pinned from both sides**.
     ///
     /// `CityInstallState.init` used to test `installedVersion` before `bundled`, so the moment a
     /// downloaded copy of San Francisco existed the `bundled` argument was never consulted: this
@@ -380,7 +380,7 @@ struct BundledCityTests {
     /// `Remove`, and it sat beside a built-in card simultaneously saying `Includes San Francisco`.
     /// The old test asserted exactly that and called it correct.
     ///
-    /// A downloaded copy of a bundled city is now an **update to that city** (RULING D4): it
+    /// A downloaded copy of a bundled city is now an **update to that city**: it
     /// shadows the bundled rows of its id space inside the union and the card stays nested under
     /// the built-in inventory, offering to undo itself rather than to remove a city the app cannot
     /// remove.
@@ -508,7 +508,7 @@ struct BundledCityTests {
         }
 
         // **`Use` and `In use` cannot be drawn by any state**, because the enum no longer has them
-        // (RULING D9). Asserted as a property of the vocabulary rather than of one row: a future
+        //. Asserted as a property of the vocabulary rather than of one row: a future
         // affordance meaning "make this the one the map draws" would be a return of the exclusive
         // switch the owner ruled out, and it would have to pass here first.
         #expect(
@@ -579,7 +579,7 @@ struct BundledCityTests {
         let offlineSF = try #require(offlineModel.rows.first { $0.id == "sf" })
         let offlineSJ = try #require(offlineModel.rows.first { $0.id == "us-ca-sj" })
         // `sf` is in the bundle **and** on disk, so it is a bundled city carrying a newer record
-        // (RULING D4) — offline as well as online, which is what keeps it nested under the
+        // — offline as well as online, which is what keeps it nested under the
         // built-in card when the network goes away.
         #expect(offlineSF.stateLine == "Updated · record as of 2026-07-31")
         #expect(offlineSF.affordances == [.revert])
@@ -607,7 +607,7 @@ struct BundledCityTests {
     /// The two paths must agree here, which is the whole reason they share `diskRow(for:)`.
     ///
     /// The city used here is one the **bundle also holds**, so what it keeps is `Revert to the
-    /// included copy` — RULING D4's verb — rather than `Remove`.
+    /// included copy` — the verb for undoing an update to a bundled city — rather than `Remove`.
     @MainActor
     @Test("a delisted but installed city keeps its affordances, on both paths")
     func aDelistedInstalledCityKeepsItsAffordances() async throws {
@@ -650,7 +650,7 @@ struct BundledCityTests {
         #expect(row.stateLine == "Updated · record as of 2026-07-31")
         #expect(row.isInsideBuiltIn)
 
-        // **And no card anywhere claims to be in use or offers to be used** (RULING D9). The
+        // **And no card anywhere claims to be in use or offers to be used**. The
         // contradiction the owner ruled out was an `In use` label above a sibling `Use`; the
         // vocabulary that could express it is gone, and the built-in card draws nothing at all.
         let builtIn = try #require(model.rows.first { $0.id == CityDownloadRow.builtInID })

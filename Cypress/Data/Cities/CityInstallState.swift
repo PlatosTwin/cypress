@@ -38,15 +38,17 @@ public enum CityInstallState: Equatable, Sendable {
     /// Inside the app bundle, and the published file carries a strictly later record date. The
     /// `Update` button is honest here because it now buys something.
     ///
-    /// **What the downloaded copy then does is shadowing, not switching** (RULING D1): it replaces
+    /// **What the downloaded copy then does is shadowing, not switching**: it replaces
     /// the bundled rows of that city's whole id space inside the union, and every *other* bundled
     /// city stays on the map. The `active-city` marker this comment used to name is gone, with the
-    /// exclusive switch it belonged to (RULING D9).
+    /// exclusive switch it belonged to.
     case bundledOutdated(bundledContentRev: String)
 
     /// **Inside the app bundle, and a downloaded copy has replaced the bundled rows for it.**
     ///
-    /// The state RULING D4 is about and this enum had no case for — which is exactly why
+    /// **A downloaded newer copy of a bundled city is an update to that city's data, not a second
+    /// inventory beside it.** That is the state this case exists for, and the one the enum had no
+    /// case for at all — which is exactly why
     /// `CityInstallState.init` could never reach `.bundled` again for a city that had been
     /// downloaded once, and why San Francisco drew `Installed · <version>` with `Use` and `Remove`
     /// beside a built-in card simultaneously claiming to include it.
@@ -104,7 +106,7 @@ public enum CityInstallState: Equatable, Sendable {
     /// Whether the **app's own bundle** holds this city, in any of the three states it can be in.
     ///
     /// Decides where the Cities screen files the card: a bundled city is nested under the built-in
-    /// inventory rather than drawn beside it (RULING D2, decision 3), because it is not something
+    /// inventory rather than drawn beside it, because it is not something
     /// the reader can add or remove. Stated here beside `isOnDevice` and `allowsDownload` for the
     /// same reason those two are — one type knows what the device holds, and the screen's
     /// sectioning, its buttons and its copy must not reach different conclusions about it.
@@ -169,8 +171,9 @@ public enum CityInstallState: Equatable, Sendable {
         // as a download, were unreachable for any city that had ever been downloaded once.
         //
         // Reordering alone would have been the wrong fix and would have hidden the downloaded copy
-        // instead: a bundled city *with* a downloaded copy is a real state, it is the one RULING D4
-        // is about, and it needed a case of its own (`.bundledUpdated`). Both halves are here, and
+        // instead: a bundled city *with* a downloaded copy is a real state — the one where the
+        // downloaded copy is an update to that city's data rather than a peer inventory — and it
+        // needed a case of its own (`.bundledUpdated`). Both halves are here, and
         // `BundledCityTests` pins the pair.
         if published.schemaVersion > newestKnownSchemaVersion {
             // The schema gate still refuses the download. What changes is what the row *says* when
@@ -208,7 +211,7 @@ public enum CityInstallState: Equatable, Sendable {
             // offering one is 81 MB of bytes the reader already has.
             if let installedVersion {
                 // **A downloaded copy of a bundled city is an update to that city, not a peer
-                // inventory** (RULING D4). It shadows the bundled rows of that id space inside the
+                // inventory**. It shadows the bundled rows of that id space inside the
                 // union and nothing else moves, so the row states the record the reader is actually
                 // looking at and offers to undo it — never `Remove`, which would read as removing a
                 // city the app cannot remove.

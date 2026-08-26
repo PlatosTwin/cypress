@@ -90,7 +90,7 @@ public struct InventoryUnion: Sendable, Equatable {
     /// have them, so the map queries no longer carry the predicate; `trees` still exposes the
     /// column, and `pins(rowIDs:)` still applies it.
     public let hasSoftDeletedTrees: Bool
-    /// **Where the map should open when it has nothing better to go on** (RULING D3), or nil when
+    /// **Where the map should open when it has nothing better to go on**, or nil when
     /// the only inventory is the bundled one.
     ///
     /// D3's order is: a location fix inside any live inventory wins; failing that, the camera this
@@ -348,7 +348,8 @@ public struct InventoryUnion: Sendable, Equatable {
         }
     }
 
-    /// The mean coordinate of the largest **downloaded** inventory (RULING D3's third clause).
+    /// The mean coordinate of the largest **downloaded** inventory — the last thing the opening
+    /// camera tries, after a location fix and after the camera this install was left on.
     ///
     /// Only downloaded arms are candidates: the bundled one already has an answer, and it is
     /// `MapLayout.defaultCenter`. Ties break on the arm's ordinal, which is its id order, so two
@@ -382,7 +383,7 @@ public struct InventoryUnion: Sendable, Equatable {
         } ?? nil
     }
 
-    // MARK: - Shadowing (RULING D1)
+    // MARK: - Shadowing
 
     /// Marks the bundled arm's rows that a downloaded pack now covers.
     ///
@@ -507,7 +508,7 @@ public struct InventoryArm: Sendable, Equatable {
     public let treeColumns: Set<String>
     public let rtreeColumns: Set<String>
     public let hasSoftDeletedTrees: Bool
-    /// The bundled arm's rows a pack now covers (RULING D1). Always empty on a pack.
+    /// The bundled arm's rows a pack now covers. Always empty on a pack.
     public let shadowed: [ShadowedSpace]
 
     func shadowing(_ spaces: [ShadowedSpace]) -> InventoryArm {

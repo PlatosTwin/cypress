@@ -82,7 +82,7 @@ struct CityDownloadsFeedbackTests {
 
     // MARK: - Report: "I can't seem to use manhattan even though it's on my phone"
 
-    /// **The report is answered by the union rather than by a third button** (RULING D9).
+    /// **The report is answered by the union rather than by a third button**.
     ///
     /// The tester reached a dead end by using Manhattan, switching back to the built-in inventory,
     /// and finding no way back — *"I can't seem to use manhattan even though it's on my phone"*.
@@ -631,9 +631,9 @@ struct CityDownloadsFeedbackTests {
         let row = Self.row(sf, state: .bundledOutdated(bundledContentRev: "2026-07-31"))
 
         #expect(row.stateLine == "Included in the app · record as of 2026-07-31")
-        // **RULING D2 changed both halves of this row.** The sentence no longer names the
-        // transfer, and the verb is `Update` rather than `Download`, because RULING D4 makes a
-        // newer copy of a bundled city an update to that city rather than a second inventory.
+        // **Both halves of this row changed with the screen.** The sentence no longer names the
+        // transfer, and the verb is `Update` rather than `Download`, because a newer copy of a
+        // bundled city is an update to that city rather than a second inventory.
         #expect(row.detailLine == "A newer record is available.")
         #expect(row.affordances == [.update])
         #expect(row.isOnDevice)
@@ -921,7 +921,7 @@ struct CityDownloadsFeedbackTests {
         #expect(flattened.count == rows.count)
         #expect(Set(flattened.map(\.id)) == Set(rows.map(\.id)))
         // The `On this phone` heading now sits over the built-in card alone; the bundled city
-        // nests under it and the downloaded pack follows in the untitled run below (RULING D2).
+        // nests under it and the downloaded pack follows in the untitled run below.
         // What this test is about is that nothing is dropped or duplicated on the way, which the
         // two assertions above check against the flattening.
         #expect(

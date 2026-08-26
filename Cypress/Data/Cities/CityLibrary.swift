@@ -10,9 +10,9 @@ import SQLite3
 /// the files.
 ///
 /// The one fact the layout could not carry used to be *which* inventory the reader had chosen, and
-/// that was a marker file holding a city id. **RULING D9 deleted the question**: every installed
-/// city is attached, so what is on disk is what is drawn and there is nothing left for a marker to
-/// say. No schema, no migration, and now no marker either.
+/// that was a marker file holding a city id. **The question itself is gone**: every installed city
+/// is attached, so what is on disk is what is drawn and there is nothing left for a marker to say.
+/// No schema, no migration, and now no marker either.
 ///
 /// A value type over a root URL rather than a service: every method is straight `FileManager`
 /// work, and handing tests their own root in a temp directory is the whole test story.
@@ -61,8 +61,8 @@ public struct CityLibrary: Sendable {
 
     /// The retired `active-city` marker.
     ///
-    /// **RULING D9 removed the choice this file recorded**, not merely the file: a downloaded city
-    /// is in the union the moment it lands, `Remove` is what takes it out, and there is no third
+    /// **What went is the choice this file recorded, not merely the file**: a downloaded city is in
+    /// the union the moment it lands, `Remove` is what takes it out, and there is no third
     /// state for a marker to name. It is still deleted on sight, because a device upgrading from a
     /// build that wrote one would otherwise carry a stray file at the library root forever —
     /// `installedCities()` already steps over it, but a leftover nothing reads is a thing the next
@@ -255,7 +255,7 @@ public struct CityLibrary: Sendable {
 
     /// Deletes a city entirely.
     ///
-    /// The caller re-boots the data layer afterwards (RULING D8), which is what detaches the file
+    /// The caller re-boots the data layer afterwards, which is what detaches the file
     /// before it stops existing — `CityDownloadsModel.remove` calls `onInventoryChange()`
     /// unconditionally for exactly that reason.
     public func remove(id: String) throws {
@@ -269,8 +269,8 @@ public struct CityLibrary: Sendable {
 
     /// **Every installed city this build can actually read**, as inventory files for the union.
     ///
-    /// RULING D9: downloaded means in the union. There is no active choice to resolve any more —
-    /// what is on disk is what is attached, and this is the whole of that rule.
+    /// **Downloaded means in the union.** There is no active choice to resolve any more — what
+    /// is on disk is what is attached, and this is the whole of that rule.
     ///
     /// A file that does not validate is **left out and left alone**. It is not deleted: the reader
     /// paid for those bytes, the reason may be that this build is older than the file (a downgrade,

@@ -14,7 +14,7 @@ enum CityDownloadsCopy {
     // You tab section (ruling §2).
     static let youSectionLabel = "City data"
     static let youRowTitle = "Cities"
-    /// **"choose the one the map draws" left with the choice** (RULING D9). Every downloaded city
+    /// **"choose the one the map draws" left with the choice**. Every downloaded city
     /// is drawn, so there is nothing to choose between.
     ///
     /// Caught by looking at the running You tab. This door's subtitle is the one string about the
@@ -28,7 +28,7 @@ enum CityDownloadsCopy {
 
     // Affordances.
     //
-    // **`Use` and `In use` are gone from the vocabulary entirely** (RULING D9). Downloading a city
+    // **`Use` and `In use` are gone from the vocabulary entirely**. Downloading a city
     // is what puts it in the union and `Remove` is what takes it out; there is no third state in
     // which a city is on the phone and not being drawn, so there is no verb for entering or leaving
     // one. The four below plus `revert` are the whole of what this screen can say.
@@ -37,12 +37,12 @@ enum CityDownloadsCopy {
     static let remove = "Remove"
     static let cancel = "Cancel"
 
-    /// **`Remove` is not the word for undoing an update to a bundled city** (RULING D2). It reads
+    /// **`Remove` is not the word for undoing an update to a bundled city**. It reads
     /// as removing the city, and the city cannot be removed — what is removed is the newer copy,
     /// and the entry returns to the bundled record.
     static let revert = "Revert to the included copy"
 
-    /// What a city says when SQLite has no attachment slot left for it (RULING D5).
+    /// What a city says when SQLite has no attachment slot left for it.
     ///
     /// **The button is replaced by this sentence rather than disabled beside it**, because a
     /// greyed-out `Download` states a refusal without stating a remedy. The limit is real — it is
@@ -153,8 +153,9 @@ enum CityDownloadsCopy {
     /// D5's line without its record-date clause.
     static let bundled = "Included in the app"
 
-    /// The line for a bundled city whose rows a downloaded copy has replaced (RULING D2's third
-    /// state). `Updated`, not `Installed`: the reader did not install a city, they refreshed one
+    /// The line for a bundled city whose rows a downloaded copy has replaced — the third of the
+    /// three states such a city can be in. `Updated`, not `Installed`: the reader did not install a
+    /// city, they refreshed one
     /// they already had.
     static func bundledUpdatedLine(contentRev: String?) -> String {
         guard let contentRev else { return bundledUpdated }
@@ -163,8 +164,8 @@ enum CityDownloadsCopy {
 
     static let bundledUpdated = "Updated"
 
-    /// **`content_rev` rendered for a reader: the counter suffix comes off, and nothing else does**
-    /// (RULING D10).
+    /// **`content_rev` rendered for a reader: the counter suffix comes off, and nothing else
+    /// does.**
     ///
     /// The publisher's rev is an opaque ordered string and every *comparison* in this app keeps it
     /// whole — `CityInstallState` compares `publishedRev > bundledRev` on the full value and splits
@@ -205,8 +206,8 @@ enum CityDownloadsCopy {
     /// now states it directly above (`Included in the app · record as of 2026-07-31`), and repeating
     /// `included copy is 2026-07-31` under it would print one date twice in two spellings. What is
     /// left is the half the line above cannot say.
-    /// **The verb under this line is `Update`, not `Download`** (RULING D2): decision 4 makes a
-    /// newer copy of a bundled city an update to that city's data rather than a second inventory,
+    /// **The verb under this line is `Update`, not `Download`**: a newer copy of a bundled city
+    /// is an update to that city's data rather than a second inventory,
     /// so the sentence no longer names the transfer. It says what is true and lets the button say
     /// what it does.
     static let bundledOutdated = "A newer record is available."
@@ -337,8 +338,9 @@ struct CityDownloadSection: Equatable, Identifiable {
     /// Jose contained within its boundary. The previous arrangement gave them their own section with
     /// an empty title and a `isCityGroup` flag whose only effect was a top padding the empty title
     /// skipped, so the screen drew three cards of identical width and inset in one undifferentiated
-    /// column — the peer arrangement decision 3 forbids, with a test asserting the pair of facts
-    /// (`isCityGroup && title.isEmpty`) that together guaranteed nothing would render differently.
+    /// column — the peer arrangement the ruling forbids outright — with a test asserting the pair
+    /// of facts (`isCityGroup && title.isEmpty`) that together guaranteed nothing would render
+    /// differently.
     ///
     /// `CityDownloadsView` draws this and has no other source of cards, so a row's containment
     /// cannot be true here and absent on screen. `CypressUITests/CityCardContainmentUITests` checks
@@ -522,18 +524,19 @@ struct CityDownloadRow: Equatable, Identifiable {
     let isOnDevice: Bool
 
     /// Whether this row is one of the cities the **built-in inventory** holds, and so belongs
-    /// nested under its card rather than beside it (RULING D2, decision 3).
+    /// nested under its card rather than beside it.
     ///
     /// A bundled city is not something the reader can add or remove, so it is never a peer card in
     /// `On this phone` — that arrangement is what let the built-in card say `Includes San Francisco`
-    /// while a sibling card offered to `Use` it, which is the contradiction decision 5 forbids.
+    /// while a sibling card offered to `Use` it — the built-in card and a per-city entry may never
+    /// contradict each other, and that pair did.
     ///
     /// Read off the install state rather than set by hand at each call site, for the same reason
     /// `isOnDevice` is: the two facts that decide where a card is filed both come from the one type
     /// that knows what the device holds.
     let isInsideBuiltIn: Bool
 
-    /// **Four verbs and a revert, and no way to say `Use`** (RULING D9). Downloaded means in the
+    /// **Four verbs and a revert, and no way to say `Use`**. Downloaded means in the
     /// union, so there is no active set to join or leave and no label for having joined it.
     enum Affordance: Equatable {
         case download
@@ -577,10 +580,10 @@ struct CityDownloadRow: Equatable, Identifiable {
 
     // MARK: - Deciding a row
 
-    /// The built-in bundle's card. **It draws no affordance at all** (RULING D2).
+    /// The built-in bundle's card. **It draws no affordance at all**.
     ///
     /// Not `Use`, not `In use`, not `Remove`. The bundled inventory cannot be switched off, so a
-    /// control saying otherwise is exactly the contradiction decision 5 forbids — an `In use` label
+    /// control saying otherwise is exactly the contradiction the ruling forbids — an `In use` label
     /// above a sibling `Use` was the screen the owner ruled out. `Ships with the app and cannot be
     /// removed` already states the operative fact and needs no button under it.
     ///
@@ -735,8 +738,9 @@ struct CityDownloadRow: Equatable, Identifiable {
             // **Two buttons again, because the third one left the vocabulary.** This row used to
             // draw `Use`, `Update` and `Remove` — three, against R43 §3's "never more than two
             // visible" — because a downloaded city that was not the active one had to offer a way
-            // to become it. Under RULING D9 there is no such state: the copy on disk is in the union
-            // the moment it lands, so the only questions left are whether to take the newer record
+            // to become it. There is no such state now: downloaded means in the union, so the copy
+            // on disk is drawing the moment it lands and the only questions left are whether to
+            // take the newer record
             // and whether to keep the city at all.
             //
             // The tester report that bought the third button is answered by the union rather than
@@ -768,23 +772,23 @@ struct CityDownloadRow: Equatable, Identifiable {
             // fetch. Same two facts as before, in the order that stops the row reading as an offer
             // to sell the reader a city already on the phone.
             //
-            // **The verb is `Update`, not `Download`** (RULING D2), because RULING D4 makes the
-            // newer copy an update to this city's data rather than a second inventory.
+            // **The verb is `Update`, not `Download`**, because a newer copy of a bundled city is
+            // an update to that city's data rather than a second inventory to acquire.
             row = (
                 CityDownloadsCopy.bundledLine(contentRev: bundledContentRev),
                 CityDownloadsCopy.bundledOutdated,
                 [.update]
             )
         case let .bundledUpdated(installedContentRev, updateAvailable):
-            // RULING D2's third state. `Revert to the included copy` rather than `Remove`: the city
-            // is not going anywhere, only the newer copy is.
+            // The third state a bundled city can be in. `Revert to the included copy` rather than
+            // `Remove`: the city is not going anywhere, only the newer copy is.
             row = (
                 CityDownloadsCopy.bundledUpdatedLine(contentRev: installedContentRev),
                 updateAvailable ? CityDownloadsCopy.bundledOutdated : nil,
                 updateAvailable ? [.update, .revert] : [.revert]
             )
         }
-        // ── The attachment cap (RULING D5) ────────────────────────────────────────────────────
+        // ── The attachment cap ────────────────────────────────────────────────────
         //
         // Applied here, after the state decided what the row would otherwise offer, and applied
         // **only to a fetch that would add an inventory**. A city with no copy on disk needs a slot

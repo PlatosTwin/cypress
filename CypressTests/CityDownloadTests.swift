@@ -347,7 +347,7 @@ struct CityDownloadTests {
     /// **A schema generation from the future is left on disk and left out of the union.**
     ///
     /// The gate is the same one that used to clear the `active-city` marker; what changed is what
-    /// it protects. There is no marker to clear now (RULING D9) — `installedInventoryFiles()` is
+    /// it protects. There is no marker to clear now — `installedInventoryFiles()` is
     /// the whole of the answer, and a file it refuses is simply not among them.
     ///
     /// **Refused, not deleted.** The reader paid for those bytes and the reason may be that this
@@ -452,8 +452,8 @@ struct CityDownloadTests {
         let sf = manifest.cities[0]
         let sj = manifest.cities[1]
 
-        // **The built-in card draws no affordance at all** (RULING D2). It cannot be switched off,
-        // so a control saying otherwise is the contradiction decision 5 forbids — an `In use` label
+        // **The built-in card draws no affordance at all**. It cannot be switched off,
+        // so a control saying otherwise is the forbidden contradiction — an `In use` label
         // above a sibling `Use` was the screen the owner ruled out.
         #expect(CityDownloadRow.builtIn().affordances.isEmpty)
 
@@ -489,7 +489,7 @@ struct CityDownloadTests {
         #expect(failed.isFailure)
         #expect(failed.affordances == [.download])
 
-        // **No `In use` label and no `Use` button anywhere** (RULING D9): a downloaded city is in
+        // **No `In use` label and no `Use` button anywhere**: a downloaded city is in
         // the union, so the only question its row can put is whether to keep it.
         let installed = CityDownloadRow.published(
             city: sf, state: .installedCurrent(installedVersion: sf.version),
@@ -503,9 +503,9 @@ struct CityDownloadTests {
             downloadingFraction: nil, lastAttemptFailed: false
         )
         // Back to R43 §3's ruled pair. `Use` was added to this row when an installed-but-unattached
-        // copy needed a way back on screen; RULING D9 removed the state that made it necessary, so
-        // the third button goes with it — and the row is inside §3's "never more than two visible"
-        // again.
+        // copy needed a way back on screen; downloaded means in the union now, so that state does
+        // not exist and the third button goes with it — and the row is inside §3's "never more
+        // than two visible" again.
         #expect(updatable.affordances == [.update, .remove])
         #expect(updatable.stateLine == "Update available · s14-r2026-06-01 installed")
 
