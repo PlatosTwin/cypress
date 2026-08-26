@@ -355,10 +355,17 @@ struct BackgroundDownloadTests {
             at: packURL,
             trees: (1...3).map {
                 CumulativeInventoryTests.TreeRow(
-                    id: Int64($0), idSpace: "us-ny-nyc", lat: 40.7, lon: -74.0, speciesID: 2
+                    id: Int64($0), idSpace: "us-ny-nyc", lat: 40.7, lon: -74.0, speciesID: nil
                 )
             },
-            species: [CumulativeInventoryTests.plane, CumulativeInventoryTests.ginkgo],
+            // **No species rows, deliberately.** This test attaches its pack beside the *real*
+            // bundled seed rather than beside another fixture, and `InventoryUnion`'s canonical
+            // catalog is keyed by `species.uuid` with a UNIQUE index on `scientific_name` — so a
+            // fixture species carrying a real name under a fixture uuid is refused by that index
+            // and the whole arm drops out. Measured: `UNIQUE constraint failed:
+            // species.scientific_name`, which is a refusal of the fixture and not of the fix.
+            // The union does not need this pack's trees to have species to attach its arm.
+            species: [],
             contentRev: "2026-08-22",
             packID: "us-ny-nyc-manhattan"
         )
@@ -376,11 +383,17 @@ struct BackgroundDownloadTests {
         })
         probe.duringBuild = { [weak model] in
             probe.duringBuild = nil
-            try? library.install(
-                verifiedFileAt: packURL,
-                id: "us-ny-nyc-manhattan",
-                version: "s17-r2026-08-22-ac7b1ccc"
-            )
+            do {
+                _ = try library.install(
+                    verifiedFileAt: packURL,
+                    id: "us-ny-nyc-manhattan",
+                    version: "s17-r2026-08-22-ac7b1ccc"
+                )
+            } catch {
+                // Loud rather than swallowed: a fixture that failed to install would make the
+                // assertions below fail for a reason that is not the one they are about.
+                Issue.record("the fixture pack did not install: \(error)")
+            }
             // Precisely what `CityDownloadProgress.onInstalled` does when a file lands.
             model?.reboot()
         }
