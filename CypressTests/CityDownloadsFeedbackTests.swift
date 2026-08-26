@@ -1021,9 +1021,22 @@ struct CityDownloadsFeedbackTests {
         let control = Date().timeIntervalSince(controlStarted)
         #expect(walked == byteCount, "the control did not read the fixture it was calibrating on")
 
+        // **The session is built before the clock starts, and that is a correction rather than a
+        // convenience.** The transfer moved onto a service that owns its own `URLSession`, and
+        // constructing one is a fixed cost with no bytes in it — measured at roughly a fifth of a
+        // second on this simulator, against a 4 MB transfer that takes a tenth. Leaving it inside
+        // the window made the reading mostly about session setup, which is not the thing this test
+        // is a guard against. What is inside the window is everything that scales with the file:
+        // the transfer, the sha256, and the install.
         let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
+        let progress = await CityDownloadProgress()
+        let service = CityDownloadService(
+            library: library, baseURL: dir, configuration: .ephemeral, progress: progress
+        )
+
         let started = Date()
-        let progress = try await CityDownloadTests.transfer(city, from: dir, into: library)
+        _ = await MainActor.run { service.start(city) }
+        await service.waitUntilIdle()
         let elapsed = Date().timeIntervalSince(started)
 
         #expect(

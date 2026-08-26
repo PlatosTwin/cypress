@@ -319,6 +319,13 @@ final class CityDownloadsModel {
 
     func download(_ city: CityManifest.City) {
         guard downloading == nil else { return }
+        // **The disk is re-read before the decision, not after it.** `installed` is a snapshot taken
+        // by `load()` on appearance, and both guards below are computed from it — so a tap decided
+        // on a snapshot is a tap decided on whatever was true when the screen opened. That was
+        // survivable while every install came from this screen; it is not now, because an install
+        // can land from a background transfer, or from a relaunch this screen never saw. Found by
+        // the cap test, which refused nothing at all until this line existed.
+        refreshDiskFacts()
         // The same property the row draws its button from (`CityInstallState.allowsDownload`).
         // Refusing here as well as declining to draw the button is what makes a second copy of a
         // city the device already holds structurally impossible rather than merely unreachable:
