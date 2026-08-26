@@ -972,6 +972,14 @@ struct RootView: View {
                     // live connection at open — `SQLITE_LIMIT_ATTACHED` belongs to whichever SQLite
                     // the platform ships — and reduced by the one slot the bundle itself holds.
                     installableCityLimit: max(0, data.store.attachedDatabaseLimit - 1),
+                    // **Which downloaded files the read layer actually opened.** A city on disk that
+                    // is not one of these was refused somewhere before the map could read it — a
+                    // shape `CityLibrary.validateCityFile` declined, an attach that threw, or a
+                    // catalog merge that did — and its row says so rather than reporting a version
+                    // nothing is reading. Taken from the live union rather than from a refusal list,
+                    // because only one of the three refusals produces a list and all three produce
+                    // a missing arm.
+                    liveInventoryIDs: Set((data.store.inventory?.arms ?? []).map(\.id)),
                     onInventoryChange: onInventoryChange
                 ),
                 onBack: { router.pop() }

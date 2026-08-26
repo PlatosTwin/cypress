@@ -90,6 +90,29 @@ enum CityDownloadsCopy {
     static let needsNewerApp = "Needs a newer app"
     static let needsNewerAppDetail = "This city's data is a newer format than this app can read."
 
+    /// **What a downloaded file says when the read layer refused it.**
+    ///
+    /// The two sentences below are the only copy this fix-round wrote that no ruling had already
+    /// settled, and they are flagged for ratification in the PR rather than presented as ruled. The
+    /// four existing failure lines were tried first and none of them is true here:
+    /// `Download failed. Nothing was changed.` describes a transfer that never landed — this file
+    /// did land, and verified; `Needs a newer app` and its detail line make a specific claim about
+    /// the file's *generation*, which `CityLibrary.validateCityFile` already checks and which a
+    /// merely malformed file does not fail.
+    ///
+    /// **It states the fact and lets the button state the remedy**, which is the same division
+    /// `bundledOutdated` settled — `Remove` and `Revert to the included copy` are two different
+    /// right answers here depending on whether the app also carries the city, and a sentence naming
+    /// one of them would be wrong on the other row.
+    ///
+    /// `its trees` is the *file's* trees, deliberately. For a bundled city with a bad downloaded
+    /// copy over it the bundled rows are drawing exactly as they always did — nothing is missing
+    /// from the map — and the button underneath says `Revert to the included copy`, which is what
+    /// tells the reader an included copy is what they are looking at.
+    static let unreadableInventory = "Couldn't be read"
+    static let unreadableInventoryDetail =
+        "The downloaded file couldn't be opened, so its trees are not on the map."
+
     static func coverageNote(_ coverage: String) -> String {
         "Covers \(coverage) only"
     }
@@ -273,7 +296,19 @@ struct CityDownloadSection: Equatable, Identifiable {
     /// Whether this is a city grouping nested under a heading **that is present above it**, rather
     /// than one that heads its run. The view draws it one step quieter; nothing else differs. A
     /// group whose umbrella heading was suppressed (see `sections(from:parentCity:)`) is not one.
+    ///
+    /// **This is the `New York City`-over-five-boroughs case and only that case.** It was briefly
+    /// also how the cities inside the built-in inventory were meant to be drawn, and it drew
+    /// nothing: the flag reaches the view through one padding modifier that sits inside
+    /// `if !section.title.isEmpty`, and that group's title is empty by construction — so the one
+    /// section it was added for was the one section it could not affect. Containment is
+    /// `containedRows` now, which the view has no way to ignore.
     let isCityGroup: Bool
+
+    /// Every row in this section, in draw order, **including the ones drawn inside another row's
+    /// card**. The flattening `CityDownloadsFeedbackTests.everyRowSurvivesSectioning` checks is this
+    /// one, and it stays complete: containment is an arrangement of these rows (`cards`), not a
+    /// second place to keep some of them.
     let rows: [CityDownloadRow]
 
     init(id: String? = nil, title: String, isCityGroup: Bool = false, rows: [CityDownloadRow]) {
@@ -281,6 +316,49 @@ struct CityDownloadSection: Equatable, Identifiable {
         self.title = title
         self.isCityGroup = isCityGroup
         self.rows = rows
+    }
+
+    /// One card and the entries drawn **inside its boundary**.
+    ///
+    /// The built-in inventory's card contains the cities the app ships with; every other card
+    /// contains nothing. See `cards`.
+    struct Card: Equatable, Identifiable {
+        let row: CityDownloadRow
+        let contained: [CityDownloadRow]
+        var id: String { row.id }
+    }
+
+    /// `rows`, arranged into the cards the screen draws.
+    ///
+    /// **This is the ratified nesting, and it is a value rather than a view flag because the last
+    /// attempt was a view flag and drew nothing.** The owner ruled on 2026-08-25 that the bundled
+    /// cities go *inside* the built-in card — one card, its `Built-in inventory` /
+    /// `Ships with the app and cannot be removed` / `Includes …` header, and San Francisco and San
+    /// Jose contained within its boundary. The previous arrangement gave them their own section with
+    /// an empty title and a `isCityGroup` flag whose only effect was a top padding the empty title
+    /// skipped, so the screen drew three cards of identical width and inset in one undifferentiated
+    /// column — the peer arrangement decision 3 forbids, with a test asserting the pair of facts
+    /// (`isCityGroup && title.isEmpty`) that together guaranteed nothing would render differently.
+    ///
+    /// `CityDownloadsView` draws this and has no other source of cards, so a row's containment
+    /// cannot be true here and absent on screen. `CypressUITests/CityCardContainmentUITests` checks
+    /// the frames on the device, which is the half no value can prove.
+    ///
+    /// **A contained row attaches only to the built-in card, by name.** Not "to the previous card":
+    /// `isInsideBuiltIn` says which card it belongs to, so the arrangement asks for that card rather
+    /// than assuming order put it there. A contained row with no built-in card above it — which
+    /// `sections(from:parentCity:)` cannot produce, since the built-in row always opens that run —
+    /// falls back to being its own card rather than disappearing.
+    var cards: [Card] {
+        var containers: [(row: CityDownloadRow, contained: [CityDownloadRow])] = []
+        for row in rows {
+            if row.isInsideBuiltIn, containers.last?.row.id == CityDownloadRow.builtInID {
+                containers[containers.count - 1].contained.append(row)
+            } else {
+                containers.append((row, []))
+            }
+        }
+        return containers.map { Card(row: $0.row, contained: $0.contained) }
     }
 
     /// Splits decided rows into `On this phone`, then everything else — with the packs of any city
@@ -310,17 +388,19 @@ struct CityDownloadSection: Equatable, Identifiable {
     ///
     /// **A run's own heading is drawn even when every one of its rows grouped**, which is not
     /// obviously right and was decided by looking at the screen — see the comment on `run` below.
-    /// **The `On this phone` run is opened by the built-in card with the cities it holds nested
-    /// underneath it** (RULING D2, decision 3), and only then by anything downloaded.
+    /// **The `On this phone` run is opened by the built-in card, with the cities it holds drawn
+    /// inside that card**, and only then by anything downloaded. A bundled city is never a peer card
+    /// beside the built-in inventory, which is what the owner ruled and what `cards` draws.
     ///
     /// The three groups partition the on-device rows — the built-in card, the cities inside it, and
     /// everything else — so no row is dropped and none is drawn twice.
     /// `CityDownloadsFeedbackTests.everyRowSurvivesSectioning` asserts that against the flattening
     /// rather than trusting this sentence.
     ///
-    /// The nested run carries **no heading of its own**. `New York City` over five boroughs earns
-    /// its line because it says which city they are; a heading over the built-in card's own cities
-    /// would only repeat the card immediately above them. The view skips an empty title.
+    /// The cities inside the built-in card carry **no heading of their own**, and now cannot: they
+    /// are inside a card, not under a label. `New York City` over five boroughs earns its line
+    /// because it says which city they are; a line over the built-in card's own cities would repeat
+    /// the `Includes …` sentence already in the card's header.
     static func sections(
         from rows: [CityDownloadRow],
         parentCity: (CityDownloadRow) -> (id: String, displayName: String)?
@@ -334,18 +414,17 @@ struct CityDownloadSection: Equatable, Identifiable {
 
         var sections: [CityDownloadSection] = []
         if !onDevice.isEmpty {
+            // **The built-in card and the cities it holds are one section, in that order**, because
+            // they are one card: `cards` folds the trailing `isInsideBuiltIn` rows into the card the
+            // built-in row opens. They were two sections, the second titleless and flagged
+            // `isCityGroup`, and the flag drew nothing — see `cards`.
             sections.append(
                 CityDownloadSection(
-                    id: "on-device", title: CityDownloadsCopy.onDeviceSection, rows: builtIn
+                    id: "on-device",
+                    title: CityDownloadsCopy.onDeviceSection,
+                    rows: builtIn + insideBuiltIn
                 )
             )
-            if !insideBuiltIn.isEmpty {
-                sections.append(
-                    CityDownloadSection(
-                        id: "on-device/included", title: "", isCityGroup: true, rows: insideBuiltIn
-                    )
-                )
-            }
             sections += run(
                 downloaded, heading: "", key: "on-device-downloaded", parentCity: parentCity
             )
@@ -734,6 +813,40 @@ struct CityDownloadRow: Equatable, Identifiable {
             isFailure: false, progress: nil,
             isOnDevice: state.isOnDevice, isInsideBuiltIn: state.isBundledCity,
             affordances: row.affordances
+        )
+    }
+
+    /// The same row, restated for a downloaded file the read layer could not open.
+    ///
+    /// **A post-pass over a decided row rather than an eighth `CityInstallState` case**, and the
+    /// reason is where the fact comes from. Every other line on this screen is decided from the
+    /// catalog, the library and the bundle — three things this feature can ask. Whether a file
+    /// *opened* is a fact only the boot knows, it is discovered after all three have spoken, and it
+    /// does not change what the reader may do about the city. So it changes the two lines that state
+    /// what is true and leaves the rest of the row where it was.
+    ///
+    /// **The affordances are kept exactly as decided, not replaced**, which is the point of
+    /// surfacing this at all: for a downloaded pack they are `Remove`, for a bundled city with a bad
+    /// copy over it `Revert to the included copy`, and where the catalog has a newer record,
+    /// `Update` beside either — which replaces the unreadable file and is the other real remedy.
+    /// Every one of those is still the right action on a file that did not open, and a row that said
+    /// only that something was wrong would leave the reader where the failed boot left them.
+    /// `Download` cannot appear here, because this only reaches a row already on the device.
+    ///
+    /// `isInsideBuiltIn` and `isOnDevice` are kept too: the file is on the phone whether or not it
+    /// opened, and a bundled city does not stop being one because its update is unreadable.
+    func unreadable() -> CityDownloadRow {
+        CityDownloadRow(
+            id: id,
+            title: title,
+            coverageNote: coverageNote,
+            stateLine: CityDownloadsCopy.unreadableInventory,
+            detailLine: CityDownloadsCopy.unreadableInventoryDetail,
+            isFailure: true,
+            progress: nil,
+            isOnDevice: isOnDevice,
+            isInsideBuiltIn: isInsideBuiltIn,
+            affordances: affordances
         )
     }
 

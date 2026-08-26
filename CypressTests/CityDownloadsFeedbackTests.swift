@@ -649,18 +649,36 @@ struct CityDownloadsFeedbackTests {
         #expect(
             sections.map { ($0.title, $0.isCityGroup, $0.rows.map(\.id)) }.map(String.init(describing:))
                 == [
-                    // **The built-in card opens the run alone** (RULING D2, decision 3), and San
-                    // Francisco — which the bundle holds — is nested under it in an untitled group
-                    // rather than sitting beside it as a peer card. A heading there would only
-                    // repeat the card immediately above it.
-                    ("On this phone", false, ["built-in"]),
-                    ("", true, ["sf"]),
+                    // **The built-in card opens the run, and San Francisco is in it.** The bundle
+                    // holds that city, so it is not a row beside the built-in card — it is drawn
+                    // inside that card, which is what the pair below asserts.
+                    ("On this phone", false, ["built-in", "sf"]),
                     // Los Angeles has one pack, so it stays under the umbrella rather than earning
                     // a heading of its own — and the umbrella is drawn because it has that row.
                     ("Available to download", false, ["us-ca-la"]),
                     ("New York City", true, [
                         "us-ny-nyc-manhattan", "us-ny-nyc-brooklyn", "us-ny-nyc-queens"
                     ])
+                ].map(String.init(describing:))
+        )
+
+        // **The arrangement, not a flag about it.** `cards` is the only thing `CityDownloadsView`
+        // draws from, so a card list with San Francisco inside the built-in card is a screen with
+        // San Francisco inside the built-in card. The previous version of this assertion read
+        // `isCityGroup == true && title.isEmpty` on a separate section — the exact pair that
+        // guaranteed the flag could not reach the view, since the only modifier it fed sat inside
+        // `if !section.title.isEmpty`.
+        #expect(
+            sections.map { $0.cards.map { ($0.row.id, $0.contained.map(\.id)) } }
+                .map(String.init(describing:))
+                == [
+                    [("built-in", ["sf"])],
+                    [("us-ca-la", [] as [String])],
+                    [
+                        ("us-ny-nyc-manhattan", [] as [String]),
+                        ("us-ny-nyc-brooklyn", [] as [String]),
+                        ("us-ny-nyc-queens", [] as [String])
+                    ]
                 ].map(String.init(describing:))
         )
     }

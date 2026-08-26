@@ -37,10 +37,9 @@ struct CityDownloadsView: View {
                         // heading already use — a heading, not a new component.
                         //
                         // **A section may have no title, and then it draws none** rather than an
-                        // empty line. The cities inside the built-in card are nested under it and a
-                        // heading there would only repeat the card immediately above them
-                        // (`CityDownloadSection.sections`); the downloaded packs below them
-                        // continue the run `On this phone` already opened.
+                        // empty line. The downloaded packs continue the run `On this phone` already
+                        // opened, so their section carries no heading of its own
+                        // (`CityDownloadSection.sections`).
                         if !section.title.isEmpty {
                             Text(section.title)
                                 .cypressMicroLabel()
@@ -50,8 +49,11 @@ struct CityDownloadsView: View {
                                 )
                         }
 
-                        ForEach(section.rows) { row in
-                            card(row)
+                        // **`cards`, not `rows`** — the arrangement is decided in
+                        // `CityDownloadSection` as a value, and this is the only place cards come
+                        // from, so a row that is contained there is contained here.
+                        ForEach(section.cards) { card in
+                            self.card(card)
                         }
                     }
 
@@ -127,7 +129,53 @@ struct CityDownloadsView: View {
 
     // MARK: - One card
 
-    private func card(_ row: CityDownloadRow) -> some View {
+    /// One card, and anything drawn **inside its boundary**.
+    ///
+    /// **The containment is one rounded rectangle around all of it**, which is the owner's ruling of
+    /// 2026-08-25: the cities the app ships with belong inside the built-in inventory's card, under
+    /// its `Includes …` line, not beside it as peer cards. The arrangement arrives already decided
+    /// (`CityDownloadSection.cards`); what this adds is the chrome, and it adds none that is new —
+    /// the entries share the card the header opened, and a hairline in `borderCool`, the same token
+    /// the card's own border draws in, separates each from what is above it.
+    ///
+    /// It replaces a version where containment was a `Bool` on the section and a top padding on a
+    /// heading that was never drawn, so the screen drew three identical peer cards while a green
+    /// test asserted the flag.
+    ///
+    /// The card is one accessibility container so a UI test can ask for its **frame** and check that
+    /// the entries are inside it. That is the only form of this assertion that is about pixels
+    /// rather than about a value — see `CityCardContainmentUITests`.
+    private func card(_ card: CityDownloadSection.Card) -> some View {
+        VStack(alignment: .leading, spacing: CityDownloadsMetrics.rowTextGap) {
+            entry(card.row)
+
+            ForEach(card.contained) { contained in
+                Rectangle()
+                    .fill(CypressColor.borderCool)
+                    .frame(height: CypressSpacing.Component.hairline)
+                    .padding(.vertical, CityDownloadsMetrics.containedRuleGap)
+                entry(contained)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, CityDownloadsMetrics.cardPaddingV)
+        .padding(.horizontal, CityDownloadsMetrics.cardPaddingH)
+        .background {
+            RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
+                .fill(CypressColor.surfaceCard)
+        }
+        .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(CityDownloadsView.cardIdentifier(card.row.id))
+    }
+
+    /// A stable name per card, so a test can read the card's own frame rather than guess at it from
+    /// the text inside it.
+    static func cardIdentifier(_ rowID: String) -> String { "cities.card.\(rowID)" }
+
+    /// One entry's text and controls, with no chrome of its own — a card's header when it is the
+    /// card's own row, and a contained city when it is inside one.
+    private func entry(_ row: CityDownloadRow) -> some View {
         VStack(alignment: .leading, spacing: CityDownloadsMetrics.rowTextGap) {
             Text(row.title)
                 .font(CypressFont.body135Bold)
@@ -173,13 +221,6 @@ struct CityDownloadsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, CityDownloadsMetrics.cardPaddingV)
-        .padding(.horizontal, CityDownloadsMetrics.cardPaddingH)
-        .background {
-            RoundedRectangle(cornerRadius: CypressRadius.cardSm, style: .continuous)
-                .fill(CypressColor.surfaceCard)
-        }
-        .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
     }
 
     @ViewBuilder
@@ -229,4 +270,8 @@ enum CityDownloadsMetrics {
     /// as a caption on the card beneath it. A city group inside that section takes none — it is
     /// already inside a break.
     static let sectionTop: CGFloat = 8
+    /// Air on each side of the hairline that separates a contained city from what is above it
+    /// inside the built-in card. The same 8pt the section heading takes, for the same reason: it is
+    /// the smallest gap that reads as a break rather than as a line through a paragraph.
+    static let containedRuleGap: CGFloat = 8
 }

@@ -41,6 +41,25 @@ final class CityDownloadsModel {
     /// `CypressStore.attachedDatabaseLimit` reads it off the live connection and the composition
     /// root passes it here.
     private let installableCityLimit: Int
+
+    /// **Which inventory files the read layer actually opened**, by pack id — the arms of the live
+    /// union, minus the bundle, which has no pack id.
+    ///
+    /// A city on disk whose id is not in here is a file the app declined to read, and the row says
+    /// so (`CityDownloadRow.unreadable`). **Derived rather than reported**, and that is what makes it
+    /// complete: a file can drop out of the union at two quite separate places — `validateCityFile`
+    /// refuses a shape before the union ever sees it, and `InventoryUnion.build` refuses one whose
+    /// catalog merge throws — and a screen wired to either one alone would draw `Installed · …` over
+    /// a file the map is not reading. What is attached is one fact and it covers both.
+    ///
+    /// **`nil` means there is no read layer to ask, and no row is marked.** That is the state of
+    /// every unit test that builds this model over a temporary library with no `CypressStore` behind
+    /// it, and of a preview. It is deliberately not spelled as the empty set: an empty *set* is a
+    /// live read layer that opened nothing, which would mark every installed city, and defaulting to
+    /// that would turn "this test did not wire a store" into "every one of your cities is broken".
+    /// `RootView` passes a real set, and `CityDownloadsFeedbackTests` covers both a set that names
+    /// the file and one that does not.
+    private let liveInventoryIDs: Set<String>?
     private var downloadTask: Task<Void, Never>?
 
     init(
@@ -48,12 +67,14 @@ final class CityDownloadsModel {
         downloader: CityDownloader = CityDownloader(),
         bundledCities: [SeedCities.City] = SeedCities.inMainBundle,
         installableCityLimit: Int,
+        liveInventoryIDs: Set<String>? = nil,
         onInventoryChange: @escaping () -> Void
     ) {
         self.library = library
         self.downloader = downloader
         self.bundledCities = bundledCities
         self.installableCityLimit = installableCityLimit
+        self.liveInventoryIDs = liveInventoryIDs
         self.onInventoryChange = onInventoryChange
     }
 
@@ -134,7 +155,25 @@ final class CityDownloadsModel {
             // bundled city keeps its card here rather than disappearing with the network.
             rows += orderedUniqueIDs(installedIDs + bundledIDs).compactMap(diskRow(for:))
         }
-        return rows
+        // **One post-pass over both branches, and that is what makes it complete.** Whether a file
+        // opened is not a fact either branch above consults — the catalog does not know, the library
+        // knows only that bytes are on disk — so it is applied to the finished rows instead of
+        // threaded through two independent row-deciding paths that have drifted apart before
+        // (`diskRow(for:)`'s own comment records the last time).
+        return rows.map(unreadableIfRefused)
+    }
+
+    /// The read layer's verdict on one row, applied last.
+    ///
+    /// Only an *installed* city can be marked: the built-in card and a bundled city with no
+    /// downloaded copy have no file of their own to fail, and the bundle's own arm is not named in
+    /// `liveInventoryIDs` at all.
+    private func unreadableIfRefused(_ row: CityDownloadRow) -> CityDownloadRow {
+        guard let liveInventoryIDs,
+              installed.contains(where: { $0.id == row.id }),
+              !liveInventoryIDs.contains(row.id)
+        else { return row }
+        return row.unreadable()
     }
 
     /// The names the bundled seed states for the cities inside it, for the built-in card's second

@@ -856,13 +856,27 @@ struct CumulativeInventoryTests {
 
     // MARK: - The screen's shape (RULING D2)
 
-    /// **The built-in card opens `On this phone`, its own cities are nested under it, and the
-    /// downloaded packs follow.**
+    /// **The built-in card opens `On this phone`, its own cities are drawn INSIDE it, and the
+    /// downloaded packs follow as their own cards.**
     ///
-    /// Decision 3: a bundled city is never a peer card beside the built-in inventory. Decision 5:
-    /// the built-in card and a per-city entry may never contradict each other — which the old
-    /// screen did by drawing `In use` above a sibling `Use`.
-    @Test("bundled cities nest under the built-in card, and downloaded packs follow them")
+    /// A bundled city is never a peer card beside the built-in inventory, and the built-in card and
+    /// a per-city entry may never contradict each other — which the old screen did by drawing
+    /// `In use` above a sibling `Use`.
+    ///
+    /// ── What this test asserted before, and why that was worthless ──────────────────────────────
+    /// It asserted that the bundled cities sat in their own section with `isCityGroup == true` and
+    /// an empty title. Both were true, and **together they were exactly what guaranteed the screen
+    /// drew nothing differently**: `isCityGroup` reached `CityDownloadsView` through a single
+    /// `.padding(.top, …)` on the section heading, and that modifier sits inside
+    /// `if !section.title.isEmpty`. An empty title meant the flag was never read. The screen drew
+    /// three cards of identical width, inset and spacing in one column, and this test was green.
+    ///
+    /// It now asserts `cards`, which is the arrangement the view draws from and its only source of
+    /// cards — there is no path by which a row can be contained here and beside the card on screen.
+    /// The remaining half, that a card's boundary really encloses the entry's pixels, is not
+    /// something a value can answer and is checked on the device by
+    /// `CypressUITests/CityCardContainmentUITests`.
+    @Test("bundled cities are drawn inside the built-in card, and downloaded packs are not")
     func bundledCitiesNestUnderTheBuiltInCard() {
         let sanFrancisco = SeedCities.City(
             id: "sf", displayName: "San Francisco", contentRev: "2026-07-31"
@@ -896,21 +910,29 @@ struct CumulativeInventoryTests {
         ]
         let sections = CityDownloadSection.sections(from: rows) { _ in nil }
 
-        #expect(sections.count >= 3, "the run collapsed: \(sections.map(\.title))")
-        #expect(sections[0].title == "On this phone")
+        // Every card the screen draws, with what each one contains — compared as one shape rather
+        // than subscripted, so a break that shortens the list fails rather than crashing the
+        // process and taking the tests scheduled behind it down with it.
+        let cards = sections.flatMap(\.cards)
         #expect(
-            sections[0].rows.map(\.id) == [CityDownloadRow.builtInID],
-            "the first section holds \(sections[0].rows.map(\.id)); only the built-in card belongs there"
+            cards.map { ($0.row.id, $0.contained.map(\.id)) }.map(String.init(describing:))
+                == [
+                    // One card for the built-in inventory, with San Francisco inside it.
+                    (CityDownloadRow.builtInID, ["sf"]),
+                    // The downloaded pack is a card of its own and contains nothing.
+                    ("us-ny-nyc-manhattan", [] as [String])
+                ].map(String.init(describing:)),
+            "the screen draws \(cards.map { ($0.row.id, $0.contained.map(\.id)) })"
         )
-        // The bundled city, nested, with no heading of its own.
-        #expect(sections[1].isCityGroup, "the bundled cities are not drawn as a nested group")
-        #expect(sections[1].title.isEmpty, "the nested run drew a heading: '\(sections[1].title)'")
-        #expect(sections[1].rows.map(\.id) == ["sf"])
-        #expect(sections[1].rows.allSatisfy { $0.isInsideBuiltIn })
-        // The downloaded pack is not nested under the built-in inventory; it is its own card.
-        let downloaded = sections.dropFirst(2).flatMap(\.rows)
-        #expect(downloaded.map(\.id) == ["us-ny-nyc-manhattan"])
-        #expect(downloaded.allSatisfy { !$0.isInsideBuiltIn })
+        #expect(sections.first?.title == "On this phone")
+
+        // **A bundled city is not a card**, which is the arrangement decision 3 forbids stated as
+        // the thing it forbids. Asserted over the cards rather than over a flag, because a card is
+        // what a peer *is*.
+        #expect(
+            !cards.contains { $0.row.id == "sf" },
+            "San Francisco is drawn as a card of its own beside the built-in inventory"
+        )
 
         // **Decision 5, as a property of the whole screen**: no card may claim a state another card
         // contradicts. With `Use`/`In use` gone there is nothing left that could, and the built-in
@@ -1023,8 +1045,10 @@ struct CumulativeInventoryTests {
             ).map(\.name)
             #expect(
                 before.contains("dim_region"),
-                "the fixture never built temp.dim_region, so this test cannot see the leak it is "
-                    + "about; temp holds \(before)"
+                """
+                the fixture never built temp.dim_region, so this test cannot see the leak it is \
+                about; temp holds \(before)
+                """
             )
 
             let union = try #require(store.inventory)
@@ -1033,8 +1057,10 @@ struct CumulativeInventoryTests {
             let after = try InventoryUnion.ownObjects(in: SeedDatabase.schemaName, on: connection)
             #expect(
                 after.isEmpty,
-                "the teardown left \(after.map(\.name)) behind in temp; the next build on this "
-                    + "connection collides with them"
+                """
+                the teardown left \(after.map(\.name)) behind in temp; the next build on this \
+                connection collides with them
+                """
             )
 
             // The failure this actually causes, asserted as itself rather than inferred from the
