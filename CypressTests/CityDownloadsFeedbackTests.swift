@@ -414,6 +414,65 @@ struct CityDownloadsFeedbackTests {
         #expect(manhattan.isOnDevice)
     }
 
+    /// **A downloaded file the read layer refused says so, and keeps the button that fixes it.**
+    ///
+    /// The row used to read `Installed · <version>` for a file the map was not reading, which was
+    /// the quiet half of the boot defect: once a bad pack stopped taking the launch down, it stopped
+    /// being visible at all. `liveInventoryIDs` is what the screen is told — the arms the union
+    /// actually opened — and a city on disk that is not among them is one the app declined.
+    ///
+    /// **Both directions, in one test.** A model told the pack is live draws the ordinary row; the
+    /// same model, same disk, told it is not, draws the failure. Asserting only the second would be
+    /// green over a screen that marked every city unreadable.
+    @MainActor
+    @Test("a downloaded file the read layer refused reads as unreadable, not as installed")
+    func aRefusedInventorySaysSoOnItsRow() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cities-refused-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let library = CityLibrary(rootURL: root.appendingPathComponent("lib", isDirectory: true))
+        try Self.installBoroughPack(in: library, regionName: "Manhattan")
+        let offline = CityDownloader(
+            baseURL: root.appendingPathComponent("no-such-bucket", isDirectory: true)
+        )
+
+        let opened = CityDownloadsModel(
+            library: library, downloader: offline, bundledCities: [],
+            installableCityLimit: 9,
+            liveInventoryIDs: [InventoryFile.bundledID, "us-ny-nyc-manhattan"],
+            onInventoryChange: {}
+        )
+        await opened.load()
+        let healthy = try #require(opened.rows.first { $0.id == "us-ny-nyc-manhattan" })
+        #expect(!healthy.isFailure, "a pack the union opened is drawn as a failure")
+        #expect(healthy.stateLine != "Couldn't be read")
+        #expect(healthy.affordances == [.remove])
+
+        // The same library and the same disk, with the read layer reporting that it did not open
+        // the file — the state a malformed pack leaves behind.
+        let refused = CityDownloadsModel(
+            library: library, downloader: offline, bundledCities: [],
+            installableCityLimit: 9,
+            liveInventoryIDs: [InventoryFile.bundledID],
+            onInventoryChange: {}
+        )
+        await refused.load()
+        let broken = try #require(refused.rows.first { $0.id == "us-ny-nyc-manhattan" })
+        #expect(broken.stateLine == "Couldn't be read", "the row reads \(broken.stateLine)")
+        #expect(
+            broken.detailLine
+                == "The downloaded file couldn't be opened, so its trees are not on the map."
+        )
+        #expect(broken.isFailure, "the line is not drawn in the attention color")
+        // **The remedy survives**, which is the whole reason this is surfaced rather than hidden:
+        // the reader can still delete the file that the boot could not read.
+        #expect(broken.affordances == [.remove], "the failed row offers \(broken.affordances)")
+        #expect(broken.isOnDevice, "the failed row left the On this phone run")
+        #expect(broken.title == "Manhattan", "the failed row lost its name: \(broken.title)")
+    }
+
     /// A whole-city pack reads its name from `dim_region` too, and the fixture's `dim_city` says
     /// something else on purpose — so this pins *which* table answered, not merely that a name
     /// arrived. The pack is its own region (`REGIONS` gives San Francisco one `city`-level row),

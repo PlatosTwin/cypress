@@ -52,7 +52,8 @@ struct CumulativeInventoryTests {
         neighborhoods: [(id: Int64, name: String)] = [],
         publishSchemaVersion: Int = 17,
         contentRev: String? = nil,
-        packID: String? = nil
+        packID: String? = nil,
+        analyze: Bool = true
     ) throws {
         let connection = try SQLiteConnection(path: url.path)
         try connection.execute("""
@@ -192,7 +193,10 @@ struct CumulativeInventoryTests {
                 UPDATE trees SET region_id = 1;
                 """)
         }
-        try connection.execute("ANALYZE")
+        // `analyze: false` builds a file exactly as `Tools/build_seed.py` would if it forgot this
+        // line — the shape `MapQueryPlanTests` exists to refuse, and the only way to prove that gate
+        // can fail on a *pack* rather than on the bundle.
+        if analyze { try connection.execute("ANALYZE") }
     }
 
     /// A stable, distinct uuid per `(id space, row id)`. Deterministic so a rerun compares equal.
@@ -1070,6 +1074,139 @@ struct CumulativeInventoryTests {
 
         let rebuilt = try await Self.count(store, "SELECT COUNT(*) AS n FROM temp.trees")
         #expect(rebuilt == 3, "the rebuilt union does not answer for both files")
+    }
+
+    /// **A pack that is one COLUMN short of the bundle is refused, and the boot survives it.**
+    ///
+    /// This is the failure the attach-level refusal never covered, and it is the one that mattered:
+    /// the file below is a *valid database*, it attaches, and `CityLibrary.validateCityFile` accepts
+    /// it — `SeedSchema.introspect` asks for four tables by name and three `trees` columns and never
+    /// looks at a column of `neighborhoods` at all. It threw from inside `createNeighborhoods`,
+    /// which ran outside the per-file `do/catch`, so the error travelled out through
+    /// `CypressStore.open` and `DataLayer.boot` to `AppModel.phase = .failed`. The app never reached
+    /// a booted state, and the Cities screen — where that pack could have been deleted — lives
+    /// inside the booted layer. The recovery was deleting the app.
+    ///
+    /// The fixture is the reviewer's: `neighborhoods` without `geom_geojson`, which produces
+    /// `no such column: n.geom_geojson`. The assertions below check all three halves — the union is
+    /// built, the pack is named as refused with that reason, and the *other* file's rows are all
+    /// there and correct.
+    @Test("a pack whose catalog build throws is refused, and the rest of the union opens")
+    func aPackThatBreaksTheCatalogIsRefusedNotFatal() async throws {
+        let dir = try Self.tempDir()
+        let bundleURL = dir.appendingPathComponent("bundle.sqlite")
+        let packURL = dir.appendingPathComponent("pack.sqlite")
+        try Self.seed(
+            at: bundleURL,
+            trees: (1...3).map {
+                TreeRow(id: Int64($0), idSpace: "sf", lat: 37.7, lon: -122.4, speciesID: 1)
+            },
+            species: [Self.plane],
+            neighborhoods: [(id: 1, name: "Mission")]
+        )
+        try Self.seed(
+            at: packURL,
+            trees: [TreeRow(id: 1, idSpace: "us-ny-nyc", lat: 40.7, lon: -74.0, speciesID: 1)],
+            species: [Self.plane],
+            neighborhoods: [(id: 1, name: "Harlem")]
+        )
+        // One column narrower than the bundle's, and nothing before the catalog merge can tell.
+        try Self.dropColumn("geom_geojson", fromTable: "neighborhoods", in: packURL)
+
+        // The premise, checked rather than asserted in prose: this file really does get past the
+        // gate that is supposed to stop unreadable packs. If it did not, everything below would be
+        // testing the attach refusal that already worked.
+        #expect(
+            (try? CityLibrary.validateCityFile(at: packURL)) != nil,
+            """
+            validateCityFile refused this fixture, so it never reaches the catalog phase and this \
+            test is examining the attach path instead
+            """
+        )
+
+        let store = try await Self.store([
+            Self.file(bundleURL, bundled: true), Self.file(packURL, id: "harlem")
+        ])
+        let union = try #require(
+            store.inventory, "the boot failed outright — a bad pack took the launch down"
+        )
+        #expect(union.arms.map(\.id) == [InventoryFile.bundledID])
+        #expect(union.refused.map(\.id) == ["harlem"])
+        #expect(
+            union.refused.first?.reason.contains("geom_geojson") == true,
+            "refused for the wrong reason: \(union.refused.first?.reason ?? "none")"
+        )
+
+        // And the surviving file is whole — the retry rebuilt rather than leaving half a catalog.
+        let trees = try await Self.count(store, "SELECT COUNT(*) AS n FROM temp.trees")
+        #expect(trees == 3, "the bundle's rows did not survive the refusal")
+        let hoods = try await Self.count(store, "SELECT COUNT(*) AS n FROM temp.neighborhoods")
+        #expect(hoods == 1, "temp.neighborhoods holds \(hoods) rows; the refused arm left rows behind")
+        let named = try await store.queue.read { connection -> String? in
+            let statement = try connection.prepare("SELECT name AS n FROM temp.neighborhoods")
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.string("n") }
+        }
+        #expect(named == "Mission", "temp.neighborhoods names \(named ?? "nothing")")
+    }
+
+    /// **The bundled arm is NOT covered by that, deliberately.** Same break, applied to the file at
+    /// ordinal 0: it propagates rather than being swallowed.
+    ///
+    /// The bundle is this repository's own build artifact, `SeedContractTests` gates it, and there
+    /// is no reader action that repairs or removes it — so a union that quietly dropped it would
+    /// launch an app with no map and no way to say why. The distinction is stated in
+    /// `InventoryUnion.build` and this is what holds it there.
+    @Test("a bundled seed that breaks the catalog is fatal, not silently dropped")
+    func aBrokenBundleIsStillFatal() async throws {
+        let dir = try Self.tempDir()
+        let bundleURL = dir.appendingPathComponent("bundle.sqlite")
+        let packURL = dir.appendingPathComponent("pack.sqlite")
+        try Self.seed(
+            at: bundleURL,
+            trees: [TreeRow(id: 1, idSpace: "sf", lat: 37.7, lon: -122.4, speciesID: 1)],
+            species: [Self.plane],
+            neighborhoods: [(id: 1, name: "Mission")]
+        )
+        try Self.seed(
+            at: packURL,
+            trees: [TreeRow(id: 1, idSpace: "us-ny-nyc", lat: 40.7, lon: -74.0, speciesID: 1)],
+            species: [Self.plane],
+            neighborhoods: [(id: 1, name: "Harlem")]
+        )
+        // **A different column, and the reason is worth reading.** `neighborhoods` is mirrored FROM
+        // the first arm, so narrowing the bundle would narrow the destination table too and nothing
+        // would throw — the break has to land on a statement whose column names do not come from
+        // the arm supplying the rows. `createSpeciesTrigrams` is one: it names `g.trigram` on every
+        // arm that has the table, and `SeedSchema` decides that arm has it by asking only whether
+        // the table exists. So a bundle whose `species_trigrams` lost `trigram` throws at ordinal 0.
+        try Self.dropColumn("trigram", fromTable: "species_trigrams", in: bundleURL)
+
+        await #expect(throws: (any Error).self, "a broken bundled seed was swallowed") {
+            _ = try await Self.store([
+                Self.file(bundleURL, bundled: true), Self.file(packURL, id: "harlem")
+            ])
+        }
+    }
+
+    /// Rewrites one table without one of its columns, in place.
+    ///
+    /// SQLite's own `ALTER TABLE … DROP COLUMN` refuses a column an index or a view names, and the
+    /// fixture's `neighborhoods` is plain enough that it would work — but doing it by rebuild keeps
+    /// this usable for any column and makes the resulting file a perfectly ordinary database, which
+    /// is the whole point: nothing about it looks damaged until the union reads it.
+    static func dropColumn(_ column: String, fromTable table: String, in url: URL) throws {
+        let connection = try SQLiteConnection(path: url.path)
+        let kept = try connection.columnDefinitions(ofTable: table)
+            .filter { $0.name != column }
+        let body = kept.map { "\($0.name)\($0.type.isEmpty ? "" : " \($0.type)")" }
+        let names = kept.map(\.name).joined(separator: ", ")
+        try connection.execute("""
+            CREATE TABLE \(table)_narrow (\(body.joined(separator: ", ")));
+            INSERT INTO \(table)_narrow (\(names)) SELECT \(names) FROM \(table);
+            DROP TABLE \(table);
+            ALTER TABLE \(table)_narrow RENAME TO \(table);
+            """)
     }
 
     /// A file this build cannot read is **skipped, not fatal**: the rest of the union opens.
