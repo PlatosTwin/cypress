@@ -178,13 +178,25 @@ public struct InventoryUnion: Sendable, Equatable {
     /// `neighborhoods` is missing `geom_geojson` passes every gate and then answers
     /// `no such column: n.geom_geojson` from inside `createNeighborhoods`.
     ///
-    /// **So the whole per-arm pipeline is contained, not just the attach.** A catalog step that
-    /// throws is attributed to the arm whose rows it was reading (`contributing`), that file is
-    /// refused exactly as a bad attach is, `temp` is torn down, and the union is built again over
-    /// the survivors. Renumbering is why it rebuilds rather than patching: an arm's ordinal is
-    /// baked into every id the union computes, so dropping arm 1 of three renumbers arm 2 — and
-    /// rebuilding gets that right by construction. The retry costs a pass per bad file, on a path
-    /// no shipping pack has ever taken.
+    /// **So the attach, the catalog phase and the view phase are all contained.** Every per-arm
+    /// statement in `InventoryUnionSQL` runs inside `contributing`, so a step that throws is
+    /// attributed to the arm whose rows it was reading, that file is refused exactly as a bad
+    /// attach is, `temp` is torn down, and the union is built again over the survivors.
+    /// Renumbering is why it rebuilds rather than patching: an arm's ordinal is baked into every id
+    /// the union computes, so dropping arm 1 of three renumbers arm 2 — and rebuilding gets that
+    /// right by construction. The retry costs a pass per bad file, on a path no shipping pack has
+    /// ever taken.
+    ///
+    /// **Two per-arm reads sit outside `contributing`, which is why the sentence above names three
+    /// phases rather than "everything".** `applyShadowing` → `shadowMechanism` scans per id space
+    /// but reads only the **bundled** arm, where a throw is meant to be fatal — correct where it
+    /// is. `openingCenter` counts and averages `trees` on every **downloaded** arm and is genuinely
+    /// uncontained: an error there matches neither `catch` below and reaches
+    /// `AppModel.phase = .failed`. It cannot be an arm's *shape* that raises one —
+    /// `SeedSchema.introspect` refuses any arm whose `trees` lacks `lat`, `lon` or `status`, and no
+    /// arm reaches this line without having passed it. What is left is I/O or `SQLITE_CORRUPT` on a
+    /// file the loop above has already read successfully. Narrow, and not demonstrated; recorded
+    /// here rather than claimed away.
     ///
     /// **The bundled arm is the exception and is deliberately still fatal.** It is the app's own
     /// build artifact, `SeedContractTests` gates it, there is no reader action that could remove it,

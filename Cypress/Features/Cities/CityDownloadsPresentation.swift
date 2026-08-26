@@ -93,8 +93,10 @@ enum CityDownloadsCopy {
     /// **What a downloaded file says when the read layer refused it.**
     ///
     /// The two sentences below are the only copy this fix-round wrote that no ruling had already
-    /// settled, and they are flagged for ratification in the PR rather than presented as ruled. The
-    /// four existing failure lines were tried first and none of them is true here:
+    /// settled. **The owner ratified them as shipped, verbatim, on 2026-08-25** — both lines, the
+    /// attention color, and the division of labor described below — so they are ruled copy now
+    /// rather than a proposal. The four existing failure lines were tried first and none of them is
+    /// true here:
     /// `Download failed. Nothing was changed.` describes a transfer that never landed — this file
     /// did land, and verified; `Needs a newer app` and its detail line make a specific claim about
     /// the file's *generation*, which `CityLibrary.validateCityFile` already checks and which a
@@ -302,8 +304,8 @@ struct CityDownloadSection: Equatable, Identifiable {
     /// also how the cities inside the built-in inventory were meant to be drawn, and it drew
     /// nothing: the flag reaches the view through one padding modifier that sits inside
     /// `if !section.title.isEmpty`, and that group's title is empty by construction — so the one
-    /// section it was added for was the one section it could not affect. Containment is
-    /// `containedRows` now, which the view has no way to ignore.
+    /// section it was added for was the one section it could not affect. Containment is `cards`
+    /// now, which the view has no way to ignore.
     let isCityGroup: Bool
 
     /// Every row in this section, in draw order, **including the ones drawn inside another row's
