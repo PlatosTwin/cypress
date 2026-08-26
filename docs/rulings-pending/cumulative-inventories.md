@@ -3,6 +3,17 @@
 Unnumbered, per CLAUDE.md "Numbering and shared files". The orchestrator splices this under a real
 number at merge and rewrites any comment that cites this filename.
 
+**The decision letters below are local to this entry, and they collide with another live
+document's.** `docs/design-proposals/2026-08-14-city-data-distribution.md` letters its own
+decisions D1–D20, and the same letter means different things in the two lists: D1 here is
+id-space shadowing and D1 there is the borough as New York's published unit; D3 here is the
+opening camera and D3 there is the whole-NYC pack; D5 here is the attach cap and D5 there is
+Stage 0. Flagged at splice time because it rules out the obvious sweep — a mechanical
+letter-to-number rewrite would give half the citations the wrong document. It is also why no
+comment in `Cypress/`, `CypressTests/` or `CypressUITests/` cites a decision letter any more:
+each states its constraint standing alone instead, and `PendingCitationGuardTests` §4 holds them
+there.
+
 ---
 
 ## The decision
@@ -174,7 +185,10 @@ rather than settled here.
   removed` already says the operative fact and needs no button under it.
 - **A bundled city gets one entry, nested under the built-in card**, in the `isCityGroup` idiom
   `CityDownloadSection` already draws for a city's packs. Never a peer card in `On this phone`,
-  which is decision 3. Its state line is one of three:
+  which is decision 3. (*"Nested under"* turned out to name more than one arrangement, and the
+  `isCityGroup` idiom was the wrong one. The owner settled it on 2026-08-25 as containment inside
+  the built-in card — see the ratified section below. This bullet is left as it was proposed.)
+  Its state line is one of three:
   - `Included in the app · record as of <rev>` — the bundle's own copy is what the map draws;
   - `Included in the app · record as of <rev>` with `A newer record is available.` beneath and one
     `Update` button — the catalog is ahead, and the verb is `Update` rather than `Download`
@@ -193,6 +207,9 @@ rather than settled here.
 
 Recorded by the orchestrator from the owner's own window. Each of these was open in the list
 below when this entry was written; each is now settled, and the implementation is built on them.
+Two items carry a later date than the rest and say so where they sit: D2 was **re-ruled** on
+2026-08-25 after the first implementation of it drew nothing, and the copy for a refused file was
+ratified the same day.
 
 - **D9 — downloaded IS the active set.** A downloaded city is in the union; there is no separate
   active toggle. The screen's vocabulary is `Download`, `Update`, `Remove` and `Cancel`; `Use`
@@ -203,8 +220,29 @@ below when this entry was written; each is now settled, and the implementation i
   because the five New York boroughs share the id space `us-ny-nyc` and an id-space rule applied
   between packs would delete Brooklyn the moment Manhattan was installed.
 - **D2 — the proposed screen, as proposed.** The built-in card draws no affordance at all;
-  bundled cities are nested under it with the three state lines exactly as written; non-bundled
-  packs keep their own cards. The copy lands verbatim.
+  bundled cities belong to it rather than beside it, with the three state lines exactly as
+  written; non-bundled packs keep their own cards. The copy lands verbatim.
+
+  **Re-ruled 2026-08-25: the bundled cities are drawn *inside* the built-in card.** Recorded by
+  the orchestrator from the owner's own window, after the first implementation was shown on a
+  device. *"Nested under it"* had been read as a sibling group drawn one step quieter — the
+  `isCityGroup` idiom — and that resolved to no drawn difference at all, because the flag reached
+  the view through a single padding modifier sitting inside `if !section.title.isEmpty` and that
+  group's title is empty by construction. `Built-in inventory`, `San Francisco` and `San Jose`
+  came out as three cards of identical width and inset, which is the arrangement decision 3
+  forbids.
+
+  The ruling is containment, literally. **One card**: the built-in header, and each bundled
+  city's entry within that card's own boundary. **Existing chrome only** — the card's rounded
+  rectangle and border, a `borderCool` hairline between entries, tokens throughout; no new
+  component, no new drawn geometry, nothing that would be a constraint-21 stop-and-ask. A bundled
+  city is never drawn outside that card, and a pack the bundle does not cover is never drawn
+  inside it. This holds in every row state, including the one that carries a full-width control
+  (`Revert to the included copy`) and the one where the downloaded copy could not be read.
+
+  Whether one rectangle encloses another is not a property of a value, so it is pinned on the
+  device (`CityCardContainmentUITests`) rather than only in the presentation model — the earlier
+  guard asserted the arrangement as data and stayed green while the screen drew peers.
 - **D5 — the installed set is capped, with honest copy.** Headroom is checked at open against the
   platform's actual attach limit (`SQLITE_LIMIT_ATTACHED`, read off the live connection — never
   hard-coded), and at the cap the `Download` button is replaced by `Remove a city to download
@@ -218,6 +256,21 @@ below when this entry was written; each is now settled, and the implementation i
   bare date), and **every comparison keeps the full opaque string**. The live catalog has
   carried revisions like `2026-08-22.02` on all seven packs since the republish of 2026-08-25, so
   both halves are exercised against the shipping shape rather than a fixture.
+- **The copy for a file the read layer refused — ratified as shipped, 2026-08-25.** Recorded by
+  the orchestrator from the owner's own window. Containment (above) is what makes a refused pack
+  visible at all, and the screen state it produces is not in the mocks (DECISIONS constraint 21),
+  so the two sentences the implementation had to write were put to the owner and are ruled
+  verbatim, as written:
+
+  - state line — `Couldn't be read`, drawn in the attention color the screen already gives a
+    failed row (`isFailure`, `CypressColor.signalAmber`);
+  - detail line — `The downloaded file couldn't be opened, so its trees are not on the map.`
+
+  **No new affordance goes with them.** The sentence states the fact and the button already on
+  the row states the remedy: `Revert to the included copy` for a bundled city whose downloaded
+  copy failed, `Remove` for a pack the bundle does not carry. Either one clears the file and the
+  state with it. That division is why the copy names neither verb — a sentence naming one of them
+  would be wrong on the other row.
 
 ## Proposed by this round, for the orchestrator to adjudicate
 
@@ -290,8 +343,13 @@ Collected for the orchestrator. Each is a question this round declined to answer
   sufficient for today's catalog, because the only two packs that overlap the bundle are whole-city
   packs whose pack id *is* their id space; it would not be sufficient for a borough pack whose city
   the bundle carried.
-- **D2 — The screen copy above.** Proposed, not ruled. The three state lines, the `Update` verb for
-  a bundled city, and the wording that undoes an update are the parts to ratify or replace.
+- **D2 — The screen copy above.** **Ruled, and then re-ruled.** The three state lines, the
+  `Update` verb for a bundled city and `Revert to the included copy` were ratified verbatim on
+  2026-08-24/25; the arrangement they sit in was re-ruled on 2026-08-25 as containment inside the
+  built-in card, after the first implementation of *"nested under it"* drew nothing. One thing was
+  open that this list never named, because it did not exist until the round wrote it: what a
+  downloaded file says when the read layer refuses it. That copy is ratified too. All of it is in
+  the ratified section above; nothing about this screen is left proposed.
 - **D9 — Is the active set the installed set?** Decision 1 says the union is "the bundled seed plus
   every downloaded city pack", which reads as *downloaded ⇒ in the union*. Decision 2 says `Use`
   becomes "add/remove of a pack from the active set", which reads as a set a pack can be out of
