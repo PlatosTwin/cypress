@@ -82,7 +82,21 @@ final class CityDownloadProgress {
     ///
     /// **Not cosmetic.** Between launch and the answer, `inFlight` is nil and *means nothing*, so a
     /// screen drawing `Download` in that window would offer a second copy of a city already on its
-    /// way. The Cities screen waits on this exactly as it waits on the catalog.
+    /// way.
+    ///
+    /// **What keeps a screen out of that window is boot ordering, not this flag** — corrected after
+    /// review finding F4, which caught the sentence that used to stand here claiming *"the Cities
+    /// screen waits on this exactly as it waits on the catalog"*. It does not, and nothing in
+    /// `Features/` reads this at all. `AppModel.boot()` awaits `adopt()` **before** it publishes a
+    /// layer, and `RootView` — so the Cities screen — does not exist until a layer is published, so
+    /// the window closes before there is anything in it to draw. This flag's own job is narrower
+    /// and is the one its name states: it stops `boot()` re-asking `nsurlsessiond` on every
+    /// inventory change, since `reboot()` sends the app back through `boot()`.
+    ///
+    /// So the safety here rests on that ordering. A future caller that renders the Cities screen
+    /// outside `phase == .ready` has to wait on this itself; today none does, and this comment is
+    /// the record of which mechanism is load-bearing rather than a claim about a collaborator that
+    /// has never read it.
     private(set) var hasAdopted = false
 
     /// The composition root's reboot, called after a file has been verified and installed.
@@ -92,10 +106,12 @@ final class CityDownloadProgress {
     /// — so a mutable hook stored on it would be read off that queue and written from the app's
     /// launch, which is a race. Stored here it is read on the actor that will call it.
     ///
-    /// `AppModel.reboot()` refuses unless the layer is `.ready`, so an install landing in a
-    /// background relaunch — where no layer was ever booted — changes nothing and needs no guard of
-    /// its own. The file is on disk either way, and the next boot attaches it, because
-    /// `DataLayer.bootOverInstalledCities` reads the disk rather than a list.
+    /// `AppModel.reboot()` handles all three of its phases itself, so an install landing in a
+    /// background relaunch — where no layer was ever booted — needs no guard of its own. The file is
+    /// on disk either way, and the next boot attaches it, because
+    /// `DataLayer.bootOverInstalledCities` reads the disk rather than a list. An install landing
+    /// while a boot is *in flight* is the case review finding F3 caught, and `AppModel` reconciles
+    /// it there (`installLandedDuringBoot`) rather than here.
     var onInstalled: (() -> Void)?
 
     func apply(inFlight: InFlight?) { self.inFlight = inFlight }

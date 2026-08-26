@@ -468,12 +468,15 @@ struct CityDownloadTests {
         #expect(URLSessionConfiguration.ephemeral.identifier == nil)
     }
 
-    /// **Asking an idle session what it is carrying still answers**, which is the half a screen
+    /// **Asking an idle session what it is carrying still answers**, which is the half `boot()`
     /// waits on.
     ///
-    /// `hasAdopted` is what stops the Cities screen drawing `Download` for a city already on its
-    /// way; a launch with nothing outstanding has to set it too, or the screen waits for an answer
-    /// that never comes.
+    /// `hasAdopted` is what stops `AppModel.boot()` re-asking `nsurlsessiond` on every inventory
+    /// change, and a launch with nothing outstanding has to set it too, or every reboot pays for
+    /// another round trip. **It is not what keeps the Cities screen from drawing `Download` for a
+    /// city already on its way** — review finding F4 corrected that claim where the service stated
+    /// it as a guarantee. Boot ordering is: `boot()` awaits `adopt()` before it publishes a layer,
+    /// and `RootView` does not exist until one is published.
     @Test("adoption answers even when there is nothing to adopt")
     func adoptionOfAnIdleSessionAnswers() async throws {
         let dir = try Self.tempDir()

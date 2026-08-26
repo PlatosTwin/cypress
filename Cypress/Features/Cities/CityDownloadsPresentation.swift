@@ -673,14 +673,21 @@ struct CityDownloadRow: Equatable, Identifiable {
         )
     }
 
-    /// A transfer the catalog cannot describe — adopted from a previous launch, or still running
-    /// after the network went away.
+    /// A transfer no other row describes — adopted from a previous launch, still running after the
+    /// network went away, or for a pack the catalog **in hand** does not name.
     ///
     /// **A state the screen could not previously be in.** A download used to exist only while the
     /// screen that started it was standing on a catalog it had just fetched, so the offline branch
     /// never had one to draw. A background transfer outlives both, and a Cities screen that said
     /// nothing about the 199 MB currently arriving would be the same silence R43 §3 wrote the
     /// `Downloading…` line to prevent.
+    ///
+    /// **A loaded catalog is not a catalog that names every transfer**, which is why
+    /// `CityDownloadsModel.rows` appends this after its switch rather than inside one branch of it
+    /// (review finding F2). A pack delisted since the transfer was adopted, and
+    /// `CityDownloader.fetchManifest()`'s documented fallback to the format-1 catalog — whole
+    /// cities only, so never a borough — both put a live transfer beside a `.loaded` catalog that
+    /// cannot describe it.
     ///
     /// **No new copy and no new affordance**: the line, the ring and `Cancel` are all §3's, and the
     /// name is the publisher's, carried on the transfer itself (`CityDownloadRecord.displayName`)

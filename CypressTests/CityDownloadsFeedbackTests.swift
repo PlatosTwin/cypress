@@ -962,28 +962,30 @@ struct CityDownloadsFeedbackTests {
     /// design of this test. A fixed bound has to be slower than the defect on the slowest machine
     /// and faster than the fix on that same machine, and at the payload sizes a unit suite can
     /// afford there is no such number: on the 4 MB fixture below, measured on the assigned
-    /// simulator, the per-byte control takes **0.280 s** and the download task **0.0059 s**, so any
-    /// bound loose enough to be stable (say six seconds) sits far above *both* and would certify the
-    /// defect as fixed. That is this project's signature failure — a guard that is green while the
-    /// defect is present.
+    /// simulator, MEASURED-FIRST — so any bound loose enough to be stable (say six seconds) sits far
+    /// above *both* and would certify the defect as fixed. That is this project's signature failure
+    /// — a guard that is green while the defect is present.
     ///
     /// So the test measures the defect itself, here, on whatever machine is running: it walks the
     /// same fixture with `URLSession.AsyncBytes` exactly as the old body did, and then requires the
-    /// real download to beat that by 10×. Machine speed cancels, and the assertion can only pass
+    /// real download to beat that by **6×**. Machine speed cancels, and the assertion can only pass
     /// if the two code paths are genuinely different in kind.
     ///
-    /// **The margin is real but not enormous, and it is stated rather than implied.** The 10× factor
-    /// is not headroom: it is spent on the comparison. From the pair above the bound is
-    /// `0.0059 × 10 = 0.059 s` against a `0.280 s` control, so the slack between the committed
-    /// assertion and the measurement is about **4.7×** — not the two orders of magnitude the ratio's
-    /// name suggests, and worth knowing before reading a red here as a performance regression. It
-    /// has not been observed to flake; the number to revisit if it ever does is this factor, not the
-    /// fixture size.
+    /// **Six, and the arithmetic below is the committed assertion's own** — corrected by review
+    /// finding F5, which caught three sentences still arguing for a 10× threshold above a line that
+    /// says 6, and a display name promising an order of magnitude the assertion does not require.
+    /// A reader debugging a red here was being handed a bound that is not the one that fired.
+    ///
+    /// **The margin is real but not enormous, and it is stated rather than implied.** The factor is
+    /// not headroom; it is spent on the comparison. Measured on iPhone 16e, MEASURED-PAIR — so the
+    /// bound is `MEASURED-BOUND` and the slack between the committed assertion and the measurement
+    /// is about **MEASURED-SLACK×**. Worth knowing before reading a red here as a performance
+    /// regression: the number to revisit if it ever flakes is this factor, not the fixture size.
     ///
     /// Byte count and sha256 are asserted alongside, because a fast download that verified nothing
     /// would satisfy a timing test perfectly.
-    @Test("the transfer beats a per-byte walk of the same bytes by an order of magnitude",
-          .timeLimit(.minutes(1)))
+    @Test("the transfer beats a per-byte walk of the same bytes by a wide margin",
+          .timeLimit(.minutes(3)))
     func downloadIsNotPerByte() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cities-perf-\(UUID().uuidString)", isDirectory: true)
@@ -1050,10 +1052,43 @@ struct CityDownloadsFeedbackTests {
         // as a delta rather than against zero.
         let installsBefore = await progress.installCount
 
-        let started = Date()
-        _ = await MainActor.run { service.start(city) }
-        await service.waitUntilIdle()
+        // ── Neither endpoint is a main-actor hop, which is review finding F6 ──────────────────
+        //
+        // The window used to open on `Date()` in this task and close on `waitUntilIdle()`, and both
+        // ends crossed the main actor: `start` is `@MainActor`, and `waitUntilIdle` is resumed from
+        // inside `settle`'s `Task { @MainActor … }`. The control — a cooperative-pool loop over
+        // `URLSession.AsyncBytes` — crosses it at neither end, so those two hops were pure
+        // asymmetry inside a window whose whole budget is tens of milliseconds, on a main actor
+        // this suite's own comments document as contended.
+        //
+        // **The clock now starts after the hop in** — inside the main-actor closure, so the wait to
+        // get there is not the transfer's time — **and stops on the file rather than on idle.** The
+        // install is synchronous inside `didFinishDownloadingTo`, on URLSession's delegate queue and
+        // off the main actor, so the instant the file exists at its immutable path is the instant
+        // the bytes finished being transferred, verified and moved: exactly the work that scales
+        // with the size of the file, which is what the paragraph above says belongs in here. The
+        // poll runs on the cooperative pool, the same place the control's loop runs, so the two are
+        // starved and recovered alike.
+        //
+        // This narrows the window rather than loosening the assertion, and it cannot hide the
+        // defect: restoring the per-byte loop puts 4.2 million iterations *inside* these same two
+        // endpoints, so `elapsed` still converges on `control`.
+        //
+        // The deadline is a hang guard, not a bound the assertion leans on — without it a transfer
+        // that never lands spins here until the test's own time limit instead of failing with a
+        // number in the message.
+        let installedURL = library.fileURL(id: city.id, version: city.version)
+        let started = await MainActor.run { () -> Date in
+            let started = Date()
+            service.start(city)
+            return started
+        }
+        let deadline = started.addingTimeInterval(60)
+        while !FileManager.default.fileExists(atPath: installedURL.path), Date() < deadline {
+            try await Task.sleep(nanoseconds: 200_000)
+        }
         let elapsed = Date().timeIntervalSince(started)
+        await service.waitUntilIdle()
 
         // **Six, not ten, and the number is not the point.** Restoring the per-byte loop makes
         // `elapsed` and `control` the same measurement — both walk 4.2 million bytes one at a time
@@ -1148,7 +1183,12 @@ struct CityDownloadsFeedbackTests {
     /// time, so the monotone run of fractions asserted below describes a transfer whose shape is
     /// known, rather than whatever the filesystem happened to do that morning. Nothing leaves the
     /// machine either way.
-    @Test("the download ring is told how far along the transfer is", .timeLimit(.minutes(1)))
+    ///
+    /// **Three minutes, not one.** The budget is not a margin the assertions lean on — nothing here
+    /// is bounded by wall clock any more (see the sampler below) — but the whole test took **53.2 s**
+    /// on the GitHub runner that filed review finding F1, against a nominal 1.6 s here. A one-minute
+    /// limit would have turned the next slightly slower runner into a timeout instead of a pass.
+    @Test("the download ring is told how far along the transfer is", .timeLimit(.minutes(3)))
     func progressIsReportedDuringTheTransfer() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cities-progress-\(UUID().uuidString)", isDirectory: true)
@@ -1184,9 +1224,36 @@ struct CityDownloadsFeedbackTests {
             payload: payload, for: city, library: library, pacing: 0.05
         )
 
+        // ── The sampler's lifetime is the transfer's, and that is review finding F1 ───────────
+        //
+        // **This test was red on CI, and the failure was structural rather than a flake.** The body
+        // that shipped sampled `for _ in 0..<600` at 5 ms — about three seconds, always — while the
+        // transfer's duration is set by the fixture's pacing and by whatever else the machine is
+        // doing. The two quantities were unrelated: 32 chunks × 50 ms is 1.6 s nominal, so on this
+        // simulator the sampler beat the transfer by under 2×, and on the GitHub runner (run
+        // 32952106597) the same test took 53.2 s and the sampler expired after 2 chunks of 32 —
+        // `max` 0.0625, against an assertion of 0.5, on a transfer that was working perfectly.
+        // That is the wall-clock-margin defect class this repo has now filed twice.
+        //
+        // **The fix is cancellation rather than counting, and it is not a widened number.** The
+        // sampler runs until the transfer is over — the `cancel()` below sits after
+        // `waitUntilIdle()` — so a slower machine does not shorten the observation, it lengthens
+        // it. There is no duration in this test for a load to exceed.
+        //
+        // It also cannot be starved out from under the thing it is watching, because **the sampler
+        // and the publisher share the main actor**: `CityDownloadProgress` is `@MainActor`, so a
+        // main actor too busy to run this loop is one too busy to publish the fractions the loop
+        // would have read. They stall and recover together. That is what makes the observation
+        // load-*independent* rather than merely load-tolerant, and it is why consequence 2 above
+        // is a note about precision rather than a hazard to the assertion.
+        //
+        // Calibrated before it was believed, by making the machine's speed irrelevant the hard way:
+        // with the fixture's pacing raised to 0.2 s a chunk — a 6.4 s transfer, twice the old
+        // sampler's whole life — the shipped body fails exactly as CI did (`max` 0.469) and this
+        // one passes with fractions running to 1.0. Restored to 0.05 afterwards.
         let reported = FractionLog()
         let sampler = Task { @MainActor in
-            for _ in 0..<600 {
+            while !Task.isCancelled {
                 if let fraction = progress.inFlight?.fraction { reported.record(fraction) }
                 try? await Task.sleep(nanoseconds: 5_000_000)
             }

@@ -193,19 +193,30 @@ final class CityDownloadsModel {
             // (review finding 9): the offline screen shows the same cities as the online one, so a
             // bundled city keeps its card here rather than disappearing with the network.
             rows += orderedUniqueIDs(installedIDs + bundledIDs).compactMap(diskRow(for:))
-            // **A transfer with no catalog behind it still gets a row**, and this is new ground
-            // that the background session opened. Before it, a download could only exist while the
-            // screen that started it was on top of a catalog it had just fetched; now one can be
-            // adopted from a previous launch, or survive the reader turning the network off, and
-            // the offline branch would have drawn a screen with no mention of the 199 MB arriving.
-            //
-            // No new copy: `Downloading…` and the ring are R43 §3's, and the name comes from the
-            // record the transfer is carrying, which the publisher wrote (constraint 15).
-            if let inFlight = downloads.inFlight,
-               !installedIDs.contains(inFlight.record.id),
-               !bundledIDs.contains(inFlight.record.id) {
-                rows.append(.downloadingOffline(inFlight))
-            }
+        }
+        // **A transfer no row above describes still gets one, on every branch.** This is new ground
+        // that the background session opened. Before it, a download could only exist while the
+        // screen that started it was on top of a catalog it had just fetched; now one can be
+        // adopted from a previous launch, survive the reader turning the network off, or be for a
+        // pack the catalog in hand does not name.
+        //
+        // **The test is the finished rows, not the three id sources**, and that is the fix for
+        // review finding F2. Guarding on `installedIDs + bundledIDs` was the offline branch's own
+        // test written in the offline branch's terms, so the loaded branch — whose ids are
+        // `manifest.cities + installedIDs + bundledIDs` — drew nothing at all for a transfer the
+        // catalog could not describe: no `Downloading…`, no ring, and no `Cancel`, while
+        // `download()`'s `guard downloading == nil` left every other city on the screen inert.
+        // Two inputs reach it without a device pathology: a pack delisted from the catalog since
+        // the transfer was adopted, and `CityDownloader.fetchManifest()`'s documented fallback to
+        // the format-1 catalog, which lists whole cities only and so names no borough at all.
+        // Asking whether any row already carries the id answers for both branches at once and
+        // cannot drift from either one's notion of where ids come from.
+        //
+        // No new copy: `Downloading…` and the ring are R43 §3's, and the name comes from the
+        // record the transfer is carrying, which the publisher wrote (constraint 15).
+        if let inFlight = downloads.inFlight,
+           !rows.contains(where: { $0.id == inFlight.record.id }) {
+            rows.append(.downloadingOffline(inFlight))
         }
         // **One post-pass over both branches, and that is what makes it complete.** Whether a file
         // opened is not a fact either branch above consults — the catalog does not know, the library

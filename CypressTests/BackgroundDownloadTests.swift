@@ -228,4 +228,177 @@ struct BackgroundDownloadTests {
         #expect(reboots == 2)
         #expect(downloads.installCount == 2)
     }
+
+    // MARK: - A loaded catalog that cannot describe the transfer (review finding F2)
+
+    /// **A `.loaded` catalog is not a catalog that names every transfer.**
+    ///
+    /// The in-flight row was appended inside the offline branch only, guarded on the ids *that*
+    /// branch builds rows from. So with a catalog in hand, a transfer the catalog could not
+    /// describe drew nothing at all — no `Downloading…`, no ring and, worst of the three, no
+    /// `Cancel` — while `CityDownloadsModel.download`'s `guard downloading == nil` is global and
+    /// left every other city on the screen inert until the transfer finished or the app was
+    /// force-quit. Silence plus an inert screen is exactly what R43 §3 wrote the `Downloading…`
+    /// line to prevent, fixed on one branch and left on the other.
+    ///
+    /// **Two inputs reach it without a device pathology**, and neither needs a delisted pack to be
+    /// hypothetical: a pack delisted from the catalog since the transfer was adopted, and
+    /// `CityDownloader.fetchManifest()`'s documented fallback to the format-1 catalog, which by
+    /// construction lists whole cities only and so names no borough at all. This test builds the
+    /// first, because a one-entry catalog is the same shape either way from the model's side.
+    @Test("a loaded catalog still draws the transfer it cannot describe")
+    func aLoadedCatalogDrawsTheTransferItCannotDescribe() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bgdl-loaded-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // A real one-entry format-2 catalog, fetched the way the screen fetches one. It names
+        // Manhattan and nothing else.
+        let bucket = root.appendingPathComponent("bucket", isDirectory: true)
+        try FileManager.default.createDirectory(at: bucket, withIntermediateDirectories: true)
+        try Data(
+            CityDownloadsFeedbackTests.manifestJSON(
+                contentRev: "2026-08-22", version: "s17-r2026-08-22-ac7b1ccc"
+            ).utf8
+        ).write(to: bucket.appendingPathComponent("manifest-v2.json"))
+
+        let library = CityLibrary(rootURL: root.appendingPathComponent("lib", isDirectory: true))
+        let downloads = CityDownloadProgress()
+        let model = CityDownloadsModel(
+            library: library,
+            downloader: CityDownloader(baseURL: bucket),
+            service: CityDownloadService(
+                library: library,
+                configuration: OfflineSession.configuration(),
+                progress: downloads
+            ),
+            downloads: downloads,
+            bundledCities: [],
+            installableCityLimit: 9,
+            onInventoryChange: {}
+        )
+        await model.load()
+        guard case .loaded = model.catalog else {
+            Issue.record("the catalog did not load, so this test is not about the loaded branch")
+            return
+        }
+
+        // Brooklyn is arriving, and the catalog in hand has never heard of it. Published straight
+        // into the box, which is what `adopt()` does on a launch that inherits a transfer.
+        let brooklyn = Self.entry(id: "us-ny-nyc-brooklyn", displayName: "Brooklyn")
+        downloads.apply(inFlight: .init(record: CityDownloadRecord(brooklyn), fraction: 0.25))
+
+        let row = try #require(
+            model.rows.first { $0.id == brooklyn.id },
+            "a loaded catalog drew no row at all for the transfer that is running"
+        )
+        // The publisher's name, carried on the transfer — never an id this layer prettified.
+        #expect(row.title == "Brooklyn")
+        #expect(row.stateLine == CityDownloadsCopy.downloading)
+        #expect(row.progress == 0.25, "the row states a download and shows no ring")
+        #expect(
+            row.affordances == [.cancel],
+            "the reader cannot call off a transfer that has taken the whole screen hostage"
+        )
+
+        // The control, and it is what makes the assertions above an addition rather than a screen
+        // that draws a download row for everything: the catalog's own city is still drawn once, by
+        // the catalog, with the affordance the catalog decided.
+        let manhattan = model.rows.filter { $0.id == "us-ny-nyc-manhattan" }
+        #expect(manhattan.count == 1)
+        #expect(manhattan.first?.affordances == [.download])
+    }
+
+    // MARK: - An install that lands while the layer is booting (review finding F3)
+
+    /// The two halves of the race, held by the test rather than by the clock.
+    @MainActor
+    final class BootProbe {
+        var builds = 0
+        /// Run once, **after** a layer has been built and **before** it is published — the window
+        /// in which `AppModel.phase` is `.booting` and the disk read behind the layer is already
+        /// history.
+        var duringBuild: (() -> Void)?
+    }
+
+    /// **An install that lands while the layer is booting is reconciled, not dropped.**
+    ///
+    /// The round shipped with the claim that `reboot()` is a no-op unless a layer is booted, so
+    /// there are two cases — a live union that reboots, and no union, where the next boot reads the
+    /// disk. Review finding F3 found the third: `phase == .booting`. `boot()` suspends inside it,
+    /// `DataLayer.bootOverInstalledCities` reads `installedInventoryFiles()` exactly once at the
+    /// top, and a file landing in that window called a `reboot()` that declined — after which the
+    /// boot published a layer built before the file existed and nothing reconciled it. The reader
+    /// was then shown R84's ratified `Couldn't be read` over a byte-perfect file, for the rest of
+    /// the process, because `RootView` derives `liveInventoryIDs` from the union's arms.
+    ///
+    /// **The window is held open deliberately rather than raced for.** `makeLayer` is `AppModel`'s
+    /// one seam; the probe installs the pack and calls `reboot()` at the instant the shipped code
+    /// would have thrown the request away, so this asserts the reconciliation rather than sampling
+    /// a timing. Both halves are asserted: that a second layer was built at all, and — the fact the
+    /// reader actually sees — that the published union has the pack's arm in it.
+    @Test("an install that lands while the layer is booting is picked up by that boot")
+    func anInstallDuringBootIsReconciled() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bgdl-bootrace-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let library = CityLibrary(rootURL: root.appendingPathComponent("cities", isDirectory: true))
+        let databaseURL = root.appendingPathComponent("cypress.sqlite")
+
+        // A pack shaped like a published s17 one, so `validateCityFile` accepts it and the union
+        // attaches it — the same fixture `CumulativeInventoryTests` builds its arms from.
+        let packURL = root.appendingPathComponent("manhattan-staged.sqlite")
+        try CumulativeInventoryTests.seed(
+            at: packURL,
+            trees: (1...3).map {
+                CumulativeInventoryTests.TreeRow(
+                    id: Int64($0), idSpace: "us-ny-nyc", lat: 40.7, lon: -74.0, speciesID: 2
+                )
+            },
+            species: [CumulativeInventoryTests.plane, CumulativeInventoryTests.ginkgo],
+            contentRev: "2026-08-22",
+            packID: "us-ny-nyc-manhattan"
+        )
+
+        let probe = BootProbe()
+        let model = AppModel(makeLayer: {
+            probe.builds += 1
+            let layer = try await DataLayer.bootOverInstalledCities(
+                databaseURL: databaseURL, library: library
+            )
+            // The disk read that produced `layer` is behind us and `phase` is still `.booting`:
+            // this is the window, and it is exactly where the dropped request used to go.
+            probe.duringBuild?()
+            return layer
+        })
+        probe.duringBuild = { [weak model] in
+            probe.duringBuild = nil
+            try? library.install(
+                verifiedFileAt: packURL,
+                id: "us-ny-nyc-manhattan",
+                version: "s17-r2026-08-22-ac7b1ccc"
+            )
+            // Precisely what `CityDownloadProgress.onInstalled` does when a file lands.
+            model?.reboot()
+        }
+
+        await model.boot()
+
+        #expect(
+            probe.builds == 2,
+            "the boot published the layer it had already built, so the install was dropped"
+        )
+        let layer = try #require(model.data, "the app never reached .ready")
+        let arms = Set((layer.store.inventory?.arms ?? []).map(\.id))
+        #expect(
+            arms.contains("us-ny-nyc-manhattan"),
+            """
+            the published union has arms \(arms.sorted()) — the pack that landed during the boot is \
+            not among them, so its row draws `Couldn't be read` over a file that is perfectly good
+            """
+        )
+    }
 }
