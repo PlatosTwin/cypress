@@ -336,20 +336,35 @@ struct CityDownloadTests {
         try payload.write(to: file)
         let honest = CityDownloadRecord(Self.entry(payload: payload))
 
-        // Size first: the promise is one byte longer than the file and its sha256 is honest, so
-        // only an order that checks the count first can produce this error.
+        let liar = String(repeating: "ab", count: 32)
+
+        // Wrong count, honest hash.
         #expect(throws: CityDownloader.DownloadError.sizeMismatch(
             expected: Int64(payload.count) + 1, got: Int64(payload.count)
         )) {
             try CityDownloader.verify(fileAt: file, against: Self.record(honest, bytes: honest.bytes + 1))
         }
 
-        // The count agrees and the hash does not.
-        let liar = String(repeating: "ab", count: 32)
+        // Honest count, wrong hash.
         #expect(throws: CityDownloader.DownloadError.checksumMismatch(
             expected: liar, got: Self.sha256Hex(payload)
         )) {
             try CityDownloader.verify(fileAt: file, against: Self.record(honest, sha256: liar))
+        }
+
+        // **Both wrong, and this is the only case that pins the order.** Written after a red-proof
+        // found that the two cases above pass under *either* ordering — each fails exactly one rule,
+        // so whichever is asked first, the other one answers. The doc comment above them claimed
+        // they proved the order, which is the kind of confident sentence this project has a rule
+        // about. A file that breaks both promises can only report one of them, and which one it
+        // reports is the ordering.
+        #expect(throws: CityDownloader.DownloadError.sizeMismatch(
+            expected: Int64(payload.count) + 1, got: Int64(payload.count)
+        )) {
+            try CityDownloader.verify(
+                fileAt: file,
+                against: Self.record(honest, bytes: honest.bytes + 1, sha256: liar)
+            )
         }
 
         // The control, and it is the half that matters: an honest promise passes, so the two above
@@ -502,6 +517,13 @@ struct CityDownloadTests {
         )
         await MainActor.run { _ = service.start(city) }
         #expect(await progress.inFlight?.record.id == city.id)
+
+        // **The box is emptied first, and without this the test proved nothing.** `start` has
+        // already published the record, so an `adopt` that found the task and republished nothing
+        // would leave `inFlight` exactly as the assertion below wants it. Found by red-proof: with
+        // adoption's republish deleted outright, this test stayed green. Emptying the box is what a
+        // fresh process has — no memory of the transfer — while the session still carries the task.
+        await MainActor.run { progress.apply(inFlight: nil) }
 
         // The session is asked what it is carrying, exactly as a fresh launch asks.
         await service.adopt()
