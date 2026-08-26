@@ -93,9 +93,10 @@ public struct InventoryUnion: Sendable, Equatable {
     /// **Where the map should open when it has nothing better to go on**, or nil when
     /// the only inventory is the bundled one.
     ///
-    /// D3's order is: a location fix inside any live inventory wins; failing that, the camera this
-    /// install was last left on; failing that, the largest downloaded inventory. This is the third
-    /// clause, and it is the only one the union had to supply — the first two are
+    /// The order the opening camera tries is: a location fix inside any live inventory wins;
+    /// failing that, the camera this install was last left on; failing that, the largest downloaded
+    /// inventory. This is the third clause, and it is the only one the union had to supply — the
+    /// first two are
     /// `MapOpening.openingRegion`'s existing behavior and are unchanged by this round.
     ///
     /// **Nil is the whole of "degrades to today's behavior".** With no downloaded city there is no

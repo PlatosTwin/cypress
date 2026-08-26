@@ -762,9 +762,10 @@ struct CumulativeInventoryTests {
         )
     }
 
-    /// **The comparison keeps the whole string**, which is the other half of D10 and the half a
-    /// careless implementation breaks: strip the counter before comparing and a same-day republish
-    /// stops being detectable at all.
+    /// **The comparison keeps the whole string.** The copy strips the publisher's counter suffix
+    /// and renders a bare date; every comparison keeps the whole opaque rev. This is the second
+    /// half of that pair and the half a careless implementation breaks: strip the counter before
+    /// comparing and a same-day republish stops being detectable at all.
     @Test("update detection compares the full opaque rev, counter and all")
     func updateDetectionKeepsTheWholeRev() {
         func entry(_ rev: String) -> CityManifest.City {
@@ -847,7 +848,8 @@ struct CumulativeInventoryTests {
         // And the region built from it is centered there rather than on San Francisco.
         let region = MapOpening.openingRegion(remembered: nil, downloadedCityCenter: center)
         #expect(abs(region.center.latitude - 40.75) < 0.01)
-        // A remembered camera still wins over it — D3's second clause outranks the third.
+        // A remembered camera still wins over it: the camera this install was last left on outranks
+        // the largest-downloaded-inventory fallback.
         let remembered = MapCameraMemory.Snapshot(
             center: Coordinate(latitude: 1, longitude: 2),
             latitudeSpan: 0.01, longitudeSpan: 0.01
@@ -938,9 +940,9 @@ struct CumulativeInventoryTests {
             "San Francisco is drawn as a card of its own beside the built-in inventory"
         )
 
-        // **Decision 5, as a property of the whole screen**: no card may claim a state another card
-        // contradicts. With `Use`/`In use` gone there is nothing left that could, and the built-in
-        // card draws nothing at all.
+        // **No card may claim a state another card contradicts** — stated over the whole screen
+        // rather than over one row, because that is the shape of the rule. With `Use`/`In use` gone
+        // there is nothing left that could, and the built-in card draws nothing at all.
         let everyRow = sections.flatMap(\.rows)
         #expect(everyRow.count == 3, "sectioning dropped or duplicated a row: \(everyRow.map(\.id))")
         let builtIn = everyRow.first { $0.id == CityDownloadRow.builtInID }
