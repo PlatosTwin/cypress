@@ -137,7 +137,7 @@ struct BackgroundDownloadTests {
     @Test("a transfer the catalog cannot describe still draws a row")
     func anAdoptedTransferIsDrawnWithNoCatalog() throws {
         let library = try Self.tempLibrary()
-        let (model, downloads, _) = Self.model(library: library)
+        let (model, _, _) = Self.model(library: library)
         let city = Self.entry(id: "us-ny-nyc-manhattan", displayName: "Manhattan")
 
         // No catalog has been fetched: `model.catalog` is `.checking`, the offline branch.

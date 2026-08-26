@@ -543,13 +543,22 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
             // **Waiters are woken from here, not from the body above**, which is the whole of
             // `settlingCount`'s purpose: idle has to mean the box is telling the truth, not merely
             // that the socket closed.
-            self.lock.lock()
-            self.settlingCount -= 1
-            let waiters = self.idleWaiters
-            self.idleWaiters = []
-            self.lock.unlock()
-            waiters.forEach { $0.resume() }
+            //
+            // Through a synchronous method rather than inline, for `adopt`'s reason: `NSLock` is
+            // unavailable from an asynchronous context, and this closure is one.
+            self.finishSettling().forEach { $0.resume() }
         }
+    }
+
+    /// Closes the publish half of a settle: drop the counter, take the waiters. Synchronous, so the
+    /// lock is never held across a suspension point.
+    private func finishSettling() -> [CheckedContinuation<Void, Never>] {
+        lock.lock()
+        settlingCount -= 1
+        let waiters = idleWaiters
+        idleWaiters = []
+        lock.unlock()
+        return waiters
     }
 
     /// `0…1` against the **manifest's** promised size, never `totalBytesExpectedToWrite` — that is
