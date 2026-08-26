@@ -82,11 +82,21 @@ final class CityDownloadsModel {
     /// the file and one that does not.
     private let liveInventoryIDs: Set<String>?
 
+    /// - Parameters:
+    ///   - service: the composition root's transfer. **Defaulted to one that can reach nothing**,
+    ///     over this model's own library — the same fail-safe direction `RemoteAccess` argues for,
+    ///     so a model built without one cannot open a socket. `RootView` always passes the real one.
+    ///   - downloads: the box that service publishes into. Defaulted with it, and the pair is
+    ///     always built together: a service publishing into a box nobody reads is a screen that
+    ///     never draws a ring.
+    ///
+    ///   Neither is a default *argument*, because a default argument is evaluated in the caller's
+    ///   context and `CityDownloadProgress` is `@MainActor`.
     init(
         library: CityLibrary,
         downloader: CityDownloader = CityDownloader(),
-        service: CityDownloadService,
-        downloads: CityDownloadProgress,
+        service: CityDownloadService? = nil,
+        downloads: CityDownloadProgress? = nil,
         bundledCities: [SeedCities.City] = SeedCities.inMainBundle,
         installableCityLimit: Int,
         liveInventoryIDs: Set<String>? = nil,
@@ -94,8 +104,13 @@ final class CityDownloadsModel {
     ) {
         self.library = library
         self.downloader = downloader
-        self.service = service
+        let downloads = downloads ?? CityDownloadProgress()
         self.downloads = downloads
+        self.service = service ?? CityDownloadService(
+            library: library,
+            configuration: OfflineSession.configuration(),
+            progress: downloads
+        )
         self.bundledCities = bundledCities
         self.installableCityLimit = installableCityLimit
         self.liveInventoryIDs = liveInventoryIDs

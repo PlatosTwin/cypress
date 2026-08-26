@@ -198,6 +198,15 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
     private var resumesUsed = 0
     /// Resumed when nothing is in flight. A list, because more than one caller may wait.
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
+    /// How many settled transfers have not finished *publishing* yet.
+    ///
+    /// **Idle is not "the task is over", it is "the task is over and the box says so".** Clearing
+    /// `current` happens on URLSession's queue and publishing happens on the main actor, so between
+    /// the two there is a window in which the transfer is done and `CityDownloadProgress` still
+    /// describes it as running. A waiter woken in that window reads the state before the answer —
+    /// which for `awaitBackgroundEvents` means telling the system it may suspend the app, and for a
+    /// test means a flake that looks like a defect.
+    private var settlingCount = 0
     /// Set by `urlSessionDidFinishEvents` when nobody was waiting yet, so the handshake below
     /// cannot park on an event that has already happened.
     private var backgroundEventsArrived = false
@@ -353,7 +362,7 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
     func waitUntilIdle() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             lock.lock()
-            if current == nil {
+            if current == nil, settlingCount == 0 {
                 lock.unlock()
                 continuation.resume()
                 return
@@ -521,8 +530,7 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
         lastReportedPercent = -1
         isCancelling = false
         resumesUsed = 0
-        let waiters = idleWaiters
-        idleWaiters = []
+        settlingCount += 1
         lock.unlock()
 
         Task { @MainActor [progress] in
@@ -531,8 +539,17 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
             // `recordInstall` is what calls the composition root's reboot, so it goes last: the
             // screen's own facts are true before the layer under it is torn down.
             if installed { progress.recordInstall() }
+
+            // **Waiters are woken from here, not from the body above**, which is the whole of
+            // `settlingCount`'s purpose: idle has to mean the box is telling the truth, not merely
+            // that the socket closed.
+            self.lock.lock()
+            self.settlingCount -= 1
+            let waiters = self.idleWaiters
+            self.idleWaiters = []
+            self.lock.unlock()
+            waiters.forEach { $0.resume() }
         }
-        waiters.forEach { $0.resume() }
     }
 
     /// `0…1` against the **manifest's** promised size, never `totalBytesExpectedToWrite` — that is

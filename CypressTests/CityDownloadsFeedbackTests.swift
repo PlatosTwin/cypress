@@ -1021,9 +1021,9 @@ struct CityDownloadsFeedbackTests {
         let control = Date().timeIntervalSince(controlStarted)
         #expect(walked == byteCount, "the control did not read the fixture it was calibrating on")
 
-        let staging = dir.appendingPathComponent("staging", isDirectory: true)
+        let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
         let started = Date()
-        let verified = try await CityDownloader(baseURL: dir).downloadCity(city, to: staging)
+        let progress = try await CityDownloadTests.transfer(city, from: dir, into: library)
         let elapsed = Date().timeIntervalSince(started)
 
         #expect(
@@ -1031,7 +1031,9 @@ struct CityDownloadsFeedbackTests {
             "download took \(elapsed)s against a \(control)s per-byte control — the per-byte loop is back"
         )
 
-        let landed = try Data(contentsOf: verified)
+        // A fast transfer that verified and installed nothing would satisfy the clock perfectly.
+        #expect(await progress.installCount == 1)
+        let landed = try Data(contentsOf: library.fileURL(id: city.id, version: city.version))
         #expect(landed.count == payload.count)
         #expect(SHA256.hash(data: landed).map { String(format: "%02x", $0) }.joined() == city.sha256)
     }
@@ -1048,6 +1050,34 @@ struct CityDownloadsFeedbackTests {
             payload.append(UInt8(truncatingIfNeeded: seed >> 33))
         }
         return payload
+    }
+
+    /// A **service** pointed at an in-process http bucket, with `city` parked at its path.
+    ///
+    /// The twin of `httpBucket` for the half that moved: the transfer is `CityDownloadService`'s
+    /// now, and it owns its own session rather than being handed one, so what a test can inject is
+    /// the configuration. A background configuration ignores `protocolClasses` outright, which is
+    /// why every test here runs the service over an ephemeral one — see `CityDownloadTests.transfer`
+    /// for what that does and does not prove.
+    @MainActor
+    static func httpService(
+        payload: Data,
+        for city: CityManifest.City,
+        library: CityLibrary,
+        stalls: Bool = false,
+        pacing: TimeInterval = 0
+    ) -> (CityDownloadProgress, CityDownloadService) {
+        let base = URL(string: "https://cities-fixture.invalid/\(UUID().uuidString)")!
+        CityBucketFixtureProtocol.park(
+            base.appendingPathComponent(city.path), body: payload, stalls: stalls, pacing: pacing
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CityBucketFixtureProtocol.self]
+        let progress = CityDownloadProgress()
+        let service = CityDownloadService(
+            library: library, baseURL: base, configuration: configuration, progress: progress
+        )
+        return (progress, service)
     }
 
     /// A downloader pointed at an in-process http bucket, with `city` parked at its path.
@@ -1099,21 +1129,44 @@ struct CityDownloadsFeedbackTests {
             bytes: Int64(payload.count),
             sha256: SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
         )
-        let (downloader, session) = Self.httpBucket(payload: payload, for: city)
-        defer { session.finishTasksAndInvalidate() }
-
-        let reported = FractionLog()
-        let verified = try await downloader.downloadCity(
-            city, to: dir.appendingPathComponent("staging", isDirectory: true),
-            progress: { reported.record($0) }
+        // **Paced at 20 ms a chunk, and the pacing is what makes this measurable.** The ring is no
+        // longer fed through a callback the test holds — it reads `CityDownloadProgress`, which a
+        // test samples — and sampling a transfer that completes in four milliseconds measures the
+        // sampler. 32 chunks at 20 ms is a transfer with a shape, sampled 100 times.
+        let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
+        let (progress, service) = await Self.httpService(
+            payload: payload, for: city, library: library, pacing: 0.02
         )
 
+        let reported = FractionLog()
+        let sampler = Task { @MainActor in
+            for _ in 0..<400 {
+                if let fraction = progress.inFlight?.fraction { reported.record(fraction) }
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+        }
+        _ = await MainActor.run { service.start(city) }
+        await service.waitUntilIdle()
+        sampler.cancel()
+
         let fractions = reported.all
-        #expect(!fractions.isEmpty, "the ring was told \(fractions.count) times — it draws 0% throughout")
-        #expect(fractions.last == 1.0, "the last report was \(String(describing: fractions.last))")
+        let distinct = Set(fractions)
+        #expect(!fractions.isEmpty, "the ring was told nothing at all — it draws 0% throughout")
+        #expect(
+            distinct.count >= 3,
+            "the ring saw \(distinct.count) distinct fractions across the transfer: \(fractions)"
+        )
         #expect(fractions == fractions.sorted(), "progress went backwards: \(fractions)")
-        // A fast download that verified nothing would satisfy the assertions above perfectly.
-        #expect(try Data(contentsOf: verified).count == payload.count)
+        #expect(
+            (fractions.max() ?? 0) >= 0.5,
+            "the ring never got past \(fractions.max() ?? 0) — it stops reporting part way"
+        )
+        // A transfer that reported beautifully and verified nothing would satisfy all of the above.
+        #expect(await progress.installCount == 1)
+        #expect(
+            try Data(contentsOf: library.fileURL(id: city.id, version: city.version)).count
+                == payload.count
+        )
     }
 
     /// The new transport keeps the old one's refusal: one sabotaged byte and the file is gone.
@@ -1138,15 +1191,20 @@ struct CityDownloadsFeedbackTests {
             path: "cities/us-ny-nyc-manhattan/v/us-ny-nyc-manhattan.sqlite",
             bytes: Int64(payload.count), sha256: honest
         )
-        let (downloader, session) = Self.httpBucket(payload: payload, for: city)
-        defer { session.finishTasksAndInvalidate() }
+        let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
+        let (progress, service) = await Self.httpService(
+            payload: payload, for: city, library: library
+        )
+        _ = await MainActor.run { service.start(city) }
+        await service.waitUntilIdle()
 
-        let staging = dir.appendingPathComponent("staging", isDirectory: true)
-        await #expect(throws: CityDownloader.DownloadError.self) {
-            _ = try await downloader.downloadCity(city, to: staging)
-        }
+        #expect(await progress.failedCityID == city.id)
+        #expect(await progress.installCount == 0)
+        #expect(library.installedVersion(of: city.id) == nil)
         #expect(
-            (try? FileManager.default.contentsOfDirectory(atPath: staging.path))?.isEmpty == true
+            (try? FileManager.default.contentsOfDirectory(atPath: library.stagingURL.path))?
+                .isEmpty != false,
+            "a refused file was left in staging"
         )
     }
 
@@ -1166,47 +1224,20 @@ struct CityDownloadsFeedbackTests {
         #expect(!CityDownloader.isCancellation(CityDownloader.DownloadError.unacceptableStatus(500)))
     }
 
-    /// **Cancel on the running screen leaves no failure line.** Driven through the model, over a
-    /// transport that stays open until it is cancelled, so the error really is the one URLSession
+    /// **Cancel on the running screen leaves no failure line**, driven through the model, over a
+    /// transport that stays open until it is cancelled — so the error really is the one URLSession
     /// produces rather than one the test constructed.
-    /// What a cancelled transfer actually throws out of `downloadCity`, measured rather than
-    /// assumed — the fixture reports `.networkConnectionLost` when the loader is stopped, so a
-    /// `.cancelled` here is URLSession's own translation of the cancelled task state.
-    @Test("a cancelled transfer surfaces as a cancellation, not as a transport failure",
-          .timeLimit(.minutes(1)))
-    func cancelledTransferSurfacesAsCancellation() async throws {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cities-cancel-raw-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        let payload = Self.payload(bytes: 64 * 1024)
-        let city = CityManifest.City(
-            id: "us-ny-nyc-manhattan", displayName: "Manhattan", coverage: "full", treeCount: 1,
-            schemaVersion: 17, version: "s17-r2026-08-22-ac7b1ccc",
-            path: "cities/us-ny-nyc-manhattan/v/us-ny-nyc-manhattan.sqlite",
-            bytes: Int64(payload.count),
-            sha256: SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
-        )
-        let (downloader, session) = Self.httpBucket(payload: payload, for: city, stalls: true)
-        defer { session.finishTasksAndInvalidate() }
-
-        let staging = dir.appendingPathComponent("staging", isDirectory: true)
-        let transfer = Task { try await downloader.downloadCity(city, to: staging) }
-        try await Task.sleep(nanoseconds: 100_000_000)
-        transfer.cancel()
-
-        do {
-            _ = try await transfer.value
-            Issue.record("a cancelled transfer returned a file")
-        } catch {
-            #expect(
-                CityDownloader.isCancellation(error),
-                "a cancelled download threw \(error), which the screen reads as a failure"
-            )
-        }
-    }
-
+    ///
+    /// **The fixture reports the wrong error on purpose.** `stopLoading` answers
+    /// `.networkConnectionLost`, never `.cancelled`, so a `failedCityID` that stays nil here is
+    /// URLSession's own translation of the cancelled task state being recognised — not the test
+    /// handing the code the answer. That distinction is what the deleted
+    /// `cancelledTransferSurfacesAsCancellation` existed to make, and it is made here now that the
+    /// transfer no longer throws to a caller who could inspect it: the service publishes one of two
+    /// outcomes, and this asserts which one.
+    ///
+    /// Both spellings still matter — `CityDownloader.isCancellation` is what
+    /// `bothCancellationSpellingsAreRecognised` pins directly.
     @MainActor
     @Test("cancelling a download does not draw the failure line", .timeLimit(.minutes(1)))
     func cancelDoesNotRenderFailure() async throws {
@@ -1224,12 +1255,16 @@ struct CityDownloadsFeedbackTests {
             sha256: SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
         )
         // Serves the body and then never finishes: the transfer is live until it is cancelled.
-        let (downloader, session) = Self.httpBucket(payload: payload, for: city, stalls: true)
-        defer { session.finishTasksAndInvalidate() }
+        let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
+        let (progress, service) = Self.httpService(
+            payload: payload, for: city, library: library, stalls: true
+        )
 
         let model = CityDownloadsModel(
-            library: CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true)),
-            downloader: downloader,
+            library: library,
+            downloader: CityDownloader(baseURL: dir),
+            service: service,
+            downloads: progress,
             bundledCities: [],
             installableCityLimit: 9, onInventoryChange: {}
         )
@@ -1237,50 +1272,33 @@ struct CityDownloadsFeedbackTests {
         #expect(model.downloading?.id == city.id, "the download never started, so nothing was cancelled")
 
         model.cancelDownload()
-        // A bounded foreground wait, and `break` rather than a `where` clause: `for … where` filters
-        // iterations, it does not stop the loop, so a settled download would still have been slept
-        // over 250 times.
-        for _ in 0..<250 {
-            if model.downloading == nil { break }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
+        await service.waitUntilIdle()
 
         #expect(model.downloading == nil, "the download never settled after Cancel")
         #expect(
             model.failedCityID == nil,
             "Cancel drew R43 §3's failure line — failedCityID is \(String(describing: model.failedCityID))"
         )
+        #expect(progress.installCount == 0)
     }
 
-    /// **A transfer cancelled *before* it is resumed still settles, and nothing in the suite used
-    /// to look** (review round 2, N8).
+    /// **A transfer cancelled in the same turn it was started still settles**, rather than parking
+    /// forever on a task nobody will ever hear about again.
     ///
-    /// `downloadFile`'s `onCancel` hands the cancellation to the delegate rather than calling
-    /// `task.cancel()` directly, so `start` can decline to begin a transfer the reader called off.
-    /// The comment on it used to cite `cancelDoesNotRenderFailure` as having measured a hang here;
-    /// that test cancels *after* the download starts and cannot reach this ordering, which is why
-    /// this one exists.
-    ///
-    /// **What it pins and what it does not.** It pins the reader-visible behavior: entering
-    /// `downloadCity` already cancelled ends as a cancellation, promptly. It does *not* claim the
-    /// handshake is the only thing standing between here and a hang — probed, a download task
-    /// cancelled and never resumed still delivers `didCompleteWithError(-999)`, so URLSession would
-    /// answer the continuation too. The value of the guard is that no transfer is begun; the value
-    /// of this test is that the path is exercised at all, which it previously was not.
-    ///
-    /// **The cancellation is issued from inside the task, before the call.** `Task { … }` then
-    /// `transfer.cancel()` from outside is a race — the body may already be past the point that
-    /// matters — and a racy probe of an ordering is a probe of nothing.
+    /// This is the ordering the old `downloadFile` handshake existed for — a Swift task cancelled
+    /// before `task.resume()` — and it survives the move to a background session in a different
+    /// shape: there is no continuation to park now, but there is a `current` transfer whose
+    /// clearing every waiter depends on, and a `Cancel` that raced `start` could have left it set.
     ///
     /// **The bucket stalls, and that is load-bearing.** A 64 KiB body over a bucket that completes
     /// would finish in microseconds whatever this code did, so "it settled quickly" would be true
     /// of anything. This body is served and then never finished: the only way out is cancellation.
     ///
-    /// Measured at 0.02 s; the bounded wait below is 5 s, a hang detector rather than a performance
-    /// assertion.
-    @Test("a download cancelled before it starts settles rather than hanging",
+    /// The five-second bound is a hang detector, not a performance assertion.
+    @MainActor
+    @Test("a download cancelled in the same turn it started settles rather than hanging",
           .timeLimit(.minutes(1)))
-    func preCancelledDownloadSettlesPromptly() async throws {
+    func immediateCancelSettlesPromptly() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("cities-precancel-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -1294,64 +1312,26 @@ struct CityDownloadsFeedbackTests {
             bytes: Int64(payload.count),
             sha256: SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
         )
-        let (downloader, session) = Self.httpBucket(payload: payload, for: city, stalls: true)
-        defer { session.finishTasksAndInvalidate() }
-
-        let staging = dir.appendingPathComponent("staging", isDirectory: true)
-        let outcome = OutcomeBox()
-        let transfer = Task {
-            // Cancelled before `downloadCity` is ever called, with no window in between.
-            withUnsafeCurrentTask { $0?.cancel() }
-            do {
-                _ = try await downloader.downloadCity(city, to: staging)
-                outcome.settle(.some(nil))
-            } catch {
-                outcome.settle(.some(error))
-            }
-        }
-        defer { transfer.cancel() }
-
-        // Bounded foreground wait — 250 × 20 ms — so a hang fails in five seconds with a legible
-        // message instead of sitting until the time limit.
-        for _ in 0..<250 {
-            if outcome.result != nil { break }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-
-        let settled = try #require(
-            outcome.result,
-            "a download cancelled before it was resumed never settled — the continuation is parked"
+        let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
+        let (progress, service) = Self.httpService(
+            payload: payload, for: city, library: library, stalls: true
         )
-        let error = try #require(settled, "a pre-cancelled download returned a verified file")
-        #expect(
-            CityDownloader.isCancellation(error),
-            "a pre-cancelled download threw \(error), which the screen reads as a failure"
-        )
+
+        // No await between the two: the cancel is issued before the transport can have got
+        // anywhere. If `current` were left set by that race, the wait below would never return and
+        // the test's own time limit is what would report it.
+        _ = service.start(city)
+        service.cancel()
+        await service.waitUntilIdle()
+
+        #expect(progress.inFlight == nil)
+        #expect(progress.failedCityID == nil, "an immediate Cancel drew the failure line")
+        #expect(progress.installCount == 0)
     }
 }
 
-/// A settled-or-not box for a download run on its own task, written from that task and read from
-/// the test's. `Optional<Optional>`: the outer says whether it settled at all, the inner carries
-/// the error, or nil for a download that returned a file.
-final class OutcomeBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: ((any Error)?)?
-
-    func settle(_ error: ((any Error)?)?) {
-        lock.lock()
-        value = error
-        lock.unlock()
-    }
-
-    var result: ((any Error)?)? {
-        lock.lock()
-        defer { lock.unlock() }
-        return value
-    }
-}
-
-/// A thread-safe list of the fractions the progress ring was told, because the delegate reports
-/// from URLSession's own queue.
+/// A thread-safe list of the fractions the progress ring was told, because the sampler that reads
+/// them runs on the main actor while the transfer reports from URLSession's own queue.
 final class FractionLog: @unchecked Sendable {
     private let lock = NSLock()
     private var fractions: [Double] = []
@@ -1391,18 +1371,26 @@ final class CityBucketFixtureProtocol: URLProtocol {
         let body: Data
         /// Emits the body and then never finishes, so a test can cancel a live transfer.
         let stalls: Bool
+        /// Seconds to wait between chunks. **Zero is the default and a paced fixture is the
+        /// exception**, because a transfer that finishes in microseconds cannot be *observed*
+        /// mid-flight — and observing it is the whole of what the progress ring's test now has to
+        /// do. Progress used to arrive through a callback the test held, which caught every report
+        /// however fast; the ring is fed through the composition root's box now
+        /// (`CityDownloadProgress`), which a test reads by sampling, and sampling a 4 ms transfer
+        /// measures the sampler.
+        let pacing: TimeInterval
     }
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var objects: [String: Object] = [:]
 
-    static func park(_ url: URL, body: Data, stalls: Bool = false) {
+    static func park(_ url: URL, body: Data, stalls: Bool = false, pacing: TimeInterval = 0) {
         lock.lock()
         defer { lock.unlock() }
         if objects[url.absoluteString] != nil {
             Issue.record("\(url.absoluteString) was already parked; give this fixture its own UUID.")
         }
-        objects[url.absoluteString] = Object(body: body, stalls: stalls)
+        objects[url.absoluteString] = Object(body: body, stalls: stalls, pacing: pacing)
     }
 
     private static func object(for url: URL?) -> Object? {
@@ -1435,6 +1423,7 @@ final class CityBucketFixtureProtocol: URLProtocol {
             let end = min(offset + chunk, object.body.count)
             client?.urlProtocol(self, didLoad: object.body.subdata(in: offset..<end))
             offset = end
+            if object.pacing > 0 { Thread.sleep(forTimeInterval: object.pacing) }
         }
         // A stalling object never finishes; the task stays live until the reader cancels it.
         guard !object.stalls else { return }

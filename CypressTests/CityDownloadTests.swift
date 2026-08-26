@@ -95,12 +95,60 @@ struct CityDownloadTests {
     /// Writes `payload` into a `file://` mirror of the bucket layout and returns a downloader
     /// pointed at it. Local fixtures, never the live bucket (CLAUDE.md: CI must not need a network).
     static func bucket(payload: Data, for city: CityManifest.City, in dir: URL) throws -> CityDownloader {
+        try park(payload: payload, for: city, in: dir)
+        return CityDownloader(baseURL: dir)
+    }
+
+    /// The same `file://` mirror, with no downloader on the end of it — what a transfer needs.
+    @discardableResult
+    static func park(payload: Data, for city: CityManifest.City, in dir: URL) throws -> URL {
         let object = dir.appendingPathComponent(city.path)
         try FileManager.default.createDirectory(
             at: object.deletingLastPathComponent(), withIntermediateDirectories: true
         )
         try payload.write(to: object)
-        return CityDownloader(baseURL: dir)
+        return object
+    }
+
+    /// Runs one transfer through the shipping path, and returns once it has settled **and said so**.
+    ///
+    /// **An ordinary configuration, and that is a real limit rather than a shortcut.** A background
+    /// session refuses a `file://` URL outright and ignores `protocolClasses` entirely, so neither
+    /// of this project's two fixture mechanisms can reach `CityDownloadService` through one. What
+    /// this therefore proves is every line of the service *except* which configuration carries the
+    /// bytes — the record, the status rule, the verification, the install, the publish. That the
+    /// shipping configuration is a background one is `shippingConfigurationIsBackground`; that a
+    /// background transfer survives a suspend and a kill was watched on the device, and the PR body
+    /// says which parts of that a simulator can and cannot show.
+    static func transfer(
+        _ city: CityManifest.City,
+        from baseURL: URL,
+        into library: CityLibrary
+    ) async throws -> CityDownloadProgress {
+        let progress = await CityDownloadProgress()
+        let service = CityDownloadService(
+            library: library, baseURL: baseURL,
+            configuration: .ephemeral, progress: progress
+        )
+        let started = await MainActor.run { service.start(city) }
+        #expect(started, "the service declined to start a transfer with nothing else running")
+        await service.waitUntilIdle()
+        return progress
+    }
+
+    /// A copy of `record` with one field replaced — for putting a deliberately *wrong* promise to
+    /// the verifier without hand-building a whole manifest entry around it.
+    static func record(
+        _ record: CityDownloadRecord, bytes: Int64? = nil, sha256: String? = nil
+    ) -> CityDownloadRecord {
+        CityDownloadRecord(
+            CityManifest.City(
+                id: record.id, displayName: record.displayName, coverage: "full",
+                treeCount: 1, schemaVersion: 14, version: record.version,
+                path: "cities/\(record.id)/\(record.version)/\(record.id).sqlite",
+                bytes: bytes ?? record.bytes, sha256: sha256 ?? record.sha256
+            )
+        )
     }
 
     /// A minimal file that passes `SeedSchema.introspect` — the four required tables, the three
@@ -271,41 +319,62 @@ struct CityDownloadTests {
 
     // MARK: - Download verification
 
-    @Test("a sha256 mismatch throws, deletes the temp file, and installs nothing")
-    func checksumMismatchInstallsNothing() async throws {
+    /// The two refusals, asked of the rule itself rather than of a transfer.
+    ///
+    /// **This used to run a download to get here, and asking directly is strictly better.** The
+    /// transfer now lives on a background session (`CityDownloadService`) whose failures reach the
+    /// screen as one sentence, so a test that drove the transfer could see only *that* a file was
+    /// refused — never which of the two rules refused it, or in which order. `CityDownloader.verify`
+    /// is where that order is decided, it throws the exact error, and it has no transport in it at
+    /// all. What a transfer must still prove — that refused bytes install nothing and leave no
+    /// staging behind — is `refusedBytesInstallNothing` below, over the shipping path.
+    @Test("verification refuses on size before hash, and names which rule refused")
+    func verificationRefusesWithTheExactError() throws {
+        let dir = try Self.tempDir()
+        let payload = Data("some bytes".utf8)
+        let file = dir.appendingPathComponent("candidate.sqlite")
+        try payload.write(to: file)
+        let honest = CityDownloadRecord(Self.entry(payload: payload))
+
+        // Size first: the promise is one byte longer than the file and its sha256 is honest, so
+        // only an order that checks the count first can produce this error.
+        #expect(throws: CityDownloader.DownloadError.sizeMismatch(
+            expected: Int64(payload.count) + 1, got: Int64(payload.count)
+        )) {
+            try CityDownloader.verify(fileAt: file, against: Self.record(honest, bytes: honest.bytes + 1))
+        }
+
+        // The count agrees and the hash does not.
+        let liar = String(repeating: "ab", count: 32)
+        #expect(throws: CityDownloader.DownloadError.checksumMismatch(
+            expected: liar, got: Self.sha256Hex(payload)
+        )) {
+            try CityDownloader.verify(fileAt: file, against: Self.record(honest, sha256: liar))
+        }
+
+        // The control, and it is the half that matters: an honest promise passes, so the two above
+        // are refusals rather than a verifier that rejects everything put to it.
+        #expect(throws: Never.self) {
+            try CityDownloader.verify(fileAt: file, against: honest)
+        }
+    }
+
+    @Test("bytes that fail verification install nothing and leave staging empty")
+    func refusedBytesInstallNothing() async throws {
         let dir = try Self.tempDir()
         let payload = Data("not the promised bytes".utf8)
         let promised = Self.entry(payload: payload, sha256: String(repeating: "ab", count: 32))
-        let downloader = try Self.bucket(payload: payload, for: promised, in: dir)
+        try Self.park(payload: payload, for: promised, in: dir)
         let library = CityLibrary(rootURL: dir.appendingPathComponent("library"))
 
-        await #expect(throws: CityDownloader.DownloadError.self) {
-            _ = try await downloader.downloadCity(promised, to: library.stagingURL)
-        }
+        let progress = try await Self.transfer(promised, from: dir, into: library)
+
+        #expect(await progress.failedCityID == promised.id)
+        #expect(await progress.installCount == 0)
         // The staging area holds nothing and the library never heard of the city.
         let staged = (try? FileManager.default.contentsOfDirectory(atPath: library.stagingURL.path)) ?? []
         #expect(staged.isEmpty, "a failed download left \(staged) in staging")
         #expect(library.installedVersion(of: promised.id) == nil)
-    }
-
-    @Test("a byte-count mismatch is refused before the hash is even compared")
-    func sizeMismatchIsRefused() async throws {
-        let dir = try Self.tempDir()
-        let payload = Data("some bytes".utf8)
-        var promised = Self.entry(payload: payload)
-        promised = CityManifest.City(
-            id: promised.id, displayName: promised.displayName, coverage: promised.coverage,
-            treeCount: promised.treeCount, schemaVersion: promised.schemaVersion,
-            version: promised.version, path: promised.path,
-            bytes: promised.bytes + 1, sha256: promised.sha256
-        )
-        let downloader = try Self.bucket(payload: payload, for: promised, in: dir)
-
-        await #expect(throws: CityDownloader.DownloadError.sizeMismatch(
-            expected: Int64(payload.count) + 1, got: Int64(payload.count)
-        )) {
-            _ = try await downloader.downloadCity(promised, to: dir.appendingPathComponent("staging"))
-        }
     }
 
     @Test("a verified download installs at the immutable path; an update prunes the old version")
@@ -315,31 +384,135 @@ struct CityDownloadTests {
 
         let v1Payload = Data("version one".utf8)
         let v1 = Self.entry(version: "s14-r2026-06-01", payload: v1Payload)
-        let downloaderV1 = try Self.bucket(payload: v1Payload, for: v1, in: dir)
-        let stagedV1 = try await downloaderV1.downloadCity(v1, to: library.stagingURL)
-        try library.install(verifiedFileAt: stagedV1, id: v1.id, version: v1.version)
+        try Self.park(payload: v1Payload, for: v1, in: dir)
+        let afterV1 = try await Self.transfer(v1, from: dir, into: library)
+        #expect(await afterV1.installCount == 1)
         #expect(library.installedVersion(of: "sf") == "s14-r2026-06-01")
 
         // A failed update leaves the installed version byte-for-byte untouched.
         let badPayload = Data("version two, corrupted in flight".utf8)
         let promisedV2 = Self.entry(version: "s14-r2026-07-31", payload: Data("version two".utf8))
-        let downloaderBad = try Self.bucket(payload: badPayload, for: promisedV2, in: dir)
-        await #expect(throws: CityDownloader.DownloadError.self) {
-            _ = try await downloaderBad.downloadCity(promisedV2, to: library.stagingURL)
-        }
+        let badDir = try Self.tempDir()
+        try Self.park(payload: badPayload, for: promisedV2, in: badDir)
+        let afterBad = try await Self.transfer(promisedV2, from: badDir, into: library)
+        #expect(await afterBad.failedCityID == promisedV2.id)
+        #expect(await afterBad.installCount == 0)
         #expect(library.installedVersion(of: "sf") == "s14-r2026-06-01")
         #expect(try Data(contentsOf: library.fileURL(id: "sf", version: "s14-r2026-06-01")) == v1Payload)
 
         // The real v2 lands, and only then is v1 pruned (new-then-prune, ruling §4).
         let v2Payload = Data("version two".utf8)
-        let downloaderV2 = try Self.bucket(payload: v2Payload, for: promisedV2, in: dir)
-        let stagedV2 = try await downloaderV2.downloadCity(promisedV2, to: library.stagingURL)
-        try library.install(verifiedFileAt: stagedV2, id: promisedV2.id, version: promisedV2.version)
+        let goodDir = try Self.tempDir()
+        try Self.park(payload: v2Payload, for: promisedV2, in: goodDir)
+        let afterV2 = try await Self.transfer(promisedV2, from: goodDir, into: library)
+        #expect(await afterV2.installCount == 1)
         #expect(library.installedVersion(of: "sf") == "s14-r2026-07-31")
         #expect(!FileManager.default.fileExists(
             atPath: library.fileURL(id: "sf", version: "s14-r2026-06-01").path
         ))
         #expect(library.installedCities().map(\.version) == ["s14-r2026-07-31"])
+    }
+
+    // MARK: - The background session's own state machine
+
+    /// **The promise travels on the task, and a later process is what reads it.**
+    ///
+    /// This is what lets a transfer survive the app: `nsurlsessiond` hands a task back to whichever
+    /// process next opens the session, and `taskDescription` is the only thing that comes with it.
+    /// A record that did not round-trip would be a finished download nothing could verify.
+    @Test("the download record round-trips through a task description")
+    func recordRoundTrips() throws {
+        let city = Self.entry(
+            id: "us-ny-nyc-manhattan", version: "s17-r2026-08-22.02-ac7b1ccc",
+            payload: Data("x".utf8)
+        )
+        let record = CityDownloadRecord(city)
+        #expect(CityDownloadRecord.decoded(try record.encoded()) == record)
+        // Junk decodes to nil rather than to a partly-filled record: a transfer with no promise is
+        // cancelled (`CityDownloadService.adopt`), and a half-read one would be verified against
+        // nonsense.
+        #expect(CityDownloadRecord.decoded("not json") == nil)
+        #expect(CityDownloadRecord.decoded(nil) == nil)
+    }
+
+    /// **The shipping configuration is a background one, and both flags on it are decisions.**
+    ///
+    /// `isDiscretionary = true` is the system scheduling the transfer at its own convenience —
+    /// plugged in, on wi-fi, possibly hours later — underneath a ring the reader is watching.
+    /// `sessionSendsLaunchEvents = false` means a transfer that finishes after the app has been
+    /// terminated is never delivered to anybody at all. Neither default suits a button somebody
+    /// just pressed.
+    @Test("the shipping session is a background session that relaunches the app")
+    func shippingConfigurationIsBackground() {
+        let configuration = CityDownloadService.backgroundConfiguration()
+        #expect(configuration.identifier == CityDownloadService.backgroundSessionIdentifier)
+        #expect(configuration.sessionSendsLaunchEvents)
+        #expect(!configuration.isDiscretionary)
+        // The control: an ordinary configuration carries no identifier, so the line above is reading
+        // a background session rather than a property every session happens to have.
+        #expect(URLSessionConfiguration.ephemeral.identifier == nil)
+    }
+
+    /// **Asking an idle session what it is carrying still answers**, which is the half a screen
+    /// waits on.
+    ///
+    /// `hasAdopted` is what stops the Cities screen drawing `Download` for a city already on its
+    /// way; a launch with nothing outstanding has to set it too, or the screen waits for an answer
+    /// that never comes.
+    @Test("adoption answers even when there is nothing to adopt")
+    func adoptionOfAnIdleSessionAnswers() async throws {
+        let dir = try Self.tempDir()
+        let library = CityLibrary(rootURL: dir.appendingPathComponent("library"))
+        let progress = await CityDownloadProgress()
+        let service = CityDownloadService(
+            library: library, baseURL: dir,
+            configuration: .ephemeral, progress: progress
+        )
+
+        #expect(await !progress.hasAdopted)
+        await service.adopt()
+        #expect(await progress.hasAdopted)
+        #expect(await progress.inFlight == nil)
+    }
+
+    /// **A live transfer survives being asked about**, which is the rule `adopt` applies to whatever
+    /// the session hands back.
+    ///
+    /// The transfer here was started by *this* process, because an ordinary `URLSession` cannot hand
+    /// a task to another one — that is precisely what a background session's identifier is for. So
+    /// what this pins is the decoding-and-republishing half: the promise `start` wrote onto the task
+    /// is read back off it through `getAllTasks`, and the city is named again. The cross-process
+    /// half is the simulator caveat recorded in the PR body.
+    @Test("a live transfer is read back off its own task and re-published", .timeLimit(.minutes(1)))
+    func adoptionRepublishesALiveTransfer() async throws {
+        let dir = try Self.tempDir()
+        let library = CityLibrary(rootURL: dir.appendingPathComponent("library"))
+        let payload = Data(repeating: 7, count: 64 * 1024)
+        let base = URL(string: "https://cities-adopt.invalid/\(UUID().uuidString)")!
+        let city = Self.entry(payload: payload)
+        CityBucketFixtureProtocol.park(
+            base.appendingPathComponent(city.path), body: payload, stalls: true
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CityBucketFixtureProtocol.self]
+
+        let progress = await CityDownloadProgress()
+        let service = CityDownloadService(
+            library: library, baseURL: base, configuration: configuration, progress: progress
+        )
+        await MainActor.run { _ = service.start(city) }
+        #expect(await progress.inFlight?.record.id == city.id)
+
+        // The session is asked what it is carrying, exactly as a fresh launch asks.
+        await service.adopt()
+        #expect(await progress.hasAdopted)
+        #expect(
+            await progress.inFlight?.record == CityDownloadRecord(city),
+            "the promise did not survive the round trip through the task"
+        )
+
+        await MainActor.run { service.cancel() }
+        await service.waitUntilIdle()
     }
 
     // MARK: - What the union attaches, and the pre-attach gate
