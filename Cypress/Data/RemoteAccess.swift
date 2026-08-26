@@ -173,8 +173,18 @@ public enum OfflineSession {
     }
 
     public static func make() -> URLSession {
+        URLSession(configuration: configuration())
+    }
+
+    /// The same refusal, as a configuration, for a caller that has to build the session itself.
+    ///
+    /// `CityDownloadService` owns its session — it is the delegate, and a background session is
+    /// constructed from a configuration rather than handed one — so the gate has to reach it one
+    /// step earlier than `make()` allows. Same protocol, same refusal, same error a reader standing
+    /// in a park would really see.
+    public static func configuration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [Refuser.self]
-        return URLSession(configuration: configuration)
+        return configuration
     }
 }

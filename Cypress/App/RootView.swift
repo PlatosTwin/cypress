@@ -14,6 +14,14 @@ struct RootView: View {
     /// tests that never open the Cities screen need not supply one.
     let onInventoryChange: () -> Void
 
+    /// What the Cities screen reads about a transfer, and the object that runs one.
+    ///
+    /// **Both come from `AppModel` and neither is rebuilt here**, which is the point: they outlive
+    /// the layer this view is built over, because the transfer they describe outlives the process.
+    /// See `CityDownloadService`.
+    let downloads: CityDownloadProgress
+    let downloadService: CityDownloadService
+
     /// Screen 15's `Continue with Apple`, as one value (spec §10 step 5).
     ///
     /// Threaded through the view rather than reached for inside `accountLink()`, because that is the
@@ -51,13 +59,35 @@ struct RootView: View {
 
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
+    /// - Parameters:
+    ///   - downloads: the composition root's transfer box. Defaulted for the same reason
+    ///     `onInventoryChange` is — previews and the three unit tests that build a `RootView` only
+    ///     to reach its `accountLink()` never open the Cities screen.
+    ///   - downloadService: defaulted to one that can reach nothing, on the same terms. **Never
+    ///     defaulted in the app**: `CypressApp` passes `AppModel`'s, because a second background
+    ///     session under the same identifier traps, and because the one built at launch is the one
+    ///     holding the reader's transfer.
     @MainActor
     init(
         data: DataLayer,
+        downloads: CityDownloadProgress? = nil,
+        downloadService: CityDownloadService? = nil,
         onInventoryChange: @escaping () -> Void = {},
         appleSignIn: AppleSignIn = .launchDefault()
     ) {
         self.data = data
+        // Built here rather than as a default argument: a default argument is evaluated in the
+        // caller's context, which for a `@MainActor` type is not always the main actor.
+        let downloads = downloads ?? CityDownloadProgress()
+        self.downloads = downloads
+        self.downloadService = downloadService ?? CityDownloadService(
+            library: CityLibrary(
+                rootURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("cypress-cities-detached", isDirectory: true)
+            ),
+            configuration: OfflineSession.configuration(),
+            progress: downloads
+        )
         self.onInventoryChange = onInventoryChange
         self.appleSignIn = appleSignIn
         _outbox = State(wrappedValue: data.makeOutboxViewState())
@@ -969,6 +999,12 @@ struct RootView: View {
                     downloader: data.remoteAccess.allowsNetwork
                         ? CityDownloader()
                         : CityDownloader(session: OfflineSession.make()),
+                    // **The one built at launch, never a fresh one.** A background `URLSession` may
+                    // exist once per identifier per process, and this one is already carrying
+                    // whatever the reader started — possibly in a process that no longer exists.
+                    // The screen reads it; it does not own it.
+                    service: downloadService,
+                    downloads: downloads,
                     // How many cities may be attached beside the bundle. Read off the
                     // live connection at open — `SQLITE_LIMIT_ATTACHED` belongs to whichever SQLite
                     // the platform ships — and reduced by the one slot the bundle itself holds.

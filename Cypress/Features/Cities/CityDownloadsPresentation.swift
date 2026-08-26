@@ -673,6 +673,35 @@ struct CityDownloadRow: Equatable, Identifiable {
         )
     }
 
+    /// A transfer the catalog cannot describe — adopted from a previous launch, or still running
+    /// after the network went away.
+    ///
+    /// **A state the screen could not previously be in.** A download used to exist only while the
+    /// screen that started it was standing on a catalog it had just fetched, so the offline branch
+    /// never had one to draw. A background transfer outlives both, and a Cities screen that said
+    /// nothing about the 199 MB currently arriving would be the same silence R43 §3 wrote the
+    /// `Downloading…` line to prevent.
+    ///
+    /// **No new copy and no new affordance**: the line, the ring and `Cancel` are all §3's, and the
+    /// name is the publisher's, carried on the transfer itself (`CityDownloadRecord.displayName`)
+    /// rather than composed from an id (DECISIONS constraint 15).
+    ///
+    /// `isOnDevice` is false, so it files under `Available to download` — which is where the city
+    /// was when the reader pressed the button, and where the finished install will move it from.
+    static func downloadingOffline(_ inFlight: CityDownloadProgress.InFlight) -> CityDownloadRow {
+        CityDownloadRow(
+            id: inFlight.record.id,
+            title: inFlight.record.displayName,
+            coverageNote: nil,
+            stateLine: CityDownloadsCopy.downloading,
+            detailLine: nil,
+            isFailure: false,
+            progress: inFlight.fraction,
+            isOnDevice: false,
+            affordances: [.cancel]
+        )
+    }
+
     /// A bundled city whose rows a downloaded copy has replaced, described from **disk facts
     /// alone** — the offline twin of `CityInstallState.bundledUpdated`.
     ///

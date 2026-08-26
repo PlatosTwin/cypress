@@ -19,13 +19,34 @@ final class CityDownloadsModel {
 
     private(set) var catalog: Catalog = .checking
     private(set) var installed: [CityLibrary.InstalledCity] = []
+
     /// The city being downloaded and how far along it is. One at a time (ruling §3).
-    private(set) var downloading: (id: String, fraction: Double)?
-    /// The most recent attempt that failed, until the next attempt or screen load clears it.
-    private(set) var failedCityID: String?
+    ///
+    /// **Read from the composition root's box, not owned here.** This model is rebuilt on every push
+    /// — its catalog is deliberately never persisted (ruling §3) — so a transfer it owned ended when
+    /// the reader pressed Back, and ended for good when the process did. Since the transfer moved to
+    /// a background session it outlives both, and what this screen does is *read* it.
+    var downloading: (id: String, fraction: Double)? {
+        guard let inFlight = downloads.inFlight else { return nil }
+        return (inFlight.record.id, inFlight.fraction)
+    }
+
+    /// The most recent attempt that failed, until the next attempt or screen load clears it. In the
+    /// same box, for the same reason: the attempt may have failed while no screen existed.
+    var failedCityID: String? { downloads.failedCityID }
 
     private let library: CityLibrary
     private let downloader: CityDownloader
+    /// The app-lifetime transfer. See `downloading`.
+    private let service: CityDownloadService
+    private let downloads: CityDownloadProgress
+    /// The value of `CityDownloadProgress.installCount` this screen has already read the disk for.
+    ///
+    /// **A watermark rather than a flag anyone clears.** An install can land while this screen does
+    /// not exist, or while it is on screen and the reader is watching; either way what the screen
+    /// owes is one re-read of the disk per install, and comparing a number it kept against a number
+    /// that only ever goes up is the version of that which cannot be got wrong by forgetting.
+    private var installsSeen = 0
     /// What the app's own bundle holds (`SeedCities`). The default is `inMainBundle`, which reads
     /// the seed once per process — this model is rebuilt on every push and its default argument is
     /// evaluated more often than that, so the caching lives there rather than being asserted here.
@@ -60,11 +81,12 @@ final class CityDownloadsModel {
     /// `RootView` passes a real set, and `CityDownloadsFeedbackTests` covers both a set that names
     /// the file and one that does not.
     private let liveInventoryIDs: Set<String>?
-    private var downloadTask: Task<Void, Never>?
 
     init(
         library: CityLibrary,
         downloader: CityDownloader = CityDownloader(),
+        service: CityDownloadService,
+        downloads: CityDownloadProgress,
         bundledCities: [SeedCities.City] = SeedCities.inMainBundle,
         installableCityLimit: Int,
         liveInventoryIDs: Set<String>? = nil,
@@ -72,6 +94,8 @@ final class CityDownloadsModel {
     ) {
         self.library = library
         self.downloader = downloader
+        self.service = service
+        self.downloads = downloads
         self.bundledCities = bundledCities
         self.installableCityLimit = installableCityLimit
         self.liveInventoryIDs = liveInventoryIDs
@@ -154,6 +178,19 @@ final class CityDownloadsModel {
             // (review finding 9): the offline screen shows the same cities as the online one, so a
             // bundled city keeps its card here rather than disappearing with the network.
             rows += orderedUniqueIDs(installedIDs + bundledIDs).compactMap(diskRow(for:))
+            // **A transfer with no catalog behind it still gets a row**, and this is new ground
+            // that the background session opened. Before it, a download could only exist while the
+            // screen that started it was on top of a catalog it had just fetched; now one can be
+            // adopted from a previous launch, or survive the reader turning the network off, and
+            // the offline branch would have drawn a screen with no mention of the 199 MB arriving.
+            //
+            // No new copy: `Downloading…` and the ring are R43 §3's, and the name comes from the
+            // record the transfer is carrying, which the publisher wrote (constraint 15).
+            if let inFlight = downloads.inFlight,
+               !installedIDs.contains(inFlight.record.id),
+               !bundledIDs.contains(inFlight.record.id) {
+                rows.append(.downloadingOffline(inFlight))
+            }
         }
         // **One post-pass over both branches, and that is what makes it complete.** Whether a file
         // opened is not a fact either branch above consults — the catalog does not know, the library
@@ -241,12 +278,28 @@ final class CityDownloadsModel {
     /// fails falls back to disk facts rather than keeping a catalog it can no longer vouch for.
     func load() async {
         refreshDiskFacts()
-        failedCityID = nil
+        service.clearFailure()
         do {
             catalog = .loaded(try await downloader.fetchManifest())
         } catch {
             catalog = .unavailable
         }
+    }
+
+    /// How many files have landed since launch. The view watches this; see `catchUpOnInstalls`.
+    var completedInstallCount: Int { downloads.installCount }
+
+    /// Re-reads the disk if an install has landed since this screen last looked.
+    ///
+    /// **Called from the view's own render**, because an install can now complete with no screen in
+    /// existence and with no view-tree reboot behind it either — a background relaunch has no
+    /// `DataLayer` to reboot. `load()` alone would only catch it on the next appearance, so a reader
+    /// watching the ring reach 100 % would sit on `Downloading…` until they left and came back.
+    /// Idempotent by construction: the watermark only moves when the counter does.
+    func catchUpOnInstalls() {
+        guard downloads.installCount != installsSeen else { return }
+        installsSeen = downloads.installCount
+        refreshDiskFacts()
     }
 
     func download(_ city: CityManifest.City) {
@@ -255,48 +308,26 @@ final class CityDownloadsModel {
         // Refusing here as well as declining to draw the button is what makes a second copy of a
         // city the device already holds structurally impossible rather than merely unreachable:
         // there is no caller — a stale view, a future affordance, a test — that can start one.
-        guard installState(for: city).allowsDownload else { return }
-        failedCityID = nil
-        downloading = (city.id, 0)
-        downloadTask = Task {
-            do {
-                let verified = try await downloader.downloadCity(
-                    city,
-                    to: library.stagingURL,
-                    progress: { fraction in
-                        Task { @MainActor [weak self] in
-                            guard let self, self.downloading?.id == city.id else { return }
-                            self.downloading = (city.id, fraction)
-                        }
-                    }
-                )
-                try library.install(verifiedFileAt: verified, id: city.id, version: city.version)
-                refreshDiskFacts()
-                // **Always, now.** A downloaded city is in the union the moment it lands, so every
-                // completed install changes what the map draws — a first download adds an arm, and
-                // an update to a bundled city replaces the rows it shadows. There is no longer an
-                // install that leaves the read layer alone.
-                onInventoryChange()
-            } catch let error where CityDownloader.isCancellation(error) {
-                // Canceled by the reader: the temp file is already gone, nothing to say.
-                //
-                // **Two spellings, and catching only one of them drew a failure over a Cancel.**
-                // `session.bytes` threw Swift's `CancellationError`; a cancelled
-                // `URLSessionDownloadTask` completes with `URLError(.cancelled)`, which matched
-                // nothing here and fell through to the branch below — so pressing `Cancel` said
-                // `Download failed. Nothing was changed.` The predicate lives on `CityDownloader`
-                // because it is a fact about what that type throws, not about this screen.
-            } catch {
-                // Partial or impostor bytes never reached the library (`CityDownloader`'s
-                // contract); the row reverts and says so.
-                failedCityID = city.id
-            }
-            downloading = nil
-        }
+        let state = installState(for: city)
+        guard state.allowsDownload else { return }
+        // ── The attachment cap, refused here as well as undrawn ───────────────────────────────
+        //
+        // `CityDownloadRow.decide` withholds the `Download` button at the cap (R84 D5) and until
+        // now that was the *only* statement of the rule — the transfer itself did not consult it.
+        // That was survivable while a transfer lived and died inside one screen. It is not now: a
+        // background transfer outlives the row that started it, so a tap on a stale view is a file
+        // that lands minutes later, in another process, with no slot for it — and the reader is
+        // shown `Couldn't be read` for a file that is perfectly readable and merely homeless.
+        //
+        // Scoped exactly as the button is: only a fetch that would ADD an inventory. An update
+        // reuses the slot that city already holds and is never withheld (D5's second sentence),
+        // which `state.isOnDevice` is the test for.
+        guard hasInstallHeadroom || state.isOnDevice else { return }
+        service.start(city)
     }
 
     func cancelDownload() {
-        downloadTask?.cancel()
+        service.cancel()
     }
 
     /// Removes a downloaded city, and — for a city the bundle also holds — reverts it to the copy
