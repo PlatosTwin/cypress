@@ -239,6 +239,23 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
+### Owner backlog additions, 2026-08-28
+
+Three items queued by the owner, recorded verbatim in intent; none is scheduled yet.
+
+- **A tree's photos through the seasons.** A screen showing one tree's photographs as a grid,
+  browsable by season or by year, with a toggle between only this device's photos and all photos.
+  No mock exists — the round that builds it starts as a design round under DECISIONS constraint 21
+  (screen and states proposed to the owner before code), and its all-photos half must respect the
+  photo-visibility rules (D11 privacy defaults, R82 hero provenance).
+- **Journal: stats for a chosen neighborhood, and a chosen city.** The Journal's neighborhood
+  segment gains a way to select a different neighborhood and read its stats; the City segment gets
+  the same for a different city. Today both resolve from the nearest tree (R84's D4 kept it that
+  way deliberately); this item is the round that supersedes that scoping with an explicit picker,
+  and with R84's union live it must define which inventories a non-local pick may draw from.
+- **Update the repo README.** The README predates most of what shipped; bring it current with the
+  app as it stands (cumulative inventories, the publish pipeline, the beta process).
+
 ### Chip backlog (logged 2026-08-28, so dismissal of a session chip loses nothing)
 
 Five follow-up tasks were surfaced as one-click session chips during the 2026-08-22..28 rounds.
