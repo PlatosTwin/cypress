@@ -239,6 +239,35 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
+### Chip backlog (logged 2026-08-28, so dismissal of a session chip loses nothing)
+
+Five follow-up tasks were surfaced as one-click session chips during the 2026-08-22..28 rounds.
+Four disappeared from the pending list without being run; whatever dismissed them, the work is
+still owed, so it is recorded here as the durable queue. Each stands alone.
+
+1. **Close `PendingCitationGuardTests`' blind spots.** The guard that keeps code comments from
+   citing pending errata/rulings filenames has known gaps in what it scans; enumerate the blind
+   spots and cover them, with a planted-citation calibration per shape.
+2. **Rebuild `Tools/ui-test-shards.txt` from live CI data.** The shard assignments have drifted
+   from the suites' actual durations (shard runtimes are visibly unbalanced in recent runs);
+   regenerate from measured per-class times and re-prove `UITestShardCoverageTests` still covers
+   every class.
+3. **Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
+   scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
+   with a calibrated failure case.
+4. **Redesign `CityDownloadsFeedbackTests`' perf-margin test.** The "transfer beats a per-byte walk
+   by an order of magnitude" test (`CityDownloadsFeedbackTests.swift:920`-era) compares two
+   wall-clock timings with a hard margin and flaked on CI with no concurrent load (8.5x against a
+   10x threshold, 2026-08-23). PR #123's fix round narrowed a sibling window the same way and the
+   review flagged the class again — rebuild these guards load-independent (count work, or assert
+   the mechanism), keeping the regression they guard: a per-byte walk reappearing must fail.
+5. **Sweep `library.stagingURL`'s lifecycle for leaks** (chip still pending as of this note). The
+   #123 reviewer left it deliberately unfiled: can a process death, failed verification, cancelled
+   transfer, or refused install leave orphans in the staging directory, and does anything clean
+   them? Happy path verified empty on device; the sweep is every unhappy path, pinned with
+   red-proved tests.
+
+
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full
 reasoning, and what it supersedes, in `docs/rulings-pending/format1-retirement.md`.
