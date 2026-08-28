@@ -187,6 +187,12 @@ conflicts with convenience, the rule wins.
   `main-pull-request-only → disabled` means direct-to-main; `→ active` means PRs only.
 
 ## Working in a worktree (agents)
+- **A worktree dies with its round.** When a round's PR merges and its verification is done, the
+  orchestrator removes the round's worktrees (`git worktree remove`) and deletes its branch, local
+  and remote, in the same sitting as the merge. Nothing under `~/PycharmProjects/` besides the main
+  checkout and the worktrees of LIVE rounds; 25 dead worktrees accumulated by 2026-08-28 because
+  no step owned this. Audit before removing: `git status` clean, HEAD an ancestor of origin/main,
+  `git stash list` empty (a stash outlives its worktree — see below).
 - Set up with `Tools/setup_worktree.sh <worktree-path>` — it copies the git-ignored ~103 MB seed
   into `Cypress/Resources/` and `Fixtures/seed/`; without it 13 tests fail on `seedURL → nil`
   and you will chase a defect you did not cause.
