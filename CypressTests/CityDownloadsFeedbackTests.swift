@@ -962,9 +962,10 @@ struct CityDownloadsFeedbackTests {
     /// design of this test. A fixed bound has to be slower than the defect on the slowest machine
     /// and faster than the fix on that same machine, and at the payload sizes a unit suite can
     /// afford there is no such number: on the 4 MB fixture below, measured on the assigned
-    /// simulator, MEASURED-FIRST — so any bound loose enough to be stable (say six seconds) sits far
-    /// above *both* and would certify the defect as fixed. That is this project's signature failure
-    /// — a guard that is green while the defect is present.
+    /// simulator, the per-byte control takes **0.283 s** and the download task **0.0078 s**, so any
+    /// bound loose enough to be stable (say six seconds) sits far above *both* and would certify the
+    /// defect as fixed. That is this project's signature failure — a guard that is green while the
+    /// defect is present.
     ///
     /// So the test measures the defect itself, here, on whatever machine is running: it walks the
     /// same fixture with `URLSession.AsyncBytes` exactly as the old body did, and then requires the
@@ -977,10 +978,12 @@ struct CityDownloadsFeedbackTests {
     /// A reader debugging a red here was being handed a bound that is not the one that fired.
     ///
     /// **The margin is real but not enormous, and it is stated rather than implied.** The factor is
-    /// not headroom; it is spent on the comparison. Measured on iPhone 16e, MEASURED-PAIR — so the
-    /// bound is `MEASURED-BOUND` and the slack between the committed assertion and the measurement
-    /// is about **MEASURED-SLACK×**. Worth knowing before reading a red here as a performance
-    /// regression: the number to revisit if it ever flakes is this factor, not the fixture size.
+    /// not headroom; it is spent on the comparison. Re-measured on iPhone 16e for this correction,
+    /// through the narrowed window below: `elapsed 0.007778 s`, `control 0.282818 s`, ratio
+    /// **36.4** — so the committed bound is `0.007778 × 6 = 0.0467 s` against that control, and the
+    /// slack between the assertion and the measurement is about **6.1×**. Worth knowing before
+    /// reading a red here as a performance regression: the number to revisit if it ever flakes is
+    /// this factor, not the fixture size.
     ///
     /// Byte count and sha256 are asserted alongside, because a fast download that verified nothing
     /// would satisfy a timing test perfectly.
@@ -1247,10 +1250,24 @@ struct CityDownloadsFeedbackTests {
         // load-*independent* rather than merely load-tolerant, and it is why consequence 2 above
         // is a note about precision rather than a hazard to the assertion.
         //
-        // Calibrated before it was believed, by making the machine's speed irrelevant the hard way:
-        // with the fixture's pacing raised to 0.2 s a chunk — a 6.4 s transfer, twice the old
-        // sampler's whole life — the shipped body fails exactly as CI did (`max` 0.469) and this
-        // one passes with fractions running to 1.0. Restored to 0.05 afterwards.
+        // ── Calibrated, because an instrument nobody checked is a coincidence ────────────────
+        //
+        // CI's failure was reproduced on this machine before the fix was believed, by making the
+        // transfer outlast the old sampler the way the runner's load did: pacing raised to **0.4 s
+        // a chunk**, a 12.8 s transfer against a 3 s observation window. Both bodies were run over
+        // that same fixture on iPhone 16e, and the sampler was instrumented to report what it saw.
+        //
+        //   shipped body (`for _ in 0..<600`)   samples 599   distinct 10 of 32   max **0.3125**
+        //     → red: `((fractions.max() ?? 0) → 0.3125) >= 0.5`, the same expectation and the same
+        //       shape as the runner's `→ 0.0625`. 599 is the budget, not a measurement of anything.
+        //   this body (`while !Task.isCancelled`) samples 2157  distinct **32 of 32**  max **1.0**
+        //     → green, having watched the whole transfer rather than the first quarter of it.
+        //
+        // The pacing was restored to 0.05 afterwards and the instrument removed. Note what the
+        // first row is *not*: at 0.2 s a chunk the shipped body stopped at 19 of 32 and still
+        // scraped past the assertion at 0.59375 — it was already failing to watch the transfer two
+        // pacings before it started failing the test, which is why the count of chunks it covers,
+        // rather than the color of the run, is the thing that was measured here.
         let reported = FractionLog()
         let sampler = Task { @MainActor in
             while !Task.isCancelled {
