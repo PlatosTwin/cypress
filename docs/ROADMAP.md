@@ -278,7 +278,14 @@ still owed, so it is recorded here as the durable queue. Each stands alone.
    10x threshold, 2026-08-23). PR #123's fix round narrowed a sibling window the same way and the
    review flagged the class again — rebuild these guards load-independent (count work, or assert
    the mechanism), keeping the regression they guard: a per-byte walk reappearing must fail.
-5. **Sweep `library.stagingURL`'s lifecycle for leaks** (chip still pending as of this note). The
+5. **Harden `MapPanTabSwitchUITests` against slow runners.** Four CI sightings by 2026-08-28
+   (latest: run 33208371211, on code byte-identical to a green run), always the same shape: the
+   probe records `panBegan=3 panEnded=3` yet the camera never leaves "Centered on you" — the
+   drag is delivered but the runner is too slow for MapKit to register it as a pan. Rework the
+   test's gesture (or its precondition) so a delivered-but-unregistered pan retries or fails as
+   an environment refusal rather than a red; keep the regression it guards (a deliberate pan
+   surviving a tab switch must still fail if the camera resets).
+6. **Sweep `library.stagingURL`'s lifecycle for leaks** (chip still pending as of this note). The
    #123 reviewer left it deliberately unfiled: can a process death, failed verification, cancelled
    transfer, or refused install leave orphans in the staging directory, and does anything clean
    them? Happy path verified empty on device; the sweep is every unhappy path, pinned with
