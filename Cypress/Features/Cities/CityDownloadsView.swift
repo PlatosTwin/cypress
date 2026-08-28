@@ -70,6 +70,14 @@ struct CityDownloadsView: View {
         .toolbar(.hidden, for: .navigationBar)
         // Re-fetched on every appearance and never persisted (ruling §3).
         .task { await model.load() }
+        // **An install can now land while this screen is standing still.** `.task` above fires once
+        // per appearance, and the transfer no longer belongs to this screen: it completes on
+        // URLSession's own queue, possibly while the reader is watching the ring. Without this, the
+        // row would sit on `Downloading…` until they left and came back.
+        //
+        // Watching the counter rather than calling the model on every render, so the disk is read
+        // once per install rather than once per frame.
+        .onChange(of: model.completedInstallCount) { _, _ in model.catchUpOnInstalls() }
     }
 
     // MARK: - The NYC Data Mine disclaimer (RULINGS R78 ruling 2)
