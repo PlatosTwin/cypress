@@ -1215,13 +1215,13 @@ struct CityDownloadsFeedbackTests {
         //
         // 1. **The fixture is paced**, at 50 ms a chunk. Sampling a transfer that completes in four
         //    milliseconds measures the sampler.
-        // 2. **The count of distinct fractions is not a strong assertion and is not treated as
-        //    one.** The sampler runs on the main actor, Swift Testing runs suites in parallel, and
-        //    a neighbouring `@MainActor` test can starve it — measured, on a cold fresh-DerivedData
-        //    run, at 2 distinct samples where a warm run saw many. So the load-bearing assertion is
-        //    the one below it: **a fraction at or past half way**, which no amount of starvation
-        //    produces if `didWriteData` is not publishing. Red-proved by deleting the publish: the
-        //    sampler then sees exactly one value, `0.0`, which is what `start` put there.
+        // 2. **The values are observed, not sampled, so starvation cannot thin them.** This used
+        //    to read as a caveat about a sampler that a neighbouring `@MainActor` test could starve
+        //    — and the caveat turned out to be the defect (see `FractionObserver`, and the note at
+        //    the sampler's grave below). What is recorded now is every value the box is given,
+        //    from inside the turn that gives it. The load-bearing assertion is still the one at the
+        //    bottom — **a fraction at or past half way** — and deleting the publish still produces
+        //    exactly one value, `0.0`, the one `start` put there.
         let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
         let (progress, service) = await Self.httpService(
             payload: payload, for: city, library: library, pacing: 0.05
@@ -1238,48 +1238,41 @@ struct CityDownloadsFeedbackTests {
         // `max` 0.0625, against an assertion of 0.5, on a transfer that was working perfectly.
         // That is the wall-clock-margin defect class this repo has now filed twice.
         //
-        // **The fix is cancellation rather than counting, and it is not a widened number.** The
-        // sampler runs until the transfer is over — the `cancel()` below sits after
-        // `waitUntilIdle()` — so a slower machine does not shorten the observation, it lengthens
-        // it. There is no duration in this test for a load to exceed.
+        // **The first fix was to make the sampler's lifetime the transfer's** — `while
+        // !Task.isCancelled`, cancelled after `waitUntilIdle()` — on the argument that the sampler
+        // and the publisher share the main actor and therefore stall and recover together. It was
+        // calibrated before it was believed, by making the transfer outlast the old window the way
+        // the runner's load did (pacing 0.4 s a chunk, a 12.8 s transfer against a 3 s budget):
+        // the shipped body took 599 samples, covered **10 of 32** chunks and went red at `max`
+        // 0.3125 — the runner's failure, reproduced — while the cancel-driven one took 2157,
+        // covered **32 of 32** and reached 1.0.
         //
-        // It also cannot be starved out from under the thing it is watching, because **the sampler
-        // and the publisher share the main actor**: `CityDownloadProgress` is `@MainActor`, so a
-        // main actor too busy to run this loop is one too busy to publish the fractions the loop
-        // would have read. They stall and recover together. That is what makes the observation
-        // load-*independent* rather than merely load-tolerant, and it is why consequence 2 above
-        // is a note about precision rather than a hazard to the assertion.
+        // **And it was still wrong, which run 33197196976 said and this machine could not.** The
+        // shared-main-actor argument is false: `didWriteData` enqueues a *separate*
+        // `Task { @MainActor }` per whole percent, and `settle` enqueues one more that clears the
+        // box. A sampler resumed by `Task.sleep` is just another job in that queue with no claim on
+        // any particular position in it, and on the runner it got no turn at all between `start`
+        // and the end of the transfer: **one** recorded value, `0.0`, which is bit-for-bit the
+        // output of deleting the publish. Both the calibration above and this simulator's 32
+        // distinct samples were true and neither was evidence, because the thing that varies is not
+        // the transfer's length — it is whether the observer is scheduled inside it.
         //
-        // ── Calibrated, because an instrument nobody checked is a coincidence ────────────────
-        //
-        // CI's failure was reproduced on this machine before the fix was believed, by making the
-        // transfer outlast the old sampler the way the runner's load did: pacing raised to **0.4 s
-        // a chunk**, a 12.8 s transfer against a 3 s observation window. Both bodies were run over
-        // that same fixture on iPhone 16e, and the sampler was instrumented to report what it saw.
-        //
-        //   shipped body (`for _ in 0..<600`)   samples 599   distinct 10 of 32   max **0.3125**
-        //     → red: `((fractions.max() ?? 0) → 0.3125) >= 0.5`, the same expectation and the same
-        //       shape as the runner's `→ 0.0625`. 599 is the budget, not a measurement of anything.
-        //   this body (`while !Task.isCancelled`) samples 2157  distinct **32 of 32**  max **1.0**
-        //     → green, having watched the whole transfer rather than the first quarter of it.
-        //
-        // The pacing was restored to 0.05 afterwards and the instrument removed. Note what the
-        // first row is *not*: at 0.2 s a chunk the shipped body stopped at 19 of 32 and still
-        // scraped past the assertion at 0.59375 — it was already failing to watch the transfer two
-        // pacings before it started failing the test, which is why the count of chunks it covers,
-        // rather than the color of the run, is the thing that was measured here.
-        let reported = FractionLog()
-        let sampler = Task { @MainActor in
-            while !Task.isCancelled {
-                if let fraction = progress.inFlight?.fraction { reported.record(fraction) }
-                try? await Task.sleep(nanoseconds: 5_000_000)
-            }
+        // **So the sampler is gone.** `FractionObserver` records from inside the mutation itself
+        // (`withObservationTracking`'s `onChange`), which is not a turn anything can be denied. See
+        // its header. There is no duration and no scheduling left in this observation to lose.
+        let observer = await MainActor.run { () -> FractionObserver in
+            let observer = FractionObserver(progress)
+            // Started first, so the observer's first registration sees the box already holding this
+            // transfer's own 0 — and every value after it is one `didWriteData` put there.
+            service.start(city)
+            observer.begin()
+            return observer
         }
-        _ = await MainActor.run { service.start(city) }
         await service.waitUntilIdle()
-        sampler.cancel()
 
-        let fractions = reported.all
+        // `observer` is held by this local until here on purpose: `onChange` captures it weakly, so
+        // an observer nothing keeps alive stops re-registering and the recording quietly stops.
+        let fractions = observer.log.all
         let distinct = Set(fractions)
         #expect(!fractions.isEmpty, "the ring was told nothing at all — it draws 0% throughout")
         #expect(
@@ -1476,6 +1469,53 @@ final class FractionLog: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return fractions
+    }
+}
+
+/// Every value the download box is given, recorded **synchronously in the turn that changes it**.
+///
+/// **Not a sampler, and review finding F1's second round is why.** The first fix made the
+/// sampler's lifetime the transfer's instead of a fixed 600 × 5 ms budget, which removed one
+/// failure mode and left the real one standing: a sampler resumed by `Task.sleep` is a main-actor
+/// job competing with the ~100 `Task { @MainActor }` jobs `didWriteData` enqueues, one per whole
+/// percent, and with `settle`'s job that clears the box at the end. On the GitHub runner it lost
+/// that race outright — run 33197196976 recorded **one** value, `0.0`, the read it took
+/// immediately after `start`, and then never got another turn until `inFlight` was already nil.
+/// `(distinct.count → 1) >= 2` and `((fractions.max() ?? 0) → 0.0) >= 0.5`, which is the same
+/// output as deleting the publish. A test that cannot tell a starved observer from the defect it
+/// guards is not guarding anything.
+///
+/// `withObservationTracking`'s `onChange` runs **inside the mutation**, on the actor doing it, so
+/// there is no turn to be denied and no ordering to lose: if the box is told, this hears it. The
+/// value read is the one being left behind (the callback fires before the store), so the sequence
+/// recorded is every value the box held except its last — which is exactly the run of fractions
+/// this test asserts over, since the last one is the `nil` that `settle` writes.
+///
+/// This is not the continuation recipe `AlmanacModel`'s header rejects: nothing here awaits a
+/// change, so there is no continuation to leak when the owner goes away.
+@MainActor
+final class FractionObserver {
+    let log = FractionLog()
+    private let progress: CityDownloadProgress
+
+    init(_ progress: CityDownloadProgress) { self.progress = progress }
+
+    /// Begins recording. Call **after** `start`, so the first value seen is the transfer's own 0.
+    func begin() { track() }
+
+    private func track() {
+        withObservationTracking {
+            _ = progress.inFlight
+        } onChange: { [weak self] in
+            // `CityDownloadProgress` is `@MainActor`, so every mutation of it is a main-actor one.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let fraction = self.progress.inFlight?.fraction { self.log.record(fraction) }
+                // Re-registered here rather than from a scheduled job: a deferred re-registration
+                // is a window, and a window is the thing this type exists to not have.
+                self.track()
+            }
+        }
     }
 }
 
