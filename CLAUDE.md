@@ -135,6 +135,17 @@ conflicts with convenience, the rule wins.
   hashes are verified on both ends, everything temporary is destroyed after. The one thing to
   ask the owner for is the go-ahead to create the worker machine — nothing else.
 
+## The backlog is live, or it is wrong
+- **`docs/ROADMAP.md` is the queue's single home.** A PR body, a review verdict, a ledger note, a
+  ticket — those are records of a moment, immutable the moment they're written, and presenting one
+  as the current queue is how three already-shipped items were re-proposed to the owner on
+  2026-08-28. Copy items INTO the roadmap when they arrive; read the roadmap, not the source
+  document, when asked what's outstanding.
+- **A PR that resolves a backlog item strikes it in the same PR** — the same rule the copy audit
+  follows for SCREENS.md. The orchestrator checks at merge: does this round's diff resolve
+  anything the roadmap still lists as open? If the author didn't strike it, the merge waits until
+  someone does.
+
 ## Numbering and shared files
 - Never write a number into `docs/ERRATA.md` or `docs/RULINGS.md` from a branch or agent. Write
   the entry **unnumbered** to `docs/errata-pending/<topic>.md` or `docs/rulings-pending/`; the
