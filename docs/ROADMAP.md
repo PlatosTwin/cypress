@@ -239,6 +239,40 @@ badge, where the dark pair was documented in prose and initially transcribed as 
 
 ## Also outstanding
 
+### Tester feedback, reconciled against main 2026-08-28
+
+The 20 re-queued reports from PR #118's verbatim table, audited item by item against origin/main
+with receipts. Nine were already shipped (1, 2, 3, 5, 6, 7, 8, 10, 11 — all but the first two in
+PR #102's beta-polish, which merged the day build 49 was cut, so the tester reported against fixes
+that had not yet reached a build). What remains OPEN:
+
+- **F4 — a time filter** (today / this week / this month / last 30 days / past year). No period
+  selector exists on any screen; which screen the tester meant is itself unconfirmed.
+- **F15 — enrich the tree profile**: ID help, history/etymology, usage/edibility. Content work;
+  pairs with the parked seed-prose pass, and invented botanical content is forbidden (DECISIONS
+  constraint 15) — sourcing is the work.
+- **F16 — trees-seen counters (30d / year / lifetime). BLOCKED ON A RULING**: D1 / ARCHITECTURE
+  §5.1 forbids counting a person's actions into a user-visible string. Needs the owner to amend or
+  refuse; not schedulable as written.
+- **F22 — species distribution as a static city map** (one point per tree) on the field guide's
+  §5; today it is two stat cards.
+- **F23 — "See them all on the map"** link from Grove/Journal into the map filtered to yours; the
+  target filter exists (`MapFilter.membership`, chip "Yours"), nothing routes into it.
+- **F25 — Account/You page UI/UX pass.**
+- **F26 — Measure: unit switch clears the entered value. BLOCKED ON A RULING**: deliberate today —
+  `Quantity.value` is "the number as the human typed it, never converted", and keeping digits
+  across a unit flip would falsify it. Needs the owner to choose: keep-and-annotate, convert, or
+  keep the clear.
+- **F27 — measurements can be neither edited nor deleted.** The data model already carries the
+  tombstone (`deletedAt`); no user-facing path reaches it, and no withdrawal mutation exists in
+  the outbox vocabulary. The unhappy sibling of the photo-withdrawal work.
+- **F28 — adding a reading on a tree holding both height and DBH** is two small-text taps deep;
+  the add-a-reading card only exists while its own measurement is missing.
+- **F17 — neighborhood stats far from home — folded into the neighborhood/city picker item
+  below**: nearest-tree resolution is unchanged since the report and R84 D4 deliberately kept it;
+  the picker round is its designated fix, and should also decide what the screen says when the
+  nearest tree is very far away.
+
 ### Owner backlog additions, 2026-08-28
 
 Three items queued by the owner, recorded verbatim in intent; none is scheduled yet.
