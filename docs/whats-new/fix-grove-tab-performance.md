@@ -28,5 +28,12 @@
 # announcing it would send a tester looking for a difference they cannot feel. Left out.
 #
 # Nor does this claim anything about the map, which was never on this path and is unchanged.
+#
+# ── ON LENGTH ──────────────────────────────────────────────────────────────────────────────
+#
+# The first draft of the line below was 246 characters and `plan` refused it: the limit is 200,
+# and it is shared with every other open branch inside TestFlight's 4000-character budget. What
+# went was the clause about the cost scaling with the size of the city — true, measured, and a
+# sentence about the app's internals rather than about the tester's morning.
 
-My Grove now opens straight away. The Trees tab used to sit on a blank column for several seconds before your trees appeared, and both tabs got slower the more of the city the app knew about; they are now near-instant however large your grove is.
+My Grove now opens straight away. Its Trees tab used to sit on a blank column for several seconds before your trees appeared, however large or small your grove was.
