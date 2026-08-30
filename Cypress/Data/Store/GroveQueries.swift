@@ -39,14 +39,22 @@ public struct GroveQueries {
     /// seed with a 40-tree grove, identical answers: `residentNeighborhood` 73 → 0.2 ms,
     /// `knownSpecies` 116 → 0.2 ms.
     ///
-    /// **It is sound only while every inventory file stores its uuids lowercase**, which is a
-    /// property of the published files rather than of anything in this repository — so it is
-    /// asserted rather than assumed. `DataGates.seedContract` checks it **per arm**, so the bundled
-    /// seed and every downloaded pack are each answerable for it, and
-    /// `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack` is the negative control that
-    /// shows the check can actually fail. A file that broke it would make this join match nothing —
-    /// an empty Grove rather than a slow one — and that is a failure the gate must catch and not
-    /// the reader.
+    /// **It is sound only while every inventory file stores its uuids in lower case**, so that is
+    /// asserted rather than assumed — and it is worth being exact about *where*, because a file
+    /// that broke it would not be slow, it would be **empty**: the join matches nothing, so no
+    /// species is known, no area resolves, and no tree profile opens.
+    ///
+    /// - `DataGates.seedContract` checks it **per arm**, so the bundled seed answers for it on
+    ///   every CI run, and `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack` is the
+    ///   negative control showing the check fails on a *pack* rather than only on the bundle.
+    /// - **A pack downloaded at runtime is not checked**, and this comment will not pretend
+    ///   otherwise. `CityLibrary.validateCityFile` is the gate such a file passes through and it
+    ///   asks about shape and generation, not about this. What makes the gap narrow rather than
+    ///   open is that every published file's uuids are `str(uuid.uuid5(…))` from
+    ///   `Tools/build_seed.py`, and Python has no uppercase spelling of that — so the shape is
+    ///   unreachable for anything this project builds and reachable only for a file it did not.
+    ///   Whether that gate should refuse such a file is a product decision — a city that installs
+    ///   today would stop installing — and is left to be ruled on rather than taken here.
     ///
     /// `TreeQueries` and `SpeciesQueries` already carry the same finding for their own joins; this
     /// file is the one that never got the treatment.
