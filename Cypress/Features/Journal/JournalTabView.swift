@@ -51,6 +51,11 @@ struct JournalTabView: View {
     /// resolves its neighborhood from it and names no neighborhood at all without one.
     let coordinate: Coordinate?
 
+    /// The stated accuracy of that fix, in meters. Both stats segments need it and neither used to
+    /// get it: a fix too coarse to place the reader must not be used to name a neighborhood or a
+    /// city (`AlmanacLimits.fixCanResolveAnArea(accuracyM:)`, tester report F17).
+    var accuracyM: Double?
+
     /// The provider itself, handed down so the almanac segment can observe it directly rather than
     /// only ever seeing a fix that already changed (ERRATA E123's residual, #223). `nil` in previews
     /// and tests that supply `coordinate` alone — see `AlmanacView.location`.
@@ -107,6 +112,7 @@ struct JournalTabView: View {
                 AlmanacView(
                     api: api,
                     coordinate: coordinate,
+                    accuracyM: accuracyM,
                     location: location,
                     onOpenTree: onOpenTree,
                     onShowGroup: onShowGroup,
@@ -119,6 +125,7 @@ struct JournalTabView: View {
                 CityView(
                     api: api,
                     coordinate: coordinate,
+                    accuracyM: accuracyM,
                     onOpenTree: onOpenTree,
                     onRequestLocation: onRequestLocation
                 )

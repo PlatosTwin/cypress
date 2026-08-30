@@ -22,11 +22,20 @@
 //    a contributor's identity.
 //
 //  ── The rule this file adds, that `AlmanacPresentation` never needed ─────────────────────────
-//  **Nothing on this screen, or in this file, ever prints a city's proper name.** See `City.swift`
-//  for why: the fused seed carries no display name for a city, only for a city's *inventory*, and
-//  the one place this app does carry a hand-entered civic name (`CityManifest.displayName`) is
-//  fetched over a network this screen must not depend on. So the header names the segment, `City`,
-//  and nothing lower on the screen ever tries to be more specific than the record can support.
+//  **Nothing on this screen ever *composes* a city's proper name**, and it never did. The rule as
+//  originally written was stronger than that — "nothing here ever prints a city's proper name" —
+//  and it was written because the fused seed carried no display name for a city, only for a city's
+//  *inventory* (`inventories.name`, "City of San Jose Street Tree inventory"), and the one civic
+//  name the app did hold was `CityManifest.displayName`, fetched over a network this screen must
+//  not depend on.
+//
+//  **That premise expired at seed schema 16** (task #237), which added `dim_city` — slug, display
+//  name, state, county — reached through `id_spaces.city_id`, on disk, in the file this screen
+//  already reads. `SeedCities` and the Cities screen have printed `San Francisco` and `San Jose`
+//  off it since. So the header now names the city when the record names it, and names nothing when
+//  the record does not (a pre-s16 file has no `dim_city` and `CityAlmanac.Snapshot.cityName` is
+//  `nil`). What stays forbidden is the thing R28 and R48 actually closed the door on: building a
+//  name out of an id space's key, or out of an inventory's title.
 //
 //  No SwiftUI in this file, so all of the above is testable without a renderer
 //  (`CypressTests/CityPresentationTests.swift`).
@@ -86,6 +95,15 @@ struct CityPresentation: Equatable {
     /// with nothing to say about it, which is `isEmpty` below.
     let hasCity: Bool
 
+    /// C1's trailing pill — the city's own name, read from `dim_city.display_name`, or `nil` when
+    /// the record carries none. See the file header: read, never composed.
+    let cityName: String?
+
+    /// The line under the header saying **where this city came from** — the reader's fix, or the
+    /// reader (`AreaPickerCopy.resolvedFromFix` / `.resolvedByChoice`). `AlmanacPresentation
+    /// .provenanceNote`'s twin, and the same half of tester report F17.
+    let provenanceNote: String?
+
     let contrast: Contrast?
     /// Card 2, `Who lives here · N species` — `AlmanacPresentation.composition(_:locale:)`, reused
     /// verbatim and scoped to the whole city instead of a neighborhood, so the remainder-row math
@@ -107,12 +125,21 @@ struct CityPresentation: Equatable {
     init(city: CityAlmanac, locale: Locale = .current) {
         guard let snapshot = city.snapshot else {
             self.hasCity = false
+            self.cityName = nil
+            self.provenanceNote = nil
             self.contrast = nil
             self.composition = nil
             self.oldest = nil
             return
         }
         self.hasCity = true
+        self.cityName = snapshot.cityName
+        self.provenanceNote = snapshot.resolution == .picked
+            ? AreaPickerCopy.resolvedByChoice
+            : AreaPickerCopy.resolvedFromFix
+        // Card 1 has no local half to compare against for a city the reader chose — `LocalAPI
+        // .city(near:in:)` does not read one, and the gate below is what that absence means here:
+        // `contrast(local: nil, …)` is already `nil`, so no arm of this file has to know.
         self.contrast = Self.contrast(
             local: snapshot.localComposition,
             city: snapshot.cityComposition,

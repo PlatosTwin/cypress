@@ -506,6 +506,9 @@ struct RootView: View {
             JournalTabView(
                 api: data.api,
                 coordinate: location.availability.coordinate,
+                // The fix's own accuracy, which both stats segments now read. It has always been on
+                // `Availability` and nothing downstream ever looked at it (tester report F17).
+                accuracyM: location.availability.accuracyM,
                 location: location,
                 onOpenTree: { id in router.push(.treeProfile(id)) },
                 onShowGroup: { group in router.push(.pinSet(group)) },
