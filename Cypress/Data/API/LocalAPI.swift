@@ -19,6 +19,8 @@ public actor LocalAPI: CypressAPI {
     private let groveQueries: GroveQueries?
     private let almanacQueries: AlmanacQueries?
     private let cityQueries: CityQueries?
+    /// The two pickers' lists, and the resolution of an area the reader chose (`AreaQueries`).
+    private let areaQueries: AreaQueries?
     private let now: @Sendable () -> Date
 
     /// This installation's device id (D9). Contributions made before sign-in are attributed here.
@@ -67,6 +69,7 @@ public actor LocalAPI: CypressAPI {
         self.groveQueries = store.seed.map { GroveQueries(schema: $0) }
         self.almanacQueries = store.seed.map { AlmanacQueries(schema: $0) }
         self.cityQueries = store.seed.map { CityQueries(schema: $0) }
+        self.areaQueries = store.seed.map { AreaQueries(schema: $0) }
         self.photoDirectory = photoDirectory
             ?? store.databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
     }
@@ -1484,13 +1487,21 @@ public actor LocalAPI: CypressAPI {
             // nothing inside a *tighter* box centered differently); in practice for this seed's two
             // cities the two agree, and where they would not, the honest answer is no local mix
             // rather than one borrowed from farther away than the almanac itself would use.
-            let localScope: AlmanacScope?
-            if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
-                localScope = .neighborhood(id: polygon.id, name: polygon.name)
-            } else {
-                let fallback = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
-                localScope = try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection)
-                    ? fallback : nil
+            //
+            // **Not resolved at all for a chosen city.** The local half exists only to be one side
+            // of card 1's comparison, and card 1 does not draw against a city the reader is not in
+            // — see this method's own doc comment. Reading it anyway would leave a `localComposition`
+            // on the payload measured beside a city it has nothing to do with, which is a value
+            // waiting for the next caller to use it.
+            var localScope: AlmanacScope?
+            if resolution == .fromFix, let coordinate {
+                if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+                    localScope = .neighborhood(id: polygon.id, name: polygon.name)
+                } else {
+                    let fallback = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
+                    localScope = try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection)
+                        ? fallback : nil
+                }
             }
 
             // --- Card 1's local half, and card 1 & 2's citywide half. `AlmanacQueries.speciesMix`
@@ -1533,7 +1544,11 @@ public actor LocalAPI: CypressAPI {
                 snapshot: CityAlmanac.Snapshot(
                     localComposition: localComposition,
                     cityComposition: cityComposition,
-                    oldest: oldest
+                    oldest: oldest,
+                    // Read, never composed. `nil` for a file with no `dim_city`, and the header
+                    // then names no city at all — see `CityAlmanac.Snapshot.cityName`.
+                    cityName: try areaQueries?.city(idSpace: citySpace, connection: connection),
+                    resolution: resolution
                 )
             )
         }

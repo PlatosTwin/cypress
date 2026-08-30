@@ -421,6 +421,45 @@ public enum AlmanacLimits {
     /// spring plantings — which is why it is a cap and not a page size anybody has to think about.
     public static let recentPlantingRowLimit = 20
 
+    /// How far `SpeciesQueries.resolveNeighborhood(near:)` will look for the tree whose neighborhood
+    /// answers "which area is this".
+    ///
+    /// **400 m, which is the number that method has carried as a literal default since screen 07
+    /// added it.** Named here rather than left in the signature because a second thing now depends
+    /// on it — `fixCanResolveAnArea(accuracyM:)` below — and two copies of a distance that must be
+    /// the same distance is how they stop being the same distance.
+    public static let neighborhoodResolutionRadiusM: Double = 400
+
+    /// Whether a location fix of this stated accuracy may be used to say which area the reader is
+    /// standing in.
+    ///
+    /// ── The defect (tester report F17) ─────────────────────────────────────────────────────────
+    /// `MapLocationProvider.Availability.located` has always carried `accuracyM`, and nothing on the
+    /// path from it to screen 12 ever read it. So a fix good to ±5 m and a fix good to ±3,000 m were
+    /// treated identically: the app searched 400 m around the point for a tree, took that tree's
+    /// neighborhood, and printed the name in the header as plain fact. iOS returns exactly the
+    /// second kind of fix whenever the reader has granted **approximate** location rather than
+    /// precise — a point snapped to a large region tile, which for San Francisco lands near the
+    /// city's geographic middle. The nearest inventoried tree to the middle of San Francisco is in
+    /// **Castro/Upper Market**, which is the name the report says the screen "seems to default to".
+    ///
+    /// ── The rule ───────────────────────────────────────────────────────────────────────────────
+    /// **A fix whose own error circle is wider than the circle we search cannot pick out a tree
+    /// inside it.** At ±3,000 m the 400 m search is being run around a point the reader may be two
+    /// miles from, and the answer it returns is not a worse answer — it is an answer to a different
+    /// question, which is the shape this project's own verification rules warn about. So the screen
+    /// stops naming an area and asks the reader to choose one, which it can now do
+    /// (`AreaSelection`).
+    ///
+    /// **An unknown accuracy is permitted**, and that is the safe direction rather than the lenient
+    /// one: every live path supplies a number (`MapLocationProvider` publishes one with every fix,
+    /// substituting nothing), and the callers that pass `nil` are previews and tests driving a bare
+    /// coordinate. Refusing `nil` would blank those instead of leaving them exactly as they were.
+    public static func fixCanResolveAnArea(accuracyM: Double?) -> Bool {
+        guard let accuracyM else { return true }
+        return accuracyM <= neighborhoodResolutionRadiusM
+    }
+
     /// The radius of the fallback area, when no polygon in the record covers the reader
     /// (RULINGS **R29**).
     ///
