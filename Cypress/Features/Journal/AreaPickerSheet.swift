@@ -32,7 +32,8 @@
 //  `NeighborhoodChoice.treeCount` and `CityChoice.treeCount` order both lists, largest first, and
 //  are deliberately not printed on the chips: a capsule reading `Sunset/Parkside · 11,026` is a
 //  number nobody asked for at the moment of choosing, and 41 of them is a wall. The ordering is
-//  where the count does its work, and `AreaPickerCopy.ordering` is the one line that says so.
+//  where the count does its work, and each sheet's subtitle closes with `Largest first.` so the
+//  order is stated rather than left to be inferred from a list of names.
 //
 
 import SwiftUI
@@ -141,8 +142,17 @@ enum AreaPickerCopy {
 
     /// Under the header, whenever the reader picked the area themselves. Says what is being looked
     /// at and, by saying it, that it is not where they are standing.
-    static let resolvedByChoice = "You're reading a place you're not in, so the sections about your "
-        + "own walk are left out."
+    ///
+    /// **Two of them, because the two segments leave out different things and a shared sentence
+    /// would be wrong on one of them.** The almanac withholds §4, which is an ask to go and walk to
+    /// particular trees; the City segment withholds card 1, which is a comparison against the
+    /// reader's own streets. Naming "your own walk" on the City segment would describe a section
+    /// that is not there and has never been there — the small dishonesty this whole round is about,
+    /// reintroduced in the sentence that fixes it. Caught by looking at the screen, not by a test.
+    static let resolvedByChoice = "You're reading a place you're not in, so the section asking you "
+        + "to go and look is left out."
+    static let resolvedByChoiceCity = "You're reading a city you're not in, so the comparison with "
+        + "your own streets is left out."
 
     /// The affordance itself.
     static let change = "Change"

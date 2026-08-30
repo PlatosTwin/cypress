@@ -135,7 +135,7 @@ struct CityPresentation: Equatable {
         self.hasCity = true
         self.cityName = snapshot.cityName
         self.provenanceNote = snapshot.resolution == .picked
-            ? AreaPickerCopy.resolvedByChoice
+            ? AreaPickerCopy.resolvedByChoiceCity
             : AreaPickerCopy.resolvedFromFix
         // Card 1 has no local half to compare against for a city the reader chose — `LocalAPI
         // .city(near:in:)` does not read one, and the gate below is what that absence means here:
