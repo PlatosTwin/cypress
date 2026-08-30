@@ -148,6 +148,25 @@ struct AlmanacPresentation: Equatable {
     /// change it back.
     let areaNote: String?
 
+    /// The line that says **where the area on screen came from** — `AreaPickerCopy.resolvedFromFix`
+    /// when the reader's own fix chose it, `AreaPickerCopy.resolvedByChoice` when the reader did.
+    ///
+    /// **NOT SPECIFIED, and the half of tester report F17 that is not the picker.** The header pill
+    /// has always printed a neighborhood name as bare fact, and F17 is a reader looking at a name he
+    /// knew was wrong with nothing on the screen to say how it got there. Different from `areaNote`
+    /// above, which is about *what kind of area* this is (a place or a distance) and only ever draws
+    /// for the fallback; this is about *who chose it*, and always draws.
+    ///
+    /// `nil` when there is no area, where there is no provenance to state either.
+    let provenanceNote: String?
+
+    /// Whether the area was picked by the reader rather than resolved from their fix.
+    ///
+    /// Read straight off the payload (`Almanac.resolution`) rather than inferred from the selection
+    /// the model holds, for `AlmanacModel.displayedCoordinate`'s reason: the two are one read apart,
+    /// and in that gap an inferred answer labels the old area with the new area's provenance.
+    let isPickedArea: Bool
+
     let seasonRows: [SeasonRow]
 
     /// The line under §2's micro-label saying what determines the rows below it (task #177).
@@ -183,6 +202,8 @@ struct AlmanacPresentation: Equatable {
             self.hasArea = false
             self.neighborhoodName = nil
             self.areaNote = nil
+            self.provenanceNote = nil
+            self.isPickedArea = false
             self.seasonRows = []
             self.seasonNote = nil
             self.composition = nil
@@ -198,6 +219,10 @@ struct AlmanacPresentation: Equatable {
         self.hasArea = true
         self.neighborhoodName = pill
         self.areaNote = AlmanacCopy.areaNote(area.area, locale: locale)
+        self.isPickedArea = area.resolution == .picked
+        self.provenanceNote = area.resolution == .picked
+            ? AreaPickerCopy.resolvedByChoice
+            : AreaPickerCopy.resolvedFromFix
         let rows = Self.seasonRows(area, in: pill, now: now, calendar: calendar, locale: locale)
         self.seasonRows = rows
         self.seasonNote = AlmanacCopy.seasonNote(kinds: rows.map(\.kind), calendar: calendar, locale: locale)

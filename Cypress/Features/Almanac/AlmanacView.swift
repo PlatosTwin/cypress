@@ -51,6 +51,12 @@ struct AlmanacView: View {
     /// `.task(id:)` notice it change (ERRATA E155).
     private let coordinate: Coordinate?
 
+    /// The stated accuracy of that fix, in meters, and the reason this screen has one at all: a fix
+    /// too coarse to place the reader must not be used to name a neighborhood (tester report F17,
+    /// `AlmanacLimits.fixCanResolveAnArea(accuracyM:)`). `nil` in previews and tests driving a bare
+    /// coordinate, which the rule permits.
+    private let accuracyM: Double?
+
     /// The composition root's shared provider, held so the model can observe it directly (ERRATA
     /// E123's residual, #223) rather than waiting for a fix to arrive as a changed `coordinate`
     /// parameter on the next pass through the parent's body. `nil` in every preview and every test
@@ -60,9 +66,15 @@ struct AlmanacView: View {
 
     private let onRequestLocation: (() -> Void)?
 
+    /// Whether the area picker is up. Owned here and handed to `AlmanacScreen` as a value with two
+    /// closures, so the picker-open state can be handed straight in and photographed — the split
+    /// this file's own header describes, applied to one more state (ERRATA E126).
+    @State private var isPickingArea = false
+
     init(
         api: any CypressAPI,
         coordinate: Coordinate?,
+        accuracyM: Double? = nil,
         location: MapLocationProvider? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         onBack: (() -> Void)? = nil,
@@ -70,8 +82,15 @@ struct AlmanacView: View {
         onShowGroup: ((PinSet) -> Void)? = nil,
         onRequestLocation: (() -> Void)? = nil
     ) {
-        _model = State(wrappedValue: AlmanacModel(api: api, coordinate: coordinate, location: location, now: now))
+        _model = State(wrappedValue: AlmanacModel(
+            api: api,
+            coordinate: coordinate,
+            accuracyM: accuracyM,
+            location: location,
+            now: now
+        ))
         self.coordinate = coordinate
+        self.accuracyM = accuracyM
         self.location = location
         self.onBack = onBack
         self.onOpenTree = onOpenTree
@@ -96,8 +115,24 @@ struct AlmanacView: View {
             // for the same reason the presentation is: a state the screen cannot be *given* is a
             // state nobody can photograph (ERRATA E126).
             hasFailed: model.hasFailed,
-            onRetry: { Task { await model.retry() } }
+            onRetry: { Task { await model.retry() } },
+            // The fix is present and too rough to place the reader — F17's own mechanism. Asked of
+            // the model, beside `showsLocationPrompt`, and for the identical reason: the question is
+            // "is what is on screen blank because of this", not "is this true right now".
+            needsAreaChoice: model.needsAreaChoice,
+            areaOptions: Self.options(model.choices),
+            selectedAreaID: Self.optionID(model.displayedSelection),
+            isPickingArea: isPickingArea,
+            onOpenPicker: { isPickingArea = true },
+            onClosePicker: { isPickingArea = false },
+            onPickArea: { option in
+                isPickingArea = false
+                Task { await model.choose(Self.selection(for: option)) }
+            }
         )
+        // The picker's list. Once per screen: the set changes only when a city pack is installed or
+        // removed, which cannot happen while this segment is on screen.
+        .task { await model.loadChoices() }
         // `id:` and not a bare `.task`. The bare form runs once at mount, which is the same
         // once-only that the `@State` initializer has, so the first frame's coordinate would still
         // be the only one this screen ever read from. Keyed on the coordinate, the read re-runs when
@@ -112,10 +147,37 @@ struct AlmanacView: View {
         // on every walking-distance coordinate change even when `observeLocation()` correctly did not.
         .task(id: coordinate) {
             guard location == nil else { return }
-            await model.update(coordinate: coordinate)
+            await model.update(coordinate: coordinate, accuracyM: accuracyM)
         }
         // The direct-observation path. A no-op for every caller above that left `location` `nil`.
         .task { await model.observeLocation() }
+    }
+
+    // MARK: - The picker's options, and the selection they map back to
+
+    /// `AreaPickerCopy.here` first, then the record's own neighborhoods in the order the read
+    /// returned them (largest first — `AreaQueries.neighborhoods`).
+    ///
+    /// **`here` is always offered, including while it is the one showing.** A picker that hid the
+    /// way back would strand a reader who picked a neighborhood by mistake, and the chip's selected
+    /// state is what says which one is live.
+    static func options(_ choices: [NeighborhoodChoice]) -> [AreaPickerSheet.Option] {
+        [AreaPickerSheet.Option(id: AreaPickerCopy.hereID, label: AreaPickerCopy.here)]
+            + choices.map { AreaPickerSheet.Option(id: String($0.id), label: $0.name) }
+    }
+
+    static func optionID(_ selection: AreaSelection) -> String {
+        switch selection {
+        case .here: return AreaPickerCopy.hereID
+        case let .neighborhood(id): return String(id)
+        }
+    }
+
+    /// The inverse. An id that is not `here` and not an integer cannot be produced by `options(_:)`
+    /// above, and resolves to `.here` rather than to a crash or a neighborhood 0.
+    static func selection(for option: AreaPickerSheet.Option) -> AreaSelection {
+        guard option.id != AreaPickerCopy.hereID, let id = Int(option.id) else { return .here }
+        return .neighborhood(id: id)
     }
 }
 
@@ -145,7 +207,48 @@ struct AlmanacScreen: View {
     /// than no button, the judgment `GroveTabRow` already made about its two inert pills.
     var onRetry: (() -> Void)?
 
+    /// Location is granted, a fix has arrived, and it is too coarse to say which neighborhood the
+    /// reader is in (`AlmanacModel.needsAreaChoice`, tester report F17).
+    ///
+    /// **A fourth way of having nothing on the screen, and it means a fourth thing.** The other
+    /// three are `showsLocationPrompt` (no fix), `outOfRange` (a good fix, outside every inventory)
+    /// and `hasFailed` (the read did not arrive). This one is a good enough app and a rough enough
+    /// phone, and the only one of the four the reader can fix from here.
+    var needsAreaChoice: Bool = false
+
+    /// What the picker offers, which choice is live, and whether it is up.
+    ///
+    /// Handed in as values with closures rather than owned here, so every state of the picker can be
+    /// photographed with no model behind it (ERRATA E126) — including the one that matters most,
+    /// the sheet open over a named area.
+    var areaOptions: [AreaPickerSheet.Option] = []
+    var selectedAreaID: String?
+    var isPickingArea: Bool = false
+    var onOpenPicker: (() -> Void)?
+    var onClosePicker: (() -> Void)?
+    var onPickArea: ((AreaPickerSheet.Option) -> Void)?
+
+    /// Whether there is anything to pick from. An affordance over an empty list is the inert pill
+    /// `GroveTabRow` ruled out.
+    private var canPickArea: Bool { onPickArea != nil && areaOptions.count > 1 }
+
     var body: some View {
+        ZStack {
+            column
+            if isPickingArea {
+                AreaPickerSheet(
+                    title: AreaPickerCopy.neighborhoodTitle,
+                    subtitle: AreaPickerCopy.neighborhoodSubtitle,
+                    options: areaOptions,
+                    selectedID: selectedAreaID,
+                    onSelect: { onPickArea?($0) },
+                    onClose: { onClosePicker?() }
+                )
+            }
+        }
+    }
+
+    private var column: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -159,7 +262,10 @@ struct AlmanacScreen: View {
                         )
                         .padding(.top, CypressSpacing.labelSectionTop)
                         .padding(.horizontal, CypressSpacing.gutter)
+                    } else if needsAreaChoice {
+                        coarseFix
                     } else if let presentation, presentation.hasArea {
+                        provenance(presentation)
                         areaNote(presentation)
                         seasonBlock(presentation)
                         compositionBlock(presentation)
@@ -196,6 +302,67 @@ struct AlmanacScreen: View {
         .background(CypressColor.surfaceScreen)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    // MARK: - Where the area came from, and how to change it (tester report F17)
+
+    /// One muted sentence saying who chose this area, and the button that lets the reader choose
+    /// another. Drawn in `areaNote`'s type and color because it is doing `areaNote`'s job: saying
+    /// out loud something the header alone is too quiet to say.
+    ///
+    /// **NOT SPECIFIED** — see `AreaPickerCopy.resolvedFromFix` for why the sentence exists at all.
+    @ViewBuilder
+    private func provenance(_ presentation: AlmanacPresentation) -> some View {
+        if let note = presentation.provenanceNote {
+            VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+                Text(note)
+                    .font(CypressFont.body125)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .lineSpacing(CypressFont.LineSpacing.body125)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if canPickArea {
+                    SecondaryOutlineButton(
+                        AreaPickerCopy.change,
+                        style: .compact,
+                        action: { onOpenPicker?() }
+                    )
+                    .fixedSize()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutter)
+        }
+    }
+
+    /// A fix too rough to place the reader. Location is on; there is nothing to turn on, and the
+    /// picker is the door that is open (`AreaPickerCopy.coarseFixTitle`).
+    private var coarseFix: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            Text(AreaPickerCopy.coarseFixTitle)
+                .font(CypressFont.body145Bold)
+                .foregroundStyle(CypressColor.textInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(AreaPickerCopy.coarseFixBody)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textMuted)
+                .lineSpacing(CypressFont.LineSpacing.body125)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if canPickArea {
+                SecondaryOutlineButton(
+                    AreaPickerCopy.pickAnArea,
+                    style: .compact,
+                    action: { onOpenPicker?() }
+                )
+                .fixedSize()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
     }
 
     // MARK: - §1 Header (C1)
@@ -433,6 +600,20 @@ struct AlmanacScreen: View {
                 .foregroundStyle(CypressColor.textMuted)
                 .lineSpacing(CypressFont.LineSpacing.body125)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // **The one door that is open from here.** The copy above is D16's shape — it says what
+            // would change this, which is more cities joining the record — and until the picker
+            // existed there was nothing on this screen a reader standing in Sacramento could do. A
+            // reader who has downloaded Manhattan can read Manhattan from here now, which is the
+            // owner's ask arriving at the state that needed it most.
+            if canPickArea {
+                SecondaryOutlineButton(
+                    AreaPickerCopy.pickAnArea,
+                    style: .compact,
+                    action: { onOpenPicker?() }
+                )
+                .fixedSize()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, CypressSpacing.labelSectionTop)
