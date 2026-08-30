@@ -115,20 +115,30 @@ public struct GroveQueries {
         deviceID: UUID,
         connection: SQLiteConnection
     ) throws -> (id: Int, name: String)? {
-        let statement = try connection.cachedStatement("""
-            SELECT n.id AS neighborhood_id, n.name AS neighborhood_name
-              FROM (\(Self.ownContributions)) c
-              JOIN \(seed).trees t ON \(Self.treeJoin)
-              JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
-             WHERE t.deleted_at IS NULL
-             GROUP BY n.id
-             ORDER BY COUNT(*) DESC, n.name
-             LIMIT 1
-            """)
+        let statement = try connection.cachedStatement(residentNeighborhoodSQL)
         _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
         return try statement.fetchOne { row in
             (id: try row.int("neighborhood_id"), name: try row.string("neighborhood_name"))
         }
+    }
+
+    /// **The statements are properties so the gate can explain the text the app runs.**
+    ///
+    /// `MapQueryPlanTests`' own header records what happened when they were not: the plans were
+    /// pinned against SQL hand-copied into `DataGates.swift`, so changing the real query left the
+    /// gate explaining the paraphrase. `GroveQueryPlanTests` reads these, and nothing else builds
+    /// them.
+    var residentNeighborhoodSQL: String {
+        """
+        SELECT n.id AS neighborhood_id, n.name AS neighborhood_name
+          FROM (\(Self.ownContributions)) c
+          JOIN \(seed).trees t ON \(Self.treeJoin)
+          JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
+         WHERE t.deleted_at IS NULL
+         GROUP BY n.id
+         ORDER BY COUNT(*) DESC, n.name
+         LIMIT 1
+        """
     }
 
     /// The single city-inventory tree this contributor has been at most — R29's fallback center
@@ -153,19 +163,24 @@ public struct GroveQueries {
         deviceID: UUID,
         connection: SQLiteConnection
     ) throws -> Coordinate? {
-        let statement = try connection.cachedStatement("""
-            SELECT t.lat AS lat, t.lon AS lon
-              FROM (\(Self.ownContributions)) c
-              JOIN \(seed).trees t ON \(Self.treeJoin)
-             WHERE t.deleted_at IS NULL
-             GROUP BY t.uuid
-             ORDER BY COUNT(*) DESC, t.uuid
-             LIMIT 1
-            """)
+        let statement = try connection.cachedStatement(mostVisitedTreeSQL)
         _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
         return try statement.fetchOne { row in
             Coordinate(latitude: try row.double("lat"), longitude: try row.double("lon"))
         }
+    }
+
+    /// See `residentNeighborhoodSQL` for why this is a property.
+    var mostVisitedTreeSQL: String {
+        """
+        SELECT t.lat AS lat, t.lon AS lon
+          FROM (\(Self.ownContributions)) c
+          JOIN \(seed).trees t ON \(Self.treeJoin)
+         WHERE t.deleted_at IS NULL
+         GROUP BY t.uuid
+         ORDER BY COUNT(*) DESC, t.uuid
+         LIMIT 1
+        """
     }
 
     // MARK: - The ring's denominator
@@ -222,6 +237,17 @@ public struct GroveQueries {
         limit: Int? = nil,
         connection: SQLiteConnection
     ) throws -> Series<UUID> {
+        let statement = try connection.cachedStatement(speciesIDsSQL(scope: scope))
+        _ = try statement.bind(scope.bindings.merging(
+            [":limit": ContributionStore.rowsToRead(for: limit)] as [String: SQLiteBindable?]
+        ) { a, _ in a })
+        let rows = try statement.fetchAll { try $0.uuid("species_uuid") }
+        return ContributionStore.series(rows, limit: limit)
+    }
+
+    /// See `residentNeighborhoodSQL` for why this is a property. Takes the scope because the two
+    /// arms plan differently and the gate has to explain both.
+    func speciesIDsSQL(scope: AlmanacScope) -> String {
         let area: (join: String, predicate: String)
         switch scope {
         case .neighborhood:
@@ -231,30 +257,25 @@ public struct GroveQueries {
             area = (
                 join: """
                 JOIN \(seed).cypress_hood_xlat hx
-                              ON hx.inv = t.inv AND hx.local_id = t.neighborhood_local
+                          ON hx.inv = t.inv AND hx.local_id = t.neighborhood_local
                 """,
                 predicate: "hx.canon_id = :areaNeighborhood"
             )
         case .radius:
-            // `lat`/`lon` are the arm's own columns in both relations, so the box and the
-            // squared-distance test are the identical string screen 12 runs.
+            // `lat`/`lon` are the arm's own columns in this relation as in `trees`, so the box and
+            // the squared-distance test are the identical string screen 12 runs.
             area = (join: "", predicate: scope.predicate("t"))
         }
-        let statement = try connection.cachedStatement("""
-            SELECT DISTINCT sx.uuid AS species_uuid
-              FROM (SELECT DISTINCT t.inv AS inv, t.species_local AS species_local
-                      FROM \(seed).trees_area t
-                      \(area.join)
-                     WHERE \(area.predicate)) a
-              JOIN \(seed).cypress_species_xlat sx
-                ON sx.inv = a.inv AND sx.local_id = a.species_local
-             LIMIT :limit
-            """)
-        _ = try statement.bind(scope.bindings.merging(
-            [":limit": ContributionStore.rowsToRead(for: limit)] as [String: SQLiteBindable?]
-        ) { a, _ in a })
-        let rows = try statement.fetchAll { try $0.uuid("species_uuid") }
-        return ContributionStore.series(rows, limit: limit)
+        return """
+        SELECT DISTINCT sx.uuid AS species_uuid
+          FROM (SELECT DISTINCT t.inv AS inv, t.species_local AS species_local
+                  FROM \(seed).trees_area t
+                  \(area.join)
+                 WHERE \(area.predicate)) a
+          JOIN \(seed).cypress_species_xlat sx
+            ON sx.inv = a.inv AND sx.local_id = a.species_local
+         LIMIT :limit
+        """
     }
 
     // MARK: - The species the contributor knows
@@ -274,20 +295,7 @@ public struct GroveQueries {
         limit: Int? = nil,
         connection: SQLiteConnection
     ) throws -> Series<KnownSpecies> {
-        let statement = try connection.cachedStatement("""
-            SELECT s.\(schema.speciesIdentityColumn) AS species_uuid,
-                   s.scientific_name AS species_scientific_name,
-                   s.common_name AS species_common_name,
-                   MIN(c.captured_at) AS first_met_at,
-                   t.address AS first_met_address
-              FROM (\(Self.ownContributions)) c
-              JOIN \(seed).trees t ON \(Self.treeJoin)
-              JOIN \(seed).species s ON s.id = t.species_current
-             WHERE t.deleted_at IS NULL
-             GROUP BY s.id
-             ORDER BY first_met_at, s.scientific_name
-             LIMIT :limit
-            """)
+        let statement = try connection.cachedStatement(knownSpeciesSQL)
         _ = try statement.bind([
             ":device": deviceID.uuidString,
             ":user": userID?.uuidString,
@@ -305,5 +313,23 @@ public struct GroveQueries {
             )
         }
         return ContributionStore.series(rows, limit: limit)
+    }
+
+    /// See `residentNeighborhoodSQL` for why this is a property.
+    var knownSpeciesSQL: String {
+        """
+        SELECT s.\(schema.speciesIdentityColumn) AS species_uuid,
+               s.scientific_name AS species_scientific_name,
+               s.common_name AS species_common_name,
+               MIN(c.captured_at) AS first_met_at,
+               t.address AS first_met_address
+          FROM (\(Self.ownContributions)) c
+          JOIN \(seed).trees t ON \(Self.treeJoin)
+          JOIN \(seed).species s ON s.id = t.species_current
+         WHERE t.deleted_at IS NULL
+         GROUP BY s.id
+         ORDER BY first_met_at, s.scientific_name
+         LIMIT :limit
+        """
     }
 }

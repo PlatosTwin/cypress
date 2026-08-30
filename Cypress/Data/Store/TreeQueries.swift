@@ -1057,11 +1057,15 @@ public struct TreeQueries {
     /// looks: this is the check that stands in front of every write, and as `COLLATE NOCASE` its
     /// plan was a bare `SCAN t` — the whole inventory walked to answer one yes/no.
     public func exists(id: UUID, connection: SQLiteConnection) throws -> Bool {
-        let statement = try connection.cachedStatement(
-            "SELECT 1 AS present FROM \(seed).trees WHERE \(schema.treeIdentityColumn) = \(Self.identityMatch)"
-        )
+        let statement = try connection.cachedStatement(existsSQL)
         _ = try statement.bind(id.uuidString, forName: ":uuid")
         return try statement.fetchOne { _ in true } ?? false
+    }
+
+    /// A property so `GroveQueryPlanTests` explains this statement rather than a copy of it —
+    /// `MapQueryPlanTests`' header records what pinning a paraphrase was worth.
+    var existsSQL: String {
+        "SELECT 1 AS present FROM \(seed).trees WHERE \(schema.treeIdentityColumn) = \(Self.identityMatch)"
     }
 
     // MARK: - SQL fragments
