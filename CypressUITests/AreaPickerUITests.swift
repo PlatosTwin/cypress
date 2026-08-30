@@ -58,6 +58,25 @@ final class AreaPickerUITests: XCTestCase {
         record(app, named: "picker-2-sheet-open")
         XCTAssertTrue(app.buttons[Self.here].exists, "the picker offers no way back to the reader's own area")
 
+        // ── The picker is modal, and these are the assertions that say so ────────────────────────
+        //
+        // PR #132's review opened this sheet and then tapped `City` on the C5 segmented control
+        // *through the scrim*: the segment switched, the sheet vanished with no dismissal and no
+        // `onClose`, and the scrim had never covered that control in the first place. It was drawn
+        // as a `ZStack` layer inside the tab's own content rather than presented over it.
+        //
+        // `isHittable` is the property that separates the two, and it is checked at both ends of the
+        // screen because the old layer left the segmented control and the tab bar equally live. An
+        // element behind a modal presentation still **exists** — this must not be an existence check.
+        XCTAssertFalse(
+            app.buttons["City"].isHittable,
+            "the segmented control is tappable behind the picker's scrim, so the sheet is not modal"
+        )
+        XCTAssertFalse(
+            app.buttons["Journal"].isHittable,
+            "the tab bar is tappable behind the picker's scrim, so the sheet is not modal"
+        )
+
         let elsewhere = app.buttons[Self.otherNeighborhood]
         XCTAssertTrue(
             elsewhere.waitForExistence(timeout: 20),
@@ -118,7 +137,50 @@ final class AreaPickerUITests: XCTestCase {
         )
     }
 
-    // MARK: - 3 · Outside every inventory, the picker is the one door open
+    // MARK: - 3 · The other `.fromFix` mechanism: a city the record holds no polygons for
+
+    /// **R29's radius fallback, which is every reader in San Jose, permanently** — all 52,788 of that
+    /// city's rows carry `neighborhood_id IS NULL`.
+    ///
+    /// The first version of this round printed "Chosen from the tree nearest you in the city record."
+    /// here, directly above a sentence saying no boundary exists and the almanac was drawn around
+    /// you instead. Two adjacent sentences about one area, and the new one was the false one
+    /// (PR #132 review, F1). This drives that state on the device and reads both lines.
+    func testASanJoseReaderIsToldWhatActuallyChoseItsArea() {
+        let app = launch(fix: Self.downtownSanJose)
+        reachSegment(app, named: "Neighborhood", waitingFor: composition(app), throughPins: false)
+        record(app, named: "picker-10-san-jose-fallback")
+
+        // The pill is a distance rather than a place, which is what says this is the fallback and
+        // not some other screen agreeing with the assertions below.
+        XCTAssertTrue(
+            app.staticTexts[Self.radiusPill].exists,
+            "this reader is not in the radius fallback, so the sentences below are not under test"
+        )
+        XCTAssertTrue(
+            app.staticTexts[Self.fromFixRadiusNote].exists,
+            "the fallback does not say what chose its area"
+        )
+        XCTAssertFalse(
+            app.staticTexts[Self.fromFixNote].exists,
+            "the screen claims a nearest tree chose a circle that was drawn around the reader — "
+                + "F17's own defect, in the sentence written to fix it"
+        )
+        // The line it has to agree with, still there and still directly under it. **Matched by
+        // prefix**: an exact anchor of this length is rejected by XCUITest outright — "Invalid query
+        // - string identifier …" — which reads as a failing assertion rather than as a malformed
+        // one, and cost this test a red run to learn.
+        XCTAssertTrue(
+            app.staticTexts
+                .matching(NSPredicate(format: "label BEGINSWITH %@", Self.noBoundariesNote))
+                .firstMatch.exists
+        )
+        // And the picker is offered here too: this reader has 41 neighborhoods to choose from and no
+        // polygon of their own.
+        XCTAssertTrue(app.buttons[Self.change].exists)
+    }
+
+    // MARK: - 4 · Outside every inventory, the picker is the one door open
 
     /// A good, precise fix in Sacramento: the record does not reach it, so no area resolves and the
     /// screen says so. Before this round that was a dead end with nothing on it to press.
@@ -149,7 +211,7 @@ final class AreaPickerUITests: XCTestCase {
         record(app, named: "picker-9-out-of-range-recovered")
     }
 
-    // MARK: - 4 · A fix too rough to place the reader (F17's own mechanism)
+    // MARK: - 5 · A fix too rough to place the reader (F17's own mechanism)
 
     /// The state the report came from, reproduced: location granted, a fix in hand, and the fix's
     /// own error circle wider than the search that would name a neighborhood inside it.
@@ -203,6 +265,9 @@ final class AreaPickerUITests: XCTestCase {
     private static let coarseWesternAddition = "37.78485,-122.4215,3000"
     /// Precise, and outside every inventory in the record — `AlmanacCopy.outOfRangeTitle`'s state.
     private static let sacramento = "38.5816,-121.4944"
+    /// Precise, inside the bundle's second city — whose 52,788 rows carry no neighborhood at all, so
+    /// this is R29's radius fallback rather than a named polygon.
+    private static let downtownSanJose = "37.3352,-121.8895"
 
     /// `AlmanacCopy.compositionLabel`'s prefix — §3, the block A9 says always renders from city
     /// data, which makes it the sound witness that the almanac (and the City segment's card 2, which
@@ -223,10 +288,9 @@ final class AreaPickerUITests: XCTestCase {
     /// `AreaPickerCopy.resolvedFromFixRadius`, and `AlmanacCopy.areaPill`'s fallback string.
     private static let fromFixRadiusNote = "Centered on where you are."
     private static let radiusPill = "Within a 15-minute walk"
-    /// `AlmanacCopy.areaNote` — the sentence the provenance line has to agree with.
-    private static let noBoundariesNote = "No neighborhood boundaries are on file for where you are, "
-        + "so this almanac is drawn around you instead. It will name a neighborhood once this city's "
-        + "boundaries join the record."
+    /// `AlmanacCopy.areaNote`'s opening — the sentence the provenance line has to agree with.
+    /// A prefix, not the whole of it: see the assertion that uses it.
+    private static let noBoundariesNote = "No neighborhood boundaries are on file for where you are"
     /// Two of them: the two segments withhold different sections, so they say different sentences.
     private static let byChoiceNote =
         "You're reading a place you're not in, so the section asking you to go and look is left out."
