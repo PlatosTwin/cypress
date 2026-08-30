@@ -388,6 +388,7 @@ extension InventoryUnion {
         let temp = SeedDatabase.schemaName
         try connection.execute("CREATE VIEW \(temp).trees AS \(treesSQL(arms: arms))")
         try connection.execute("CREATE VIEW \(temp).trees_geo AS \(treesGeoSQL(arms: arms))")
+        try connection.execute("CREATE VIEW \(temp).trees_area AS \(treesAreaSQL(arms: arms))")
         try connection.execute("CREATE VIEW \(temp).trees_rtree AS \(treesRtreeSQL(arms: arms))")
         try connection.execute(
             "CREATE VIEW \(temp).species_assertions AS \(assertionsSQL(arms: arms))"
@@ -496,6 +497,49 @@ extension InventoryUnion {
             return """
             SELECT \(arm.ordinal) AS inv, t.id AS local_id,
                    (\(InventoryUnion.armStride) * \(arm.ordinal) + t.id) AS id,
+                   t.lat AS lat, t.lon AS lon
+              FROM \(arm.schemaName).trees t\(clause)
+            """
+        }.joined(separator: "\nUNION ALL\n")
+    }
+
+    /// **The Grove's area relation: each arm's OWN `neighborhood_id` and `species_current`.**
+    ///
+    /// `trees` projects `hx.canon_id AS neighborhood_id` and `sx.canon_id AS species_current`, so a
+    /// `WHERE t.neighborhood_id = ?` against it is a predicate on a **join output** and cannot reach
+    /// `idx_trees_neighborhood` inside the arm. That is not a hypothetical: it is what PR #120's
+    /// `schemaName` flip did to `GroveQueries.speciesIDs` without editing a line of it — measured
+    /// 92 ms through `trees` against 2 ms here, for the identical 186-species answer over the
+    /// bundled seed's Castro/Upper Market.
+    ///
+    /// This is the same move `trees_geo` makes for the map and the same reason: **a narrow relation
+    /// beside the wide one so the predicate lands on a column an arm actually indexes.** The
+    /// difference is which column — the map needs `(lat, lon, id)` because that is what
+    /// `idx_trees_lat_lon` covers; the Grove needs the untranslated neighborhood and species keys
+    /// because those are the columns the arms' own indexes are built on.
+    ///
+    /// **The ids here are arm-local and are useless on their own.** A caller filters with them and
+    /// then translates through `cypress_hood_xlat` / `cypress_species_xlat`, never the other way
+    /// round — two arms may both hold a `neighborhood_id` of 3 and they are not the same place
+    /// (`createCanonicalCatalogs` on why neighborhoods do not merge). `lat`/`lon` need no
+    /// translation and are carried so `AlmanacScope.radius` reaches `idx_trees_lat_lon` on the same
+    /// relation.
+    ///
+    /// Shadowing and soft deletes are applied inside the arm, exactly as `trees_geo` does, so the
+    /// caller carries neither predicate: a downloaded pack still hides the bundle's rows for the id
+    /// space it covers, on this path as on every other.
+    static func treesAreaSQL(arms: [InventoryArm]) -> String {
+        arms.map { arm in
+            var predicates = shadowPredicates(arm.shadowed, alias: "t")
+            if arm.hasSoftDeletedTrees { predicates.append("t.deleted_at IS NULL") }
+            let clause = predicates.isEmpty ? "" : " WHERE " + predicates.joined(separator: " AND ")
+            func local(_ column: String) -> String {
+                arm.treeColumns.contains(column) ? "t.\(column)" : "NULL"
+            }
+            return """
+            SELECT \(arm.ordinal) AS inv, t.id AS local_id,
+                   \(local("neighborhood_id")) AS neighborhood_local,
+                   \(local("species_current")) AS species_local,
                    t.lat AS lat, t.lon AS lon
               FROM \(arm.schemaName).trees t\(clause)
             """

@@ -893,6 +893,37 @@ public struct TreeQueries {
     /// (`dc.id = isp.city_id`) — `DimCityTests.aFixtureWithDimCityButNoTreeIDSpaceStillPrepares`
     /// guards it.
     func treeSQL() -> String {
+        treeSQL(matching: "t.\(schema.treeIdentityColumn) = \(Self.identityMatch)")
+    }
+
+    /// The same projection for a **set** of uuids, in one statement.
+    ///
+    /// `LocalAPI.grove()` is the caller this exists for: it needs a coordinate and a species name
+    /// for every tree in the grove, and it used to get them with two `queue.read` round-trips per
+    /// tree, each running `treeSQL()` — 80 executions of the app's most expensive single-row query
+    /// for a 40-tree grove, 13.2 s of a 13.2 s screen. The set costs one.
+    ///
+    /// **Exactly the same projection and exactly the same decoding**, so a `TreeRecord` from here
+    /// and one from `tree(id:)` cannot differ — including in what they throw on. That is why this
+    /// selects the whole record rather than the two columns the Grove reads: `Species.init`
+    /// validates (D5) and `decodeTree` reads every column of `treeColumns` strictly, and a narrower
+    /// batch would have quietly stopped enforcing both on a path that used to.
+    ///
+    /// The uuids travel through `json_each` rather than an interpolated list, so `cachedStatement`
+    /// holds one prepared copy across groves of every size — `speciesPredicate`'s argument for
+    /// interpolating does not apply here, because there is no index choice for the planner to cost:
+    /// a uuid seek is the only plan. Measured over the bundled seed, 40 uuids in 0.2 ms, planned
+    /// `SEARCH t USING INDEX sqlite_autoindex_trees_1 (uuid=?)` behind a bloom filter.
+    ///
+    /// `lower(value)` for the reason `identityMatch` gives: the app binds Foundation's uppercase
+    /// canonical string and the files store lowercase.
+    func treesSQL() -> String {
+        treeSQL(matching: """
+        t.\(schema.treeIdentityColumn) IN (SELECT lower(value) FROM json_each(:uuids))
+        """)
+    }
+
+    private func treeSQL(matching predicate: String) -> String {
         let idSpaceJoin = schema.hasIdSpace
             ? "LEFT JOIN \(seed).id_spaces isp ON isp.id = t.id_space"
             : ""
@@ -914,16 +945,70 @@ public struct TreeQueries {
         SELECT \(treeColumns),
                \(SpeciesQueries.projection(identityColumn: schema.speciesIdentityColumn)),
                n.name AS neighborhood_name,
-               lin.\(schema.treeIdentityColumn) AS site_lineage_uuid,
+               \(Self.siteLineageProjection(identityColumn: schema.treeIdentityColumn)),
                \(schema.hasInventorySource ? "t.inventory_source" : "NULL") AS inventory_source,
                \(cityNameProjection) AS city_short_name
           FROM \(seed).trees t
           LEFT JOIN \(seed).species s ON s.id = t.species_current
           LEFT JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
-          LEFT JOIN \(seed).trees lin ON lin.id = t.site_lineage
           \(idSpaceJoin)
           \(dimCityJoin)
-         WHERE t.\(schema.treeIdentityColumn) = :uuid COLLATE NOCASE
+         WHERE \(predicate)
+        """
+    }
+
+    /// **The one-tree lookup's uuid predicate, and why it stopped being `COLLATE NOCASE`.**
+    ///
+    /// Same finding this file already records for `speciesRowIDs` and `SpeciesQueries` records for
+    /// its own joins: `trees.uuid` is `NOT NULL UNIQUE`, so its index is **BINARY**, and a NOCASE
+    /// comparison cannot seek it whichever operand carries the collation. `EXPLAIN QUERY PLAN` for
+    /// the shipped predicate is a bare `SCAN t` — 198,625 rows walked to fetch one tree.
+    ///
+    /// `lower(:uuid)` is a constant per execution, so the seek is back:
+    /// `SEARCH t USING INDEX sqlite_autoindex_trees_1 (uuid=?)`. It normalizes in the SQL rather
+    /// than at the binding site on purpose — `treeSQL()` is explained by `GroveQueryPlanTests`
+    /// without ever being bound, and a normalization that lived in Swift would be invisible to that
+    /// gate.
+    ///
+    /// Sound only while every inventory file stores its uuids lowercase; `DataGates.seedContract`
+    /// asserts that per arm, and `GroveQueries.treeJoin` carries the argument at length.
+    static let identityMatch = "lower(:uuid)"
+
+    /// **The site-lineage predecessor, as a correlated subquery rather than a self-join.**
+    ///
+    /// It was `LEFT JOIN seed.trees lin ON lin.id = t.site_lineage`, and under R84's union that one
+    /// line cost 10× on every single-tree read in the app. Two compounding reasons, both of which
+    /// this codebase had already written down somewhere else:
+    ///
+    /// 1. **The composite id is not sargable.** `InventoryUnion.armStride` says it outright —
+    ///    `WHERE id = …` against the union spells `ordinal * armStride + t.id = …` inside each arm
+    ///    and measures as a table scan per arm. `pins(rowIDs:)` is the caller that already honours
+    ///    it; this join did not.
+    /// 2. **A view that is itself a join cannot be flattened into the right operand of a LEFT
+    ///    JOIN.** `trees` carries two `LEFT JOIN`s to the translation tables, so SQLite had no
+    ///    choice but to `MATERIALIZE trees` — every row of the union into a temp b-tree — *per
+    ///    call*.
+    ///
+    /// The plan for one tree by uuid, as shipped: `MATERIALIZE trees | SCAN t | … | SCAN lin`, at
+    /// 221–327 ms over the bundled seed. `LocalAPI.grove()` ran it 80 times for a 40-tree grove.
+    ///
+    /// A scalar subquery is not the right operand of a join, so nothing is materialized, and
+    /// `(inv, local_id)` is the lookup `armStride` documents as the correct one: `t.site_lineage` is
+    /// `armStride * inv + <that arm's own id>` by construction, so the modulo recovers the arm's
+    /// rowid and `lin.inv = t.inv` holds by construction rather than by coincidence — a lineage
+    /// pointer never crosses an arm. Measured 221–327 ms → 0.1 ms for the same row, planned as
+    /// `SEARCH t USING INDEX sqlite_autoindex_trees_1 (uuid=?)` with
+    /// `CORRELATED SCALAR SUBQUERY 1 · SEARCH t USING INTEGER PRIMARY KEY (rowid=?)`.
+    ///
+    /// A `LEFT JOIN` on a unique key and a scalar subquery answer identically: `id` is unique, so
+    /// there was never a second row for the join to multiply by, and an absent predecessor is NULL
+    /// either way. `TreeProfilePresentationTests` and `SiteTests` cover the rows that have one.
+    static func siteLineageProjection(identityColumn: String) -> String {
+        """
+        (SELECT lin.\(identityColumn) FROM \(SeedDatabase.schemaName).trees lin
+                        WHERE lin.inv = t.inv
+                          AND lin.local_id = t.site_lineage % \(InventoryUnion.armStride))
+                      AS site_lineage_uuid
         """
     }
 
@@ -931,23 +1016,49 @@ public struct TreeQueries {
         let statement = try connection.cachedStatement(treeSQL())
         _ = try statement.bind(id.uuidString, forName: ":uuid")
 
-        return try statement.fetchOne { row in
-            TreeRecord(
-                tree: try Self.decodeTree(row),
-                species: try SpeciesQueries.decodeIfPresent(row),
-                neighborhoodName: try row.stringIfPresent("neighborhood_name"),
-                siteLineageID: try row.uuidIfPresent("site_lineage_uuid"),
-                inventorySourceID: try row.stringIfPresent("inventory_source"),
-                cityShortName: try row.stringIfPresent("city_short_name")
-            )
+        return try statement.fetchOne(Self.decodeRecord)
+    }
+
+    /// Every one of `ids` the inventory holds, keyed by uuid. Ids it does not hold are simply
+    /// absent, which is `tree(id:)` returning nil for each of them.
+    ///
+    /// See `treesSQL()` for why this exists and why it selects the whole record.
+    public func trees(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: TreeRecord] {
+        guard !ids.isEmpty else { return [:] }
+        let statement = try connection.cachedStatement(treesSQL())
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":uuids"
+        )
+        var records: [UUID: TreeRecord] = [:]
+        records.reserveCapacity(ids.count)
+        for record in try statement.fetchAll(Self.decodeRecord) {
+            records[record.tree.id] = record
         }
+        return records
+    }
+
+    /// Decodes a `TreeRecord` from any projection `treeSQL(matching:)` builds. Shared by the
+    /// one-tree and the set forms so the two cannot drift in what they read or what they throw on.
+    private static func decodeRecord(_ row: SQLiteRow) throws -> TreeRecord {
+        TreeRecord(
+            tree: try Self.decodeTree(row),
+            species: try SpeciesQueries.decodeIfPresent(row),
+            neighborhoodName: try row.stringIfPresent("neighborhood_name"),
+            siteLineageID: try row.uuidIfPresent("site_lineage_uuid"),
+            inventorySourceID: try row.stringIfPresent("inventory_source"),
+            cityShortName: try row.stringIfPresent("city_short_name")
+        )
     }
 
     /// Whether a tree id exists in the inventory. Checked before accepting a contribution, since no
     /// foreign key can span the attached seed (see `AppSchema`).
+    ///
+    /// Uses `identityMatch` for the same reason `treeSQL` does, and it mattered more here than it
+    /// looks: this is the check that stands in front of every write, and as `COLLATE NOCASE` its
+    /// plan was a bare `SCAN t` — the whole inventory walked to answer one yes/no.
     public func exists(id: UUID, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement(
-            "SELECT 1 AS present FROM \(seed).trees WHERE \(schema.treeIdentityColumn) = :uuid COLLATE NOCASE"
+            "SELECT 1 AS present FROM \(seed).trees WHERE \(schema.treeIdentityColumn) = \(Self.identityMatch)"
         )
         _ = try statement.bind(id.uuidString, forName: ":uuid")
         return try statement.fetchOne { _ in true } ?? false

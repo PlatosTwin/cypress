@@ -20,6 +20,38 @@ public struct GroveQueries {
         self.schema = schema
     }
 
+    /// **How a contribution's `tree_uuid` meets the inventory's, and why it is not `COLLATE NOCASE`.**
+    ///
+    /// The two sides genuinely differ in case: `UUID.bind` stores Foundation's uppercase canonical
+    /// string in `main`, and every seed file `Tools/build_seed.py` writes stores `trees.uuid`
+    /// lowercase. So the comparison has to normalize one side or match nothing at all.
+    ///
+    /// It was `t.uuid = c.tree_uuid COLLATE NOCASE`, which is *correct* and cannot be answered by
+    /// an index: `trees.uuid` is `NOT NULL UNIQUE`, so `sqlite_autoindex_trees_1` is a **BINARY**
+    /// index and no NOCASE comparison can seek it, whichever operand carries the collation. The
+    /// planner's fallback was to drive from the seed instead — `SEARCH t USING INDEX
+    /// idx_trees_species_current` over 173,538 trees, probing the contributor's a hundred rows once
+    /// per tree, the inverse of the right plan. Cost tracked the size of the *city*, so a brand-new
+    /// contributor with one visit paid the same 290 ms as one with forty.
+    ///
+    /// `lower()` on the **contributions** side leaves the indexed column bare, so the seek is back:
+    /// `SCAN c | SEARCH t USING INDEX sqlite_autoindex_trees_1 (uuid=?)`. Measured over the bundled
+    /// seed with a 40-tree grove, identical answers: `residentNeighborhood` 73 → 0.2 ms,
+    /// `knownSpecies` 116 → 0.2 ms.
+    ///
+    /// **It is sound only while every inventory file stores its uuids lowercase**, which is a
+    /// property of the published files rather than of anything in this repository — so it is
+    /// asserted rather than assumed. `DataGates.seedContract` checks it **per arm**, so the bundled
+    /// seed and every downloaded pack are each answerable for it, and
+    /// `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack` is the negative control that
+    /// shows the check can actually fail. A file that broke it would make this join match nothing —
+    /// an empty Grove rather than a slow one — and that is a failure the gate must catch and not
+    /// the reader.
+    ///
+    /// `TreeQueries` and `SpeciesQueries` already carry the same finding for their own joins; this
+    /// file is the one that never got the treatment.
+    private static let treeJoin = "t.uuid = lower(c.tree_uuid)"
+
     /// Every contribution this device (or this account) made, as `(tree_uuid, captured_at)`.
     ///
     /// The four kinds are unioned rather than queried separately because "met a species" is not
@@ -86,7 +118,7 @@ public struct GroveQueries {
         let statement = try connection.cachedStatement("""
             SELECT n.id AS neighborhood_id, n.name AS neighborhood_name
               FROM (\(Self.ownContributions)) c
-              JOIN \(seed).trees t ON t.uuid = c.tree_uuid COLLATE NOCASE
+              JOIN \(seed).trees t ON \(Self.treeJoin)
               JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
              WHERE t.deleted_at IS NULL
              GROUP BY n.id
@@ -124,7 +156,7 @@ public struct GroveQueries {
         let statement = try connection.cachedStatement("""
             SELECT t.lat AS lat, t.lon AS lon
               FROM (\(Self.ownContributions)) c
-              JOIN \(seed).trees t ON t.uuid = c.tree_uuid COLLATE NOCASE
+              JOIN \(seed).trees t ON \(Self.treeJoin)
              WHERE t.deleted_at IS NULL
              GROUP BY t.uuid
              ORDER BY COUNT(*) DESC, t.uuid
@@ -145,20 +177,77 @@ public struct GroveQueries {
     /// error would flatter the contributor, which is the direction nobody notices (ERRATA E38).
     ///
     /// Takes an `AlmanacScope` rather than a `neighborhoodID` since R29 reached this screen: for a
-    /// `.neighborhood` scope the rendered predicate is the identical
-    /// `t.neighborhood_id = :areaNeighborhood` string, and for the `.radius` fallback it is the
-    /// same bounding-box-plus-squared-distance test every almanac read uses, so the two screens
-    /// cannot disagree about what "within a 15-minute walk" holds.
+    /// `.radius` fallback the rendered predicate is the same bounding-box-plus-squared-distance test
+    /// every almanac read uses, so the two screens cannot disagree about what "within a 15-minute
+    /// walk" holds. The `.neighborhood` arm renders the same *question* against a different
+    /// relation — see below.
+    ///
+    /// ── Why this reads `trees_area` and not `trees` (RULINGS R84, ERRATA E216-adjacent) ─────────
+    /// The obvious spelling of this query is `FROM seed.trees t WHERE \(scope.predicate("t"))`, and
+    /// it is what shipped. Under the union `trees` projects `neighborhood_id` as `hx.canon_id` — a
+    /// LEFT JOIN output — so that predicate can never reach `idx_trees_neighborhood` inside an arm.
+    /// The planner falls back to driving the whole `species` catalog and probing
+    /// `idx_trees_species_current` once per species, which walks the city:
+    ///
+    ///     through `trees`, canonical predicate    92–181 ms   SEARCH t USING idx_trees_species_current
+    ///     through `trees_area`, arm-local          2 ms       SEARCH t USING idx_trees_neighborhood
+    ///
+    /// Same 186 species over the bundled seed's Castro/Upper Market, ~20× apart. `trees_area` is the
+    /// `trees_geo` idiom (`InventoryUnionSQL.treesAreaSQL`): a narrow relation carrying each arm's
+    /// **own** neighborhood and species keys, with shadowing and soft deletes already applied inside
+    /// the arm — which is why neither predicate appears here any more and why a downloaded pack
+    /// still hides the bundle's rows on this path.
+    ///
+    /// ── The subquery is load-bearing and is not a stylistic choice ──────────────────────────────
+    /// Written flat — `FROM trees_area t JOIN cypress_hood_xlat hx … JOIN cypress_species_xlat sx …`
+    /// — the planner still chose `sx` as the outer loop and went back through
+    /// `idx_trees_species_current`, at the same 92 ms; `CROSS JOIN` and scalar-subquery spellings
+    /// did too. A `SELECT DISTINCT` subquery cannot be flattened into the outer join, so the area's
+    /// species are settled first, as a few hundred arm-local ids, and only then translated. The
+    /// plan that costs 2 ms is:
+    ///
+    ///     CO-ROUTINE a
+    ///       SEARCH hx USING PRIMARY KEY (inv=?)
+    ///       SEARCH t USING INDEX idx_trees_neighborhood (neighborhood_id=?)
+    ///     SEARCH sx USING PRIMARY KEY (inv=? AND local_id=?)
+    ///
+    /// `GroveQueryPlanTests` pins it, because this is exactly the shape that regressed silently once
+    /// already — PR #120 re-pointed it without editing a line of this file.
+    ///
+    /// The uuid comes off `cypress_species_xlat` rather than a fourth join to `species`: the
+    /// translation table carries the canonical species' identity string beside the id it resolves
+    /// to, for exactly this reason.
     public func speciesIDs(
         scope: AlmanacScope,
         limit: Int? = nil,
         connection: SQLiteConnection
     ) throws -> Series<UUID> {
+        let area: (join: String, predicate: String)
+        switch scope {
+        case .neighborhood:
+            // The canonical id the caller holds names one `(inv, local_id)` pair and only one —
+            // neighborhoods are appended and renumbered rather than merged, so `canon_id` is unique
+            // across the whole translation table (`InventoryUnionSQL.createNeighborhoods`).
+            area = (
+                join: """
+                JOIN \(seed).cypress_hood_xlat hx
+                              ON hx.inv = t.inv AND hx.local_id = t.neighborhood_local
+                """,
+                predicate: "hx.canon_id = :areaNeighborhood"
+            )
+        case .radius:
+            // `lat`/`lon` are the arm's own columns in both relations, so the box and the
+            // squared-distance test are the identical string screen 12 runs.
+            area = (join: "", predicate: scope.predicate("t"))
+        }
         let statement = try connection.cachedStatement("""
-            SELECT DISTINCT s.\(schema.speciesIdentityColumn) AS species_uuid
-              FROM \(seed).trees t
-              JOIN \(seed).species s ON s.id = t.species_current
-             WHERE \(scope.predicate("t")) AND t.deleted_at IS NULL
+            SELECT DISTINCT sx.uuid AS species_uuid
+              FROM (SELECT DISTINCT t.inv AS inv, t.species_local AS species_local
+                      FROM \(seed).trees_area t
+                      \(area.join)
+                     WHERE \(area.predicate)) a
+              JOIN \(seed).cypress_species_xlat sx
+                ON sx.inv = a.inv AND sx.local_id = a.species_local
              LIMIT :limit
             """)
         _ = try statement.bind(scope.bindings.merging(
@@ -192,7 +281,7 @@ public struct GroveQueries {
                    MIN(c.captured_at) AS first_met_at,
                    t.address AS first_met_address
               FROM (\(Self.ownContributions)) c
-              JOIN \(seed).trees t ON t.uuid = c.tree_uuid COLLATE NOCASE
+              JOIN \(seed).trees t ON \(Self.treeJoin)
               JOIN \(seed).species s ON s.id = t.species_current
              WHERE t.deleted_at IS NULL
              GROUP BY s.id

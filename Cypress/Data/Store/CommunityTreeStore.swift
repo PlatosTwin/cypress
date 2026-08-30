@@ -166,6 +166,33 @@ public struct CommunityTreeStore {
         return try statement.fetchOne(Self.decode)
     }
 
+    /// The same read for a set of ids, keyed by id — one statement instead of one per tree.
+    ///
+    /// `LocalAPI.grove()` resolves every tree in the grove against the seed and then against this
+    /// table; doing it a tree at a time is what made the Trees tab linear in the size of the grove.
+    ///
+    /// **`COLLATE NOCASE` on the left operand, not on the `IN` list.** Written
+    /// `id IN (…) COLLATE NOCASE` the collation binds to the subquery rather than to the
+    /// comparison, and the whole search silently answers zero — `TreeQueries.speciesRowIDs` records
+    /// the day that was discovered. This table is tens of rows, so the scan the collation costs is
+    /// the scan `tree(id:)` already paid, once instead of N times.
+    ///
+    /// Like `tree(id:)`, this deliberately does **not** filter `deleted_at`: the one caller that
+    /// needs to see a withdrawal is the reason that method does not either.
+    public func trees(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: Tree] {
+        guard !ids.isEmpty else { return [:] }
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM community_trees
+             WHERE id COLLATE NOCASE IN (SELECT value FROM json_each(:ids))
+            """)
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
+        )
+        var trees: [UUID: Tree] = [:]
+        for tree in try statement.fetchAll(Self.decode) { trees[tree.id] = tree }
+        return trees
+    }
+
     public func exists(id: UUID, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
             SELECT 1 AS present FROM community_trees WHERE id = :id COLLATE NOCASE
