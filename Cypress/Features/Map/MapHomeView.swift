@@ -709,13 +709,26 @@ struct MapHomeView: View {
     /// (`MapFilter.isActive`).
     ///
     /// **That sentence used to end "so the way out is on screen from the first frame", and the
-    /// device said otherwise** (PR #130 review, F2). The row is one horizontally scrolling line, so
-    /// the fifth chip sat past the trailing edge on a 390 pt phone — reachable by dragging the row,
-    /// and not visible. The UI test could not tell: XCUITest scrolls an element into view before it
-    /// answers `isHittable`, so a test that presses the chip passes either way. `MapFilterChips`
-    /// pins `Clear filters` beside the scroller below the accessibility sizes now, which is what
-    /// makes the claim true rather than hopeful, and `SeeAllOnMapUITests` measures that chip's
-    /// frame against the window — not its hittability — to keep it true.
+    /// device said otherwise** (PR #130 review, F2). What is on screen from the first frame is the
+    /// *cause* — the `Yours` chip, drawn selected at the leading edge. `Clear filters` is the fifth
+    /// chip of a one-line horizontal scroller (#166) and on a 390 pt phone it sits past the trailing
+    /// edge: in the row, one drag away, **not visible**. `SeeAllOnMapUITests` measures both frames
+    /// against the window rather than tapping them, because XCUITest scrolls an element into view
+    /// before it answers `isHittable` — which is why the first version of that test could not tell.
+    ///
+    /// **Making the way out visible was tried and is a worse trade, measured rather than argued.**
+    /// Pinning `Clear filters` beside the scroller costs it 88 pt (its own measured frame is
+    /// `(356.0, 103.3, 87.7, 44.0)` at 390 pt), which leaves ~294 pt for four chips that need 356,
+    /// so `More filters` goes off the trailing edge instead — permanently, and at every text size.
+    /// That is the strictly worse half to hide: it is the control R23.1 §2 gives three channels to
+    /// precisely so a reader can see that *something is narrowing the map from inside it*, where
+    /// `Clear filters` only exists when a narrowing is already announced by a filled chip beside it.
+    /// `MapFilterAccessibilityTests.testAnOpenSuggestionListLeavesTheWholeFilterRowOrderedAndHittable`
+    /// failed on exactly that ("the `Yours` chip is in the tree and cannot be activated" — the row
+    /// had been left scrolled by a drawer that no longer fits).
+    ///
+    /// **So five chips do not fit at 390 pt and which one loses is the owner's, not this round's**
+    /// (DECISIONS constraint 21). It is in PR #130's ratification list beside the camera.
     private func applyPendingFilter() {
         guard let pending = router.takePendingMapFilter() else { return }
         model.filter = pending

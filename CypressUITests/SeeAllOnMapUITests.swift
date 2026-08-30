@@ -20,9 +20,11 @@
 //  and watches it go, because "the way out is drawn" and "the way out works" are two claims.
 //
 //  **And there is a third claim, which the first version of this file could not make** (PR #130
-//  review, F2): that the way out is *on screen*. `isHittable` and `.tap()` cannot say it, because
-//  XCUITest scrolls an element into view before answering either — so this file measures the chip's
-//  frame against the window before it touches anything.
+//  review, F2): where these controls *are*. `isHittable` and `.tap()` cannot say it, because
+//  XCUITest scrolls an element into view before answering either — so this file measures frames
+//  against the window before it touches anything. The cause must be on screen; the way out must be
+//  on the same line. `MapHomeView.applyPendingFilter` carries the measurement for why the second
+//  of those is not "on screen" too, and it is in the PR's ratification list rather than fixed here.
 //
 //  ── Why the journal has to be seeded ─────────────────────────────────────────────────────────
 //  The link draws only over a list (`JournalPresentation.offersMapLink`), and this device has made
@@ -76,48 +78,59 @@ final class SeeAllOnMapUITests: XCTestCase {
         )
 
         // ══════════════════════════════════════════════════════════════════════════════════════
-        // **The way out is ON SCREEN, measured from its frame** (PR #130 review, F2).
+        // **Measured from frames, not from hittability** (PR #130 review, F2).
         //
-        // `assertReachable` and `.tap()` were the whole of this check and they cannot make this
-        // claim: XCUITest scrolls an element inside a `ScrollView` into view before it answers
-        // `isHittable` and before it synthesizes a tap, so both passed while `Clear filters` sat
-        // past the trailing edge of the one-line chip row on this 390 pt phone — reachable by a
-        // drag nobody had been told about. That is the E126 hazard on the one entrance where the
-        // reader did not press a filter to get here.
+        // `assertReachable` and `.tap()` were the whole of the escape check here, and neither can
+        // say where a control *is*: XCUITest scrolls an element inside a `ScrollView` into view
+        // before it answers `isHittable` and before it synthesizes a tap, so both pass over a chip
+        // sitting past the trailing edge. Frames are the one channel a scroller cannot hide — the
+        // same lesson `MapFilterAccessibilityTests` learned at AX5 — and they are read here BEFORE
+        // anything touches the row, and against the window rather than a constant, so this says the
+        // same true thing on a 440 pt phone.
         //
-        // So the frame is read FIRST, before anything can scroll the row, and it is read against
-        // the window rather than against a constant — this suite must say the same true thing on a
-        // 440 pt phone. The same lesson `MapFilterAccessibilityTests` learned at AX5: frames are
-        // the one channel a scroller cannot hide.
+        // **What is asserted is the cause, and it is the half that matters on this entrance.** A
+        // reader who arrives narrowed without having pressed anything needs to see *why* the map is
+        // narrowed; that is the filled `Yours` chip, and it is at the leading edge. `Clear filters`
+        // is the fifth chip of a one-line row that does not fit five chips on a 390 pt phone, so it
+        // is in the row and one drag away — see `MapHomeView.applyPendingFilter` for the measurement
+        // and for why pinning it beside the scroller is a worse trade rather than a fix. Which chip
+        // loses that width is the owner's call, so this file does not assert an answer to it.
         // ══════════════════════════════════════════════════════════════════════════════════════
-        let clear = app.buttons[Self.clearChip]
-        XCTAssertTrue(
-            clear.waitForExistence(timeout: 30),
-            "a map that arrived filtered drew no “\(Self.clearChip)” chip at all"
-        )
         let screen = app.windows.firstMatch.frame
-        let clearBox = clear.frame
+        let yoursBox = yours.frame
         XCTAssertGreaterThanOrEqual(
-            clearBox.minX, screen.minX - 0.5,
-            "the “\(Self.clearChip)” chip starts off the leading edge (\(clearBox) on a "
+            yoursBox.minX, screen.minX - 0.5,
+            "the “\(Self.yoursChip)” chip starts off the leading edge (\(yoursBox) on a "
                 + "\(screen.width)×\(screen.height) screen)"
         )
         XCTAssertLessThanOrEqual(
-            clearBox.maxX, screen.maxX + 0.5,
-            "the “\(Self.clearChip)” chip is clipped past the trailing edge (\(clearBox) on a "
-                + "\(screen.width)×\(screen.height) screen), so a reader who arrived narrowed from "
-                + "the journal has to discover a horizontal drag to find the way out. XCUITest "
-                + "would still tap it, which is why this measures the frame."
-        )
-        // And the cause stays on screen beside it — a visible way out that had scrolled the
-        // selected chip off would be the same defect with the halves swapped.
-        let yoursBox = yours.frame
-        XCTAssertLessThanOrEqual(
             yoursBox.maxX, screen.maxX + 0.5,
-            "the “\(Self.yoursChip)” chip is off the trailing edge (\(yoursBox)), so the map is "
-                + "narrowed with nothing on screen saying by what"
+            "the “\(Self.yoursChip)” chip is off the trailing edge (\(yoursBox) on a "
+                + "\(screen.width)×\(screen.height) screen), so the map arrived narrowed with "
+                + "nothing on screen saying by what — E126 through the one door where the reader "
+                + "pressed no filter. XCUITest would still find it hittable, which is why this "
+                + "measures the frame."
         )
 
+        // **The way out is in the row, on the same line as the cause.** It cannot be asserted to be
+        // on screen (see above), so what is pinned instead is that it has not moved somewhere else:
+        // one drag along the row a reader is already looking at, and not a control that has drifted
+        // onto another band of the chrome. The 4 pt rounding is the band `MapFilterAccessibility
+        // Tests` uses for the same question.
+        let clear = app.buttons[Self.clearChip]
+        XCTAssertTrue(
+            clear.waitForExistence(timeout: 30),
+            "a map that arrived filtered drew no “\(Self.clearChip)” chip at all, so there is no "
+                + "way out of a narrowing the reader did not ask for"
+        )
+        let clearBox = clear.frame
+        XCTAssertEqual(
+            Int((clearBox.minY / 4).rounded()), Int((yoursBox.minY / 4).rounded()),
+            "the “\(Self.clearChip)” chip is not on the filter row's line: it is at \(clearBox) "
+                + "against the “\(Self.yoursChip)” chip's \(yoursBox)"
+        )
+
+        assertReachable(clear, "a map that arrived filtered offered no way to clear the filter")
         clear.tap()
 
         // **Presence, not absence** (CLAUDE.md; PR #130 review, F6). The `Yours` chip is drawn

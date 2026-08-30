@@ -169,9 +169,8 @@ struct SeeAllOnMapTests {
     /// **Two id sets, and deliberately not a claim about pins** (PR #130 review, F4). What the map
     /// draws is this set intersected with the camera and with the installed inventory, and neither
     /// is in scope here: a test that asserted a pin per row would be asserting a viewport and a
-    /// download state. Both axes are written down where they belong — the camera in the PR's
-    /// ratification list, the inventory in
-    /// `docs/errata-pending/three-answers-to-which-trees-are-mine.md`.
+    /// download state. Both axes are written down in the round's unnumbered erratum on the three
+    /// answers to "which trees are mine", and the camera is in the PR's ratification list as well.
     @Test("every tree the journal names is under the map's Yours")
     func theMapCannotHideARowTheJournalDrew() async throws {
         let store = try await Self.store()
