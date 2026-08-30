@@ -2,6 +2,28 @@
 
 Unnumbered, per CLAUDE.md; the orchestrator splices under the real next R-number at merge.
 
+## Ratified by the owner, 2026-08-30
+
+Recorded by the orchestrator from the owner's own window, on the PR #132 review. **These are no
+longer proposals.** Each item's text below stands as ruled; where the review round changed how one is
+implemented, the change is recorded under it and marked.
+
+| item | status |
+|---|---|
+| **D1** — a non-local pick draws from the live inventories only | **RATIFIED as shipped** |
+| **D2** — the mechanism is a sheet of chips | **RATIFIED as shipped**, with the presentation corrected (F2 below) |
+| **D3** — the default states its own provenance, always | **RATIFIED as shipped**, and now three sentences rather than two (F1 below) |
+| **D4** — a picked area drops the blocks that are about the reader | **RATIFIED as shipped** |
+| **D5** — the honest coarse-fix state | **RATIFIED as shipped**, with each segment's bound corrected (F3 below) |
+| **D6** — the City segment names its city from `dim_city` | **RATIFIED as shipped** |
+| **D7** — a pick does not survive relaunch | **RATIFIED**: it resets, deliberately |
+
+**Still open, and the only things on this page awaiting an answer:** the two wordings the review round
+had to write — `AreaPickerCopy.resolvedFromFixRadius` (F1) and `AreaPickerCopy.qualified` (F4). Both
+are marked **AWAITING RATIFICATION** where they appear.
+
+---
+
 **Everything below is a proposal for the owner's ratification, not a decision.** SCREENS.md carries
 no mock for a picker on any screen, so the round is written under DECISIONS constraint 21's
 delegated-authority pattern — the same footing R43 §3's affordance table and the City segment itself
@@ -41,9 +63,41 @@ screen 01's map-filter row, verbatim, and it already carries the `.isSelected` a
 The affordance that opens it is a `SecondaryOutlineButton(.compact)` labelled `Change`, under the
 header.
 
+**Presented by the composition root, through `RootView`'s single `.fullScreenCover` keyed on
+`AppRouter.sheet`** — the way screens 09, 10 and 15 are. **This is a correction (PR #132 review,
+F2).** The first version drew the same card as a `ZStack` layer inside the segment's own content
+slot, which sits between the C5 segmented control and the tab bar and therefore covered neither: the
+review tapped `City` *through* the scrim, the segment switched, and the sheet vanished with no
+dismissal and no `onClose`. VoiceOver's rotor still reached every card underneath. A cover is a
+separate hosting context and closes all three at once.
+
+The selection the sheet writes therefore lives on `AppRouter` (`journalArea` / `journalCity`), beside
+`journalSegment` and for a related reason: a `Route` is `Hashable` and cannot carry a closure back
+into a feature's `@State`. It is destroyed with the router on any inventory change, which is what
+keeps D7 true.
+
 **Why not a list with a checkmark:** a second selection idiom for the same job, and the checkmark
 would have to be drawn as a shape (R57 forbids SF Symbols) — a new glyph for a control the app
 already has.
+
+### Two chips with one label (PR #132 review, F4) — **AWAITING RATIFICATION**
+
+`InventoryUnionSQL` deliberately does not merge neighborhoods across arms — *"two cities may each
+have a `Downtown`, and merging those would put San Jose's trees in a San Francisco neighborhood"* —
+so under R84's union the picker can be handed two rows with one name and nothing to choose between.
+
+**Proposed, and built:** qualify **only a name that actually collides**, in the app's own middle-dot
+idiom — `Downtown · San Jose`. Qualifying unconditionally would print a city beside all 41 of San
+Francisco's names when nobody is choosing between cities; qualifying nothing leaves two identical
+chips. A record with no city name on file is left unqualified rather than given an empty suffix.
+
+Today's bundle cannot reach it (41 distinct San Francisco names, and San Jose carries no polygons at
+all). It becomes live the first time a downloaded pack carries a neighborhood set, which is the
+configuration D1 exists to enable and which the five published NYC borough packs are one install
+away from.
+
+**Alternatives:** a per-city section in the sheet (more structure than a chip flow supports), or a
+stated decision that the ambiguity is accepted.
 
 **Alternative:** make the header pill itself the tap target, with a drawn caret. Tighter, and it
 loses the sentence — see D3, which is the half of this round that answers the tester rather than the
@@ -57,11 +111,36 @@ surface small.
 
 **Built:** one muted sentence under the header, in `areaNote`'s type and color, on both segments.
 
-- resolved from the reader's fix — **"Chosen from the tree nearest you in the city record."**
+- resolved from the reader's fix **through a polygon**, i.e. the nearest inventoried tree —
+  **"Chosen from the tree nearest you in the city record."**
+- resolved from the reader's fix **through R29's radius fallback**, where no polygon covers them —
+  **"Centered on where you are."** — **AWAITING RATIFICATION**
 - picked by the reader, almanac — **"You're reading a place you're not in, so the section asking you
   to go and look is left out."**
 - picked by the reader, City — **"You're reading a city you're not in, so the comparison with your
   own streets is left out."**
+
+### The third sentence, and why it exists (PR #132 review, F1 — blocking)
+
+The first version had two sentences and keyed them on `AreaResolution`, which answers *"did the
+reader choose this"* — the question the picker asks — and not *"what chose it"*, which is the
+question this line answers. The two coincide for a polygon and come apart for the fallback, where no
+tree was consulted at all.
+
+**It was not an edge.** All **52,788** San Jose rows carry `neighborhood_id IS NULL`, so every reader
+in the bundle's second city sat permanently under *"Chosen from the tree nearest you in the city
+record."* printed directly above *"No neighborhood boundaries are on file for where you are, so this
+almanac is drawn around you instead."* Two adjacent sentences about one area, and the new one was the
+false one — this round's own thesis failing on itself.
+
+The wording states what actually happened and stops: the reader's fix is the circle's center
+(`AlmanacScope.radius(center:meters:)` is handed the coordinate), and *why* it is a circle is the
+next line's job. **Deliberately not `nil`**, which was the review's other suggestion: D3's rule is
+that the default accounts for itself always, and a blank where the account should be is how the
+screen got into F17 to begin with.
+
+**The alternative, if the owner prefers it:** drop the line for the fallback and let `areaNote` carry
+the whole explanation. It reads slightly lighter and it costs D3 its "always".
 
 **This is the half of the round that answers F17 rather than the backlog item.** The report asks why
 the page "seems to default to" a neighborhood, and until now the screen said nothing at all: a name
@@ -94,10 +173,17 @@ product decision, not a copy one.
 
 ## D5 — A fix too coarse to place the reader is not used to place the reader
 
-**Built:** `AlmanacLimits.fixCanResolveAnArea(accuracyM:)`. A fix whose stated accuracy exceeds the
-400 m radius the neighborhood search runs over cannot pick out a tree inside that radius, so it is
+**Built:** `AlmanacLimits.fixCanResolveAnArea(accuracyM:withinM:)`. A fix whose stated accuracy
+exceeds the radius its own resolution searches cannot pick out a tree inside that radius, so it is
 not used at all; the segment draws **"Your location is too rough to place you."** and the picker.
 An unknown accuracy is permitted, which leaves every preview and test unchanged.
+
+**The bound is the caller's, and that is a correction (PR #132 review, F3).** The two segments do not
+search the same distance — the almanac resolves through `SpeciesQueries.resolveNeighborhood` at
+**400 m**, the City segment through `CityQueries.resolveIDSpace` at `AlmanacLimits.fallbackRadiusM`,
+**1,200 m**. Keyed on 400 m for both, a fix good to 600 m blanked a City segment that could still
+answer, and did answer on main. Each gate now takes the radius its own read runs over, and this
+ruling's text says both numbers rather than one.
 
 **This is the state F17 most likely came from** — see `docs/errata-pending/stats-picker.md` for what
 is established and what is not. Approximate location grants exactly this kind of fix, and the app
@@ -135,8 +221,15 @@ means a reader who picked San Jose has no persistent indication of what they are
 and a picked id the live inventories no longer carry (the reader removed a pack) resolves to the
 reader's own area rather than to a named empty screen.
 
-**Not built, and worth a decision:** the selection **does not survive relaunch**. It lives on the
+**Ratified 2026-08-30: it resets, and that is the decision.** The selection **does not survive
+relaunch**. It lives on the
 model for the life of the screen, like `AppRouter.journalSegment` before it was made addressable. A
 reader who picks Manhattan, leaves the app and comes back is back on `Where I am`. That is
 defensible — a stats screen whose default silently stopped being "here" is its own version of F17 —
-but it is a choice, and the opposite choice is one `@AppStorage` line.
+but it is a choice, and it has now been made rather than left open.
+
+The review confirmed there is no persistence path to leak through — no `@AppStorage`, no `app_state`
+key, no `UserDefaults` write — and the move onto `AppRouter` (F2, above) keeps it that way: the
+router is `@State` on `RootView`, which `CypressApp` keys on `ObjectIdentifier(data.store)`, so an
+inventory change destroys the selection along with everything else built on the old layer. A pick
+cannot outlive the inventory it was made against.

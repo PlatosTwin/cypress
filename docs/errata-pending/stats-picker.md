@@ -100,3 +100,64 @@ closed the door on — *composing* a name out of an id space's key or an invento
 
 This is the "start with the most confident comment in the file" rule paying out again, and it is the
 second entry in this file where a true sentence outlived its subject.
+
+---
+
+### E??? — One `AreaResolution` covered two different mechanisms, and the sentence written to explain the screen was false for a whole city
+
+The neighborhood/city picker round put a provenance line under the Journal's stats headers — the half
+of the F17 fix that answers *"why does this page seem to default to Castro/market?"* — and chose the
+wording from `AreaResolution`, which has two cases: the reader picked this area, or their fix
+resolved it.
+
+**`.fromFix` is two mechanisms, not one.** R29 created `AlmanacScope` precisely to keep them apart:
+a polygon the seed carries, found through the nearest inventoried tree, and — where no polygon covers
+the reader — a 1,200 m circle drawn around them, which no tree chose. Keyed on the resolution alone,
+*"Chosen from the tree nearest you in the city record."* printed over both.
+
+Over the second it is false, and it is false immediately above `AlmanacCopy.areaNote` saying no
+boundary exists and the almanac was drawn around the reader instead. **All 52,788 San Jose rows carry
+`neighborhood_id IS NULL`** (`SELECT COUNT(*), SUM(neighborhood_id IS NULL) FROM trees WHERE
+id_space = 'us-ca-sj'` → `52788 | 52788`), so this was not an edge case: it was every reader in the
+bundle's second city, permanently, reading two adjacent sentences that contradicted each other.
+
+**Why the round's own tests did not catch it.** `provenanceIsStated` built *both* of its fixtures
+from `.named("Mission")`. The mechanism that was wrong was never handed to the presentation at all —
+the guard was green because the defect's input was outside it, which is this project's dominant
+test-suite defect class. The repair is one fixture per mechanism and an assertion that all three
+sentences differ.
+
+The general shape is worth naming, because it is not about copy: **an enum that answers a question
+adjacent to the one you are asking will agree with you most of the time.** `AreaResolution` answers
+"did the reader choose this"; the sentence answers "what chose it". They coincide for a polygon and
+come apart for the fallback.
+
+---
+
+### E??? — A sheet that is a `ZStack` layer inside a tab's content is not modal, and looks identical to one that is
+
+The same round drew its picker as `ZStack { column; if isPicking { BottomSheet(…) } }` inside
+`AlmanacScreen` and `CityScreen`. It rendered correctly, dismissed correctly, and was not a modal.
+
+The segment's content slot sits **between** the C5 segmented control and the tab bar in
+`JournalTabView`'s `VStack`, so a layer inside it covers neither. Three consequences, all found by a
+reviewer on the device:
+
+1. the scrim stopped short of the segmented control and behind the tab bar;
+2. **the controls behind it were live** — a tap on `City` switched segments and cancelled the sheet
+   with no dismissal and no `onClose`, a fourth exit R42 never designed;
+3. VoiceOver modality was lost: the column was not `.accessibilityHidden`, so the rotor still reached
+   `Change`, the header pill and every card underneath.
+
+Every other `BottomSheet` in the app (09, 10, 15) is presented from the composition root through
+`RootView`'s single `.fullScreenCover(isPresented:)`, keyed on `AppRouter.sheet`, and gets all three
+properties from the cover being a separate hosting context. `RootView`'s own comment already says why
+there is exactly one cover; what it did not say — and now does — is that a feature drawing its own
+card inside its own content is the failure mode on the other side of that rule.
+
+**A note on the guard that now pins this**, because it is narrower than it looks:
+`AreaPickerUITests` asserts `!app.buttons["City"].isHittable` and `!app.buttons["Journal"].isHittable`
+while the sheet is up. Red-proved against the exact arrangement above. It was **also** tried against a
+full-window `.overlay` on the `NavigationStack`, which **passed** — correctly, because such an overlay
+does cover both controls. The assertion catches a sheet drawn inside the tab's content, which is the
+defect that shipped; it is not a general proof that any given presentation is a system modal.
