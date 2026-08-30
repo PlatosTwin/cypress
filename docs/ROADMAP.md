@@ -256,8 +256,17 @@ that had not yet reached a build). What remains OPEN:
   refuse; not schedulable as written.
 - **F22 — species distribution as a static city map** (one point per tree) on the field guide's
   §5; today it is two stat cards.
-- **F23 — "See them all on the map"** link from Grove/Journal into the map filtered to yours; the
-  target filter exists (`MapFilter.membership`, chip "Yours"), nothing routes into it.
+- ~~**F23 — "See them all on the map"** link from Grove/Journal into the map filtered to yours; the
+  target filter exists (`MapFilter.membership`, chip "Yours"), nothing routes into it.~~
+  **DONE — the link ships on the Journal tab's `Yours` segment.** `AppRouter.goToMap(showing:)` arms
+  a one-shot narrowing that screen 01 applies on arrival; the chip reads selected and `Clear
+  filters` is in the row from the first frame. **The placement is the owner's to ratify** — no mock
+  draws this link (DECISIONS constraint 21) — and the PR asks. It is deliberately **not** on My
+  Grove's `Trees` pill, which is where the sentence reads most naturally and where it cannot keep
+  its promise: the grove's list includes trees you have only favorited and the map's `Yours` filter
+  deliberately does not (R23), so the same link there would silently drop rows the reader can still
+  see. See `docs/errata-pending/three-answers-to-which-trees-are-mine.md`, and
+  `CypressTests/SeeAllOnMapTests`, which pins both halves.
 - **F25 — Account/You page UI/UX pass.**
 - **F26 — Measure: unit switch clears the entered value. BLOCKED ON A RULING**: deliberate today —
   `Quantity.value` is "the number as the human typed it, never converted", and keeping digits
