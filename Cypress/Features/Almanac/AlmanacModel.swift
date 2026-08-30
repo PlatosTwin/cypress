@@ -64,12 +64,14 @@ final class AlmanacModel {
     /// Which neighborhood this almanac is about: the reader's own, or one they chose
     /// (`AreaSelection`). `displayedSelection` is the one the picture on screen was read for, for
     /// `displayedCoordinate`'s reason.
+    ///
+    /// **An input, like `coordinate`, and not state this model owns.** The picker that writes it is
+    /// presented by the composition root through `AppRouter.sheet`, because a card over a scrim that
+    /// the controls behind can be tapped through is not a sheet (PR #132 review, F2) — and a `Route`
+    /// cannot carry a closure back into this object's `@State`. So the selection lives on
+    /// `AppRouter.journalArea` and arrives here the way the fix does.
     private(set) var selection: AreaSelection = .here
     private(set) var displayedSelection: AreaSelection = .here
-
-    /// What the picker may offer — every neighborhood the live inventories carry, most trees first.
-    /// Empty until `loadChoices()` has answered, and no picker is drawn while it is empty.
-    private(set) var choices: [NeighborhoodChoice] = []
 
     private let now: @Sendable () -> Date
 
@@ -97,6 +99,7 @@ final class AlmanacModel {
         api: any CypressAPI,
         coordinate: Coordinate?,
         accuracyM: Double? = nil,
+        selection: AreaSelection = .here,
         location: MapLocationProvider? = nil,
         locationPollInterval: Duration = .milliseconds(500),
         now: @escaping @Sendable () -> Date = { Date() }
@@ -106,6 +109,8 @@ final class AlmanacModel {
         self.displayedCoordinate = coordinate
         self.accuracyM = accuracyM
         self.displayedAccuracyM = accuracyM
+        self.selection = selection
+        self.displayedSelection = selection
         self.location = location
         self.locationPollInterval = locationPollInterval
         self.now = now
@@ -141,7 +146,10 @@ final class AlmanacModel {
     var needsAreaChoice: Bool {
         displayedSelection.isHere
             && displayedCoordinate != nil
-            && !AlmanacLimits.fixCanResolveAnArea(accuracyM: displayedAccuracyM)
+            && !AlmanacLimits.fixCanResolveAnArea(
+                accuracyM: displayedAccuracyM,
+                withinM: AlmanacLimits.neighborhoodResolutionRadiusM
+            )
     }
 
     func load() async {
@@ -152,8 +160,10 @@ final class AlmanacModel {
         // over anyway, the read searches 400 m around a point the reader may be two miles from and
         // names whatever it finds, in a header that states it as fact. `nil` reaches `.empty` by
         // contract and `needsAreaChoice` above tells the screen which empty this is.
-        let fixForRead = AlmanacLimits.fixCanResolveAnArea(accuracyM: requestedAccuracy)
-            ? requestedCoordinate : nil
+        let fixForRead = AlmanacLimits.fixCanResolveAnArea(
+            accuracyM: requestedAccuracy,
+            withinM: AlmanacLimits.neighborhoodResolutionRadiusM
+        ) ? requestedCoordinate : nil
         do {
             let almanac = try await api.almanac(near: fixForRead, in: requestedSelection)
             // A newer fix arrived while this read was in flight; its own read is authoritative and
@@ -169,16 +179,9 @@ final class AlmanacModel {
         displayedSelection = requestedSelection
     }
 
-    /// Reads what the picker may offer, once per screen.
-    ///
-    /// A failure costs the reader the button, not the page, so it is swallowed to an empty list
-    /// rather than routed into `Phase.failed` — the stats are what the screen is for.
-    func loadChoices() async {
-        choices = ((try? await api.areaChoices()) ?? .none).neighborhoods
-    }
-
-    /// The reader picked a neighborhood, or picked their own back.
-    func choose(_ newValue: AreaSelection) async {
+    /// Take the selection the composition root holds *now* and re-read if it is a different one —
+    /// `update(coordinate:accuracyM:)`'s shape, for the input that arrives the same way.
+    func update(selection newValue: AreaSelection) async {
         guard newValue != selection else { return }
         selection = newValue
         await load()
@@ -244,8 +247,9 @@ final class AlmanacModel {
         to current: MapLocationProvider.Availability
     ) -> Bool {
         if (previous.coordinate == nil) != (current.coordinate == nil) { return true }
-        return AlmanacLimits.fixCanResolveAnArea(accuracyM: previous.accuracyM)
-            != AlmanacLimits.fixCanResolveAnArea(accuracyM: current.accuracyM)
+        let radius = AlmanacLimits.neighborhoodResolutionRadiusM
+        return AlmanacLimits.fixCanResolveAnArea(accuracyM: previous.accuracyM, withinM: radius)
+            != AlmanacLimits.fixCanResolveAnArea(accuracyM: current.accuracyM, withinM: radius)
     }
 
     /// Watches `location` for the life of the screen and reloads on the one change that matters.

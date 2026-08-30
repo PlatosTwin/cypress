@@ -220,6 +220,13 @@ final class AreaPickerUITests: XCTestCase {
 
     /// `AreaPickerCopy`, each one.
     private static let fromFixNote = "Chosen from the tree nearest you in the city record."
+    /// `AreaPickerCopy.resolvedFromFixRadius`, and `AlmanacCopy.areaPill`'s fallback string.
+    private static let fromFixRadiusNote = "Centered on where you are."
+    private static let radiusPill = "Within a 15-minute walk"
+    /// `AlmanacCopy.areaNote` — the sentence the provenance line has to agree with.
+    private static let noBoundariesNote = "No neighborhood boundaries are on file for where you are, "
+        + "so this almanac is drawn around you instead. It will name a neighborhood once this city's "
+        + "boundaries join the record."
     /// Two of them: the two segments withhold different sections, so they say different sentences.
     private static let byChoiceNote =
         "You're reading a place you're not in, so the section asking you to go and look is left out."

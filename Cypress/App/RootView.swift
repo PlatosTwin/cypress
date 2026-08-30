@@ -32,6 +32,20 @@ struct RootView: View {
 
     @State private var router = AppRouter()
 
+    /// What the Journal's two pickers may offer — one read, shared by both segments.
+    ///
+    /// **Here rather than in either feature's model**, because the sheet that consumes it is
+    /// presented from this file (see `presentedSheet`) and because two segments reading the same
+    /// list twice is two chances for them to disagree about what is installed. Loaded once per
+    /// `RootView` lifetime, which is once per store identity: `CypressApp` keys this view on
+    /// `ObjectIdentifier(data.store)`, so the read is remade exactly when the union it describes is
+    /// rebuilt — an inventory change goes through `AppModel.reboot()`, and a background download
+    /// that completes with the app on the Journal tab goes through the same door
+    /// (`CityDownloadProgress.onInstalled`).
+    ///
+    /// A failure costs the reader the two buttons and not the page, so it is swallowed to `.none`.
+    @State private var areaChoices: AreaChoices = .none
+
     /// Screen 17's model, owned here because **two screens now show the same preference**.
     ///
     /// The You tab draws the wi-fi toggle beside the outbox row, and screen 17 draws it in its own
@@ -166,6 +180,7 @@ struct RootView: View {
         // skeleton of the profile, not the live profile"). A system sheet would impose its own card,
         // its own dimming and the live screen behind it — none of which is what the mocks draw.
         // `AppRouter.sheet` already distinguishes these from `path` for exactly this reason.
+        .task { areaChoices = (try? await data.api.areaChoices()) ?? .none }
         .fullScreenCover(isPresented: presentingSheet) {
             // ══════════════════════════════════════════════════════════════════════════════════
             // **The environment is handed over explicitly, and it has to be.**
@@ -338,6 +353,44 @@ struct RootView: View {
     @ViewBuilder
     private var presentedSheet: some View {
         switch router.sheet {
+        case let .journalAreaPicker(kind):
+            // The Journal's area picker (`AreaPickerSheet`), presented the way 09, 10 and 15 are.
+            //
+            // **It is here rather than inside the Journal tab, and that is the whole of PR #132's
+            // second review finding.** Drawn as a `ZStack` layer inside the tab's own content it
+            // looked identical and was not modal: the scrim stopped short of the C5 segmented
+            // control and the tab bar, a tap on `City` behind the scrim switched segments and
+            // cancelled the sheet with no dismissal at all, and VoiceOver's rotor still reached
+            // every card underneath. A cover is a separate hosting context and fixes all three.
+            //
+            // The selection it writes lives on `AppRouter` because `Route` is `Hashable` and cannot
+            // carry a closure back into a feature's `@State` — see `AppRouter.journalArea`.
+            switch kind {
+            case .neighborhood:
+                AreaPickerSheet(
+                    title: AreaPickerCopy.neighborhoodTitle,
+                    subtitle: AreaPickerCopy.neighborhoodSubtitle,
+                    options: AreaPickerSheet.options(areaChoices.neighborhoods),
+                    selectedID: AreaPickerSheet.optionID(router.journalArea),
+                    onSelect: { option in
+                        router.journalArea = AreaPickerSheet.areaSelection(for: option)
+                        router.sheet = nil
+                    },
+                    onClose: { router.sheet = nil }
+                )
+            case .city:
+                AreaPickerSheet(
+                    title: AreaPickerCopy.cityTitle,
+                    subtitle: AreaPickerCopy.citySubtitle,
+                    options: AreaPickerSheet.options(areaChoices.cities),
+                    selectedID: AreaPickerSheet.optionID(router.journalCity),
+                    onSelect: { option in
+                        router.journalCity = AreaPickerSheet.citySelection(for: option)
+                        router.sheet = nil
+                    },
+                    onClose: { router.sheet = nil }
+                )
+            }
         case let .careLog(id):
             // Screen 09.
             CareLogView(
@@ -509,6 +562,12 @@ struct RootView: View {
                 // The fix's own accuracy, which both stats segments now read. It has always been on
                 // `Availability` and nothing downstream ever looked at it (tester report F17).
                 accuracyM: location.availability.accuracyM,
+                areaSelection: router.journalArea,
+                citySelection: router.journalCity,
+                canPickArea: !areaChoices.neighborhoods.isEmpty,
+                canPickCity: !areaChoices.cities.isEmpty,
+                onPickArea: { router.sheet = .journalAreaPicker(.neighborhood) },
+                onPickCity: { router.sheet = .journalAreaPicker(.city) },
                 location: location,
                 onOpenTree: { id in router.push(.treeProfile(id)) },
                 onShowGroup: { group in router.push(.pinSet(group)) },
@@ -1033,7 +1092,9 @@ struct RootView: View {
         // (`PhotoViewerView`: it is a closer look at what is already on screen, not a place in the
         // app, and a pushed one would wear the navigation stack's light bar across its dark
         // backdrop).
-        case .careLog, .share, .accountAsk, .photoViewer:
+        // The Journal's area picker joins them: it is a `BottomSheet` over the tab it belongs to,
+        // and pushing it would put a scrim inside the navigation stack instead of over it.
+        case .careLog, .share, .accountAsk, .photoViewer, .journalAreaPicker:
             NotBuiltYetView(route: route)
 
         // Every remaining route has a mocked screen but no built feature yet. Naming them here

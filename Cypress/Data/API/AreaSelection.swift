@@ -95,10 +95,21 @@ public struct NeighborhoodChoice: Identifiable, Hashable, Sendable {
     public let name: String
     public let treeCount: Int
 
-    public init(id: Int, name: String, treeCount: Int) {
+    /// The city whose polygon set this neighborhood came from (`dim_city.display_name`), or `nil`
+    /// where the record carries no city name — a pre-s16 file.
+    ///
+    /// **Carried for the collision case and used for nothing else** (PR #132 review, F4). Neighborhood
+    /// names are unique only *within* a file — `InventoryUnionSQL` refuses to merge them across arms
+    /// for exactly that reason — so under R84's union two live inventories can each contribute a
+    /// `Downtown`. `AreaPickerSheet.options(_:)` qualifies a name only when it actually collides;
+    /// this is the fact it qualifies with.
+    public let cityName: String?
+
+    public init(id: Int, name: String, treeCount: Int, cityName: String? = nil) {
         self.id = id
         self.name = name
         self.treeCount = treeCount
+        self.cityName = cityName
     }
 }
 

@@ -39,12 +39,11 @@ final class CityModel {
     private(set) var accuracyM: Double?
 
     /// Which city this segment is about: the reader's own, or one they chose (`CitySelection`).
+    ///
+    /// **An input, like `coordinate`** — see `AlmanacModel.selection`, whose reasoning is this
+    /// property's too: the picker is presented by the composition root and writes
+    /// `AppRouter.journalCity`.
     private(set) var selection: CitySelection = .here
-
-    /// What the picker may offer — the live inventories' cities, most trees first. Empty until
-    /// `loadChoices()` has answered, and empty forever for a record with no city names on file, in
-    /// which case no picker is drawn at all (`AreaChoices`).
-    private(set) var choices: [CityChoice] = []
 
     /// The fix the state currently *on screen* was derived from, not necessarily the one the model
     /// has been handed since — `AlmanacModel.displayedCoordinate`'s own reasoning, unchanged. The
@@ -54,12 +53,19 @@ final class CityModel {
     private(set) var displayedAccuracyM: Double?
     private(set) var displayedSelection: CitySelection = .here
 
-    init(api: any CypressAPI, coordinate: Coordinate?, accuracyM: Double? = nil) {
+    init(
+        api: any CypressAPI,
+        coordinate: Coordinate?,
+        accuracyM: Double? = nil,
+        selection: CitySelection = .here
+    ) {
         self.api = api
         self.coordinate = coordinate
         self.accuracyM = accuracyM
+        self.selection = selection
         self.displayedCoordinate = coordinate
         self.displayedAccuracyM = accuracyM
+        self.displayedSelection = selection
     }
 
     /// The derivation the view draws, or nil while loading or after a failure.
@@ -79,14 +85,23 @@ final class CityModel {
     var needsLocation: Bool { displayedSelection.isHere && displayedCoordinate == nil }
 
     /// Whether the screen is empty because the fix, though present, is too coarse to say which city
-    /// the reader is in — `AlmanacLimits.fixCanResolveAnArea(accuracyM:)`, tester report F17.
+    /// the reader is in — tester report F17.
     ///
     /// Distinct from `needsLocation`, and the distinction is the point: location is on, the reader
     /// granted it, and there is nothing to turn on. What there is, is a choice to make.
+    ///
+    /// **Bounded by `fallbackRadiusM`, which is this segment's own search radius and not the
+    /// almanac's** (PR #132 review, F3). `CityQueries.resolveIDSpace(near:radiusM:)` is handed
+    /// `AlmanacLimits.fallbackRadiusM` (1,200 m); keyed on the almanac's 400 m instead, a fix good to
+    /// 600 m blanked a segment that could still answer, and did answer on main. The two segments ask
+    /// different questions over different distances and each one's gate takes its own.
     var needsAreaChoice: Bool {
         displayedSelection.isHere
             && displayedCoordinate != nil
-            && !AlmanacLimits.fixCanResolveAnArea(accuracyM: displayedAccuracyM)
+            && !AlmanacLimits.fixCanResolveAnArea(
+                accuracyM: displayedAccuracyM,
+                withinM: AlmanacLimits.fallbackRadiusM
+            )
     }
 
     func load() async {
@@ -97,8 +112,10 @@ final class CityModel {
         // anyway is what produced F17: the read would search 400 m around a point the reader may be
         // two miles from and name whatever it found. `nil` here reaches `.empty` by contract, and
         // `needsAreaChoice` above is what tells the screen which empty this is.
-        let fixForRead = AlmanacLimits.fixCanResolveAnArea(accuracyM: requestedAccuracy)
-            ? requestedCoordinate : nil
+        let fixForRead = AlmanacLimits.fixCanResolveAnArea(
+            accuracyM: requestedAccuracy,
+            withinM: AlmanacLimits.fallbackRadiusM
+        ) ? requestedCoordinate : nil
         do {
             let city = try await api.city(near: fixForRead, in: requestedSelection)
             guard requestedCoordinate == coordinate, requestedSelection == selection else { return }
@@ -112,18 +129,8 @@ final class CityModel {
         displayedSelection = requestedSelection
     }
 
-    /// Reads what the picker may offer. Once per screen; the set changes only when a city pack is
-    /// installed or removed, which cannot happen while this segment is on screen.
-    ///
-    /// A failure here is not the screen's failure — the stats are what the screen is for, and losing
-    /// the picker's list costs the reader the button, not the page. So it is swallowed to an empty
-    /// list rather than routed into `Phase.failed`.
-    func loadChoices() async {
-        choices = ((try? await api.areaChoices()) ?? .none).cities
-    }
-
-    /// The reader picked a city, or picked their own back.
-    func choose(_ newValue: CitySelection) async {
+    /// Take the selection the composition root holds *now* and re-read if it is a different one.
+    func update(selection newValue: CitySelection) async {
         guard newValue != selection else { return }
         selection = newValue
         await load()

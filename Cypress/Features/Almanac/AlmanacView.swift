@@ -66,31 +66,45 @@ struct AlmanacView: View {
 
     private let onRequestLocation: (() -> Void)?
 
-    /// Whether the area picker is up. Owned here and handed to `AlmanacScreen` as a value with two
-    /// closures, so the picker-open state can be handed straight in and photographed — the split
-    /// this file's own header describes, applied to one more state (ERRATA E126).
-    @State private var isPickingArea = false
+    /// Which area this segment is about, from the composition root (`AppRouter.journalArea`).
+    ///
+    /// **Not owned here**, because the picker that writes it is presented by the composition root
+    /// through `AppRouter.sheet` — see `AreaPickerSheet`'s header for the review finding that moved
+    /// it there, and `AlmanacModel.selection` for why the model treats it as an input.
+    private let selection: AreaSelection
+
+    /// Whether there is anything to pick from, and the closure that raises the picker. Both are the
+    /// composition root's: it holds the one `areaChoices()` read that both segments share.
+    private let canPickArea: Bool
+    private let onPickArea: (() -> Void)?
 
     init(
         api: any CypressAPI,
         coordinate: Coordinate?,
         accuracyM: Double? = nil,
+        selection: AreaSelection = .here,
+        canPickArea: Bool = false,
         location: MapLocationProvider? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         onBack: (() -> Void)? = nil,
         onOpenTree: ((UUID) -> Void)? = nil,
         onShowGroup: ((PinSet) -> Void)? = nil,
-        onRequestLocation: (() -> Void)? = nil
+        onRequestLocation: (() -> Void)? = nil,
+        onPickArea: (() -> Void)? = nil
     ) {
         _model = State(wrappedValue: AlmanacModel(
             api: api,
             coordinate: coordinate,
             accuracyM: accuracyM,
+            selection: selection,
             location: location,
             now: now
         ))
         self.coordinate = coordinate
         self.accuracyM = accuracyM
+        self.selection = selection
+        self.canPickArea = canPickArea
+        self.onPickArea = onPickArea
         self.location = location
         self.onBack = onBack
         self.onOpenTree = onOpenTree
@@ -120,19 +134,12 @@ struct AlmanacView: View {
             // the model, beside `showsLocationPrompt`, and for the identical reason: the question is
             // "is what is on screen blank because of this", not "is this true right now".
             needsAreaChoice: model.needsAreaChoice,
-            areaOptions: Self.options(model.choices),
-            selectedAreaID: Self.optionID(model.displayedSelection),
-            isPickingArea: isPickingArea,
-            onOpenPicker: { isPickingArea = true },
-            onClosePicker: { isPickingArea = false },
-            onPickArea: { option in
-                isPickingArea = false
-                Task { await model.choose(Self.selection(for: option)) }
-            }
+            canPickArea: canPickArea,
+            onOpenPicker: onPickArea
         )
-        // The picker's list. Once per screen: the set changes only when a city pack is installed or
-        // removed, which cannot happen while this segment is on screen.
-        .task { await model.loadChoices() }
+        // The composition root's selection, taken the way the fix is. Fires on mount and on every
+        // change, which is what a pick made in the presented sheet looks like from here.
+        .task(id: selection) { await model.update(selection: selection) }
         // `id:` and not a bare `.task`. The bare form runs once at mount, which is the same
         // once-only that the `@State` initializer has, so the first frame's coordinate would still
         // be the only one this screen ever read from. Keyed on the coordinate, the read re-runs when
@@ -151,33 +158,6 @@ struct AlmanacView: View {
         }
         // The direct-observation path. A no-op for every caller above that left `location` `nil`.
         .task { await model.observeLocation() }
-    }
-
-    // MARK: - The picker's options, and the selection they map back to
-
-    /// `AreaPickerCopy.here` first, then the record's own neighborhoods in the order the read
-    /// returned them (largest first — `AreaQueries.neighborhoods`).
-    ///
-    /// **`here` is always offered, including while it is the one showing.** A picker that hid the
-    /// way back would strand a reader who picked a neighborhood by mistake, and the chip's selected
-    /// state is what says which one is live.
-    static func options(_ choices: [NeighborhoodChoice]) -> [AreaPickerSheet.Option] {
-        [AreaPickerSheet.Option(id: AreaPickerCopy.hereID, label: AreaPickerCopy.here)]
-            + choices.map { AreaPickerSheet.Option(id: String($0.id), label: $0.name) }
-    }
-
-    static func optionID(_ selection: AreaSelection) -> String {
-        switch selection {
-        case .here: return AreaPickerCopy.hereID
-        case let .neighborhood(id): return String(id)
-        }
-    }
-
-    /// The inverse. An id that is not `here` and not an integer cannot be produced by `options(_:)`
-    /// above, and resolves to `.here` rather than to a crash or a neighborhood 0.
-    static func selection(for option: AreaPickerSheet.Option) -> AreaSelection {
-        guard option.id != AreaPickerCopy.hereID, let id = Int(option.id) else { return .here }
-        return .neighborhood(id: id)
     }
 }
 
@@ -216,39 +196,19 @@ struct AlmanacScreen: View {
     /// phone, and the only one of the four the reader can fix from here.
     var needsAreaChoice: Bool = false
 
-    /// What the picker offers, which choice is live, and whether it is up.
+    /// Whether there is anything to pick from, and how to raise the picker.
     ///
-    /// Handed in as values with closures rather than owned here, so every state of the picker can be
-    /// photographed with no model behind it (ERRATA E126) — including the one that matters most,
-    /// the sheet open over a named area.
-    var areaOptions: [AreaPickerSheet.Option] = []
-    var selectedAreaID: String?
-    var isPickingArea: Bool = false
-    var onOpenPicker: (() -> Void)?
-    var onClosePicker: (() -> Void)?
-    var onPickArea: ((AreaPickerSheet.Option) -> Void)?
-
-    /// Whether there is anything to pick from. An affordance over an empty list is the inert pill
+    /// **The sheet itself is not here.** It is presented by the composition root through
+    /// `AppRouter.sheet`, like screens 09, 10 and 15 — see `AreaPickerSheet`'s header for the review
+    /// finding that moved it out of this file. What is left is the affordance, which is what this
+    /// screen actually draws.
+    ///
+    /// `canPickArea` false draws no button at all: an affordance over an empty list is the inert pill
     /// `GroveTabRow` ruled out.
-    private var canPickArea: Bool { onPickArea != nil && areaOptions.count > 1 }
+    var canPickArea: Bool = false
+    var onOpenPicker: (() -> Void)?
 
     var body: some View {
-        ZStack {
-            column
-            if isPickingArea {
-                AreaPickerSheet(
-                    title: AreaPickerCopy.neighborhoodTitle,
-                    subtitle: AreaPickerCopy.neighborhoodSubtitle,
-                    options: areaOptions,
-                    selectedID: selectedAreaID,
-                    onSelect: { onPickArea?($0) },
-                    onClose: { onClosePicker?() }
-                )
-            }
-        }
-    }
-
-    private var column: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -321,7 +281,7 @@ struct AlmanacScreen: View {
                     .lineSpacing(CypressFont.LineSpacing.body125)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if canPickArea {
+                if canPickArea, onOpenPicker != nil {
                     SecondaryOutlineButton(
                         AreaPickerCopy.change,
                         style: .compact,
@@ -351,7 +311,7 @@ struct AlmanacScreen: View {
                 .lineSpacing(CypressFont.LineSpacing.body125)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if canPickArea {
+            if canPickArea, onOpenPicker != nil {
                 SecondaryOutlineButton(
                     AreaPickerCopy.pickAnArea,
                     style: .compact,
@@ -606,7 +566,7 @@ struct AlmanacScreen: View {
             // existed there was nothing on this screen a reader standing in Sacramento could do. A
             // reader who has downloaded Manhattan can read Manhattan from here now, which is the
             // owner's ask arriving at the state that needed it most.
-            if canPickArea {
+            if canPickArea, onOpenPicker != nil {
                 SecondaryOutlineButton(
                     AreaPickerCopy.pickAnArea,
                     style: .compact,

@@ -56,6 +56,22 @@ struct JournalTabView: View {
     /// city (`AlmanacLimits.fixCanResolveAnArea(accuracyM:)`, tester report F17).
     var accuracyM: Double?
 
+    /// Which area each stats segment is about, and how to raise the picker that changes it — all
+    /// four from the composition root (`AppRouter.journalArea` / `.journalCity`, and
+    /// `AppRouter.sheet` for the sheet itself). This tab passes them through and holds none of it:
+    /// the picker is presented over the whole window, including this tab's own segmented control,
+    /// which is the finding that put it there (PR #132 review, F2).
+    var areaSelection: AreaSelection = .here
+    var citySelection: CitySelection = .here
+    ///
+    /// **Two flags and not one**: the two lists are read separately and can be empty separately — a
+    /// pre-s16 file carries neighborhoods and no `dim_city`, so the neighborhood picker has rows and
+    /// the city picker has none. One flag would draw a button over an empty sheet on that record.
+    var canPickArea: Bool = false
+    var canPickCity: Bool = false
+    var onPickArea: (() -> Void)?
+    var onPickCity: (() -> Void)?
+
     /// The provider itself, handed down so the almanac segment can observe it directly rather than
     /// only ever seeing a fix that already changed (ERRATA E123's residual, #223). `nil` in previews
     /// and tests that supply `coordinate` alone — see `AlmanacView.location`.
@@ -113,10 +129,13 @@ struct JournalTabView: View {
                     api: api,
                     coordinate: coordinate,
                     accuracyM: accuracyM,
+                    selection: areaSelection,
+                    canPickArea: canPickArea,
                     location: location,
                     onOpenTree: onOpenTree,
                     onShowGroup: onShowGroup,
-                    onRequestLocation: onRequestLocation
+                    onRequestLocation: onRequestLocation,
+                    onPickArea: onPickArea
                 )
             case .city:
                 // Screen 12's own outbound affordances minus `onShowGroup`: nothing on the City
@@ -126,8 +145,11 @@ struct JournalTabView: View {
                     api: api,
                     coordinate: coordinate,
                     accuracyM: accuracyM,
+                    selection: citySelection,
+                    canPickCity: canPickCity,
                     onOpenTree: onOpenTree,
-                    onRequestLocation: onRequestLocation
+                    onRequestLocation: onRequestLocation,
+                    onPickCity: onPickCity
                 )
             }
 

@@ -431,7 +431,20 @@ public enum AlmanacLimits {
     public static let neighborhoodResolutionRadiusM: Double = 400
 
     /// Whether a location fix of this stated accuracy may be used to say which area the reader is
-    /// standing in.
+    /// standing in, given the radius the resolution actually searches.
+    ///
+    /// ── The two bounds, and why the caller names one ───────────────────────────────────────────
+    /// **There are two resolutions on the Journal and they do not search the same distance**, which
+    /// the first version of this rule missed (PR #132 review, F3):
+    ///
+    /// - the almanac's area comes from `SpeciesQueries.resolveNeighborhood(near:radiusM:)` at
+    ///   `neighborhoodResolutionRadiusM` — **400 m**;
+    /// - the City segment's comes from `CityQueries.resolveIDSpace(near:radiusM:)` at
+    ///   `fallbackRadiusM` — **1,200 m**.
+    ///
+    /// Keyed on 400 m for both, a fix good to 600 m blanked a City segment that could still answer,
+    /// and did answer on main. So the bound is the caller's, and each caller passes the radius its
+    /// own read runs over.
     ///
     /// ── The defect (tester report F17) ─────────────────────────────────────────────────────────
     /// `MapLocationProvider.Availability.located` has always carried `accuracyM`, and nothing on the
@@ -445,7 +458,7 @@ public enum AlmanacLimits {
     ///
     /// ── The rule ───────────────────────────────────────────────────────────────────────────────
     /// **A fix whose own error circle is wider than the circle we search cannot pick out a tree
-    /// inside it.** At ±3,000 m the 400 m search is being run around a point the reader may be two
+    /// inside it.** At ±3,000 m a 400 m search is being run around a point the reader may be two
     /// miles from, and the answer it returns is not a worse answer — it is an answer to a different
     /// question, which is the shape this project's own verification rules warn about. So the screen
     /// stops naming an area and asks the reader to choose one, which it can now do
@@ -455,9 +468,9 @@ public enum AlmanacLimits {
     /// one: every live path supplies a number (`MapLocationProvider` publishes one with every fix,
     /// substituting nothing), and the callers that pass `nil` are previews and tests driving a bare
     /// coordinate. Refusing `nil` would blank those instead of leaving them exactly as they were.
-    public static func fixCanResolveAnArea(accuracyM: Double?) -> Bool {
+    public static func fixCanResolveAnArea(accuracyM: Double?, withinM radiusM: Double) -> Bool {
         guard let accuracyM else { return true }
-        return accuracyM <= neighborhoodResolutionRadiusM
+        return accuracyM <= radiusM
     }
 
     /// The radius of the fallback area, when no polygon in the record covers the reader

@@ -1411,7 +1411,7 @@ public actor LocalAPI: CypressAPI {
     /// pack in the union.** Not the published catalog: a city whose pack is not on this phone has no
     /// rows here to aggregate, so offering it would offer a screen that could only say nothing. Not
     /// one inventory either — a reader who downloaded Manhattan can read Manhattan's stats without
-    /// travelling there, which is the whole of the owner's ask.
+    /// traveling there, which is the whole of the owner's ask.
     ///
     /// One `read`, not `readConsistently`: the two lists are independent of each other and of every
     /// other read on the screen, and nothing on either is compared against a number read elsewhere.

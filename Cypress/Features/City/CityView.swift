@@ -25,20 +25,34 @@ struct CityView: View {
     private let accuracyM: Double?
     private let onRequestLocation: (() -> Void)?
 
-    /// Whether the city picker is up. Owned here and handed down as a value with closures, so every
-    /// state including this one can be photographed (ERRATA E126).
-    @State private var isPickingCity = false
+    /// Which city this segment is about, from the composition root (`AppRouter.journalCity`), plus
+    /// whether there is anything to pick and how to raise the picker — `AlmanacView`'s three, for the
+    /// same reason. The sheet is presented by `RootView`, not here.
+    private let selection: CitySelection
+    private let canPickCity: Bool
+    private let onPickCity: (() -> Void)?
 
     init(
         api: any CypressAPI,
         coordinate: Coordinate?,
         accuracyM: Double? = nil,
+        selection: CitySelection = .here,
+        canPickCity: Bool = false,
         onOpenTree: ((UUID) -> Void)? = nil,
-        onRequestLocation: (() -> Void)? = nil
+        onRequestLocation: (() -> Void)? = nil,
+        onPickCity: (() -> Void)? = nil
     ) {
-        _model = State(wrappedValue: CityModel(api: api, coordinate: coordinate, accuracyM: accuracyM))
+        _model = State(wrappedValue: CityModel(
+            api: api,
+            coordinate: coordinate,
+            accuracyM: accuracyM,
+            selection: selection
+        ))
         self.coordinate = coordinate
         self.accuracyM = accuracyM
+        self.selection = selection
+        self.canPickCity = canPickCity
+        self.onPickCity = onPickCity
         self.onOpenTree = onOpenTree
         self.onRequestLocation = onRequestLocation
     }
@@ -52,15 +66,8 @@ struct CityView: View {
             hasFailed: model.hasFailed,
             onRetry: { Task { await model.retry() } },
             needsAreaChoice: model.needsAreaChoice,
-            cityOptions: Self.options(model.choices),
-            selectedCityID: Self.optionID(model.displayedSelection),
-            isPickingCity: isPickingCity,
-            onOpenPicker: { isPickingCity = true },
-            onClosePicker: { isPickingCity = false },
-            onPickCity: { option in
-                isPickingCity = false
-                Task { await model.choose(Self.selection(for: option)) }
-            }
+            canPickCity: canPickCity,
+            onOpenPicker: onPickCity
         )
         // Keyed on the coordinate, as `AlmanacView` keys its own read — the almanac's own fix for a
         // cold launch whose first frame has no fix at all (ERRATA E155).
@@ -77,7 +84,7 @@ struct CityView: View {
         .task(id: Fix(coordinate: coordinate, accuracyM: accuracyM)) {
             await model.update(coordinate: coordinate, accuracyM: accuracyM)
         }
-        .task { await model.loadChoices() }
+        .task(id: selection) { await model.update(selection: selection) }
     }
 
     /// The two halves of a fix, together, so `.task(id:)` can key on both. `Coordinate` is
@@ -85,33 +92,6 @@ struct CityView: View {
     private struct Fix: Hashable {
         let coordinate: Coordinate?
         let accuracyM: Double?
-    }
-
-    // MARK: - The picker's options, and the selection they map back to
-
-    /// `AreaPickerCopy.here` first, then the record's own cities, largest first
-    /// (`AreaQueries.cities`). `here` is always offered, including while it is showing — see
-    /// `AlmanacView.options(_:)`, which makes the same choice for the same reason.
-    static func options(_ choices: [CityChoice]) -> [AreaPickerSheet.Option] {
-        [AreaPickerSheet.Option(id: AreaPickerCopy.hereID, label: AreaPickerCopy.here)]
-            + choices.map { AreaPickerSheet.Option(id: $0.id, label: $0.name) }
-    }
-
-    static func optionID(_ selection: CitySelection) -> String {
-        switch selection {
-        case .here: return AreaPickerCopy.hereID
-        case let .city(idSpace): return idSpace
-        }
-    }
-
-    /// The inverse. **An id space literally equal to `AreaPickerCopy.hereID` would be shadowed** —
-    /// `id_spaces.id` is `sf`, `us-ca-sj`, `us-ny-nyc`, and a space named `here` would resolve to
-    /// the reader's own city instead of itself. It is a collision worth naming rather than a hazard
-    /// worth engineering around: the id space vocabulary is `<country>-<state>-<city>` by
-    /// convention (`dim_city.slug`'s own note), the two exceptions are frozen, and the failure is
-    /// visible on screen rather than silent in a count.
-    static func selection(for option: AreaPickerSheet.Option) -> CitySelection {
-        option.id == AreaPickerCopy.hereID ? .here : .city(idSpace: option.id)
     }
 }
 
@@ -134,37 +114,15 @@ struct CityScreen: View {
     /// in (`CityModel.needsAreaChoice`, tester report F17) — `AlmanacScreen.needsAreaChoice`'s twin.
     var needsAreaChoice: Bool = false
 
-    /// What the picker offers, which choice is live, and whether it is up. Values with closures, so
-    /// every state photographs with no model behind it (ERRATA E126).
-    var cityOptions: [AreaPickerSheet.Option] = []
-    var selectedCityID: String?
-    var isPickingCity: Bool = false
+    /// Whether there is anything to pick from, and how to raise the picker. The sheet itself is
+    /// presented by the composition root — `AlmanacScreen`'s pair, for the same reason.
+    ///
+    /// False for a record with no `dim_city`: a city with no name on file is not offered under an
+    /// invented one (`AreaQueries`), and the affordance goes with the list.
+    var canPickCity: Bool = false
     var onOpenPicker: (() -> Void)?
-    var onClosePicker: (() -> Void)?
-    var onPickCity: ((AreaPickerSheet.Option) -> Void)?
-
-    /// Whether there is anything to pick from. Empty for a record with no `dim_city` — a city with
-    /// no name on file is not offered under an invented one (`AreaQueries`), and the affordance goes
-    /// with the list.
-    private var canPickCity: Bool { onPickCity != nil && cityOptions.count > 1 }
 
     var body: some View {
-        ZStack {
-            column
-            if isPickingCity {
-                AreaPickerSheet(
-                    title: AreaPickerCopy.cityTitle,
-                    subtitle: AreaPickerCopy.citySubtitle,
-                    options: cityOptions,
-                    selectedID: selectedCityID,
-                    onSelect: { onPickCity?($0) },
-                    onClose: { onClosePicker?() }
-                )
-            }
-        }
-    }
-
-    private var column: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -240,7 +198,7 @@ struct CityScreen: View {
                     .lineSpacing(CypressFont.LineSpacing.body125)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if canPickCity {
+                if canPickCity, onOpenPicker != nil {
                     SecondaryOutlineButton(
                         AreaPickerCopy.change,
                         style: .compact,
@@ -270,7 +228,7 @@ struct CityScreen: View {
                 .lineSpacing(CypressFont.LineSpacing.body125)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if canPickCity {
+            if canPickCity, onOpenPicker != nil {
                 SecondaryOutlineButton(
                     AreaPickerCopy.pickACity,
                     style: .compact,
@@ -397,7 +355,7 @@ struct CityScreen: View {
 
             // The one door open from here — `AlmanacScreen.outOfRange`'s own addition, for the same
             // reason: a reader whose ground no inventory covers can still read a city they have.
-            if canPickCity {
+            if canPickCity, onOpenPicker != nil {
                 SecondaryOutlineButton(
                     AreaPickerCopy.pickACity,
                     style: .compact,

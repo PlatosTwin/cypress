@@ -67,13 +67,33 @@ public struct AreaQueries {
     /// the largest neighborhoods — the ones a reader is most likely to want — are not buried under
     /// an alphabet.
     public func neighborhoods(connection: SQLiteConnection) throws -> [NeighborhoodChoice] {
+        // **The city name is a LEFT JOIN and is `MIN(...)` over the group**, both deliberately.
+        //
+        // `LEFT`, because a pre-s16 file has no `dim_city` to reach and a neighborhood with no city
+        // name on file is still a neighborhood the reader may pick — an inner join would drop the
+        // whole list for such a file rather than drop one column of it. `MIN`, because SQLite would
+        // otherwise pick an arbitrary row's value from a bare column in a grouped select: a
+        // neighborhood's trees all share one id space (the union never merges polygons across arms,
+        // `InventoryUnionSQL.createCanonicalCatalogs`), so every row in the group carries the same
+        // name and `MIN` names *which* same one rather than leaving it to the query planner.
+        let cityName = schema.hasIdSpace && schema.hasDimCity
+            ? "MIN(dc.display_name)"
+            : "NULL"
+        let cityJoin = schema.hasIdSpace && schema.hasDimCity
+            ? """
+              LEFT JOIN \(seed).id_spaces isp ON isp.id = t.id_space
+              LEFT JOIN \(seed).dim_city dc ON dc.id = isp.city_id
+              """
+            : ""
         let statement = try connection.cachedStatement("""
             SELECT n.id AS neighborhood_id,
                    n.name AS neighborhood_name,
+                   \(cityName) AS city_name,
                    COUNT(*) AS tree_count
               FROM \(seed).trees t
               JOIN \(seed).species s ON s.id = t.species_current
               JOIN \(seed).neighborhoods n ON n.id = t.neighborhood_id
+              \(cityJoin)
              WHERE t.deleted_at IS NULL
                AND \(Self.standing)
              GROUP BY n.id
@@ -83,7 +103,8 @@ public struct AreaQueries {
             NeighborhoodChoice(
                 id: try row.int("neighborhood_id"),
                 name: try row.string("neighborhood_name"),
-                treeCount: try row.int("tree_count")
+                treeCount: try row.int("tree_count"),
+                cityName: try row.stringIfPresent("city_name")
             )
         }
     }

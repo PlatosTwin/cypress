@@ -17,8 +17,14 @@
 //  ARCHITECTURE §5 rule 8 sends an unspecified screen to the nearest specified thing, and every
 //  piece of this already exists:
 //
-//  - **C17 `BottomSheet(style: .standard)`** is the app's card-over-scrim, with the drag-to-dismiss
-//    band and the scrim tap R42 settled. Screens 09, 10 and 15 present through it.
+//  - **C17 `BottomSheet(style: .standard)`, presented the way the app's other three sheets are** —
+//    from the composition root, through `RootView`'s single `.fullScreenCover(isPresented:)`, keyed
+//    on `AppRouter.sheet`. The first version of this file was a `ZStack` layer inside the tab's own
+//    content, which looked identical and was not modal: the PR #132 review tapped the C5 segmented
+//    control *through* the scrim and the sheet vanished with no dismissal, the scrim stopped short
+//    of the segmented control and the tab bar, and VoiceOver's rotor still reached every card
+//    underneath. A cover fixes all three at once because it is a separate hosting context, which is
+//    the property `RootView`'s comment is protecting when it insists on one cover for all of them.
 //  - **C1 `ScreenHeader`** titles it, as it titles the sheets.
 //  - **C4 `Chip`, `.filterSelected` / `.filterIdle`, in a `CypressChipFlow`** is the app's existing
 //    "choose one of these" control — it is screen 01's map filter row, verbatim, and it already
@@ -65,6 +71,79 @@ struct AreaPickerSheet: View {
 
     let onSelect: (Option) -> Void
     let onClose: () -> Void
+
+    // MARK: - The options, and the selection they map back to
+
+    /// `AreaPickerCopy.here` first, then the record's own neighborhoods in the order the read
+    /// returned them (largest first — `AreaQueries.neighborhoods`).
+    ///
+    /// **`here` is always offered, including while it is the one showing.** A picker that hid the way
+    /// back would strand a reader who picked a neighborhood by mistake, and the chip's selected state
+    /// is what says which one is live.
+    ///
+    /// **A name two cities share is qualified, and only then** (PR #132 review, F4).
+    /// `InventoryUnionSQL.createCanonicalCatalogs` deliberately does not merge neighborhoods across
+    /// arms — "two cities may each have a `Downtown`, and merging those would put San Jose's trees in
+    /// a San Francisco neighborhood" — so the union can and one day will hand this list two rows with
+    /// one label. Unqualified they are two identical chips with nothing to choose between; qualified
+    /// unconditionally, all 41 of San Francisco's would carry a city nobody is choosing between. So
+    /// the qualifier is applied per colliding name and to nothing else, in the app's own
+    /// middle-dot idiom (`Who lives here · 127 species`, `Red flowering gum on 44th Ave · Jan 22`).
+    ///
+    /// Today's bundle cannot reach it — 41 distinct San Francisco names, and San Jose carries no
+    /// polygons at all — so this is written against the configuration D1 exists to enable rather than
+    /// against a defect on screen.
+    static func options(_ choices: [NeighborhoodChoice]) -> [Option] {
+        var seen: [String: Int] = [:]
+        for choice in choices { seen[choice.name, default: 0] += 1 }
+        return [Option(id: AreaPickerCopy.hereID, label: AreaPickerCopy.here)]
+            + choices.map { choice in
+                let shared = seen[choice.name, default: 0] > 1
+                let label = shared && !(choice.cityName ?? "").isEmpty
+                    ? AreaPickerCopy.qualified(choice.name, city: choice.cityName ?? "")
+                    : choice.name
+                return Option(id: String(choice.id), label: label)
+            }
+    }
+
+    /// The cities, largest first. No collision rule: `dim_city.display_name` is the city's own civic
+    /// name and two live inventories naming one city is what R84 decision 4 forbids outright — a
+    /// downloaded copy of a bundled city is an update to it, never a peer.
+    static func options(_ choices: [CityChoice]) -> [Option] {
+        [Option(id: AreaPickerCopy.hereID, label: AreaPickerCopy.here)]
+            + choices.map { Option(id: $0.id, label: $0.name) }
+    }
+
+    static func optionID(_ selection: AreaSelection) -> String {
+        switch selection {
+        case .here: return AreaPickerCopy.hereID
+        case let .neighborhood(id): return String(id)
+        }
+    }
+
+    static func optionID(_ selection: CitySelection) -> String {
+        switch selection {
+        case .here: return AreaPickerCopy.hereID
+        case let .city(idSpace): return idSpace
+        }
+    }
+
+    /// The inverse. An id that is not `here` and not an integer cannot be produced by `options(_:)`
+    /// above, and resolves to `.here` rather than to a crash or a neighborhood 0.
+    static func areaSelection(for option: Option) -> AreaSelection {
+        guard option.id != AreaPickerCopy.hereID, let id = Int(option.id) else { return .here }
+        return .neighborhood(id: id)
+    }
+
+    /// The inverse for cities. **An id space literally equal to `AreaPickerCopy.hereID` would be
+    /// shadowed** — `id_spaces.id` is `sf`, `us-ca-sj`, `us-ny-nyc`, and a space named `here` would
+    /// resolve to the reader's own city instead of itself. A collision worth naming rather than one
+    /// worth engineering around: the vocabulary is `<country>-<state>-<city>` by convention
+    /// (`dim_city.slug`'s own note), the two exceptions are frozen, and the failure would be visible
+    /// on screen rather than silent in a count.
+    static func citySelection(for option: Option) -> CitySelection {
+        option.id == AreaPickerCopy.hereID ? .here : .city(idSpace: option.id)
+    }
 
     var body: some View {
         BottomSheet(style: .standard, onScrimTap: onClose) {
@@ -117,6 +196,14 @@ enum AreaPickerCopy {
     /// or reworded `here` cannot silently stop matching the selection.
     static let hereID = "here"
 
+    /// `Downtown · San Jose` — a neighborhood name two live inventories share, qualified by the city
+    /// that drew the polygon (PR #132 review, F4). The middle dot is the app's own compound-label
+    /// separator (`AlmanacCopy.compositionLabel`, `AlmanacCopy.bloomSubtitle`,
+    /// `CityCopy.recordSince`'s row), so this introduces a rule and not a punctuation mark.
+    ///
+    /// **Applied only to a name that actually collides** — see `AreaPickerSheet.options(_:)`.
+    static func qualified(_ name: String, city: String) -> String { "\(name) · \(city)" }
+
     static let neighborhoodTitle = "Neighborhood"
     static let cityTitle = "City"
 
@@ -128,7 +215,18 @@ enum AreaPickerCopy {
 
     // MARK: The provenance line — the half of F17 that is not the picker
 
-    /// Under the header, whenever the area on screen was resolved from the reader's own fix.
+    /// Under the header, whenever the area on screen was resolved from the reader's own fix **and a
+    /// nearest tree is what did the resolving**.
+    ///
+    /// **It is not the only `.fromFix` mechanism, and shipping it as if it were was PR #132's
+    /// blocking review finding.** `AlmanacScope` has two cases and R29 is the ruling that they are
+    /// different promises: a polygon the seed carries, resolved through the nearest inventoried tree
+    /// (`SpeciesQueries.resolveNeighborhood`), and — where no polygon covers the reader — a 1,200 m
+    /// circle drawn around them, which no tree chose. Printed over the second, this sentence is
+    /// false, and it is false directly above `AlmanacCopy.areaNote` saying no boundary exists and the
+    /// almanac was drawn around you instead. **All 52,788 San Jose rows carry
+    /// `neighborhood_id IS NULL`**, so that was not an edge: it was every reader in the bundle's
+    /// second city, permanently. See `resolvedFromFixRadius` for the sentence that state gets.
     ///
     /// **This sentence is the actual answer to F17.** The report asks "why does this page seem to
     /// *default* to showing stats for Castro/market?" — and until now the screen said nothing at
@@ -139,6 +237,19 @@ enum AreaPickerCopy {
     /// It names the mechanism (the nearest tree on file) rather than the outcome, because the
     /// mechanism is the part that explains a surprising name.
     static let resolvedFromFix = "Chosen from the tree nearest you in the city record."
+
+    /// Under the header for R29's radius fallback — the other `.fromFix` mechanism, and the one that
+    /// has no tree in it (PR #132 review, F1).
+    ///
+    /// **It states what actually happened and nothing more.** The reader's own fix is the center of
+    /// the circle (`AlmanacScope.radius(center:meters:)` is handed the coordinate), and that is the
+    /// whole of this area's provenance. Why it is a circle rather than a place is `areaNote`'s
+    /// sentence, immediately below, and repeating it here would be the same fact twice — the
+    /// "not pure data porn" restraint the City segment's brief asks for, applied to copy.
+    ///
+    /// Deliberately not `nil`. D3's rule is that the default accounts for itself *always*; a blank
+    /// where the account should be is how the screen got into F17 in the first place.
+    static let resolvedFromFixRadius = "Centered on where you are."
 
     /// Under the header, whenever the reader picked the area themselves. Says what is being looked
     /// at and, by saying it, that it is not where they are standing.

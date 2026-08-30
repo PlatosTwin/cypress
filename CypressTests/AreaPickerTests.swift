@@ -297,13 +297,37 @@ struct AreaPickerTests {
     @Test("a fix is allowed to name an area exactly while its error circle fits inside the search")
     func accuracyBoundary() {
         let radius = AlmanacLimits.neighborhoodResolutionRadiusM
-        #expect(AlmanacLimits.fixCanResolveAnArea(accuracyM: radius))
-        #expect(AlmanacLimits.fixCanResolveAnArea(accuracyM: radius - 1))
-        #expect(!AlmanacLimits.fixCanResolveAnArea(accuracyM: radius + 1))
+        #expect(AlmanacLimits.fixCanResolveAnArea(accuracyM: radius, withinM: radius))
+        #expect(AlmanacLimits.fixCanResolveAnArea(accuracyM: radius - 1, withinM: radius))
+        #expect(!AlmanacLimits.fixCanResolveAnArea(accuracyM: radius + 1, withinM: radius))
         // An approximate-location fix, which is where F17 comes from.
-        #expect(!AlmanacLimits.fixCanResolveAnArea(accuracyM: 3_000))
+        #expect(!AlmanacLimits.fixCanResolveAnArea(accuracyM: 3_000, withinM: radius))
         // Unknown accuracy is permitted, which is what leaves previews and tests unchanged.
-        #expect(AlmanacLimits.fixCanResolveAnArea(accuracyM: nil))
+        #expect(AlmanacLimits.fixCanResolveAnArea(accuracyM: nil, withinM: radius))
+    }
+
+    /// PR #132 review, F3. The two segments search different distances, so a fix between them is
+    /// good enough for one and not the other — and the City segment is the one that can still
+    /// answer.
+    @MainActor
+    @Test("each segment's coarse-fix gate is keyed on the radius its own resolution searches")
+    func eachSegmentUsesItsOwnRadius() async throws {
+        let between = (AlmanacLimits.neighborhoodResolutionRadiusM + AlmanacLimits.fallbackRadiusM) / 2
+        #expect(
+            AlmanacLimits.neighborhoodResolutionRadiusM < between
+                && between < AlmanacLimits.fallbackRadiusM,
+            "the two bounds stopped straddling this accuracy, so the test below proves nothing"
+        )
+
+        let store = try await Self.store()
+        let city = CityModel(api: Self.api(store), coordinate: Self.outerSunset, accuracyM: between)
+        await city.load()
+        #expect(!city.needsAreaChoice, "the City segment blanked for a fix its own 1,200 m search covers")
+        #expect(city.presentation?.hasCity == true, "and it really can answer for that coordinate")
+
+        let almanac = AlmanacModel(api: Self.api(store), coordinate: Self.outerSunset, accuracyM: between)
+        await almanac.load()
+        #expect(almanac.needsAreaChoice, "the almanac accepted a fix wider than its own 400 m search")
     }
 
     /// The recorder: `almanac(near:in:)` is asked **what coordinate it was handed**, because the
@@ -394,39 +418,115 @@ struct AreaPickerTests {
             NeighborhoodChoice(id: 40, name: "West of Twin Peaks", treeCount: 10_420),
             NeighborhoodChoice(id: 3, name: "Castro/Upper Market", treeCount: 1)
         ]
-        let options = AlmanacView.options(choices)
+        let options = AreaPickerSheet.options(choices)
         #expect(options.first?.id == AreaPickerCopy.hereID)
         #expect(options.count == choices.count + 1)
-        #expect(AlmanacView.selection(for: options[0]) == .here)
-        #expect(AlmanacView.selection(for: options[1]) == .neighborhood(id: 40))
-        #expect(AlmanacView.optionID(.neighborhood(id: 3)) == options[2].id)
-        #expect(AlmanacView.optionID(.here) == options[0].id)
+        #expect(AreaPickerSheet.areaSelection(for: options[0]) == .here)
+        #expect(AreaPickerSheet.areaSelection(for: options[1]) == .neighborhood(id: 40))
+        #expect(AreaPickerSheet.optionID(.neighborhood(id: 3)) == options[2].id)
+        #expect(AreaPickerSheet.optionID(AreaSelection.here) == options[0].id)
 
         let cities = [CityChoice(id: "us-ca-sj", name: "San Jose", treeCount: 40_199)]
-        let cityOptions = CityView.options(cities)
+        let cityOptions = AreaPickerSheet.options(cities)
         #expect(cityOptions.first?.id == AreaPickerCopy.hereID)
-        #expect(CityView.selection(for: cityOptions[1]) == .city(idSpace: "us-ca-sj"))
-        #expect(CityView.optionID(.city(idSpace: "us-ca-sj")) == cityOptions[1].id)
+        #expect(AreaPickerSheet.citySelection(for: cityOptions[0]) == CitySelection.here)
+        #expect(AreaPickerSheet.citySelection(for: cityOptions[1]) == .city(idSpace: "us-ca-sj"))
+        #expect(AreaPickerSheet.optionID(.city(idSpace: "us-ca-sj")) == cityOptions[1].id)
+    }
+
+    /// PR #132 review, F4. The union deliberately does not merge neighborhoods across arms, so two
+    /// live inventories can each contribute a `Downtown`; unqualified they are two identical chips.
+    @Test("a neighborhood name two cities share is qualified, and one only one city has is not")
+    func collidingNamesAreQualified() {
+        let choices = [
+            NeighborhoodChoice(id: 1, name: "Downtown", treeCount: 900, cityName: "San Francisco"),
+            NeighborhoodChoice(id: 2, name: "Downtown", treeCount: 800, cityName: "San Jose"),
+            NeighborhoodChoice(id: 3, name: "Mission", treeCount: 700, cityName: "San Francisco")
+        ]
+        let labels = AreaPickerSheet.options(choices).map(\.label)
+        #expect(Set(labels).count == labels.count, "two chips share a label: \(labels)")
+        #expect(labels.contains(AreaPickerCopy.qualified("Downtown", city: "San Francisco")))
+        #expect(labels.contains(AreaPickerCopy.qualified("Downtown", city: "San Jose")))
+        // The name only one city carries is left alone — qualifying all 41 of San Francisco's would
+        // print a city nobody is choosing between.
+        #expect(labels.contains("Mission"))
+
+        // A record with no city name on file cannot be qualified, and is left as it is rather than
+        // given an empty suffix.
+        let nameless = [
+            NeighborhoodChoice(id: 1, name: "Downtown", treeCount: 900),
+            NeighborhoodChoice(id: 2, name: "Downtown", treeCount: 800)
+        ]
+        #expect(AreaPickerSheet.options(nameless).map(\.label).allSatisfy { !$0.contains("·") })
     }
 
     // MARK: - 6 · The sentence that answers the report
 
-    @Test("the screen states where its area came from, and states it differently for a choice")
+    /// **One fixture per mechanism**, which is the whole repair. The version this replaces built both
+    /// of its fixtures from `.named("Mission")`, so R29's radius fallback — the state every San Jose
+    /// reader is permanently in — was never handed to `AlmanacPresentation` at all, and a sentence
+    /// claiming a nearest tree chose a circle drawn around the reader passed a green suite
+    /// (PR #132 review, F1).
+    @Test("each of the three ways an area is reached states its own provenance")
     func provenanceIsStated() {
-        let fromFix = AlmanacPresentation(
+        let polygon = AlmanacPresentation(
             almanac: Almanac(neighborhood: AlmanacNeighborhood(area: .named("Mission"))),
+            now: Self.now
+        )
+        let fallback = AlmanacPresentation(
+            almanac: Almanac(
+                neighborhood: AlmanacNeighborhood(area: .radius(meters: AlmanacLimits.fallbackRadiusM))
+            ),
             now: Self.now
         )
         let picked = AlmanacPresentation(
             almanac: Almanac(neighborhood: AlmanacNeighborhood(area: .named("Mission"), resolution: .picked)),
             now: Self.now
         )
-        #expect(fromFix.provenanceNote == AreaPickerCopy.resolvedFromFix)
+
+        #expect(polygon.provenanceNote == AreaPickerCopy.resolvedFromFix)
+        #expect(fallback.provenanceNote == AreaPickerCopy.resolvedFromFixRadius)
         #expect(picked.provenanceNote == AreaPickerCopy.resolvedByChoice)
-        #expect(!fromFix.isPickedArea)
+
+        // All three different — one sentence reused across two mechanisms is exactly the defect.
+        let notes = [polygon.provenanceNote, fallback.provenanceNote, picked.provenanceNote]
+        #expect(Set(notes.compactMap { $0 }).count == 3)
+
+        // And the fallback's own sentence does not contradict the line drawn directly under it.
+        #expect(fallback.areaNote != nil, "the fallback lost the sentence this one has to agree with")
+        #expect(fallback.provenanceNote != AreaPickerCopy.resolvedFromFix)
+
+        #expect(!polygon.isPickedArea)
         #expect(picked.isPickedArea)
 
         // No area, no provenance to state.
         #expect(AlmanacPresentation(almanac: .empty, now: Self.now).provenanceNote == nil)
+    }
+
+    /// The seed fact that makes F1 a permanent state for a whole city rather than an edge case.
+    @Test("every San Jose row carries no neighborhood, so its readers are always in the fallback")
+    func sanJoseIsAlwaysTheFallback() async throws {
+        let store = try await Self.store()
+        let counted: (total: Int, null: Int) = try await store.queue.read { connection in
+            let statement = try connection.prepare(
+                "SELECT COUNT(*) AS n, SUM(neighborhood_id IS NULL) AS m "
+                    + "FROM \(SeedDatabase.schemaName).trees WHERE id_space = 'us-ca-sj'"
+            )
+            defer { statement.finalize() }
+            let row = try #require(try statement.fetchOne { (try $0.int("n"), try $0.int("m")) })
+            return (row.0, row.1)
+        }
+        #expect(counted.total > 0, "no San Jose rows at all; this test is measuring nothing")
+        #expect(counted.null == counted.total)
+
+        // So the read really does produce the radius area for that city, and the sentence over it is
+        // the fallback's rather than the nearest tree's.
+        let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose, in: .here)
+        let area = try #require(almanac.neighborhood)
+        #expect(area.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
+        #expect(
+            AlmanacPresentation(almanac: almanac, now: Self.now).provenanceNote
+                == AreaPickerCopy.resolvedFromFixRadius
+        )
     }
 }
