@@ -629,9 +629,19 @@ enum DebugDeepLink {
     /// end (the photo cases). Three eighths is the widest remaining gap that the marching end cannot
     /// reach before it has passed a quarter first.
     ///
-    /// It marches nowhere. The check-in is written under a fixed `client_uuid`, so every run finds
-    /// its own row already present and writes nothing new — the same tree, the same single row,
-    /// however many times the harness runs.
+    /// **What is fixed is the index, not the tree** (PR #130 review, F5). The first version of this
+    /// comment said "the same tree … however many times the harness runs", and that is `anonymized
+    /// PhotoTree`'s exposure restated wrongly: `.memorial` marks the nearest standing tree removed
+    /// on every run, so `standing` shrinks from the near end and the three-eighths position walks
+    /// outward with it. Once it moves, this returns tree B while the journal row written under the
+    /// fixed `client_uuid` still hangs off tree A, and nothing new is inserted.
+    ///
+    /// **That is harmless here and worth stating rather than hiding**, because the two properties
+    /// this slot actually needs are unaffected: the journal keeps its one row — the conflict clause
+    /// keys on the `client_uuid` and not on the tree, so the row stays where the first run put it
+    /// and no second one is written — and nothing accumulates however far the index walks. What
+    /// this must not be read as is a stable fixture: a test that anchored on *which* tree this
+    /// resolves to would pass until somebody opened screen 19.
     private static func checkedInTree(_ api: LocalAPI) async throws -> UUID {
         let candidates = try await candidates(api)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }

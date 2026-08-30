@@ -85,8 +85,36 @@ struct SeeAllOnMapTests {
         #expect(router.pendingMapFilter == nil)
     }
 
-    /// Arriving at the map any *other* way must not pick up a narrowing somebody armed and abandoned.
-    @Test("a plain tab switch disarms a narrowing nobody used")
+    /// **The tab switch a finger actually performs** (PR #130 review, F1).
+    ///
+    /// This test used to call `goToTab` — and `goToTab` is the one road to a tab root that C16's bar
+    /// does not take. `AppRouter.bottomTabSelection`'s setter assigns `tab` directly, every tab root
+    /// draws the bar through that binding, and the reviewer's probe armed a narrowing, drove the
+    /// binding, and found it still armed while a control on `goToTab` cleared. A guard pointed at
+    /// the path nobody walks is the guards-green-while-the-defect-is-present shape, pre-installed.
+    ///
+    /// The binding is driven here rather than a `Tab` assigned, because the binding is the object
+    /// the bar holds: a fix that cleared on `tab` but left the binding writing somewhere else would
+    /// still pass an assignment test.
+    @Test("the bottom bar's own tab switch disarms a narrowing nobody used")
+    @MainActor
+    func theBottomBarDisarms() {
+        let router = AppRouter()
+        router.goToMap(showing: MapFilter(membership: .yours))
+
+        router.bottomTabSelection.wrappedValue = .myGrove
+
+        #expect(router.tab == .grove, "the bar's binding did not move the tab")
+        #expect(
+            router.pendingMapFilter == nil,
+            "a narrowing survived the tab switch C16 performs, so the next arrival at the map would be narrowed by something nobody pressed"
+        )
+    }
+
+    /// The same claim for the programmatic road, which several features take (E151's `goToMap`,
+    /// screen 18's `onOpenGrove`). Kept beside the one above rather than replaced by it: they are
+    /// two different paths and the fix has to hold on both.
+    @Test("a programmatic tab switch disarms a narrowing nobody used")
     @MainActor
     func aPlainTabSwitchDisarms() {
         let router = AppRouter()
@@ -129,14 +157,21 @@ struct SeeAllOnMapTests {
 
     // MARK: - 3 · `them` and `only yours` are the same trees
 
-    /// **The link cannot hide a row the reader was just looking at.**
+    /// **The narrowing cannot hide a row the reader was just looking at.**
     ///
     /// The journal is read from `visits`, `observations`, `measurements` and `care_events`
     /// (`ContributionStore.journal`); screen 01's `Yours` is read from those same four plus
-    /// `community_trees` (`contributedTreeIDs`). So the map is a superset of what this list names,
-    /// and `See them all` cannot drop anything — which is the entire argument for putting the link
-    /// on this screen. One row of each kind, because a proof over one table would pass for a query
-    /// that had lost the other three.
+    /// `community_trees` (`contributedTreeIDs`). So the `Yours` **set** is a superset of what this
+    /// list names, and the *filter* cannot drop anything — which is the entire argument for putting
+    /// the link on this screen. One row of each kind, because a proof over one table would pass for
+    /// a query that had lost the other three.
+    ///
+    /// **Two id sets, and deliberately not a claim about pins** (PR #130 review, F4). What the map
+    /// draws is this set intersected with the camera and with the installed inventory, and neither
+    /// is in scope here: a test that asserted a pin per row would be asserting a viewport and a
+    /// download state. Both axes are written down where they belong — the camera in the PR's
+    /// ratification list, the inventory in
+    /// `docs/errata-pending/three-answers-to-which-trees-are-mine.md`.
     @Test("every tree the journal names is under the map's Yours")
     func theMapCannotHideARowTheJournalDrew() async throws {
         let store = try await Self.store()

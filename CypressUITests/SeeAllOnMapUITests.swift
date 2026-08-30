@@ -19,6 +19,11 @@
 //  chip, which is in the row for exactly as long as any dimension is set — so this test presses it
 //  and watches it go, because "the way out is drawn" and "the way out works" are two claims.
 //
+//  **And there is a third claim, which the first version of this file could not make** (PR #130
+//  review, F2): that the way out is *on screen*. `isHittable` and `.tap()` cannot say it, because
+//  XCUITest scrolls an element into view before answering either — so this file measures the chip's
+//  frame against the window before it touches anything.
+//
 //  ── Why the journal has to be seeded ─────────────────────────────────────────────────────────
 //  The link draws only over a list (`JournalPresentation.offersMapLink`), and this device has made
 //  no contributions — `CYPRESS_SCREEN=journalList` is deliberately the cold-start state. The
@@ -45,6 +50,7 @@ final class SeeAllOnMapUITests: XCTestCase {
     /// `MapFilterCopy.chipValue(isOn:)`. The chip's drawn state is a fill and a weight, and neither
     /// is available to this target — the spoken value is the only channel that carries it.
     private static let on = "On"
+    private static let off = "Off"
 
     func testTheLinkOpensTheMapNarrowedToYoursAndTheNarrowingCanBeCleared() {
         let app = launch()
@@ -69,17 +75,61 @@ final class SeeAllOnMapUITests: XCTestCase {
                 + "\(yours.value as? String ?? "nil")"
         )
 
-        // The way out, drawn and pressed. `Clear filters` is in the row for as long as any dimension
-        // is set and for no longer, so its disappearance is the map reporting itself un-narrowed.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        // **The way out is ON SCREEN, measured from its frame** (PR #130 review, F2).
+        //
+        // `assertReachable` and `.tap()` were the whole of this check and they cannot make this
+        // claim: XCUITest scrolls an element inside a `ScrollView` into view before it answers
+        // `isHittable` and before it synthesizes a tap, so both passed while `Clear filters` sat
+        // past the trailing edge of the one-line chip row on this 390 pt phone — reachable by a
+        // drag nobody had been told about. That is the E126 hazard on the one entrance where the
+        // reader did not press a filter to get here.
+        //
+        // So the frame is read FIRST, before anything can scroll the row, and it is read against
+        // the window rather than against a constant — this suite must say the same true thing on a
+        // 440 pt phone. The same lesson `MapFilterAccessibilityTests` learned at AX5: frames are
+        // the one channel a scroller cannot hide.
+        // ══════════════════════════════════════════════════════════════════════════════════════
         let clear = app.buttons[Self.clearChip]
-        assertReachable(clear, "a map that arrived filtered offered no way to clear the filter")
+        XCTAssertTrue(
+            clear.waitForExistence(timeout: 30),
+            "a map that arrived filtered drew no “\(Self.clearChip)” chip at all"
+        )
+        let screen = app.windows.firstMatch.frame
+        let clearBox = clear.frame
+        XCTAssertGreaterThanOrEqual(
+            clearBox.minX, screen.minX - 0.5,
+            "the “\(Self.clearChip)” chip starts off the leading edge (\(clearBox) on a "
+                + "\(screen.width)×\(screen.height) screen)"
+        )
+        XCTAssertLessThanOrEqual(
+            clearBox.maxX, screen.maxX + 0.5,
+            "the “\(Self.clearChip)” chip is clipped past the trailing edge (\(clearBox) on a "
+                + "\(screen.width)×\(screen.height) screen), so a reader who arrived narrowed from "
+                + "the journal has to discover a horizontal drag to find the way out. XCUITest "
+                + "would still tap it, which is why this measures the frame."
+        )
+        // And the cause stays on screen beside it — a visible way out that had scrolled the
+        // selected chip off would be the same defect with the halves swapped.
+        let yoursBox = yours.frame
+        XCTAssertLessThanOrEqual(
+            yoursBox.maxX, screen.maxX + 0.5,
+            "the “\(Self.yoursChip)” chip is off the trailing edge (\(yoursBox)), so the map is "
+                + "narrowed with nothing on screen saying by what"
+        )
+
         clear.tap()
 
+        // **Presence, not absence** (CLAUDE.md; PR #130 review, F6). The `Yours` chip is drawn
+        // unconditionally, so its off state is a value this target can read and assert — strictly
+        // stronger than "not on", which a chip that had vanished would also satisfy. The clear
+        // chip's departure is the second half: it is in the row for as long as any dimension is set
+        // and for no longer.
         XCTAssertTrue(
-            wait { (yours.value as? String) != Self.on && !clear.exists },
-            "the narrowing survived “Clear filters” — a reader routed here from the journal cannot "
-                + "get back to the whole map. Chip value: \(yours.value as? String ?? "nil"), "
-                + "clear chip present: \(clear.exists)"
+            wait { (yours.value as? String) == Self.off && !clear.exists },
+            "the narrowing survived “\(Self.clearChip)” — a reader routed here from the journal "
+                + "cannot get back to the whole map. Chip value: "
+                + "\(yours.value as? String ?? "nil"), clear chip present: \(clear.exists)"
         )
     }
 

@@ -292,8 +292,16 @@ enum JournalCopy {
     /// no favorites arm at all (R23 argues at length that a bookmark is not a contribution). A tree
     /// somebody only hearted is in the grove and is *not* under `Yours`, so this link on that screen
     /// would quietly drop rows the reader was looking at a moment earlier. Every tree this journal
-    /// names is a row in one of those four tables, so here the map is a superset and the link cannot
-    /// hide anything.
+    /// names is a row in one of those four tables, so here the `Yours` **set** is a superset of what
+    /// this list names and the narrowing itself cannot drop one.
+    ///
+    /// **A superset of ids is not a promise about pins** (PR #130 review, F4). What screen 01 draws
+    /// is that set intersected with the camera — the owner has the camera as a follow-up — and with
+    /// the installed inventory, which is the axis nobody has ruled on: a journal row survives its
+    /// tree's city pack being removed (`LocalAPI.journal` reads `main` and resolves names
+    /// separately), and the pin does not. That is the `Yours` chip's own long-standing behavior
+    /// rather than anything this link introduces, and R41 forbids a sentence on the map explaining
+    /// it. The claim this comment makes, and the one `SeeAllOnMapTests` proves, is about the sets.
     ///
     /// **It implies no account** (D11). `Yours` is this installation's, exactly as this segment's own
     /// label already is — `journalSegment` above is the same word — and the map chip it turns on says

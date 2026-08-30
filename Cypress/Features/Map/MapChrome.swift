@@ -56,12 +56,60 @@ struct MapFilterChips: View {
     /// the screen — which is exactly why the collapsed chip has to say that something is still on.
     @State private var isExpanded = false
 
+    /// **Whether the way out can be pinned beside the scroller** — see `body`. Read here rather than
+    /// measured, for `MapHomeView.dynamicTypeSize`'s reason one file over: what a chip occupies at
+    /// the top of the ramp is not something a constant can be right about.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         // A stack rather than more entries in the flow: the drawer is a block under the row, not a
         // wide chip in it. In the flow and never an overlay, for R25's reason one control over — an
         // overlay would leave whatever it covered reachable by an assistive technology and invisible
         // to everyone else.
         VStack(alignment: .leading, spacing: MapLayout.chipGap) {
+            // ══════════════════════════════════════════════════════════════════════════════════
+            // **The way out does not scroll away** (R23.1 §3, and the PR #130 review's F2).
+            //
+            // The row is one horizontally scrolling line (#166) and `Clear filters` is the chip on
+            // the far end of it, so on a 390 pt phone the five chips need ~475 pt and the way out
+            // sits past the trailing edge — present, reachable by dragging the row, and **not on
+            // screen**. That was tolerable while every narrowed map was one the reader had narrowed
+            // by pressing a chip a second earlier. F23 adds an entrance where the map arrives
+            // already narrowed by a link on another screen, and for that reader the way out being
+            // one undiscoverable drag away is the E126 hazard R23.1 §3 was written against: "the
+            // way out never hides".
+            //
+            // So the chip comes out of the scroller and sits beside it. Nothing else moves: it is
+            // still last in the line, still drawn only while `filter.isActive`, still the same
+            // control, and the row still reads `Yours · In bloom · Needs care · More filters ·
+            // Clear filters` left to right — which is what `MapFilterAccessibilityTests` asserts
+            // from frames rather than from the tree.
+            //
+            // **Below the accessibility sizes only.** At AX5 a single chip is most of the width of
+            // the phone, so pinning one would leave the scroller a stub too narrow to drag and
+            // would clip `Yours` — trading a hidden way out for a hidden cause. At those sizes the
+            // row is a scroller end to end, exactly as it was, and `revealedChip` is how a reader
+            // and a test both reach the far end. `MapHomeView` already branches the legend's
+            // reservation on this same question (`MapLayout.legendChipHeight(isAccessibilitySize:)`).
+            // ══════════════════════════════════════════════════════════════════════════════════
+            HStack(spacing: MapLayout.chipGap) {
+                scrollingChips
+                if filter.isActive, !dynamicTypeSize.isAccessibilitySize { clearChip }
+            }
+
+            // Open, the drawer's chips are real elements after the row. Shut, they are **not in the
+            // tree at all** — the `if` is the point. A drawer built as a hidden overlay, or as chips
+            // behind `.opacity(0)`, would leave a filter a sighted reader cannot see and a VoiceOver
+            // reader can still swipe onto and press, which is the failure
+            // `DeepLinkVoiceOverTests.testAModalIsolatesTheScreenBehindIt` exists for.
+            if isExpanded { drawer }
+        }
+    }
+
+    /// The chips that scroll — the owner's three and the expandable control, plus the way out at
+    /// the accessibility sizes, where nothing is pinned. See `body`.
+    private var scrollingChips: some View {
+        Group {
             // One line, scrolled, never wrapped (#166). The indicator is off because a scroll bar
             // under a row of pills reads as a second piece of chrome; the cut-off chip at the
             // trailing edge is what says there is more.
@@ -89,9 +137,7 @@ struct MapFilterChips: View {
 
                     moreChip
 
-                    if filter.isActive {
-                        chip(MapFilterCopy.clearLabel, isOn: false) { filter = .all }
-                    }
+                    if filter.isActive, dynamicTypeSize.isAccessibilitySize { clearChip }
                 }
             }
             // The named container is the scroller itself, not the stack around it. It was the
@@ -100,16 +146,23 @@ struct MapFilterChips: View {
             // trees"]` matched nothing, measured on the assigned simulator, not reasoned about.
             // On the scroller, the group survives, and it is also the truer boundary: the row is
             // the group; the drawer below is its own named group (`moreLabel`).
+            //
+            // **The pinned `Clear filters` is outside this group and stays outside it.** Moving the
+            // label up to the `HStack` that now holds both is exactly the change the paragraph
+            // above records losing the group to, and the way out is a control a reader meets on the
+            // same line either way. What it must not do is disappear — see `body`.
             .accessibilityElement(children: .contain)
             .accessibilityLabel(MapFilterCopy.rowLabel)
-
-            // Open, the drawer's chips are real elements after the row. Shut, they are **not in the
-            // tree at all** — the `if` is the point. A drawer built as a hidden overlay, or as chips
-            // behind `.opacity(0)`, would leave a filter a sighted reader cannot see and a VoiceOver
-            // reader can still swipe onto and press, which is the failure
-            // `DeepLinkVoiceOverTests.testAModalIsolatesTheScreenBehindIt` exists for.
-            if isExpanded { drawer }
         }
+    }
+
+    /// The one way out of every narrowing at once (`MapFilterCopy.clearLabel`).
+    ///
+    /// Drawn from one place and hung in one of two, so the pinned and the scrolling arrangement
+    /// cannot drift into two different controls. `filter = .all` clears every dimension, drawn or
+    /// hidden — R23.1's argument for there being one of these rather than one per surface.
+    private var clearChip: some View {
+        chip(MapFilterCopy.clearLabel, isOn: false) { filter = .all }
     }
 
     /// The expandable control itself (R23.1).

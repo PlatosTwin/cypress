@@ -706,7 +706,16 @@ struct MapHomeView: View {
     ///
     /// The reader is never stuck in what this applies: `MapFilterChips` draws `Yours` in its
     /// selected state and puts `Clear filters` in the row for as long as any dimension is set
-    /// (`MapFilter.isActive`), so the way out is on screen from the first frame.
+    /// (`MapFilter.isActive`).
+    ///
+    /// **That sentence used to end "so the way out is on screen from the first frame", and the
+    /// device said otherwise** (PR #130 review, F2). The row is one horizontally scrolling line, so
+    /// the fifth chip sat past the trailing edge on a 390 pt phone — reachable by dragging the row,
+    /// and not visible. The UI test could not tell: XCUITest scrolls an element into view before it
+    /// answers `isHittable`, so a test that presses the chip passes either way. `MapFilterChips`
+    /// pins `Clear filters` beside the scroller below the accessibility sizes now, which is what
+    /// makes the claim true rather than hopeful, and `SeeAllOnMapUITests` measures that chip's
+    /// frame against the window — not its hittability — to keep it true.
     private func applyPendingFilter() {
         guard let pending = router.takePendingMapFilter() else { return }
         model.filter = pending

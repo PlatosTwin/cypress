@@ -103,7 +103,22 @@ enum Tab: Hashable {
 @MainActor
 @Observable
 final class AppRouter {
-    var tab: Tab = .map
+    /// **Written directly as well as through `goToTab`**, and the `didSet` is what makes that safe
+    /// for `pendingMapFilter` (PR #130 review, F1).
+    ///
+    /// `bottomTabSelection`'s setter assigns this field — it is C16's binding, and it deliberately
+    /// does *not* go through `goToTab`, so the four tab roots' bars move the tab without clearing
+    /// anything. `DebugDeepLink` assigns it too. Disarming in `goToTab` alone therefore covered the
+    /// one path a finger never takes: the reviewer's probe armed a narrowing, drove
+    /// `bottomTabSelection`, and found it still armed, with a control on `goToTab` that cleared.
+    ///
+    /// So the disarm lives with the *event* rather than with one of the functions that raise it.
+    /// Any change of tab, by any road, drops a narrowing nobody consumed. Guarded on an actual
+    /// change so that `goToMap(showing:)`'s own `tab = .map` — which may be a no-op when the map is
+    /// already the tab on screen — cannot disarm the value it is in the middle of arming.
+    var tab: Tab = .map {
+        didSet { if tab != oldValue { pendingMapFilter = nil } }
+    }
     var path: [Route] = []
 
     /// Which segment the `Journal` tab is showing.
@@ -135,8 +150,14 @@ final class AppRouter {
     /// **One-shot, and it has to be.** A filter that persisted here would re-narrow the map on every
     /// later return to the tab, so a reader who cleared the chips would find them back the next time
     /// they pressed `Map` — with nothing on screen explaining why. `takePendingMapFilter()` is the
-    /// only read, it clears as it answers, and `goToTab` clears it as well so that arriving at the
-    /// map any *other* way cannot pick up a narrowing somebody armed and abandoned.
+    /// only read and it clears as it answers.
+    ///
+    /// **The other half of that is on `tab`'s `didSet`, and the difference is not cosmetic** (PR
+    /// #130 review, F1). This sentence used to say `goToTab` clears it, "so that arriving at the map
+    /// any *other* way cannot pick up a narrowing somebody armed and abandoned" — and the way a
+    /// reader actually arrives at the map is C16's bar, whose binding writes `tab` directly and
+    /// never calls `goToTab`. The claim was false for the only path a finger takes. Disarming on the
+    /// tab change itself makes it true for every path, including the ones nobody has written yet.
     ///
     /// `nil` is the ordinary state and means "open the map as it always did".
     private(set) var pendingMapFilter: MapFilter?
@@ -180,9 +201,9 @@ final class AppRouter {
 
     /// Back to the map, **narrowed to something the reader asked for on another screen** (F23).
     ///
-    /// The order is load-bearing: `goToTab` clears `pendingMapFilter` (see that property), so arming
-    /// it first would arm and immediately disarm. Everything else about the destination is
-    /// `goToMap()`'s, unchanged.
+    /// The order is load-bearing: reaching the map clears `pendingMapFilter` twice over — `goToTab`
+    /// clears it outright, and `tab`'s own `didSet` clears it on the change — so arming first would
+    /// arm and immediately disarm. Everything else about the destination is `goToMap()`'s, unchanged.
     ///
     /// `showing: nil` is exactly `goToMap()` — a caller that has no narrowing to ask for is asking
     /// for the plain map, and this must not become a second way to reach it with different
@@ -213,7 +234,10 @@ final class AppRouter {
     ///
     /// It also drops any `pendingMapFilter` (F23): this is the operation that means "arrive at a tab
     /// root plainly", and a narrowing armed for a map nobody went to would otherwise sit here and
-    /// fire at whatever reached screen 01 next.
+    /// fire at whatever reached screen 01 next. **`tab`'s `didSet` is what covers the paths that do
+    /// not come through here** — C16's bar and the debug deep links both assign `tab` directly — and
+    /// this line is what covers `goToTab(.map)` called while the map is already the tab, where the
+    /// assignment changes nothing and the `didSet` therefore does not fire.
     func goToTab(_ destination: Tab) {
         sheet = nil
         path.removeAll()

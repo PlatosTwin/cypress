@@ -37,14 +37,28 @@ It cost F23 its obvious placement. The tester's sentence — *"let's add a link 
 all on the map. When clicked it takes you back to the map and shows only yours"* — reads most
 naturally under the grove's list of trees, and that is the one screen where the link cannot keep its
 promise: `them` there includes favorites and the map it opens would silently drop them. The link
-went on the Journal segment instead, where the destination is a superset of what the reader is
-looking at and nothing can go missing.
+went on the Journal segment instead, where the destination **set** is a superset of what the reader
+is looking at and the narrowing itself can drop nothing.
+
+**Two axes stand between that set and what the reader sees, and neither is this entry's subject** —
+they are recorded here because the superset sentence is now load-bearing and must not be read as a
+promise about pins (PR #130 review, F4):
+
+- **the camera.** The link keeps the remembered viewport, so trees in the set can be off screen.
+  Flagged in PR #130 and ratified as a follow-up rather than fixed.
+- **the installed inventory.** A journal row survives its tree's city pack being removed —
+  `LocalAPI.journal` reads the `main` contribution tables and resolves names separately — while the
+  pin does not, because `MapViewport.treeIDs` is applied against the inventory union. So `Remove` a
+  pack you have contributed in and the row stays, the link still says *all*, and that tree has no
+  pin, with R41 forbidding any message that says why. This is the `Yours` chip's behavior since it
+  shipped rather than anything the link introduces, and nobody has ruled on it.
 
 It bought two assertions that did not exist before, in `CypressTests/SeeAllOnMapTests`:
 
 - `theMapCannotHideARowTheJournalDrew` writes one row of each of the four kinds and requires every
-  tree the journal names to be under `mapMembership(.yours)`. This is the link's promise, and it
-  fails if either query loses an arm.
+  tree the journal names to be under `mapMembership(.yours)`. This is the link's promise **about the
+  sets** — see the two axes above for what it deliberately does not claim — and it fails if either
+  query loses an arm.
 - `theMapsYoursIsNotTheGrovesList` requires a favorited tree to be in `grove()` and **not** under
   `Yours`. It is a pin on the state of the world rather than a wish: if the two are ever reconciled
   it goes red and says so, and the placement is open again.
