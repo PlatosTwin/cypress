@@ -777,6 +777,7 @@ private struct ProbeAPI: CypressAPI {
     func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide { throw log.reached("speciesGuide") }
     func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac { throw log.reached("almanac") }
     func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac { throw log.reached("city") }
+    func areaChoices() async throws -> AreaChoices { throw log.reached("areaChoices") }
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { throw log.reached("sync") }
     func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket { throw log.reached("beginPhotoUpload") }
     func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws { throw log.reached("uploadPhoto") }

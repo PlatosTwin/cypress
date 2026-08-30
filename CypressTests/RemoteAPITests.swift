@@ -755,6 +755,10 @@ struct RemoteAPITests {
         let allowed: Set<String> = [
             // Class L — the city layer is answered on the phone and this service has no route.
             "mapContent", "treesNear", "species", "searchSpecies", "speciesGuide", "almanac", "city",
+            // `areaChoices` is the two pickers' lists — an aggregate over the *installed*
+            // inventories, which under D16 the service cannot know. Class L, no route, same as
+            // the two above it that it belongs beside.
+            "areaChoices",
             // Spec §3.4's nine unqueued mutations, plus the export D12 has not built.
             "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
