@@ -7,8 +7,11 @@ import Testing
 ///
 /// The loop it replaces ran `TreeQueries.tree(id:)` **twice** per tree, over two `store.queue.read`
 /// round-trips — once through `treeIfPresent` for the coordinate and once through
-/// `displayNameIfPresent` for the name, after that method's cheap `activeName` miss. Measured on a
-/// 40-tree grove that was 13,219 ms of a 13,224 ms screen, linear at ~330 ms a tree.
+/// `displayNameIfPresent` for the name, after that method's cheap `activeName` miss. The same
+/// 40-tree grove measured 13.2 s, 16.3 s and 21.7 s across three calibrated runs; the spread is
+/// machine load, and what is stable is that the cost was linear in the size of the grove at roughly
+/// a third to half a second per tree. `LocalAPI.grove()` says why the range is quoted and not one
+/// of the figures.
 ///
 /// Batching a read is where semantics get lost quietly, and this one had four rules to keep, three
 /// of which are only visible on a row that is not the common case:

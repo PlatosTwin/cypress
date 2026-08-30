@@ -2046,9 +2046,15 @@ public actor LocalAPI: CypressAPI {
     /// `displayNameIfPresent(for: row.treeID)` for the name, each its own `store.queue.read`, and
     /// **both of them running `TreeQueries.tree(id:)`** — the same statement, twice, per tree. Two
     /// queue round-trips and two executions of the app's most expensive single-row query for every
-    /// tree in the grove. Measured on a 40-tree grove: 13,219 ms of a 13,224 ms screen, linear at
-    /// ~330 ms a tree, against 3.9 ms for the three batched statements above it. A hundred trees
-    /// would have been 33 s.
+    /// tree in the grove.
+    ///
+    /// **Measured at 13.2 s, 16.3 s and 21.7 s for the same 40-tree grove** — three calibrated
+    /// readings, two agents, one shared machine. The spread is machine load, not disagreement, and
+    /// quoting any single one of them as *the* number would give a load-dependent quantity four
+    /// significant figures it does not have. What is stable is the shape: **linear in grove size**,
+    /// at roughly a third to half a second per tree, against 3.9 ms for the three batched statements
+    /// above this loop. A hundred trees would have been half a minute. The *after* column has no
+    /// such spread — 25.9 ms and 26.8 ms, measured independently.
     ///
     /// Three statements now answer for the whole set, and the semantics are preserved one for one:
     ///

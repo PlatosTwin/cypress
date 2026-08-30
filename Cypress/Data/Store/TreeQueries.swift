@@ -901,13 +901,20 @@ public struct TreeQueries {
     /// `LocalAPI.grove()` is the caller this exists for: it needs a coordinate and a species name
     /// for every tree in the grove, and it used to get them with two `queue.read` round-trips per
     /// tree, each running `treeSQL()` — 80 executions of the app's most expensive single-row query
-    /// for a 40-tree grove, 13.2 s of a 13.2 s screen. The set costs one.
+    /// for a 40-tree grove, which measured between 13 s and 22 s depending on machine load
+    /// (`LocalAPI.grove()` has the three readings). The set costs one.
     ///
-    /// **Exactly the same projection and exactly the same decoding**, so a `TreeRecord` from here
-    /// and one from `tree(id:)` cannot differ — including in what they throw on. That is why this
-    /// selects the whole record rather than the two columns the Grove reads: `Species.init`
-    /// validates (D5) and `decodeTree` reads every column of `treeColumns` strictly, and a narrower
-    /// batch would have quietly stopped enforcing both on a path that used to.
+    /// **The same projection and the same decoder** — `decodeRecord`, shared with `tree(id:)` — so a
+    /// `TreeRecord` from here matches one from there field for field, including in what it throws
+    /// on. That is why this selects the whole record rather than the two columns the Grove reads:
+    /// `Species.init` validates (D5) and `decodeTree` reads every column of `treeColumns` strictly,
+    /// and a narrower batch would have quietly stopped enforcing both on a path that used to.
+    ///
+    /// **Not quite "cannot differ", and the exception is worth naming rather than rounding off.**
+    /// The *fold* is not shared: this keeps the last row per uuid, `tree(id:)` takes the first via
+    /// `fetchOne`. They can only disagree if the union presents one uuid from two arms at once,
+    /// which shadowing exists to prevent and which nothing here introduces — so it is a difference
+    /// with no reachable input today, not an equivalence.
     ///
     /// The uuids travel through `json_each` rather than an interpolated list, so `cachedStatement`
     /// holds one prepared copy across groves of every size — `speciesPredicate`'s argument for

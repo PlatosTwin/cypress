@@ -26,9 +26,18 @@ import Testing
 ///    stays green while the defect is present.
 ///
 /// ── Calibration ─────────────────────────────────────────────────────────────────────────────
-/// Run against the branch base (`f85ddcf`), with only the two source files reverted, five of the
-/// eight statements below fail and each fails for its own reason — recorded in the PR. That is what
-/// separates this from a gate that has only ever been seen to pass.
+/// Run against the branch base (`f85ddcf`), with only the SQL reverted, **all eight** statements
+/// below fail, with **14 issues** between them, and each fails for its own reason: the three uuid
+/// joins and `exists` lose the `sqlite_autoindex_trees_1` seek (`mostVisitedTree` and `exists` also
+/// walk `t`), the polygon arm loses `idx_trees_neighborhood`, the radius arm loses
+/// `idx_trees_lat_lon`, and the two tree lookups add `MATERIALIZE temp.trees` and a `SCAN t` on top
+/// of the missing seek. The distribution is in PR #131.
+///
+/// That is what separates this from a gate that has only ever been seen to pass — and the sentence
+/// is worth stating exactly, because **it was wrong here first.** This paragraph said "five of the
+/// eight" until PR #131's reviewer re-ran the experiment and counted. A calibration claim nobody
+/// re-derives is the same artifact as an uncalibrated gate: in a file whose whole argument is that
+/// its instrument has been shown to fail, the one sentence that must not be approximate is this one.
 @Suite("My Grove · query plans")
 struct GroveQueryPlanTests {
 

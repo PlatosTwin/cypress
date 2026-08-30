@@ -125,6 +125,18 @@ struct GroveView: View {
     /// also says: **one line per tree, however many times you have been.** Its opposite number is on
     /// the Journal tab (`JournalTabView.explanation`), and the two are written to be read against
     /// each other.
+    ///
+    /// ── There are three arms and `.idle` is not one of them, on purpose ─────────────────────────
+    /// While `loadTreesIfNeeded()` is in flight `model.treesPresentation` is nil and
+    /// `treesHaveFailed` is false, so **none** of the arms below match and this column draws
+    /// nothing. That was a 13-to-22-second blank until task #250 batched `LocalAPI.grove()`'s
+    /// per-tree reads; it is now about 26 ms, and a loading state was considered and declined at
+    /// that number. A spinner visible for a frame or two reads as a flicker rather than as progress,
+    /// and it would be copy that appears in no mock (DECISIONS constraint 21). Measured first, then
+    /// decided — in that order, which is the only order in which the answer means anything.
+    ///
+    /// So the blank arm is a deliberate omission rather than an oversight. What would re-open it is
+    /// the read getting slow again, and `GroveQueryPlanTests` is what would notice that first.
     @ViewBuilder
     private var treesTab: some View {
         if model.treesHaveFailed {

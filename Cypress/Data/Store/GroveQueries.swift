@@ -47,14 +47,17 @@ public struct GroveQueries {
     /// - `DataGates.seedContract` checks it **per arm**, so the bundled seed answers for it on
     ///   every CI run, and `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack` is the
     ///   negative control showing the check fails on a *pack* rather than only on the bundle.
-    /// - **A pack downloaded at runtime is not checked**, and this comment will not pretend
-    ///   otherwise. `CityLibrary.validateCityFile` is the gate such a file passes through and it
-    ///   asks about shape and generation, not about this. What makes the gap narrow rather than
-    ///   open is that every published file's uuids are `str(uuid.uuid5(…))` from
+    /// - **A pack downloaded at runtime is not checked, and the owner has ruled (2026-08-30) that
+    ///   this is acceptable as it stands.** `CityLibrary.validateCityFile` is the gate such a file
+    ///   passes through, and it asks about shape and generation, not about this. What makes the gap
+    ///   narrow rather than open is that every published file's uuids are `str(uuid.uuid5(…))` from
     ///   `Tools/build_seed.py`, and Python has no uppercase spelling of that — so the shape is
     ///   unreachable for anything this project builds and reachable only for a file it did not.
-    ///   Whether that gate should refuse such a file is a product decision — a city that installs
-    ///   today would stop installing — and is left to be ruled on rather than taken here.
+    ///   Adding the refusal was weighed and declined: it is a product change — a city that installs
+    ///   today would stop installing — bought against a shape the generator cannot emit.
+    ///   **A closed decision, not an open question.** It does not need re-raising as a caveat on
+    ///   future work; re-open it only if a pack from outside `Tools/build_seed.py` ever becomes
+    ///   installable.
     ///
     /// `TreeQueries` and `SpeciesQueries` already carry the same finding for their own joins; this
     /// file is the one that never got the treatment.
