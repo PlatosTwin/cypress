@@ -287,7 +287,7 @@ public struct RemoteAPI: CypressAPI {
     ///
     /// Overrides the protocol's `.empty` default deliberately: an empty almanac draws "nothing is
     /// happening in your neighborhood" over "we could not ask".
-    public func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+    public func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
         throw RemoteSurface.cityLayerIsAnsweredLocally
     }
 
@@ -296,7 +296,7 @@ public struct RemoteAPI: CypressAPI {
     /// **Class L, no route** — §4.2 puts this beside `speciesGuide`: an aggregate over the installed
     /// inventory, which under D16 the service cannot know. Overrides the protocol's `.empty` default
     /// for `almanac`'s reason.
-    public func city(near coordinate: Coordinate?) async throws -> CityAlmanac {
+    public func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac {
         throw RemoteSurface.cityLayerIsAnsweredLocally
     }
 

@@ -259,12 +259,18 @@ public struct RoutedAPI: CypressAPI {
     /// not R wholesale, "which would put the city aggregates on the network for the sake of the
     /// bloom line". The service exposes no almanac delta route, so the community half has nothing to
     /// arrive from yet and this is L in full.
-    public func almanac(near coordinate: Coordinate?) async throws -> Almanac {
-        try await local.almanac(near: coordinate)
+    public func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
+        try await local.almanac(near: coordinate, in: area)
     }
 
-    public func city(near coordinate: Coordinate?) async throws -> CityAlmanac {
-        try await local.city(near: coordinate)
+    /// Class L for `almanac`'s reason: the lists are aggregates over the *installed* inventories,
+    /// which under D16 the service cannot know.
+    public func areaChoices() async throws -> AreaChoices {
+        try await local.areaChoices()
+    }
+
+    public func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac {
+        try await local.city(near: coordinate, in: city)
     }
 
     public func exportLatest(_ format: ExportFormat) async throws -> Data {

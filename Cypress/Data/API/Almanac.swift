@@ -102,6 +102,16 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
     /// only where the neighborhood holds none, which E115 measured as nowhere in the city.
     public let vacantSites: VacantSites?
 
+    /// Whether this almanac is about the area the reader's fix resolves, or one they chose.
+    ///
+    /// **What it decides is which blocks are honest, not which are interesting.** §4 — the coverage
+    /// gap, the app's one directed ask (D1) — asks the reader to go and look at particular trees,
+    /// and its second sentence is a claim about how far away they are from *the reader*
+    /// (`AlmanacMetrics.walkRadiusM`). Neither survives being asked about a neighborhood across
+    /// town, so `LocalAPI` withholds the block for `.picked` rather than printing an ask nobody can
+    /// answer. Everything else here is a fact about the place and is unchanged.
+    public let resolution: AreaResolution
+
     public init(
         area: AlmanacArea,
         firstBloom: BloomFirst? = nil,
@@ -109,7 +119,8 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
         newestNeighbors: RecentPlanting? = nil,
         composition: NeighborhoodComposition? = nil,
         coverage: CoverageGap? = nil,
-        vacantSites: VacantSites? = nil
+        vacantSites: VacantSites? = nil,
+        resolution: AreaResolution = .fromFix
     ) {
         self.area = area
         self.firstBloom = firstBloom
@@ -118,6 +129,7 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
         self.composition = composition
         self.coverage = coverage
         self.vacantSites = vacantSites
+        self.resolution = resolution
     }
 }
 
@@ -443,7 +455,7 @@ public extension CypressAPI {
     /// second client does not have to invent a neighborhood to compile. `LocalAPI` overrides it
     /// with the real read; `RemoteAPI` overrides it to throw, because a server that does not exist
     /// has no answer at all, which is a different thing from an empty one.
-    func almanac(near coordinate: Coordinate?) async throws -> Almanac { .empty }
+    func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac { .empty }
 }
 
 // MARK: - Windows

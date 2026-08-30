@@ -1194,14 +1194,42 @@ public actor LocalAPI: CypressAPI {
     /// the bloom and the coverage list are one statement about one neighborhood, and five separate
     /// reads could straddle a write and disagree about it.
     ///
-    /// Without a fix there is no area and the whole payload is empty. That is not a degraded state
-    /// to apologize for; it is a screen whose subject does not exist.
-    public func almanac(near coordinate: Coordinate?) async throws -> Almanac {
-        guard let coordinate, let speciesQueries, let almanacQueries else { return .empty }
+    /// Without a fix **and** without a chosen area there is no area and the whole payload is empty.
+    /// That is not a degraded state to apologize for; it is a screen whose subject does not exist.
+    ///
+    /// ── A chosen area (`AreaSelection`) ────────────────────────────────────────────────────────
+    /// `.here` is everything the paragraphs above describe, unchanged. `.neighborhood(id:)` skips the
+    /// resolution entirely — the reader has already answered the question it asks — and two things
+    /// follow that are worth stating rather than leaving to be noticed:
+    ///
+    /// - **Distances are measured from the neighborhood, not from the reader.** `plantingPins` and
+    ///   `vacantSites` both order by distance from a point; for a chosen area that point is the
+    ///   polygon's own center (`AreaQueries.neighborhood(id:)`), so "the nearest empty planting
+    ///   site" means nearest *in that neighborhood* rather than nearest to whichever edge of it
+    ///   faces the reader. It is the same list for everybody who picks that name, which is the
+    ///   property `AlmanacScope`'s own doc says a place has and a radius does not.
+    /// - **§4 does not draw.** The coverage gap is the app's one directed ask (D1) and its second
+    ///   sentence is a claim about the reader's own walking distance. Both are about the reader, and
+    ///   neither survives being asked about a neighborhood they are not in. Withholding it is not a
+    ///   degradation; asking somebody to go and check nine trees across town would be.
+    ///
+    /// **A chosen id no live inventory carries resolves to `.here`** rather than to an empty screen
+    /// under a remembered name: a reader reaches that state by picking a neighborhood inside a
+    /// downloaded pack and then removing the pack, having done nothing wrong.
+    public func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
+        guard let speciesQueries, let almanacQueries else { return .empty }
         let moment = now()
         let calendar = Calendar.current
+        let areaQueries = self.areaQueries
 
         return try await store.queue.readConsistently { connection -> Almanac in
+            // --- The reader's own choice, first. It answers the question the resolution below asks.
+            var picked: (scope: AlmanacScope, origin: Coordinate)?
+            if case let .neighborhood(id) = area,
+               let found = try areaQueries?.neighborhood(id: id, connection: connection) {
+                picked = (.neighborhood(id: id, name: found.name), found.center)
+            }
+
             // --- What this almanac is about (RULINGS R29, ERRATA E182).
             //
             // The polygon first, because a named place is a better subject than a distance: its
@@ -1217,8 +1245,12 @@ public actor LocalAPI: CypressAPI {
             // Then nothing, and the screen says so. A circle drawn around a reader in Sacramento is
             // a perfectly well-formed area with no record in it, and heading a blank screen with a
             // distance would be claiming ground the inventory has never covered.
+            guard let coordinate = picked?.origin ?? coordinate else { return .empty }
+            let resolution: AreaResolution = picked == nil ? .fromFix : .picked
             let scope: AlmanacScope
-            if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+            if let found = picked {
+                scope = found.scope
+            } else if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
                 scope = .neighborhood(id: polygon.id, name: polygon.name)
             } else {
                 let fallback = AlmanacScope.radius(
@@ -1309,21 +1341,33 @@ public actor LocalAPI: CypressAPI {
             // --- Where eyes are needed. One row more than the cap is read, so `isComplete` is a
             // fact about the read rather than a guess — the same proof `ContributionStore` uses, and
             // it has to hold here because this card is nothing but a count (ERRATA E38).
-            let found = try almanacQueries.youngTreesWithoutVisits(
-                scope: scope,
-                plantedOnOrAfter: AlmanacWindow.youngSince(now: moment, calendar: calendar),
-                limit: AlmanacLimits.coverageRowLimit + 1,
-                connection: connection
-            )
-            let isComplete = found.count <= AlmanacLimits.coverageRowLimit
-            let coverage = CoverageGap(
-                trees: Series(
-                    items: found.prefix(AlmanacLimits.coverageRowLimit)
-                        .map { CoverageTree(pin: $0, distanceM: coordinate.distance(to: $0.coordinate)) }
-                        .sorted { $0.distanceM < $1.distanceM },
-                    isComplete: isComplete
+            //
+            // **Not read at all for a chosen area.** Every other block below is a fact about a
+            // place; this one is an ask directed at the reader, and its body sentence measures
+            // walking distance from where the reader is standing (`AlmanacMetrics.walkRadiusM`,
+            // through `CoverageTree.distanceM`). Pointed at a neighborhood the reader picked off a
+            // list, the ask has no addressee and the distance has no meaning — `coordinate` above is
+            // the polygon's center, so the sentence would be measuring the neighborhood's distance
+            // from itself and would come out "within a 15-minute walk" every single time. That is a
+            // sentence the card is only allowed to print when it has checked, and here it cannot.
+            var coverage: CoverageGap?
+            if resolution == .fromFix {
+                let found = try almanacQueries.youngTreesWithoutVisits(
+                    scope: scope,
+                    plantedOnOrAfter: AlmanacWindow.youngSince(now: moment, calendar: calendar),
+                    limit: AlmanacLimits.coverageRowLimit + 1,
+                    connection: connection
                 )
-            )
+                let isComplete = found.count <= AlmanacLimits.coverageRowLimit
+                coverage = CoverageGap(
+                    trees: Series(
+                        items: found.prefix(AlmanacLimits.coverageRowLimit)
+                            .map { CoverageTree(pin: $0, distanceM: coordinate.distance(to: $0.coordinate)) }
+                            .sorted { $0.distanceM < $1.distanceM },
+                        isComplete: isComplete
+                    )
+                )
+            }
 
             // --- Where a tree could go. The one block that inverts `standing`: the planting sites
             // with no tree in them. A count of city records, so it draws on a fresh install like the
@@ -1350,8 +1394,30 @@ public actor LocalAPI: CypressAPI {
                     newestNeighbors: newestNeighbors,
                     composition: composition,
                     coverage: coverage,
-                    vacantSites: vacantSites
+                    vacantSites: vacantSites,
+                    resolution: resolution
                 )
+            )
+        }
+    }
+
+    /// The two pickers' lists — every neighborhood and every city the live inventories can answer
+    /// for (`AreaChoices`).
+    ///
+    /// **The live inventories, which under R84 decision 1 is the bundled seed plus every downloaded
+    /// pack in the union.** Not the published catalog: a city whose pack is not on this phone has no
+    /// rows here to aggregate, so offering it would offer a screen that could only say nothing. Not
+    /// one inventory either — a reader who downloaded Manhattan can read Manhattan's stats without
+    /// travelling there, which is the whole of the owner's ask.
+    ///
+    /// One `read`, not `readConsistently`: the two lists are independent of each other and of every
+    /// other read on the screen, and nothing on either is compared against a number read elsewhere.
+    public func areaChoices() async throws -> AreaChoices {
+        guard let areaQueries else { return .none }
+        return try await store.queue.read { connection in
+            AreaChoices(
+                neighborhoods: try areaQueries.neighborhoods(connection: connection),
+                cities: try areaQueries.cities(connection: connection)
             )
         }
     }
@@ -1367,21 +1433,47 @@ public actor LocalAPI: CypressAPI {
     /// read that forgot the predicate would be R48's defect, a count spanning both cities under one
     /// city's name (here, under no name, which does not make an unscoped count honest — it is still
     /// the wrong population).
-    public func city(near coordinate: Coordinate?) async throws -> CityAlmanac {
-        guard let coordinate, let speciesQueries, let almanacQueries, let cityQueries else { return .empty }
+    ///
+    /// ── A chosen city (`CitySelection`) ────────────────────────────────────────────────────────
+    /// `.here` is everything above, unchanged and still the default. `.city(idSpace:)` names the
+    /// city outright, out of a list the reader chose from (`areaChoices()`), and **card 1 does not
+    /// draw**: its sentence is "…of the trees near you and …% citywide", a comparison between the
+    /// reader's own streets and the city around them. Against a city the reader is not in, those two
+    /// halves are measured over ground that may be forty miles apart, and the sentence would be
+    /// R48's defect wearing a conjunction. Cards 2 and 3 are facts about the city and are unchanged.
+    ///
+    /// **A chosen id space no live inventory carries resolves to `.here`**, for the reason
+    /// `almanac(near:in:)` gives: removing a downloaded pack is not a mistake the reader made.
+    public func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac {
+        guard let speciesQueries, let almanacQueries, let cityQueries else { return .empty }
+        let areaQueries = self.areaQueries
 
         return try await store.queue.readConsistently { connection -> CityAlmanac in
+            // --- The reader's own choice, first; it answers the resolution below outright.
+            var pickedSpace: String?
+            if case let .city(idSpace) = city,
+               try areaQueries?.city(idSpace: idSpace, connection: connection) != nil {
+                pickedSpace = idSpace
+            }
+
             // --- Which city. A fact off the nearest row, never a guess from the coordinate alone
             // (`CityQueries.resolveIDSpace`'s own doc comment). Bounded by the same radius the
             // almanac's own fallback area uses, so a reader this resolves a city for is a reader the
             // almanac itself would not call out of range.
-            guard let citySpace = try cityQueries.resolveIDSpace(
-                near: coordinate,
-                radiusM: AlmanacLimits.fallbackRadiusM,
-                connection: connection
-            ) else {
-                return .empty
+            let resolution: AreaResolution = pickedSpace == nil ? .fromFix : .picked
+            let resolvedSpace: String?
+            if let pickedSpace {
+                resolvedSpace = pickedSpace
+            } else if let coordinate {
+                resolvedSpace = try cityQueries.resolveIDSpace(
+                    near: coordinate,
+                    radiusM: AlmanacLimits.fallbackRadiusM,
+                    connection: connection
+                )
+            } else {
+                resolvedSpace = nil
             }
+            guard let citySpace = resolvedSpace else { return .empty }
 
             // --- The local scope, resolved exactly as the almanac resolves its own area (RULINGS
             // R29): a named neighborhood where the seed carries one, a stated radius where it does
