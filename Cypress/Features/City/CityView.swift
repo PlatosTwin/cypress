@@ -64,8 +64,27 @@ struct CityView: View {
         )
         // Keyed on the coordinate, as `AlmanacView` keys its own read — the almanac's own fix for a
         // cold launch whose first frame has no fix at all (ERRATA E155).
-        .task(id: coordinate) { await model.update(coordinate: coordinate, accuracyM: accuracyM) }
+        //
+        // **On the accuracy as well as the coordinate**, and the pair is why `Fix` exists at all.
+        // `MapLocationProvider.publish` rewrites `availability` when the position moves *or* when
+        // the accuracy changes by a meter (`publishAccuracyM`), so a reader standing still while
+        // Precise Location is switched on gets a new accuracy at the same coordinate. Keyed on the
+        // coordinate alone this segment would never hear about it, and would go on saying it cannot
+        // tell which city you are in on a phone that now can. `AlmanacView` reaches the same fact by
+        // a different road — it observes the provider directly (`AlmanacModel.observeLocation`),
+        // whose `isFixAvailabilityTransition` gained the same second boundary — and this segment has
+        // no provider to observe.
+        .task(id: Fix(coordinate: coordinate, accuracyM: accuracyM)) {
+            await model.update(coordinate: coordinate, accuracyM: accuracyM)
+        }
         .task { await model.loadChoices() }
+    }
+
+    /// The two halves of a fix, together, so `.task(id:)` can key on both. `Coordinate` is
+    /// `Hashable` and a tuple is not.
+    private struct Fix: Hashable {
+        let coordinate: Coordinate?
+        let accuracyM: Double?
     }
 
     // MARK: - The picker's options, and the selection they map back to
