@@ -74,7 +74,7 @@ struct FailedReadTests {
             return .empty
         }
 
-        func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
             attempts.almanac += 1
             if attempts.almanac == 1 { throw APIError.serverError }
             return .empty

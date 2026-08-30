@@ -157,8 +157,8 @@ struct CityQueriesTests {
     func cityAPIScopesCompositionToOneCity() async throws {
         let store = try await Self.store()
 
-        let sfCity = try await Self.api(store).city(near: Self.outerSunset)
-        let sjCity = try await Self.api(store).city(near: Self.downtownSanJose)
+        let sfCity = try await Self.api(store).city(near: Self.outerSunset, in: .here)
+        let sjCity = try await Self.api(store).city(near: Self.downtownSanJose, in: .here)
 
         let sfComposition = try #require(sfCity.snapshot?.cityComposition, "no composition for a San Francisco reader")
         let sjComposition = try #require(sjCity.snapshot?.cityComposition, "no composition for a San Jose reader")

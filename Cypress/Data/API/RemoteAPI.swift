@@ -291,6 +291,14 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.cityLayerIsAnsweredLocally
     }
 
+    /// **Class L, no route**, and the override matters here more than most: the protocol's default
+    /// is `AreaChoices.none`, and an empty picker list is an *answer* — it draws no picker at all,
+    /// which reads as "this record has nothing to offer" rather than "nobody asked". That is the
+    /// distinction this whole file's guard (`APIConformanceGuardTests`) exists to keep.
+    public func areaChoices() async throws -> AreaChoices {
+        throw RemoteSurface.cityLayerIsAnsweredLocally
+    }
+
     // MARK: - City
 
     /// **Class L, no route** — §4.2 puts this beside `speciesGuide`: an aggregate over the installed

@@ -129,7 +129,7 @@ struct AlmanacGeographyTests {
     @Test("an almanac read in San Francisco still resolves a named neighborhood")
     func sanFranciscoResolvesAPolygon() async throws {
         let store = try await Self.store()
-        let almanac = try await Self.api(store).almanac(near: Self.outerSunset)
+        let almanac = try await Self.api(store).almanac(near: Self.outerSunset, in: .here)
         let area = try #require(almanac.neighborhood, "San Francisco resolved no area")
 
         #expect(area.name != nil, "a San Francisco fix must resolve a named polygon, not the fallback")
@@ -169,7 +169,7 @@ struct AlmanacGeographyTests {
         #expect(polygon == nil, "a polygon resolved in San Jose")
 
         // And the almanac a reader standing there actually gets.
-        let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose)
+        let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose, in: .here)
         let area = try #require(almanac.neighborhood, "San Jose still has no almanac at all")
         #expect(area.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
         #expect(area.name == nil, "a distance is not a name")
@@ -192,7 +192,7 @@ struct AlmanacGeographyTests {
     @Test("the coverage ask reaches San Jose, and its walking claim is true by construction")
     func sanJoseHasACoverageAsk() async throws {
         let store = try await Self.store()
-        let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose)
+        let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose, in: .here)
         let area = try #require(almanac.neighborhood)
         let coverage = try #require(area.coverage, "no coverage gap in San Jose")
 
@@ -221,7 +221,7 @@ struct AlmanacGeographyTests {
     @Test("the fallback area is presented as a distance and explained")
     func fallbackSaysWhatItIs() async throws {
         let store = try await Self.store()
-        let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose)
+        let almanac = try await Self.api(store).almanac(near: Self.downtownSanJose, in: .here)
         let presentation = AlmanacPresentation(almanac: almanac, now: Self.now, locale: Self.locale)
 
         #expect(presentation.hasArea)
@@ -256,7 +256,7 @@ struct AlmanacGeographyTests {
     @Test("a fix outside every inventory resolves no area at all")
     func outsideTheRecordResolvesNothing() async throws {
         let store = try await Self.store()
-        let almanac = try await Self.api(store).almanac(near: Self.sacramento)
+        let almanac = try await Self.api(store).almanac(near: Self.sacramento, in: .here)
 
         // Not a radius over an empty circle: an area with no record in it is not an area. The
         // fallback is only taken where `holdsAnyRecord` says the inventory covers the ground.
@@ -336,7 +336,7 @@ struct AlmanacGeographyTests {
     private struct NeverAnswers: CypressAPI {
         let payload: Almanac?
 
-        func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
             guard let payload else {
                 await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
                 return .empty

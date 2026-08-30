@@ -266,8 +266,8 @@ struct RemoteAPITests {
         await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) {
             _ = try await api.speciesGuide(id: UUID(), near: here)
         }
-        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.almanac(near: here) }
-        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.city(near: here) }
+        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.almanac(near: here, in: .here) }
+        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.city(near: here, in: .here) }
     }
 
     /// The mutations of spec §3.4 that have no route refuse, and none of them reaches the wire.

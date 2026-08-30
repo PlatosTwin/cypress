@@ -2,8 +2,9 @@
 //  APIConformanceGuardTests.swift
 //  CypressTests
 //
-//  **Task #76.** `CypressAPI` carries 32 requirements — 31 when this file was written, and #158 §3.2
-//  added `deleteAccount` as the thirty-second, which the cross-checks below turned from an audit
+//  **Task #76.** `CypressAPI` carries 33 requirements — 31 when this file was written; #158 §3.2
+//  added `deleteAccount` as the thirty-second and the neighborhood/city picker added
+//  `areaChoices` as the thirty-third, each of which the cross-checks below turned from an audit
 //  into a compile-and-fix pass. `RemoteAPI` declared 17 of them and
 //  inherited the other 14 from protocol extensions, and the build was green — because that is what
 //  a protocol-extension default is *for*. Ten of those defaults threw `.notFound`, which is
@@ -774,8 +775,8 @@ private struct ProbeAPI: CypressAPI {
     func species(id: UUID) async throws -> Species { throw log.reached("species") }
     func searchSpecies(query: String, limit: Int) async throws -> [Species] { throw log.reached("searchSpecies") }
     func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide { throw log.reached("speciesGuide") }
-    func almanac(near coordinate: Coordinate?) async throws -> Almanac { throw log.reached("almanac") }
-    func city(near coordinate: Coordinate?) async throws -> CityAlmanac { throw log.reached("city") }
+    func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac { throw log.reached("almanac") }
+    func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac { throw log.reached("city") }
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { throw log.reached("sync") }
     func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket { throw log.reached("beginPhotoUpload") }
     func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws { throw log.reached("uploadPhoto") }
@@ -1095,8 +1096,9 @@ struct APIConformanceGuardTests {
         await check("species") { _ = try await api.species(id: id) }
         await check("searchSpecies") { _ = try await api.searchSpecies(query: "oak", limit: 1) }
         await check("speciesGuide") { _ = try await api.speciesGuide(id: id, near: coordinate) }
-        await check("almanac") { _ = try await api.almanac(near: coordinate) }
-        await check("city") { _ = try await api.city(near: coordinate) }
+        await check("almanac") { _ = try await api.almanac(near: coordinate, in: .here) }
+        await check("areaChoices") { _ = try await api.areaChoices() }
+        await check("city") { _ = try await api.city(near: coordinate, in: .here) }
         await check("sync") { _ = try await api.sync([]) }
         await check("beginPhotoUpload") {
             _ = try await api.beginPhotoUpload(
