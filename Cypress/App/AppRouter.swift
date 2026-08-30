@@ -124,6 +124,23 @@ final class AppRouter {
     /// as bottom sheets over a dimmed profile, not as full screens.
     var sheet: Route?
 
+    /// **The narrowing screen 01 should arrive already showing** (tester report F23).
+    ///
+    /// ── Why a value on the router rather than an argument to the map ─────────────────────────
+    /// `RootView` builds tab roots on a `switch`, so `MapHomeView` — and the `@State MapModel` that
+    /// holds `MapFilter` — is remade on every tab switch (the view's own `position` comment records
+    /// the same fact for the camera). A filter chosen on another tab therefore has nowhere to live
+    /// between the tap and the map existing, and the router is the one object that spans them.
+    ///
+    /// **One-shot, and it has to be.** A filter that persisted here would re-narrow the map on every
+    /// later return to the tab, so a reader who cleared the chips would find them back the next time
+    /// they pressed `Map` — with nothing on screen explaining why. `takePendingMapFilter()` is the
+    /// only read, it clears as it answers, and `goToTab` clears it as well so that arriving at the
+    /// map any *other* way cannot pick up a narrowing somebody armed and abandoned.
+    ///
+    /// `nil` is the ordinary state and means "open the map as it always did".
+    private(set) var pendingMapFilter: MapFilter?
+
     func push(_ route: Route) { push(route, unlessAlreadyOnTop: false) }
 
     /// Pushes, optionally declining to stack a second copy of the screen already in front.
@@ -159,7 +176,32 @@ final class AppRouter {
     /// All three fields, and the order matters. `sheet` first so the cover is on its way out before the
     /// stack under it changes; `path` because a tab root is invisible beneath a pushed destination (see
     /// `goToTab`); `tab` last because it is the thing being asked for.
-    func goToMap() { goToTab(.map) }
+    func goToMap() { goToMap(showing: nil) }
+
+    /// Back to the map, **narrowed to something the reader asked for on another screen** (F23).
+    ///
+    /// The order is load-bearing: `goToTab` clears `pendingMapFilter` (see that property), so arming
+    /// it first would arm and immediately disarm. Everything else about the destination is
+    /// `goToMap()`'s, unchanged.
+    ///
+    /// `showing: nil` is exactly `goToMap()` — a caller that has no narrowing to ask for is asking
+    /// for the plain map, and this must not become a second way to reach it with different
+    /// behavior.
+    func goToMap(showing filter: MapFilter?) {
+        goToTab(.map)
+        pendingMapFilter = filter
+    }
+
+    /// The narrowing screen 01 has not applied yet, cleared by the asking.
+    ///
+    /// Screen 01 reads this once on appearance and once on every later change, so an arming that
+    /// lands while the map is already on screen is applied there and then rather than waiting for a
+    /// tab switch that may never come. Clearing on read is what keeps the second channel from
+    /// re-applying what the first one already did.
+    func takePendingMapFilter() -> MapFilter? {
+        defer { pendingMapFilter = nil }
+        return pendingMapFilter
+    }
 
     /// The same, for any tab root.
     ///
@@ -168,9 +210,14 @@ final class AppRouter {
     /// screen that stays on top of it. Screen 18's "Route done · see your grove" did exactly that — from
     /// the profile entrance it dismissed the cover onto the tree profile, with the grove it had just been
     /// asked for hidden beneath, and the only sign anything had happened was that Back went somewhere new.
+    ///
+    /// It also drops any `pendingMapFilter` (F23): this is the operation that means "arrive at a tab
+    /// root plainly", and a narrowing armed for a map nobody went to would otherwise sit here and
+    /// fire at whatever reached screen 01 next.
     func goToTab(_ destination: Tab) {
         sheet = nil
         path.removeAll()
+        pendingMapFilter = nil
         tab = destination
     }
 

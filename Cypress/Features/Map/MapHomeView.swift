@@ -211,6 +211,14 @@ struct MapHomeView: View {
         // rather than adding to a number that was compensating for anything.
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        // **Arriving already narrowed** (tester report F23). Two channels, one function, because the
+        // link that arms this is on another tab *today* and need not stay there: `onAppear` catches
+        // the ordinary case, where this view is built by the tab switch the arming performed, and
+        // `onChange` catches an arming made while screen 01 is already the screen on glass — which
+        // `onAppear` cannot see, there being no appearance. `takePendingMapFilter()` clears as it
+        // answers, so whichever fires first is the only one that applies anything.
+        .onAppear { applyPendingFilter() }
+        .onChange(of: router.pendingMapFilter) { _, _ in applyPendingFilter() }
         .task {
             location.start()
             // **The magnetometer is this screen's alone, and it is switched off below.** The GPS
@@ -678,6 +686,30 @@ struct MapHomeView: View {
 
     private func openSettings() {
         if let url = location.settingsURL { UIApplication.shared.open(url) }
+    }
+
+    // MARK: - Arriving narrowed (F23)
+
+    /// Applies the narrowing another screen asked this one to open under, if there is one.
+    ///
+    /// **Through `model.filter`'s setter, not around it.** Seeding the value inside `MapModel.init`
+    /// would skip the `didSet` that reads the membership set (`membershipDidChange`), so the map
+    /// would arrive with the chip drawn on and every tree in the city under it — the wrong answer,
+    /// shown confidently. Assigning here is the same path a press of the chip takes, so it is the
+    /// same code that has to be right.
+    ///
+    /// **What this does not promise, stated rather than implied:** the membership read is a `Task`,
+    /// and the camera settles on its own schedule, so a fetch can go out before the id set lands and
+    /// draw the unnarrowed city for a frame. That window is not new — it is the one
+    /// `MapModel.filterDidChange` describes for an ordinary chip press — and it closes the moment
+    /// the read answers, which is a `main`-table query of tens of rows.
+    ///
+    /// The reader is never stuck in what this applies: `MapFilterChips` draws `Yours` in its
+    /// selected state and puts `Clear filters` in the row for as long as any dimension is set
+    /// (`MapFilter.isActive`), so the way out is on screen from the first frame.
+    private func applyPendingFilter() {
+        guard let pending = router.takePendingMapFilter() else { return }
+        model.filter = pending
     }
 
     // MARK: - Opening on the reader

@@ -2536,6 +2536,39 @@ public actor LocalAPI: CypressAPI {
         return flag.id
     }
 
+    /// Test seam (tester report F23): one check-in on a real seed tree, so the harness can put a
+    /// journal with something in it — and the map link that only draws over a non-empty list — in
+    /// front of a test. Inserts the row screen 05 inserts, without the outbox round trip, exactly as
+    /// `debugSeedReview` above inserts a review flag.
+    ///
+    /// **`observations` and not `visits`, deliberately.** Both put a row in the journal and both put
+    /// the tree under screen 01's `Yours`; only this one leaves screen 03 cold. A visit is what the
+    /// camera flow saves, and a tree with a visit on it draws an activity feed and a `See the whole
+    /// year` link under it — a warmth four `DeepLinkVoiceOverTests` cases anchor against the absence
+    /// of (see `DebugDeepLink.photographedTree` for the run this class of pollution broke). The
+    /// narrower write is the one that cannot reach them.
+    ///
+    /// **Idempotent through `client_uuid`**, which the insert's `ON CONFLICT … DO NOTHING` already
+    /// keys on: a caller that passes a stable id gets one row however many times the harness runs,
+    /// rather than a journal that grows a section per launch. Defaulted to a fresh id, so a caller
+    /// that wants a second row can have one.
+    @discardableResult
+    public func debugSeedCheckIn(treeID: UUID, clientUUID: UUID = UUID()) async throws -> UUID {
+        let moment = now()
+        let observation = TreeObservation(
+            treeID: treeID,
+            attribution: attribution,
+            clientUUID: clientUUID,
+            capturedAt: moment,
+            createdAt: moment,
+            updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            try contributions.insert(observation, connection: connection)
+        }
+        return observation.id
+    }
+
     /// Test seam (ERRATA E124-B, widened by E170): force a tree to a status by writing its override
     /// directly, so the harness can open screen 19 — or a confirmed-dead profile — against a real seed
     /// record. The shipping path is `confirmReview`, which requires a lead and an open flag; this skips
