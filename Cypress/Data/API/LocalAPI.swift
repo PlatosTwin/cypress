@@ -2039,6 +2039,36 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// `GET /me/grove`, Trees tab — screen 08.
+    ///
+    /// ── Why every read here is over the whole set ───────────────────────────────────────────────
+    /// This used to be a loop: `treeIfPresent(row.treeID)` for the coordinate and
+    /// `displayNameIfPresent(for: row.treeID)` for the name, each its own `store.queue.read`, and
+    /// **both of them running `TreeQueries.tree(id:)`** — the same statement, twice, per tree. Two
+    /// queue round-trips and two executions of the app's most expensive single-row query for every
+    /// tree in the grove.
+    ///
+    /// **Measured at 13.2 s, 16.3 s and 21.7 s for the same 40-tree grove** — three calibrated
+    /// readings, two agents, one shared machine. The spread is machine load, not disagreement, and
+    /// quoting any single one of them as *the* number would give a load-dependent quantity four
+    /// significant figures it does not have. What is stable is the shape: **linear in grove size**,
+    /// at roughly a third to half a second per tree, against 3.9 ms for the three batched statements
+    /// above this loop. A hundred trees would have been half a minute. The *after* column has no
+    /// such spread — 25.9 ms and 26.8 ms, measured independently.
+    ///
+    /// Three statements now answer for the whole set, and the semantics are preserved one for one:
+    ///
+    /// - a tree the inventory holds, else one added on this device, else **skipped** — a row whose
+    ///   tree resolves to neither is not a grove entry, exactly as `treeIfPresent` returning nil
+    ///   dropped it;
+    /// - the display name is the tree's one active nickname, else the **seed** species' common
+    ///   name, else empty (D15). That second fallback deliberately does not consult the community
+    ///   row: `displayNameIfPresent` answers nil for a community tree with no nickname, because a
+    ///   self-asserted species is not a name the app puts on a tree.
+    ///
+    /// `GroveBatchReadTests` holds this against the per-tree form over a grove carrying one of each
+    /// case, because "preserved one for one" is exactly the kind of claim this project has been
+    /// wrong about in a comment.
     public func grove() async throws -> [GroveEntry] {
         let userID = userID
         let deviceID = deviceID
@@ -2051,14 +2081,25 @@ public actor LocalAPI: CypressAPI {
                 try contributions.heroPhotoIDs(connection: connection)
             )
         }
+        let treeIDs = rows.map(\.treeID)
+        let (seedRecords, community, activeNames) = try await store.queue.read { connection in
+            (
+                try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
+                try communityTrees.trees(ids: treeIDs, connection: connection),
+                try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            )
+        }
         var entries: [GroveEntry] = []
         entries.reserveCapacity(rows.count)
         for row in rows {
-            guard let profileTree = try await treeIfPresent(row.treeID) else { continue }
+            let seedRecord = seedRecords[row.treeID]
+            guard let profileTree = seedRecord?.tree ?? community[row.treeID] else { continue }
             entries.append(
                 GroveEntry(
                     treeID: row.treeID,
-                    displayName: (try await displayNameIfPresent(for: row.treeID)) ?? "",
+                    displayName: activeNames[row.treeID]?.name
+                        ?? seedRecord?.species?.commonName
+                        ?? "",
                     coordinate: profileTree.coordinate,
                     lastVisitedAt: row.lastVisitedAt,
                     isFavorite: row.isFavorite,
