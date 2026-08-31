@@ -251,9 +251,13 @@ that had not yet reached a build). What remains OPEN:
 - **F15 — enrich the tree profile**: ID help, history/etymology, usage/edibility. Content work;
   pairs with the parked seed-prose pass, and invented botanical content is forbidden (DECISIONS
   constraint 15) — sourcing is the work.
-- **F16 — trees-seen counters (30d / year / lifetime). BLOCKED ON A RULING**: D1 / ARCHITECTURE
-  §5.1 forbids counting a person's actions into a user-visible string. Needs the owner to amend or
-  refuse; not schedulable as written.
+- ~~**F16 — trees-seen counters (30d / year / lifetime).**~~ **REFUSED by the owner, 2026-08-31.**
+  The counters stay unbuilt and the rule stands as written: ARCHITECTURE §5 rule 1 — "No streaks,
+  points, ranks, badges, or public counts of user actions. If you find yourself writing
+  `visitCount` into a user-visible string, stop" — which is D1 in DECISIONS §3. The report asked
+  for the one thing that rule names, so there was nothing to build that would not have been the
+  rule being set aside. Recorded rather than deleted, because a refused report is a decision and
+  the next person to have the idea should find the answer instead of the idea.
 - **F22 — species distribution as a static city map** (one point per tree) on the field guide's
   §5; today it is two stat cards.
 - ~~**F23 — "See them all on the map"** link from Grove/Journal into the map filtered to yours; the
@@ -268,15 +272,51 @@ that had not yet reached a build). What remains OPEN:
   see. See **ERRATA E287**, and
   `CypressTests/SeeAllOnMapTests`, which pins both halves.
 - **F25 — Account/You page UI/UX pass.**
-- **F26 — Measure: unit switch clears the entered value. BLOCKED ON A RULING**: deliberate today —
-  `Quantity.value` is "the number as the human typed it, never converted", and keeping digits
-  across a unit flip would falsify it. Needs the owner to choose: keep-and-annotate, convert, or
-  keep the clear.
-- **F27 — measurements can be neither edited nor deleted.** The data model already carries the
-  tombstone (`deletedAt`); no user-facing path reaches it, and no withdrawal mutation exists in
-  the outbox vocabulary. The unhappy sibling of the photo-withdrawal work.
-- **F28 — adding a reading on a tree holding both height and DBH** is two small-text taps deep;
-  the add-a-reading card only exists while its own measurement is missing.
+- ~~**F26 — Measure: unit switch clears the entered value.**~~ **RULED keep-the-digits-and-annotate
+  by the owner, 2026-08-31, and shipped here.** The flip keeps the typed digits untouched (5 stays
+  5, never converted) and the screen says what changed under them: `Typed in centimeters, now read
+  as inches.` The annotation withdraws itself when the digits are cleared, or when a second flip
+  returns them to the unit they were typed in.
+  **The premise this entry carried was wrong and is corrected here rather than deleted**: keeping
+  the digits does *not* falsify `Quantity.value`. That invariant is about the stored record, and a
+  `Quantity` is only ever built at save out of whatever digits and unit the pad holds then — so
+  typing 5, flipping to feet and saving stores `value: 5, unitEntered: ft`, which is exactly "the
+  number as the human typed it, in the unit it was typed in". Converting on the flip is what would
+  break it, and nothing converts. The field's own doc comment now records this.
+  The copy and its placement are **NOT SPECIFIED** by SCREENS.md and go to the owner under
+  DECISIONS constraint 21; see `docs/rulings-pending/measurements-round.md`.
+- **F27 — measurements can be neither edited nor deleted. BLOCKED ON A SCHEMA MIGRATION**, and the
+  premise needs splitting in two.
+  **"Edited" is already answered and needs nothing built.** This app has no edit verb for any
+  contributed record, by design: `CypressAPI`'s whole write surface is append-or-withdraw, species
+  corrections supersede rather than overwrite (`superseded_by`), and every capture screen carries
+  the burden in its confirmation because nothing can be amended afterwards. Changing a reading is
+  adding a reading, which screen 16 already does — and F28's link, shipped here, is what makes that
+  reachable in one tap on the tree where it was hardest.
+  **"Deleted" is real, designed, and stops at a migration.** The `measurements.deleted_at` tombstone
+  exists; what does not is an `OutboxItem.Kind` to sync a withdrawal under. `outbox.kind` is a
+  closed `CHECK` vocabulary that SQLite cannot widen in place, so a `measurement_withdrawal` kind is
+  a table rebuild — the writable schema's next migration, exactly as v4 and v17 were.
+  `CommunityOutboxKindTests`' "every kind the app can build is one the outbox can store" is the
+  guard that makes this unavoidable rather than optional. **One migration author per round and this
+  round had none**, so the design is written down and the code is not: see
+  `docs/rulings-pending/measurements-round.md`. The two rejected shortcuts are recorded there too —
+  riding the existing `measurement` kind with a payload discriminator (which `OutboxItem.Kind`'s own
+  comment forbids: it would put the distinction "inside a payload field where `outbox.kind` cannot
+  see it"), and shipping the UI local-only, which would re-create the Class L debt spec §3.4's nine
+  mutations were queued to pay off — a delete the reader believes is everywhere and that never
+  leaves the phone.
+- ~~**F28 — adding a reading on a tree holding both height and DBH** is two small-text taps deep;
+  the add-a-reading card only exists while its own measurement is missing.~~ **SHIPPED.** Screen 03
+  now draws an `Add a reading` link — `See every reading`'s twin, same tokens, one block down —
+  in exactly the state where no stat card is a door. The rule it restores: **while a tree accepts
+  contributions the profile always offers a way into screen 16, and never two.** That covers the
+  city-bucket tree as well as the fully measured one, which a "both measurements present" fix would
+  have missed: a published DBH range suppresses the empty slot just as a reading does.
+  `MeasureEntranceKindTests` asserts it over the state space and `AddReadingReachabilityTests` walks
+  the tap. **The affordance is NOT SPECIFIED** — no mock draws it — so it goes to the owner under
+  DECISIONS constraint 21, by ARCHITECTURE §5 rule 8's practice of taking the nearest specified
+  thing; the PR asks.
 - ~~**F17 — neighborhood stats far from home.**~~ **SHIPPED** by the neighborhood/city picker
   round (`feat/stats-picker`). Both halves: the two stats segments now state where their area came
   from and offer a picker, and — the mechanism the report actually came from — a location fix whose
