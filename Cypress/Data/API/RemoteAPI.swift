@@ -629,6 +629,22 @@ public struct RemoteAPI: CypressAPI {
         return Set(try decode(MapMembershipResponse.self, from: data).treeIDs)
     }
 
+    /// **Empty, and it is a true answer rather than a missing route** — which is why it is written
+    /// out here instead of inherited from `ContributedPlace.swift`'s default.
+    ///
+    /// The set of ids above is joinable and is joined. A *coordinate* is not: it comes from the
+    /// inventory files attached on this device, and the service has no view of which packs this
+    /// phone has installed — R84 made that set cumulative and per-install. A `[ContributedPlace]`
+    /// assembled anywhere else would be pins for a map that has no trees under them.
+    ///
+    /// The caller reads empty as "leave the camera alone", so a composition with no local half
+    /// behaves exactly as screen 01 did before this method existed. Declared rather than inherited
+    /// for `APIConformanceGuardTests`' reason and E125's: a default satisfying a requirement on a
+    /// shipping conformance is a member nobody chose.
+    public func contributedPlaces() async throws -> [ContributedPlace] {
+        []
+    }
+
     // MARK: - Reports and export
 
     /// **No route.** The hazard-redirect log is one of spec §3.4's nine — see `claimSpecies` — and

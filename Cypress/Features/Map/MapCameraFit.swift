@@ -140,9 +140,12 @@ enum ContributedCamera {
     /// 1. **Most trees.** The owner's sentence, and the whole of the decision on any real input.
     /// 2. **The most recent contribution.** Two cities holding the same number of the reader's
     ///    trees is a genuine tie, and the reader's own answer to "which of these am I in" is the
-    ///    one they were at last. Proposed rather than ruled — see the round's pending ruling for
-    ///    the alternative that was recorded (largest-inventory-first, which is what
-    ///    `InventoryUnion.openingCenter` already does for the opening camera).
+    ///    one they were at last. **This round's proposal, not the owner's ruling** — the ruling
+    ///    stopped at "the city where you have the most trees". The alternative weighed and not
+    ///    taken is written here rather than deferred to: break the tie on inventory size, largest
+    ///    first, which is what `InventoryUnion.openingCenter` already does for the opening camera
+    ///    and would make the two camera paths agree. It loses because "the biggest city wins" is a
+    ///    fact about the inventory rather than about the reader, and this camera is the reader's.
     /// 3. **The group's own key, ascending.** Dates can be nil and can be equal, so a ranking that
     ///    stopped at 2 can still call two cities the same — and a reader who taps the link twice
     ///    must get the same map twice. The key is unique per group, so adding it makes the ranking

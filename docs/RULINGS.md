@@ -8483,8 +8483,8 @@ search the same distance — the almanac resolves through `SpeciesQueries.resolv
 answer, and did answer on main. Each gate now takes the radius its own read runs over, and this
 ruling's text says both numbers rather than one.
 
-**This is the state F17 most likely came from** — see `docs/errata-pending/stats-picker.md` for what
-is established and what is not. Approximate location grants exactly this kind of fix, and the app
+**This is the state F17 most likely came from** — see **ERRATA E282** for what is established and
+what is not. Approximate location grants exactly this kind of fix, and the app
 neither requests full accuracy nor reads `accuracyAuthorization`.
 
 **The copy deliberately does not name the setting.** The app cannot tell an approximate grant from a
@@ -8505,8 +8505,7 @@ screen that is not asking for anything else, and it is a bigger change than this
 **Built:** the header's trailing pill carries `dim_city.display_name`, read through
 `id_spaces.city_id`, and carries nothing when the record has no name on file.
 
-**This reverses three comments rather than a ruling** — see the third entry in
-`docs/errata-pending/stats-picker.md`. The rule they stated was true until seed schema 16 put the
+**This reverses three comments rather than a ruling** — see **ERRATA E284**. The rule they stated was true until seed schema 16 put the
 name on disk. What stays forbidden is composing a name from an id space's key or an inventory's
 title, which is what R28 and R48 actually closed.
 

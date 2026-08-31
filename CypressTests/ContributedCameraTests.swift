@@ -120,8 +120,11 @@ struct ContributedCameraTests {
         }
     }
 
-    /// **A tie is broken by the most recent contribution**, which is the round's proposal rather
-    /// than an owner ruling — see the pending ruling for the alternative that was recorded.
+    /// **A tie is broken by the most recent contribution** — this round's proposal rather than
+    /// the owner's ruling, which stopped at "the city where you have the most trees". The
+    /// alternative weighed and not taken was inventory size, largest first, which is
+    /// `InventoryUnion.openingCenter`'s rule for the opening camera; `ContributedCamera.winner`
+    /// carries the argument.
     ///
     /// Both cities hold two trees, so the count says nothing; the only thing that separates them is
     /// that the reader was in the second one yesterday and in the first one a year ago.

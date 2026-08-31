@@ -265,7 +265,7 @@ that had not yet reached a build). What remains OPEN:
   Grove's `Trees` pill, which is where the sentence reads most naturally and where it cannot keep
   its promise: the grove's list includes trees you have only favorited and the map's `Yours` filter
   deliberately does not (R23), so the same link there would silently drop rows the reader can still
-  see. See `docs/errata-pending/three-answers-to-which-trees-are-mine.md`, and
+  see. See **ERRATA E287**, and
   `CypressTests/SeeAllOnMapTests`, which pins both halves.
 - **F25 — Account/You page UI/UX pass.**
 - **F26 — Measure: unit switch clears the entered value. BLOCKED ON A RULING**: deliberate today —
@@ -328,7 +328,7 @@ Three items queued by the owner, recorded verbatim in intent; none is scheduled 
   inventories a non-local pick may draw from". Supersedes R84 **D4** for the Journal: the
   nearest-tree resolution is still the default and is now one of two states rather than the only
   one. The design decisions taken under DECISIONS constraint 21 are in
-  `docs/rulings-pending/stats-picker.md` and are **awaiting the owner's ratification**.
+  **RULINGS R85** and are **awaiting the owner's ratification**.
 - **Update the repo README.** The README predates most of what shipped; bring it current with the
   app as it stands (cumulative inventories, the publish pipeline, the beta process).
 
