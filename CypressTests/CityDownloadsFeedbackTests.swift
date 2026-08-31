@@ -1085,6 +1085,18 @@ struct CityDownloadsFeedbackTests {
             """
         )
 
+        // And the counter counted per iteration, not per call — review finding D1.
+        #expect(
+            Self.readsAreOnePerChunk(counts),
+            """
+            \(counts.payloadReads) read(s) reported \(counts.payloadBytesRead) bytes, which is more \
+            than \(CityDownloader.chunkSize) bytes apiece — no single read can return more than one \
+            chunk, so the census is being told the total instead of the chunk. See \
+            `readsAreOnePerChunk`: with the increment hoisted out of the loop every other assertion \
+            here stays green while the payload is walked a byte at a time.
+            """
+        )
+
         // The whole of the guard, in one line: every read took at least 64 KiB on average. A
         // per-byte walk of this fixture reports 4,194,304 reads against a ceiling of 64.
         let ceiling = byteCount / Self.smallestHonestRead
@@ -1186,6 +1198,19 @@ struct CityDownloadsFeedbackTests {
             """
         )
 
+        // Review finding D1, at both sizes: the flat `payloadReads` the hoisted increment produces
+        // takes the honest `extraReads == 0` branch of the rate below, so the rate cannot see it.
+        for (counts, size) in [(smallCounts, small), (largeCounts, large)] {
+            #expect(
+                Self.readsAreOnePerChunk(counts),
+                """
+                over \(size) bytes, \(counts.payloadReads) read(s) reported \
+                \(counts.payloadBytesRead) bytes — more than \(CityDownloader.chunkSize) apiece, so \
+                the census is being told the total rather than the chunk
+                """
+            )
+        }
+
         let extraBytes = large - small
         let extraReads = largeCounts.payloadReads - smallCounts.payloadReads
         #expect(
@@ -1212,6 +1237,34 @@ struct CityDownloadsFeedbackTests {
     /// division is the trap F1 filed.
     static func marginalReadIsHonest(extraBytes: Int, extraReads: Int) -> Bool {
         extraReads == 0 || extraBytes >= extraReads * smallestHonestRead
+    }
+
+    /// **No recorded read returned more than one chunk** — the census counted once per loop
+    /// iteration, not once per call.
+    ///
+    /// Review finding D1, and it restores coverage that went with the deleted
+    /// `largeReads > smallReads` assertion. Hoisting `recordPayloadRead` out of the read loop and
+    /// handing it the running total is one moved line, and it leaves every other guard green:
+    /// `payloadBytesRead` still equals the payload, so both anti-vacuity assertions pass;
+    /// `payloadReads` goes flat at 1, so `marginalReadIsHonest` takes its honest `extraReads == 0`
+    /// branch and the ceiling in `downloadIsNotPerByte` sees `1 <= 64`. With `chunkSize = 1` behind
+    /// it that is 4.2 million single-byte reads reported as one, measured by the reviewer at 12.1 s
+    /// against a 0.65 s baseline.
+    ///
+    /// **Derived from `CityDownloader.chunkSize`, and unlike `smallestHonestRead` that is safe
+    /// here, because this is an *upper* bound.** A floor derived from the production constant moves
+    /// with a regression that shrinks it and certifies the defect — the argument `smallestHonestRead`
+    /// is built on. A ceiling moves the other way: shrinking the chunk size makes this *stricter*,
+    /// never laxer. A `chunkSize = 1` regression with the increment left in the loop satisfies it
+    /// (`4194304 <= 4194304 × 1`) and is caught by `marginalReadIsHonest` instead. The two are
+    /// complementary and neither is asked to do the other's job.
+    ///
+    /// **What it is not.** This defends the counter's self-consistency, not the download. Editing
+    /// the census call site is tampering with the instrument, which is RP-C's class, and no counting
+    /// guard is proof against a counter made to lie. It is here because the shape is one moved line
+    /// and the check is free.
+    static func readsAreOnePerChunk(_ counts: CityTransferCensus.Counts) -> Bool {
+        counts.payloadBytesRead <= Int64(counts.payloadReads) * Int64(CityDownloader.chunkSize)
     }
 
     /// **The rule, run against cases whose answers are already known** — CLAUDE.md's calibration
@@ -1290,6 +1343,20 @@ struct CityDownloadsFeedbackTests {
     ///   * `Data(contentsOf:` — reads a whole file into memory in one uncounted operation. Not a
     ///     per-byte walk, but on a 199 MB pack it is both a memory event and contact with the
     ///     payload that no counter sees.
+    ///   * `contents(atPath:` — `FileManager`'s spelling of the line above, and review finding D2:
+    ///     it was missing while its sibling was banned for reasoning that applies to it word for
+    ///     word. More reachable than it looks, which is why it is called out rather than quietly
+    ///     added — `CityDownloadService` already reaches `FileManager.default` for `createDirectory`,
+    ///     `moveItem` and `removeItem`, so this is the spelling somebody there would land on, and it
+    ///     takes a `String` path so it does not even resemble the banned call.
+    ///
+    /// **This list is curated, not closed, and reading it as closed is the mistake to avoid.**
+    /// Foundation and Darwin offer more ways to touch a file than a blocklist can enumerate —
+    /// `DispatchIO`, `mmap`, and the `fopen`/`fread` family are all reachable and none is watched
+    /// here. What makes the gate worth having anyway is Family 2 below: bounding the read surface
+    /// to one known site is a structural rule rather than a list of spellings, and it is what
+    /// caught the reviewer's replanted walk. Family 1 is the cheap half, and it is honest about
+    /// being a curated set of the spellings anyone would actually reach for.
     ///
     /// **Family 2, allowed exactly once — the verification's own loop.** `FileHandle(forReadingFrom:`
     /// and `read(upToCount:` are how `CityDownloader.verifiableFacts` hashes a staged file, so they
@@ -1302,7 +1369,8 @@ struct CityDownloadsFeedbackTests {
     /// adds a second of each and is named here.
     static let forbiddenByteReads = [
         ".bytes(", "AsyncBytes", "InputStream",
-        "readData(ofLength:", "readDataToEndOfFile", "availableData", "Data(contentsOf:"
+        "readData(ofLength:", "readDataToEndOfFile", "availableData",
+        "Data(contentsOf:", "contents(atPath:"
     ]
 
     /// Family 2's spellings, and the one file entitled to one of each.
@@ -1427,14 +1495,16 @@ struct CityDownloadsFeedbackTests {
         let payload = try Data(contentsOf: staged)
         while let b = try probe.readData(ofLength: 1), !b.isEmpty { walked += 1 }
         let stream = InputStream(url: staged)
+        if let whole = FileManager.default.contents(atPath: staged.path) { _ = whole.count }
         """
         #expect(
             Self.byteReadUses(in: mustCatch, tokens: Self.forbiddenByteReads).map(\.line)
-                == [1, 2, 3, 4, 5, 6],
+                == [1, 2, 3, 4, 5, 6, 7],
             """
             the scanner missed a spelling it must catch: it found \
-            \(Self.byteReadUses(in: mustCatch, tokens: Self.forbiddenByteReads)) where all six of \
-            those lines read a payload through an API the census cannot see
+            \(Self.byteReadUses(in: mustCatch, tokens: Self.forbiddenByteReads)) where all seven of \
+            those lines read a payload through an API the census cannot see — line 7 is review \
+            finding D2's, planted in `didFinishDownloadingTo` and green before this round
             """
         )
 
@@ -1481,6 +1551,7 @@ struct CityDownloadsFeedbackTests {
         didWriteData bytesWritten: Int64,
         var payloadBytesRead: Int64 = 0
         guard bytes == record.bytes else { throw DownloadError.sizeMismatch(expected: record.bytes) }
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: cityDir, includingPropertiesForKeys: nil)
         // the body was `session.bytes(from:)` and walked a URLSession.AsyncBytes per byte
         /// `for try await byte in session.bytes(…)`, one iteration per byte of a 199 MB pack.
         /// `Data(contentsOf:)`-style absence on a file URL surfaces as a plain Cocoa error.
@@ -1491,10 +1562,12 @@ struct CityDownloadsFeedbackTests {
             the scanner flagged a line it must leave alone: \
             \(Self.byteReadUses(in: mustNotCatch, tokens: Self.forbiddenByteReads)). Lines 1–5 are \
             the ordinary byte *counts* and `record.bytes` reads these files are full of — the open \
-            paren in `.bytes(` is what keeps them out. Lines 6–8 are comments, and unlike in this \
-            gate's first version they are not hypothetical: 7 and 8 are copied from \
-            `CityTransferCensus.swift` and `CityDownloader.swift:211` as they stand, and both spell \
-            a watched token. Stripping comments is what lets those files keep describing the code.
+            paren in `.bytes(` is what keeps them out. Line 6 is `CityLibrary`'s real directory \
+            listing, which must not be confused with D2's `contents(atPath:` — the token is the \
+            whole label, so `contentsOfDirectory(at:` does not match it. Lines 7–9 are comments, \
+            and unlike in this gate's first version they are not hypothetical: 8 and 9 are copied \
+            from `CityTransferCensus.swift` and `CityDownloader.swift:211` as they stand, and both \
+            spell a watched token. Stripping comments is what lets those files describe the code.
             """
         )
     }
