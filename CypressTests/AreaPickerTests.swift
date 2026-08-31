@@ -503,6 +503,29 @@ struct AreaPickerTests {
         #expect(AlmanacPresentation(almanac: .empty, now: Self.now).provenanceNote == nil)
     }
 
+    /// **The two VoiceOver hints the header pill wears**, since the owner's 2026-08-31 ruling made
+    /// the pill itself the picker and retired the boxed `Change` button.
+    ///
+    /// XCUITest cannot read an accessibility *hint* — `XCUIElement` exposes the label, the traits
+    /// and the value, and nothing else — so `AreaPickerUITests` can witness that the pill is a
+    /// button carrying the place name, and cannot witness what it says the press will do. This is
+    /// the part that is checkable here, and the failure it is aimed at is the plausible one: two
+    /// hints written together, one pasted from the other, both naming neighborhoods. That reads
+    /// correctly on the segment it was written for and wrongly on the other, where nothing on
+    /// screen contradicts it.
+    @Test("each segment's pill hint names its own list")
+    func theHeaderPillHintsNameTheirOwnLists() {
+        let area = AreaPickerCopy.changeAreaHint
+        let city = AreaPickerCopy.changeCityHint
+
+        #expect(area != city, "both segments' pills promise the same list")
+        // Each names the noun its own sheet is full of, and not the other's.
+        #expect(area.contains("neighborhood"))
+        #expect(!area.contains("cities"))
+        #expect(city.contains("cities"))
+        #expect(!city.contains("neighborhood"))
+    }
+
     /// The seed fact that makes F1 a permanent state for a whole city rather than an edge case.
     @Test("every San Jose row carries no neighborhood, so its readers are always in the fallback")
     func sanJoseIsAlwaysTheFallback() async throws {

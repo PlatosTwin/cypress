@@ -110,6 +110,23 @@ extension ScreenHeader where Trailing == HeaderPill {
     }
 }
 
+extension ScreenHeader where Trailing == HeaderPillButton {
+    /// The pill as the control — screens 12 and 16, where the name in the header *is* what the
+    /// reader changes. See `HeaderPillButton`.
+    init(
+        title: String,
+        trailingPill: String,
+        pillHint: String,
+        bottomInset: BottomInset = .standard,
+        onBack: (() -> Void)? = nil,
+        onTapPill: @escaping () -> Void
+    ) {
+        self.init(title: title, bottomInset: bottomInset, onBack: onBack) {
+            HeaderPillButton(trailingPill, hint: pillHint, action: onTapPill)
+        }
+    }
+}
+
 // MARK: - Pieces
 
 /// 44×44 circle, `1px` border, `shadow.restSoft`. Already at the 44pt minimum, so no hit-area
@@ -182,5 +199,85 @@ struct HeaderPill: View {
             // an ellipsis beside it. Once C1 has moved it onto its own line there is no competition
             // and a long pill may wrap — `3 waiting · offline` at AX5 needs two lines and has one.
             .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
+    }
+}
+
+/// `HeaderPill` when the pill is *the way to change what the screen is about* — the Journal's two
+/// stats segments, 12 and 16.
+///
+/// **The place name is the control.** The picker used to be a boxed `SecondaryOutlineButton`
+/// reading `Change`, stacked under the provenance sentence; the owner's ruling retired it and moved
+/// the affordance onto the name it changes. Three things were weighed and are recorded in the
+/// picker-header ruling, pending — briefly: a `Change` box at the gutter sits directly above §2's
+/// micro-label with nothing between them, so it crowded the section it was not part of; it carried
+/// the visual weight of a primary action while §4's `Walk to it` (the screen's one directed ask) was
+/// the actual primary; and it named an operation rather than a subject, so a reader had to look up
+/// to find out what would change. The name plus a mark is the smaller, quieter, and more specific
+/// of the two.
+///
+/// **Same capsule as `HeaderPill` and deliberately so.** It is the same element it always was,
+/// still saying what the screen is about; the mark is what says it can be pressed. A filled or
+/// outlined "button" pill would have re-imported the weight the ruling removed.
+///
+/// **NOT SPECIFIED** — SCREENS.md §2 draws C1's pill as a label only. The mark's sizes live in
+/// `CypressSpacing.Component`, its color is `chevronDisclosure` (the app's existing "this is an
+/// affordance" green, held at one value in both schemes for that token's own stated reason), and
+/// the glyph is `CypressChevron`, drawn here like every other mark in the app — there are no SF
+/// Symbols (RULINGS R57, `DrawnGlyphGuardTests`).
+///
+/// **Accessibility.** The visual is ~24pt tall, so `cypressHitArea` gives it the 44pt target
+/// without moving the drawn pill (ARCHITECTURE §6). The label is the place name and the hint is
+/// what pressing it does, which is strictly more than the retired control offered: `Change, button`
+/// named an operation without its subject, where this reads `Sunset/Parkside, button` and then the
+/// caller's hint.
+struct HeaderPillButton: View {
+
+    let text: String
+    /// What pressing it does, read after the label and the trait.
+    let hint: String
+    let action: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(_ text: String, hint: String, action: @escaping () -> Void) {
+        self.text = text
+        self.hint = hint
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: CypressSpacing.Component.headerPillChevronGap) {
+                Text(text)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(CypressColor.textMuted)
+
+                CypressChevron(direction: .down)
+                    .stroke(
+                        CypressColor.chevronDisclosure,
+                        style: StrokeStyle(
+                            lineWidth: CypressSpacing.Component.headerPillChevronStroke,
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
+                    )
+                    .frame(
+                        width: CypressSpacing.Component.headerPillChevronWidth,
+                        height: CypressSpacing.Component.headerPillChevronHeight
+                    )
+            }
+            .padding(.vertical, CypressSpacing.Component.headerPillPaddingV)
+            .padding(.horizontal, CypressSpacing.Component.headerPillPaddingH)
+            .background { Capsule().fill(CypressColor.surfaceCard) }
+            .cypressPillBorder(CypressColor.borderCool)
+            // `HeaderPill`'s rule, and for its reason: intrinsic width while the pill shares the
+            // row with the title, free to wrap once C1 has moved it onto its own line.
+            .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .accessibilityLabel(text)
+        .accessibilityHint(hint)
     }
 }
