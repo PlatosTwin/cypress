@@ -274,6 +274,12 @@ struct TreeProfileView: View {
                     growthLink(presentation)
                 }
 
+                // F28. On a tree carrying every measurement there is no empty stat card to be the
+                // way into screen 16, and this is. See `offersAddReadingLink` for the invariant.
+                if presentation.offersAddReadingLink {
+                    addReadingLink(presentation)
+                }
+
                 cityDetails(presentation)
 
                 // 14 §7's footnote stood here and was removed by the copy audit of 2026-08-23
@@ -822,6 +828,41 @@ struct TreeProfileView: View {
         .cypressHitArea()
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, TreeProfileMetrics.activityLinkTop)
+        // The closing space belongs to whatever ends the screen. `offersAddReadingLink` puts one
+        // more link under this one, and that link then carries it.
+        .padding(
+            .bottom,
+            presentation.isCold || presentation.showsCityDetails || presentation.offersAddReadingLink
+                ? 0
+                : CypressSpacing.bottomBar
+        )
+    }
+
+    /// **F28's `Add a reading`**, on a tree that has no empty stat card to carry one.
+    ///
+    /// Built as `growthLink`'s twin down to the token — same font, same color, same 44 pt hit area,
+    /// same gutter — for the reason that link gives for being built the way it is: C1–C30 has no
+    /// link component, and a screen-local control from tokens is what this codebase does where the
+    /// catalog has no entry (ERRATA E46). Two links that do the neighboring things a block apart
+    /// should read as one kind of thing, and the way to guarantee that is to build them the same.
+    private func addReadingLink(_ presentation: TreeProfilePresentation) -> some View {
+        Button {
+            router?.push(
+                .measure(model.treeID, TreeProfilePresentation.addReadingLinkKind)
+            )
+        } label: {
+            Text(TreeProfilePresentation.addReadingLinkTitle)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .padding(.horizontal, CypressSpacing.gutter)
+        // No `activityLinkTop` when it follows `growthLink`: that gap separates the link block from
+        // the stat grid above it, and these two links are one block.
+        .padding(.top, presentation.offersGrowthLink ? 0 : TreeProfileMetrics.activityLinkTop)
         .padding(.bottom, presentation.isCold || presentation.showsCityDetails ? 0 : CypressSpacing.bottomBar)
     }
 
