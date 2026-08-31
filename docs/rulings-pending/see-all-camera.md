@@ -103,8 +103,11 @@ than about the reader, and this camera is the reader's.
 build with the last tie-break deleted. What decides a tie the ranking cannot is `Dictionary`
 iteration order, which is a function of the process's hash seed rather than of the row order — one
 process flipped four times in twenty-four permutations and the next flipped in none of two hundred.
-`ContributedCamera.winner` now sorts by the group's key before it ranks, and the test asserts the
-rule instead of its own first answer.
+The repair, after review, is a single mechanism: `ContributedCamera.best(among:)` ranks an array
+under a strict total order whose last key is the group's own, so the maximum is a property of the
+comparison rather than of any sequence — and the test asserts the rule, plus order-invariance,
+instead of its own first answer. (An earlier fix carried a pre-sort as a second mechanism; the
+review showed deleting either alone stayed green, so the pre-sort was removed.)
 
 #### 3. A city whose inventory is gone cannot win, and the next city takes it — RATIFIED
 

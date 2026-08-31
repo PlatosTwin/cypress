@@ -637,8 +637,9 @@ public struct RemoteAPI: CypressAPI {
     /// phone has installed — R84 made that set cumulative and per-install. A `[ContributedPlace]`
     /// assembled anywhere else would be pins for a map that has no trees under them.
     ///
-    /// The caller reads empty as "leave the camera alone", so a composition with no local half
-    /// behaves exactly as screen 01 did before this method existed. Declared rather than inherited
+    /// The caller reads empty as "aim no fit" — the suppression ends and screen 01's own opening
+    /// fly-to-you may still run — so a composition with no local half behaves exactly as screen 01
+    /// did before this method existed. Declared rather than inherited
     /// for `APIConformanceGuardTests`' reason and E125's: a default satisfying a requirement on a
     /// shipping conformance is a member nobody chose.
     public func contributedPlaces() async throws -> [ContributedPlace] {

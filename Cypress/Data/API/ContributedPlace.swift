@@ -56,7 +56,8 @@ public extension CypressAPI {
     /// statement about such an implementation rather than a placeholder, so no preview double and
     /// no second client has to invent a geometry to compile.
     ///
-    /// **Empty is a real answer, and the caller treats it as one**: the camera does not move, which
-    /// is exactly what screen 01 did before this method existed.
+    /// **Empty is a real answer, and the caller treats it as one**: no fit is aimed, the
+    /// suppression ends, and screen 01's own opening fly-to-you may still run — the reader is shown
+    /// where they are, exactly as before this method existed.
     func contributedPlaces() async throws -> [ContributedPlace] { [] }
 }
