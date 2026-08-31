@@ -1449,10 +1449,13 @@ struct CityDownloadsFeedbackTests {
             offenders.isEmpty,
             """
             \(offenders.joined(separator: ", ")) read a payload through an API the census cannot \
-            see. `.bytes(`/`AsyncBytes` is the 2026-08-23 defect verbatim — the response arrives as \
-            a sequence of `UInt8` and the path walks a 199 MB pack one element at a time. The \
-            transfer is a download task and is handed a finished file; see \
-            `CityDownloadService.urlSession(_:downloadTask:didFinishDownloadingTo:)`.
+            see. The offending token is named above and decides which of two stories this is: \
+            `.bytes(`/`AsyncBytes` is the 2026-08-23 defect verbatim — the response arrives as a \
+            sequence of `UInt8` and the path walks a 199 MB pack one element at a time — while \
+            `Data(contentsOf:`, `contents(atPath:` and the `FileHandle` reads are a whole pack \
+            pulled into memory in one uncounted go. The transfer is a download task and is handed a \
+            finished file; see `CityDownloadService.urlSession(_:downloadTask:\
+            didFinishDownloadingTo:)`, and `forbiddenByteReads` for why each token is watched.
             """
         )
 
