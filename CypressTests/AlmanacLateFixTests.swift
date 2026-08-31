@@ -85,7 +85,7 @@ struct AlmanacLateFixTests {
 
         init(payload: Almanac) { self.payload = payload }
 
-        func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
             reads.append(coordinate)
             return coordinate == nil ? .empty : payload
         }
@@ -144,7 +144,7 @@ struct AlmanacLateFixTests {
 
         init(payload: Almanac) { self.payload = payload }
 
-        func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
             guard coordinate != nil else { return .empty }
             reads += 1
             let isTheHeldOne = reads == 1

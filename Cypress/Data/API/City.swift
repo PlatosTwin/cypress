@@ -61,14 +61,35 @@ public struct CityAlmanac: Hashable, Sendable {
         /// may say "the five oldest" outright or has to say something truer.
         public let oldest: [ElderTree]
 
+        /// The city's own civic name, from `dim_city.display_name` joined through
+        /// `id_spaces.city_id` — never composed from the `id_space` key and never
+        /// `inventories.name`, which names the inventory rather than the city.
+        ///
+        /// **`nil` is a real state and the screen honors it**: a pre-s16 file carries no `dim_city`
+        /// at all, and this segment names no city rather than inventing one. That is the rule
+        /// `CityQueries`'s header states; what changed is that the seed now usually has an answer.
+        public let cityName: String?
+
+        /// Whether this snapshot is about the city the reader's fix resolves, or one they chose.
+        ///
+        /// Card 1 — "Monterey cypress is 18% of the trees near you and 4% citywide" — is a
+        /// comparison between the reader's own streets and the surrounding city, so it is drawn only
+        /// for `.fromFix`. Against a city the reader is not in, the two halves of that sentence are
+        /// measured over ground forty miles apart and the word "and" is doing work it cannot do.
+        public let resolution: AreaResolution
+
         public init(
             localComposition: NeighborhoodComposition? = nil,
             cityComposition: NeighborhoodComposition? = nil,
-            oldest: [ElderTree] = []
+            oldest: [ElderTree] = [],
+            cityName: String? = nil,
+            resolution: AreaResolution = .fromFix
         ) {
             self.localComposition = localComposition
             self.cityComposition = cityComposition
             self.oldest = oldest
+            self.cityName = cityName
+            self.resolution = resolution
         }
     }
 }
@@ -124,5 +145,5 @@ public extension CypressAPI {
     /// An implementation with no city inventory behind it resolves no city, and therefore has no
     /// findings — the same shape `almanac(near:)`'s default takes, and for the same reason: this is a
     /// true statement about such an implementation rather than a placeholder.
-    func city(near coordinate: Coordinate?) async throws -> CityAlmanac { .empty }
+    func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac { .empty }
 }

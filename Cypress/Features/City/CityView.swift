@@ -20,16 +20,39 @@ struct CityView: View {
 
     private let onOpenTree: ((UUID) -> Void)?
     private let coordinate: Coordinate?
+    /// The stated accuracy of that fix, in meters — see `AlmanacView.accuracyM`, which carries the
+    /// same value into the same rule (`AlmanacLimits.fixCanResolveAnArea(accuracyM:)`, F17).
+    private let accuracyM: Double?
     private let onRequestLocation: (() -> Void)?
+
+    /// Which city this segment is about, from the composition root (`AppRouter.journalCity`), plus
+    /// whether there is anything to pick and how to raise the picker — `AlmanacView`'s three, for the
+    /// same reason. The sheet is presented by `RootView`, not here.
+    private let selection: CitySelection
+    private let canPickCity: Bool
+    private let onPickCity: (() -> Void)?
 
     init(
         api: any CypressAPI,
         coordinate: Coordinate?,
+        accuracyM: Double? = nil,
+        selection: CitySelection = .here,
+        canPickCity: Bool = false,
         onOpenTree: ((UUID) -> Void)? = nil,
-        onRequestLocation: (() -> Void)? = nil
+        onRequestLocation: (() -> Void)? = nil,
+        onPickCity: (() -> Void)? = nil
     ) {
-        _model = State(wrappedValue: CityModel(api: api, coordinate: coordinate))
+        _model = State(wrappedValue: CityModel(
+            api: api,
+            coordinate: coordinate,
+            accuracyM: accuracyM,
+            selection: selection
+        ))
         self.coordinate = coordinate
+        self.accuracyM = accuracyM
+        self.selection = selection
+        self.canPickCity = canPickCity
+        self.onPickCity = onPickCity
         self.onOpenTree = onOpenTree
         self.onRequestLocation = onRequestLocation
     }
@@ -41,11 +64,34 @@ struct CityView: View {
             showsLocationPrompt: model.needsLocation,
             onRequestLocation: onRequestLocation,
             hasFailed: model.hasFailed,
-            onRetry: { Task { await model.retry() } }
+            onRetry: { Task { await model.retry() } },
+            needsAreaChoice: model.needsAreaChoice,
+            canPickCity: canPickCity,
+            onOpenPicker: onPickCity
         )
         // Keyed on the coordinate, as `AlmanacView` keys its own read — the almanac's own fix for a
         // cold launch whose first frame has no fix at all (ERRATA E155).
-        .task(id: coordinate) { await model.update(coordinate: coordinate) }
+        //
+        // **On the accuracy as well as the coordinate**, and the pair is why `Fix` exists at all.
+        // `MapLocationProvider.publish` rewrites `availability` when the position moves *or* when
+        // the accuracy changes by a meter (`publishAccuracyM`), so a reader standing still while
+        // Precise Location is switched on gets a new accuracy at the same coordinate. Keyed on the
+        // coordinate alone this segment would never hear about it, and would go on saying it cannot
+        // tell which city you are in on a phone that now can. `AlmanacView` reaches the same fact by
+        // a different road — it observes the provider directly (`AlmanacModel.observeLocation`),
+        // whose `isFixAvailabilityTransition` gained the same second boundary — and this segment has
+        // no provider to observe.
+        .task(id: Fix(coordinate: coordinate, accuracyM: accuracyM)) {
+            await model.update(coordinate: coordinate, accuracyM: accuracyM)
+        }
+        .task(id: selection) { await model.update(selection: selection) }
+    }
+
+    /// The two halves of a fix, together, so `.task(id:)` can key on both. `Coordinate` is
+    /// `Hashable` and a tuple is not.
+    private struct Fix: Hashable {
+        let coordinate: Coordinate?
+        let accuracyM: Double?
     }
 }
 
@@ -64,6 +110,18 @@ struct CityScreen: View {
     var hasFailed: Bool = false
     var onRetry: (() -> Void)?
 
+    /// Location is granted, a fix has arrived, and it is too coarse to say which city the reader is
+    /// in (`CityModel.needsAreaChoice`, tester report F17) — `AlmanacScreen.needsAreaChoice`'s twin.
+    var needsAreaChoice: Bool = false
+
+    /// Whether there is anything to pick from, and how to raise the picker. The sheet itself is
+    /// presented by the composition root — `AlmanacScreen`'s pair, for the same reason.
+    ///
+    /// False for a record with no `dim_city`: a city with no name on file is not offered under an
+    /// invented one (`AreaQueries`), and the affordance goes with the list.
+    var canPickCity: Bool = false
+    var onOpenPicker: (() -> Void)?
+
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
@@ -78,7 +136,10 @@ struct CityScreen: View {
                         )
                         .padding(.top, CypressSpacing.labelSectionTop)
                         .padding(.horizontal, CypressSpacing.gutter)
+                    } else if needsAreaChoice {
+                        coarseFix
                     } else if let presentation, presentation.hasCity {
+                        provenance(presentation)
                         contrastBlock(presentation)
                         compositionBlock(presentation)
                         oldestBlock(presentation)
@@ -106,10 +167,79 @@ struct CityScreen: View {
 
     // MARK: - Header (C1)
 
-    /// No trailing pill, ever — the file header's whole reason: this screen has no city name to put
-    /// in one.
+    /// `title: City`, trailing pill the city's own name.
+    ///
+    /// **This used to say "no trailing pill, ever", on the grounds that the screen had no city name
+    /// to put in one.** That was true and stopped being true at seed schema 16, which put
+    /// `dim_city.display_name` on disk in the file this screen already reads — see
+    /// `CityPresentation`'s header for the whole of it. The pill draws the name the record carries
+    /// and draws nothing when the record carries none, which is the same rule screen 12's own pill
+    /// follows for a neighborhood it cannot name.
+    @ViewBuilder
     private var header: some View {
-        ScreenHeader(title: CityCopy.segmentLabel)
+        if let name = presentation?.cityName {
+            ScreenHeader(title: CityCopy.segmentLabel, trailingPill: name)
+        } else {
+            ScreenHeader(title: CityCopy.segmentLabel)
+        }
+    }
+
+    // MARK: - Where the city came from, and how to change it (tester report F17)
+
+    /// `AlmanacScreen.provenance(_:)`'s twin, in the same type and color, saying who chose this city
+    /// and offering the way to choose another. **NOT SPECIFIED** — see `AreaPickerCopy`.
+    @ViewBuilder
+    private func provenance(_ presentation: CityPresentation) -> some View {
+        if let note = presentation.provenanceNote {
+            VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+                Text(note)
+                    .font(CypressFont.body125)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .lineSpacing(CypressFont.LineSpacing.body125)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if canPickCity, onOpenPicker != nil {
+                    SecondaryOutlineButton(
+                        AreaPickerCopy.change,
+                        style: .compact,
+                        action: { onOpenPicker?() }
+                    )
+                    .fixedSize()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, CypressSpacing.labelSectionTop)
+            .padding(.horizontal, CypressSpacing.gutter)
+        }
+    }
+
+    /// A fix too rough to place the reader. Location is on and there is nothing to turn on; the
+    /// picker is the door that is open (`AreaPickerCopy.coarseFixTitle`).
+    private var coarseFix: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            Text(AreaPickerCopy.coarseFixTitle)
+                .font(CypressFont.body145Bold)
+                .foregroundStyle(CypressColor.textInk)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(AreaPickerCopy.coarseFixCityBody)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textMuted)
+                .lineSpacing(CypressFont.LineSpacing.body125)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if canPickCity, onOpenPicker != nil {
+                SecondaryOutlineButton(
+                    AreaPickerCopy.pickACity,
+                    style: .compact,
+                    action: { onOpenPicker?() }
+                )
+                .fixedSize()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, CypressSpacing.labelSectionTop)
+        .padding(.horizontal, CypressSpacing.gutter)
     }
 
     // MARK: - Card 1 · Your streets, against the city
@@ -222,6 +352,17 @@ struct CityScreen: View {
                 .foregroundStyle(CypressColor.textMuted)
                 .lineSpacing(CypressFont.LineSpacing.body125)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // The one door open from here — `AlmanacScreen.outOfRange`'s own addition, for the same
+            // reason: a reader whose ground no inventory covers can still read a city they have.
+            if canPickCity, onOpenPicker != nil {
+                SecondaryOutlineButton(
+                    AreaPickerCopy.pickACity,
+                    style: .compact,
+                    action: { onOpenPicker?() }
+                )
+                .fixedSize()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, CypressSpacing.labelSectionTop)

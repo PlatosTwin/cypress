@@ -186,10 +186,22 @@ struct ScreenEntranceTests {
             // one because it can sign you out (ERRATA E131), and a sign-out whose only way back is
             // three more field visits is a door that locks behind you.
             return "the third visit save (D9) · the You tab · the account block's Sign in row (E131)"
+        case let .journalAreaPicker(kind):
+            // One entrance each, and both are the same affordance drawn on two segments: the
+            // `Change` button under the header, plus `Pick an area` on the two states where the
+            // screen has nothing else on it (a fix too coarse to place the reader, and ground no
+            // inventory covers).
+            return kind == .neighborhood
+                ? "16 Journal · Neighborhood · Change, and Pick an area on the coarse-fix and "
+                    + "out-of-range states"
+                : "16 Journal · City · Change, and Pick a city on the coarse-fix and out-of-range "
+                    + "states"
         }
     }
 
     private static let everyRoute: [Route] = [
+        .journalAreaPicker(.neighborhood),
+        .journalAreaPicker(.city),
         .treeProfile(treeID),
         .identify(nil),
         .identify(treeID),

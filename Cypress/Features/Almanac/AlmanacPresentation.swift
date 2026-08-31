@@ -148,6 +148,43 @@ struct AlmanacPresentation: Equatable {
     /// change it back.
     let areaNote: String?
 
+    /// The line that says **where the area on screen came from** — one of three sentences, because
+    /// there are three ways an area gets here and they are not the same statement.
+    ///
+    /// | how the area was reached | sentence |
+    /// |---|---|
+    /// | the reader picked it | `AreaPickerCopy.resolvedByChoice` |
+    /// | their fix resolved a **polygon**, through the nearest inventoried tree | `.resolvedFromFix` |
+    /// | their fix resolved **R29's radius fallback**, where no polygon covers them | `.resolvedFromFixRadius` |
+    ///
+    /// **The third row is PR #132's blocking review finding, and it is worth stating why the first
+    /// version got it wrong.** `AreaResolution` answers "did the reader choose this", which is the
+    /// question the *picker* asks; it does not answer "what chose it", which is the question this
+    /// sentence answers. The two coincide for a polygon and come apart for the fallback, where no
+    /// tree was consulted at all — and the fallback is not an edge: **all 52,788 San Jose rows carry
+    /// `neighborhood_id IS NULL`**, so it was every reader in the bundle's second city, permanently,
+    /// reading a claim contradicted by the very next line on the screen.
+    ///
+    /// So the mechanism is read off `AlmanacArea`, which is the type R29 created to keep exactly
+    /// this distinction — "the Mission" and "everything within a 15-minute walk" are different
+    /// promises — rather than off the resolution alone.
+    ///
+    /// **NOT SPECIFIED, and the half of tester report F17 that is not the picker.** The header pill
+    /// has always printed a neighborhood name as bare fact, and F17 is a reader looking at a name he
+    /// knew was wrong with nothing on the screen to say how it got there. Different from `areaNote`
+    /// below, which says *why* the area is a circle and only draws for the fallback; this says what
+    /// chose it, and always draws.
+    ///
+    /// `nil` when there is no area, where there is no provenance to state either.
+    let provenanceNote: String?
+
+    /// Whether the area was picked by the reader rather than resolved from their fix.
+    ///
+    /// Read straight off the payload (`Almanac.resolution`) rather than inferred from the selection
+    /// the model holds, for `AlmanacModel.displayedCoordinate`'s reason: the two are one read apart,
+    /// and in that gap an inferred answer labels the old area with the new area's provenance.
+    let isPickedArea: Bool
+
     let seasonRows: [SeasonRow]
 
     /// The line under §2's micro-label saying what determines the rows below it (task #177).
@@ -183,6 +220,8 @@ struct AlmanacPresentation: Equatable {
             self.hasArea = false
             self.neighborhoodName = nil
             self.areaNote = nil
+            self.provenanceNote = nil
+            self.isPickedArea = false
             self.seasonRows = []
             self.seasonNote = nil
             self.composition = nil
@@ -198,12 +237,30 @@ struct AlmanacPresentation: Equatable {
         self.hasArea = true
         self.neighborhoodName = pill
         self.areaNote = AlmanacCopy.areaNote(area.area, locale: locale)
+        self.isPickedArea = area.resolution == .picked
+        self.provenanceNote = Self.provenanceNote(resolution: area.resolution, area: area.area)
         let rows = Self.seasonRows(area, in: pill, now: now, calendar: calendar, locale: locale)
         self.seasonRows = rows
         self.seasonNote = AlmanacCopy.seasonNote(kinds: rows.map(\.kind), calendar: calendar, locale: locale)
         self.composition = Self.composition(area.composition, locale: locale)
         self.coverage = Self.coverage(area.coverage, in: pill, locale: locale)
         self.vacantSites = Self.vacantSites(area.vacantSites, in: pill, locale: locale)
+    }
+
+    /// The three-way choice `provenanceNote` documents, as a `static` so it can be tested at each of
+    /// its three branches without building a whole almanac — the shape
+    /// `AlmanacModel.isFixAvailabilityTransition` already uses, and for the same reason.
+    ///
+    /// A picked area is always `.named`: `AreaSelection.neighborhood(id:)` names a polygon, and there
+    /// is nothing to pick that is a distance. The `(.picked, .radius)` pair is therefore
+    /// unrepresentable in practice and falls to the by-choice sentence, which is the safe direction —
+    /// it says the reader chose this, which would still be true.
+    static func provenanceNote(resolution: AreaResolution, area: AlmanacArea) -> String {
+        if resolution == .picked { return AreaPickerCopy.resolvedByChoice }
+        switch area {
+        case .named: return AreaPickerCopy.resolvedFromFix
+        case .radius: return AreaPickerCopy.resolvedFromFixRadius
+        }
     }
 
     // MARK: - §2 This season

@@ -51,6 +51,28 @@ final class AlmanacModel {
     /// nothing about why (E126's invariant).
     private(set) var displayedCoordinate: Coordinate?
 
+    /// How good the fix is, in meters (`MapLocationProvider.Availability.accuracyM`).
+    ///
+    /// **Carried because this screen's honesty depends on it and nothing used to read it.** The
+    /// rule and the whole of the reasoning are in `AlmanacLimits.fixCanResolveAnArea(accuracyM:)`;
+    /// the short version is that a fix good to ±3,000 m cannot pick out the tree 400 m away whose
+    /// neighborhood this header prints, and it used to be allowed to try. `nil` in previews and
+    /// tests driving a bare coordinate, which the rule permits and which leaves them unchanged.
+    private(set) var accuracyM: Double?
+    private(set) var displayedAccuracyM: Double?
+
+    /// Which neighborhood this almanac is about: the reader's own, or one they chose
+    /// (`AreaSelection`). `displayedSelection` is the one the picture on screen was read for, for
+    /// `displayedCoordinate`'s reason.
+    ///
+    /// **An input, like `coordinate`, and not state this model owns.** The picker that writes it is
+    /// presented by the composition root through `AppRouter.sheet`, because a card over a scrim that
+    /// the controls behind can be tapped through is not a sheet (PR #132 review, F2) — and a `Route`
+    /// cannot carry a closure back into this object's `@State`. So the selection lives on
+    /// `AppRouter.journalArea` and arrives here the way the fix does.
+    private(set) var selection: AreaSelection = .here
+    private(set) var displayedSelection: AreaSelection = .here
+
     private let now: @Sendable () -> Date
 
     /// The provider this model was built against (ERRATA E123's residual, #223).
@@ -76,6 +98,8 @@ final class AlmanacModel {
     init(
         api: any CypressAPI,
         coordinate: Coordinate?,
+        accuracyM: Double? = nil,
+        selection: AreaSelection = .here,
         location: MapLocationProvider? = nil,
         locationPollInterval: Duration = .milliseconds(500),
         now: @escaping @Sendable () -> Date = { Date() }
@@ -83,6 +107,10 @@ final class AlmanacModel {
         self.api = api
         self.coordinate = coordinate
         self.displayedCoordinate = coordinate
+        self.accuracyM = accuracyM
+        self.displayedAccuracyM = accuracyM
+        self.selection = selection
+        self.displayedSelection = selection
         self.location = location
         self.locationPollInterval = locationPollInterval
         self.now = now
@@ -104,21 +132,59 @@ final class AlmanacModel {
     /// the model, built once, still held the empty almanac it had read from `nil`. The prompt was
     /// withdrawn from a screen that had nothing to replace it with. This reads the coordinate behind
     /// the *picture*, so the sentence and the picture cannot disagree.
-    var needsLocation: Bool { displayedCoordinate == nil }
+    ///
+    /// Asked only of `.here`: a reader who chose a neighborhood is not waiting on a fix.
+    var needsLocation: Bool { displayedSelection.isHere && displayedCoordinate == nil }
+
+    /// Whether the screen is empty because the fix, though present, is too coarse to say which
+    /// neighborhood the reader is in — `AlmanacLimits.fixCanResolveAnArea(accuracyM:)`, tester
+    /// report F17.
+    ///
+    /// **Deliberately not folded into `needsLocation`.** Location is granted and a fix has arrived;
+    /// there is nothing to turn on, and a prompt saying otherwise would be the screen's second lie
+    /// on top of the one this fixes. What there is, is a choice to make.
+    var needsAreaChoice: Bool {
+        displayedSelection.isHere
+            && displayedCoordinate != nil
+            && !AlmanacLimits.fixCanResolveAnArea(
+                accuracyM: displayedAccuracyM,
+                withinM: AlmanacLimits.neighborhoodResolutionRadiusM
+            )
+    }
 
     func load() async {
-        let requested = coordinate
+        let requestedCoordinate = coordinate
+        let requestedAccuracy = accuracyM
+        let requestedSelection = selection
+        // **A fix too coarse to place the reader is not used to place the reader** (F17). Handed
+        // over anyway, the read searches 400 m around a point the reader may be two miles from and
+        // names whatever it finds, in a header that states it as fact. `nil` reaches `.empty` by
+        // contract and `needsAreaChoice` above tells the screen which empty this is.
+        let fixForRead = AlmanacLimits.fixCanResolveAnArea(
+            accuracyM: requestedAccuracy,
+            withinM: AlmanacLimits.neighborhoodResolutionRadiusM
+        ) ? requestedCoordinate : nil
         do {
-            let almanac = try await api.almanac(near: requested)
+            let almanac = try await api.almanac(near: fixForRead, in: requestedSelection)
             // A newer fix arrived while this read was in flight; its own read is authoritative and
             // this one's answer is about a place the reader has already left.
-            guard requested == coordinate else { return }
+            guard requestedCoordinate == coordinate, requestedSelection == selection else { return }
             phase = .loaded(almanac)
         } catch {
-            guard requested == coordinate else { return }
+            guard requestedCoordinate == coordinate, requestedSelection == selection else { return }
             phase = .failed
         }
-        displayedCoordinate = requested
+        displayedCoordinate = requestedCoordinate
+        displayedAccuracyM = requestedAccuracy
+        displayedSelection = requestedSelection
+    }
+
+    /// Take the selection the composition root holds *now* and re-read if it is a different one —
+    /// `update(coordinate:accuracyM:)`'s shape, for the input that arrives the same way.
+    func update(selection newValue: AreaSelection) async {
+        guard newValue != selection else { return }
+        selection = newValue
+        await load()
     }
 
     /// Take the fix the composition root has *now* and re-read if it is a different one.
@@ -128,9 +194,13 @@ final class AlmanacModel {
     /// The phase is deliberately **not** reset to `.loading` here: the almanac already on screen
     /// (empty, with the prompt over it, or a previous neighborhood) stays until the replacement has
     /// actually been read, so the re-read costs the reader no blank frame.
-    func update(coordinate newValue: Coordinate?) async {
-        guard newValue != coordinate || phase == .loading else { return }
+    ///
+    /// **Accuracy is compared too**: a fix that stays put while its accuracy collapses from 8 m to
+    /// 3,000 m is the difference between naming a neighborhood and admitting we cannot.
+    func update(coordinate newValue: Coordinate?, accuracyM newAccuracy: Double? = nil) async {
+        guard newValue != coordinate || newAccuracy != accuracyM || phase == .loading else { return }
         coordinate = newValue
+        accuracyM = newAccuracy
         await load()
     }
 
@@ -161,11 +231,25 @@ final class AlmanacModel {
     /// `.located → .notAsked/.denied/.servicesOff/.waitingForFix` is `true` for the reverse reason —
     /// that is E126's invariant reappearing in the other direction, and `update(coordinate:)` below
     /// already knows what to do with a `nil` coordinate.
+    /// **Two boundaries, not one, since the F17 fix.** The second is whether the fix is accurate
+    /// enough to name an area at all (`AlmanacLimits.fixCanResolveAnArea(accuracyM:)`). It has to be
+    /// here rather than nowhere: `MapLocationProvider` rewrites `availability` on every publish, and
+    /// with only the first clause a reader whose first fix was approximate and who then turned
+    /// Precise Location on would sit in the "pick an area" state for the life of the screen, being
+    /// told we cannot tell where they are by an app that now can.
+    ///
+    /// It costs nothing of the churn rule above. Both sides of a walking-pace `.located(A) →
+    /// .located(B)` are precise fixes, so the second clause is `true != true` and the whole
+    /// predicate is still `false` — which is the property the paragraph above is protecting and the
+    /// one `AlmanacLocationTransitionTests` pins.
     static func isFixAvailabilityTransition(
         from previous: MapLocationProvider.Availability,
         to current: MapLocationProvider.Availability
     ) -> Bool {
-        (previous.coordinate == nil) != (current.coordinate == nil)
+        if (previous.coordinate == nil) != (current.coordinate == nil) { return true }
+        let radius = AlmanacLimits.neighborhoodResolutionRadiusM
+        return AlmanacLimits.fixCanResolveAnArea(accuracyM: previous.accuracyM, withinM: radius)
+            != AlmanacLimits.fixCanResolveAnArea(accuracyM: current.accuracyM, withinM: radius)
     }
 
     /// Watches `location` for the life of the screen and reloads on the one change that matters.
@@ -183,13 +267,13 @@ final class AlmanacModel {
     func observeLocation() async {
         guard let location else { return }
         var previous = location.availability
-        await update(coordinate: previous.coordinate)
+        await update(coordinate: previous.coordinate, accuracyM: previous.accuracyM)
         while !Task.isCancelled {
             try? await Task.sleep(for: locationPollInterval)
             guard !Task.isCancelled else { return }
             let current = location.availability
             if Self.isFixAvailabilityTransition(from: previous, to: current) {
-                await update(coordinate: current.coordinate)
+                await update(coordinate: current.coordinate, accuracyM: current.accuracyM)
             }
             previous = current
         }

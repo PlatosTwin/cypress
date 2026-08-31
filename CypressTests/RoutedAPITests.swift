@@ -97,8 +97,8 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
     func speciesGuide(id: UUID, near coordinate: Coordinate?) async throws -> SpeciesGuide {
         SpeciesGuide(species: try await species(id: id))
     }
-    func almanac(near coordinate: Coordinate?) async throws -> Almanac { .empty }
-    func city(near coordinate: Coordinate?) async throws -> CityAlmanac { .empty }
+    func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac { .empty }
+    func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac { .empty }
     func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
         items.map { SyncResult(clientUUID: $0.clientUUID, status: .applied) }
     }
@@ -219,8 +219,8 @@ struct RoutedAPITests {
         #expect(try await router.species(id: speciesID).commonName == "London Plane")
         #expect(try await router.searchSpecies(query: "plane", limit: 5).isEmpty)
         #expect(try await router.speciesGuide(id: speciesID, near: here).species.id == speciesID)
-        _ = try await router.almanac(near: here)
-        _ = try await router.city(near: here)
+        _ = try await router.almanac(near: here, in: .here)
+        _ = try await router.city(near: here, in: .here)
         #expect(try await router.exportLatest(.csv) == Data("local".utf8))
 
         // Class D, on the same terms: the rows have not been sent, and their being unsent is what

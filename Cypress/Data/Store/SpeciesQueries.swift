@@ -462,7 +462,7 @@ public struct SpeciesQueries {
     /// bay. Then there is no area, and the `Near you` card does not draw at all.
     public func resolveNeighborhood(
         near coordinate: Coordinate,
-        radiusM: Double = 400,
+        radiusM: Double = AlmanacLimits.neighborhoodResolutionRadiusM,
         connection: SQLiteConnection
     ) throws -> (id: Int, name: String)? {
         let bounds = BoundingBox(around: coordinate, radiusM: radiusM)

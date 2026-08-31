@@ -25,7 +25,7 @@ struct AlmanacPreviewAPI: CypressAPI {
     /// broken device (ERRATA E126).
     var fails = false
 
-    func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+    func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
         if fails { throw APIError.serverError }
         return payload
     }

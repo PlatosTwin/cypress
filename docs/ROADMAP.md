@@ -277,10 +277,16 @@ that had not yet reached a build). What remains OPEN:
   the outbox vocabulary. The unhappy sibling of the photo-withdrawal work.
 - **F28 — adding a reading on a tree holding both height and DBH** is two small-text taps deep;
   the add-a-reading card only exists while its own measurement is missing.
-- **F17 — neighborhood stats far from home — folded into the neighborhood/city picker item
-  below**: nearest-tree resolution is unchanged since the report and R84 D4 deliberately kept it;
-  the picker round is its designated fix, and should also decide what the screen says when the
-  nearest tree is very far away.
+- ~~**F17 — neighborhood stats far from home.**~~ **SHIPPED** by the neighborhood/city picker
+  round (`feat/stats-picker`). Both halves: the two stats segments now state where their area came
+  from and offer a picker, and — the mechanism the report actually came from — a location fix whose
+  own accuracy is wider than the 400 m search that names a neighborhood is no longer used to name
+  one (`AlmanacLimits.fixCanResolveAnArea(accuracyM:)`). **The premise this entry carried was
+  wrong and is corrected here rather than deleted**: "the nearest tree is very far away" is not a
+  state the shipped code could reach — `resolveNeighborhood` is bounded at 400 m and
+  `resolveIDSpace` at 1,200 m, so a distant reader already got the out-of-range screen. An
+  approximate-location fix is what put a confidently named neighborhood in front of a reader who
+  was nowhere near it.
 
 ### Follow-up tickets from the 2026-08-30 rounds
 
@@ -302,11 +308,13 @@ Three items queued by the owner, recorded verbatim in intent; none is scheduled 
   No mock exists — the round that builds it starts as a design round under DECISIONS constraint 21
   (screen and states proposed to the owner before code), and its all-photos half must respect the
   photo-visibility rules (D11 privacy defaults, R82 hero provenance).
-- **Journal: stats for a chosen neighborhood, and a chosen city.** The Journal's neighborhood
-  segment gains a way to select a different neighborhood and read its stats; the City segment gets
-  the same for a different city. Today both resolve from the nearest tree (R84's D4 kept it that
-  way deliberately); this item is the round that supersedes that scoping with an explicit picker,
-  and with R84's union live it must define which inventories a non-local pick may draw from.
+- ~~**Journal: stats for a chosen neighborhood, and a chosen city.**~~ **SHIPPED**
+  (`feat/stats-picker`). Both segments carry a picker over the **live** inventories — the bundled
+  seed plus every downloaded pack, R84 decision 1's union — which is the answer to "which
+  inventories a non-local pick may draw from". Supersedes R84 **D4** for the Journal: the
+  nearest-tree resolution is still the default and is now one of two states rather than the only
+  one. The design decisions taken under DECISIONS constraint 21 are in
+  `docs/rulings-pending/stats-picker.md` and are **awaiting the owner's ratification**.
 - **Update the repo README.** The README predates most of what shipped; bring it current with the
   app as it stands (cumulative inventories, the publish pipeline, the beta process).
 

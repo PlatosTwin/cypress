@@ -89,6 +89,24 @@ enum Route: Hashable {
     /// tab needs one because it can sign you *out* (ERRATA E131), and a sign-out with no way back
     /// short of three more field visits is a door that locks behind you.
     case accountAsk             // 15
+    /// The Journal's area picker — which neighborhood, or which city, the stats segments are about.
+    ///
+    /// **Presented, never pushed, and through this enum rather than as a layer inside the tab**, for
+    /// the reason `RootView`'s single `fullScreenCover` gives: a card over a scrim that the controls
+    /// behind it can still be tapped through is not the C17 the app draws four times. The first
+    /// version of this picker was a `ZStack` inside the tab content, and the PR #132 review switched
+    /// segments *through* the scrim, which cancelled the sheet with no dismissal at all.
+    ///
+    /// It carries which of the two lists to show and nothing else. `Route` is `Hashable` and cannot
+    /// hold a closure, which is why the selection it writes lives on `AppRouter` beside
+    /// `journalSegment` rather than in either feature's own `@State` — see `journalArea`.
+    case journalAreaPicker(JournalPicker)
+}
+
+/// Which of the Journal's two stats segments the picker is for.
+enum JournalPicker: Hashable {
+    case neighborhood
+    case city
 }
 
 /// The four root destinations of the bottom bar (C16 / screen 01).
@@ -134,6 +152,25 @@ final class AppRouter {
     /// and failed with "the Journal tab did not draw the almanac". The deep link had stopped meaning
     /// what its own comment said.
     var journalSegment: JournalSegment = .journal
+
+    /// Which area each of the Journal's two stats segments is about — the reader's own, or one they
+    /// picked (`AreaSelection` / `CitySelection`).
+    ///
+    /// **Here for `journalSegment`'s reason, one step further in.** That property is navigation state
+    /// because the *segment* is addressable; these are here because the picker that writes them is
+    /// presented from the composition root through `sheet` below, and a `Route` cannot carry a
+    /// closure back to a feature's own `@State`. The selection has to live somewhere both `RootView`
+    /// and the segment can see, and this is the object that already exists for exactly that.
+    ///
+    /// **It does not persist, and that is ruled** (D7, ratified by the owner 2026-08-30): a stats
+    /// screen whose default silently stopped being "here" is its own version of F17. This router is
+    /// `@State` on `RootView`, which `CypressApp` keys on `ObjectIdentifier(data.store)` — so an
+    /// inventory change (`AppModel.reboot()`, which a background download triggers) destroys it along
+    /// with everything else built on the old layer. A pick therefore cannot outlive the inventory it
+    /// was made against, which is the stale-selection hazard closed by construction rather than by a
+    /// check.
+    var journalArea: AreaSelection = .here
+    var journalCity: CitySelection = .here
 
     /// Sheets are modal over the current tab rather than pushed — screens 09, 10 and 15 are drawn
     /// as bottom sheets over a dimmed profile, not as full screens.

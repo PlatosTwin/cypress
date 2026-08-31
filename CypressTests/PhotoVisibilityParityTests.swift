@@ -84,7 +84,7 @@ struct PhotoVisibilityParityTests {
         func addTree(_ draft: TreeDraft) async throws -> Tree { throw APIError.forbidden }
         func species(id: UUID) async throws -> Species { throw APIError.notFound }
         func searchSpecies(query: String, limit: Int) async throws -> [Species] { [] }
-        func almanac(near coordinate: Coordinate?) async throws -> Almanac { .empty }
+        func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac { .empty }
         func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { [] }
         func beginPhotoUpload(_ r: PhotoUploadRequest) async throws -> PhotoUploadTicket {
             throw APIError.forbidden

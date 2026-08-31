@@ -102,6 +102,16 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
     /// only where the neighborhood holds none, which E115 measured as nowhere in the city.
     public let vacantSites: VacantSites?
 
+    /// Whether this almanac is about the area the reader's fix resolves, or one they chose.
+    ///
+    /// **What it decides is which blocks are honest, not which are interesting.** §4 — the coverage
+    /// gap, the app's one directed ask (D1) — asks the reader to go and look at particular trees,
+    /// and its second sentence is a claim about how far away they are from *the reader*
+    /// (`AlmanacMetrics.walkRadiusM`). Neither survives being asked about a neighborhood across
+    /// town, so `LocalAPI` withholds the block for `.picked` rather than printing an ask nobody can
+    /// answer. Everything else here is a fact about the place and is unchanged.
+    public let resolution: AreaResolution
+
     public init(
         area: AlmanacArea,
         firstBloom: BloomFirst? = nil,
@@ -109,7 +119,8 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
         newestNeighbors: RecentPlanting? = nil,
         composition: NeighborhoodComposition? = nil,
         coverage: CoverageGap? = nil,
-        vacantSites: VacantSites? = nil
+        vacantSites: VacantSites? = nil,
+        resolution: AreaResolution = .fromFix
     ) {
         self.area = area
         self.firstBloom = firstBloom
@@ -118,6 +129,7 @@ public struct AlmanacNeighborhood: Hashable, Sendable {
         self.composition = composition
         self.coverage = coverage
         self.vacantSites = vacantSites
+        self.resolution = resolution
     }
 }
 
@@ -409,6 +421,58 @@ public enum AlmanacLimits {
     /// spring plantings — which is why it is a cap and not a page size anybody has to think about.
     public static let recentPlantingRowLimit = 20
 
+    /// How far `SpeciesQueries.resolveNeighborhood(near:)` will look for the tree whose neighborhood
+    /// answers "which area is this".
+    ///
+    /// **400 m, which is the number that method has carried as a literal default since screen 07
+    /// added it.** Named here rather than left in the signature because a second thing now depends
+    /// on it — `fixCanResolveAnArea(accuracyM:)` below — and two copies of a distance that must be
+    /// the same distance is how they stop being the same distance.
+    public static let neighborhoodResolutionRadiusM: Double = 400
+
+    /// Whether a location fix of this stated accuracy may be used to say which area the reader is
+    /// standing in, given the radius the resolution actually searches.
+    ///
+    /// ── The two bounds, and why the caller names one ───────────────────────────────────────────
+    /// **There are two resolutions on the Journal and they do not search the same distance**, which
+    /// the first version of this rule missed (PR #132 review, F3):
+    ///
+    /// - the almanac's area comes from `SpeciesQueries.resolveNeighborhood(near:radiusM:)` at
+    ///   `neighborhoodResolutionRadiusM` — **400 m**;
+    /// - the City segment's comes from `CityQueries.resolveIDSpace(near:radiusM:)` at
+    ///   `fallbackRadiusM` — **1,200 m**.
+    ///
+    /// Keyed on 400 m for both, a fix good to 600 m blanked a City segment that could still answer,
+    /// and did answer on main. So the bound is the caller's, and each caller passes the radius its
+    /// own read runs over.
+    ///
+    /// ── The defect (tester report F17) ─────────────────────────────────────────────────────────
+    /// `MapLocationProvider.Availability.located` has always carried `accuracyM`, and nothing on the
+    /// path from it to screen 12 ever read it. So a fix good to ±5 m and a fix good to ±3,000 m were
+    /// treated identically: the app searched 400 m around the point for a tree, took that tree's
+    /// neighborhood, and printed the name in the header as plain fact. iOS returns exactly the
+    /// second kind of fix whenever the reader has granted **approximate** location rather than
+    /// precise — a point snapped to a large region tile, which for San Francisco lands near the
+    /// city's geographic middle. The nearest inventoried tree to the middle of San Francisco is in
+    /// **Castro/Upper Market**, which is the name the report says the screen "seems to default to".
+    ///
+    /// ── The rule ───────────────────────────────────────────────────────────────────────────────
+    /// **A fix whose own error circle is wider than the circle we search cannot pick out a tree
+    /// inside it.** At ±3,000 m a 400 m search is being run around a point the reader may be two
+    /// miles from, and the answer it returns is not a worse answer — it is an answer to a different
+    /// question, which is the shape this project's own verification rules warn about. So the screen
+    /// stops naming an area and asks the reader to choose one, which it can now do
+    /// (`AreaSelection`).
+    ///
+    /// **An unknown accuracy is permitted**, and that is the safe direction rather than the lenient
+    /// one: every live path supplies a number (`MapLocationProvider` publishes one with every fix,
+    /// substituting nothing), and the callers that pass `nil` are previews and tests driving a bare
+    /// coordinate. Refusing `nil` would blank those instead of leaving them exactly as they were.
+    public static func fixCanResolveAnArea(accuracyM: Double?, withinM radiusM: Double) -> Bool {
+        guard let accuracyM else { return true }
+        return accuracyM <= radiusM
+    }
+
     /// The radius of the fallback area, when no polygon in the record covers the reader
     /// (RULINGS **R29**).
     ///
@@ -443,7 +507,7 @@ public extension CypressAPI {
     /// second client does not have to invent a neighborhood to compile. `LocalAPI` overrides it
     /// with the real read; `RemoteAPI` overrides it to throw, because a server that does not exist
     /// has no answer at all, which is a different thing from an empty one.
-    func almanac(near coordinate: Coordinate?) async throws -> Almanac { .empty }
+    func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac { .empty }
 }
 
 // MARK: - Windows

@@ -46,7 +46,7 @@ struct AlmanacLocationTransitionTests {
     private final class ReadCountingAPI: CypressAPI, @unchecked Sendable {
         private(set) var reads: [Coordinate?] = []
 
-        func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
             reads.append(coordinate)
             return .empty
         }
@@ -91,7 +91,7 @@ struct AlmanacLocationTransitionTests {
     private final class SuspendingReadCountingAPI: CypressAPI, @unchecked Sendable {
         private(set) var reads: [Coordinate?] = []
 
-        func almanac(near coordinate: Coordinate?) async throws -> Almanac {
+        func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac {
             reads.append(coordinate)
             await Task.yield()
             return .empty

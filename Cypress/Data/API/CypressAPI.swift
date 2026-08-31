@@ -135,20 +135,31 @@ public protocol CypressAPI: Sendable {
     ///
     /// Defaulted in `Almanac.swift` to the empty almanac, which is what an implementation with no
     /// city inventory truthfully has.
-    func almanac(near coordinate: Coordinate?) async throws -> Almanac
+    ///
+    /// **`area` is the reader's own choice and `.here` is the shipping behavior** (`AreaSelection`).
+    /// The paragraph above described the only state this call had until the owner's 2026-08-28
+    /// backlog item; `.here` is still that state and still the default. What changed is that it is
+    /// no longer the only one, and the route for the other case is the `GET /neighborhoods/{id}/
+    /// almanac` the paragraph already names.
+    func almanac(near coordinate: Coordinate?, in area: AreaSelection) async throws -> Almanac
+
+    /// Every neighborhood and every city the live inventories can answer for — what the two pickers
+    /// offer (`AreaChoices`). Defaulted in `AreaSelection.swift` to nothing to pick from.
+    func areaChoices() async throws -> AreaChoices
 
     // MARK: - City
 
     /// The Journal tab's `City` segment. `near` is the caller's fix, or nil when there is none.
     ///
     /// Not a BUILD-PLAN §6 endpoint, for the same reason `almanac` is not one: it postdates the
-    /// contract. The city is resolved from the fix through the nearest inventoried tree's `id_space`
-    /// (`CityQueries.resolveIDSpace`) rather than named by the caller — this app has no mechanism for
-    /// naming one, on purpose (`City.swift`).
+    /// contract. With `city: .here` the city is resolved from the fix through the nearest
+    /// inventoried tree's `id_space` (`CityQueries.resolveIDSpace`), which is the shipping behavior
+    /// and the default; with `.city(idSpace:)` the caller names it, from a list the reader chose out
+    /// of (`areaChoices()`), which is never a name this app composed.
     ///
     /// Defaulted in `City.swift` to the empty payload, which is what an implementation with no city
     /// inventory truthfully has.
-    func city(near coordinate: Coordinate?) async throws -> CityAlmanac
+    func city(near coordinate: Coordinate?, in city: CitySelection) async throws -> CityAlmanac
 
     // MARK: - Sync
 

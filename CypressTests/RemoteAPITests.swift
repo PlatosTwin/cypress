@@ -266,8 +266,8 @@ struct RemoteAPITests {
         await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) {
             _ = try await api.speciesGuide(id: UUID(), near: here)
         }
-        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.almanac(near: here) }
-        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.city(near: here) }
+        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.almanac(near: here, in: .here) }
+        await #expect(throws: RemoteSurface.cityLayerIsAnsweredLocally) { _ = try await api.city(near: here, in: .here) }
     }
 
     /// The mutations of spec §3.4 that have no route refuse, and none of them reaches the wire.
@@ -755,6 +755,10 @@ struct RemoteAPITests {
         let allowed: Set<String> = [
             // Class L — the city layer is answered on the phone and this service has no route.
             "mapContent", "treesNear", "species", "searchSpecies", "speciesGuide", "almanac", "city",
+            // `areaChoices` is the two pickers' lists — an aggregate over the *installed*
+            // inventories, which under D16 the service cannot know. Class L, no route, same as
+            // the two above it that it belongs beside.
+            "areaChoices",
             // Spec §3.4's nine unqueued mutations, plus the export D12 has not built.
             "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
