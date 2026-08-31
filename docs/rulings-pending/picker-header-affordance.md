@@ -1,6 +1,19 @@
-### R__ · The Journal stats header pill is the area picker
+# Rulings pending — the Journal stats picker's affordance (owner decision, 2026-08-31)
 
-**Status:** ruled by the owner 2026-08-31; this entry records the design decided under it.
+Unnumbered, per CLAUDE.md "Numbering and shared files". The orchestrator splices this under a real
+number at merge and rewrites any comment that cites this filename. No code comment in this round
+cites it by filename; the two view files and `HeaderPillButton` say "the picker-header ruling,
+pending" in prose.
+
+One entry. It **supersedes** the affordance shipped in PR #132, on the owner's own later decision —
+which per `format1-retirement.md` is the only mechanism that may do that.
+
+---
+
+### R??? — The Journal stats header pill is the area picker
+
+**Date:** 2026-08-31. **Decided by:** owner. **Implemented by:** this round.
+
 **Supersedes:** the affordance shipped in PR #132 (`AreaPickerCopy.change`, a boxed
 `SecondaryOutlineButton` under the provenance sentence on both Journal stats segments).
 
