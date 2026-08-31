@@ -1062,6 +1062,19 @@ public enum DataGates {
             """)
         expect(badUUIDs == 0, "seed contract: \(badUUIDs) trees have a malformed uuid", into: &failures)
 
+        // …and is stored in **lower case**, which is a query-plan contract and not a spelling
+        // preference. See `armsWithUppercaseUUIDs`.
+        let shouty = try await armsWithUppercaseUUIDs(store)
+        expect(
+            shouty.isEmpty,
+            """
+            seed contract: \(shouty) store trees.uuid in something other than lower case, so \
+            GroveQueries' and TreeQueries' `lower()` joins would match none of their rows — an \
+            empty Grove and an unreachable tree profile, not a slow one
+            """,
+            into: &failures
+        )
+
         // Coordinates are inside their own city's declared bbox.
         //
         // **The box belongs to the id space, not to the file.** This used to be San Francisco's box
@@ -1593,5 +1606,40 @@ public enum DataGates {
         }
 
         return failures
+    }
+
+    /// Every attached inventory holding a `trees.uuid` that is not its own lower case, by pack id.
+    ///
+    /// **The property three joins now depend on for their plan.** `trees.uuid` is `NOT NULL
+    /// UNIQUE`, so its index is BINARY; the app stores Foundation's uppercase canonical string in
+    /// `main`; and the only comparison that both matches and seeks is `t.uuid = lower(<the app's
+    /// value>)`. That is sound exactly while every file stores uuids lower case —
+    /// `GroveQueries.treeJoin` and `TreeQueries.identityMatch` carry the argument, and this is where
+    /// it stops being an assumption. A file that broke it would not be slow, it would be **empty**:
+    /// the join matches nothing, the Grove shows no species and no trees, and the tree profile
+    /// cannot be opened. That is a failure the gate has to catch before a reader does.
+    ///
+    /// **Per file, and it has to be** — for the reason `MapQueryPlanTests.armsWithoutStatistics`
+    /// gives about statistics, plus one of its own: a downloaded pack's rows reach these joins
+    /// exactly as the bundle's do, and a bundled arm that is shadowed for an id space does not even
+    /// present its rows through `temp.trees`. Asked of the arm, the question is about the published
+    /// file, which is what the property belongs to.
+    ///
+    /// `EXISTS` rather than `COUNT(*)`: the answer is a bit, and on a healthy file SQLite stops at
+    /// the first row that satisfies nothing rather than walking a million.
+    public static func armsWithUppercaseUUIDs(_ store: CypressStore) async throws -> [String] {
+        let arms = store.inventory?.arms ?? []
+        return try await store.queue.read { connection in
+            try arms.compactMap { arm -> String? in
+                let column = arm.schema.treeIdentityColumn
+                let statement = try connection.cachedStatement("""
+                SELECT EXISTS(
+                    SELECT 1 FROM \(arm.schemaName).trees
+                     WHERE \(column) <> lower(\(column))
+                ) AS present
+                """)
+                return (try statement.fetchOne { try $0.bool("present") } ?? false) ? arm.id : nil
+            }
+        }
     }
 }

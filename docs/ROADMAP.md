@@ -282,6 +282,17 @@ that had not yet reached a build). What remains OPEN:
   the picker round is its designated fix, and should also decide what the screen says when the
   nearest tree is very far away.
 
+### Follow-up tickets from the 2026-08-30 rounds
+
+- **Map camera fits the filtered set.** "See them all on the map" (PR #130) arrives with the
+  remembered viewport, so the reader's trees can be off-screen; the owner ruled the link ships
+  as-is and the camera change is its own small round — camera policy carries its own errata
+  history, so it gets its own review, not a rider.
+- **Screen 12's `COLLATE NOCASE` joins.** `AlmanacQueries` lines ~321 and ~394 carry the same
+  index-defeating collation the Grove round (PR #131) removed from its own path; the almanac pays
+  the same class of full-inventory walk. Same fix shape (`lower()` + the seed-contract test PR
+  #131 added), and the query-plan gate should grow to cover these two statements.
+
 ### Owner backlog additions, 2026-08-28
 
 Three items queued by the owner, recorded verbatim in intent; none is scheduled yet.

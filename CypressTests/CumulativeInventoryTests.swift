@@ -417,6 +417,113 @@ struct CumulativeInventoryTests {
         }
     }
 
+    /// **Shadowing on My Grove's own path**, which is a different relation from the map's and had
+    /// to be given the rule again.
+    ///
+    /// `GroveQueries.speciesIDs` no longer reads `temp.trees`: the union computes that view's
+    /// `neighborhood_id` as a join output, so a predicate on it could not reach
+    /// `idx_trees_neighborhood` and the ring's denominator cost ~20× what it should. It reads
+    /// `temp.trees_area` instead — the `trees_geo` idiom, a narrow relation carrying each arm's own
+    /// keys. A new relation over the arms is a new place for shadowing to be forgotten, and a
+    /// forgotten exclusion here neither throws nor looks wrong: the ring counts species from a city
+    /// the reader has replaced, and reads a little low forever.
+    ///
+    /// The fixture makes the failure legible. `Platanus` stands **only** on the bundle's San
+    /// Francisco rows, which the pack shadows; `Quercus` stands only on the pack's. So:
+    ///
+    /// - the bundle's neighborhood must answer `{Ginkgo}` — its San Jose rows, and *no* Platanus.
+    ///   Without the shadow predicate in `trees_area` it answers `{Platanus, Ginkgo}`;
+    /// - the pack's must answer `{Quercus}`, translated through the pack's own numbering — the pack
+    ///   calls Quercus species 1 where the bundle calls Platanus species 1, so an untranslated read
+    ///   answers Platanus here too.
+    @Test("the Grove's area relation shadows the bundle exactly as the map's does")
+    func shadowingHoldsOnTheGroveSpeciesPath() async throws {
+        let dir = try Self.tempDir()
+        let bundleURL = dir.appendingPathComponent("bundle.sqlite")
+        let packURL = dir.appendingPathComponent("sf.sqlite")
+        let oak = SpeciesRow(
+            id: 1, uuid: "aaaaaaaa-0000-0000-0000-000000000003",
+            scientificName: "Quercus agrifolia"
+        )
+
+        // Contiguous by construction, so the rowid-range mechanism is the one under test: sf is
+        // 1…4 and carries Platanus, us-ca-sj is 5…7 and carries Ginkgo.
+        var trees = (1...4).map {
+            TreeRow(id: Int64($0), idSpace: "sf", lat: 37.7, lon: -122.4, speciesID: 1)
+        }
+        trees += (5...7).map {
+            TreeRow(id: Int64($0), idSpace: "us-ca-sj", lat: 37.3, lon: -121.9, speciesID: 2)
+        }
+        try Self.seed(
+            at: bundleURL, trees: trees, species: [Self.plane, Self.ginkgo],
+            neighborhoods: [(id: 1, name: "Bundled Hood")]
+        )
+        // The pack's San Francisco, numbering Quercus as species 1 — the id the bundle gives
+        // Platanus.
+        try Self.seed(
+            at: packURL,
+            trees: (1...2).map {
+                TreeRow(id: Int64($0), idSpace: "sf", lat: 37.75, lon: -122.45, speciesID: 1)
+            },
+            species: [
+                oak,
+                SpeciesRow(id: 2, uuid: Self.plane.uuid, scientificName: Self.plane.scientificName),
+                SpeciesRow(id: 3, uuid: Self.ginkgo.uuid, scientificName: Self.ginkgo.scientificName)
+            ],
+            neighborhoods: [(id: 1, name: "Packed Hood")]
+        )
+
+        let store = try await Self.store([
+            Self.file(bundleURL, bundled: true), Self.file(packURL, id: "sf")
+        ])
+        let schema = try #require(store.seed)
+        let queries = GroveQueries(schema: schema)
+
+        // The canonical ids are read back by name rather than assumed: neighborhoods are appended
+        // and renumbered, and which integer each lands on is the union's business.
+        let hoods: [String: Int] = try await store.queue.read { connection in
+            let statement = try connection.prepare(
+                "SELECT id AS id, name AS name FROM \(SeedDatabase.schemaName).neighborhoods"
+            )
+            defer { statement.finalize() }
+            return Dictionary(
+                uniqueKeysWithValues: try statement.fetchAll {
+                    (try $0.string("name"), try $0.int("id"))
+                }
+            )
+        }
+        let bundledHood = try #require(hoods["Bundled Hood"])
+        let packedHood = try #require(hoods["Packed Hood"])
+
+        func species(in hood: Int) async throws -> Set<String> {
+            let uuids = try await store.queue.read { connection in
+                try queries.speciesIDs(
+                    scope: .neighborhood(id: hood, name: "x"), connection: connection
+                ).items
+            }
+            return Set(uuids.map { $0.uuidString.lowercased() })
+        }
+
+        let fromBundle = try await species(in: bundledHood)
+        #expect(
+            fromBundle == [Self.ginkgo.uuid],
+            """
+            the bundle's neighborhood answered \(fromBundle) — Platanus (\(Self.plane.uuid)) \
+            stands only on rows the pack shadows, so its presence means trees_area is not applying \
+            the exclusion the map's relation applies
+            """
+        )
+        let fromPack = try await species(in: packedHood)
+        #expect(
+            fromPack == [oak.uuid],
+            """
+            the pack's neighborhood answered \(fromPack); Quercus is species 1 in the pack and \
+            Platanus is species 1 in the bundle, so Platanus here means the arm-local id was read \
+            without translating it
+            """
+        )
+    }
+
     /// **A pack never shadows another pack**, and the five New York boroughs are why: they share
     /// one id space, so an id-space rule applied between packs would delete Brooklyn the moment
     /// Manhattan was installed.
