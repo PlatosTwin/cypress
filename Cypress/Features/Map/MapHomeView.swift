@@ -727,8 +727,10 @@ struct MapHomeView: View {
     /// failed on exactly that ("the `Yours` chip is in the tree and cannot be activated" — the row
     /// had been left scrolled by a drawer that no longer fits).
     ///
-    /// **So five chips do not fit at 390 pt and which one loses is the owner's, not this round's**
-    /// (DECISIONS constraint 21). It is in PR #130's ratification list beside the camera.
+    /// **So five chips do not fit at 390 pt, and the owner ruled which one loses** (2026-08-30,
+    /// recorded via the orchestrator): `Clear filters` scrolls — the way out is one drag away, and
+    /// the filled chip at the leading edge is the always-visible second escape. The pin (option b)
+    /// was measured and refused; the arithmetic above is why.
     private func applyPendingFilter() {
         guard let pending = router.takePendingMapFilter() else { return }
         model.filter = pending

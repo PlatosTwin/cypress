@@ -24,7 +24,8 @@
 //  XCUITest scrolls an element into view before answering either — so this file measures frames
 //  against the window before it touches anything. The cause must be on screen; the way out must be
 //  on the same line. `MapHomeView.applyPendingFilter` carries the measurement for why the second
-//  of those is not "on screen" too, and it is in the PR's ratification list rather than fixed here.
+//  of those is not "on screen" too; the owner ruled (2026-08-30) that this is the arrangement that
+//  ships — `Clear filters` scrolls, the filled leading chip is the standing escape.
 //
 //  ── Why the journal has to be seeded ─────────────────────────────────────────────────────────
 //  The link draws only over a list (`JournalPresentation.offersMapLink`), and this device has made
@@ -94,7 +95,9 @@ final class SeeAllOnMapUITests: XCTestCase {
         // is the fifth chip of a one-line row that does not fit five chips on a 390 pt phone, so it
         // is in the row and one drag away — see `MapHomeView.applyPendingFilter` for the measurement
         // and for why pinning it beside the scroller is a worse trade rather than a fix. Which chip
-        // loses that width is the owner's call, so this file does not assert an answer to it.
+        // loses that width was ruled by the owner (2026-08-30): this one — `Clear filters`
+        // scrolls, and the filled leading-edge chip stays the visible escape. The assertions above
+        // pin the two halves of that ruling that are measurable.
         // ══════════════════════════════════════════════════════════════════════════════════════
         let screen = app.windows.firstMatch.frame
         let yoursBox = yours.frame
