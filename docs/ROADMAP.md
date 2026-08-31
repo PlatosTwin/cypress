@@ -307,7 +307,7 @@ that had not yet reached a build). What remains OPEN:
   ERRATA E287's two axes; the second, the installed inventory, is still open. The three decisions
   under the ruling — fit rather than centroid, most-recent-contribution as the tie rule, and the
   next city winning when the winning city's pack has been removed — are in
-  `docs/rulings-pending/see-all-camera.md` and were **ratified by the owner on 2026-08-31**, via
+  **RULINGS R87/R88** and were **ratified by the owner on 2026-08-31**, via
   the orchestrator, after the adversarial review.
 - **Screen 12's `COLLATE NOCASE` joins.** `AlmanacQueries` lines ~321 and ~394 carry the same
   index-defeating collation the Grove round (PR #131) removed from its own path; the almanac pays
