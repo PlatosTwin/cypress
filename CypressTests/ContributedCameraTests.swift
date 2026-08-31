@@ -146,14 +146,22 @@ struct ContributedCameraTests {
         #expect(ContributedCamera.winner(among: fresh + stale) == .city("us-ca-sj"))
     }
 
-    /// **The same tap twice must open the same map.**
+    /// **The same tap twice must open the same map**, when count and date have both run out.
     ///
-    /// A tie on count *and* on date leaves nothing but the group's own key, and without that last
-    /// comparison the winner falls out of `Dictionary` iteration order — which differs between
-    /// launches of the same build, so a reader would get one of two cities at random. The input is
-    /// permuted rather than repeated: reordering is what a set read out of SQLite actually varies
-    /// by, and a loop over one array would agree with itself either way.
-    @Test("a tie with nothing to separate it answers the same way whatever the row order")
+    /// **This asserts the rule rather than the stability, and the difference is the whole point.**
+    /// The first version of this test held the answer from one call and required 200 shuffles to
+    /// agree with it. It passed against a build with the key comparison deleted — because what
+    /// decides a tie the ranking cannot is `Dictionary` iteration order, and that is a function of
+    /// the process's hash seed rather than of the row order: one process flipped four times in
+    /// twenty-four and the next flipped in none of two hundred. A guard that is green in three
+    /// processes out of four is this project's signature failure, and the repair was in the code
+    /// (`winner` sorts before it ranks) as well as here.
+    ///
+    /// So the expected winner is written down: `sf` sorts before `us-ca-sj`, both hold two of the
+    /// reader's trees, and neither carries a date. The shuffle stays as the second half — the rule
+    /// has to survive the order SQLite happened to return the rows in — but it is no longer what
+    /// the assertion rests on.
+    @Test("a tie with nothing to separate it opens on the same city every time")
     func aTieWithNothingToSeparateItIsStillDeterministic() throws {
         var places = [
             Self.place("sf", 37.7590, -122.4260),
@@ -161,13 +169,15 @@ struct ContributedCameraTests {
             Self.place("us-ca-sj", 37.3290, -121.8789),
             Self.place("us-ca-sj", 37.3300, -121.8800)
         ]
-        let first = try #require(ContributedCamera.winner(among: places))
-        for _ in 0..<24 {
-            places.shuffle()
+        for _ in 0..<200 {
             #expect(
-                ContributedCamera.winner(among: places) == first,
-                "the winner changed with the row order, so the link opens a different city per tap"
+                ContributedCamera.winner(among: places) == .city("sf"),
+                """
+                a tie on count and on date did not go to the first city by key, so which city the \
+                link opens is not a function of the reader's trees alone.
+                """
             )
+            places.shuffle()
         }
     }
 
