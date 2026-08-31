@@ -583,6 +583,21 @@ public struct RoutedAPI: CypressAPI {
         }
     }
 
+    /// **Local, because the geometry is local.** The set of ids is joinable and is joined above; a
+    /// *coordinate* is not, because a coordinate comes from the attached inventory files and the
+    /// service has no view of which of them this phone has installed. Reading it from anywhere else
+    /// would put a pin on a map where the map has no tree.
+    ///
+    /// **And it is forwarded rather than inherited, which is the whole of why it is written out.**
+    /// `CypressAPI` defaults `contributedPlaces()` to the empty array, so a `RoutedAPI` that did not
+    /// name it would compile, satisfy the protocol, and answer `[]` for every reader in the shipping
+    /// composition — the camera would never move and every unit test would still be green, because
+    /// the unit tests hold a `LocalAPI`. That is ERRATA E125's shape a second time, and it is what
+    /// `SeeAllOnMapUITests` caught: the app on the device answered `[]` while the suite was green.
+    public func contributedPlaces() async throws -> [ContributedPlace] {
+        try await local.contributedPlaces()
+    }
+
     /// **Local, and this one cannot be joined — the reason is a sentence the service does not send.**
     ///
     /// `GET /me/journal` answers `{client_uuid, kind, tree_uuid, occurred_at, payload}`.
