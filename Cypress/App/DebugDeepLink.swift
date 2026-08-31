@@ -100,6 +100,10 @@ enum DebugDeepLink {
         case growthHistory      // 11
         case activity           // 13
         case measure            // 16
+        /// 03 on a tree that already carries **both** measurements — the state F28's `Add a reading`
+        /// link exists for, and one no seed tree is in. Writes two readings; see `fullyMeasuredTree`
+        /// for why it writes them onto a tree of its own.
+        case fullyMeasured
         case outbox             // 17
         case memorial           // 19 — reachable now via a local removal override (ERRATA E124-B)
         /// 03 over a tree a lead has **confirmed dead** (ERRATA E170) — the other outcome of the
@@ -286,6 +290,22 @@ enum DebugDeepLink {
                 // `.dbh`, which is 16 §2's drawn selection — this case opens the screen as screen
                 // 11's general link does, naming no measurement (RULINGS R15).
                 router.push(.measure(try await measuredTree(api), .dbh))
+            case .fullyMeasured:
+                // The data changes here, like `.memorial`, `.journalContributions` and the photo
+                // cases: no tree in the seed carries a reading, so the state F28 is about has no
+                // honest harness but one that writes the rows the way screen 16 writes them. Both
+                // client uuids are fixed, so a second run finds the readings rather than stacking a
+                // growth history a launch at a time.
+                let tree = try await fullyMeasuredTree(api)
+                try await api.debugSeedMeasurement(
+                    treeID: tree, kind: .dbh, value: 64, unit: .centimeters,
+                    clientUUID: fullyMeasuredDBHClientUUID
+                )
+                try await api.debugSeedMeasurement(
+                    treeID: tree, kind: .height, value: 18, unit: .meters,
+                    clientUUID: fullyMeasuredHeightClientUUID
+                )
+                router.push(.treeProfile(tree))
             case .species:
                 router.push(.species(try await anySpecies(api)))
             case .outbox:
@@ -608,6 +628,44 @@ enum DebugDeepLink {
     /// a case whose whole subject is the state of one row. The one collision it can eventually have
     /// is `.memorial`'s outward march reaching a quarter of the way out, which takes as many runs as
     /// there are records in between — the same exposure `.measure` has carried since E133.
+    /// The standing tree **five eighths** of the way out — the one the fully-measured case writes
+    /// onto (tester report F28).
+    ///
+    /// A sixth slot, under this file's standing rule. The five taken are the near end (`.memorial`,
+    /// marching outward), a quarter (`.anonymizedPhotos`), the middle (`.measure`), three quarters
+    /// (`.deadProfile`) and the far end (the photo cases). Five eighths sits between the middle and
+    /// three quarters with hundreds of records either side, which is the last gap of that size.
+    ///
+    /// **It must not be `measuredTree`, and the reason is E133 exactly.** That tree already collects
+    /// a DBH from `testSavingAMeasurementLeavesTheScreen`, so writing a height onto it would make it
+    /// fully measured — and a fully measured tree draws F28's link and *stops* drawing an empty stat
+    /// card, which is a change under nine other cases that read screen 03. E133 is the record of
+    /// what that costs; this is the same hazard one round later, avoided the same way.
+    ///
+    /// It marches nowhere: the same tree every run, re-seeded through fixed client uuids, which is
+    /// right for a case whose whole subject is the state of two rows.
+    private static func fullyMeasuredTree(_ api: LocalAPI) async throws -> UUID {
+        let candidates = try await candidates(api)
+        let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
+        guard !standing.isEmpty else {
+            throw Failure(
+                screen: "a standing tree carrying every measurement",
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
+            )
+        }
+        return standing[standing.count * 5 / 8].tree.id
+    }
+
+    /// The two readings `.fullyMeasured` writes, named once so every run writes the same two rows.
+    ///
+    /// Literals rather than derived values, for `checkInClientUUID`'s reason: `client_uuid` is what
+    /// the insert's `ON CONFLICT … DO NOTHING` keys on, so these constants *are* the idempotency,
+    /// and a key computed from anything that changes between runs would silently stop being one.
+    private static let fullyMeasuredDBHClientUUID =
+        UUID(uuidString: "F28D0000-0000-4000-8000-00000000DB40")!
+    private static let fullyMeasuredHeightClientUUID =
+        UUID(uuidString: "F28D0000-0000-4000-8000-000000004867")!
+
     private static func anonymizedPhotoTree(_ api: LocalAPI) async throws -> UUID {
         let candidates = try await candidates(api)
         let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
