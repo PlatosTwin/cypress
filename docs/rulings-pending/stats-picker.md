@@ -17,10 +17,13 @@ implemented, the change is recorded under it and marked.
 | **D5** — the honest coarse-fix state | **RATIFIED as shipped**, with each segment's bound corrected (F3 below) |
 | **D6** — the City segment names its city from `dim_city` | **RATIFIED as shipped** |
 | **D7** — a pick does not survive relaunch | **RATIFIED**: it resets, deliberately |
+| **F1 wording** — `AreaPickerCopy.resolvedFromFixRadius` | **RATIFIED** verbatim: *"Centered on where you are."* |
+| **F4 wording** — `AreaPickerCopy.qualified` | **RATIFIED** verbatim: `Downtown · San Jose`, collision-only |
 
-**Still open, and the only things on this page awaiting an answer:** the two wordings the review round
-had to write — `AreaPickerCopy.resolvedFromFixRadius` (F1) and `AreaPickerCopy.qualified` (F4). Both
-are marked **AWAITING RATIFICATION** where they appear.
+**Nothing on this page is awaiting an answer.** The two wordings the review round had to write —
+`AreaPickerCopy.resolvedFromFixRadius` (F1) and `AreaPickerCopy.qualified` (F4) — were the last two
+open items, and the owner ratified both **verbatim on 2026-08-30**, recorded by the orchestrator from
+the owner's own window after the D1–D7 block above. Each is marked ratified where it appears.
 
 ---
 
@@ -68,8 +71,11 @@ header.
 F2).** The first version drew the same card as a `ZStack` layer inside the segment's own content
 slot, which sits between the C5 segmented control and the tab bar and therefore covered neither: the
 review tapped `City` *through* the scrim, the segment switched, and the sheet vanished with no
-dismissal and no `onClose`. VoiceOver's rotor still reached every card underneath. A cover is a
-separate hosting context and closes all three at once.
+dismissal and no `onClose`. Through the cover the picker is **exactly as modal as 09, 10 and 15**,
+which is what the finding asked for: with it up, the controls at both ends of the screen report
+`isHittable == false`. Parity is the whole of the claim — driving screen 15's own cover as a control
+shows the background still enumerated in the accessibility hierarchy behind it too, so the cover does
+not buy this sheet a VoiceOver property the app's other sheets do not already have.
 
 The selection the sheet writes therefore lives on `AppRouter` (`journalArea` / `journalCity`), beside
 `journalSegment` and for a related reason: a `Route` is `Hashable` and cannot carry a closure back
@@ -80,13 +86,13 @@ keeps D7 true.
 would have to be drawn as a shape (R57 forbids SF Symbols) — a new glyph for a control the app
 already has.
 
-### Two chips with one label (PR #132 review, F4) — **AWAITING RATIFICATION**
+### Two chips with one label (PR #132 review, F4) — **RATIFIED by the owner, 2026-08-30**
 
 `InventoryUnionSQL` deliberately does not merge neighborhoods across arms — *"two cities may each
 have a `Downtown`, and merging those would put San Jose's trees in a San Francisco neighborhood"* —
 so under R84's union the picker can be handed two rows with one name and nothing to choose between.
 
-**Proposed, and built:** qualify **only a name that actually collides**, in the app's own middle-dot
+**Ratified, and built:** qualify **only a name that actually collides**, in the app's own middle-dot
 idiom — `Downtown · San Jose`. Qualifying unconditionally would print a city beside all 41 of San
 Francisco's names when nobody is choosing between cities; qualifying nothing leaves two identical
 chips. A record with no city name on file is left unqualified rather than given an empty suffix.
@@ -114,7 +120,7 @@ surface small.
 - resolved from the reader's fix **through a polygon**, i.e. the nearest inventoried tree —
   **"Chosen from the tree nearest you in the city record."**
 - resolved from the reader's fix **through R29's radius fallback**, where no polygon covers them —
-  **"Centered on where you are."** — **AWAITING RATIFICATION**
+  **"Centered on where you are."** — **RATIFIED by the owner, 2026-08-30**, verbatim
 - picked by the reader, almanac — **"You're reading a place you're not in, so the section asking you
   to go and look is left out."**
 - picked by the reader, City — **"You're reading a city you're not in, so the comparison with your

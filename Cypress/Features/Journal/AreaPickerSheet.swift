@@ -21,10 +21,17 @@
 //    from the composition root, through `RootView`'s single `.fullScreenCover(isPresented:)`, keyed
 //    on `AppRouter.sheet`. The first version of this file was a `ZStack` layer inside the tab's own
 //    content, which looked identical and was not modal: the PR #132 review tapped the C5 segmented
-//    control *through* the scrim and the sheet vanished with no dismissal, the scrim stopped short
-//    of the segmented control and the tab bar, and VoiceOver's rotor still reached every card
-//    underneath. A cover fixes all three at once because it is a separate hosting context, which is
-//    the property `RootView`'s comment is protecting when it insists on one cover for all of them.
+//    control *through* the scrim and the sheet vanished with no dismissal, and the scrim stopped
+//    short of the segmented control and the tab bar. Through the cover this sheet is **exactly as
+//    modal as 09, 10 and 15** — the finding was that it was unlike every other `BottomSheet` in the
+//    app, and parity is the fix. Measured: with it up, the controls at both ends of the screen
+//    report `isHittable == false`. That is the property `RootView`'s comment is protecting when it
+//    insists on one cover for all of them.
+//
+//    **No accessibility claim is made beyond that parity, deliberately.** Driving screen 15's
+//    ratified cover as a control shows the background still enumerated in the accessibility
+//    hierarchy behind it too, so the cover buys this sheet the same modality the app's other
+//    sheets have and not a stronger one. XCUITest's element tree is not VoiceOver's rotor.
 //  - **C1 `ScreenHeader`** titles it, as it titles the sheets.
 //  - **C4 `Chip`, `.filterSelected` / `.filterIdle`, in a `CypressChipFlow`** is the app's existing
 //    "choose one of these" control — it is screen 01's map filter row, verbatim, and it already

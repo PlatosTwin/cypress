@@ -68,6 +68,15 @@ final class AreaPickerUITests: XCTestCase {
         // `isHittable` is the property that separates the two, and it is checked at both ends of the
         // screen because the old layer left the segmented control and the tab bar equally live. An
         // element behind a modal presentation still **exists** — this must not be an existence check.
+        //
+        // ── What this pair does NOT prove, stated where the next reader meets it ──────────────────
+        // It catches a sheet drawn **inside the tab's content**, which is the defect that shipped,
+        // and nothing narrower than that. It was red-proved against that exact arrangement, and it
+        // was also tried against a full-window `.overlay` on the `NavigationStack`, where it
+        // **passed** — correctly, since such an overlay does cover both controls. So this cannot
+        // tell a `fullScreenCover` from any other full-window layer, and it is not a proof that the
+        // presentation is a system modal. It also says nothing about VoiceOver: the background stays
+        // in the accessibility hierarchy behind a cover, so only hittability is being witnessed here.
         XCTAssertFalse(
             app.buttons["City"].isHittable,
             "the segmented control is tappable behind the picker's scrim, so the sheet is not modal"

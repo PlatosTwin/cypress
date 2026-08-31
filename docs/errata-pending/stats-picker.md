@@ -140,20 +140,28 @@ The same round drew its picker as `ZStack { column; if isPicking { BottomSheet(�
 `AlmanacScreen` and `CityScreen`. It rendered correctly, dismissed correctly, and was not a modal.
 
 The segment's content slot sits **between** the C5 segmented control and the tab bar in
-`JournalTabView`'s `VStack`, so a layer inside it covers neither. Three consequences, all found by a
+`JournalTabView`'s `VStack`, so a layer inside it covers neither. Two consequences, both found by a
 reviewer on the device:
 
 1. the scrim stopped short of the segmented control and behind the tab bar;
 2. **the controls behind it were live** — a tap on `City` switched segments and cancelled the sheet
-   with no dismissal and no `onClose`, a fourth exit R42 never designed;
-3. VoiceOver modality was lost: the column was not `.accessibilityHidden`, so the rotor still reached
-   `Change`, the header pill and every card underneath.
+   with no dismissal and no `onClose`, a fourth exit R42 never designed.
 
 Every other `BottomSheet` in the app (09, 10, 15) is presented from the composition root through
-`RootView`'s single `.fullScreenCover(isPresented:)`, keyed on `AppRouter.sheet`, and gets all three
+`RootView`'s single `.fullScreenCover(isPresented:)`, keyed on `AppRouter.sheet`, and gets both
 properties from the cover being a separate hosting context. `RootView`'s own comment already says why
 there is exactly one cover; what it did not say — and now does — is that a feature drawing its own
 card inside its own content is the failure mode on the other side of that rule.
+
+**A third consequence was written here and then withdrawn, because it did not survive measurement.**
+The first draft said VoiceOver modality was lost as well — the column was not `.accessibilityHidden`,
+so the rotor still reached `Change`, the header pill and the cards underneath — and that presenting
+through the cover fixed it. The second half is not something this presentation delivers: with the
+cover up the background is still enumerated in the accessibility hierarchy, and **the control settles
+it** — screen 15's own ratified cover, the same presentation, behaves identically. Only `isHittable`
+flips. So the honest statement is parity with 09, 10 and 15, which is exactly what the finding asked
+for; XCUITest's element tree is not VoiceOver's rotor, and no claim about the rotor is supported by
+anything run here.
 
 **A note on the guard that now pins this**, because it is narrower than it looks:
 `AreaPickerUITests` asserts `!app.buttons["City"].isHittable` and `!app.buttons["Journal"].isHittable`

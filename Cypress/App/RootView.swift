@@ -359,9 +359,18 @@ struct RootView: View {
             // **It is here rather than inside the Journal tab, and that is the whole of PR #132's
             // second review finding.** Drawn as a `ZStack` layer inside the tab's own content it
             // looked identical and was not modal: the scrim stopped short of the C5 segmented
-            // control and the tab bar, a tap on `City` behind the scrim switched segments and
-            // cancelled the sheet with no dismissal at all, and VoiceOver's rotor still reached
-            // every card underneath. A cover is a separate hosting context and fixes all three.
+            // control and the tab bar, and a tap on `City` behind the scrim switched segments and
+            // cancelled the sheet with no dismissal at all. Presented here, from the one cover,
+            // the picker is **exactly as modal as the app's other sheets** — 09, 10 and 15 — which
+            // is what the finding asked for. Measured on the device: with the cover up, every
+            // element behind it reports `isHittable == false`, at both ends of the screen, and
+            // `AreaPickerUITests` asserts two of them.
+            //
+            // **What is deliberately not claimed here is any change to what VoiceOver reaches.**
+            // Measured with a control — screen 15's own ratified cover, the same presentation —
+            // the background is still enumerated in the accessibility hierarchy behind both, so
+            // parity is what this delivers and nothing stronger. XCUITest's element tree is not
+            // the rotor, so the rotor's behavior is untested either way and must not be asserted.
             //
             // The selection it writes lives on `AppRouter` because `Route` is `Hashable` and cannot
             // carry a closure back into a feature's `@State` — see `AppRouter.journalArea`.
