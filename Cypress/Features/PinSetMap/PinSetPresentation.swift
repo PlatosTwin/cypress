@@ -121,44 +121,21 @@ struct PinSetPresentation: Equatable {
     /// spread over a neighborhood and a group on one block both get the same visual margin. It
     /// reuses `BoundingBox.expanded(by:)`, which the map already uses to fetch a little more than the
     /// screen.
+    ///
+    /// **The arithmetic moved to `MapCameraFrame.around(_:padding:)` and did not change.** Screen 01
+    /// now fits a camera to a set of the reader's trees as well (the Journal's `See them all on the
+    /// map` link), and both wanted the same three rules — hold everything, pad by a fraction of the
+    /// extent, floor at `MapLayout.defaultSpanMeters`. Two copies of those rules would be two camera
+    /// policies that happen to agree today. What stays here is the **empty** answer, because that is
+    /// a fact about screen 12 rather than about boxes: the almanac never builds an empty group, and
+    /// a box has to exist regardless.
     static func frame(around pins: [TreePin]) -> BoundingBox {
-        let coordinates = pins.map(\.coordinate)
-        guard let first = coordinates.first else {
+        MapCameraFrame.around(pins.map(\.coordinate), padding: PinSetMetrics.framePadding)
             // No pins means no group, and the almanac does not build one — but a box has to exist, so
             // it is the city's own default view rather than the null island off the coast of Africa.
-            return BoundingBox(around: MapLayout.defaultCenter, radiusM: MapLayout.defaultSpanMeters / 2)
-        }
-
-        let enclosing = coordinates.dropFirst().reduce(
-            BoundingBox(
-                minLatitude: first.latitude,
-                maxLatitude: first.latitude,
-                minLongitude: first.longitude,
-                maxLongitude: first.longitude
+            ?? BoundingBox(
+                around: MapLayout.defaultCenter, radiusM: MapLayout.defaultSpanMeters / 2
             )
-        ) { box, coordinate in
-            BoundingBox(
-                minLatitude: min(box.minLatitude, coordinate.latitude),
-                maxLatitude: max(box.maxLatitude, coordinate.latitude),
-                minLongitude: min(box.minLongitude, coordinate.longitude),
-                maxLongitude: max(box.maxLongitude, coordinate.longitude)
-            )
-        }.expanded(by: PinSetMetrics.framePadding)
-
-        let floor = BoundingBox(
-            around: Coordinate(
-                latitude: (enclosing.minLatitude + enclosing.maxLatitude) / 2,
-                longitude: (enclosing.minLongitude + enclosing.maxLongitude) / 2
-            ),
-            radiusM: MapLayout.defaultSpanMeters / 2
-        )
-
-        return BoundingBox(
-            minLatitude: min(enclosing.minLatitude, floor.minLatitude),
-            maxLatitude: max(enclosing.maxLatitude, floor.maxLatitude),
-            minLongitude: min(enclosing.minLongitude, floor.minLongitude),
-            maxLongitude: max(enclosing.maxLongitude, floor.maxLongitude)
-        )
     }
 }
 
@@ -289,9 +266,11 @@ enum PinSetCopy {
 enum PinSetMetrics {
     /// How much room the camera leaves around the group, as a fraction of the group's own extent.
     ///
-    /// **NOT SPECIFIED.** 0.25 is a quarter of the spread on each side, which keeps the outermost pin
-    /// clear of the frame edge at the aspect ratios a phone actually has — a pin drawn hard against
-    /// the edge reads as "there are more of these off screen", which is the one thing this map must
-    /// not imply when it is showing the whole group.
-    static let framePadding: Double = 0.25
+    /// **The number moved to `MapCameraFrame.padding` and this name still resolves to it.** Screen
+    /// 01 fits a camera to a group now too, so the fraction stopped being this screen's own; the
+    /// argument for the value — a quarter of the spread on each side keeps the outermost pin clear
+    /// of the frame edge, and a pin against the edge reads as "there are more off screen" — is
+    /// written where the number now lives. The name is kept because it is what this screen's own
+    /// prose calls it and renaming a shared identifier costs every live branch a compile.
+    static let framePadding: Double = MapCameraFrame.padding
 }

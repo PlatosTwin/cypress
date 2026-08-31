@@ -3144,6 +3144,73 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// `mapMembership(.yours)` with its geometry resolved — the camera's half of the Journal link.
+    ///
+    /// **The id set is not re-derived**: it is `contributedTreeIDs`, the same statement the `Yours`
+    /// chip reads, so the camera and the pins cannot be answering two different questions. What is
+    /// added is where each of those trees stands, and it comes from two places because the trees do:
+    ///
+    /// - **the inventory union**, through `TreeQueries.places(ids:)`. An id the union does not hold
+    ///   is simply absent, which is how a tree whose city pack has been removed leaves the camera's
+    ///   arithmetic without leaving the reader's journal (ERRATA E287's second axis, and R41 forbids
+    ///   saying why). It is also why the fallback the ruling asks for needs no code: a city with no
+    ///   installed inventory contributes no place, so it cannot win the vote.
+    /// - **`community_trees`**, for the ids the union did not answer for. A tree the reader added is
+    ///   the most emphatically theirs there is (`MapMembership.yours`), it is drawn on screen 01 by
+    ///   `mapContent`'s own merge, and a camera that ignored it would frame everything except the
+    ///   one pin the reader is proudest of.
+    ///
+    /// **A community tree's city is resolved, not assumed.** It carries no `id_space` — the column
+    /// belongs to the inventory files — so its city is the `id_space` of the nearest inventoried
+    /// row within `AlmanacLimits.fallbackRadiusM`, which is `CityQueries.resolveIDSpace`'s whole
+    /// argument: a fact read off a row rather than an inference about a coordinate, degrading to
+    /// nothing rather than to a plausible-looking wrong city. One statement per community tree in
+    /// the set, over a table that holds what this one installation has added.
+    public func contributedPlaces() async throws -> [ContributedPlace] {
+        let device = deviceID
+        let user = userID
+        return try await store.queue.read { connection in
+            let ids = try contributions.contributedTreeIDs(
+                userID: user, deviceID: device, connection: connection
+            )
+            guard !ids.isEmpty else { return [] }
+            let times = try contributions.contributedTreeTimes(
+                userID: user, deviceID: device, connection: connection
+            )
+
+            let inventory = try treeQueries?.places(ids: Array(ids), connection: connection) ?? []
+            var places = inventory.map {
+                ContributedPlace(
+                    treeID: $0.treeID,
+                    idSpace: $0.idSpace,
+                    coordinate: $0.coordinate,
+                    contributedAt: times[$0.treeID]
+                )
+            }
+
+            let placed = Set(inventory.map(\.treeID))
+            let unplaced = ids.subtracting(placed)
+            guard !unplaced.isEmpty else { return places }
+            for tree in try communityTrees.trees(
+                ids: Array(unplaced), connection: connection
+            ).values {
+                places.append(
+                    ContributedPlace(
+                        treeID: tree.id,
+                        idSpace: try cityQueries?.resolveIDSpace(
+                            near: tree.coordinate,
+                            radiusM: AlmanacLimits.fallbackRadiusM,
+                            connection: connection
+                        ),
+                        coordinate: tree.coordinate,
+                        contributedAt: times[tree.id]
+                    )
+                )
+            }
+            return places
+        }
+    }
+
     // MARK: - Reports and export
 
     public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {

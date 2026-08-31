@@ -33,6 +33,8 @@ extension BoundingBox {
 
     /// Whether this box already covers `other` entirely. The map uses it to answer "is there
     /// anything off-screen I have not fetched yet?" without touching the database.
+    ///
+    /// (The inverse conversion — box to region — is on `MKCoordinateRegion` below.)
     func contains(_ other: BoundingBox) -> Bool {
         minLatitude <= other.minLatitude && maxLatitude >= other.maxLatitude
             && minLongitude <= other.minLongitude && maxLongitude >= other.maxLongitude
@@ -48,6 +50,30 @@ extension BoundingBox {
             maxLatitude: maxLatitude + latitudePad,
             minLongitude: minLongitude - longitudePad,
             maxLongitude: maxLongitude + longitudePad
+        )
+    }
+}
+
+extension MKCoordinateRegion {
+
+    /// A fitted box, as MapKit's own camera type.
+    ///
+    /// **This lived in `PinSetMapView` and its own comment said why**: `MapGeography` converted a
+    /// region into a box, which was the only direction screen 01 needed, and adding the inverse to
+    /// a shared file for one screen's single use would have been surface bought for nothing. That
+    /// stopped being true when screen 01 gained a fitted camera of its own (the Journal's `See them
+    /// all on the map` link) — there are two callers now, on two screens, and the conversion is the
+    /// same arithmetic in both.
+    init(_ box: BoundingBox) {
+        self.init(
+            center: CLLocationCoordinate2D(
+                latitude: (box.minLatitude + box.maxLatitude) / 2,
+                longitude: (box.minLongitude + box.maxLongitude) / 2
+            ),
+            span: MKCoordinateSpan(
+                latitudeDelta: box.maxLatitude - box.minLatitude,
+                longitudeDelta: box.maxLongitude - box.minLongitude
+            )
         )
     }
 }

@@ -383,6 +383,69 @@ enum MapOpening {
         remembered ? .whereYouLeftOff : .theCityFallback
     }
 
+    /// **The two one-shots screen 01's opening camera runs on, and how one holds the other back.**
+    ///
+    /// ── Why this is a value and not two `@State` booleans ────────────────────────────────────
+    /// It was one boolean and a captured copy of it, assigned in three places inside `MapHomeView`,
+    /// and it had a lifecycle defect no test could reach (PR #135 review, F4). `hasCenteredOnUser`
+    /// was doing two jobs — "the opening centering has happened" and "a fit is in flight, hold the
+    /// fly-to-you back" — and those have **different lifetimes**: the first lasts as long as the
+    /// screen, the second only as long as one armed narrowing. Overloading them meant a second
+    /// arming captured the first one's `true`, the cancelled first task never restored it, and a
+    /// second read that found nothing left the reader with neither their trees nor the fly-to-you.
+    ///
+    /// Two facts, two properties, and the transitions named — so the sequence that produced that
+    /// state is three lines in a test rather than a screen nobody can drive.
+    ///
+    /// ── What it deliberately does not hold ───────────────────────────────────────────────────
+    /// `MapCameraMemory.shared.readerMovedCamera`, the third condition on the fly-to-you. That one
+    /// is process-scoped and survives the tab switch that remakes this view (task #128, and E140
+    /// for why it is a gesture flag rather than a comparison of cameras); folding it in here would
+    /// give it this value's much shorter life.
+    struct OneShots: Equatable {
+
+        /// Whether the opening centering has already happened — on the reader, or on the reader's
+        /// own trees, which are the two ways this screen can answer #115.
+        private(set) var hasCenteredOnUser = false
+
+        /// Whether an armed fit is in flight and holding the fly-to-you back.
+        ///
+        /// **It dies with the arming that set it**, which is the whole of the repair: every path
+        /// out of a fit clears it, and a *cancelled* fit clears nothing, because the arming that
+        /// superseded it owns the flag by then.
+        private(set) var isFittingToYours = false
+
+        /// Whether the opening fly-to-you may run. The reader's own trees outrank the reader.
+        var mayCenterOnUser: Bool { !hasCenteredOnUser && !isFittingToYours }
+
+        /// The link armed a narrowing and a fit is going out. Claimed **synchronously**, before the
+        /// read's first `await`: a fix landing inside that window is precisely the owner's blank
+        /// screen, arriving a second late.
+        mutating func armFit() {
+            isFittingToYours = true
+        }
+
+        /// The fit landed a camera. The opening centering has now happened — on their trees rather
+        /// than on them — so a fix arriving later must not yank the camera off it.
+        mutating func fitLandedCamera() {
+            isFittingToYours = false
+            hasCenteredOnUser = true
+        }
+
+        /// The fit had nothing to aim at (`ContributedCamera.frame` answered nil). The suppression
+        /// ends and the opening one-shot is left exactly as it was found, so the ordinary opening
+        /// behavior resumes — see that function's header for why this is not "the camera stays
+        /// where it is".
+        mutating func fitFoundNothing() {
+            isFittingToYours = false
+        }
+
+        /// The fly-to-you ran.
+        mutating func centeredOnUser() {
+            hasCenteredOnUser = true
+        }
+    }
+
     static func wait(for availability: MapLocationProvider.Availability) -> Wait {
         switch availability {
         case .notAsked: return .permission

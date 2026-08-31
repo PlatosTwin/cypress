@@ -794,6 +794,7 @@ private struct ProbeAPI: CypressAPI {
     }
     func deviceContributions() async throws -> DeviceContributions { throw log.reached("deviceContributions") }
     func mapMembership(_ kind: MapMembership) async throws -> Set<UUID> { throw log.reached("mapMembership") }
+    func contributedPlaces() async throws -> [ContributedPlace] { throw log.reached("contributedPlaces") }
     func logHazardRedirect(_ event: HazardRedirectEvent) async throws { throw log.reached("logHazardRedirect") }
     func exportLatest(_ format: ExportFormat) async throws -> Data { throw log.reached("exportLatest") }
 }
@@ -1118,6 +1119,7 @@ struct APIConformanceGuardTests {
         await check("deleteAccount") { _ = try await api.deleteAccount(.leaveRecords) }
         await check("deviceContributions") { _ = try await api.deviceContributions() }
         await check("mapMembership") { _ = try await api.mapMembership(.favorites) }
+        await check("contributedPlaces") { _ = try await api.contributedPlaces() }
         await check("logHazardRedirect") {
             try await api.logHazardRedirect(
                 HazardRedirectEvent(treeID: id, category: .hangingOrBrokenLimb, shownAt: .now)

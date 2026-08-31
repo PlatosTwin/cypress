@@ -1210,27 +1210,78 @@ public struct ContributionStore {
         deviceID: UUID,
         connection: SQLiteConnection
     ) throws -> Set<UUID> {
-        let owner = """
-             WHERE deleted_at IS NULL
-               AND (device_id = :device COLLATE NOCASE
-                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-            """
         let statement = try connection.cachedStatement("""
-            SELECT DISTINCT tree_uuid FROM (
-                SELECT tree_uuid FROM visits \(owner)
-                UNION ALL
-                SELECT tree_uuid FROM observations \(owner)
-                UNION ALL
-                SELECT tree_uuid FROM measurements \(owner)
-                UNION ALL
-                SELECT tree_uuid FROM care_events \(owner)
-                UNION ALL
-                SELECT id AS tree_uuid FROM community_trees WHERE deleted_at IS NULL
-            )
+            SELECT DISTINCT tree_uuid FROM (\(Self.contributedRowsSQL))
             """)
         let bindings: [String: SQLiteBindable?] = [":device": deviceID, ":user": userID]
         _ = try statement.bind(bindings)
         return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
+    }
+
+    /// **The five arms of `Yours`, written once.**
+    ///
+    /// `contributedTreeIDs` above and `contributedTreeTimes` below are the same question asked for
+    /// two different answers — which trees, and when each was last touched — and E287 is an entry
+    /// about three surfaces that answer "which trees are mine" and disagree. A second copy of this
+    /// union would be a fourth. So the arms live here and the two statements differ only in what
+    /// they fold.
+    ///
+    /// `at` is `captured_at` on the four contribution tables — the moment the reader was at the
+    /// tree, which is what `journal` and `grove` already order by, never `created_at`, which is
+    /// when the row reached the database. `community_trees` has no `captured_at`; adding one is
+    /// what the record would say if the reader had told it, and they did not, so that arm uses
+    /// `created_at` and the difference is stated here rather than smoothed over.
+    private static let contributedRowsSQL = """
+                SELECT tree_uuid, captured_at AS at FROM visits \(ownerClause)
+                UNION ALL
+                SELECT tree_uuid, captured_at AS at FROM observations \(ownerClause)
+                UNION ALL
+                SELECT tree_uuid, captured_at AS at FROM measurements \(ownerClause)
+                UNION ALL
+                SELECT tree_uuid, captured_at AS at FROM care_events \(ownerClause)
+                UNION ALL
+                SELECT id AS tree_uuid, created_at AS at FROM community_trees
+                 WHERE deleted_at IS NULL
+        """
+
+    /// The ownership predicate the four contribution tables share. See `contributedTreeIDs` for why
+    /// both arms are read and why `community_trees` has none.
+    private static let ownerClause = """
+         WHERE deleted_at IS NULL
+           AND (device_id = :device COLLATE NOCASE
+                OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+        """
+
+    /// When each tree under `Yours` was last contributed to.
+    ///
+    /// **Not a count and not a score** — D1 and ARCHITECTURE §5.1 both apply here exactly as they
+    /// apply to `contributedTreeIDs`, and this is why the fold is `MAX` rather than `COUNT`: one
+    /// moment per tree, which no caller can turn into "you have visited this tree nine times".
+    ///
+    /// The one caller is the camera the `See them all on the map` link opens on, where it breaks a
+    /// tie between two cities holding the same number of the reader's trees. Nothing renders it.
+    ///
+    /// **`MAX` over a TEXT column is a string comparison, and that is the right one here** for the
+    /// reason `SQLiteTimestamp`'s own header gives: every timestamp in this database is written in
+    /// one fixed-width UTC spelling, so lexicographic order is chronological order. Two spellings
+    /// of the same second can order between themselves by their fractional part; nothing this value
+    /// decides can see a difference that small.
+    public func contributedTreeTimes(
+        userID: UUID?,
+        deviceID: UUID,
+        connection: SQLiteConnection
+    ) throws -> [UUID: Date] {
+        let statement = try connection.cachedStatement("""
+            SELECT tree_uuid, MAX(at) AS at FROM (\(Self.contributedRowsSQL))
+             GROUP BY tree_uuid
+            """)
+        let bindings: [String: SQLiteBindable?] = [":device": deviceID, ":user": userID]
+        _ = try statement.bind(bindings)
+        var times: [UUID: Date] = [:]
+        for row in try statement.fetchAll({ (id: try $0.uuid("tree_uuid"), at: try $0.date("at")) }) {
+            times[row.id] = row.at
+        }
+        return times
     }
 
     /// Every tree this reader is still holding a favorite on — screen 01's `Favorites` chip.

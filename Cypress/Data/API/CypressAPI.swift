@@ -302,6 +302,16 @@ public protocol CypressAPI: Sendable {
     /// app failed to load because a requirement lived in an extension and dispatched statically.
     func mapMembership(_ kind: MapMembership) async throws -> Set<UUID>
 
+    /// Where the reader's own trees stand — `mapMembership(.yours)` with its geometry resolved.
+    ///
+    /// One caller, one decision: the camera the Journal's `See them all on the map` link opens on.
+    /// See `ContributedPlace` for why the ids and the coordinates are two calls rather than one,
+    /// and for what this type deliberately does not carry.
+    ///
+    /// Defaulted in `ContributedPlace.swift` to the empty array. **Declared here and not only in an
+    /// extension**, for `mapMembership`'s reason above and ERRATA E125's.
+    func contributedPlaces() async throws -> [ContributedPlace]
+
     // MARK: - Reports and export
 
     /// `POST /reports/hazard-redirect` — logs that a 311 redirect was shown. Analytics only, no

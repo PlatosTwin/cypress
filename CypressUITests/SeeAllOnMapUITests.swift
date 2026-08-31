@@ -149,6 +149,79 @@ final class SeeAllOnMapUITests: XCTestCase {
         )
     }
 
+    // MARK: - The camera
+
+    /// **The owner's report, reproduced and closed** (2026-08-31, build 63): the link "just takes
+    /// you to the map, and if you're nowhere near a city it shows blank."
+    ///
+    /// ── How the blank is produced deterministically ──────────────────────────────────────────
+    /// Both the reader's location and the map's opening camera are **pinned to San Jose** — a city
+    /// the bundled inventory really covers, sixty-eight kilometers from where this device's one
+    /// contribution is. The reader is therefore standing in a city with a full map and none of
+    /// their own trees in it, which is the state the report describes, and it is a state rather
+    /// than a coincidence: `CYPRESS_LOCATION` and `CYPRESS_MAP_CAMERA` are R58's and R73's seams
+    /// for exactly this, and neither run inherits anything from the last one.
+    ///
+    /// The camera coordinate is measured, not chosen: it is the densest 0.002° bin of the
+    /// `us-ca-sj` id space in `Cypress/Resources/cypress-seed.sqlite` — **601 trees inside the
+    /// ±250 m box `Tools/run_tests.sh` counts**, 66 inside the 120 m opening view — so a failure
+    /// here is never "the map had nothing to draw anywhere".
+    ///
+    /// ── What is asserted, and why it is the pin count ────────────────────────────────────────
+    /// The promise is that the reader's trees are **on screen**, and a pin is the only thing that
+    /// says so from outside the app. Narrowed to `Yours`, San Jose draws none — every tree there
+    /// belongs to somebody else — so this counts zero without the camera move and at least one
+    /// with it. `MapPanProbe`'s trace rides along so a red run says which of the two happened
+    /// rather than leaving the next reader to guess (task #241).
+    ///
+    /// The chip assertions are `testTheLinkOpensTheMapNarrowedToYours…`'s job and are not repeated:
+    /// what is checked here is only what that test cannot see, which is where the map is pointed.
+    func testTheLinkCentersTheMapOnTheCityWhereTheReaderHasTheMostTrees() {
+        let app = launch(camera: Self.anotherCity, location: Self.anotherCity, probe: true)
+        guard arrive(app) else { return }
+
+        let link = app.buttons[Self.link]
+        assertReachable(link, "the journal drew rows and no way onto the map")
+        link.tap()
+
+        let yours = app.buttons[Self.yoursChip]
+        XCTAssertTrue(
+            yours.waitForExistence(timeout: 30),
+            "the map never drew its filter row, so the link did not land on screen 01"
+        )
+
+        XCTAssertTrue(
+            wait(timeout: 40, for: { self.cityTreePins(app) > 0 }),
+            """
+            the map opened narrowed to “\(Self.yoursChip)” and drew no tree at all. The camera is \
+            still over the city the reader is standing in — where they have contributed nothing — \
+            which is the owner's blank screen. Camera trace: \(self.probeSummary(app))
+            """
+        )
+    }
+
+    /// The densest San Jose bin, and the whole of what makes the test above deterministic. See its
+    /// doc for the measurement; the format is `DebugMapCameraOverride.parse`'s `lat,lon`, which
+    /// `DebugLocationOverride` accepts unchanged for a pinned fix.
+    private static let anotherCity = "37.329024,-121.878931"
+
+    /// `MapPin.Kind.cityTree`'s own first word — the same proxy `MapSearchUITests.cityTreePins`
+    /// uses, including its finding that this must match `label` and not `identifier`: screen 01's
+    /// pins set no identifier, and `matching(identifier:)` therefore counts zero and reads as an
+    /// empty map.
+    private func cityTreePins(_ app: XCUIApplication) -> Int {
+        app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "City tree"))
+            .count
+    }
+
+    /// `MapPanProbe`'s trace, for a failure message. Literal identifier for this target's usual
+    /// reason — nothing here imports `Cypress`.
+    private func probeSummary(_ app: XCUIApplication) -> String {
+        let probe = app.staticTexts["CypressPanProbe"]
+        return probe.exists ? probe.label : "(no CypressPanProbe element)"
+    }
+
     // MARK: - Harness
 
     private func launch() -> XCUIApplication {
@@ -158,6 +231,20 @@ final class SeeAllOnMapUITests: XCTestCase {
         // `DebugMapCamera`'s own header). Nothing here reads a pin, but a camera over open water
         // draws no map chrome worth waiting on and the failure would read as a defect in the link.
         DebugMapCamera.pin(app)
+        app.launch()
+        return app
+    }
+
+    /// The same launch with the two things the camera test has to state rather than inherit.
+    ///
+    /// `location` is R58's seam and `camera` is R73's; between them a run of this class depends on
+    /// nothing the previous run left on the device, which is what E216 and E262 are both about.
+    private func launch(camera: String, location: String, probe: Bool) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["CYPRESS_SCREEN"] = "journalContributions"
+        app.launchEnvironment[DebugMapCamera.key] = camera
+        app.launchEnvironment["CYPRESS_LOCATION"] = location
+        if probe { app.launchEnvironment["CYPRESS_PAN_PROBE"] = "1" }
         app.launch()
         return app
     }
