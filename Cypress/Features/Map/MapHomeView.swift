@@ -86,7 +86,12 @@ struct MapHomeView: View {
     /// re-ran the one-shot and re-centered a camera the reader had deliberately panned away: #85's
     /// defect arriving through the tab bar. `centerOnUserIfNeeded()` therefore also consults
     /// `MapCameraMemory.shared.readerMovedCamera`, which survives the identity reset.
-    @State private var hasCenteredOnUser = false
+    ///
+    /// **It is a value with two facts in it rather than a `Bool`, since PR #135's review** — the
+    /// second being whether an armed fit is holding this one-shot back. The two have different
+    /// lifetimes and one boolean carrying both stranded the fly-to-you on a second arming (F4).
+    /// `MapOpening.OneShots` carries the argument and the transitions.
+    @State private var oneShots = MapOpening.OneShots()
     /// Whether the current wait for a location has gone on long enough to owe the reader a sentence.
     /// Driven by the task below; the decision it feeds is `MapOpening.standing`.
     @State private var waited = false
@@ -775,26 +780,37 @@ struct MapHomeView: View {
     /// reader asked to see their trees, so their trees win for this arrival. It is claimed
     /// synchronously, before the read goes out, because the fix can land inside that window.
     ///
-    /// **And it is given back when there is nothing to show.** A reader whose every contributed
-    /// tree is in a city pack they have since removed has no camera to be moved to (E287's second
-    /// axis, and R41 forbids a message saying why). Suppressing the fly-to-you for a move that
-    /// never happens would take away a good camera and offer nothing, so the one-shot is restored
-    /// and asked again.
+    /// **And it ends when there is nothing to show — it is not handed to the next arming.** A
+    /// reader whose every contributed tree is in a city pack they have since removed has no camera
+    /// to be moved to (E287's second axis, and R41 forbids a message saying why). The suppression
+    /// then ends and `centerOnUserIfNeeded()` is asked again, so the ordinary opening behavior
+    /// resumes — which may well **move the map, to the reader**. Stillness was ratified for the
+    /// *fit*, not for the screen; `ContributedCamera.frame` carries that distinction.
+    ///
+    /// **The suppression is its own flag and it dies with the arming that set it** (PR #135 review,
+    /// F4). It used to be a captured copy of `hasCenteredOnUser`, restored on the nothing-to-show
+    /// path — and a second arming while the first read was in flight captured the first one's
+    /// `true`, while the cancelled first task restored nothing. The reader then got neither their
+    /// trees nor the fly-to-you. `MapOpening.OneShots` splits the two facts because they have two
+    /// lifetimes; the transitions below are its whole vocabulary, and a cancelled task takes none
+    /// of them, because by then the arming that superseded it owns the flag.
     private func fitCameraToYours() {
         yoursCameraTask?.cancel()
         // Claimed before the `await`, not after: a fix arriving while the read is out would
         // otherwise fly to the reader and be overwritten a moment later, which is two camera moves
         // for one tap.
-        let wasCentered = hasCenteredOnUser
-        hasCenteredOnUser = true
+        oneShots.armFit()
         yoursCameraTask = Task { @MainActor in
             let places = (try? await api.contributedPlaces()) ?? []
             guard !Task.isCancelled else { return }
             guard let frame = ContributedCamera.frame(for: places) else {
-                hasCenteredOnUser = wasCentered
+                oneShots.fitFoundNothing()
                 centerOnUserIfNeeded()
                 return
             }
+            // The opening centering has happened, on their trees. A fix arriving later must not
+            // yank the camera off them, which is what spending the one-shot here prevents.
+            oneShots.fitLandedCamera()
             position = .move(to: MKCoordinateRegion(frame))
         }
     }
@@ -815,10 +831,15 @@ struct MapHomeView: View {
         // flag is set by a real gesture on the glass (never by comparing cameras, E140) and lives
         // for the process, so a pan survives Journal-and-back. A camera the reader never touched
         // still centers on them here, which is #115's promise kept.
-        guard !hasCenteredOnUser,
+        //
+        // **And a third gate since PR #135**: `mayCenterOnUser` is false while an armed fit is in
+        // flight. A reader who pressed `See them all on the map` asked for their trees, and a fix
+        // landing in the window between that press and the read returning would otherwise answer a
+        // question they did not ask.
+        guard oneShots.mayCenterOnUser,
               !MapCameraMemory.shared.readerMovedCamera,
               let coordinate = location.availability.coordinate else { return false }
-        hasCenteredOnUser = true
+        oneShots.centeredOnUser()
         recenterWhenFixArrives = false
         flyTo(coordinate, meters: MapLayout.defaultSpanMeters)
         return true

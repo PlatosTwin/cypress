@@ -149,39 +149,66 @@ struct ContributedCameraTests {
         #expect(ContributedCamera.winner(among: fresh + stale) == .city("us-ca-sj"))
     }
 
-    /// **The same tap twice must open the same map**, when count and date have both run out.
+    /// **A tie with nothing to separate it goes to the first group by key** — the rule, stated.
     ///
-    /// **This asserts the rule rather than the stability, and the difference is the whole point.**
-    /// The first version of this test held the answer from one call and required 200 shuffles to
-    /// agree with it. It passed against a build with the key comparison deleted — because what
-    /// decides a tie the ranking cannot is `Dictionary` iteration order, and that is a function of
-    /// the process's hash seed rather than of the row order: one process flipped four times in
-    /// twenty-four and the next flipped in none of two hundred. A guard that is green in three
-    /// processes out of four is this project's signature failure, and the repair was in the code
-    /// (`winner` sorts before it ranks) as well as here.
+    /// `sf` sorts before `us-ca-sj`, both hold two of the reader's trees, and neither carries a
+    /// date, so key 3 is the only thing deciding this.
     ///
-    /// So the expected winner is written down: `sf` sorts before `us-ca-sj`, both hold two of the
-    /// reader's trees, and neither carries a date. The shuffle stays as the second half — the rule
-    /// has to survive the order SQLite happened to return the rows in — but it is no longer what
-    /// the assertion rests on.
-    @Test("a tie with nothing to separate it opens on the same city every time")
-    func aTieWithNothingToSeparateItIsStillDeterministic() throws {
-        var places = [
+    /// **What this test cannot do is prove key 3 is what decided it**, and two versions of it have
+    /// now failed to. The first held the answer from one call and required 200 shuffles to agree
+    /// with it — green against a build with key 3 deleted. The second wrote the expected winner
+    /// down and was still green against that build, because with key 3 gone the answer comes out of
+    /// `Dictionary` iteration order, which is a function of the **process hash seed** and not of
+    /// the row order: the reviewer measured green, green, and a coin flip across three processes
+    /// (PR #135 review, F2). No amount of permuting `places` can reach past a dictionary. That is
+    /// `theRankingDoesNotDependOnTheOrderItIsHandedIn` below, which asks `best` directly.
+    @Test("a tie with nothing to separate it opens on the first city by key")
+    func aTieWithNothingToSeparateItGoesToTheFirstKey() throws {
+        let places = [
             Self.place("sf", 37.7590, -122.4260),
             Self.place("sf", 37.7610, -122.4230),
             Self.place("us-ca-sj", 37.3290, -121.8789),
             Self.place("us-ca-sj", 37.3300, -121.8800)
         ]
-        for _ in 0..<200 {
-            #expect(
-                ContributedCamera.winner(among: places) == .city("sf"),
-                """
-                a tie on count and on date did not go to the first city by key, so which city the \
-                link opens is not a function of the reader's trees alone.
-                """
-            )
-            places.shuffle()
-        }
+        #expect(
+            ContributedCamera.winner(among: places) == .city("sf"),
+            "a tie on count and on date did not go to the first city by key"
+        )
+    }
+
+    /// **The ranking's one guarantee: the order it is handed in does not reach the answer.**
+    ///
+    /// This is the guard `aTieWithNothingToSeparateItGoesToTheFirstKey` above could not be, and the
+    /// reason it works is that it asks `ContributedCamera.best` — which takes an **array** — rather
+    /// than `winner`, which builds a dictionary first. A dictionary's order is the process's, not
+    /// the test's; an array's is the test's, so "permute the input" is a thing that can actually be
+    /// done here.
+    ///
+    /// **It goes red the moment key 3 is deleted**, deterministically and in both directions:
+    /// without a total order `max(by:)` keeps whichever tied standing it met first, so `[sf, sj]`
+    /// answers `sf` and `[sj, sf]` answers `us-ca-sj`. One of the two `#expect`s below is then
+    /// wrong on every process. That is the whole of F2's repair on the test side; the code side was
+    /// to delete the redundant pre-sort, so key 3 is now the only thing holding this up.
+    ///
+    /// Both permutations are written out rather than shuffled: there are two, and a loop over a
+    /// randomizer would make a deterministic property into a probabilistic one for no gain.
+    @Test("the ranking does not depend on the order it is handed in")
+    func theRankingDoesNotDependOnTheOrderItIsHandedIn() throws {
+        let sanFrancisco = ContributedCamera.Standing(group: .city("sf"), count: 2, latest: nil)
+        let sanJose = ContributedCamera.Standing(group: .city("us-ca-sj"), count: 2, latest: nil)
+
+        #expect(
+            ContributedCamera.best(among: [sanFrancisco, sanJose]) == .city("sf"),
+            "a tie on count and date did not go to the first group by key"
+        )
+        #expect(
+            ContributedCamera.best(among: [sanJose, sanFrancisco]) == .city("sf"),
+            """
+            reversing the two tied groups changed the winner, so the ranking is not a total order \
+            and which city the link opens depends on the order the rows arrived in — which is the \
+            process's hash seed, not the reader's trees.
+            """
+        )
     }
 
     /// **A group of one gets a camera with a street on it.**
@@ -227,12 +254,18 @@ struct ContributedCameraTests {
         )
     }
 
-    /// **Nothing to show moves nothing**, which is the honest answer and is what the link already
+    /// **Nothing to show aims nothing**, which is the honest answer and is what the link already
     /// did. A reader whose every contributed tree is in a city pack they have since removed keeps
     /// their journal rows and has no pin the map can draw (ERRATA E287); there is no camera that
-    /// shows them their trees, so the camera stays where it is.
-    @Test("no places at all leaves the camera alone")
-    func nothingToShowMovesNoCamera() {
+    /// shows them their trees, so this round proposes none.
+    ///
+    /// **It does not follow that the screen holds still, and the first version of this comment said
+    /// it did** (PR #135 review, F3). `MapHomeView.fitCameraToYours()` answers a nil frame by
+    /// ending its suppression and asking `centerOnUserIfNeeded()` again, which may fly the map to
+    /// the reader. What is asserted here is what the ruling ratified — that the **fit** stays
+    /// silent rather than inventing a plausible box — not that the map does not move.
+    @Test("no places at all aims no camera")
+    func nothingToShowAimsNoCamera() {
         #expect(ContributedCamera.frame(for: []) == nil)
     }
 

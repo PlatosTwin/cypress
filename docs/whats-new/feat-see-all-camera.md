@@ -4,10 +4,11 @@
 # most trees." That supersedes the deferral ERRATA E287 records — the link shipped keeping the
 # remembered viewport, and the camera was ratified as a follow-up rather than fixed.
 #
-# Three decisions inside it are the round's proposals rather than the owner's words, and all three
-# are in the pull request for ratification: fit the whole set in the winning city rather than center
-# on its middle; break a tie between two cities on the most recent contribution; and, when the
-# winning city's pack has been removed, let the next city win rather than showing nothing.
+# Three decisions inside it were the round's proposals rather than the owner's words, and all three
+# were ratified by the owner on 2026-08-31 via the orchestrator: fit the whole set in the winning
+# city rather than center on its middle; break a tie between two cities on the most recent
+# contribution; and, when the winning city's pack has been removed, let the next city win rather
+# than showing nothing.
 #
 # It rides the same one-shot the narrowing does, so pressing the `Yours` chip on the map still moves
 # nothing — a reader already looking at the map chose the camera they are looking at.

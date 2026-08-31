@@ -609,3 +609,114 @@ struct MapOpeningCameraApplyTests {
         #expect(fired == 1, "the hook fired \(fired) times — it is a first-layout hook, not an observer")
     }
 }
+
+// MARK: - The two one-shots, and the lifetime one of them has
+
+/// **`MapOpening.OneShots`** — the opening fly-to-you, and the suppression an armed fit holds it
+/// back with.
+///
+/// ── Why this suite exists at all ─────────────────────────────────────────────────────────────
+/// The state it covers lived inside `MapHomeView` as one `@State` boolean and a captured copy of
+/// it, and it had a lifecycle defect that no test in this repository could reach: a SwiftUI view's
+/// private state is not drivable, and the sequence that produced the defect — two armings, the
+/// first cancelled, the second finding nothing — is not reachable from the UI either, because the
+/// only caller of `goToMap(showing:)` sits on another tab and a tab change remakes the view. The
+/// review found it by reading (PR #135, F4). Reading is not a guard, so the state came out of the
+/// view and the sequence is three lines below.
+@Suite("Screen 01's opening one-shots")
+struct MapOpeningOneShotsTests {
+
+    /// **The claim is synchronous, and that is the owner's blank screen in one assertion.** The
+    /// fit's read is `async`; a fix landing between the tap and the read returning would otherwise
+    /// fly the map to the reader — who, in the report, is sixty-eight kilometers from every tree
+    /// they have contributed to.
+    @Test("an armed fit holds the fly-to-you back from the moment it is armed")
+    func armingSuppressesTheFlyToYouAtOnce() {
+        var oneShots = MapOpening.OneShots()
+        #expect(oneShots.mayCenterOnUser, "the fly-to-you was blocked before anything armed a fit")
+
+        oneShots.armFit()
+        #expect(
+            !oneShots.mayCenterOnUser,
+            """
+            a fix arriving while the fit is still being read would fly the map to the reader, and \
+            the fit would then overwrite it — two camera moves for one tap, and the wrong one first.
+            """
+        )
+    }
+
+    /// **A fit that lands spends the opening one-shot.** The centering has happened; it happened on
+    /// the reader's trees rather than on the reader. A fix arriving a second later must not pull the
+    /// camera off them, which is #85's complaint aimed at a camera the reader did ask for.
+    @Test("a fit that lands a camera spends the opening one-shot")
+    func aLandedFitSpendsTheOneShot() {
+        var oneShots = MapOpening.OneShots()
+        oneShots.armFit()
+        oneShots.fitLandedCamera()
+
+        #expect(
+            !oneShots.mayCenterOnUser,
+            "a later fix could still fly the map off the trees the reader asked to be shown"
+        )
+    }
+
+    /// **A fit that finds nothing gives the fly-to-you back**, rather than leaving the reader with
+    /// neither their trees nor themselves.
+    ///
+    /// This is the removed-packs corner (ERRATA E287's second axis): the journal rows survive, the
+    /// pins do not, and there is no camera that shows the reader their trees. The ordinary opening
+    /// behavior is what is owed then, and it is what the ruling ratified — stillness for the *fit*,
+    /// not for the screen.
+    @Test("a fit that finds nothing gives the fly-to-you back")
+    func aFitThatFindsNothingRestoresTheFlyToYou() {
+        var oneShots = MapOpening.OneShots()
+        oneShots.armFit()
+        oneShots.fitFoundNothing()
+
+        #expect(
+            oneShots.mayCenterOnUser,
+            """
+            the reader has no camera onto their own trees and has now also lost the opening \
+            centering, so the map holds whatever camera it happened to open on.
+            """
+        )
+    }
+
+    /// **The defect this value was extracted to make reachable** (PR #135 review, F4).
+    ///
+    /// Two armings while the first read is still out: the first is cancelled and takes no
+    /// transition, the second resolves with nothing to aim at. The suppression must die with the
+    /// arming that set it, so the reader still gets the fly-to-you.
+    ///
+    /// It went red as written against the shape this replaced — a captured `wasCentered` restored on
+    /// the nothing-to-show path — because the second call captured the first call's `true` and
+    /// restored *that*.
+    @Test("a second arming does not strand the suppression the first one set")
+    func aSecondArmingDoesNotStrandTheSuppression() {
+        var oneShots = MapOpening.OneShots()
+        // The link is pressed; the read goes out.
+        oneShots.armFit()
+        // Pressed again before it answers. The first task is cancelled and takes no transition —
+        // the arming that superseded it owns the flag now.
+        oneShots.armFit()
+        // The second read answers with nothing to aim at.
+        oneShots.fitFoundNothing()
+
+        #expect(
+            oneShots.mayCenterOnUser,
+            """
+            the suppression outlived the arming that set it: the reader gets neither the camera \
+            onto their trees nor the opening fly-to-you. This is the state F4 named.
+            """
+        )
+    }
+
+    /// The fly-to-you is still a one-shot, which is task #85's whole subject. Asserted here because
+    /// this value is now where that fact lives.
+    @Test("the fly-to-you runs once")
+    func theFlyToYouIsStillAOneShot() {
+        var oneShots = MapOpening.OneShots()
+        oneShots.centeredOnUser()
+        #expect(!oneShots.mayCenterOnUser, "the map would re-center on every later fix (#85)")
+    }
+}

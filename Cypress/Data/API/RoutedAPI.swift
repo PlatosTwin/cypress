@@ -591,9 +591,19 @@ public struct RoutedAPI: CypressAPI {
     /// **And it is forwarded rather than inherited, which is the whole of why it is written out.**
     /// `CypressAPI` defaults `contributedPlaces()` to the empty array, so a `RoutedAPI` that did not
     /// name it would compile, satisfy the protocol, and answer `[]` for every reader in the shipping
-    /// composition — the camera would never move and every unit test would still be green, because
-    /// the unit tests hold a `LocalAPI`. That is ERRATA E125's shape a second time, and it is what
-    /// `SeeAllOnMapUITests` caught: the app on the device answered `[]` while the suite was green.
+    /// composition — the camera would never move. That is ERRATA E125's shape a second time.
+    ///
+    /// **The unit suite catches that, and this comment used to deny it** (PR #135 review, F1). The
+    /// reviewer deleted this forward and ran the guard, which named the member exactly:
+    /// `APIConformanceGuardTests.everyShippingConformanceDeclaresEveryRequirement` answered
+    /// `missing → [contributedPlaces() -> [ContributedPlace]]`. That gate has covered `RoutedAPI`
+    /// since #158 step 4, and this defect class is what it is for. Nothing here needs a second
+    /// guard, and nobody should build one on the strength of this comment.
+    ///
+    /// What did happen on the branch is narrower, and is about *when* rather than about coverage:
+    /// the requirement landed in one commit, the forward in a later one, and the **full** unit suite
+    /// was not run in between — so `SeeAllOnMapUITests` caught the missing forward **first**, not
+    /// **only**. A gate you have not run yet is not a gate you have.
     public func contributedPlaces() async throws -> [ContributedPlace] {
         try await local.contributedPlaces()
     }

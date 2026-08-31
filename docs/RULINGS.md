@@ -8505,8 +8505,8 @@ screen that is not asking for anything else, and it is a bigger change than this
 **Built:** the header's trailing pill carries `dim_city.display_name`, read through
 `id_spaces.city_id`, and carries nothing when the record has no name on file.
 
-**This reverses three comments rather than a ruling** — see **ERRATA E284**. The rule they stated was true until seed schema 16 put the
-name on disk. What stays forbidden is composing a name from an id space's key or an inventory's
+**This reverses three comments rather than a ruling** — see **ERRATA E284**. The rule they stated
+was true until seed schema 16 put the name on disk. What stays forbidden is composing a name from an id space's key or an inventory's
 title, which is what R28 and R48 actually closed.
 
 **Alternative:** keep the bare `City` header and name the city only inside the picker. Safe, and it

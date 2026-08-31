@@ -65,13 +65,14 @@ reader?). Nothing here is reachable from the search bar.
 
 ---
 
-### R??? — The three decisions under that ruling, with the alternatives, for ratification
+### R??? — The three decisions under that ruling, ratified 2026-08-31, with the alternatives they were chosen over
 
-**Date:** 2026-08-31. **Decided by:** this round, under DECISIONS constraint 21. **Awaiting the
-owner's ratification.** Each is stated with what was not chosen, so ratifying is a choice rather
-than a re-derivation.
+**Date:** 2026-08-31. **Proposed by:** this round, under DECISIONS constraint 21. **RATIFIED by
+the owner, 2026-08-31, via the orchestrator** — all three, as proposed, after the adversarial
+review of PR #135. Each is kept with the alternative it was chosen over, because a ratification
+that discards what it ruled out leaves the next round to re-derive it.
 
-#### 1. The camera **fits** the winning city's trees; it does not center on their middle
+#### 1. The camera **fits** the winning city's trees; it does not center on their middle — RATIFIED
 
 "Centered on where the trees are" has two readings when the trees are spread over a neighborhood.
 This round fits: the box holds every one of the reader's trees in the winning city, padded by a
@@ -86,7 +87,7 @@ which is the defect ERRATA E129 and E144 both are — a screen that names a grou
 The arithmetic is not new: it is `PinSetPresentation.frame(around:)`'s, moved to
 `MapCameraFrame.around(_:padding:)` unchanged and now called from both screens.
 
-#### 2. A tie between two cities goes to the **most recent contribution**
+#### 2. A tie between two cities goes to the **most recent contribution** — RATIFIED
 
 Two cities holding the same number of the reader's trees is a genuine tie, and the reader's own
 answer to "which of these am I in" is the one they were at last. A third key — the city's own
@@ -105,7 +106,7 @@ process flipped four times in twenty-four permutations and the next flipped in n
 `ContributedCamera.winner` now sorts by the group's key before it ranks, and the test asserts the
 rule instead of its own first answer.
 
-#### 3. A city whose inventory is gone cannot win, and the next city takes it
+#### 3. A city whose inventory is gone cannot win, and the next city takes it — RATIFIED
 
 E287's second axis: a journal row survives its tree's city pack being removed, and the pin does not.
 So a reader can have four contributions in a city they no longer have installed and one in a city
@@ -121,6 +122,31 @@ city still wins and the camera opens on an empty box. That is honest about the r
 useless as a camera, and R41 forbids the map saying why it is empty.
 
 *The corner where nothing can be done, stated rather than hidden:* a reader **every** one of whose
-contributions is in removed packs gets no camera and the map stays where it was. There is no view
-that shows those trees, so the honest move is not to move — which is what the link did before this
-round, and the one case where that was already right.
+contributions is in removed packs gets no fitted camera at all. There is no view that shows those
+trees, so the honest move is for this round to aim nothing.
+
+**That corner is where the screen goes on doing what it always did, and it is not stillness — an
+earlier draft of this paragraph said it was** (PR #135 review, F3, corrected in three places). What
+happens is that `MapHomeView.fitCameraToYours()` ends its suppression and asks
+`centerOnUserIfNeeded()` again, so the map may fly to **the reader**. That is the pre-round
+behavior, unchanged, and it is right: what was ratified above is stillness for the *fit* — the
+policy declines to invent a plausible box — not suppression of an opening fly-to-you that has
+nothing to do with this ruling. A reader with no drawable trees is better served by being shown
+where they are than by a camera frozen wherever the app happened to open.
+
+
+---
+
+### On the device
+
+Both states, on the iPhone 16 Pro simulator, with the reader's location and the map's opening camera
+pinned to the densest San Jose bin (`37.329024,-121.878931`) while every contribution is in San
+Francisco, sixty-eight kilometers away:
+
+- `docs/design-proposals/images/see-all-camera-before-blank-san-jose.png` — the `Yours` chip filled,
+  streets drawn, **no pin**. The owner's report.
+- `docs/design-proposals/images/see-all-camera-after-fitted-san-francisco.png` — the camera in the
+  Mission with both contributed trees on screen, with margin.
+
+The adversarial reviewer of PR #135 reproduced both independently on a second device (iPhone 16 Pro
+Max, 440 pt) and reports the same two screens.

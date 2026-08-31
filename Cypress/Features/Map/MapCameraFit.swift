@@ -133,10 +133,26 @@ enum ContributedCamera {
         }
     }
 
-    /// Which group the camera should open on, or nil when there is nothing to open on.
+    /// One group, tallied — what the ranking sees, and the only thing it sees.
+    struct Standing: Equatable {
+        let group: Group
+        let count: Int
+        /// The newest contribution to any tree in the group, or nil when no row dates one.
+        let latest: Date?
+    }
+
+    /// The ranking, over a list **whose order the caller chooses**.
     ///
-    /// **The order of the three keys is the ruling, then determinism, then determinism again.**
+    /// ── Why this is separate from `winner(among:)`, and takes an array ───────────────────────
+    /// Because its one guarantee is that the order does not matter, and that is not assertable
+    /// against a `Dictionary`: the sequence a dictionary yields is a function of this process's
+    /// hash seed, so a test that permutes the *places* and gets the same answer has proved nothing
+    /// about the ranking — it has observed that one process's seed did not change. That is exactly
+    /// how this round's first determinism guard came to be green against a build with key 3
+    /// deleted (PR #135 review, F2). Handed an array, the property is a fact about the ranking and
+    /// a test can put the two orders in by hand.
     ///
+    /// ── The three keys: the ruling, the reader, and totality ─────────────────────────────────
     /// 1. **Most trees.** The owner's sentence, and the whole of the decision on any real input.
     /// 2. **The most recent contribution.** Two cities holding the same number of the reader's
     ///    trees is a genuine tie, and the reader's own answer to "which of these am I in" is the
@@ -147,20 +163,31 @@ enum ContributedCamera {
     ///    and would make the two camera paths agree. It loses because "the biggest city wins" is a
     ///    fact about the inventory rather than about the reader, and this camera is the reader's.
     /// 3. **The group's own key, ascending.** Dates can be nil and can be equal, so a ranking that
-    ///    stopped at 2 can still call two cities the same — and a reader who taps the link twice
-    ///    must get the same map twice. The key is unique per group, so adding it makes the ranking
-    ///    a strict *total* order and the winner unique.
+    ///    stopped at 2 can still call two groups the same — and a reader who taps the link twice
+    ///    must get the same map twice.
     ///
-    /// **The dictionary is sorted before it is ranked, and that is not belt-and-braces.** A
-    /// `Dictionary`'s iteration order is a function of this process's hash seed, which Swift
-    /// randomizes per launch, so anything the ranking cannot decide would be decided by the seed:
-    /// the same build, the same rows, and a different city tomorrow. Sorting by the group's own key
-    /// first takes the seed out of the input.
-    ///
-    /// **Measured, not assumed.** With comparison 3 removed, permuting the rows flipped the winner
-    /// four times in twenty-four in one process and not once in twenty-four in the next — which is
-    /// this project's signature guard failure (a test that reports green while the defect is
-    /// present) hiding inside the standard library.
+    /// **Key 3 is the whole of the determinism and there is deliberately no second mechanism.**
+    /// `sortKey` is unique per group, so with key 3 the comparison is a strict *total* order and
+    /// the maximum is unique — it is a property of the comparison rather than of the sequence, so
+    /// no input order and no `max(by:)` tie behavior can reach it. A previous version also sorted
+    /// the input by `sortKey` before ranking. It was removed rather than kept as belt-and-braces:
+    /// two mechanisms either of which suffices are two mechanisms **neither of which any test can
+    /// hold**, which the review measured — deleting either one alone left the whole suite green
+    /// (F2). One answer, one guard.
+    static func best(among standings: [Standing]) -> Group? {
+        standings.max { lhs, rhs in
+            if lhs.count != rhs.count { return lhs.count < rhs.count }
+            let lhsLatest = lhs.latest ?? .distantPast
+            let rhsLatest = rhs.latest ?? .distantPast
+            if lhsLatest != rhsLatest { return lhsLatest < rhsLatest }
+            // Reversed, so the *smallest* key is the maximum, which makes ascending key order the
+            // readable rule. Total, because `sortKey` is unique per group: no two distinct
+            // standings compare equal, so the maximum does not depend on where they sit.
+            return lhs.group.sortKey > rhs.group.sortKey
+        }?.group
+    }
+
+    /// The tally. Which group the camera should open on, or nil when there is nothing to open on.
     static func winner(among places: [ContributedPlace]) -> Group? {
         var counts: [Group: (count: Int, latest: Date?)] = [:]
         for place in places {
@@ -172,24 +199,27 @@ enum ContributedCamera {
             }
             counts[group] = tally
         }
-        return counts.sorted { $0.key.sortKey < $1.key.sortKey }.max { lhs, rhs in
-            if lhs.value.count != rhs.value.count { return lhs.value.count < rhs.value.count }
-            let lhsLatest = lhs.value.latest ?? .distantPast
-            let rhsLatest = rhs.value.latest ?? .distantPast
-            if lhsLatest != rhsLatest { return lhsLatest < rhsLatest }
-            // Reversed, so the *smallest* key is the maximum: `max(by:)` keeps the first element
-            // nothing after it beats, and ascending key order is the readable rule.
-            return lhs.key.sortKey > rhs.key.sortKey
-        }?.key
+        // Handed to the ranking in whatever order the dictionary yields, which is safe precisely
+        // because `best` does not depend on it. See its header.
+        return best(among: counts.map {
+            Standing(group: $0.key, count: $0.value.count, latest: $0.value.latest)
+        })
     }
 
-    /// The whole decision: the box screen 01 should open on, or nil to leave the camera alone.
+    /// The whole decision: the box screen 01 should open on, or nil when this round has no camera
+    /// to aim.
     ///
     /// **Nil is a real answer and the caller honors it.** A reader whose every contributed tree is
     /// in a city pack they have since removed has a journal full of rows and no pin the map can
-    /// draw (ERRATA E287). There is no camera that shows them their trees, so the camera does not
-    /// move — which is what the link did before this round, and is the one case where that was
-    /// already the honest behavior.
+    /// draw (ERRATA E287). There is no camera that shows them their trees, so this round aims none.
+    ///
+    /// **Nil does not mean the screen holds still, and an earlier version of this sentence said it
+    /// did** (PR #135 review, F3). What the caller does with nil is hand back the opening one-shot
+    /// it was holding, so `MapHomeView.centerOnUserIfNeeded()` runs and the map may fly to the
+    /// *reader* — the ordinary opening behavior, resumed. That is the honest outcome and it is what
+    /// the link did before this round: the owner ratified stillness for the **fit**, which is this
+    /// function returning nil rather than a plausible box, not suppression of a fly-to-you that has
+    /// nothing to do with the ruling.
     static func frame(for places: [ContributedPlace]) -> BoundingBox? {
         guard let winner = winner(among: places) else { return nil }
         let members = places.filter {
