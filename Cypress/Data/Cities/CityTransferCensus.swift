@@ -35,12 +35,22 @@ import Foundation
 ///    the same defect one layer down: a chunk size of one byte walks the transferred bytes just as
 ///    surely, and the handoff count is oblivious to it.
 ///
-/// **It does not count what `FileManager` does.** Staging is `moveItem` and installing is
-/// `moveItem`; both are renames within a volume and neither reads a byte. A future path that
-/// *copied* instead would move bytes without touching either counter — see
-/// `CityDownloadsFeedbackTests`, which states that limit beside the assertions rather than leaving
-/// a reader to infer it, and pairs these counts with a source gate over `Data/Cities/` for the
-/// transport half.
+/// **It counts the two sites it is wired to, and nothing else** — stated this way after review
+/// finding F2, which caught the previous sentence claiming the gap was `FileManager`. That was
+/// narrower than the truth and therefore worse than saying nothing: the real limit is that **a new
+/// read site anywhere in the download path counts as zero.** The reviewer demonstrated it with a
+/// `FileHandle` opened in `didFinishDownloadingTo` and walked with `read(upToCount: 1)` — 4.2
+/// million single-byte reads of the payload, a ~10× slowdown of exactly the reported shape, and all
+/// four guards green. `FileManager` is one instance of that (staging and installing are `moveItem`,
+/// renames that read no byte, so a path that *copied* would be invisible), not the whole of it.
+///
+/// **So the invariant this design leans on is enforced rather than assumed.** What makes the two
+/// counters sufficient is that `CityDownloader.verifiableFacts` is the app's only contact with a
+/// transferred file's bytes, and that was a comment until F2. `CityDownloadsFeedbackTests`'
+/// source gate now bounds `FileHandle(forReadingFrom:` and `read(upToCount:` to exactly one
+/// occurrence each, in `CityDownloader.swift`, and forbids the streaming read APIs outright across
+/// the whole directory. A new read site fails that gate, and the message tells its author to bring
+/// a counter with it.
 ///
 /// ── Cost, and why it is per-instance ──────────────────────────────────────────────────────────
 ///

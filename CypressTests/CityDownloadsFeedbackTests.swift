@@ -1012,11 +1012,16 @@ struct CityDownloadsFeedbackTests {
     /// The install, byte count and sha256 are asserted alongside, because a transfer that counted
     /// beautifully and verified nothing would satisfy every count above perfectly.
     ///
-    /// **What this does not cover, stated rather than left to be inferred:** `FileManager`'s own
-    /// work. Staging and installing are `moveItem`, renames within a volume that read no bytes, so
-    /// a future path that *copied* would move a payload past both counters.
-    /// `nothingInTheDownloadPathConsumesAByteStream` is the other half of the cover — a source gate
-    /// over `Data/Cities/`, which sees the transport spelling whether or not a transfer runs.
+    /// **What this does not cover, corrected by review finding F2.** This used to say the hole was
+    /// `FileManager`. The hole is wider and simpler: **the census counts its two wired sites and a
+    /// new read site anywhere counts as zero.** The reviewer proved it — a `FileHandle` opened in
+    /// `didFinishDownloadingTo` and walked with `read(upToCount: 1)`, 4.2 million single-byte reads
+    /// on every transfer, a ~10× slowdown of the originally reported shape, and all four guards
+    /// here green. `FileManager` copying is one case of that, not the boundary.
+    ///
+    /// `nothingInTheDownloadPathConsumesAByteStream` is what closes it, and why that gate now
+    /// *bounds* the verification's `FileHandle` loop to one occurrence rather than only forbidding
+    /// the streaming APIs. A second read site in this directory is a red there.
     @Test("the transfer hands over a finished file and the app reads it in chunks",
           .timeLimit(.minutes(3)))
     func downloadIsNotPerByte() async throws {
@@ -1115,6 +1120,18 @@ struct CityDownloadsFeedbackTests {
     /// not move the difference. A per-byte walk cannot hide in it: 3 MiB of extra payload costs
     /// 3,145,728 extra reads, one byte a read, against a floor of 64 KiB.
     ///
+    /// **The rule is `marginalReadIsHonest`, and it is a pure function on purpose** — review
+    /// finding F1. The assertion here used to be `extraBytes / extraReads >= floor`, an integer
+    /// division with nothing guarding `extraReads == 0`. `#expect` does not halt, so the
+    /// anti-vacuity assertions above fired and control reached the division anyway: the process
+    /// trapped with `Fatal error: Division by zero` and every test scheduled behind it in that
+    /// process lost its result. Two inputs reached it, and the second is the one that matters —
+    /// **a chunk size of 4 MiB**, which is strictly *better* by this guard's own metric, gives one
+    /// read at both sizes and `extraReads == 0`. Someone improving the chunk size got a crashed
+    /// runner. The rule is cross-multiplied now, so there is no division to trap, and it is stated
+    /// once as a function that `marginalRuleIsCalibrated` runs against cases whose answers are
+    /// known.
+    ///
     /// Run against `CityDownloader.verify` directly rather than through a transfer. That is
     /// deliberate: a red here names the verification loop, where a red in the test above could be
     /// either half of the path. `sabotagedByteIsRefusedOverHTTP` is what proves this same function
@@ -1148,112 +1165,313 @@ struct CityDownloadsFeedbackTests {
         let smallCounts = try reads(overBytes: small)
         let largeCounts = try reads(overBytes: large)
 
-        // Anti-vacuity, both ends: a verification that read nothing has a flat, tiny slope.
-        #expect(smallCounts.payloadBytesRead == Int64(small))
-        #expect(largeCounts.payloadBytesRead == Int64(large))
+        // **Anti-vacuity, and these two carry it alone now.** There used to be a third —
+        // `largeCounts.payloadReads > smallCounts.payloadReads` — as the "the instrument responds
+        // to size" control. It is gone, because it is false for a legitimately *larger* chunk
+        // (1 read at both sizes is not greater than itself), which is the same benign change F1
+        // showed trapping the process one line below. These two are what an unwired census fails:
+        // it reports 0 bytes read at both sizes, and 0 is not 1 MiB.
         #expect(
-            largeCounts.payloadReads > smallCounts.payloadReads,
+            smallCounts.payloadBytesRead == Int64(small),
             """
-            the read count did not move between \(small) and \(large) bytes \
-            (\(smallCounts.payloadReads) and \(largeCounts.payloadReads)) — the census is not \
-            counting this loop, so the rate below is arithmetic over a constant
+            the verification read \(smallCounts.payloadBytesRead) of \(small) bytes, so the rate \
+            below describes something other than a full pass over the payload
+            """
+        )
+        #expect(
+            largeCounts.payloadBytesRead == Int64(large),
+            """
+            the verification read \(largeCounts.payloadBytesRead) of \(large) bytes, so the rate \
+            below describes something other than a full pass over the payload
             """
         )
 
         let extraBytes = large - small
         let extraReads = largeCounts.payloadReads - smallCounts.payloadReads
         #expect(
-            extraBytes / extraReads >= Self.smallestHonestRead,
+            Self.marginalReadIsHonest(extraBytes: extraBytes, extraReads: extraReads),
             """
             the extra \(extraBytes) bytes cost \(extraReads) extra reads — \
-            \(extraBytes / extraReads) bytes a read, against a floor of \
+            \(extraBytes / max(extraReads, 1)) bytes a read, against a floor of \
             \(Self.smallestHonestRead). The verification's cost is following the byte count rather \
             than the chunk count, which is the per-byte walk one layer below the transport.
             """
         )
     }
 
-    /// **Nothing under `Data/Cities/` consumes a URLSession byte stream.**
+    /// **The marginal rule, cross-multiplied so there is no division to trap** (review finding F1).
     ///
-    /// The counting guards above run a transfer and observe it. This one needs no transfer, which
-    /// is the point: it sees `adopt`, the resume path and any code a fixture never reaches, and it
-    /// names the defect by its spelling instead of by its consequence.
+    /// `extraReads == 0` is the *best* possible outcome, not a failure: it means the extra payload
+    /// cost no extra reads at all, which is what a chunk larger than the whole fixture produces. It
+    /// is deliberately not treated as an anti-vacuity signal either — an unwired census also
+    /// reports zero, and what catches that is `payloadBytesRead`, which knows the difference
+    /// between "read in one piece" and "not read".
     ///
-    /// **The tokens are the byte-stream API, not the word "bytes".** `record.bytes`,
-    /// `countOfBytesReceived`, `totalBytesWritten` and `payloadBytesRead` are all ordinary and all
-    /// live in these files. What is forbidden is the API whose element is one byte —
-    /// `URLSession.bytes(from:)`, `URLSession.bytes(for:)`, and the `AsyncBytes` type they return.
-    /// A download task hands over a file; there is no reason for this directory to hold a byte
-    /// stream, and the one time it did was the defect.
-    ///
-    /// Comments are stripped first (`BorrowedGlyphAPI.codeOnly`, calibrated by its own suite),
-    /// because these files discuss the removed loop at length — `CityTransferCensus`'s header
-    /// quotes it, and `CityDownloader.isCancellation` explains which error it used to throw. A gate
-    /// that made the codebase unable to describe its own history would be fixed by deleting the
-    /// prose.
-    @Test("nothing in the city download path consumes a byte stream")
-    func nothingInTheDownloadPathConsumesAByteStream() throws {
-        let root = AppSourceLiterals.repositoryRoot()
-        let directory = root.appendingPathComponent("Cypress/Data/Cities", isDirectory: true)
-        let files = try FileManager.default
-            .contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "swift" }
-            .sorted { $0.path < $1.path }
+    /// Otherwise: the extra bytes must have paid for themselves at `smallestHonestRead` apiece,
+    /// written as a multiplication rather than `extraBytes / extraReads >= floor` because the
+    /// division is the trap F1 filed.
+    static func marginalReadIsHonest(extraBytes: Int, extraReads: Int) -> Bool {
+        extraReads == 0 || extraBytes >= extraReads * smallestHonestRead
+    }
 
-        // The scanner's own control: an empty read satisfies the sweep below vacuously, and a
-        // mistyped path is exactly how that happens.
+    /// **The rule, run against cases whose answers are already known** — CLAUDE.md's calibration
+    /// rule, and the explicit green case review finding F1 asked for: a *larger* chunk must pass,
+    /// not crash.
+    @Test("the marginal-read rule admits a bigger chunk and refuses a per-byte walk")
+    func marginalRuleIsCalibrated() {
+        let threeMiB = 3 * 1024 * 1024
+
+        // The shipping 512 KiB chunk: 3 MiB of extra payload costs six extra reads.
+        #expect(Self.marginalReadIsHonest(extraBytes: threeMiB, extraReads: 6))
+
+        // **The case that used to trap the runner.** `chunkSize = 4 * 1024 * 1024` reads each
+        // fixture whole, so both sizes report one read and the extra 3 MiB costs none. That is
+        // better than what ships, and it must be green — F1's second input.
         #expect(
-            files.count >= 5,
+            Self.marginalReadIsHonest(extraBytes: threeMiB, extraReads: 0),
             """
-            found only \(files.count) Swift files under \(directory.path) — this gate is not \
-            reading the download path, so it passes without checking anything
+            a chunk large enough to read each fixture in one go reports zero extra reads, which is \
+            the best outcome this rule can observe — it must not be read as a failure, and before \
+            F1 it was not read at all because the division trapped first
             """
         )
 
-        let offenders = try files
-            .map { file -> (name: String, lines: [Int]) in
-                let source = try String(contentsOf: file, encoding: .utf8)
-                return (file.lastPathComponent, Self.byteStreamUses(in: source))
+        // The defect: one byte a read.
+        #expect(!Self.marginalReadIsHonest(extraBytes: threeMiB, extraReads: threeMiB))
+
+        // The boundary, both sides of it. 3 MiB / 64 KiB is exactly 48.
+        #expect(Self.marginalReadIsHonest(extraBytes: threeMiB, extraReads: 48))
+        #expect(!Self.marginalReadIsHonest(extraBytes: threeMiB, extraReads: 49))
+    }
+
+    // MARK: - The source gate over the download path
+
+    /// Every `.swift` file under `Cypress/Data/Cities`, **including subdirectories**.
+    ///
+    /// `FileManager.enumerator` rather than `contentsOfDirectory`, which is review finding F3(a):
+    /// the non-recursive read never saw `Data/Cities/Transport/`, so moving transport code one
+    /// folder down turned the gate off for it silently — the reviewer planted an unhidden byte
+    /// stream there and every assertion stayed green. URLs are resolved for
+    /// `AppSourceLiterals.sourceFiles`' reason (#229).
+    static func downloadPathSources(root: URL) -> [URL] {
+        let directory = root.appendingPathComponent("Cypress/Data/Cities", isDirectory: true)
+            .resolvingSymlinksInPath()
+        guard let walker = FileManager.default.enumerator(
+            at: directory, includingPropertiesForKeys: nil
+        ) else { return [] }
+        return walker.compactMap { $0 as? URL }
+            .map { $0.resolvingSymlinksInPath() }
+            .filter { $0.pathExtension == "swift" }
+            .sorted { $0.path < $1.path }
+    }
+
+    /// One occurrence of a watched spelling: which token, and the line it starts on.
+    struct ByteReadUse: Equatable, CustomStringConvertible {
+        let token: String
+        let line: Int
+        var description: String { "\(token)@\(line)" }
+    }
+
+    /// **The APIs that put this app in contact with a transferred file's bytes**, and the reason
+    /// each is on the list. Two families, judged differently below.
+    ///
+    /// **Family 1, forbidden outright — reading a payload as a stream.**
+    ///
+    ///   * `.bytes(` — `URLSession.bytes(from:)` / `.bytes(for:)`, whose element is one byte. This
+    ///     is the 2026-08-23 defect's own API. Matched on the open paren alone rather than on
+    ///     `(from:`/`(for:`, which is review finding F3(b): the argument label can be on the next
+    ///     line, and the old tokens required both halves to share one. The paren is what keeps
+    ///     `record.bytes` and `payloadBytesRead` out.
+    ///   * `AsyncBytes` — the type those return, named directly.
+    ///   * `InputStream` — Foundation's other byte-at-a-time reader.
+    ///   * `readData(ofLength:`, `readDataToEndOfFile`, `availableData` — `FileHandle`'s remaining
+    ///     read surface. None is used here; a payload read that arrived through one of them would
+    ///     be uncounted by the census exactly as `read(upToCount:)` would.
+    ///   * `Data(contentsOf:` — reads a whole file into memory in one uncounted operation. Not a
+    ///     per-byte walk, but on a 199 MB pack it is both a memory event and contact with the
+    ///     payload that no counter sees.
+    ///
+    /// **Family 2, allowed exactly once — the verification's own loop.** `FileHandle(forReadingFrom:`
+    /// and `read(upToCount:` are how `CityDownloader.verifiableFacts` hashes a staged file, so they
+    /// cannot be banned. They are *bounded* instead: exactly one of each, in `CityDownloader.swift`.
+    /// That is what makes the sentence at `CityDownloader.swift:267` — *"this loop is the app's only
+    /// contact with a transferred file's bytes"* — a test rather than a comment, which is review
+    /// finding F2's ruling. The census's whole design leans on that invariant, and it was load-bearing
+    /// prose. The reviewer's planted regression (a `FileHandle` opened in `didFinishDownloadingTo`
+    /// and walked with `read(upToCount: 1)`, 4.2 million single-byte reads, all four guards green)
+    /// adds a second of each and is named here.
+    static let forbiddenByteReads = [
+        ".bytes(", "AsyncBytes", "InputStream",
+        "readData(ofLength:", "readDataToEndOfFile", "availableData", "Data(contentsOf:"
+    ]
+
+    /// Family 2's spellings, and the one file entitled to one of each.
+    static let boundedByteReads = ["FileHandle(forReadingFrom:", "read(upToCount:"]
+    static let verificationFile = "CityDownloader.swift"
+
+    /// Where each watched spelling occurs in `source`, by line.
+    ///
+    /// **Whitespace is removed before matching, which is review finding F3(b).** The tokens used to
+    /// be matched against one line at a time, so an ordinary wrapped call —
+    ///
+    ///     let (stream, _) = try await session.bytes(
+    ///         from: url
+    ///     )
+    ///
+    /// — put no forbidden spelling on any single line and walked straight through. Packing the
+    /// source down to its non-whitespace characters, with each character remembering the line it
+    /// came from, makes the match indifferent to how a call is wrapped while still reporting the
+    /// line the token starts on.
+    ///
+    /// **Comments are stripped first** (`BorrowedGlyphAPI.codeOnly`, calibrated by its own suite),
+    /// and unlike in the first version of this gate that is *not* hypothetical — review finding F4
+    /// caught the previous justification naming two comments that contained no forbidden token.
+    /// With the token set above, two real comments in this directory now do spell watched APIs:
+    /// `CityTransferCensus.swift`'s header quotes ``session.bytes(…)``, which `.bytes(` matches,
+    /// and `CityDownloader.swift:211` writes ``Data(contentsOf:)`` while explaining how a missing
+    /// file surfaces. Both are correct prose about the code, and without the strip this gate would
+    /// be fixed by deleting them.
+    static func byteReadUses(in source: String, tokens: [String]) -> [ByteReadUse] {
+        var packed: [Character] = []
+        var lines: [Int] = []
+        var line = 1
+        for character in BorrowedGlyphAPI.codeOnly(in: source) {
+            if character == "\n" { line += 1 }
+            guard !character.isWhitespace else { continue }
+            packed.append(character)
+            lines.append(line)
+        }
+
+        var uses: [ByteReadUse] = []
+        for token in tokens {
+            let needle = Array(token.filter { !$0.isWhitespace })
+            guard !needle.isEmpty, packed.count >= needle.count else { continue }
+            for start in 0...(packed.count - needle.count)
+            where Array(packed[start..<(start + needle.count)]) == needle {
+                uses.append(ByteReadUse(token: token, line: lines[start]))
             }
-            .filter { !$0.lines.isEmpty }
-            .map { "\($0.name) \($0.lines)" }
+        }
+        return uses.sorted { ($0.line, $0.token) < ($1.line, $1.token) }
+    }
+
+    /// **Nothing under `Data/Cities/` reads a transferred payload except the one loop that is
+    /// counted.**
+    ///
+    /// The counting guards above run a transfer and observe it; this one needs no transfer, so it
+    /// sees `adopt`, the resume path and any code a fixture never reaches. It carries two rules —
+    /// see `forbiddenByteReads` for the token-by-token reasoning:
+    ///
+    /// 1. the streaming APIs must not appear at all;
+    /// 2. the verification's own `FileHandle` loop must appear **exactly once, in one file**, which
+    ///    is how the census's load-bearing invariant stops being a comment (review finding F2).
+    @Test("the download path reads a payload only through the loop the census counts")
+    func nothingInTheDownloadPathConsumesAByteStream() throws {
+        let root = AppSourceLiterals.repositoryRoot()
+        let sources = Self.downloadPathSources(root: root)
+        let scanned = try sources.map {
+            (name: $0.lastPathComponent, code: try String(contentsOf: $0, encoding: .utf8))
+        }
+
+        // ── Rule 1: no streaming reads anywhere ───────────────────────────────────────────────
+        let offenders = scanned
+            .map { (name: $0.name, uses: Self.byteReadUses(in: $0.code, tokens: Self.forbiddenByteReads)) }
+            .filter { !$0.uses.isEmpty }
+            .map { "\($0.name) \($0.uses.map(\.description))" }
         #expect(
             offenders.isEmpty,
             """
-            \(offenders.joined(separator: ", ")) consume(s) a URLSession byte stream. That is the \
-            2026-08-23 defect verbatim: the response arrives as an `AsyncSequence` of `UInt8` and \
-            the path walks a 199 MB pack one element at a time. The transfer is a download task and \
-            is handed a finished file — see `CityDownloadService.urlSession(_:downloadTask:\
-            didFinishDownloadingTo:)`.
+            \(offenders.joined(separator: ", ")) read a payload through an API the census cannot \
+            see. `.bytes(`/`AsyncBytes` is the 2026-08-23 defect verbatim — the response arrives as \
+            a sequence of `UInt8` and the path walks a 199 MB pack one element at a time. The \
+            transfer is a download task and is handed a finished file; see \
+            `CityDownloadService.urlSession(_:downloadTask:didFinishDownloadingTo:)`.
             """
         )
-    }
 
-    /// The byte-stream API's spellings, as line numbers. A free function of a string so it can be
-    /// run against cases whose answers are already known.
-    static func byteStreamUses(in source: String) -> [Int] {
-        let tokens = [".bytes(from:", ".bytes(for:", "AsyncBytes"]
-        return BorrowedGlyphAPI.codeOnly(in: source)
-            .split(separator: "\n", omittingEmptySubsequences: false).enumerated()
-            .filter { _, line in tokens.contains(where: { line.contains($0) }) }
-            .map { index, _ in index + 1 }
+        // ── Rule 2: the counted loop is the only file read, and it is where it says it is ──────
+        //
+        // This is also the scan's anti-vacuity control, and a far better one than a file count: a
+        // scan that read nothing reports zero occurrences and fails these two assertions, where
+        // `files.count >= 5` passed happily while a whole subdirectory went unread (F3(a)).
+        for token in Self.boundedByteReads {
+            let sites = scanned
+                .flatMap { file in
+                    Self.byteReadUses(in: file.code, tokens: [token])
+                        .map { "\(file.name):\($0.line)" }
+                }
+            #expect(
+                sites.count == 1 && sites[0].hasPrefix("\(Self.verificationFile):"),
+                """
+                `\(token)` occurs at \(sites) — it must occur exactly once, in \
+                \(Self.verificationFile), because `CityTransferCensus` is built on that loop being \
+                the app's ONLY contact with a transferred file's bytes. A second site is a read the \
+                census does not count and no guard here would otherwise see: the reviewer's planted \
+                shape (a `FileHandle` opened in `didFinishDownloadingTo` and walked one byte at a \
+                time) is 4.2 million uncounted reads with every other assertion green. If this is a \
+                deliberate new read site, it needs a census counter of its own before it needs an \
+                entry here. Zero sites means this scan read nothing at all.
+                """
+            )
+        }
     }
 
     /// **The calibration.** A scanner that found nothing looks exactly like a clean directory, and
-    /// this repository has filed that defect. Both directions are checked.
-    @Test("the byte-stream scanner catches the defect's spellings and leaves the ordinary ones")
+    /// this repository has filed that defect. Both directions are checked, and the wrapped-call
+    /// case is here because review finding F3(b) walked the previous line-at-a-time matcher.
+    @Test("the byte-read scanner catches the defect's spellings and leaves the ordinary ones")
     func byteStreamScannerIsCalibrated() {
         let mustCatch = """
         let (bytes, _) = try await session.bytes(from: url)
         let (stream, response) = try await session.bytes(for: request)
         func walk(_ stream: URLSession.AsyncBytes) async throws { }
+        let payload = try Data(contentsOf: staged)
+        while let b = try probe.readData(ofLength: 1), !b.isEmpty { walked += 1 }
+        let stream = InputStream(url: staged)
         """
         #expect(
-            Self.byteStreamUses(in: mustCatch) == [1, 2, 3],
+            Self.byteReadUses(in: mustCatch, tokens: Self.forbiddenByteReads).map(\.line)
+                == [1, 2, 3, 4, 5, 6],
             """
             the scanner missed a spelling it must catch: it found \
-            \(Self.byteStreamUses(in: mustCatch)) where all three of those lines take the response \
-            as a sequence of single bytes
+            \(Self.byteReadUses(in: mustCatch, tokens: Self.forbiddenByteReads)) where all six of \
+            those lines read a payload through an API the census cannot see
+            """
+        )
+
+        // **F3(b): the same call, wrapped.** No single line holds `.bytes(from:`, and `AsyncBytes`
+        // is inferred rather than written, so the previous per-line matcher reported nothing. The
+        // token starts on line 1, which is where the report must point.
+        let wrapped = """
+        let (stream, _) = try await session.bytes(
+            from: url
+        )
+        """
+        #expect(
+            Self.byteReadUses(in: wrapped, tokens: Self.forbiddenByteReads)
+                == [ByteReadUse(token: ".bytes(", line: 1)],
+            """
+            a wrapped call evaded the scanner: it found \
+            \(Self.byteReadUses(in: wrapped, tokens: Self.forbiddenByteReads)). This is F3(b), and \
+            it is an ordinary way to write a call at this indentation, not an obfuscation.
+            """
+        )
+
+        // The reviewer's planted per-byte walk, as it would appear in `didFinishDownloadingTo`.
+        // Both bounded tokens must be seen, which is what makes the count-of-one rule bite.
+        let plantedWalk = """
+        if let probe = try? FileHandle(forReadingFrom: staged) {
+            var walked = 0
+            while let b = try? probe.read(upToCount: 1), !b.isEmpty { walked += 1 }
+        }
+        """
+        #expect(
+            Self.byteReadUses(in: plantedWalk, tokens: Self.boundedByteReads) == [
+                ByteReadUse(token: "FileHandle(forReadingFrom:", line: 1),
+                ByteReadUse(token: "read(upToCount:", line: 3)
+            ],
+            """
+            the scanner did not see F2's planted walk: \
+            \(Self.byteReadUses(in: plantedWalk, tokens: Self.boundedByteReads))
             """
         )
 
@@ -1262,16 +1480,21 @@ struct CityDownloadsFeedbackTests {
         record: record, fraction: Self.fraction(task.countOfBytesReceived, record)
         didWriteData bytesWritten: Int64,
         var payloadBytesRead: Int64 = 0
+        guard bytes == record.bytes else { throw DownloadError.sizeMismatch(expected: record.bytes) }
         // the body was `session.bytes(from:)` and walked a URLSession.AsyncBytes per byte
         /// `for try await byte in session.bytes(…)`, one iteration per byte of a 199 MB pack.
+        /// `Data(contentsOf:)`-style absence on a file URL surfaces as a plain Cocoa error.
         """
         #expect(
-            Self.byteStreamUses(in: mustNotCatch).isEmpty,
+            Self.byteReadUses(in: mustNotCatch, tokens: Self.forbiddenByteReads).isEmpty,
             """
             the scanner flagged a line it must leave alone: \
-            \(Self.byteStreamUses(in: mustNotCatch)). Lines 1–4 are the ordinary byte *counts* \
-            these files are full of, and lines 5–6 are comments describing the removed loop — \
-            which every file in the directory is entitled to do, and two of them do.
+            \(Self.byteReadUses(in: mustNotCatch, tokens: Self.forbiddenByteReads)). Lines 1–5 are \
+            the ordinary byte *counts* and `record.bytes` reads these files are full of — the open \
+            paren in `.bytes(` is what keeps them out. Lines 6–8 are comments, and unlike in this \
+            gate's first version they are not hypothetical: 7 and 8 are copied from \
+            `CityTransferCensus.swift` and `CityDownloader.swift:211` as they stand, and both spell \
+            a watched token. Stripping comments is what lets those files keep describing the code.
             """
         )
     }
