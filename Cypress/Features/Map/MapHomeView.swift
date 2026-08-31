@@ -211,6 +211,14 @@ struct MapHomeView: View {
         // rather than adding to a number that was compensating for anything.
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        // **Arriving already narrowed** (tester report F23). Two channels, one function, because the
+        // link that arms this is on another tab *today* and need not stay there: `onAppear` catches
+        // the ordinary case, where this view is built by the tab switch the arming performed, and
+        // `onChange` catches an arming made while screen 01 is already the screen on glass — which
+        // `onAppear` cannot see, there being no appearance. `takePendingMapFilter()` clears as it
+        // answers, so whichever fires first is the only one that applies anything.
+        .onAppear { applyPendingFilter() }
+        .onChange(of: router.pendingMapFilter) { _, _ in applyPendingFilter() }
         .task {
             location.start()
             // **The magnetometer is this screen's alone, and it is switched off below.** The GPS
@@ -678,6 +686,54 @@ struct MapHomeView: View {
 
     private func openSettings() {
         if let url = location.settingsURL { UIApplication.shared.open(url) }
+    }
+
+    // MARK: - Arriving narrowed (F23)
+
+    /// Applies the narrowing another screen asked this one to open under, if there is one.
+    ///
+    /// **Through `model.filter`'s setter, not around it.** Seeding the value inside `MapModel.init`
+    /// would skip the `didSet` that reads the membership set (`membershipDidChange`), so the map
+    /// would arrive with the chip drawn on and every tree in the city under it — the wrong answer,
+    /// shown confidently. Assigning here is the same path a press of the chip takes, so it is the
+    /// same code that has to be right.
+    ///
+    /// **What this does not promise, stated rather than implied:** the membership read is a `Task`,
+    /// and the camera settles on its own schedule, so a fetch can go out before the id set lands and
+    /// draw the unnarrowed city for a frame. That window is not new — it is the one
+    /// `MapModel.filterDidChange` describes for an ordinary chip press — and it closes the moment
+    /// the read answers, which is a `main`-table query of tens of rows.
+    ///
+    /// The reader is never stuck in what this applies: `MapFilterChips` draws `Yours` in its
+    /// selected state and puts `Clear filters` in the row for as long as any dimension is set
+    /// (`MapFilter.isActive`).
+    ///
+    /// **That sentence used to end "so the way out is on screen from the first frame", and the
+    /// device said otherwise** (PR #130 review, F2). What is on screen from the first frame is the
+    /// *cause* — the `Yours` chip, drawn selected at the leading edge. `Clear filters` is the fifth
+    /// chip of a one-line horizontal scroller (#166) and on a 390 pt phone it sits past the trailing
+    /// edge: in the row, one drag away, **not visible**. `SeeAllOnMapUITests` measures both frames
+    /// against the window rather than tapping them, because XCUITest scrolls an element into view
+    /// before it answers `isHittable` — which is why the first version of that test could not tell.
+    ///
+    /// **Making the way out visible was tried and is a worse trade, measured rather than argued.**
+    /// Pinning `Clear filters` beside the scroller costs it 88 pt (its own measured frame is
+    /// `(356.0, 103.3, 87.7, 44.0)` at 390 pt), which leaves ~294 pt for four chips that need 356,
+    /// so `More filters` goes off the trailing edge instead — permanently, and at every text size.
+    /// That is the strictly worse half to hide: it is the control R23.1 §2 gives three channels to
+    /// precisely so a reader can see that *something is narrowing the map from inside it*, where
+    /// `Clear filters` only exists when a narrowing is already announced by a filled chip beside it.
+    /// `MapFilterAccessibilityTests.testAnOpenSuggestionListLeavesTheWholeFilterRowOrderedAndHittable`
+    /// failed on exactly that ("the `Yours` chip is in the tree and cannot be activated" — the row
+    /// had been left scrolled by a drawer that no longer fits).
+    ///
+    /// **So five chips do not fit at 390 pt, and the owner ruled which one loses** (2026-08-30,
+    /// recorded via the orchestrator): `Clear filters` scrolls — the way out is one drag away, and
+    /// the filled chip at the leading edge is the always-visible second escape. The pin (option b)
+    /// was measured and refused; the arithmetic above is why.
+    private func applyPendingFilter() {
+        guard let pending = router.takePendingMapFilter() else { return }
+        model.filter = pending
     }
 
     // MARK: - Opening on the reader

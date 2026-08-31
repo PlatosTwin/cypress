@@ -66,6 +66,10 @@ struct JournalTabView: View {
     var onOpenTree: ((UUID) -> Void)?
     var onShowGroup: ((PinSet) -> Void)?
     var onRequestLocation: (() -> Void)?
+    /// Screen 01, narrowed to this contributor's trees — the `Yours` segment's one outbound link
+    /// (tester report F23). Resolved by the composition root, like the three above it: this folder
+    /// holds no `MapFilter` and constructs no map (ARCHITECTURE §2, §3).
+    var onSeeAllOnMap: (() -> Void)?
 
     /// Which segment is showing, when there is no router to hold it (previews, screenshots).
     ///
@@ -156,7 +160,11 @@ struct JournalTabView: View {
                         .padding(.top, CypressSpacing.labelSectionTop)
                         .padding(.horizontal, CypressSpacing.gutter)
 
-                    JournalSection(api: api, onOpenTree: onOpenTree)
+                    JournalSection(
+                        api: api,
+                        onOpenTree: onOpenTree,
+                        onSeeAllOnMap: onSeeAllOnMap
+                    )
 
                     // The `Spacer(minLength: 0)` here bottom-pinned the footnote and went with it
                     // (copy audit, 2026-08-23). The `minHeight` frame below still top-aligns a

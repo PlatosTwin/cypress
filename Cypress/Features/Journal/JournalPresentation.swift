@@ -174,6 +174,20 @@ struct JournalPresentation: Equatable {
         rows.isEmpty && !hasOlder ? JournalCopy.emptyState : nil
     }
 
+    /// Whether to draw the link into screen 01 (tester report F23, `JournalCopy.seeAllOnMap`).
+    ///
+    /// **Only where there is a list**, which is `TreeProfilePresentation.offersActivityLink`'s rule
+    /// and its reason: a link drawn over an empty journal is a door onto an empty map, and screen 01
+    /// deliberately draws nothing at all to explain an empty filtered map (RULINGS R41, task #165).
+    /// Nobody should be routed to that from a screen that already had nothing to show them.
+    ///
+    /// `rows` rather than `emptyState == nil`, and the two differ in one state: a first page that
+    /// came back empty *with* a cursor. `emptyState` withholds the cold-start sentence there because
+    /// E38 forbids concluding anything from a read that stopped early; this withholds the link for a
+    /// simpler reason that needs no such argument — there is nothing on this screen for `them` to
+    /// refer to.
+    var offersMapLink: Bool { !rows.isEmpty }
+
     init(
         entries: [JournalEntry],
         nextCursor: String?,
@@ -259,6 +273,40 @@ enum JournalCopy {
     /// collection does not, and it is worth one word.
     static let explanation =
         "One line for each thing you did, newest first, under the day it happened."
+
+    // MARK: The way onto the map (tester report F23)
+
+    /// The link under the explanation, into screen 01 narrowed to `Yours`.
+    ///
+    /// **The tester's own words, kept** — *"let's add a link that says See them all on the map. When
+    /// clicked it takes you back to the map and shows only yours"* — because a sentence somebody
+    /// wrote down while using the app is better evidence of what the control means than anything
+    /// invented beside it. NOT SPECIFIED like every other string in this type: no mock draws this
+    /// link, so DECISIONS constraint 21 makes the placement a question for the owner, and the PR
+    /// that added it asks.
+    ///
+    /// **Why this segment and not screen 08's `Trees` pill**, which is the other list a reader might
+    /// say `them` about. The two lists are built from different queries and they are not the same
+    /// set: the grove is `ContributionStore.groveTreeIDs` — visits **and favorites** — while screen
+    /// 01's `Yours` is `contributedTreeIDs`, the four contribution tables and `community_trees`, with
+    /// no favorites arm at all (R23 argues at length that a bookmark is not a contribution). A tree
+    /// somebody only hearted is in the grove and is *not* under `Yours`, so this link on that screen
+    /// would quietly drop rows the reader was looking at a moment earlier. Every tree this journal
+    /// names is a row in one of those four tables, so here the `Yours` **set** is a superset of what
+    /// this list names and the narrowing itself cannot drop one.
+    ///
+    /// **A superset of ids is not a promise about pins** (PR #130 review, F4). What screen 01 draws
+    /// is that set intersected with the camera — the owner has the camera as a follow-up — and with
+    /// the installed inventory, which is the axis nobody has ruled on: a journal row survives its
+    /// tree's city pack being removed (`LocalAPI.journal` reads `main` and resolves names
+    /// separately), and the pin does not. That is the `Yours` chip's own long-standing behavior
+    /// rather than anything this link introduces, and R41 forbids a sentence on the map explaining
+    /// it. The claim this comment makes, and the one `SeeAllOnMapTests` proves, is about the sets.
+    ///
+    /// **It implies no account** (D11). `Yours` is this installation's, exactly as this segment's own
+    /// label already is — `journalSegment` above is the same word — and the map chip it turns on says
+    /// the same word back. Nothing here says *your account*, because there need not be one.
+    static let seeAllOnMap = "See them all on the map"
 
     // The footnote was an alias of screen 08's (`GroveCopy.footnote`), borrowed rather than written.
     // Both were removed by the copy audit of 2026-08-23 (owner ruling: the footnote slot is a

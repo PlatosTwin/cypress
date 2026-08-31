@@ -39,6 +39,11 @@ struct JournalListView: View {
     var onOpenTree: ((UUID) -> Void)?
     var onRetry: (() -> Void)?
     var onShowOlder: (() -> Void)?
+    /// Screen 01, narrowed to this contributor's trees (tester report F23). Resolved by the
+    /// composition root like every other destination — this folder constructs no other feature's
+    /// view and holds no `MapFilter` (ARCHITECTURE §2, §3). Nil in the previews and in the value
+    /// tests, where the link is drawn as a plain row of text with nowhere to go.
+    var onSeeAllOnMap: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -50,6 +55,12 @@ struct JournalListView: View {
                     // sentence where a list would be" rather than one per screen.
                     GroveNote(empty)
                 } else {
+                    // Above the rows, not under them. This list is paginated, so its bottom is
+                    // wherever `Show earlier` has stopped rather than the end of anything; a link
+                    // that says `all` would be sitting at the end of a page and reading as the end
+                    // of the record. Under the tab's explanation line is also where the sentence is
+                    // answering a question the reader already has.
+                    if presentation.offersMapLink, let onSeeAllOnMap { mapLink(onSeeAllOnMap) }
                     rows(presentation)
                     olderBlock(presentation)
                 }
@@ -58,6 +69,32 @@ struct JournalListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, JournalMetrics.listTop)
         .padding(.horizontal, CypressSpacing.gutter)
+    }
+
+    // MARK: - The way onto the map (tester report F23)
+
+    /// `See them all on the map` — screen 01, narrowed to `Yours`.
+    ///
+    /// **A text link built from tokens, because C1–C30 has no link in it** and this is the shape the
+    /// app already uses where the catalog has no entry: screen 03's `See the whole year`
+    /// (`TreeProfileView.activityLink`), down to the font, the color and the hit area. Reading as
+    /// the same control at the same volume is the point — a reader who has met one has met this.
+    ///
+    /// **Drawn only when there is somewhere to go**, in both senses: `offersMapLink` is the list
+    /// having rows, and the closure being non-nil is the host having wired a destination. A control
+    /// that looks pressable and does nothing is worse than a label — `GroveTabRow` says so, and it
+    /// is why this takes the closure as an argument rather than checking it inside.
+    private func mapLink(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(JournalCopy.seeAllOnMap)
+                .font(CypressFont.body13Bold)
+                .foregroundStyle(CypressColor.ctaFill)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .padding(.bottom, CypressSpacing.gapRows)
     }
 
     // MARK: - The rows, under their days
@@ -169,10 +206,17 @@ struct JournalSection: View {
     @State private var model: JournalModel
 
     private let onOpenTree: ((UUID) -> Void)?
+    private let onSeeAllOnMap: (() -> Void)?
 
-    init(api: any CypressAPI, now: @escaping @Sendable () -> Date = { Date() }, onOpenTree: ((UUID) -> Void)? = nil) {
+    init(
+        api: any CypressAPI,
+        now: @escaping @Sendable () -> Date = { Date() },
+        onOpenTree: ((UUID) -> Void)? = nil,
+        onSeeAllOnMap: (() -> Void)? = nil
+    ) {
         _model = State(wrappedValue: JournalModel(api: api, now: now))
         self.onOpenTree = onOpenTree
+        self.onSeeAllOnMap = onSeeAllOnMap
     }
 
     var body: some View {
@@ -183,7 +227,8 @@ struct JournalSection: View {
             isLoadingOlder: model.isLoadingOlder,
             onOpenTree: onOpenTree,
             onRetry: { Task { await model.retry() } },
-            onShowOlder: { Task { await model.loadOlder() } }
+            onShowOlder: { Task { await model.loadOlder() } },
+            onSeeAllOnMap: onSeeAllOnMap
         )
         // `load()` is idempotent on a successful read, so switching away from this segment and back
         // does not throw away pages the reader has already asked for.
