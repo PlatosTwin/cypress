@@ -130,10 +130,39 @@ This is strictly more than the retired control offered (`Change, button`), which
 **Dynamic Type, and the wrapped pill.** The mark scales on the label's own curve (above). Alignment
 is the other half: the radius fallback's pill (`Within a 15-minute walk`) wraps to two lines at
 large type, and a centered mark then floats against the full height of the wrapped label, beside the
-line break, touching neither line. `.firstTextBaseline` puts it on the first line at every size. A
-`Shape` has no baseline, so SwiftUI would align its bottom edge; an `alignmentGuide` lifts it by half
-its own height instead, which sets the "v" on the text's midline rather than hanging it off the
-baseline.
+line break, touching neither line. `.firstTextBaseline` puts it on the first line at every size.
+
+A `Shape` has no baseline, so SwiftUI would align its bottom edge. The `alignmentGuide` reports a
+point half an x-height **below** the mark's center, so that lining that point up with the text's
+baseline leaves the mark's center half an x-height **above** the baseline — the label's optical
+midline. The half x-height is `CypressFont.body12HalfXHeight`, read from `UIFont.xHeight` of the
+face that actually draws, and scaled on `.caption` like the mark itself.
+
+**This was wrong in the first fix round and the correction is worth recording.** That version
+returned the mark's plain center, which put the center *on the baseline* — a half x-height low —
+while this paragraph and the code comment both claimed it was on the midline. Measured on a 402 pt
+device at default type: chevron center `414.5` against a label baseline of `414`, i.e. **+2.33 pt
+below the midline** and +3.00 pt below the capsule's own center. It traded a correct single-line
+pill — every reader at default type, on both segments — for the correct wrapped one. Both cases are
+required.
+
+**Measured from rendered pixels, iPhone 16 Pro (402 pt), light.** Chevron isolated as the rightmost
+ink cluster inside the capsule; baseline as the label's lowest ink row (neither `Western Addition`
+nor `San Francisco` carries a descender); x-height top as the modal per-column ink top.
+
+| case | chevron centre vs label midline |
+| --- | --- |
+| default type, Almanac — before | **+2.33 pt** (centre 414.5 on baseline 414) |
+| default type, Almanac — after | **+0.00 pt** (centre 407.5, midline 407.5) |
+| default type, City segment — after | **+0.00 pt** (centre 407.5, midline 407.5) |
+| AX5, single line — after | **−0.17 pt** |
+| AX5, radius fallback (wrapped) — after | **−1.83 pt** vs the *first* line's midline |
+
+Against the capsule's own centre the mark went from +3.00 pt low to +0.67 pt.
+
+**The wrapped case still rides the first line**, which is the property the baseline alignment exists
+for: chevron ink spans y 1190–1233, inside line one's band (1158–1248) and outside line two's
+(1295–1375).
 
 **One honest limit:** XCUITest exposes an element's label, traits and value, and **not its hint**,
 so `AreaPickerUITests` witnesses the trait and the label and cannot witness the hint. What is

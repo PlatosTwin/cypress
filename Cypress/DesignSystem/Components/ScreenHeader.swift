@@ -263,6 +263,11 @@ struct HeaderPillButton: View {
     @ScaledMetric(relativeTo: .caption) private var chevronStroke =
         CypressSpacing.Component.headerPillChevronStroke
 
+    /// Half the label's x-height, on the label's own curve — the offset that turns the baseline
+    /// alignment below into a midline one. See `CypressFont.body12HalfXHeight`.
+    @ScaledMetric(relativeTo: .caption) private var labelHalfXHeight =
+        CypressFont.body12HalfXHeight
+
     init(_ text: String, hint: String, action: @escaping () -> Void) {
         self.text = text
         self.hint = hint
@@ -280,9 +285,18 @@ struct HeaderPillButton: View {
             // line and reading as attached to nothing. Aligned to the first baseline it rides the
             // first line, which is where a reader looks for it and where it stays at every size.
             //
-            // A `Shape` has no baseline of its own, so its bottom edge is what SwiftUI aligns; the
-            // guide below lifts it by the mark's own optical center instead, which puts the "v" on
-            // the text's midline rather than hanging it off the baseline.
+            // A `Shape` has no baseline of its own, so its bottom edge is what SwiftUI would align.
+            // The guide below reports a point half an x-height *below* the mark's own center, so
+            // that when SwiftUI lines that point up with the text's baseline, the mark's center
+            // comes to rest half an x-height above it — which is the label's optical midline.
+            //
+            // **The version of this that shipped in the first fix round returned the mark's plain
+            // center, and the sentence here claimed that centered it on the midline. It did not:
+            // it put the center on the baseline**, a half x-height low, which measured +2.33 pt
+            // below the midline on a 402 pt device and was visible at 3x. `+ labelHalfXHeight` is
+            // the whole of the correction. Both cases have to be right — this one is every reader
+            // at default type, on both segments; the wrapped one below is AX5 on the fallback —
+            // and a guide targeting the baseline only ever got the second.
             HStack(alignment: .firstTextBaseline, spacing: CypressSpacing.Component.headerPillChevronGap) {
                 Text(text)
                     .font(CypressFont.body12)
@@ -299,7 +313,7 @@ struct HeaderPillButton: View {
                     )
                     .frame(width: chevronWidth, height: chevronHeight)
                     .alignmentGuide(.firstTextBaseline) { dimensions in
-                        dimensions[.bottom] - (dimensions.height / 2)
+                        dimensions[.bottom] - (dimensions.height / 2) + labelHalfXHeight
                     }
             }
             .padding(.vertical, CypressSpacing.Component.headerPillPaddingV)
