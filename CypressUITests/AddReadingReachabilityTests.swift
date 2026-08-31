@@ -196,8 +196,16 @@ final class AddReadingReachabilityTests: XCTestCase {
     ///
     /// Bounded rather than a `while`: a loop that swipes until a condition it can never reach is a
     /// hung test, and this project's rule is that waits have a ceiling.
+    ///
+    /// **`isHittableWithoutRaising` because this is a filter position**, which is the distinction
+    /// `HittabilityFilterGateTests` enforces: the raw property *raises* rather than answering
+    /// `false` for an element with no computable activation point, and here that exception would be
+    /// the test failure. The `XCTAssertTrue(…isHittable)` calls above are claims and correctly use
+    /// the raw property. `app.frame` is hoisted above the loop, per that helper's own note.
     private static func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<6 where !element.isHittable {
+        let screen = app.frame
+        for _ in 0..<6 {
+            if element.isHittableWithoutRaising(onScreen: screen) { return }
             app.swipeUp()
         }
     }
