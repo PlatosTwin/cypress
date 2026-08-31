@@ -207,10 +207,17 @@ final class AreaPickerUITests: XCTestCase {
         // **In `buttons` since the header pill became the picker.** The fallback names an area the
         // reader did not choose and has 41 neighborhoods it could offer instead, so this is the
         // state that most needs the affordance — and the pill carrying a distance carries it too.
+        // **This one line can fail two ways and the message has to say so**, which the red-proof for
+        // this round taught: with the pill made inert it went red reading "this reader is not in the
+        // radius fallback", which was false — the reader was in it, and the pill had merely stopped
+        // being a button. A failure here means one of the two, and the next reader should not have to
+        // guess which.
         let pill = app.buttons[Self.radiusPill]
         XCTAssertTrue(
             pill.exists,
-            "this reader is not in the radius fallback, so the sentences below are not under test"
+            "no BUTTON labelled “\(Self.radiusPill)”. Either this reader is not in the radius "
+                + "fallback — in which case the sentences below are not under test — or the header "
+                + "pill has stopped being the picker. Check whether the label exists as a static text."
         )
         XCTAssertTrue(
             app.staticTexts[Self.fromFixRadiusNote].exists,
