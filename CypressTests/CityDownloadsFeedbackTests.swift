@@ -956,38 +956,68 @@ struct CityDownloadsFeedbackTests {
 
     // MARK: - Report: "Download is super slow"
 
-    /// The transfer no longer walks the response one byte at a time.
+    /// **The smallest average read the download path may perform over a transferred payload.**
     ///
-    /// **A ratio against a control, not a wall-clock bound**, and the difference is the whole
-    /// design of this test. A fixed bound has to be slower than the defect on the slowest machine
-    /// and faster than the fix on that same machine, and at the payload sizes a unit suite can
-    /// afford there is no such number: on the 4 MB fixture below, measured on the assigned
-    /// simulator, the per-byte control takes **0.283 s** and the download task **0.0078 s**, so any
-    /// bound loose enough to be stable (say six seconds) sits far above *both* and would certify the
-    /// defect as fixed. That is this project's signature failure — a guard that is green while the
-    /// defect is present.
+    /// 64 KiB. The real path reads in `CityDownloader.chunkSize` — 512 KiB — so this sits eight
+    /// times below what the working implementation does and 65,536 times above what the defect
+    /// does. There is a great deal of room between those two and nothing to tune.
     ///
-    /// So the test measures the defect itself, here, on whatever machine is running: it walks the
-    /// same fixture with `URLSession.AsyncBytes` exactly as the old body did, and then requires the
-    /// real download to beat that by **6×**. Machine speed cancels, and the assertion can only pass
-    /// if the two code paths are genuinely different in kind.
+    /// **Stated here rather than derived from `CityDownloader.chunkSize`, and that is the whole
+    /// reason this is a constant of the suite's own.** A bound computed from the production
+    /// constant would move with a regression that set the chunk size to one byte — expected
+    /// `bytes + 1` reads, observed `bytes + 1` reads, green — which is this project's dominant
+    /// test-suite defect exactly: a guard that passes while the defect it names is present. The
+    /// chunk size is still *reported* in the failure messages below, because a reader debugging a
+    /// red wants to know what produced the count; it is never what the count is judged against.
+    static let smallestHonestRead = 64 * 1024
+
+    /// The transfer hands over a finished file, and this app never walks the bytes one at a time.
     ///
-    /// **Six, and the arithmetic below is the committed assertion's own** — corrected by review
-    /// finding F5, which caught three sentences still arguing for a 10× threshold above a line that
-    /// says 6, and a display name promising an order of magnitude the assertion does not require.
-    /// A reader debugging a red here was being handed a bound that is not the one that fired.
+    /// ── What replaced a stopwatch, and why ────────────────────────────────────────────────────
     ///
-    /// **The margin is real but not enormous, and it is stated rather than implied.** The factor is
-    /// not headroom; it is spent on the comparison. Re-measured on iPhone 16e for this correction,
-    /// through the narrowed window below: `elapsed 0.007778 s`, `control 0.282818 s`, ratio
-    /// **36.4** — so the committed bound is `0.007778 × 6 = 0.0467 s` against that control, and the
-    /// slack between the assertion and the measurement is about **6.1×**. Worth knowing before
-    /// reading a red here as a performance regression: the number to revisit if it ever flakes is
-    /// this factor, not the fixture size.
+    /// This test used to race two wall-clock measurements: it walked the same fixture with
+    /// `URLSession.AsyncBytes` exactly as the defect had, and required the real transfer to beat
+    /// that control by 6×. The reasoning was that machine speed cancels in a ratio. It does not,
+    /// because the two measurements are not taken at the same instant on a shared runner, and the
+    /// guard went red three times on code nobody had changed:
     ///
-    /// Byte count and sha256 are asserted alongside, because a fast download that verified nothing
-    /// would satisfy a timing test perfectly.
-    @Test("the transfer beats a per-byte walk of the same bytes by a wide margin",
+    ///   * 2026-08-23 — 8.5× against the then-10× threshold.
+    ///   * PR #123's fix round narrowed a sibling window the same way, and the review flagged the
+    ///     class rather than the instance.
+    ///   * 2026-08-31, run 33430972054, the build-65 main run — `elapsed × 6 = 37.698` against a
+    ///     control of `11.744`. A plain rerun went green, which proves it was intermittent and says
+    ///     nothing whatever about why.
+    ///
+    /// **The margin was always a proxy for a count.** A per-byte walk performs one operation per
+    /// byte; a chunked path performs one per 512 KiB. So the count is what is asserted, through
+    /// `CityTransferCensus` — see that type for what it can and cannot see. Nothing here reads a
+    /// clock, and no assertion below can be moved by what else the machine is doing.
+    ///
+    /// ── The two counts, and why neither is sufficient alone ───────────────────────────────────
+    ///
+    /// **`fileHandoffs`** says the bytes arrived as a *file*. This is the one that catches the
+    /// original defect: a transfer that accumulates the response byte by byte in memory and then
+    /// writes it out is verified in perfectly tidy 512 KiB chunks, so a read count alone would be
+    /// green while 4.2 million appends ran.
+    ///
+    /// **`payloadReads`** says this app's own reading of those bytes is chunked. This is the one
+    /// that catches the same defect a layer down, where the transport is untouched and the
+    /// verification walks the file a byte at a time.
+    ///
+    /// **`payloadBytesRead` is the anti-vacuity assertion and is load-bearing.** A read count of
+    /// zero satisfies any ceiling; it is what a verification that never ran reports, and it is what
+    /// a census wired to nothing reports. Requiring the whole payload to have been read is what
+    /// separates "read in big pieces" from "not read".
+    ///
+    /// The install, byte count and sha256 are asserted alongside, because a transfer that counted
+    /// beautifully and verified nothing would satisfy every count above perfectly.
+    ///
+    /// **What this does not cover, stated rather than left to be inferred:** `FileManager`'s own
+    /// work. Staging and installing are `moveItem`, renames within a volume that read no bytes, so
+    /// a future path that *copied* would move a payload past both counters.
+    /// `nothingInTheDownloadPathConsumesAByteStream` is the other half of the cover — a source gate
+    /// over `Data/Cities/`, which sees the transport spelling whether or not a transfer runs.
+    @Test("the transfer hands over a finished file and the app reads it in chunks",
           .timeLimit(.minutes(3)))
     func downloadIsNotPerByte() async throws {
         let dir = FileManager.default.temporaryDirectory
@@ -995,15 +1025,11 @@ struct CityDownloadsFeedbackTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        // 4 MB of non-uniform bytes — a compressible payload would let a transport cheat the clock.
+        // 4 MiB of non-uniform bytes. The non-uniformity is inherited from when this was a timing
+        // test — a compressible payload let a transport cheat the clock — and is kept because it
+        // costs nothing and a realistic pack is not a run of zeroes either.
         let byteCount = 4 * 1024 * 1024
-        var payload = Data()
-        payload.reserveCapacity(byteCount)
-        var seed: UInt64 = 0x2026_0823
-        for _ in 0..<byteCount {
-            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-            payload.append(UInt8(truncatingIfNeeded: seed >> 33))
-        }
+        let payload = Self.payload(bytes: byteCount)
 
         let city = CityManifest.City(
             id: "perf", displayName: "Perf", coverage: "full", treeCount: 1,
@@ -1018,96 +1044,235 @@ struct CityDownloadsFeedbackTests {
         )
         try payload.write(to: object)
 
-        // The control: the loop this fix removed, run against the same file on this machine.
-        let controlStarted = Date()
-        var walked = 0
-        let (bytes, _) = try await URLSession.shared.bytes(from: object)
-        for try await _ in bytes { walked += 1 }
-        let control = Date().timeIntervalSince(controlStarted)
-        #expect(walked == byteCount, "the control did not read the fixture it was calibrating on")
-
-        // ── What is inside the measured window, and why ───────────────────────────────────────
-        //
-        // **Only what scales with the size of the file.** The transfer moved onto a service that
-        // owns its own `URLSession`, so this measurement acquired two fixed costs the old one did
-        // not have: constructing the session, and the first use of URLSession in the process. Both
-        // are a constant number of milliseconds however big the pack is, and neither is the thing
-        // this test guards against — the defect is a loop that runs once per BYTE, which is pure
-        // slope and no intercept.
-        //
-        // So the session is built before the clock starts, and a tiny transfer is run through it
-        // first. **The warm-up is not a fudge, and it was added after a measurement**: on a fresh
-        // DerivedData — a cold process, first URLSession use — the 4 MB transfer measured 0.333 s
-        // against a 1.749 s control, a ratio of 5.2, where the same code on a warm process cleared
-        // 10 comfortably. The intercept was most of the cold reading.
+        // **No warm-up, and no measured window.** Both existed to keep a fixed cost out of a
+        // stopwatch reading — constructing the session, the process's first use of URLSession. A
+        // count does not have an intercept, so there is nothing left for either to protect.
         let library = CityLibrary(rootURL: dir.appendingPathComponent("lib", isDirectory: true))
         let progress = await CityDownloadProgress()
+        let census = CityTransferCensus()
         let service = CityDownloadService(
-            library: library, baseURL: dir, configuration: .ephemeral, progress: progress
+            library: library, baseURL: dir, configuration: .ephemeral,
+            progress: progress, census: census
         )
 
-        let warmUpPayload = Data("warm".utf8)
-        let warmUp = CityDownloadTests.entry(id: "warmup", payload: warmUpPayload)
-        try CityDownloadTests.park(payload: warmUpPayload, for: warmUp, in: dir)
-        _ = await MainActor.run { service.start(warmUp) }
-        await service.waitUntilIdle()
-        // The warm-up is a real transfer and installs a real file, so the count below is measured
-        // as a delta rather than against zero.
-        let installsBefore = await progress.installCount
-
-        // ── Neither endpoint is a main-actor hop, which is review finding F6 ──────────────────
-        //
-        // The window used to open on `Date()` in this task and close on `waitUntilIdle()`, and both
-        // ends crossed the main actor: `start` is `@MainActor`, and `waitUntilIdle` is resumed from
-        // inside `settle`'s `Task { @MainActor … }`. The control — a cooperative-pool loop over
-        // `URLSession.AsyncBytes` — crosses it at neither end, so those two hops were pure
-        // asymmetry inside a window whose whole budget is tens of milliseconds, on a main actor
-        // this suite's own comments document as contended.
-        //
-        // **The clock now starts after the hop in** — inside the main-actor closure, so the wait to
-        // get there is not the transfer's time — **and stops on the file rather than on idle.** The
-        // install is synchronous inside `didFinishDownloadingTo`, on URLSession's delegate queue and
-        // off the main actor, so the instant the file exists at its immutable path is the instant
-        // the bytes finished being transferred, verified and moved: exactly the work that scales
-        // with the size of the file, which is what the paragraph above says belongs in here. The
-        // poll runs on the cooperative pool, the same place the control's loop runs, so the two are
-        // starved and recovered alike.
-        //
-        // This narrows the window rather than loosening the assertion, and it cannot hide the
-        // defect: restoring the per-byte loop puts 4.2 million iterations *inside* these same two
-        // endpoints, so `elapsed` still converges on `control`.
-        //
-        // The deadline is a hang guard, not a bound the assertion leans on — without it a transfer
-        // that never lands spins here until the test's own time limit instead of failing with a
-        // number in the message.
-        let installedURL = library.fileURL(id: city.id, version: city.version)
-        let started = await MainActor.run { () -> Date in
-            let started = Date()
-            service.start(city)
-            return started
-        }
-        let deadline = started.addingTimeInterval(60)
-        while !FileManager.default.fileExists(atPath: installedURL.path), Date() < deadline {
-            try await Task.sleep(nanoseconds: 200_000)
-        }
-        let elapsed = Date().timeIntervalSince(started)
+        await MainActor.run { _ = service.start(city) }
         await service.waitUntilIdle()
 
-        // **Six, not ten, and the number is not the point.** Restoring the per-byte loop makes
-        // `elapsed` and `control` the same measurement — both walk 4.2 million bytes one at a time
-        // — so the ratio collapses to about 1 and any threshold above 2 catches it. Six is far
-        // enough above the noise of a loaded CI machine to not flake, and far enough below what a
-        // working implementation achieves to still be a guard.
+        let counts = census.counts
+
+        // The bytes arrived as a finished file this app was handed, never as a stream it consumed.
         #expect(
-            elapsed * 6 < control,
-            "download took \(elapsed)s against a \(control)s per-byte control — the per-byte loop is back"
+            counts.fileHandoffs == 1,
+            """
+            URLSession handed this app \(counts.fileHandoffs) finished file(s) for a transfer that \
+            installed — the transport is no longer a download task, so the response body is passing \
+            through this app as a stream. That is the shape of the 2026-08-23 defect: \
+            `for try await byte in session.bytes(…)`.
+            """
         )
 
-        // A fast transfer that verified and installed nothing would satisfy the clock perfectly.
-        #expect(await progress.installCount == installsBefore + 1)
+        // Anti-vacuity. Every ceiling below is satisfied by a read that never happened.
+        #expect(
+            counts.payloadBytesRead == Int64(byteCount),
+            """
+            the verification read \(counts.payloadBytesRead) of \(byteCount) bytes, so the read \
+            count below describes something other than a full pass over the payload
+            """
+        )
+
+        // The whole of the guard, in one line: every read took at least 64 KiB on average. A
+        // per-byte walk of this fixture reports 4,194,304 reads against a ceiling of 64.
+        let ceiling = byteCount / Self.smallestHonestRead
+        #expect(
+            counts.payloadReads <= ceiling,
+            """
+            the app performed \(counts.payloadReads) reads over \(byteCount) bytes — an average of \
+            \(counts.payloadBytesRead / Int64(max(counts.payloadReads, 1))) bytes a read, against a \
+            floor of \(Self.smallestHonestRead). The download path is walking the transferred bytes \
+            in pieces far smaller than it should; `CityDownloader.chunkSize` reads \
+            \(CityDownloader.chunkSize) and a working path reports \
+            \(byteCount / CityDownloader.chunkSize) reads here.
+            """
+        )
+
+        // A transfer that counted beautifully and verified nothing satisfies all of the above.
+        #expect(await progress.installCount == 1)
         let landed = try Data(contentsOf: library.fileURL(id: city.id, version: city.version))
         #expect(landed.count == payload.count)
         #expect(SHA256.hash(data: landed).map { String(format: "%02x", $0) }.joined() == city.sha256)
+    }
+
+    /// The verification's read count follows the **chunks**, not the bytes.
+    ///
+    /// The test above bounds the count at one payload size, which a fixed-size buffer that happens
+    /// to be generous at 4 MiB would also satisfy. This is the slope: the same verification is run
+    /// over 1 MiB and over 4 MiB, and what is asserted is the *marginal* cost — the reads spent on
+    /// the three extra mebibytes, against the bytes they carried.
+    ///
+    /// **A marginal rate rather than a ratio, because it survives any intercept.** A path with a
+    /// fixed setup cost, or one that reads a header separately, shifts both counts equally and does
+    /// not move the difference. A per-byte walk cannot hide in it: 3 MiB of extra payload costs
+    /// 3,145,728 extra reads, one byte a read, against a floor of 64 KiB.
+    ///
+    /// Run against `CityDownloader.verify` directly rather than through a transfer. That is
+    /// deliberate: a red here names the verification loop, where a red in the test above could be
+    /// either half of the path. `sabotagedByteIsRefusedOverHTTP` is what proves this same function
+    /// is the one a real transfer goes through.
+    @Test("the verification's reads follow the chunks, not the bytes")
+    func verificationReadsScaleWithChunksNotBytes() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cities-slope-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        func reads(overBytes byteCount: Int) throws -> CityTransferCensus.Counts {
+            let payload = Self.payload(bytes: byteCount)
+            let file = dir.appendingPathComponent("\(byteCount).bin")
+            try payload.write(to: file)
+            let record = CityDownloadRecord(
+                CityManifest.City(
+                    id: "slope", displayName: "Slope", coverage: "full", treeCount: 1,
+                    schemaVersion: 17, version: "v", path: "p",
+                    bytes: Int64(payload.count),
+                    sha256: SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+                )
+            )
+            let census = CityTransferCensus()
+            try CityDownloader.verify(fileAt: file, against: record, census: census)
+            return census.counts
+        }
+
+        let small = 1024 * 1024
+        let large = 4 * 1024 * 1024
+        let smallCounts = try reads(overBytes: small)
+        let largeCounts = try reads(overBytes: large)
+
+        // Anti-vacuity, both ends: a verification that read nothing has a flat, tiny slope.
+        #expect(smallCounts.payloadBytesRead == Int64(small))
+        #expect(largeCounts.payloadBytesRead == Int64(large))
+        #expect(
+            largeCounts.payloadReads > smallCounts.payloadReads,
+            """
+            the read count did not move between \(small) and \(large) bytes \
+            (\(smallCounts.payloadReads) and \(largeCounts.payloadReads)) — the census is not \
+            counting this loop, so the rate below is arithmetic over a constant
+            """
+        )
+
+        let extraBytes = large - small
+        let extraReads = largeCounts.payloadReads - smallCounts.payloadReads
+        #expect(
+            extraBytes / extraReads >= Self.smallestHonestRead,
+            """
+            the extra \(extraBytes) bytes cost \(extraReads) extra reads — \
+            \(extraBytes / extraReads) bytes a read, against a floor of \
+            \(Self.smallestHonestRead). The verification's cost is following the byte count rather \
+            than the chunk count, which is the per-byte walk one layer below the transport.
+            """
+        )
+    }
+
+    /// **Nothing under `Data/Cities/` consumes a URLSession byte stream.**
+    ///
+    /// The counting guards above run a transfer and observe it. This one needs no transfer, which
+    /// is the point: it sees `adopt`, the resume path and any code a fixture never reaches, and it
+    /// names the defect by its spelling instead of by its consequence.
+    ///
+    /// **The tokens are the byte-stream API, not the word "bytes".** `record.bytes`,
+    /// `countOfBytesReceived`, `totalBytesWritten` and `payloadBytesRead` are all ordinary and all
+    /// live in these files. What is forbidden is the API whose element is one byte —
+    /// `URLSession.bytes(from:)`, `URLSession.bytes(for:)`, and the `AsyncBytes` type they return.
+    /// A download task hands over a file; there is no reason for this directory to hold a byte
+    /// stream, and the one time it did was the defect.
+    ///
+    /// Comments are stripped first (`BorrowedGlyphAPI.codeOnly`, calibrated by its own suite),
+    /// because these files discuss the removed loop at length — `CityTransferCensus`'s header
+    /// quotes it, and `CityDownloader.isCancellation` explains which error it used to throw. A gate
+    /// that made the codebase unable to describe its own history would be fixed by deleting the
+    /// prose.
+    @Test("nothing in the city download path consumes a byte stream")
+    func nothingInTheDownloadPathConsumesAByteStream() throws {
+        let root = AppSourceLiterals.repositoryRoot()
+        let directory = root.appendingPathComponent("Cypress/Data/Cities", isDirectory: true)
+        let files = try FileManager.default
+            .contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "swift" }
+            .sorted { $0.path < $1.path }
+
+        // The scanner's own control: an empty read satisfies the sweep below vacuously, and a
+        // mistyped path is exactly how that happens.
+        #expect(
+            files.count >= 5,
+            """
+            found only \(files.count) Swift files under \(directory.path) — this gate is not \
+            reading the download path, so it passes without checking anything
+            """
+        )
+
+        let offenders = try files
+            .map { file -> (name: String, lines: [Int]) in
+                let source = try String(contentsOf: file, encoding: .utf8)
+                return (file.lastPathComponent, Self.byteStreamUses(in: source))
+            }
+            .filter { !$0.lines.isEmpty }
+            .map { "\($0.name) \($0.lines)" }
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders.joined(separator: ", ")) consume(s) a URLSession byte stream. That is the \
+            2026-08-23 defect verbatim: the response arrives as an `AsyncSequence` of `UInt8` and \
+            the path walks a 199 MB pack one element at a time. The transfer is a download task and \
+            is handed a finished file — see `CityDownloadService.urlSession(_:downloadTask:\
+            didFinishDownloadingTo:)`.
+            """
+        )
+    }
+
+    /// The byte-stream API's spellings, as line numbers. A free function of a string so it can be
+    /// run against cases whose answers are already known.
+    static func byteStreamUses(in source: String) -> [Int] {
+        let tokens = [".bytes(from:", ".bytes(for:", "AsyncBytes"]
+        return BorrowedGlyphAPI.codeOnly(in: source)
+            .split(separator: "\n", omittingEmptySubsequences: false).enumerated()
+            .filter { _, line in tokens.contains(where: { line.contains($0) }) }
+            .map { index, _ in index + 1 }
+    }
+
+    /// **The calibration.** A scanner that found nothing looks exactly like a clean directory, and
+    /// this repository has filed that defect. Both directions are checked.
+    @Test("the byte-stream scanner catches the defect's spellings and leaves the ordinary ones")
+    func byteStreamScannerIsCalibrated() {
+        let mustCatch = """
+        let (bytes, _) = try await session.bytes(from: url)
+        let (stream, response) = try await session.bytes(for: request)
+        func walk(_ stream: URLSession.AsyncBytes) async throws { }
+        """
+        #expect(
+            Self.byteStreamUses(in: mustCatch) == [1, 2, 3],
+            """
+            the scanner missed a spelling it must catch: it found \
+            \(Self.byteStreamUses(in: mustCatch)) where all three of those lines take the response \
+            as a sequence of single bytes
+            """
+        )
+
+        let mustNotCatch = """
+        bytes: Int64(payload.count),
+        record: record, fraction: Self.fraction(task.countOfBytesReceived, record)
+        didWriteData bytesWritten: Int64,
+        var payloadBytesRead: Int64 = 0
+        // the body was `session.bytes(from:)` and walked a URLSession.AsyncBytes per byte
+        /// `for try await byte in session.bytes(…)`, one iteration per byte of a 199 MB pack.
+        """
+        #expect(
+            Self.byteStreamUses(in: mustNotCatch).isEmpty,
+            """
+            the scanner flagged a line it must leave alone: \
+            \(Self.byteStreamUses(in: mustNotCatch)). Lines 1–4 are the ordinary byte *counts* \
+            these files are full of, and lines 5–6 are comments describing the removed loop — \
+            which every file in the directory is entitled to do, and two of them do.
+            """
+        )
     }
 
     // MARK: - The progress ring R43 §3 rules determinate
