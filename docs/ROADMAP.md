@@ -290,6 +290,15 @@ that had not yet reached a build). What remains OPEN:
 
 ### Follow-up tickets from the 2026-08-30 rounds
 
+- **The splice backlog (orchestrator-only).** Nine pending files under `docs/{rulings,errata}-pending/`
+  predate the 2026-08-30 splice and were never spliced at their rounds' merges: nyc-ingest,
+  nyc-publish, photo-upload-storage-and-provenance, s17-region-generation (both files),
+  seed-case-normalisation-off-by-one, seed-pin-and-bundle-scope, format1-retirement,
+  nyc-publish-rulings, cities-screen-feedback-amendments. Numbering is the orchestrator's alone
+  (CLAUDE.md); several are cited by filename from ROADMAP itself and cross-reference each other, so
+  this is one careful sitting, not a sweep.
+
+
 - **Map camera fits the filtered set.** "See them all on the map" (PR #130) arrives with the
   remembered viewport, so the reader's trees can be off-screen; the owner ruled the link ships
   as-is and the camera change is its own small round — camera policy carries its own errata
