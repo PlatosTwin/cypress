@@ -384,9 +384,14 @@ final class AreaPickerUITests: XCTestCase {
     /// The neighborhood the pinned fix **does** resolve, and therefore the name the header pill
     /// prints before anything is picked — the pill this file taps to open the picker.
     ///
-    /// Safe to look up in `buttons` while the sheet is open, which matters: the picker lists this
-    /// name too. It is only ever tapped **before** the sheet exists, and `otherNeighborhood` — the
-    /// one tapped inside the sheet — is a different string from this one by construction.
+    /// **It is only ever tapped before the sheet exists**, and that — not any safety of the lookup
+    /// itself — is the invariant that makes this constant correct.
+    ///
+    /// The picker lists this name too, so with the sheet open `app.buttons["Western Addition"]`
+    /// matches **two** elements (measured: `count == 2`). An ambiguous query tolerates `.exists`
+    /// and raises on `.tap()`, `.label`, `.frame` and `.isHittable`, so a future edit that reaches
+    /// for this constant after the sheet is up gets a hard failure, not a wrong answer. The one
+    /// tapped inside the sheet is `otherNeighborhood`, a different string by construction.
     private static let homeNeighborhood = "Western Addition"
     private static let homeCity = "San Francisco"
     private static let otherCity = "San Jose"

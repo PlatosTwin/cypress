@@ -526,6 +526,61 @@ struct AreaPickerTests {
         #expect(!city.contains("neighborhood"))
     }
 
+    /// **Which segment passes which hint** — the other half of the paste error, and the half the
+    /// test above cannot see.
+    ///
+    /// Writing the two constants correctly and then wiring them to the wrong segments produces an
+    /// Almanac that announces *"Opens the list of cities on this phone"* and a City segment that
+    /// announces neighborhoods. Every value test stays green through that swap: the constants are
+    /// still distinct, still correctly worded, and `AlmanacPresentation` never sees either one.
+    /// The PR's reviewer performed exactly that swap and watched the suite pass.
+    ///
+    /// XCUITest cannot read an accessibility hint, so the device cannot witness this either. But
+    /// the swap is not really a fact about the running app — it is a fact about **two call sites**,
+    /// and this repo already reads its own source to pin facts of that shape (`DrawnGlyphGuardTests`
+    /// for SF Symbols, `BritishSpellingGuardTests` for spellings). This reuses both of their
+    /// helpers: `AppSourceLiterals` for the walk and `BorrowedGlyphAPI.codeOnly` to blank comments
+    /// and string interiors first — without that, a docstring naming the other segment's constant
+    /// would fail this, and the prose in these files does discuss both.
+    @Test("each stats segment passes its own hint to its header pill")
+    func eachSegmentIsWiredToItsOwnHint() throws {
+        let root = AppSourceLiterals.repositoryRoot()
+
+        /// The code of one app-target file, comments and string interiors blanked.
+        func code(_ relativePath: String) throws -> String {
+            let url = root.appendingPathComponent(relativePath)
+            let source = try String(contentsOf: url, encoding: .utf8)
+            return BorrowedGlyphAPI.codeOnly(in: source)
+        }
+
+        let almanac = try code("Cypress/Features/Almanac/AlmanacView.swift")
+        let city = try code("Cypress/Features/City/CityView.swift")
+
+        // Each file mentions its own hint and never the other's. Neither name is a substring of the
+        // other, so these four are four independent facts.
+        #expect(
+            almanac.contains("changeAreaHint"),
+            "the Almanac's header pill passes no area hint — either it was rewired or the pill is gone"
+        )
+        #expect(
+            !almanac.contains("changeCityHint"),
+            "the Almanac's header pill announces the CITY list; the two hints are swapped"
+        )
+        #expect(
+            city.contains("changeCityHint"),
+            "the City segment's header pill passes no city hint — either it was rewired or the pill is gone"
+        )
+        #expect(
+            !city.contains("changeAreaHint"),
+            "the City segment's header pill announces the NEIGHBORHOOD list; the two hints are swapped"
+        )
+
+        // The walk found real files rather than two empty strings, which is the way this test would
+        // otherwise pass while measuring nothing (E203's family).
+        #expect(almanac.contains("struct AlmanacScreen"), "AlmanacView.swift did not read as expected")
+        #expect(city.contains("struct CityScreen"), "CityView.swift did not read as expected")
+    }
+
     /// The seed fact that makes F1 a permanent state for a whole city rather than an edge case.
     @Test("every San Jose row carries no neighborhood, so its readers are always in the fallback")
     func sanJoseIsAlwaysTheFallback() async throws {

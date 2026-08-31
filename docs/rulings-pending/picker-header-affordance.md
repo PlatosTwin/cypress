@@ -52,10 +52,16 @@ entirely; the provenance sentence stays as one quiet line."**
   hairline, `body12` in `textMuted`, `headerPillPaddingV/H`. It is the element it always was —
   still the screen naming its own subject — and re-styling it as a "button" would have re-imported
   the visual weight fault 2 is about.
-- **Plus a drawn chevron**, `CypressChevron(direction: .down)` at 9×5 in `chevronDisclosure`, the
-  token the app already uses for "this is an affordance". That mark is the entire visual difference
-  between the label and the control, which is the point: it is the smallest thing that says
-  *pressable*.
+- **Plus a drawn chevron**, `CypressChevron(direction: .down)`, 9×5 at the default type setting and
+  scaling from there. That mark is the entire visual difference between the label and the control,
+  which is the point: it is the smallest thing that says *pressable*. Its color is ruled on
+  separately below, and the reason it needed a ruling is that same sentence.
+- **The mark scales with the label**, `@ScaledMetric(relativeTo: .caption)`. The precedent is
+  `AccountAskView.AccountProviderButton`, whose comment says to pick the curve the paired font
+  actually scales on; there that is `.body` for `body15Bold`, here it is `.caption` for `body12`.
+  Following the precedent literally rather than by its reasoning would have been wrong.
+- **Aligned to the first text baseline**, not centered. Centered is indistinguishable while the
+  label is one line and wrong the moment it is two — see the wrapped-pill note below.
 - **`direction: .down` is new and is drawn, not rotated.** A `RotatedShape` keeps its unrotated
   frame as its layout box, so a quarter-turned 10×16 chevron lays out 10 wide and reads 16 wide, and
   the pill would be spaced against a box the mark does not occupy. There are no SF Symbols here
@@ -64,6 +70,35 @@ entirely; the provenance sentence stays as one quiet line."**
   size moving (ARCHITECTURE §6).
 
 The provenance sentence is now a bare `Text` on both segments. `AreaPickerCopy.change` is deleted.
+
+#### Amendment (orchestrator, 2026-08-31) — the mark's color is a contrast requirement
+
+**Ruled after the PR review.** The chevron shipped in `chevronDisclosure`, the token every other
+disclosure chevron in the app uses. Measured off rendered pixels, that is **1.96:1** against the
+capsule in light and **2.16:1** in dark. WCAG 2.1 SC 1.4.11 asks **3:1** of a graphical object that
+alone identifies a control, and this component's own docstring says the mark is exactly that.
+
+**The ruling: the pill's chevron takes an existing token measuring ≥3:1 against the pill fill in
+both schemes.** No new token is minted, and `chevronDisclosure` is not changed at its other sites —
+there the mark sits on a full-width row with a trailing edge, so the layout is also saying "this
+opens something" and the chevron is not carrying the claim alone. Here it is.
+
+**Chosen: `textMuted`** — the pill's own label color.
+
+| | chevron | capsule (`surfaceCard`) | ratio |
+| --- | --- | --- | --- |
+| light, was | `#B4BCA9` | `#FFFFFF` | **1.96:1** ✗ |
+| dark, was | `#4A5A4C` | `#18251D` | **2.16:1** ✗ |
+| light, now | `#535F4C` | `#FFFFFF` | **6.75:1** ✓ |
+| dark, now | `#94A496` | `#18251D` | **6.06:1** ✓ |
+
+Method: sampled from rendered device screenshots at the chevron's stroke core, not read off the
+token table. The calculator was calibrated first by reproducing the reviewer's two published
+numbers (1.96 and 2.16) from their sampled RGB before it was trusted on the new ones.
+
+Choosing the label's own token, rather than any other passing token, has a second virtue: the name
+and the mark become one object instead of a name with a decoration attached, which is what the
+ruling above wanted the pill to read as in the first place.
 
 #### What was weighed and rejected
 
@@ -91,6 +126,14 @@ that opens — `AreaPickerCopy.changeAreaHint` / `.changeCityHint`. VoiceOver re
 `Sunset/Parkside, button, Opens the list of neighborhoods on this phone.`
 
 This is strictly more than the retired control offered (`Change, button`), which is fault 3 fixed.
+
+**Dynamic Type, and the wrapped pill.** The mark scales on the label's own curve (above). Alignment
+is the other half: the radius fallback's pill (`Within a 15-minute walk`) wraps to two lines at
+large type, and a centered mark then floats against the full height of the wrapped label, beside the
+line break, touching neither line. `.firstTextBaseline` puts it on the first line at every size. A
+`Shape` has no baseline, so SwiftUI would align its bottom edge; an `alignmentGuide` lifts it by half
+its own height instead, which sets the "v" on the text's midline rather than hanging it off the
+baseline.
 
 **One honest limit:** XCUITest exposes an element's label, traits and value, and **not its hint**,
 so `AreaPickerUITests` witnesses the trait and the label and cannot witness the hint. What is

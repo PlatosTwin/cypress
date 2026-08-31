@@ -143,6 +143,12 @@ extension CypressSpacing {
         static let headerPillPaddingH: CGFloat = 12
         /// The disclosure mark on a trailing pill that is itself the control (`HeaderPillButton`).
         ///
+        /// **These three are the mark's size at the default type setting and NOT its drawn size.**
+        /// `HeaderPillButton` reads them through `@ScaledMetric(relativeTo: .caption)` so the mark
+        /// follows `body12`, the label beside it, up the same curve — fixed points left a 5pt speck
+        /// next to a ~34pt name at AX5. Anything measuring the drawn mark has to measure it on the
+        /// device at a stated type size; these numbers answer for one setting only.
+        ///
         /// **NOT SPECIFIED** — SCREENS.md §2 draws C1's pill as a label and never as a control, so
         /// there is no drawn size to copy. Sized against the pill's own 12pt label rather than
         /// against the 10×16 back chevron: at the back circle's size the mark outweighs the name it

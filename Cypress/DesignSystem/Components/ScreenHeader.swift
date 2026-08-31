@@ -219,17 +219,33 @@ struct HeaderPill: View {
 /// still saying what the screen is about; the mark is what says it can be pressed. A filled or
 /// outlined "button" pill would have re-imported the weight the ruling removed.
 ///
-/// **NOT SPECIFIED** — SCREENS.md §2 draws C1's pill as a label only. The mark's sizes live in
-/// `CypressSpacing.Component`, its color is `chevronDisclosure` (the app's existing "this is an
-/// affordance" green, held at one value in both schemes for that token's own stated reason), and
-/// the glyph is `CypressChevron`, drawn here like every other mark in the app — there are no SF
-/// Symbols (RULINGS R57, `DrawnGlyphGuardTests`).
+/// **NOT SPECIFIED** — SCREENS.md §2 draws C1's pill as a label only. The mark's base sizes live in
+/// `CypressSpacing.Component` and the glyph is `CypressChevron`, drawn here like every other mark in
+/// the app — there are no SF Symbols (RULINGS R57, `DrawnGlyphGuardTests`).
 ///
-/// **Accessibility.** The visual is ~24pt tall, so `cypressHitArea` gives it the 44pt target
-/// without moving the drawn pill (ARCHITECTURE §6). The label is the place name and the hint is
-/// what pressing it does, which is strictly more than the retired control offered: `Change, button`
-/// named an operation without its subject, where this reads `Sunset/Parkside, button` and then the
-/// caller's hint.
+/// **The mark is drawn in `textMuted`, the pill's own label color, and that is a contrast
+/// requirement rather than a preference.** It was `chevronDisclosure` — the token every other
+/// disclosure chevron in the app uses — and measured off rendered pixels that came to **1.96:1**
+/// against the capsule in light and **2.16:1** in dark. WCAG 2.1 SC 1.4.11 asks 3:1 of a graphical
+/// object that alone identifies a control, and by this component's own account above, this mark is
+/// exactly that. `chevronDisclosure` is fine where it lives: on a full-width row with a trailing
+/// edge, the layout is also saying "this opens something", and the chevron is not carrying the
+/// claim by itself. Here it is. Matching the label's own token measures **6.75:1** light and
+/// **6.06:1** dark, and has the second virtue of making the name and the mark one object rather
+/// than a name with a decoration attached. `chevronDisclosure` is untouched at its other sites.
+///
+/// **The mark scales with the label.** `@ScaledMetric(relativeTo: .caption)`, because `body12` — the
+/// label beside it — is built `relativeTo: .caption`, so the two ride one curve and the ratio
+/// between them holds at every setting. `AccountAskView.AccountProviderButton` is the precedent and
+/// this follows its *reasoning* rather than its literal `.body`: that comment's point is to pick the
+/// curve the paired font actually uses, and there the paired font is `body15Bold`. Fixed points
+/// here left a 5pt speck beside a ~34pt name at AX5.
+///
+/// **Accessibility.** The visual is ~24pt tall at default type, so `cypressHitArea` gives it the
+/// 44pt target without moving the drawn pill (ARCHITECTURE §6). The label is the place name and the
+/// hint is what pressing it does, which is strictly more than the retired control offered:
+/// `Change, button` named an operation without its subject, where this reads `Sunset/Parkside,
+/// button` and then the caller's hint.
 struct HeaderPillButton: View {
 
     let text: String
@@ -239,6 +255,14 @@ struct HeaderPillButton: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// The mark's drawn size, following the label's own curve — see the note above.
+    @ScaledMetric(relativeTo: .caption) private var chevronWidth =
+        CypressSpacing.Component.headerPillChevronWidth
+    @ScaledMetric(relativeTo: .caption) private var chevronHeight =
+        CypressSpacing.Component.headerPillChevronHeight
+    @ScaledMetric(relativeTo: .caption) private var chevronStroke =
+        CypressSpacing.Component.headerPillChevronStroke
+
     init(_ text: String, hint: String, action: @escaping () -> Void) {
         self.text = text
         self.hint = hint
@@ -247,24 +271,36 @@ struct HeaderPillButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: CypressSpacing.Component.headerPillChevronGap) {
+            // ── `.firstTextBaseline`, and the wrapped pill is the reason ────────────────────────
+            //
+            // Centered, the mark sits against the *whole* height of the label, which is right while
+            // the label is one line and wrong the moment it is two. The radius fallback is the case
+            // that shows it: at AX5 `Within a 15-minute walk` wraps, the pill grows to ~101pt tall,
+            // and a centered mark floats in the white space beside the line break, touching neither
+            // line and reading as attached to nothing. Aligned to the first baseline it rides the
+            // first line, which is where a reader looks for it and where it stays at every size.
+            //
+            // A `Shape` has no baseline of its own, so its bottom edge is what SwiftUI aligns; the
+            // guide below lifts it by the mark's own optical center instead, which puts the "v" on
+            // the text's midline rather than hanging it off the baseline.
+            HStack(alignment: .firstTextBaseline, spacing: CypressSpacing.Component.headerPillChevronGap) {
                 Text(text)
                     .font(CypressFont.body12)
                     .foregroundStyle(CypressColor.textMuted)
 
                 CypressChevron(direction: .down)
                     .stroke(
-                        CypressColor.chevronDisclosure,
+                        CypressColor.textMuted,
                         style: StrokeStyle(
-                            lineWidth: CypressSpacing.Component.headerPillChevronStroke,
+                            lineWidth: chevronStroke,
                             lineCap: .round,
                             lineJoin: .round
                         )
                     )
-                    .frame(
-                        width: CypressSpacing.Component.headerPillChevronWidth,
-                        height: CypressSpacing.Component.headerPillChevronHeight
-                    )
+                    .frame(width: chevronWidth, height: chevronHeight)
+                    .alignmentGuide(.firstTextBaseline) { dimensions in
+                        dimensions[.bottom] - (dimensions.height / 2)
+                    }
             }
             .padding(.vertical, CypressSpacing.Component.headerPillPaddingV)
             .padding(.horizontal, CypressSpacing.Component.headerPillPaddingH)
