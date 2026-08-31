@@ -256,6 +256,27 @@
 # device it was measured on. So: either of the two short lines is right, this class is on one of
 # them, and nothing about the gate's pace turns on 10.7s either way. Shards 2 and 3 are the ones the
 # arithmetic actually rules out, by ~6-8s.
+#
+# `SeeAllOnMapUITests` then GREW from one test to two — the camera the link opens on (the owner's
+# 2026-08-31 ruling) — and the class measured **16.5s** whole, on the iPhone 16 Pro simulator
+# (EA0AD796-3052-4EE5-A7A8-A1DE807A3653, 402 pt):
+#
+#   VERIFY-OK: Executed 2 tests, with 0 failures (0 unexpected) in 16.523 (16.528) seconds
+#
+# A different device from the 10.7s above, so what this line contributes is **+5.8s over the number
+# already carried**, not 16.5s of new cost — the same accounting the ReadingOrderAccessibilityTests
+# entry uses.
+#
+# THE PLACEMENT DOES NOT CHANGE, and here is the arithmetic that says so. Totals as the entries
+# above leave them, with this class's cost applied to whichever line holds it:
+#
+#   this class on Shard 1:  max(369.7, 372.5 + 5.8 = 378.3) = 378.3s   <- stays here
+#   this class on Shard 4:  max(369.7, 362.6 + 16.5 = 379.1) = 379.1s
+#
+# 0.8s again — the same coin flip between the same two lines, not a new finding — so moving the
+# class would buy nothing and cost the churn. Shards 2 and 3 stay ruled out by ~6-8s. **Every number
+# in this arithmetic is still a one-run snapshot from three different machines**, and the file's
+# standing instruction to re-measure Shards 1 and 4 on one machine is untouched by it.
 
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests

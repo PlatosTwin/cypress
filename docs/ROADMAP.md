@@ -299,10 +299,15 @@ that had not yet reached a build). What remains OPEN:
   this is one careful sitting, not a sweep.
 
 
-- **Map camera fits the filtered set.** "See them all on the map" (PR #130) arrives with the
-  remembered viewport, so the reader's trees can be off-screen; the owner ruled the link ships
-  as-is and the camera change is its own small round — camera policy carries its own errata
-  history, so it gets its own review, not a rider.
+- ~~**Map camera fits the filtered set.**~~ **SHIPPED** (`feat/see-all-camera`). The owner ruled
+  the behavior on 2026-08-31 while trying build 63, and the ruling is narrower than this entry's
+  title: the link opens on **the city where the reader has the most trees**, fitted to their trees
+  in that city. The chip on screen 01 still moves nothing — the camera rides the link's own
+  one-shot narrowing, so it cannot fire on a plain tab switch either. This closes the first of
+  ERRATA E287's two axes; the second, the installed inventory, is still open. The three decisions
+  under the ruling — fit rather than centroid, most-recent-contribution as the tie rule, and the
+  next city winning when the winning city's pack has been removed — are in
+  `docs/rulings-pending/see-all-camera.md` and are **awaiting the owner's ratification**.
 - **Screen 12's `COLLATE NOCASE` joins.** `AlmanacQueries` lines ~321 and ~394 carry the same
   index-defeating collation the Grove round (PR #131) removed from its own path; the almanac pays
   the same class of full-inventory walk. Same fix shape (`lower()` + the seed-contract test PR
