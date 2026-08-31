@@ -1089,9 +1089,10 @@ struct CityDownloadsFeedbackTests {
             the app performed \(counts.payloadReads) reads over \(byteCount) bytes — an average of \
             \(counts.payloadBytesRead / Int64(max(counts.payloadReads, 1))) bytes a read, against a \
             floor of \(Self.smallestHonestRead). The download path is walking the transferred bytes \
-            in pieces far smaller than it should; `CityDownloader.chunkSize` reads \
-            \(CityDownloader.chunkSize) and a working path reports \
-            \(byteCount / CityDownloader.chunkSize) reads here.
+            in pieces far smaller than it should. `CityDownloader.chunkSize` currently reads \
+            \(CityDownloader.chunkSize) bytes at a time; at its intended 512 KiB this fixture \
+            reports 8 reads. (The count is judged against the floor, never against that constant — \
+            see `smallestHonestRead`.)
             """
         )
 
