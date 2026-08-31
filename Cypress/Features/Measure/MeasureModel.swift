@@ -162,7 +162,9 @@ final class MeasureModel {
             // The reading is now part of this tree's record, so the sanity pill has to be able to
             // see it: a second measurement taken in the same standing compares against the first.
             measurements.append(receipt.measurement)
-            draft.entry = ""
+            // `clearEntry`, not `entry = ""`: a save that left F26's unit annotation standing would
+            // put a sentence about the number that was just filed under an empty pad.
+            draft.clearEntry()
             onSaved(receipt)
         } catch {
             saveFailed = true

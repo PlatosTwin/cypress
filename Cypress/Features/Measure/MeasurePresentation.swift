@@ -48,8 +48,23 @@ struct MeasureDraft: Equatable {
     var method: MeasurementMethod = .tape
     /// The unit the keypad is entering in. Defaults per kind; changed by 16 §3's `switch to …` link.
     var unit: LengthUnit = MeasureMetrics.defaultUnit(for: .dbh)
-    /// The digits as typed, in `unit`. Never converted (see `switchUnit`).
+    /// The digits as typed. Never converted (see `switchUnit`).
+    ///
+    /// Normally these digits were typed under `unit`. Between a unit flip and the pad being emptied
+    /// they were not, and `unitDigitsWereTypedIn` is what says so.
     var entry: String = ""
+
+    /// The unit these digits were typed under, when that is no longer the unit under the keypad.
+    ///
+    /// Nil in the ordinary case — the digits and the label agree, and there is nothing to say. It is
+    /// set only by `switchUnit`, and only while there are digits to be wrong about; it is what the
+    /// owner's 2026-08-31 ruling on F26 annotates. See `switchUnit` for the ruling itself.
+    ///
+    /// **It is cleared when `entry` empties and not before.** Backspacing `64` to `6` leaves a digit
+    /// that was still typed under the old unit, and appending to it produces a number that is partly
+    /// old — so no edit short of clearing the field makes these digits honestly the current unit's.
+    /// The conservative rule is the one that cannot leave the annotation off a number that needs it.
+    private(set) var unitDigitsWereTypedIn: LengthUnit?
 
     /// A draft opened on a given measurement, with the unit that measurement is entered in.
     ///
@@ -98,6 +113,10 @@ struct MeasureDraft: Equatable {
         case .backspace:
             guard !entry.isEmpty else { return }
             entry.removeLast()
+            // Backspacing the field empty is the reader discarding the number the annotation was
+            // about, so the annotation goes with it. Anything short of empty keeps it — see
+            // `unitDigitsWereTypedIn` for why partial edits do not earn a clear.
+            if entry.isEmpty { unitDigitsWereTypedIn = nil }
         }
     }
 
@@ -109,20 +128,51 @@ struct MeasureDraft: Equatable {
         guard newKind != kind else { return }
         kind = newKind
         unit = MeasureMetrics.defaultUnit(for: newKind)
-        entry = ""
+        // Still a clear, and F26's ruling does not reach it: a unit flip asks the same question in
+        // other units, where the digits are still an answer worth keeping. Changing kind asks a
+        // different question, and a trunk's 64 is not an answer about a height.
+        clearEntry()
     }
 
     /// 16 §3's `switch to inches`.
     ///
-    /// **The entry is cleared rather than converted.** `Quantity.value` is "the number as the human
-    /// typed it, in `unitEntered`. Never silently converted for display" — and converting it on
-    /// entry would make that field a lie in the other direction. Keeping the digits and swapping the
-    /// label is worse still: `64 cm` would silently become `64 in`, a 2.5× error written to an
-    /// append-only record with nothing on screen to catch it. Retyping four digits is the cheap
-    /// half of that trade. **NOT SPECIFIED** by SCREENS.md; see ERRATA.
+    /// **The entry is kept and annotated** — the owner's ruling of 2026-08-31 on tester report F26,
+    /// which reported the clear as data loss. The digits stay exactly as typed (5 stays 5, never
+    /// converted), and `unitDigitsWereTypedIn` carries what they were typed under so the screen can
+    /// say the meaning changed.
+    ///
+    /// **The old behavior's argument was sound and the ruling answers it rather than overruling
+    /// it.** Clearing was defended on the ground that `64 cm` silently becoming `64 in` is a 2.5×
+    /// error on an append-only record "with nothing on screen to catch it". The annotation *is* the
+    /// something on screen. What the clear cost in exchange was every digit the reader had typed,
+    /// on a keypad, in a field, often one-handed — which is what F26 was filed about.
+    ///
+    /// **`Quantity.value` is untouched by this and was never in tension with it.** That invariant is
+    /// about the *stored* record: the number as typed, in the unit it was typed in. A `Quantity` is
+    /// only ever built at save, out of whatever digits and unit the pad holds at that moment, so a
+    /// reader who types 5, flips to inches and saves stores `value: 5, unitEntered: in` — which is
+    /// precisely what the invariant asks for. Converting on the flip is the thing that would break
+    /// it, and this does not convert. (ROADMAP's F26 entry said keeping the digits "would falsify"
+    /// the invariant; it would not, and that entry is corrected in this round.)
+    ///
+    /// **NOT SPECIFIED** by SCREENS.md; see ERRATA.
     mutating func switchUnit() {
+        // The unit these digits have belonged to all along, which is not necessarily the one being
+        // switched away from: flipping cm → in → cm returns the digits to their own unit, and there
+        // is then nothing left to annotate.
+        let typedIn = unitDigitsWereTypedIn ?? unit
         unit = MeasureMetrics.alternateUnit(for: kind, from: unit)
+        unitDigitsWereTypedIn = (entry.isEmpty || typedIn == unit) ? nil : typedIn
+    }
+
+    /// Empties the pad, and forgets the unit annotation with it.
+    ///
+    /// The two are one action: the annotation describes digits, and there are no digits afterwards.
+    /// Every place that empties the entry goes through here for that reason — a bare `entry = ""`
+    /// elsewhere would leave a sentence on screen about a number that is gone.
+    mutating func clearEntry() {
         entry = ""
+        unitDigitsWereTypedIn = nil
     }
 }
 
@@ -228,6 +278,13 @@ struct MeasurePresentation {
     /// `switch to inches`.
     var unitSwitchLabel: String {
         MeasureCopy.switchTo(MeasureMetrics.alternateUnit(for: draft.kind, from: draft.unit))
+    }
+
+    /// F26's annotation, or nil when the digits and the unit under them agree — which is every state
+    /// except the one between a unit flip and the pad being emptied.
+    var unitFlipNotice: String? {
+        guard let typedIn = draft.unitDigitsWereTypedIn else { return nil }
+        return MeasureCopy.unitFlipNotice(typedIn: typedIn, nowReadAs: draft.unit)
     }
 
     var canSave: Bool { draft.canSave }
@@ -377,6 +434,22 @@ enum MeasureCopy {
 
     /// §3's `switch to inches`.
     static func switchTo(_ unit: LengthUnit) -> String { "switch to " + unitName(unit) }
+
+    /// **F26's annotation.** What the digits on the pad were typed under, and what they now mean.
+    ///
+    /// The owner ruled on 2026-08-31 that a unit flip keeps the typed digits and says what happened
+    /// to them, rather than clearing the field. This is the saying-so, and it is the whole safeguard
+    /// against the error the old clear existed to prevent — so it states both units and neither is
+    /// left to be inferred from the label above it.
+    ///
+    /// Two facts and no instruction. It does not tell the reader to retype, because retyping is one
+    /// of two correct responses and the screen does not know which they meant: somebody who flipped
+    /// the unit deliberately, having typed the number under the wrong one, is already looking at
+    /// what they wanted. **NOT SPECIFIED** by SCREENS.md; proposed under DECISIONS constraint 21 for
+    /// the owner to ratify.
+    static func unitFlipNotice(typedIn: LengthUnit, nowReadAs: LengthUnit) -> String {
+        "Typed in \(unitName(typedIn)), now read as \(unitName(nowReadAs))."
+    }
 
     /// The spelled-out unit the switch link names. **NOT SPECIFIED** beyond `inches`; the other
     /// three follow from the pairs in `MeasureMetrics.alternateUnit`.
