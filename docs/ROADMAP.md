@@ -256,8 +256,17 @@ that had not yet reached a build). What remains OPEN:
   refuse; not schedulable as written.
 - **F22 — species distribution as a static city map** (one point per tree) on the field guide's
   §5; today it is two stat cards.
-- **F23 — "See them all on the map"** link from Grove/Journal into the map filtered to yours; the
-  target filter exists (`MapFilter.membership`, chip "Yours"), nothing routes into it.
+- ~~**F23 — "See them all on the map"** link from Grove/Journal into the map filtered to yours; the
+  target filter exists (`MapFilter.membership`, chip "Yours"), nothing routes into it.~~
+  **DONE — the link ships on the Journal tab's `Yours` segment.** `AppRouter.goToMap(showing:)` arms
+  a one-shot narrowing that screen 01 applies on arrival; the chip reads selected and `Clear
+  filters` is in the row from the first frame. **The placement is the owner's to ratify** — no mock
+  draws this link (DECISIONS constraint 21) — and the PR asks. It is deliberately **not** on My
+  Grove's `Trees` pill, which is where the sentence reads most naturally and where it cannot keep
+  its promise: the grove's list includes trees you have only favorited and the map's `Yours` filter
+  deliberately does not (R23), so the same link there would silently drop rows the reader can still
+  see. See `docs/errata-pending/three-answers-to-which-trees-are-mine.md`, and
+  `CypressTests/SeeAllOnMapTests`, which pins both halves.
 - **F25 — Account/You page UI/UX pass.**
 - **F26 — Measure: unit switch clears the entered value. BLOCKED ON A RULING**: deliberate today —
   `Quantity.value` is "the number as the human typed it, never converted", and keeping digits
@@ -278,6 +287,17 @@ that had not yet reached a build). What remains OPEN:
   `resolveIDSpace` at 1,200 m, so a distant reader already got the out-of-range screen. An
   approximate-location fix is what put a confidently named neighborhood in front of a reader who
   was nowhere near it.
+
+### Follow-up tickets from the 2026-08-30 rounds
+
+- **Map camera fits the filtered set.** "See them all on the map" (PR #130) arrives with the
+  remembered viewport, so the reader's trees can be off-screen; the owner ruled the link ships
+  as-is and the camera change is its own small round — camera policy carries its own errata
+  history, so it gets its own review, not a rider.
+- **Screen 12's `COLLATE NOCASE` joins.** `AlmanacQueries` lines ~321 and ~394 carry the same
+  index-defeating collation the Grove round (PR #131) removed from its own path; the almanac pays
+  the same class of full-inventory walk. Same fix shape (`lower()` + the seed-contract test PR
+  #131 added), and the query-plan gate should grow to cover these two statements.
 
 ### Owner backlog additions, 2026-08-28
 

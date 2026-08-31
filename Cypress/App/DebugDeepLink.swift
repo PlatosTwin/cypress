@@ -158,6 +158,16 @@ enum DebugDeepLink {
         /// device's contributions, so on a device that has made none it is the empty state, which is
         /// the state worth photographing anyway.
         case journalList
+        /// The same segment with **something in it** (tester report F23).
+        ///
+        /// `journalList` above is deliberately the cold-start state, and a screen nothing can reach
+        /// populated has states nothing can look at — today the `See them all on the map` link,
+        /// which draws only where there are rows (`JournalPresentation.offersMapLink`). This case
+        /// writes one check-in first, through `LocalAPI.debugSeedCheckIn`.
+        ///
+        /// **It writes, so it takes a tree of its own** — see `checkedInTree`, and the standing rule
+        /// this file keeps about a case that writes persistent state.
+        case journalContributions
         /// The Journal tab's third segment, `City`. Draws from the same seed the other two read, so
         /// on the shipped bundle it is never the cold-start state — both fused cities clear every
         /// card's floor.
@@ -452,6 +462,16 @@ enum DebugDeepLink {
             case .journalList:
                 router.tab = .journal
                 router.journalSegment = .journal
+            case .journalContributions:
+                // The data changes here, like `.memorial` and the photo cases: this device has made
+                // no contributions, so there is no journal to open and no honest harness but one
+                // that writes a row the way the app writes one. `checkInClientUUID` is fixed, so a
+                // second run finds the row already there rather than adding a section a day.
+                try await api.debugSeedCheckIn(
+                    treeID: try await checkedInTree(api), clientUUID: checkInClientUUID
+                )
+                router.tab = .journal
+                router.journalSegment = .journal
             case .journalCity:
                 router.tab = .journal
                 router.journalSegment = .city
@@ -599,6 +619,47 @@ enum DebugDeepLink {
         }
         return standing[standing.count / 4].tree.id
     }
+
+    /// The standing tree **three eighths** of the way out — the one `.journalContributions` checks
+    /// in on (tester report F23).
+    ///
+    /// A sixth slot, under the same standing rule, and placed by the same arithmetic the fifth was:
+    /// the taken positions are the near end (`.memorial`, marching outward), a quarter
+    /// (`.anonymizedPhotos`), the middle (`.measure`), three quarters (`.deadProfile`) and the far
+    /// end (the photo cases). Three eighths is the widest remaining gap that the marching end cannot
+    /// reach before it has passed a quarter first.
+    ///
+    /// **What is fixed is the index, not the tree** (PR #130 review, F5). The first version of this
+    /// comment said "the same tree … however many times the harness runs", and that is `anonymized
+    /// PhotoTree`'s exposure restated wrongly: `.memorial` marks the nearest standing tree removed
+    /// on every run, so `standing` shrinks from the near end and the three-eighths position walks
+    /// outward with it. Once it moves, this returns tree B while the journal row written under the
+    /// fixed `client_uuid` still hangs off tree A, and nothing new is inserted.
+    ///
+    /// **That is harmless here and worth stating rather than hiding**, because the two properties
+    /// this slot actually needs are unaffected: the journal keeps its one row — the conflict clause
+    /// keys on the `client_uuid` and not on the tree, so the row stays where the first run put it
+    /// and no second one is written — and nothing accumulates however far the index walks. What
+    /// this must not be read as is a stable fixture: a test that anchored on *which* tree this
+    /// resolves to would pass until somebody opened screen 19.
+    private static func checkedInTree(_ api: LocalAPI) async throws -> UUID {
+        let candidates = try await candidates(api)
+        let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
+        guard !standing.isEmpty else {
+            throw Failure(
+                screen: "a standing tree to check in on",
+                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
+            )
+        }
+        return standing[standing.count * 3 / 8].tree.id
+    }
+
+    /// The check-in `.journalContributions` writes, named once so every run writes the same row.
+    ///
+    /// A literal rather than a derived value: `client_uuid` is what the insert's `ON CONFLICT …
+    /// DO NOTHING` keys on, so this constant *is* the idempotency, and a key computed from anything
+    /// that can change between runs would silently stop being one.
+    private static let checkInClientUUID = UUID(uuidString: "F23C0DE0-0000-4000-8000-00000000F23C")!
 
     /// The *middle* standing tree among the candidates — the one screen 16 measures.
     ///

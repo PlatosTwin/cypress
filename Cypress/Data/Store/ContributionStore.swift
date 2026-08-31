@@ -1313,6 +1313,37 @@ public struct ContributionStore {
         return try statement.fetchOne(Self.decodeTreeName)
     }
 
+    /// The active nicknames for a set of trees, keyed by tree — one statement instead of one per
+    /// tree, for `LocalAPI.grove()`.
+    ///
+    /// **Dropping the `LIMIT 1` loses nothing, and that is a property of the schema rather than of
+    /// this query.** `idx_tree_names_one_active` is a UNIQUE partial index on `tree_uuid` where
+    /// `status = 'active' AND deleted_at IS NULL` — D15's "one active name per tree, first namer
+    /// wins" — so the per-tree form never had a second row to discard and this one cannot return
+    /// two rows for a tree either. Were that index dropped, the two forms would agree on *which*
+    /// name only by storage order, which is why the constraint is named here rather than relied on
+    /// silently.
+    ///
+    /// `COLLATE NOCASE` on the left operand rather than on the `IN` list — see
+    /// `TreeQueries.speciesRowIDs` for the day that distinction was learned.
+    public func activeNames(
+        treeIDs: [UUID],
+        connection: SQLiteConnection
+    ) throws -> [UUID: TreeName] {
+        guard !treeIDs.isEmpty else { return [:] }
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM tree_names
+             WHERE tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+               AND status = 'active' AND deleted_at IS NULL
+            """)
+        _ = try statement.bind(
+            "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":trees"
+        )
+        var names: [UUID: TreeName] = [:]
+        for name in try statement.fetchAll(Self.decodeTreeName) { names[name.treeID] = name }
+        return names
+    }
+
     /// `POST /reports/hazard-redirect`. Analytics only, no public record (D4).
     public func log(_ event: HazardRedirectEvent, connection: SQLiteConnection) throws {
         let statement = try connection.cachedStatement("""

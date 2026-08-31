@@ -338,7 +338,15 @@ struct DimCityTests {
                     source, lat, lon, address, site_type, status,
                     verification_state, created_at, updated_at
                 ) VALUES (
-                    '\(uuid.uuidString)', '1', \(idSpaceInsert)
+                    -- **Lower case, because every published inventory file is.** `trees.uuid`
+                    -- is `NOT NULL UNIQUE`, so its index is BINARY, and `TreeQueries` seeks it with
+                    -- `lower(:uuid)` rather than a `COLLATE NOCASE` comparison no index can answer.
+                    -- `Tools/build_seed.py` writes lower case (0 of 198,625 rows disagree) and
+                    -- `DataGates.seedContract` now asserts it per arm; a fixture that wrote
+                    -- Foundation's uppercase canonical string would be standing in for a file that
+                    -- cannot exist, and would be the only thing in the suite asking for a collation
+                    -- the app no longer uses.
+                    '\(uuid.uuidString.lowercased())', '1', \(idSpaceInsert)
                     'city_import', 37.7, -122.4, 'Test Address', NULL, 'alive',
                     'city_record', '\(now)', '\(now)'
                 );

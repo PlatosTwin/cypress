@@ -233,7 +233,31 @@
 # derived from are still one-run snapshots from three different machines**, and the file's standing
 # instruction to re-measure Shards 1 and 4 on one machine is unaffected by this entry.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests
+# `SeeAllOnMapUITests` (tester report F23) was added afterwards and has never been on CI. One test:
+# one launch, one link tap, two chip reads and a clear. Measured alone on the iPhone 16e simulator
+# (3A1F212D-8F3A-41F1-AF72-EC95E155A4C9, 390 pt) — a different machine and device from the CI table
+# at the top, exactly as the seven entries before it are:
+#
+#   VERIFY-OK: Executed 1 test, with 0 failures (0 unexpected) in 10.740 (10.742) seconds
+#
+# PLACED ON SHARD 1, and this file's own standing warning about small margins applies with force —
+# the two candidate lines are tied and the placement should not be read as measured. Totals as the
+# corrected numbers above leave them: Shard 1 at 361.8-363.4s, Shard 2 at 367.8s, Shard 3 at 369.7s,
+# Shard 4 at 362.6s. What matters is the maximum across shards, since the gate is as slow as its
+# slowest:
+#
+#   this class on Shard 1:  max(369.7, 361.8 + 10.7 = 372.5) = 372.5s   <- placed here
+#   this class on Shard 4:  max(369.7, 362.6 + 10.7 = 373.3) = 373.3s
+#   this class on Shard 2:  max(369.7, 367.8 + 10.7 = 378.5) = 378.5s
+#   this class on Shard 3:  max(367.8, 369.7 + 10.7 = 380.4) = 380.4s
+#
+# Shard 1 beats Shard 4 by 0.8s, which is the *same* coin flip the AppleSignInUITests entry above
+# already found between these two lines — its own margin was 0.8s and its sign changed with the
+# device it was measured on. So: either of the two short lines is right, this class is on one of
+# them, and nothing about the gate's pace turns on 10.7s either way. Shards 2 and 3 are the ones the
+# arithmetic actually rules out, by ~6-8s.
+
+DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests

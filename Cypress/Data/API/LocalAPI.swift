@@ -2146,6 +2146,36 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// `GET /me/grove`, Trees tab — screen 08.
+    ///
+    /// ── Why every read here is over the whole set ───────────────────────────────────────────────
+    /// This used to be a loop: `treeIfPresent(row.treeID)` for the coordinate and
+    /// `displayNameIfPresent(for: row.treeID)` for the name, each its own `store.queue.read`, and
+    /// **both of them running `TreeQueries.tree(id:)`** — the same statement, twice, per tree. Two
+    /// queue round-trips and two executions of the app's most expensive single-row query for every
+    /// tree in the grove.
+    ///
+    /// **Measured at 13.2 s, 16.3 s and 21.7 s for the same 40-tree grove** — three calibrated
+    /// readings, two agents, one shared machine. The spread is machine load, not disagreement, and
+    /// quoting any single one of them as *the* number would give a load-dependent quantity four
+    /// significant figures it does not have. What is stable is the shape: **linear in grove size**,
+    /// at roughly a third to half a second per tree, against 3.9 ms for the three batched statements
+    /// above this loop. A hundred trees would have been half a minute. The *after* column has no
+    /// such spread — 25.9 ms and 26.8 ms, measured independently.
+    ///
+    /// Three statements now answer for the whole set, and the semantics are preserved one for one:
+    ///
+    /// - a tree the inventory holds, else one added on this device, else **skipped** — a row whose
+    ///   tree resolves to neither is not a grove entry, exactly as `treeIfPresent` returning nil
+    ///   dropped it;
+    /// - the display name is the tree's one active nickname, else the **seed** species' common
+    ///   name, else empty (D15). That second fallback deliberately does not consult the community
+    ///   row: `displayNameIfPresent` answers nil for a community tree with no nickname, because a
+    ///   self-asserted species is not a name the app puts on a tree.
+    ///
+    /// `GroveBatchReadTests` holds this against the per-tree form over a grove carrying one of each
+    /// case, because "preserved one for one" is exactly the kind of claim this project has been
+    /// wrong about in a comment.
     public func grove() async throws -> [GroveEntry] {
         let userID = userID
         let deviceID = deviceID
@@ -2158,14 +2188,25 @@ public actor LocalAPI: CypressAPI {
                 try contributions.heroPhotoIDs(connection: connection)
             )
         }
+        let treeIDs = rows.map(\.treeID)
+        let (seedRecords, community, activeNames) = try await store.queue.read { connection in
+            (
+                try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
+                try communityTrees.trees(ids: treeIDs, connection: connection),
+                try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            )
+        }
         var entries: [GroveEntry] = []
         entries.reserveCapacity(rows.count)
         for row in rows {
-            guard let profileTree = try await treeIfPresent(row.treeID) else { continue }
+            let seedRecord = seedRecords[row.treeID]
+            guard let profileTree = seedRecord?.tree ?? community[row.treeID] else { continue }
             entries.append(
                 GroveEntry(
                     treeID: row.treeID,
-                    displayName: (try await displayNameIfPresent(for: row.treeID)) ?? "",
+                    displayName: activeNames[row.treeID]?.name
+                        ?? seedRecord?.species?.commonName
+                        ?? "",
                     coordinate: profileTree.coordinate,
                     lastVisitedAt: row.lastVisitedAt,
                     isFavorite: row.isFavorite,
@@ -2641,6 +2682,39 @@ public actor LocalAPI: CypressAPI {
             try contributions.insert(flag, connection: connection)
         }
         return flag.id
+    }
+
+    /// Test seam (tester report F23): one check-in on a real seed tree, so the harness can put a
+    /// journal with something in it — and the map link that only draws over a non-empty list — in
+    /// front of a test. Inserts the row screen 05 inserts, without the outbox round trip, exactly as
+    /// `debugSeedReview` above inserts a review flag.
+    ///
+    /// **`observations` and not `visits`, deliberately.** Both put a row in the journal and both put
+    /// the tree under screen 01's `Yours`; only this one leaves screen 03 cold. A visit is what the
+    /// camera flow saves, and a tree with a visit on it draws an activity feed and a `See the whole
+    /// year` link under it — a warmth four `DeepLinkVoiceOverTests` cases anchor against the absence
+    /// of (see `DebugDeepLink.photographedTree` for the run this class of pollution broke). The
+    /// narrower write is the one that cannot reach them.
+    ///
+    /// **Idempotent through `client_uuid`**, which the insert's `ON CONFLICT … DO NOTHING` already
+    /// keys on: a caller that passes a stable id gets one row however many times the harness runs,
+    /// rather than a journal that grows a section per launch. Defaulted to a fresh id, so a caller
+    /// that wants a second row can have one.
+    @discardableResult
+    public func debugSeedCheckIn(treeID: UUID, clientUUID: UUID = UUID()) async throws -> UUID {
+        let moment = now()
+        let observation = TreeObservation(
+            treeID: treeID,
+            attribution: attribution,
+            clientUUID: clientUUID,
+            capturedAt: moment,
+            createdAt: moment,
+            updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            try contributions.insert(observation, connection: connection)
+        }
+        return observation.id
     }
 
     /// Test seam (ERRATA E124-B, widened by E170): force a tree to a status by writing its override

@@ -580,7 +580,18 @@ struct RootView: View {
                 location: location,
                 onOpenTree: { id in router.push(.treeProfile(id)) },
                 onShowGroup: { group in router.push(.pinSet(group)) },
-                onRequestLocation: { location.start() }
+                onRequestLocation: { location.start() },
+                // Tester report F23: "let's add a link that says See them all on the map. When
+                // clicked it takes you back to the map and shows only yours." The narrowing is
+                // constructed **here** rather than inside the Journal folder, for the reason every
+                // other cross-feature destination in this file is: `Features/Journal` does not
+                // reach into `Features/Map` to say what the map should show (ARCHITECTURE §2, §3).
+                //
+                // `.yours`, which is `ContributionStore.contributedTreeIDs` — the four contribution
+                // tables this journal is read from, plus `community_trees`. Not `.favorites`, which
+                // is a bookmark rather than a contribution (RULINGS R23) and is not what this list
+                // is made of.
+                onSeeAllOnMap: { router.goToMap(showing: MapFilter(membership: .yours)) }
             )
         case .you:
             // The export closure is resolved here rather than inside the tab, for the reason every
