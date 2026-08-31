@@ -143,20 +143,74 @@ struct MeasurePresentationTests {
 
     // MARK: - Units
 
-    @Test("switching the unit clears the entry rather than relabeling it")
-    func switchingUnitsClearsTheEntry() {
+    /// **F26, as the owner ruled it on 2026-08-31.** The digits survive the flip, and the screen
+    /// says what they now mean.
+    ///
+    /// The old behavior — clearing — was defended against `64 cm` silently becoming `64 in`, a 2.5×
+    /// error "with nothing on screen to catch it". Both halves of the replacement are asserted here
+    /// in one test *because they are one ruling*: keeping the digits without the annotation is the
+    /// error that argument describes, so a test that checked only the digits would go green on
+    /// exactly the outcome the clear existed to prevent.
+    @Test("switching the unit keeps the digits and annotates what they now mean")
+    func switchingUnitsKeepsTheEntryAndSaysTheMeaningMoved() {
         var draft = Self.draft(entry: "64")
         #expect(draft.unit == .centimeters)
 
         draft.switchUnit()
-        // The dangerous outcome is `64 in` written where 64 cm was measured — a 2.5× error on an
-        // append-only record with nothing on screen to catch it.
         #expect(draft.unit == .inches)
-        #expect(draft.entry.isEmpty)
-        #expect(draft.quantity == nil)
+        // 5 stays 5: the digits are not converted, which is what keeps `Quantity.value` honest.
+        #expect(draft.entry == "64")
+        #expect(draft.quantity?.value == 64)
+        #expect(draft.quantity?.unitEntered == .inches)
+        // And the something-on-screen that makes keeping them safe.
+        #expect(draft.unitDigitsWereTypedIn == .centimeters)
+        #expect(
+            Self.presentation(draft).unitFlipNotice
+                == "Typed in centimeters, now read as inches."
+        )
+    }
+
+    /// Flipping back returns the digits to the unit they were typed in, so there is nothing left to
+    /// annotate. Without this the notice would stand over a number it no longer describes — the same
+    /// class of stale sentence the annotation exists to prevent, pointing the other way.
+    @Test("flipping back to the unit the digits were typed in withdraws the annotation")
+    func flippingBackWithdrawsTheAnnotation() {
+        var draft = Self.draft(entry: "64")
+        draft.switchUnit()
+        #expect(draft.unitDigitsWereTypedIn == .centimeters)
 
         draft.switchUnit()
         #expect(draft.unit == .centimeters)
+        #expect(draft.entry == "64")
+        #expect(draft.unitDigitsWereTypedIn == nil)
+        #expect(Self.presentation(draft).unitFlipNotice == nil)
+    }
+
+    /// A flip with an empty pad has no digits to be wrong about, so it annotates nothing.
+    @Test("switching the unit on an empty pad annotates nothing")
+    func switchingOnAnEmptyPadSaysNothing() {
+        var draft = Self.draft(entry: "")
+        draft.switchUnit()
+        #expect(draft.unit == .inches)
+        #expect(draft.unitDigitsWereTypedIn == nil)
+        #expect(Self.presentation(draft).unitFlipNotice == nil)
+    }
+
+    /// Emptying the pad discards the number the annotation was about, so the annotation goes too —
+    /// and a partial edit does not, because the digits left behind were still typed under the old
+    /// unit.
+    @Test("the annotation outlives a partial backspace and dies with the last digit")
+    func backspacingToEmptyWithdrawsTheAnnotation() {
+        var draft = Self.draft(entry: "64")
+        draft.switchUnit()
+
+        draft.apply(.backspace)
+        #expect(draft.entry == "6")
+        #expect(draft.unitDigitsWereTypedIn == .centimeters)
+
+        draft.apply(.backspace)
+        #expect(draft.entry.isEmpty)
+        #expect(draft.unitDigitsWereTypedIn == nil)
     }
 
     @Test("each kind opens in its own unit, and changing kind resets the entry")
