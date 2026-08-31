@@ -223,20 +223,12 @@ struct PinSetMapView: View {
 
     /// The `BoundingBox` the presentation computed, as MapKit's own camera type.
     ///
-    /// The conversion lives here rather than in `MapGeography` because it is this screen's only
-    /// caller: `MapGeography` turns a *region* into a box, which is the direction 01 needs, and adding
-    /// the inverse to a file another screen owns would be a change to that screen's surface for one
-    /// use.
+    /// **The arithmetic moved to `MKCoordinateRegion.init(_:)` in `MapGeography`, and the comment
+    /// that used to be here is why it moved.** It said the conversion belonged to this screen
+    /// because this screen was its only caller — true when it was written, and no longer: screen 01
+    /// fits a camera to a box now as well. This wrapper is kept so the two call sites below read as
+    /// they did.
     private static func region(_ box: BoundingBox) -> MKCoordinateRegion {
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(
-                latitude: (box.minLatitude + box.maxLatitude) / 2,
-                longitude: (box.minLongitude + box.maxLongitude) / 2
-            ),
-            span: MKCoordinateSpan(
-                latitudeDelta: box.maxLatitude - box.minLatitude,
-                longitudeDelta: box.maxLongitude - box.minLongitude
-            )
-        )
+        MKCoordinateRegion(box)
     }
 }

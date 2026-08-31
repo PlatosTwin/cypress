@@ -96,6 +96,13 @@ struct MapHomeView: View {
     /// A press made while waiting for the first fix. The notice promises the map will move when one
     /// arrives; this is the promise, held.
     @State private var recenterWhenFixArrives = false
+    /// The read behind the camera the Journal link opens on, in flight. See `fitCameraToYours()`.
+    ///
+    /// Held so a second arming — the reader going back to the Journal and tapping again while the
+    /// first read is still out — cannot land two camera moves. It is cancelled rather than ignored,
+    /// because the losing one would otherwise still mint a ticket and E140 is emphatic that a
+    /// camera the app asked for is applied on sight.
+    @State private var yoursCameraTask: Task<Void, Never>?
     /// Whether C20 is being typed into, which is the whole condition for the suggestion dropdown
     /// existing (task #109, ruling R25).
     ///
@@ -734,6 +741,62 @@ struct MapHomeView: View {
     private func applyPendingFilter() {
         guard let pending = router.takePendingMapFilter() else { return }
         model.filter = pending
+        if pending.membership == .yours { fitCameraToYours() }
+    }
+
+    /// Moves the camera to the reader's own trees, in the city where they have the most.
+    ///
+    /// ── The ruling ───────────────────────────────────────────────────────────────────────────
+    /// The owner, trying build 63: `See them all on the map` "should center the map on where the
+    /// trees are; right now it just takes you to the map, and if you're nowhere near a city it
+    /// shows blank. It should be centered on the city where you have the most trees." That
+    /// supersedes the deferral ERRATA E287 records — "the link keeps the remembered viewport …
+    /// ratified as a follow-up rather than fixed" — with a behavior.
+    ///
+    /// `ContributedCamera` is the whole of the decision and has no view, no MapKit and no clock in
+    /// it. This function is the three things that cannot be pure: the read, the ticket, and the
+    /// one-shot it has to get out of the way of.
+    ///
+    /// ── Why it rides the one-shot and not the chip ───────────────────────────────────────────
+    /// **Pressing `Yours` on screen 01 still moves nothing**, and that is deliberate rather than an
+    /// omission. A reader already looking at the map has chosen the camera they are looking at;
+    /// narrowing what is drawn on it is not a request to be taken somewhere else, and a chip that
+    /// teleported the map would be the un-pannable-map complaint (#85, ERRATA E140) rearmed with a
+    /// different trigger. Arriving *from another screen* is the opposite: there is no camera the
+    /// reader chose, which is exactly the state the ruling is about. So this hangs off
+    /// `takePendingMapFilter()` — the same one-shot, spent the same way — and inherits its disarm:
+    /// a plain tab switch clears the arming (`AppRouter.tab`'s `didSet`, R86-era), so nothing here
+    /// runs.
+    ///
+    /// ── Why the fly-to-you is suppressed, and put back ───────────────────────────────────────
+    /// `centerOnUserIfNeeded()` fires from `.task` and from the first fix, and on this arrival it
+    /// would land *after* this one and overwrite it — which is the owner's blank screen exactly:
+    /// a reader standing nowhere near a city they have contributed in, centered on themselves. The
+    /// reader asked to see their trees, so their trees win for this arrival. It is claimed
+    /// synchronously, before the read goes out, because the fix can land inside that window.
+    ///
+    /// **And it is given back when there is nothing to show.** A reader whose every contributed
+    /// tree is in a city pack they have since removed has no camera to be moved to (E287's second
+    /// axis, and R41 forbids a message saying why). Suppressing the fly-to-you for a move that
+    /// never happens would take away a good camera and offer nothing, so the one-shot is restored
+    /// and asked again.
+    private func fitCameraToYours() {
+        yoursCameraTask?.cancel()
+        // Claimed before the `await`, not after: a fix arriving while the read is out would
+        // otherwise fly to the reader and be overwritten a moment later, which is two camera moves
+        // for one tap.
+        let wasCentered = hasCenteredOnUser
+        hasCenteredOnUser = true
+        yoursCameraTask = Task { @MainActor in
+            let places = (try? await api.contributedPlaces()) ?? []
+            guard !Task.isCancelled else { return }
+            guard let frame = ContributedCamera.frame(for: places) else {
+                hasCenteredOnUser = wasCentered
+                centerOnUserIfNeeded()
+                return
+            }
+            position = .move(to: MKCoordinateRegion(frame))
+        }
     }
 
     // MARK: - Opening on the reader

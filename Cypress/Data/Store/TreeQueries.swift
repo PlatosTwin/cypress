@@ -850,6 +850,24 @@ public struct TreeQueries {
         public let cityShortName: String?
     }
 
+    /// One row's coordinate and the city inventory that holds it — what `places(ids:)` returns.
+    ///
+    /// **`idSpace` is a key, never a name.** `CityQueries`' header is the standing rule: `id_space`
+    /// is `sf` / `us-ca-sj` / `us-ny-nyc`, it carries no display name for the city, and composing
+    /// one from it is the guess R28 and R48 closed the door on. Nothing that reaches a reader is
+    /// derived from this string; it groups rows and nothing else.
+    public struct TreePlace: Sendable, Hashable {
+        public let treeID: UUID
+        public let idSpace: String?
+        public let coordinate: Coordinate
+
+        public init(treeID: UUID, idSpace: String?, coordinate: Coordinate) {
+            self.treeID = treeID
+            self.idSpace = idSpace
+            self.coordinate = coordinate
+        }
+    }
+
     /// `GET /trees/{id}`, the inventory half. `LocalAPI` adds the contributions.
     ///
     /// ```
@@ -1042,6 +1060,53 @@ public struct TreeQueries {
             records[record.tree.id] = record
         }
         return records
+    }
+
+    /// Where a set of trees stands, and which city inventory holds each one.
+    ///
+    /// **Three columns, and the narrowness is the point.** `trees(ids:)` above answers the same
+    /// question with the whole record — two species joins, a neighborhood join and a correlated
+    /// lineage subquery — because its caller draws a grove row per tree. This one exists for a
+    /// camera: the only facts it needs are a coordinate and the city the row belongs to, and
+    /// `treeSQL`'s own header records what the wide projection costs per row.
+    ///
+    /// `id_space` is the city, and it is read off the row rather than inferred from the
+    /// coordinate — `CityQueries`' header carries that argument at length ("a fact read off a row,
+    /// not an inference about a coordinate"). It is NULL for a file that carries no `id_space`
+    /// column at all, which `SeedSchema.hasIdSpace` is the test for.
+    ///
+    /// **`deleted_at IS NULL`, because the pin layer applies it.** `pins(rowIDs:connection:)`
+    /// drops a soft-deleted tree rather than drawing it, so a camera that framed one would be
+    /// framing something the map will not put on screen. Ids the inventory does not hold at all
+    /// are simply absent, exactly as `trees(ids:)` leaves them out — which is what makes a tree
+    /// whose city pack has been removed disappear from the answer rather than fake a coordinate
+    /// for it (ERRATA E287's second axis).
+    ///
+    /// The uuids travel through `json_each` for `treesSQL()`'s reason: one prepared copy across
+    /// sets of every size, and a uuid seek is the only plan there is to choose.
+    public func places(ids: [UUID], connection: SQLiteConnection) throws -> [TreePlace] {
+        guard !ids.isEmpty else { return [] }
+        let statement = try connection.cachedStatement("""
+        SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+               \(schema.hasIdSpace ? "t.id_space" : "NULL") AS id_space,
+               t.lat AS lat,
+               t.lon AS lon
+          FROM \(seed).trees t
+         WHERE t.\(schema.treeIdentityColumn) IN (SELECT lower(value) FROM json_each(:uuids))
+           AND t.deleted_at IS NULL
+        """)
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":uuids"
+        )
+        return try statement.fetchAll { row in
+            TreePlace(
+                treeID: try row.uuid("tree_uuid"),
+                idSpace: try row.stringIfPresent("id_space"),
+                coordinate: Coordinate(
+                    latitude: try row.double("lat"), longitude: try row.double("lon")
+                )
+            )
+        }
     }
 
     /// Decodes a `TreeRecord` from any projection `treeSQL(matching:)` builds. Shared by the
