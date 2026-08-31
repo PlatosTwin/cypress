@@ -2732,6 +2732,15 @@ public actor LocalAPI: CypressAPI {
     /// **Idempotent through `client_uuid`**, whose `ON CONFLICT … DO NOTHING` the insert already
     /// keys on, so a second launch finds the reading rather than adding one. A caller that wants a
     /// second reading passes its own id.
+    ///
+    /// **Returns the id of the row that is actually on disk**, which on every run after the first is
+    /// the row the *previous* run wrote, not the `TreeMeasurement` built here. Those differ: `id`
+    /// and `clientUUID` are minted separately, and only `client_uuid` is what the conflict clause
+    /// matches on — so a locally minted `id` returned after a `duplicate` names no row in the
+    /// database. That is a value a caller cannot use for anything, handed back as though it could
+    /// be. Nothing consumes it today (`@discardableResult`, and the one caller discards it), which
+    /// is why this was latent rather than broken; it is fixed rather than annotated because the
+    /// next caller has no way to know.
     @discardableResult
     public func debugSeedMeasurement(
         treeID: UUID,
@@ -2772,10 +2781,25 @@ public actor LocalAPI: CypressAPI {
                 updatedAt: moment
             )
         }
-        try await store.queue.write { connection in
-            _ = try contributions.insert(measurement, connection: connection)
+        return try await store.queue.write { connection in
+            switch try contributions.insert(measurement, connection: connection) {
+            case .inserted:
+                return measurement.id
+            case .duplicate:
+                // A previous run wrote it. Read back the row this `client_uuid` names and return
+                // *its* id — the one a caller could actually look up.
+                let existing = try contributions
+                    .measurements(treeID: treeID, connection: connection)
+                    .first { $0.clientUUID == clientUUID }
+                guard let existing else {
+                    // `duplicate` means the conflict clause matched a row, so not finding it means
+                    // the read and the write disagree about what is on disk. Failing loudly beats
+                    // returning an id for a row nobody can find, which is the whole defect here.
+                    throw APIError.notFound
+                }
+                return existing.id
+            }
         }
-        return measurement.id
     }
 
     /// Test seam (ERRATA E124-B, widened by E170): force a tree to a status by writing its override

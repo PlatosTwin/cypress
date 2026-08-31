@@ -843,8 +843,14 @@ struct TreeProfileView: View {
     /// Built as `growthLink`'s twin down to the token — same font, same color, same 44 pt hit area,
     /// same gutter — for the reason that link gives for being built the way it is: C1–C30 has no
     /// link component, and a screen-local control from tokens is what this codebase does where the
-    /// catalog has no entry (ERRATA E46). Two links that do the neighboring things a block apart
-    /// should read as one kind of thing, and the way to guarantee that is to build them the same.
+    /// catalog has no entry (ERRATA E46). Two links that do the neighboring things should read as
+    /// one kind of thing, and the way to guarantee that is to build them the same.
+    ///
+    /// **They are not, however, one tightly-spaced block, and PR #139's review is why.** That was
+    /// the intent this shipped with — no gap, so the pair read as a unit — and it is what put this
+    /// link's invisible 44 pt hit rect over the whole of `See every reading`. Two controls that each
+    /// need a 44 pt target cannot sit 10 pt apart; the spacing below is the accessibility floor
+    /// asserting itself, not a visual preference, and the "one block" reading was the mistake.
     private func addReadingLink(_ presentation: TreeProfilePresentation) -> some View {
         Button {
             router?.push(
@@ -860,9 +866,28 @@ struct TreeProfileView: View {
         .buttonStyle(.plain)
         .cypressHitArea()
         .padding(.horizontal, CypressSpacing.gutter)
-        // No `activityLinkTop` when it follows `growthLink`: that gap separates the link block from
-        // the stat grid above it, and these two links are one block.
-        .padding(.top, presentation.offersGrowthLink ? 0 : TreeProfileMetrics.activityLinkTop)
+        // **A full tap target, and the reason is that `cypressHitArea` is a `background`.**
+        //
+        // It gives this control a 44 pt hit rect centered on its label *without entering layout* —
+        // the layout frame stays the height of 13 pt text, about 10 pt. So the rect overhangs the
+        // label by ~17 pt on each side, invisibly. This link is later in the `VStack` than
+        // `growthLink`, so wherever the two rects overlap, this one wins the hit test.
+        //
+        // At the zero padding this shipped with in PR #139, it did: `See every reading`'s label sat
+        // at 498.3-508.7 pt and this link's hit rect at 496.2-540.2 pt, swallowing the label whole.
+        // Tapping the words `See every reading` opened screen 16. **XCUITest reported that button
+        // hittable throughout**, which is why the reachability test passed over it — the same class
+        // of defect as the `.clipped()` control this project has shipped before.
+        //
+        // A padding of `minTapTarget` makes the geometry correct by construction rather than by
+        // arithmetic that a type-size change could invalidate: the distance between the two labels'
+        // centers is `h1/2 + padding + h2/2`, which is at least `padding` for any label heights at
+        // all. At 44 pt that is never less than the 44 pt each rect needs, so the rects cannot
+        // overlap at any Dynamic Type size. A smaller token happens to clear it at the default size
+        // by well under a point, which is not a margin this project ships on.
+        .padding(.top, presentation.offersGrowthLink
+            ? CypressSpacing.minTapTarget
+            : TreeProfileMetrics.activityLinkTop)
         .padding(.bottom, presentation.isCold || presentation.showsCityDetails ? 0 : CypressSpacing.bottomBar)
     }
 

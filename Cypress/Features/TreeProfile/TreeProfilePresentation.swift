@@ -1131,9 +1131,9 @@ struct TreeProfilePresentation {
     /// ── The rule this restores ────────────────────────────────────────────────────────────────
     /// **While a tree accepts contributions, this screen offers exactly one door into screen 16.**
     /// Usually that door is an empty stat card. When every measurement is already on file there is
-    /// no empty card to be one, and this link is. `MeasureEntranceTests` asserts the invariant over
-    /// the whole state space rather than this branch alone, because "exactly one" is the property
-    /// worth having — two doors a card apart would be the same report from the other side.
+    /// no empty card to be one, and this link is. `MeasureEntranceKindTests` asserts the invariant
+    /// over the whole state space rather than this branch alone, because two doors a card apart
+    /// would be the same report from the other side.
     ///
     /// It is deliberately keyed off the stat items rather than off the measurements: the DBH slot is
     /// also suppressed by a published city bucket (see `stats`), and a reader looking at a city

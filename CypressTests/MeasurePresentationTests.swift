@@ -196,6 +196,69 @@ struct MeasurePresentationTests {
         #expect(Self.presentation(draft).unitFlipNotice == nil)
     }
 
+    /// **The gap PR #139's review found: nothing held the two places that empty the pad.**
+    ///
+    /// `clearEntry` exists so that emptying the entry and forgetting the annotation are one action,
+    /// and two callers use it — `MeasureModel.save` and `select(kind:)`. Reverting *both* to a bare
+    /// `entry = ""` left the whole suite green, because every test above drives `switchUnit` and the
+    /// keypad and none of them saved or changed kind afterwards. The state that escaped is a stale
+    /// amber sentence about centimeters standing over an empty pad.
+    ///
+    /// This is the kind-change path, which is pure. The save path is the test below it.
+    @Test("changing the measurement kind takes the unit annotation with the digits")
+    func changingKindWithdrawsTheAnnotation() {
+        var draft = Self.draft(entry: "64")
+        draft.switchUnit()
+        #expect(draft.unitDigitsWereTypedIn == .centimeters, "the annotation is not set, so this test cannot see it being cleared")
+
+        draft.select(kind: .height)
+        #expect(draft.entry.isEmpty)
+        #expect(draft.unitDigitsWereTypedIn == nil)
+        #expect(Self.presentation(draft).unitFlipNotice == nil)
+    }
+
+    /// The save path, end to end through a real outbox — the reviewer's actual reproduction.
+    ///
+    /// A save empties the pad, so the annotation has to go with it: the reading that was filed is
+    /// gone from the screen, and a sentence describing its units is then describing nothing. The
+    /// assertion is on the presentation's notice rather than only on the flag, because the notice is
+    /// what a person would have been looking at.
+    @Test("saving a reading takes the unit annotation with the digits it filed")
+    func savingWithdrawsTheAnnotation() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7848, longitude: -122.4215),
+                photoLocalPath: "/tmp/cypress-f26-save-clears.jpg",
+                attribution: .anonymous(deviceID: Self.deviceID)
+            )
+        )
+        var opening = MeasureDraft()
+        opening.entry = "64"
+        opening.switchUnit()
+        #expect(opening.unitDigitsWereTypedIn == .centimeters, "the annotation is not set, so this test cannot see it being cleared")
+
+        let model = await MeasureModel(
+            treeID: tree.id,
+            api: api,
+            outbox: OutboxQueue(queue: store.queue, apply: APIOutboxTransport(api: api)),
+            attribution: .anonymous(deviceID: Self.deviceID),
+            gpsAccuracyM: { 8 },
+            initialDraft: opening,
+            now: { Self.now }
+        )
+        await model.save()
+
+        let draft = await model.draft
+        #expect(draft.entry.isEmpty, "the save did not empty the pad, so this proves nothing about the annotation")
+        #expect(draft.unitDigitsWereTypedIn == nil)
+        #expect(
+            Self.presentation(draft).unitFlipNotice == nil,
+            "the reading was filed and the pad is empty, and the screen is still saying those digits were typed in centimeters"
+        )
+    }
+
     /// Emptying the pad discards the number the annotation was about, so the annotation goes too —
     /// and a partial edit does not, because the digits left behind were still typed under the old
     /// unit.

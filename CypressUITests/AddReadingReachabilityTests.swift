@@ -69,6 +69,9 @@ final class AddReadingReachabilityTests: XCTestCase {
             "a tree carrying every measurement offered no way into screen 16 from its own profile — "
                 + "which is the whole of tester report F28"
         )
+        // Screen 03 is longer than the screen and these links close it, so reaching them is a
+        // scroll. That is the ordinary way down a profile and not what this test is about.
+        Self.scrollIntoView(addReading, in: app)
         XCTAssertTrue(
             addReading.isHittable,
             "the link is in the profile's tree but nothing could press it"
@@ -85,6 +88,55 @@ final class AddReadingReachabilityTests: XCTestCase {
         XCTAssertTrue(
             app.buttons[Self.keypadDigit].waitForExistence(timeout: 5),
             "screen 16 opened without its keypad, so nothing could be entered on arrival"
+        )
+    }
+
+    /// **The defect PR #139's review found, as an assertion.** Tapping the words
+    /// `See every reading` has to open screen 11.
+    ///
+    /// ── Why this is not the same test as the one above ───────────────────────────────────────
+    /// `cypressHitArea` is a `background`: it gives a control a 44 pt hit rect centered on its label
+    /// *without entering layout*, so the rect overhangs a 10 pt label by ~17 pt on each side,
+    /// invisibly. F28's link shipped directly under `growthLink` with no padding between them, and
+    /// being later in the `VStack` it won the hit test across the whole overlap — which was all of
+    /// `See every reading`. Tapping those words opened Measure.
+    ///
+    /// **Nothing in the suite caught it, and the reason is the point of this test.** XCUITest
+    /// reported `See every reading` present and `isHittable` throughout, because hittability is
+    /// asked of the element, not of the point a finger lands on. So this test does not touch the
+    /// element's own API: it takes the center of the label's frame as a *coordinate* and taps the
+    /// screen there, which is what a finger does and what resolves through the real hit test. An
+    /// assertion built on `.tap()` of the button would have gone green against the defect.
+    func testTappingTheWordsSeeEveryReadingOpensGrowthAndNotMeasure() {
+        let app = launch()
+        guard arrive(app) else { return }
+
+        let growth = app.buttons[Self.growthLink]
+        XCTAssertTrue(
+            growth.waitForExistence(timeout: 5),
+            "the fully measured tree drew no See every reading link, so there was no overlap to test"
+        )
+        // The link this one has to survive being next to. Its presence is the precondition: with no
+        // F28 link on screen there is nothing that could steal the tap and this proves nothing.
+        XCTAssertTrue(
+            app.buttons[Self.addReadingLink].exists,
+            "F28's link is not on this screen, so this test is not exercising the overlap it exists for"
+        )
+        // Both links have to be on screen before a coordinate tap means anything: a normalized
+        // offset into an off-screen element resolves to a point that is not the words.
+        Self.scrollIntoView(app.buttons[Self.addReadingLink], in: app)
+        XCTAssertTrue(growth.isHittable, "See every reading scrolled out of reach, so the tap below would not be on it")
+
+        growth.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+
+        XCTAssertTrue(
+            app.staticTexts[Self.growthTitle].waitForExistence(timeout: 10),
+            "a tap on the center of the words See every reading did not open screen 11"
+        )
+        XCTAssertFalse(
+            app.staticTexts[Self.measureTitle].exists,
+            "a tap on the words See every reading opened screen 16 — F28's link is drawn close "
+                + "enough that its 44pt hit rect covers the link above it"
         )
     }
 
@@ -135,8 +187,20 @@ final class AddReadingReachabilityTests: XCTestCase {
     /// anybody noticing should fail here rather than follow the change silently.
     private static let addReadingLink = "Add a reading"
     private static let emptySlotValue = "Add a reading"
+    private static let growthLink = "See every reading"
     private static let measureTitle = "Measure"
+    private static let growthTitle = "Growth"
     private static let keypadDigit = "3"
+
+    /// Swipes until `element` can be pressed, or gives up after a bounded number of tries.
+    ///
+    /// Bounded rather than a `while`: a loop that swipes until a condition it can never reach is a
+    /// hung test, and this project's rule is that waits have a ceiling.
+    private static func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 where !element.isHittable {
+            app.swipeUp()
+        }
+    }
 
     private func launch(screen: String = "fullyMeasured") -> XCUIApplication {
         let app = XCUIApplication()
