@@ -120,12 +120,31 @@ enum CypressDash {
 
 /// C1's back chevron — SVG `M8 2L2 8l6 6` in a 10×16 viewBox, round caps and joins.
 /// `direction: .trailing` mirrors it into the `M1 1l6 6-6 6` chevron the 01 tree card uses.
+/// `direction: .down` transposes it into the disclosure mark `HeaderPillButton` wears.
 struct CypressChevron: Shape {
-    enum Direction { case leading, trailing }
+    enum Direction { case leading, trailing, down }
 
     var direction: Direction = .leading
 
     func path(in rect: CGRect) -> Path {
+        // ── `.down` is the same glyph on its side, and it is built rather than rotated ──────────
+        // A `RotatedShape` keeps the *unrotated* frame as its layout box, so a chevron drawn tall
+        // and turned a quarter-turn lays out 10 wide × 16 tall while reading 16 × 10 — the pill
+        // beside it would be spaced against a box the mark does not occupy. Drawn directly, the
+        // caller's frame is the mark's own bounds and the two agree. The proportions are the
+        // source glyph's, transposed: the 0.2 short-axis inset and the 0.125 long-axis inset.
+        if direction == .down {
+            var path = Path()
+            let inset = rect.height * 0.2
+            let left = CGPoint(x: rect.minX + rect.width * 0.125, y: rect.minY + inset)
+            let apex = CGPoint(x: rect.midX, y: rect.maxY - inset)
+            let right = CGPoint(x: rect.maxX - rect.width * 0.125, y: rect.minY + inset)
+            path.move(to: left)
+            path.addLine(to: apex)
+            path.addLine(to: right)
+            return path
+        }
+
         // The source viewBox is 10 wide × 16 tall; the stroke sits inset by 2 on the x axis.
         var path = Path()
         let inset = rect.width * 0.2

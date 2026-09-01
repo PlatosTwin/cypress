@@ -183,12 +183,38 @@ enum CypressFont {
     /// smallest type in the app that carries meaning a rating depends on (D3). See ERRATA (E26).
     static let body115 = font(Face.sansRegular, 11.5, .caption)
 
+    /// The drawn size of the three `body.12` faces, named once so `body12HalfXHeight` below cannot
+    /// drift away from the face it claims to measure.
+    private static let body12Size: CGFloat = 12
+
     /// `body.12` — 12 / 400. Footnotes.
-    static let body12 = font(Face.sansRegular, 12, .caption)
+    static let body12 = font(Face.sansRegular, body12Size, .caption)
     /// `body.12` — 12 / 600 → Bold (see header). Action-row labels.
-    static let body12SemiBold = font(Face.sansBold, 12, .caption)
+    static let body12SemiBold = font(Face.sansBold, body12Size, .caption)
     /// `body.12` — 12 / 700.
-    static let body12Bold = font(Face.sansBold, 12, .caption)
+    static let body12Bold = font(Face.sansBold, body12Size, .caption)
+
+    /// Half `body12`'s x-height, in points, at the **default** content size.
+    ///
+    /// **Read off the font, not guessed.** `HeaderPillButton` centers its drawn chevron on the
+    /// label's optical midline, and that midline is half an x-height above the baseline — so this
+    /// is the offset a baseline alignment needs to become a midline alignment. Hard-coding a ratio
+    /// would have been a number nobody could check; `UIFont.xHeight` is the same metric the
+    /// renderer uses to set the glyphs this is being aligned to.
+    ///
+    /// **The fallback is the face that would actually draw.** When a custom face is missing,
+    /// `Font.custom` silently falls back to the system font at the same size
+    /// (`debugDumpAvailableFamilies` exists because that failure is invisible), so measuring the
+    /// system font at `body12Size` measures whatever the reader is really looking at rather than
+    /// substituting an invented constant for a face that is not there.
+    ///
+    /// Callers must scale it — `@ScaledMetric(relativeTo: .caption)`, the curve `body12` is built
+    /// on — because this is one setting's value, like every other point size in this file.
+    static let body12HalfXHeight: CGFloat = {
+        let face = UIFont(name: Face.sansRegular, size: body12Size)
+            ?? UIFont.systemFont(ofSize: body12Size)
+        return face.xHeight / 2
+    }()
 
     /// `micro.label` — 11 / 800, tracking .08em, uppercase, `text.faint`.
     /// Prefer `.cypressMicroLabel()`; this bare font omits tracking, case and color.

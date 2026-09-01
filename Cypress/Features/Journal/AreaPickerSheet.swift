@@ -272,8 +272,22 @@ enum AreaPickerCopy {
     static let resolvedByChoiceCity = "You're reading a city you're not in, so the comparison with "
         + "your own streets is left out."
 
-    /// The affordance itself.
-    static let change = "Change"
+    /// The affordance itself, which is now the header pill rather than a control of its own.
+    ///
+    /// **There is no `change` label any more.** It was a boxed `SecondaryOutlineButton` reading
+    /// `Change`, stacked under the provenance sentence on both segments, and the owner's ruling
+    /// retired it: the place name in the header is the control. See `HeaderPillButton` for what
+    /// replaced it and the picker-header ruling, pending, for why.
+    ///
+    /// What survives is these two — the hint VoiceOver reads after the pill's name and its button
+    /// trait. They name the list that opens, because the pill's label has already named the place:
+    /// `Sunset/Parkside, button, Opens the list of neighborhoods on this phone.`
+    ///
+    /// "on this phone" is the honest scope and it is the sheet's own (`neighborhoodSubtitle`,
+    /// `citySubtitle` both say it): the list is what the inventories currently on the device cover,
+    /// not every neighborhood there is.
+    static let changeAreaHint = "Opens the list of neighborhoods on this phone."
+    static let changeCityHint = "Opens the list of cities on this phone."
 
     // MARK: The fix that cannot name a place (ERRATA — the F17 mechanism)
 
