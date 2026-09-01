@@ -101,7 +101,60 @@ struct JournalTabView: View {
     /// bar promises when you press it.
     @State private var localSegment: JournalSegment = .journal
 
+    /// **The journal's model, held here rather than inside the segment it draws.**
+    ///
+    /// `JournalSection` used to declare it as its own `@State`, and `JournalSection` is mounted from
+    /// inside the `switch` below. SwiftUI ties `@State` to the identity of the view that declares
+    /// it, and a `switch` arm that is not taken has no identity, so looking at Neighborhood for a
+    /// second destroyed the model: the reader came back to page one, whatever `Show earlier` had
+    /// fetched, and `JournalModel.load()`'s idempotence guard could not help — it met a brand new
+    /// model in `.loading`. Owner ruling, 2026-09-01: a revisit paints what was there.
+    ///
+    /// Here it is above the `switch`, so it lives as long as this tab view does, which is what makes
+    /// that guard true across Yours ↔ Neighborhood ↔ City. Across the **bottom** tabs it lives as
+    /// long as `RootView.tabRoot`'s own `switch` keeps this view, which is a separate question one
+    /// level up and is not claimed here.
+    ///
+    /// The explicit initializer below exists for this property and for nothing else: `@State` has to
+    /// be seeded with `api`, which is a parameter. Every other parameter keeps the name, the order
+    /// and the default the synthesized memberwise initializer gave it, so no call site changes.
+    @State private var model: JournalModel
+
     @Environment(AppRouter.self) private var router: AppRouter?
+
+    init(
+        api: any CypressAPI,
+        coordinate: Coordinate?,
+        accuracyM: Double? = nil,
+        areaSelection: AreaSelection = .here,
+        citySelection: CitySelection = .here,
+        canPickArea: Bool = false,
+        canPickCity: Bool = false,
+        onPickArea: (() -> Void)? = nil,
+        onPickCity: (() -> Void)? = nil,
+        location: MapLocationProvider? = nil,
+        onOpenTree: ((UUID) -> Void)? = nil,
+        onShowGroup: ((PinSet) -> Void)? = nil,
+        onRequestLocation: (() -> Void)? = nil,
+        onSeeAllOnMap: (() -> Void)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.api = api
+        self.coordinate = coordinate
+        self.accuracyM = accuracyM
+        self.areaSelection = areaSelection
+        self.citySelection = citySelection
+        self.canPickArea = canPickArea
+        self.canPickCity = canPickCity
+        self.onPickArea = onPickArea
+        self.onPickCity = onPickCity
+        self.location = location
+        self.onOpenTree = onOpenTree
+        self.onShowGroup = onShowGroup
+        self.onRequestLocation = onRequestLocation
+        self.onSeeAllOnMap = onSeeAllOnMap
+        _model = State(wrappedValue: JournalModel(api: api, now: now))
+    }
 
     /// The router's copy when there is one, this view's own otherwise.
     ///
@@ -190,7 +243,7 @@ struct JournalTabView: View {
                         .padding(.horizontal, CypressSpacing.gutter)
 
                     JournalSection(
-                        api: api,
+                        model: model,
                         onOpenTree: onOpenTree,
                         onSeeAllOnMap: onSeeAllOnMap
                     )

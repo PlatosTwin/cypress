@@ -33,6 +33,26 @@ final class JournalModel {
 
     private(set) var phase: Phase = .loading
 
+    /// Everything the list draws, derived **once per phase change** rather than once per body pass.
+    ///
+    /// This was a computed property. SwiftUI evaluates a body many times for one visible change —
+    /// a scroll, an appearance, an observation firing anywhere in the subtree — and each evaluation
+    /// rebuilt the whole derivation: every row's title, the day fold, and a `DateFormatter` per day
+    /// group inside `JournalCopy.day`. A full page is up to `JournalLimits.pageSize` groups, so the
+    /// cost was paid up to twenty-five times over on every redraw of a screen whose content had not
+    /// changed.
+    ///
+    /// **`now` is therefore sampled when the phase changes, not when the view draws**, and that is
+    /// a real difference rather than an implementation detail: `JournalCopy.day` prints the year on
+    /// a date outside the current one, so a screen left open across midnight on December 31st would
+    /// have started printing years the moment it next redrew and now does so on its next read. The
+    /// list not silently relabelling itself under a reader is the better of the two, and the year
+    /// boundary is the only input `now` has.
+    ///
+    /// Set by `setPhase` alone, which is the one writer of `phase` — see it for why the pair moves
+    /// together rather than through a `didSet`.
+    private(set) var presentation: JournalPresentation?
+
     /// Whether the last `Show earlier` failed. Cleared by the next successful one.
     private(set) var hasFailedOlder = false
 
@@ -48,18 +68,44 @@ final class JournalModel {
         self.now = now
     }
 
-    var presentation: JournalPresentation? {
-        guard case let .loaded(entries, cursor) = phase else { return nil }
-        return JournalPresentation(entries: entries, nextCursor: cursor, now: now())
-    }
-
     var hasFailed: Bool { phase == .failed }
+
+    /// The one writer of `phase`, so `presentation` cannot fall behind it.
+    ///
+    /// A `didSet` on `phase` would read more directly and is not used: `phase` is a stored property
+    /// of an `@Observable` type, and the macro rewrites those into accessors over a backing store.
+    /// A single explicit setter keeps the pairing legible in the source rather than depending on
+    /// what the macro does with an observer.
+    private func setPhase(_ newPhase: Phase) {
+        phase = newPhase
+        guard case let .loaded(entries, cursor) = newPhase else {
+            presentation = nil
+            return
+        }
+        presentation = JournalPresentation(entries: entries, nextCursor: cursor, now: now())
+    }
 
     /// The first page.
     ///
-    /// Idempotent on a successful read, so the `.task` that fires on every reappearance of a segment
-    /// does not throw away pages the reader has already asked for. A screen that reset itself every
-    /// time you switched away and back would make `Show earlier` un-doable by accident.
+    /// **Idempotent on a successful read**, so the `.task` that fires on every reappearance does not
+    /// throw away pages the reader has already asked for — a screen that reset itself every time you
+    /// looked away would make `Show earlier` un-doable by accident.
+    ///
+    /// **That guard is only worth anything while the model outlives the view**, and this is where a
+    /// comment on this method was wrong for two rounds: the guard was here, it was correct, and the
+    /// model it guarded was `@State` on `JournalSection`, which sat inside `JournalTabView`'s
+    /// `switch` on the segment. Glancing at Neighborhood and back destroyed the model, the next
+    /// `.task` met a fresh `.loading`, and every page after the first was gone. The claim was a
+    /// property of the model that the view structure did not give it.
+    ///
+    /// So the ownership is now stated as the thing it is: `JournalTabView` holds the model *above*
+    /// its segment `switch`, which makes this guard true across Yours ↔ Neighborhood ↔ City.
+    /// `JournalModelOwnershipGuardTests` reads the two files rather than trusting this paragraph.
+    ///
+    /// **Across the bottom tabs it is true exactly as far as whoever holds `JournalTabView` makes it
+    /// true.** `RootView.tabRoot` is a `switch` on `router.tab`, so leaving the Journal tab destroys
+    /// the tab view and this model with it. That is one level up and outside this file; nothing here
+    /// claims otherwise.
     func load() async {
         if case .loaded = phase { return }
         await read()
@@ -68,17 +114,17 @@ final class JournalModel {
     /// Re-runs the first read after a failure. The read writes nothing, so a retry is free — the
     /// same reason `GroveModel.retry` can offer one (ERRATA E126).
     func retry() async {
-        phase = .loading
+        setPhase(.loading)
         await read()
     }
 
     private func read() async {
         do {
             let page = try await api.journal(cursor: nil, limit: JournalLimits.pageSize)
-            phase = .loaded(entries: page.items, nextCursor: page.nextCursor)
+            setPhase(.loaded(entries: page.items, nextCursor: page.nextCursor))
             hasFailedOlder = false
         } catch {
-            phase = .failed
+            setPhase(.failed)
         }
     }
 
@@ -94,7 +140,7 @@ final class JournalModel {
         defer { isLoadingOlder = false }
         do {
             let page = try await api.journal(cursor: cursor, limit: JournalLimits.pageSize)
-            phase = .loaded(entries: entries + page.items, nextCursor: page.nextCursor)
+            setPhase(.loaded(entries: entries + page.items, nextCursor: page.nextCursor))
             hasFailedOlder = false
         } catch {
             // The rows already read stay on screen. Only the note changes — see the file comment.

@@ -2282,27 +2282,69 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// `GET /me/journal`, one page.
+    ///
+    /// **Two round-trips and four statements, whatever the page holds.** It used to be two
+    /// statements plus a loop: `displayNames(for:)` was a serial `for` over the page's distinct
+    /// trees, one `store.queue.read` hop apiece, and each miss fell through to
+    /// `TreeQueries.tree(id:)` — the wide four-join projection this file's own header calls the
+    /// app's most expensive single-row query. That is the shape PR #131 took out of `grove()` and
+    /// it was still here, on the tab's *default* segment, paid on every first paint and again on
+    /// every `Show earlier`.
+    ///
+    /// The second read is a second read because its statements need the page's tree ids, which the
+    /// first read is what produces — the same two-stage shape `grove()` has for the same reason.
+    /// The three statements inside it are:
+    ///
+    /// - `TreeQueries.trees(ids:)` and `ContributionStore.activeNames(treeIDs:)`, through
+    ///   `Self.displayNames(for:treeQueries:contributions:connection:)`, which is the one
+    ///   implementation of the name rule and is what `displayNames(for:)` now calls too;
+    /// - `ContributionStore.heroPhotoIDs(treeIDs:attribution:)` rather than the unscoped
+    ///   `heroPhotoIDs()` (ERRATA E204), so the thumbnails for a page of at most
+    ///   `Page.maximumLimit` trees are answered by two narrowed statements instead of
+    ///   `SELECT * FROM photos` plus a `GROUP BY` over every row of `photo_votes`.
+    ///
+    /// **The scoped hero read answers identically for this page, and the one case where it does not
+    /// is E215's own rule.** Every row the unscoped form would keep passes `deleted_at IS NULL`;
+    /// the scoped form keeps a row when `TreeProfile.isPhotoVisible` says so, which for a
+    /// photograph this installation took (`is_own`) is `Photo.isVisibleToItsContributor` —
+    /// `deletedAt == nil`, the identical test. `main.photos` holds what this device wrote, so that
+    /// is every row on this path today. The difference is reachable only for a photograph
+    /// belonging to somebody else that a sync brought down, and there the scoped form withholds an
+    /// unapproved one — which is E215, not a regression. `JournalBatchReadTests` holds both halves.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
         let cursorDate = cursor.flatMap(SQLiteTimestamp.date(from:))
         let capped = min(limit, Page<JournalEntry>.maximumLimit)
-        let (rows, heroPhotoIDs) = try await store.queue.read { connection in
-            (
-                try contributions.journal(
-                    userID: userID,
-                    deviceID: deviceID,
-                    before: cursorDate,
-                    limit: capped,
-                    connection: connection
-                ),
-                // One statement for every row on the page, not one per row (#176). See
-                // `ContributionStore.heroPhotoIDs`.
-                try contributions.heroPhotoIDs(connection: connection)
+        let rows = try await store.queue.read { connection in
+            try contributions.journal(
+                userID: userID,
+                deviceID: deviceID,
+                before: cursorDate,
+                limit: capped,
+                connection: connection
             )
         }
 
         // One name lookup per distinct tree, not per row: a journal page is usually several
-        // contributions about the same handful of trees.
-        let names = await displayNames(for: Array(Set(rows.map(\.treeID))))
+        // contributions about the same handful of trees. And one *statement* per question for the
+        // whole set, not one per tree — see the header.
+        let treeIDs = Set(rows.map(\.treeID))
+        let attribution = attribution
+        let (names, heroPhotoIDs) = try await store.queue.read { connection in
+            (
+                try Self.displayNames(
+                    for: Array(treeIDs),
+                    treeQueries: treeQueries,
+                    contributions: contributions,
+                    connection: connection
+                ),
+                try contributions.heroPhotoIDs(
+                    treeIDs: treeIDs,
+                    attribution: attribution,
+                    connection: connection
+                )
+            )
+        }
 
         let entries = rows.map { row in
             JournalEntry(
@@ -3456,15 +3498,66 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
-    /// Resolves several tree names in one pass, for `OutboxViewState`.
-    public func displayNames(for ids: [UUID]) async -> [UUID: String] {
+    /// **The name rule for a whole set, in two statements against one open connection.**
+    ///
+    /// This is `displayNameIfPresent`'s rule — the tree's one active nickname, else the **seed**
+    /// species' common name, else nothing — asked of every id at once. The species fallback is
+    /// `TreeQueries`-only here exactly as it is there: a community tree with no nickname answers
+    /// nothing even when its row carries a self-asserted species, because a self-assertion is not a
+    /// name the app puts on a tree (D15). An id with no name is absent from the result, which is
+    /// how the caller spells `nil`.
+    ///
+    /// Two folds differ from the per-tree form and neither is reachable. `activeNames` keeps the
+    /// last row per tree where `activeName`'s `LIMIT 1` keeps the first, and `idx_tree_names_one_active`
+    /// — UNIQUE on `tree_uuid` where the name is active and undeleted — means there is never a
+    /// second row to disagree about. `trees(ids:)` keeps the last record per uuid where `tree(id:)`
+    /// takes the first, which `TreeQueries.treesSQL()` records can only differ if the inventory
+    /// union presented one uuid from two arms at once, which shadowing exists to prevent.
+    ///
+    /// `JournalBatchReadTests` checks every answer against `displayNameIfPresent` itself rather
+    /// than restating this paragraph as assertions.
+    private static func displayNames(
+        for ids: [UUID],
+        treeQueries: TreeQueries?,
+        contributions: ContributionStore,
+        connection: SQLiteConnection
+    ) throws -> [UUID: String] {
+        guard !ids.isEmpty else { return [:] }
+        let records = try treeQueries?.trees(ids: ids, connection: connection) ?? [:]
+        let active = try contributions.activeNames(treeIDs: ids, connection: connection)
         var names: [UUID: String] = [:]
+        names.reserveCapacity(ids.count)
         for id in ids {
-            if let name = try? await displayNameIfPresent(for: id), !name.isEmpty {
-                names[id] = name
-            }
+            guard let name = active[id]?.name ?? records[id]?.species?.commonName,
+                  !name.isEmpty else { continue }
+            names[id] = name
         }
         return names
+    }
+
+    /// Resolves several tree names in one pass, for `OutboxViewState` and for `journal`.
+    ///
+    /// **One round-trip and two statements**, where this was a serial loop of one `queue.read` hop
+    /// per id, each running `TreeQueries.tree(id:)` on the nickname miss. See the static above for
+    /// the rule and for the two folds that differ from the per-tree form.
+    ///
+    /// **What the batch changes about failure, stated because it is a real difference.** The loop
+    /// wrapped each id in `try?`, so one unreadable row cost that id its name and no other; one
+    /// read now answers for the whole set, so a throw costs every id in the call. Both spellings
+    /// are the same at the boundary — an absent key, drawn as `TreeProfilePresentation.fallbackTitle`
+    /// — and the throw is a database-level failure rather than a per-row one: a page whose rows
+    /// resolve to nothing at all is the ordinary case and does not throw (`aPageWhoseTreeIsInNo
+    /// InventoryStillNamesTheOthers`).
+    public func displayNames(for ids: [UUID]) async -> [UUID: String] {
+        guard !ids.isEmpty else { return [:] }
+        return (try? await store.queue.read { connection in
+            try Self.displayNames(
+                for: ids,
+                treeQueries: treeQueries,
+                contributions: contributions,
+                connection: connection
+            )
+        }) ?? [:]
     }
 }
 
