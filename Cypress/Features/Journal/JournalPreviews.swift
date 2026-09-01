@@ -48,6 +48,12 @@ struct JournalPreviewAPI: CypressAPI {
     var fails = false
     /// Makes only the *first* read fail, so a retry can be seen to recover.
     var failsOnce = false
+    /// The mirror of `failsOnce`: the first read succeeds and every one after it fails, which is the
+    /// only way to drive a model from `.loaded` to `.failed` — a retry that does not recover. Needed
+    /// by `JournalModelLifetimeTests.aFailureClearsThePresentation`, because a model that never
+    /// loaded has no presentation to lose and cannot show that the failure is what took it away.
+    /// Counts reads the way `failsOnce` does, so it needs a `reads` counter to be meaningful.
+    var failsAfterFirst = false
     /// Makes only `Show earlier` fail, which must not take the whole screen down.
     var olderFails = false
     var reads: JournalReadCounter?
@@ -60,6 +66,7 @@ struct JournalPreviewAPI: CypressAPI {
         reads?.record()
         if fails { throw APIError.serverError }
         if failsOnce, attempt == 0 { throw APIError.serverError }
+        if failsAfterFirst, attempt > 0 { throw APIError.serverError }
         guard cursor != nil else { return page }
         if olderFails { throw APIError.serverError }
         return older ?? Page(items: [])

@@ -274,24 +274,41 @@ struct JournalModelLifetimeTests {
         #expect(model.presentation?.rows.count == 1, "a retry did not re-derive from the fresh first page")
     }
 
-    /// A failed read has no presentation, and a failed *retry* clears the one it had — the arm
-    /// `setPhase` has to handle for `presentation` not to outlive its phase.
-    @Test("a failure clears the presentation rather than leaving the last one behind")
+    /// **A failed retry clears the presentation it had**, which is the arm `setPhase` has to handle
+    /// for a stored `presentation` not to outlive its phase.
+    ///
+    /// The transition has to be `.loaded` → `.failed` on **one** model, and that is why
+    /// `JournalPreviewAPI.failsAfterFirst` exists: a model that never loaded has no presentation to
+    /// lose, so asserting `nil` on one proves only that nothing was ever set. `retry()` is the only
+    /// path that makes the transition — `loadOlder`'s failure deliberately keeps what is on screen
+    /// (ERRATA E126, and this model's file comment).
+    @Test("a failed retry clears the presentation rather than leaving the last one behind")
     @MainActor
-    func aFailureClearsThePresentation() async {
+    func aFailureClearsThePresentation() async throws {
+        let reads = JournalReadCounter()
         let model = JournalModel(
-            api: JournalPreviewAPI(page: Page(items: [Self.entry(1)])),
+            api: JournalPreviewAPI(
+                page: Page(items: [Self.entry(1)]),
+                failsAfterFirst: true,
+                reads: reads
+            ),
             now: { Self.date(2026, 7, 1) }
         )
         await model.load()
-        #expect(model.presentation != nil)
+        try #require(
+            model.presentation?.rows.count == 1,
+            "the fixture did not load a page, so there is nothing for the failure to clear"
+        )
+        #expect(reads.count == 1)
 
-        let failing = JournalModel(api: JournalPreviewAPI(fails: true), now: { Self.date(2026, 7, 1) })
-        await failing.load()
-        #expect(failing.hasFailed)
+        await model.retry()
+        #expect(model.hasFailed, "the second read was supposed to fail")
         #expect(
-            failing.presentation == nil,
-            "a journal that could not be read drew a presentation, which is ERRATA E126's own case"
+            model.presentation == nil,
+            """
+            a journal that could not be re-read went on drawing the rows of the read before it, \
+            under a screen that says it failed — ERRATA E126's own case
+            """
         )
     }
 }
