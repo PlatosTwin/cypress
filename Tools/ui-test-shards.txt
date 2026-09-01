@@ -315,6 +315,21 @@
 # winner under the corrected numbers, and within 6s of the winner under the uncorrected ones — and
 # the file's standing instruction to re-measure Shards 1 and 4 on a single machine is what would
 # settle it. Do not move this class for a number this small without doing that first.
+#
+# IT THEN GREW from two tests to three — PR #139's review found F28's link stealing taps from
+# `See every reading`, and the third test taps the words and requires screen 11. Measured whole on
+# the same iPhone 16e (3A1F212D-8F3A-41F1-AF72-EC95E155A4C9, 390 pt) as the 13.9s above, so this is
+# a like-for-like replacement rather than two devices being compared:
+#
+#   Executed 3 tests, with 0 failures (0 unexpected) in 22.773 (22.781) seconds
+#
+# What this line contributes is therefore **+8.9s over the number already carried**, not 22.8s of
+# new cost. THE PLACEMENT DOES NOT CHANGE, and it does not need re-deriving: the paragraph above
+# already concluded that no arrangement of this class moves the gate's longest TESTS by more than
+# ~6s, because Shard 1 at 378.3s sets the pace and neither short line reaches it. Shard 2 becomes
+# 367.8 + 22.8 = 390.6s against Shard 3's 369.7 + 22.8 = 392.5s and Shard 4's ~370.6 + 22.8 =
+# 393.4s — the same ordering, the same ~2s spread, and the same warning that a 2s margin built from
+# three machines' numbers is not a measurement.
 
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests
