@@ -234,6 +234,38 @@ public struct RoutedAPI: CypressAPI {
         }
     }
 
+    /// What the city file could say about a set of trees: the ones it named, and the ones it holds
+    /// and **declines** to name.
+    ///
+    /// ── Why the second set exists, which is a correctness point and not bookkeeping ─────────────
+    ///
+    /// Two different things make a row not appear on screen, and collapsing them mislabels the read.
+    /// A tree this installation's inventories do not carry at all is a piece of the service's answer
+    /// that **did not make it** — under D16 an ordinary case, the other device was in another city —
+    /// and `.fellBackToLocal` is the honest mark for it. A tree the inventories *do* carry, which
+    /// D15 gives no name, is not a loss: it is the rule being applied, correctly, to a complete
+    /// answer. Recording that as a degraded read would tell a §4.3 surface "showing what's on this
+    /// phone" about a read where nothing was missing.
+    ///
+    /// PR #144's review is what separated them. The first cut had only the named dictionary, so an
+    /// intended D15 refusal and a genuinely unresolvable row were the same absence and both marked
+    /// the read degraded.
+    public struct CityFileRows: Sendable {
+
+        /// Trees the city file carries and D15 names.
+        public let named: [UUID: CityFileRow]
+
+        /// Trees the city file **carries** and D15 declines to name — a nickname-less community
+        /// record, whose only species is one somebody asserted about it. Dropped from the grove, and
+        /// not a reason to call the read degraded.
+        public let unnamed: Set<UUID>
+
+        public init(named: [UUID: CityFileRow], unnamed: Set<UUID>) {
+            self.named = named
+            self.unnamed = unnamed
+        }
+    }
+
     /// Names and positions for a set of trees at once, or nil to resolve them one at a time.
     ///
     /// **Injected, nil by default, and nil means the per-row form** — `signedInUserID`'s pattern
@@ -254,7 +286,7 @@ public struct RoutedAPI: CypressAPI {
     ///
     /// It is only ever asked about rows the **service** named and the phone's own grove did not, so
     /// on a single-device installation it is never called at all.
-    public let resolveGroveRows: (@Sendable ([UUID]) async -> [UUID: CityFileRow])?
+    public let resolveGroveRows: (@Sendable ([UUID]) async -> CityFileRows)?
 
     /// The two names of a set of species at once, or nil to resolve them one at a time.
     ///
@@ -268,7 +300,7 @@ public struct RoutedAPI: CypressAPI {
         remote: RemoteAPI,
         log: RemoteReadLog = RemoteReadLog(),
         signedInUserID: (@Sendable () async -> UUID?)? = nil,
-        resolveGroveRows: (@Sendable ([UUID]) async -> [UUID: CityFileRow])? = nil,
+        resolveGroveRows: (@Sendable ([UUID]) async -> CityFileRows)? = nil,
         resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])? = nil
     ) {
         self.local = local
@@ -516,17 +548,31 @@ public struct RoutedAPI: CypressAPI {
     /// local answer is on the glass, so a species or a tree the account met on another device
     /// appears a beat later rather than holding the first frame (the owner's ruling of 2026-09-01).
     ///
-    /// **The join is unchanged and so is the log.** Every semantic below — the later of the two
-    /// visit dates, `record ?? existing.record` because a nil record is "this read did not answer
-    /// that" and not zero, the re-sort on the joined dates, `.live` only when every row resolved —
-    /// is the one this method carried when it was `grove()` itself. What changed is *when*
-    /// `.grove`'s outcome is written: it is written after the paint rather than before it, so a
-    /// surface reading `log` is being told about the refresh. That is the same fact it was always
-    /// being told; it now arrives second.
+    /// **The join is unchanged.** Every semantic below — the later of the two visit dates,
+    /// `record ?? existing.record` because a nil record is "this read did not answer that" and not
+    /// zero (ERRATA E38), the re-sort on the joined dates — is the one this method carried when it
+    /// was `grove()` itself.
+    ///
+    /// **Two things about the log did change, and both are corrections rather than side effects.**
+    ///
+    /// 1. *When* `.grove`'s outcome is written: after the paint rather than before it, so a surface
+    ///    reading `log` is being told about the refresh. Same fact, arriving second.
+    /// 2. *What counts as degraded.* `.live` used to mean "every row the service named reached the
+    ///    screen", which folded an intended D15 refusal in with a genuinely unresolvable row. It now
+    ///    means "nothing the service said was lost" — see `CityFileRows`, and PR #144's review, which
+    ///    is where the two were separated.
+    ///
+    /// **A cancelled refresh records nothing at all.** `GroveModel` cancels an in-flight refresh when
+    /// the tab is re-entered, and `try? await remote.groveDelta()` answers nil for a cancellation
+    /// exactly as it does for an unreachable host — so without the check below, flipping tabs twice
+    /// would leave `.fellBackToLocal` in the log against a service that was perfectly reachable.
+    /// "We did not ask" is the truthful mark for a read we ourselves called off, and nil is how this
+    /// log spells it (`RemoteReadLog.outcome(of:)`). PR #144's review found this.
     public func refreshedGrove() async throws -> [GroveEntry] {
         let mine = try await local.grove()
         guard let delta = try? await remote.groveDelta() else {
-            await log.record(.grove, .fellBackToLocal)
+            // Nothing is recorded for a refresh we cancelled ourselves — see the note above.
+            if !Task.isCancelled { await log.record(.grove, .fellBackToLocal) }
             return mine
         }
 
@@ -559,8 +605,11 @@ public struct RoutedAPI: CypressAPI {
                 )
                 continue
             }
-            guard let resolved = cityFileRows[row.treeID] else {
-                everythingResolved = false
+            guard let resolved = cityFileRows.named[row.treeID] else {
+                // **Degraded only when the city file could not answer at all.** A tree it holds and
+                // D15 declines to name (`CityFileRows.unnamed`) is the rule being applied to a
+                // complete answer, not a piece of the answer going missing — see `CityFileRows`.
+                if !cityFileRows.unnamed.contains(row.treeID) { everythingResolved = false }
                 continue
             }
             byTree[row.treeID] = GroveEntry(
@@ -629,7 +678,8 @@ public struct RoutedAPI: CypressAPI {
     public func refreshedGroveSpecies() async throws -> GroveSpecies {
         let mine = try await local.groveSpecies()
         guard let delta = try? await remote.groveSpeciesDelta() else {
-            await log.record(.groveSpecies, .fellBackToLocal)
+            // `refreshedGrove()`'s cancellation note, for the same reason and the same reader.
+            if !Task.isCancelled { await log.record(.groveSpecies, .fellBackToLocal) }
             return mine
         }
 
@@ -852,35 +902,58 @@ public struct RoutedAPI: CypressAPI {
 
 // MARK: - Resolving a row the phone has never seen
 
-private extension RoutedAPI {
+/// **Internal rather than `private`, so the two arms can be compared against each other.**
+///
+/// `resolvedCityFileRows(for:)` has a provider arm and a loop arm that must answer identically, and
+/// PR #144's review found them disagreeing on a row the fixture did not contain. The test that keeps
+/// them honest has to be able to call *this* method with no provider — the real loop — rather than a
+/// copy of it lifted into the test file, because a lifted copy is a third implementation and it
+/// drifts silently, which is exactly how the disagreement stayed invisible. Nothing outside `Data`
+/// calls either of these.
+extension RoutedAPI {
 
     /// Names and positions for trees only the account knows about, from the city file.
     ///
-    /// A tree absent from the answer is one the city file cannot name or cannot place — under D16 an
-    /// ordinary case and not an error, because the other device may have been in a city this
-    /// installation has not installed. The caller drops it rather than drawing a row with no name at
-    /// a coordinate this client invented, on a screen whose whole subject is trees the reader knows,
-    /// and marks the read degraded because part of the answer did not make it.
+    /// **Three outcomes per tree, and the difference between the last two is the whole of `CityFileRows`.**
+    /// A tree is `named`; or it is `unnamed` — the inventories hold it and D15 gives it no name; or it
+    /// is in neither, which means the inventories do not carry it at all. Under D16 the last is an
+    /// ordinary case rather than an error (the other device may have been in a city this installation
+    /// has not installed), and it is the only one of the three that marks the read degraded, because
+    /// it is the only one where part of the service's answer did not make it.
     ///
-    /// **The provider when there is one, the per-row loop when there is not.** The loop is the form
-    /// this method has always had — `LocalAPI.displayNameIfPresent`'s rule restated over
-    /// `treeProfile`'s payload: the one active nickname (D15), else the species common name, never a
-    /// fabricated label. `LocalAPIGroveBatch` is held against it row for row by
-    /// `GroveLocalFirstTests`, because "the same answer, in one query" is exactly the kind of claim
-    /// this project has been wrong about in a comment.
-    func resolvedCityFileRows(for treeIDs: [UUID]) async -> [UUID: CityFileRow] {
-        guard !treeIDs.isEmpty else { return [:] }
+    /// ── The name rule, which is D15's and which both arms now apply ────────────────────────────
+    ///
+    /// The one active nickname; else the **seed** species' common name; never a fabricated label. The
+    /// second fallback deliberately does not consult a *community* record's species, and PR #144's
+    /// review is why that sentence is here rather than merely implied: this loop used to read
+    /// `profile.species?.commonName` unconditionally, and `LocalAPI.treeProfile` fills that field for
+    /// a community record out of `tree.speciesCurrentID` — somebody's self-assertion about a tree they
+    /// added. So a nickname-less community tree carrying a claimed species got named after it, which
+    /// `LocalAPI.grove()` has always refused to do ("a self-asserted species is not a name the app
+    /// puts on a tree", D15) and which this method's own comment already claimed it refused. The
+    /// reviewer proved the two arms disagreed on exactly that row. The batch's rule is the ruled one;
+    /// the loop was the drift, and the `source == .community` guard below is the correction.
+    ///
+    /// `GroveCityFileBatchTests` holds the two arms against each other row for row over a fixture
+    /// that now carries that shape, because "the same answer, in one query" is exactly the kind of
+    /// claim this project has been wrong about in a comment.
+    func resolvedCityFileRows(for treeIDs: [UUID]) async -> CityFileRows {
+        guard !treeIDs.isEmpty else { return CityFileRows(named: [:], unnamed: []) }
         if let resolveGroveRows { return await resolveGroveRows(treeIDs) }
 
-        var rows: [UUID: CityFileRow] = [:]
+        var named: [UUID: CityFileRow] = [:]
+        var unnamed: Set<UUID> = []
         for treeID in treeIDs {
             guard let profile = try? await local.treeProfile(id: treeID) else { continue }
-            guard let name = profile.activeName?.name ?? profile.species?.commonName, !name.isEmpty else {
+            // D15: a community record's species is a self-assertion, not a name. See the note above.
+            let speciesName = profile.tree.source == .community ? nil : profile.species?.commonName
+            guard let name = profile.activeName?.name ?? speciesName, !name.isEmpty else {
+                unnamed.insert(treeID)
                 continue
             }
-            rows[treeID] = CityFileRow(displayName: name, coordinate: profile.tree.coordinate)
+            named[treeID] = CityFileRow(displayName: name, coordinate: profile.tree.coordinate)
         }
-        return rows
+        return CityFileRows(named: named, unnamed: unnamed)
     }
 
     /// The two names of species only the account knows about, from the city file.

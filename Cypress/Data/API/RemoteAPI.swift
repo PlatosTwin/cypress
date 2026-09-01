@@ -482,7 +482,8 @@ public struct RemoteAPI: CypressAPI {
     /// the `GroveRecord` and the hero photo — and no display name and no coordinate, because both
     /// are city-inventory facts. `GroveEntry` requires both, and a coordinate is not optional.
     ///
-    /// `groveDelta()` is what the router calls; `RoutedAPI.grove()` is where the halves meet.
+    /// `groveDelta()` is what the router calls; `RoutedAPI.refreshedGrove()` is where the halves
+    /// meet — `grove()` itself is the local-first paint and never reaches this route.
     public func grove() async throws -> [GroveEntry] {
         throw RemoteSurface.communityHalfOnly
     }

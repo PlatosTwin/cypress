@@ -94,6 +94,11 @@ struct GroveLocalFirstTests {
                 isFavorite: false
             )
         ]
+        // **The nickname is load-bearing, not decoration** (PR #144 review, F1b). This row is a
+        // `.community` record, and D15 does not name one after a species somebody asserted about it
+        // — so with only the species it has no name the app will draw and *both* resolver arms drop
+        // it, which would make every merge assertion below about a row that never arrives. A
+        // nickname is what a contributor gives a tree they added, and it is what D15 names.
         local.profilesByID = [
             accountTreeID: TreeProfile(
                 tree: Tree(
@@ -101,6 +106,7 @@ struct GroveLocalFirstTests {
                     source: .community,
                     coordinate: Coordinate(latitude: 37.76, longitude: -122.50)
                 ),
+                activeName: TreeName(treeID: accountTreeID, name: "The Corner Oak", givenBy: nil),
                 species: try Species(
                     id: accountSpeciesID,
                     scientificName: "Quercus agrifolia",
@@ -110,6 +116,30 @@ struct GroveLocalFirstTests {
             )
         ]
         return local
+    }
+
+    /// The phone's answer after a second species has been met on **this** device — the local write a
+    /// repeat visit has to pick up.
+    static func twoSpeciesLocally() throws -> GroveSpecies {
+        GroveSpecies(
+            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID])),
+            known: Series(complete: [
+                KnownSpecies(
+                    speciesID: speciesID,
+                    scientificName: "Platanus × acerifolia",
+                    commonName: "London Plane",
+                    firstMetAt: GroveFirstClock.laterMet,
+                    firstMetAddress: "Noriega St"
+                ),
+                KnownSpecies(
+                    speciesID: accountSpeciesID,
+                    scientificName: "Quercus agrifolia",
+                    commonName: "Coast Live Oak",
+                    firstMetAt: GroveFirstClock.laterMet,
+                    firstMetAddress: nil
+                )
+            ])
+        )
     }
 
     /// A service holding one species and one tree this phone has never met.
@@ -132,6 +162,16 @@ struct GroveLocalFirstTests {
         return transport
     }
 
+    /// A router over the `LocalDouble` fixture, with **no resolver providers** — deliberately the
+    /// nil arm, and labelled as such because PR #144's review found this helper being read as though
+    /// it were the shipping composition.
+    ///
+    /// It is not. `DataLayer.boot` fills `resolveGroveRows` and `resolveSpecies`, and the arm that
+    /// ships is covered two ways rather than by pretending this one is it:
+    /// `theShippingRouterMergesThroughTheBatchedResolver` below builds a router the way `boot` does,
+    /// over a real `LocalAPI` and the real seed; and `GroveCityFileBatchTests` holds the two arms
+    /// against each other row for row — calling `RoutedAPI.resolvedCityFileRows` itself for the loop,
+    /// not a copy of it — over a fixture that carries the row shape they once disagreed on.
     static func router(_ local: LocalDouble, _ transport: ScriptedTransport, log: RemoteReadLog) -> RoutedAPI {
         RoutedAPI(
             local: local,
@@ -326,35 +366,73 @@ struct GroveLocalFirstTests {
 
     // MARK: The lifetime, which is what a tab switch costs
 
-    /// **A second `load()` does not read again.**
+    /// **A repeat visit re-reads the phone and never the service, and never blanks the screen.**
     ///
     /// `RootView.tabRoot` rebuilds the arm it selects, so `GroveView.task` fires on every return to
-    /// the tab. With the model owned above the switch (`RootView.grove`) that is a *repeat* call on
-    /// a model that already has an answer, and the answer is what should be drawn — not a second
-    /// read of the same question. `loadTreesIfNeeded()` has had this guard since it was written;
-    /// `load()` did not, which is why every visit to My Grove was a cold read.
-    @Test("a repeat load paints the answer it already has instead of reading again")
-    func aRepeatLoadDoesNotReadAgain() async throws {
-        let counter = ReadCounter()
+    /// the tab. With the model owned above the switch (`RootView.grove`) that is a repeat call on a
+    /// model that already has an answer.
+    ///
+    /// **This test pinned the wrong contract in the first cut of this PR, and PR #144's review is
+    /// why it now pins this one.** It asserted one local read for three visits — a model that, with
+    /// no refresher wired, never re-read anything at all. That is every DEBUG build and the whole UI
+    /// suite, and it meant the Grove tab was frozen for the life of the process: favorite a tree from
+    /// the Map, come back, and the pill still said what it said. The contract is not "do not read", it
+    /// is **"do not go back to the network, and do not go back to blank"**: the phone is re-read on
+    /// every visit (≈6 ms), the phase never returns to `.loading` or `.idle`, and the service is
+    /// reached only by the background refresh, which this model has none of.
+    ///
+    /// The second half is the one that would have caught the freeze, and it is asserted as a fact
+    /// about the *answer* rather than about a count: the phone's answer changes between visits, and
+    /// the screen has to change with it.
+    @Test("a repeat visit re-reads the phone, never the service, and never blanks")
+    func aRepeatVisitRepaintsFromThePhone() async throws {
+        let probe = GroveReadProbe()
         var local = try Self.localDouble()
-        local.reads = counter
+        local.reads = probe
         let model = GroveModel(api: local, now: { GroveFirstClock.laterMet }, tab: .trees)
 
-        // Calibration: the counter counts. Without this, "1" and "the counter is broken" agree.
-        await model.load()
-        #expect(counter.speciesReads == 1, "the counter did not see the first read")
-
-        await model.load()
+        // Calibration: the probe counts. Without this, any number below and "the probe is broken"
+        // agree with each other.
         await model.load()
         await model.loadTreesIfNeeded()
+        #expect(probe.speciesReads == 1, "the probe did not see the first species read")
+        #expect(probe.treeReads == 1, "the probe did not see the first trees read")
+
+        // A local write lands between visits — a visit logged from a tree profile is exactly this.
+        probe.setSpecies(try Self.twoSpeciesLocally())
+        probe.setTrees([
+            GroveEntry(
+                treeID: Self.treeID,
+                displayName: "London Plane",
+                coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+                lastVisitedAt: GroveFirstClock.laterMet,
+                isFavorite: true
+            ),
+            GroveEntry(
+                treeID: Self.accountTreeID,
+                displayName: "The Corner Oak",
+                coordinate: Coordinate(latitude: 37.76, longitude: -122.50),
+                lastVisitedAt: nil,
+                isFavorite: false
+            )
+        ])
+
+        await model.load()
         await model.loadTreesIfNeeded()
 
-        #expect(counter.speciesReads == 1, "the species read ran \(counter.speciesReads) times for three visits")
-        #expect(counter.treeReads == 1, "the trees read ran \(counter.treeReads) times for two visits")
-        guard case .loaded = model.phase, case .loaded = model.treesPhase else {
+        #expect(probe.speciesReads == 2, "the second visit made \(probe.speciesReads) species reads")
+        #expect(probe.treeReads == 2, "the second visit made \(probe.treeReads) trees reads")
+
+        guard case let .loaded(species) = model.phase, case let .loaded(trees) = model.treesPhase else {
             Issue.record("a repeat visit lost the grove: \(model.phase) / \(model.treesPhase)")
             return
         }
+        #expect(species.known.items.count == 2, "the revisit did not pick up a species logged since")
+        #expect(trees.count == 2, "the revisit did not pick up a tree logged since")
+
+        // And no service was reached: this model has no refresher, so no task was started at all.
+        #expect(model.speciesRefresh == nil)
+        #expect(model.treesRefresh == nil)
     }
 
     /// **…and a repeat visit still refreshes.** The guard above must not be the reason a second
@@ -458,13 +536,23 @@ struct GroveLocalFirstTests {
 
 // MARK: - Counting the phone's reads
 
-/// How many times the phone was asked. A reference type because `CountingLocal` is a struct and the
-/// model holds its own copy — `DeletionRecorder`'s argument, for `DeletionRecorder`'s reason.
-final class ReadCounter: @unchecked Sendable {
+/// How many times the phone was asked, and what it should answer next.
+///
+/// A reference type because `LocalDouble` is a struct and the model holds its own copy — a plain
+/// `var` counter would be incremented on a value the test cannot see, which is `DeletionRecorder`'s
+/// argument in `RoutedAPITests` and its reason.
+///
+/// **It carries the answers as well as the counts**, because the contract a repeat visit has to keep
+/// is not "how many reads" — it is "the screen shows what the phone now says". Counting alone was
+/// what let the frozen-tab defect through PR #144's first cut: one read for three visits looked like
+/// thrift and was a tab that never updated again.
+final class GroveReadProbe: @unchecked Sendable {
 
     private let lock = NSLock()
     private var species = 0
     private var trees = 0
+    private var speciesAnswer: GroveSpecies?
+    private var treesAnswer: [GroveEntry]?
 
     var speciesReads: Int {
         lock.lock(); defer { lock.unlock() }
@@ -476,14 +564,28 @@ final class ReadCounter: @unchecked Sendable {
         return trees
     }
 
-    func countSpecies() {
+    /// What the phone answers from the next read onward. Nil until a test says otherwise, which
+    /// means "whatever the `LocalDouble` was built with".
+    func setSpecies(_ value: GroveSpecies) {
         lock.lock(); defer { lock.unlock() }
-        species += 1
+        speciesAnswer = value
     }
 
-    func countTrees() {
+    func setTrees(_ value: [GroveEntry]) {
+        lock.lock(); defer { lock.unlock() }
+        treesAnswer = value
+    }
+
+    func takeSpecies(or fallback: GroveSpecies) -> GroveSpecies {
+        lock.lock(); defer { lock.unlock() }
+        species += 1
+        return speciesAnswer ?? fallback
+    }
+
+    func takeTrees(or fallback: [GroveEntry]) -> [GroveEntry] {
         lock.lock(); defer { lock.unlock() }
         trees += 1
+        return treesAnswer ?? fallback
     }
 }
 
@@ -500,9 +602,15 @@ final class ReadCounter: @unchecked Sendable {
 /// through `any CypressAPI`, which is why it survived the two rounds that removed the same N+1 from
 /// `LocalAPI.grove()` and `speciesGuide`.
 ///
-/// Every name below is checked **against the per-row form itself**, which is still in `RoutedAPI`
-/// as the fallback for a router with no provider. That is a comparison rather than a restatement of
-/// what the new code does — the distinction `GroveBatchReadTests` makes and this suite inherits.
+/// Every name below is checked **against `RoutedAPI.resolvedCityFileRows` itself**, called with no
+/// provider so it takes its loop arm. Not a copy of the loop lifted into this file: PR #144's review
+/// found the arms disagreeing on a row shape the fixture did not contain, and a lifted copy is a
+/// third implementation that would have hidden the disagreement a second time. Comparing the real
+/// two is the distinction `GroveBatchReadTests` makes and this suite inherits.
+///
+/// **The row they disagreed on is now in the fixture**: a community record carrying a self-asserted
+/// species and no nickname. D15 gives it no name — `LocalAPI.grove()` has always refused to name a
+/// tree after somebody's claim about it — and both arms now say so.
 @Suite("My Grove · the batched city-file resolver answers what the per-row loop answered")
 struct GroveCityFileBatchTests {
 
@@ -515,6 +623,17 @@ struct GroveCityFileBatchTests {
         return (LocalAPI(store: store, deviceID: deviceID), store)
     }
 
+    /// Puts a tree in the grove the way a walk does — a visit, which is what `groveTreeIDs` reads.
+    private static func visit(_ treeID: UUID, api: LocalAPI, store: CypressStore) async throws {
+        let attribution = await api.attribution
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                Visit(treeID: treeID, attribution: attribution, capturedAt: Date()),
+                connection: connection
+            )
+        }
+    }
+
     private static func name(_ treeID: UUID, _ nickname: String, store: CypressStore) async throws {
         try await store.queue.write { connection in
             _ = try ContributionStore().insert(
@@ -523,16 +642,42 @@ struct GroveCityFileBatchTests {
         }
     }
 
-    /// The per-row form, lifted out of `RoutedAPI.resolvedCityFileRows(for:)` so the two can be
-    /// compared. It is the same three lines, and if it drifts from that method this suite is
-    /// comparing the batch against a copy — which is why it is written here as narrowly as possible
-    /// and why `RoutedAPI`'s own tests exercise the real one.
-    private static func perRow(_ treeID: UUID, api: LocalAPI) async -> RoutedAPI.CityFileRow? {
-        guard let profile = try? await api.treeProfile(id: treeID) else { return nil }
-        guard let name = profile.activeName?.name ?? profile.species?.commonName, !name.isEmpty else {
-            return nil
-        }
-        return RoutedAPI.CityFileRow(displayName: name, coordinate: profile.tree.coordinate)
+    /// **The real loop arm**, reached by building the router with no provider.
+    ///
+    /// `RoutedAPI.resolvedCityFileRows(for:)` is internal precisely so this is possible; its own
+    /// comment says why. The remote half refuses everything and is never touched — this method does
+    /// not go near the wire.
+    private static func loopArm(over api: LocalAPI) -> RoutedAPI {
+        RoutedAPI(
+            local: api,
+            remote: RemoteAPI(
+                baseURL: URL(string: "https://service.invalid/api/v1")!,
+                transport: ScriptedTransport(),
+                session: .shared
+            )
+        )
+    }
+
+    /// The router `DataLayer.boot` builds: the same two providers, out of the same `LocalAPI`.
+    ///
+    /// Written as one helper so a test cannot accidentally exercise the fallback while believing it
+    /// is exercising the shipping composition — which is the mistake PR #144's review found.
+    static func shippingRouter(
+        over api: LocalAPI,
+        transport: ScriptedTransport,
+        log: RemoteReadLog = RemoteReadLog()
+    ) -> RoutedAPI {
+        RoutedAPI(
+            local: api,
+            remote: RemoteAPI(
+                baseURL: URL(string: "https://service.invalid/api/v1")!,
+                transport: transport,
+                session: .shared
+            ),
+            log: log,
+            resolveGroveRows: { ids in await api.groveCityFileRows(for: ids) },
+            resolveSpecies: { ids in await api.species(ids: ids) }
+        )
     }
 
     @Test("seed trees named and unnamed, a community tree, and an id nobody holds")
@@ -566,45 +711,76 @@ struct GroveCityFileBatchTests {
                 attribution: attribution
             )
         ).id
+        // **The row PR #144's review proved the two arms disagreed on.** A community record with a
+        // *claimed* species and no nickname: `TreeDraft.speciesID` is the community-add screen's own
+        // optional species (BUILD-PLAN §6), so this is a shape a contributor produces. The loop used
+        // to name it after the claim, because `LocalAPI.treeProfile` fills `species` for a community
+        // row out of `tree.speciesCurrentID`; D15 says a self-assertion is not a name the app puts
+        // on a tree, and both arms now agree that it has none.
+        let seedSpecies = try #require(
+            try await api.searchSpecies(query: "oak", limit: 1).first,
+            "the seed carries no species matching 'oak' to claim"
+        )
+        let communityClaimed = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7697, longitude: -122.4865),
+                speciesID: seedSpecies.id,
+                photoLocalPath: "/tmp/cypress-grove-cityfile-c.jpg",
+                attribution: attribution
+            )
+        ).id
 
         try await Self.name(named.tree.id, "The Corner Elder", store: store)
         try await Self.name(communityNamed, "The Sapling", store: store)
 
-        let ids = [named.tree.id, unnamed.tree.id, communityNamed, communityBare, Self.phantom]
+        let ids = [
+            named.tree.id, unnamed.tree.id, communityNamed, communityBare, communityClaimed, Self.phantom
+        ]
         let rows = await api.groveCityFileRows(for: ids)
 
         // Calibration: the resolver answers at all, and it does not answer for everything. A
-        // resolver returning `[:]` and one returning a row per id would each make the comparison
+        // resolver returning nothing and one returning a row per id would each make the comparison
         // below agree with itself for the wrong reason.
-        #expect(!rows.isEmpty, "the batched resolver answered for nothing — this gate is vacuous")
+        #expect(!rows.named.isEmpty, "the batched resolver named nothing — this gate is vacuous")
         #expect(
-            rows[Self.phantom] == nil,
-            "an id neither the inventory nor this device holds was given a name and a coordinate"
+            rows.named[Self.phantom] == nil && !rows.unnamed.contains(Self.phantom),
+            "an id neither the inventory nor this device holds was resolved"
         )
 
-        #expect(rows[named.tree.id]?.displayName == "The Corner Elder", "the nickname lost")
+        #expect(rows.named[named.tree.id]?.displayName == "The Corner Elder", "the nickname lost")
         #expect(
-            rows[unnamed.tree.id]?.displayName == unnamed.speciesCommonName,
+            rows.named[unnamed.tree.id]?.displayName == unnamed.speciesCommonName,
             "a seed tree with no nickname did not fall back to its species' common name"
         )
-        #expect(rows[named.tree.id]?.coordinate == named.tree.coordinate)
-        #expect(rows[communityNamed]?.displayName == "The Sapling")
+        #expect(rows.named[named.tree.id]?.coordinate == named.tree.coordinate)
+        #expect(rows.named[communityNamed]?.displayName == "The Sapling")
         #expect(
-            rows[communityNamed]?.coordinate == Coordinate(latitude: 37.7695, longitude: -122.4863),
+            rows.named[communityNamed]?.coordinate == Coordinate(latitude: 37.7695, longitude: -122.4863),
             "a community tree's coordinate did not survive the batch"
         )
-        // D15, which is `LocalAPI.grove()`'s rule for the same fallback: a community tree with no
-        // nickname has no name the app is willing to put on it, so it is absent rather than empty.
-        #expect(rows[communityBare] == nil)
+        // D15, twice: a community tree with no nickname has no name the app will draw, whether or
+        // not somebody has claimed a species for it.
+        #expect(rows.named[communityBare] == nil)
+        #expect(rows.named[communityClaimed] == nil, "a community tree was named after a claimed species")
 
-        // …and every id against the per-row form, which is the comparison rather than a restatement.
-        for id in ids {
-            let loop = await Self.perRow(id, api: api)
-            #expect(
-                rows[id] == loop,
-                "\(id): batched \(String(describing: rows[id])) against per-tree \(String(describing: loop))"
-            )
-        }
+        // **And the two are in `unnamed`, not merely absent** — the distinction that decides whether
+        // the caller calls the read degraded. The phantom is in neither, which is what "the service's
+        // answer lost a row" looks like.
+        #expect(
+            rows.unnamed == [communityBare, communityClaimed],
+            "the D15 refusals were reported as \(rows.unnamed), which is not the pair that has no name"
+        )
+
+        // …and every id against the real loop arm, which is the comparison rather than a restatement.
+        let loop = await Self.loopArm(over: api).resolvedCityFileRows(for: ids)
+        #expect(
+            rows.named == loop.named,
+            "batched \(rows.named.mapValues(\.displayName)) against loop \(loop.named.mapValues(\.displayName))"
+        )
+        #expect(
+            rows.unnamed == loop.unnamed,
+            "batched refused \(rows.unnamed) and the loop refused \(loop.unnamed)"
+        )
     }
 
     /// **An empty set asks for nothing**, which is the guard the three statements carry and not a
@@ -613,8 +789,252 @@ struct GroveCityFileBatchTests {
     @Test("no unresolved rows means no read")
     func anEmptySetReadsNothing() async throws {
         let (api, _) = try await Self.openSeeded()
-        #expect(await api.groveCityFileRows(for: []).isEmpty)
+        let nothing = await api.groveCityFileRows(for: [])
+        #expect(nothing.named.isEmpty && nothing.unnamed.isEmpty)
         #expect(await api.species(ids: []).isEmpty)
+    }
+
+    // MARK: - The composition that ships
+
+    /// **A merge through the router `DataLayer.boot` actually builds.**
+    ///
+    /// PR #144's review found every merge gate in this file running the *fallback* arm, because the
+    /// helper that built the routers passed no providers. So the batched resolver — the one that
+    /// ships — was exercised only by comparing it against a lifted copy of the loop. This test wires
+    /// `boot`'s two closures over a real `LocalAPI` and the real seed, and asserts both halves of the
+    /// join: a seed tree the account named reaches the screen, and the D15 refusal does **not** make
+    /// the read degraded.
+    @Test("the shipping router merges an account's tree and stays live through a D15 refusal")
+    func theShippingRouterMergesThroughTheBatchedResolver() async throws {
+        let (api, store) = try await Self.openSeeded()
+
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        let seedTree = try #require(
+            candidates.first(where: { $0.speciesCommonName != nil }),
+            "no seed tree near the opening center carries a species with a common name"
+        )
+        try await Self.name(seedTree.tree.id, "The Corner Elder", store: store)
+
+        // The account also names a tree this phone holds as a nickname-less community record with a
+        // claimed species — the shape D15 refuses. It is dropped, and the read is still live.
+        let attribution = await api.attribution
+        let seedSpecies = try #require(try await api.searchSpecies(query: "oak", limit: 1).first)
+        let refused = try await api.addTree(
+            TreeDraft(
+                coordinate: Coordinate(latitude: 37.7698, longitude: -122.4866),
+                speciesID: seedSpecies.id,
+                photoLocalPath: "/tmp/cypress-grove-shipping-a.jpg",
+                attribution: attribution
+            )
+        ).id
+
+        let transport = ScriptedTransport()
+        transport.answer(
+            "GET /me/grove",
+            with: """
+            {"entries":[
+             {"tree_uuid":"\(seedTree.tree.id.uuidString)","last_visited_at":null,"is_favorite":true,
+              "record":null,"hero_photo_id":null},
+             {"tree_uuid":"\(refused.uuidString)","last_visited_at":null,"is_favorite":true,
+              "record":null,"hero_photo_id":null}],"total":2}
+            """
+        )
+
+        let log = RemoteReadLog()
+        let entries = try await Self.shippingRouter(over: api, transport: transport, log: log).refreshedGrove()
+
+        // Calibration: the account's row really did have to be resolved through the city file — this
+        // phone's own grove is empty, so nothing here could have come from `local.grove()`.
+        #expect(try await api.grove().isEmpty, "the phone's own grove is not empty; this gate is not testing the join")
+
+        #expect(entries.count == 1, "the merge produced \(entries.map(\.displayName))")
+        #expect(entries.first?.treeID == seedTree.tree.id)
+        #expect(entries.first?.displayName == "The Corner Elder", "the batched resolver did not name the row")
+        #expect(entries.first?.coordinate == seedTree.tree.coordinate)
+        #expect(entries.contains { $0.treeID == refused } == false, "a community tree was named after a claim")
+
+        // **The point of the whole `CityFileRows` split.** The service answered completely and a
+        // local rule dropped one of its rows; that is not a fallback, and saying so would offer a
+        // §4.3 surface "showing what's on this phone" about a read where nothing was missing.
+        let outcome = await log.outcome(of: .grove)
+        #expect(outcome == .live, "a D15 refusal was recorded as \(String(describing: outcome))")
+    }
+
+    /// **…and a row the inventories genuinely do not carry still marks the read degraded**, which is
+    /// the other side of the same split and the reason it is not simply "never degrade".
+    @Test("a tree no installed inventory carries still marks the read degraded")
+    func anUncarriedTreeStillDegradesTheRead() async throws {
+        let (api, _) = try await Self.openSeeded()
+        let transport = ScriptedTransport()
+        transport.answer(
+            "GET /me/grove",
+            with: """
+            {"entries":[{"tree_uuid":"\(Self.phantom.uuidString)","last_visited_at":null,
+             "is_favorite":true,"record":null,"hero_photo_id":null}],"total":1}
+            """
+        )
+
+        let log = RemoteReadLog()
+        let entries = try await Self.shippingRouter(over: api, transport: transport, log: log).refreshedGrove()
+
+        #expect(entries.isEmpty)
+        let outcome = await log.outcome(of: .grove)
+        #expect(
+            outcome == .fellBackToLocal,
+            "part of the service's answer was lost and the read reported \(String(describing: outcome))"
+        )
+    }
+
+    /// **The batched arm does not grow with the number of rows the account named; the loop does.**
+    ///
+    /// The census (#143's `StatementCensus`) counts hops onto the database queue from the inside, so
+    /// this is bound to what ran rather than to a string a test names. The control is the whole gate:
+    /// a count that is constant proves nothing unless the form it replaced is shown to be the form
+    /// that is not.
+    @Test("the batched resolver costs the same for one account row as for five, and the loop does not")
+    func theBatchedResolverDoesNotScaleWithTheAccountsRows() async throws {
+        let (api, store) = try await Self.openSeeded()
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        let named = candidates.filter { $0.speciesCommonName != nil }.prefix(5).map(\.tree.id)
+        try #require(named.count == 5, "the fixture needs five named seed trees near the opening center")
+
+        func delta(_ ids: [UUID]) -> ScriptedTransport {
+            let transport = ScriptedTransport()
+            let rows = ids.map {
+                """
+                {"tree_uuid":"\($0.uuidString)","last_visited_at":null,"is_favorite":true,
+                 "record":null,"hero_photo_id":null}
+                """
+            }
+            transport.answer(
+                "GET /me/grove",
+                with: "{\"entries\":[\(rows.joined(separator: ","))],\"total\":\(ids.count)}"
+            )
+            return transport
+        }
+
+        func hops(_ router: RoutedAPI, _ ids: [UUID]) async throws -> Int {
+            let census = StatementCensus()
+            await store.queue.installCensus(census)
+            _ = try await router.refreshedGrove()
+            await store.queue.installCensus(nil)
+            return census.readCount
+        }
+
+        let oneID = [named[0]]
+        let fiveIDs = Array(named)
+
+        let batchedOne = try await hops(Self.shippingRouter(over: api, transport: delta(oneID)), oneID)
+        let batchedFive = try await hops(Self.shippingRouter(over: api, transport: delta(fiveIDs)), fiveIDs)
+
+        // Calibration: the census sees anything at all. A census reading zero would make the equality
+        // below true for the reason that nothing was measured.
+        #expect(batchedOne > 0, "the census recorded no reads — this gate is vacuous")
+        #expect(
+            batchedOne == batchedFive,
+            "the batched resolver cost \(batchedOne) hops for one row and \(batchedFive) for five"
+        )
+
+        // The control, on the same instrument: the loop arm pays per row.
+        let loopOne = try await hops(
+            RoutedAPI(
+                local: api,
+                remote: RemoteAPI(
+                    baseURL: URL(string: "https://service.invalid/api/v1")!,
+                    transport: delta(oneID),
+                    session: .shared
+                )
+            ),
+            oneID
+        )
+        let loopFive = try await hops(
+            RoutedAPI(
+                local: api,
+                remote: RemoteAPI(
+                    baseURL: URL(string: "https://service.invalid/api/v1")!,
+                    transport: delta(fiveIDs),
+                    session: .shared
+                )
+            ),
+            fiveIDs
+        )
+        #expect(
+            loopFive > loopOne,
+            "the per-row loop cost \(loopOne) hops for one row and \(loopFive) for five — if these are equal the control is broken and the equality above means nothing"
+        )
+    }
+
+    // MARK: - The hero photograph, scoped without changing the rule
+
+    /// **The scoped hero read returns what the unscoped one returns, anonymized rows included.**
+    ///
+    /// PR #144's review, F2. The first cut of this change pointed `LocalAPI.grove()` at
+    /// `heroPhotoIDs(treeIDs:attribution:connection:)`, whose `own` comes from `removalPredicate()`,
+    /// whose leading ownerless refusal (R3/E157) makes an anonymized photograph `own: false` — then
+    /// `isPubliclyVisible`, then `.pending`, then dropped. `TreeProfile.isPhotoVisible`'s own doc
+    /// rules the opposite for this screen: shown-and-not-deletable. So the grove takes the
+    /// `treeIDs:` overload, which scopes the rows and leaves the predicate alone.
+    @Test("an anonymized photograph is still the grove row's hero")
+    func theScopedHeroReadKeepsAnAnonymizedPhotograph() async throws {
+        let (api, store) = try await Self.openSeeded()
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        let tree = try #require(candidates.first(where: { $0.speciesCommonName != nil })).tree.id
+        let attribution = await api.attribution
+        try await Self.visit(tree, api: api, store: store)
+
+        // An anonymized photograph, written the way `AccountDeletion.anonymizeContributions` leaves
+        // one: nobody's, and with the provenance column cleared in the same statement.
+        let photoID = UUID()
+        try await store.queue.write { connection in
+            _ = try ContributionStore().insert(
+                Photo(id: photoID, treeID: tree, shotType: .fullTree, capturedAt: Date()),
+                localPath: "/tmp/cypress-anonymized.jpg",
+                owner: .nobody,
+                takenOnDevice: attribution.deviceID,
+                connection: connection
+            )
+            let clear = try connection.cachedStatement(
+                "UPDATE photos SET taken_on_device = NULL WHERE id = :id"
+            )
+            _ = try clear.bind([":id": photoID.uuidString])
+            try clear.run()
+        }
+
+        // Calibration: the unscoped read — the rule this call site has always used — returns it.
+        let unscoped = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(connection: connection)
+        }
+        #expect(unscoped[tree] == photoID, "the fixture is not an anonymized row the unscoped read returns")
+
+        // The scoped read agrees, and the attribution-scoped read — the wrong one for this caller —
+        // is the negative control that shows the two overloads really do differ here.
+        let scoped = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(treeIDs: [tree], connection: connection)
+        }
+        #expect(scoped == unscoped.filter { $0.key == tree }, "the scoped read changed the rule")
+
+        let byAttribution = try await store.queue.read { connection in
+            try ContributionStore().heroPhotoIDs(
+                treeIDs: [tree], attribution: attribution, connection: connection
+            )
+        }
+        #expect(
+            byAttribution[tree] == nil,
+            """
+            the attribution-scoped overload returned the anonymized row, so this test's negative \
+            control is gone and it no longer shows which overload `grove()` must take
+            """
+        )
+
+        // …and the grove row itself draws it, which is the behavior the ruling is about.
+        let entry = try #require(try await api.grove().first { $0.treeID == tree })
+        #expect(entry.heroPhotoID == photoID, "the grove row lost its hero to the scoping")
     }
 
     /// The species half of the same batch: the same answer `species(id:)` gives, one call instead of

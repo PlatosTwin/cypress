@@ -78,7 +78,17 @@ public struct AuthClient: Sendable {
     public let baseURL: URL
     private let http: any AuthHTTP
 
-    public init(baseURL: URL = SyncService.defaultBaseURL, http: any AuthHTTP = URLSession.shared) {
+    /// - Parameter http: **`SyncService.makeSession()`, and deliberately not `URLSession.shared`.**
+    ///   The defect PR #144 closed was never "somebody chose 60 seconds" — it was that the wire was
+    ///   the one session that *cannot* be configured, so no value could be set. Leaving `.shared` as
+    ///   the default here would leave that trap armed for the next call site that omits the argument.
+    ///   A default argument is evaluated at the call site, so each construction gets its own session;
+    ///   the app constructs one `AuthClient` per boot, and `DataLayer.boot` passes the session it
+    ///   shares with `SessionTransport` explicitly rather than taking this default.
+    public init(
+        baseURL: URL = SyncService.defaultBaseURL,
+        http: any AuthHTTP = SyncService.makeSession()
+    ) {
         self.baseURL = baseURL
         self.http = http
     }

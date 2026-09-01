@@ -70,11 +70,11 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
     /// Makes the phone's half of a deletion fail, for the one arm that is not transactional.
     var deletionError: (any Error)?
 
-    /// How many times each of the two grove reads was asked for, when a test cares — nil when none
-    /// does, which is every test in this file. `GroveLocalFirstTests` is the caller: "the model does
-    /// not read again on a repeat visit" is a claim about a count, and a count needs somewhere to
-    /// live that the router's own copy of this struct cannot hide. See `ReadCounter`.
-    var reads: ReadCounter?
+    /// What the two grove reads report and answer, when a test cares — nil when none does, which is
+    /// every test in this file. `GroveLocalFirstTests` is the caller: what a repeat visit does is a
+    /// claim about both a count and the answer that comes back, and neither can live in a `var` on
+    /// this struct because the router holds its own copy of it. See `GroveReadProbe`.
+    var reads: GroveReadProbe?
 
     func mapContent(in viewport: MapViewport) async throws -> MapContent { content }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { nearby }
@@ -121,13 +121,11 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {}
     func deletePhoto(id: UUID) async throws -> PhotoDeletion { throw APIError.notFound }
     func grove() async throws -> [GroveEntry] {
-        reads?.countTrees()
-        return groveEntries
+        reads?.takeTrees(or: groveEntries) ?? groveEntries
     }
     func isFavorite(treeID: UUID) async throws -> Bool { favorite }
     func groveSpecies() async throws -> GroveSpecies {
-        reads?.countSpecies()
-        return speciesKnown
+        reads?.takeSpecies(or: speciesKnown) ?? speciesKnown
     }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { journalPage }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}

@@ -111,11 +111,29 @@ final class GroveModel {
     /// makes it testable.
     ///
     /// - `.loading` — nothing has been read yet. Read the phone, paint it, then refresh behind it.
-    /// - `.loaded` — the answer is already on the glass. **Paint nothing and refresh behind it**,
-    ///   which is the owner's ruling of 2026-09-01 made literal: revisiting the tab shows the last
-    ///   data instantly and picks up anything new without a spinner.
+    /// - `.loaded` — the answer is already on the glass. **Re-read the phone and repaint, then
+    ///   refresh behind it.** Nothing passes through `.loading`, so there is no blank and no spinner;
+    ///   the reader sees what they saw, updated. That is the owner's ruling of 2026-09-01 made
+    ///   literal, and it is the same arm `JournalModel.load()` takes for the same ruling.
     /// - `.failed` — leave it. The retry button is the way back from a failure (ERRATA E126), and a
     ///   `.task` firing again is not somebody asking for one.
+    ///
+    /// ── The local re-read is not redundant with the refresh, and PR #144's review is why ────────
+    ///
+    /// The first cut of this arm did **only** `startSpeciesRefresh()`, on the reasoning that the
+    /// refresh re-reads the phone before it merges. It does — but only when there *is* a refresh, and
+    /// there is none in a build whose remote gate is shut, which is every DEBUG build and the whole
+    /// UI suite. So the tab froze at its first read for the life of the process: favorite a tree from
+    /// the Map, come back, and the grove still said what it said. The prose claimed a gate-shut build
+    /// "behaves exactly as it did" while the suite pinned the opposite.
+    ///
+    /// Re-reading here fixes that and one more thing besides: a **local** write — a visit logged from
+    /// a tree profile, a favorite — now shows on revisit in every build rather than only in one that
+    /// can reach the service. At about 6 ms it is not a cost worth arm-wrestling over.
+    ///
+    /// A re-read that throws leaves the painted grove exactly where it is. A background read the
+    /// reader did not ask for must not take down a screen that is already showing them their grove
+    /// (R72 ruling 1) — the same reasoning `JournalModel.refresh()` states for its own failure path.
     func load() async {
         switch phase {
         case .loading:
@@ -127,6 +145,7 @@ final class GroveModel {
             }
             startSpeciesRefresh()
         case .loaded:
+            if let fresh = try? await api.groveSpecies() { phase = .loaded(fresh) }
             startSpeciesRefresh()
         case .failed:
             break
@@ -176,9 +195,10 @@ final class GroveModel {
     /// otherwise re-run the read on every switch. "Once" has to be a property of the model rather
     /// than of the view, which is what makes it testable.
     ///
-    /// **A pill already loaded refreshes rather than doing nothing** — `load()`'s `.loaded` arm, for
-    /// the same ruling. That is the one thing this method gained: the guard still stops the *read*
-    /// from running twice, and the background merge runs behind whatever is drawn.
+    /// **A pill already loaded repaints and refreshes rather than doing nothing** — `load()`'s
+    /// `.loaded` arm exactly, for the same ruling and with the same argument for the local re-read.
+    /// What the guard still buys is that the pill never returns to a blank column: the phase does not
+    /// pass back through `.idle`, so the rows on screen stay on screen while the fresh read runs.
     func loadTreesIfNeeded() async {
         switch treesPhase {
         case .idle:
@@ -190,6 +210,7 @@ final class GroveModel {
             }
             startTreesRefresh()
         case .loaded:
+            if let fresh = try? await api.grove() { treesPhase = .loaded(fresh) }
             startTreesRefresh()
         case .failed:
             break
