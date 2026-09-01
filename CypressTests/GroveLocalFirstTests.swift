@@ -364,6 +364,47 @@ struct GroveLocalFirstTests {
         #expect(!model.hasFailed)
     }
 
+    /// **A refresh the model cancelled records nothing; one that was actually refused records the
+    /// refusal.** PR #144's review, F4.
+    ///
+    /// `GroveModel` cancels an in-flight refresh whenever the tab is re-entered, and
+    /// `try? await remote.groveSpeciesDelta()` answers nil for a cancellation exactly as it does for
+    /// an unreachable host. Without the guard, flipping tabs twice quickly left `.fellBackToLocal` in
+    /// the log against a service that was perfectly reachable — "we did not ask" reported as "we
+    /// asked and could not reach it", which `RemoteReadLog.outcome(of:)` exists to keep apart.
+    ///
+    /// **The cancellation is ordered, not raced.** The suite is `@MainActor`; the child task cannot
+    /// begin until this function suspends, and `cancel()` is called before it does. So the body runs
+    /// already-cancelled, every time.
+    ///
+    /// The second half is the calibration and it is the whole test: an identical router that is *not*
+    /// cancelled must still record the refusal, or "records nothing" would be true because nothing
+    /// ever records anything.
+    @Test("a cancelled refresh records nothing, and an uncancelled refusal still records")
+    func aCancelledRefreshRecordsNothing() async throws {
+        let cancelledLog = RemoteReadLog()
+        let cancelledRouter = Self.router(try Self.localDouble(), ScriptedTransport(), log: cancelledLog)
+        let task = Task { _ = try? await cancelledRouter.refreshedGroveSpecies() }
+        task.cancel()
+        await task.value
+
+        let cancelled = await cancelledLog.outcome(of: .groveSpecies)
+        #expect(
+            cancelled == nil,
+            "a refresh this app called off was recorded as \(String(describing: cancelled))"
+        )
+
+        // Calibration: the same unreachable service, not cancelled, still marks the read.
+        let refusedLog = RemoteReadLog()
+        let refusedRouter = Self.router(try Self.localDouble(), ScriptedTransport(), log: refusedLog)
+        _ = try await refusedRouter.refreshedGroveSpecies()
+        let refused = await refusedLog.outcome(of: .groveSpecies)
+        #expect(
+            refused == .fellBackToLocal,
+            "an unreachable service recorded \(String(describing: refused)) — this gate is vacuous"
+        )
+    }
+
     // MARK: The lifetime, which is what a tab switch costs
 
     /// **A repeat visit re-reads the phone and never the service, and never blanks the screen.**
