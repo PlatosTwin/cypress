@@ -32,6 +32,20 @@ import Foundation
 import Testing
 @testable import Cypress
 
+// MARK: - The fixture's clock, outside the suite
+
+/// The two instants the fixtures are built from.
+///
+/// **They live here rather than on the suite because the suite is `@MainActor`**, which makes its
+/// static properties main-actor isolated — and `GroveModel(now:)` takes a `@Sendable () -> Date`, so
+/// a closure reading one of them reads main-actor state from a `Sendable` context. That is a warning
+/// today and an error in the Swift 6 language mode, and this repository holds a zero-warning line
+/// across both targets. A free enum has no isolation to cross.
+enum GroveFirstClock {
+    static let firstMet = Date(timeIntervalSince1970: 1_700_000_000)
+    static let laterMet = Date(timeIntervalSince1970: 1_780_000_000)
+}
+
 // MARK: - The gates
 
 @MainActor
@@ -43,8 +57,10 @@ struct GroveLocalFirstTests {
     static let treeID = UUID(uuidString: "77000000-0000-4000-8000-000000000001")!
     static let accountTreeID = UUID(uuidString: "77000000-0000-4000-8000-000000000002")!
 
-    static let firstMet = Date(timeIntervalSince1970: 1_700_000_000)
-    static let laterMet = Date(timeIntervalSince1970: 1_780_000_000)
+    /// Named here as well, so a fixture reads `Self.laterMet` like every other constant in the
+    /// suite. See `GroveFirstClock` for why the values are not declared on this type.
+    static let firstMet = GroveFirstClock.firstMet
+    static let laterMet = GroveFirstClock.laterMet
 
     /// A phone that knows one species and one tree, and a service that knows one more of each.
     static func localDouble() throws -> LocalDouble {
@@ -220,7 +236,7 @@ struct GroveLocalFirstTests {
         let router = Self.router(try Self.localDouble(), transport, log: RemoteReadLog())
         let model = GroveModel(
             api: router,
-            now: { Self.laterMet },
+            now: { GroveFirstClock.laterMet },
             refreshSpecies: { try? await router.refreshedGroveSpecies() }
         )
 
@@ -256,7 +272,7 @@ struct GroveLocalFirstTests {
         let router = Self.router(try Self.localDouble(), transport, log: RemoteReadLog())
         let model = GroveModel(
             api: router,
-            now: { Self.laterMet },
+            now: { GroveFirstClock.laterMet },
             tab: .trees,
             refreshTrees: { try? await router.refreshedGrove() }
         )
@@ -292,7 +308,7 @@ struct GroveLocalFirstTests {
         let router = Self.router(try Self.localDouble(), ScriptedTransport(), log: RemoteReadLog())
         let model = GroveModel(
             api: router,
-            now: { Self.laterMet },
+            now: { GroveFirstClock.laterMet },
             // What `DataLayer.boot` builds: the throw is swallowed to nil.
             refreshSpecies: { nil }
         )
@@ -322,7 +338,7 @@ struct GroveLocalFirstTests {
         let counter = ReadCounter()
         var local = try Self.localDouble()
         local.reads = counter
-        let model = GroveModel(api: local, now: { Self.laterMet }, tab: .trees)
+        let model = GroveModel(api: local, now: { GroveFirstClock.laterMet }, tab: .trees)
 
         // Calibration: the counter counts. Without this, "1" and "the counter is broken" agree.
         await model.load()
@@ -350,7 +366,7 @@ struct GroveLocalFirstTests {
         let router = Self.router(try Self.localDouble(), transport, log: RemoteReadLog())
         let model = GroveModel(
             api: router,
-            now: { Self.laterMet },
+            now: { GroveFirstClock.laterMet },
             refreshSpecies: { try? await router.refreshedGroveSpecies() }
         )
 
@@ -380,7 +396,7 @@ struct GroveLocalFirstTests {
     /// tab for a merge that has nothing to merge.
     @Test("a model with no refresher starts no task")
     func aModelWithNoRefresherStartsNoTask() async throws {
-        let model = GroveModel(api: GrovePreviewAPI(), now: { Self.laterMet }, tab: .trees)
+        let model = GroveModel(api: GrovePreviewAPI(), now: { GroveFirstClock.laterMet }, tab: .trees)
 
         await model.load()
         await model.loadTreesIfNeeded()
