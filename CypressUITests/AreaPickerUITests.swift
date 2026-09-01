@@ -47,13 +47,31 @@ final class AreaPickerUITests: XCTestCase {
             "§4 is absent for the reader's own area, so its absence after a pick would prove nothing"
         )
 
-        let change = app.buttons[Self.change]
-        XCTAssertTrue(change.exists, "the almanac offers no way to change its area")
-        change.tap()
+        // ── The header pill IS the picker (the owner's 2026-08-31 ruling) ────────────────────────
+        //
+        // It is matched in `buttons` and not in `staticTexts`, and that is the whole assertion: the
+        // name the header prints carries a button trait, so VoiceOver reaches it as a control and a
+        // sighted reader can press the thing the screen is about. Before this round the pill was an
+        // inert label and the affordance was a boxed `Change` under the provenance sentence.
+        let pill = app.buttons[Self.homeNeighborhood]
+        XCTAssertTrue(
+            pill.exists,
+            "the almanac's header pill is not a button, so the screen offers no way to change its area"
+        )
+        XCTAssertTrue(pill.isHittable, "the header pill is a button nobody can press")
+
+        // The retired control, checked for while a control that proves the screen rendered is in
+        // hand — `pill` above. An absence on its own would pass on a screen that drew nothing.
+        XCTAssertFalse(
+            app.buttons[Self.retiredChangeButton].exists,
+            "the boxed “\(Self.retiredChangeButton)” button is still under the provenance sentence"
+        )
+
+        pill.tap()
 
         XCTAssertTrue(
             app.staticTexts[Self.neighborhoodSheetTitle].waitForExistence(timeout: 20),
-            "tapping “\(Self.change)” opened no picker"
+            "tapping the header pill “\(Self.homeNeighborhood)” opened no picker"
         )
         record(app, named: "picker-2-sheet-open")
         XCTAssertTrue(app.buttons[Self.here].exists, "the picker offers no way back to the reader's own area")
@@ -94,8 +112,9 @@ final class AreaPickerUITests: XCTestCase {
         elsewhere.tap()
 
         // The header pill is the screen naming its own subject, and it is what a reader checks.
+        // Still in `buttons`: having picked a place, the reader can pick again from the same spot.
         XCTAssertTrue(
-            app.staticTexts[Self.otherNeighborhood].waitForExistence(timeout: 20),
+            app.buttons[Self.otherNeighborhood].waitForExistence(timeout: 20),
             "the almanac did not take the neighborhood that was picked"
         )
         record(app, named: "picker-3-picked-neighborhood")
@@ -119,14 +138,36 @@ final class AreaPickerUITests: XCTestCase {
         reachSegment(app, named: "City", waitingFor: composition(app))
         record(app, named: "picker-4-city-default")
 
+        // Both halves at once, and deliberately: the City segment names the city it is about, and
+        // that name is the control. `AlmanacScreen`'s pair, on the other segment — the ruling put
+        // the affordance on the pill for both, so both are driven through the pill.
+        let pill = app.buttons[Self.homeCity]
         XCTAssertTrue(
-            app.staticTexts[Self.homeCity].exists,
-            "the City segment does not name the city it is about, which the record now carries"
+            pill.exists,
+            "the City segment does not name the city it is about as a button, so it either fails to "
+                + "name it (the record carries the name) or offers no way to change it"
+        )
+        XCTAssertTrue(pill.isHittable, "the City segment's header pill is a button nobody can press")
+        XCTAssertFalse(
+            app.buttons[Self.retiredChangeButton].exists,
+            "the boxed “\(Self.retiredChangeButton)” button is still under the City segment's "
+                + "provenance sentence"
         )
 
-        let change = app.buttons[Self.change]
-        XCTAssertTrue(change.exists, "the City segment offers no way to change its city")
-        change.tap()
+        pill.tap()
+
+        // The picker opened — the second half of "the header control opens the sheet on both
+        // segments", the first being the Neighborhood test above.
+        //
+        // **Anchored on `Where I am` and NOT on the sheet's title.** The city sheet's title is the
+        // word `City`, and `City` is also the C5 segmented control's own label sitting behind the
+        // scrim; an assertion on that string is satisfied by the control that was already there
+        // before the tap, so it would pass with no sheet at all. `Where I am` is
+        // `AreaPickerCopy.here` and it exists nowhere but inside the picker.
+        XCTAssertTrue(
+            app.buttons[Self.here].waitForExistence(timeout: 20),
+            "tapping the header pill “\(Self.homeCity)” opened no picker"
+        )
 
         let other = app.buttons[Self.otherCity]
         XCTAssertTrue(
@@ -136,7 +177,7 @@ final class AreaPickerUITests: XCTestCase {
         other.tap()
 
         XCTAssertTrue(
-            app.staticTexts[Self.otherCity].waitForExistence(timeout: 20),
+            app.buttons[Self.otherCity].waitForExistence(timeout: 20),
             "the City segment did not take the city that was picked"
         )
         record(app, named: "picker-5-picked-city")
@@ -162,9 +203,21 @@ final class AreaPickerUITests: XCTestCase {
 
         // The pill is a distance rather than a place, which is what says this is the fallback and
         // not some other screen agreeing with the assertions below.
+        //
+        // **In `buttons` since the header pill became the picker.** The fallback names an area the
+        // reader did not choose and has 41 neighborhoods it could offer instead, so this is the
+        // state that most needs the affordance — and the pill carrying a distance carries it too.
+        // **This one line can fail two ways and the message has to say so**, which the red-proof for
+        // this round taught: with the pill made inert it went red reading "this reader is not in the
+        // radius fallback", which was false — the reader was in it, and the pill had merely stopped
+        // being a button. A failure here means one of the two, and the next reader should not have to
+        // guess which.
+        let pill = app.buttons[Self.radiusPill]
         XCTAssertTrue(
-            app.staticTexts[Self.radiusPill].exists,
-            "this reader is not in the radius fallback, so the sentences below are not under test"
+            pill.exists,
+            "no BUTTON labelled “\(Self.radiusPill)”. Either this reader is not in the radius "
+                + "fallback — in which case the sentences below are not under test — or the header "
+                + "pill has stopped being the picker. Check whether the label exists as a static text."
         )
         XCTAssertTrue(
             app.staticTexts[Self.fromFixRadiusNote].exists,
@@ -185,8 +238,13 @@ final class AreaPickerUITests: XCTestCase {
                 .firstMatch.exists
         )
         // And the picker is offered here too: this reader has 41 neighborhoods to choose from and no
-        // polygon of their own.
-        XCTAssertTrue(app.buttons[Self.change].exists)
+        // polygon of their own. It is the pill above, so what is left to say is that it is pressable
+        // — and that the control it replaced did not survive on this screen either.
+        XCTAssertTrue(pill.isHittable, "the fallback's header pill is a button nobody can press")
+        XCTAssertFalse(
+            app.buttons[Self.retiredChangeButton].exists,
+            "the boxed “\(Self.retiredChangeButton)” button is still on the radius fallback"
+        )
     }
 
     // MARK: - 4 · Outside every inventory, the picker is the one door open
@@ -305,7 +363,13 @@ final class AreaPickerUITests: XCTestCase {
         "You're reading a place you're not in, so the section asking you to go and look is left out."
     private static let byChoiceCityNote =
         "You're reading a city you're not in, so the comparison with your own streets is left out."
-    private static let change = "Change"
+    /// **The control this round retired**, kept as an anchor so its return is a red test rather
+    /// than a thing somebody notices in a screenshot. It was `AreaPickerCopy.change`, a boxed
+    /// `SecondaryOutlineButton` under the provenance sentence on both stats segments; the owner's
+    /// 2026-08-31 ruling moved the affordance onto the header pill and deleted the constant. Every
+    /// assertion that names this string is paired with a positive one on the same screen — an
+    /// absence alone would be satisfied by a screen that never drew.
+    private static let retiredChangeButton = "Change"
     private static let here = "Where I am"
     private static let neighborhoodSheetTitle = "Neighborhood"
     private static let coarseTitle = "Your location is too rough to place you."
@@ -317,6 +381,18 @@ final class AreaPickerUITests: XCTestCase {
     /// the largest-first list to be on the first screenful of chips. `dim_city.display_name` for the
     /// two cities the bundled seed is fused across.
     private static let otherNeighborhood = "Sunset/Parkside"
+    /// The neighborhood the pinned fix **does** resolve, and therefore the name the header pill
+    /// prints before anything is picked — the pill this file taps to open the picker.
+    ///
+    /// **It is only ever tapped before the sheet exists**, and that — not any safety of the lookup
+    /// itself — is the invariant that makes this constant correct.
+    ///
+    /// The picker lists this name too, so with the sheet open `app.buttons["Western Addition"]`
+    /// matches **two** elements (measured: `count == 2`). An ambiguous query tolerates `.exists`
+    /// and raises on `.tap()`, `.label`, `.frame` and `.isHittable`, so a future edit that reaches
+    /// for this constant after the sheet is up gets a hard failure, not a wrong answer. The one
+    /// tapped inside the sheet is `otherNeighborhood`, a different string by construction.
+    private static let homeNeighborhood = "Western Addition"
     private static let homeCity = "San Francisco"
     private static let otherCity = "San Jose"
 

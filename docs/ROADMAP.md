@@ -405,12 +405,21 @@ still owed, so it is recorded here as the durable queue. Each stands alone.
 3. **Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
    with a calibrated failure case.
-4. **Redesign `CityDownloadsFeedbackTests`' perf-margin test.** The "transfer beats a per-byte walk
-   by an order of magnitude" test (`CityDownloadsFeedbackTests.swift:920`-era) compares two
+4. ~~**Redesign `CityDownloadsFeedbackTests`' perf-margin test.** The "transfer beats a per-byte
+   walk by an order of magnitude" test (`CityDownloadsFeedbackTests.swift:920`-era) compares two
    wall-clock timings with a hard margin and flaked on CI with no concurrent load (8.5x against a
    10x threshold, 2026-08-23). PR #123's fix round narrowed a sibling window the same way and the
    review flagged the class again — rebuild these guards load-independent (count work, or assert
-   the mechanism), keeping the regression they guard: a per-byte walk reappearing must fail.
+   the mechanism), keeping the regression they guard: a per-byte walk reappearing must fail.~~
+   **SHIPPED** (`test/perf-margin-redesign`). A third flake — run 33430972054, the build-65 main
+   run, `elapsed × 6 = 37.698` against an `11.744` control — closed the argument. The guard now
+   counts the path's work through `CityTransferCensus` instead of racing it: the transfer must hand
+   over a finished **file** (so the response cannot be a byte stream this app consumes), and the
+   app's own reads over the payload must average at least 64 KiB (so the verification cannot walk
+   it a byte at a time). A marginal-rate test pins the slope at two payload sizes, and a source gate
+   over `Data/Cities/` refuses the byte-stream API outright. No clock is read anywhere. The census's
+   own blind spot — `FileManager` work, which is `moveItem` today and reads no bytes — is written
+   down beside the assertions.
 5. **Harden `MapPanTabSwitchUITests` against slow runners.** Four CI sightings by 2026-08-28
    (latest: run 33208371211, on code byte-identical to a green run), always the same shape: the
    probe records `panBegan=3 panEnded=3` yet the camera never leaves "Centered on you" — the

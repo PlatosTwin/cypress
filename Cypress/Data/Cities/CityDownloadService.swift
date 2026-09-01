@@ -195,6 +195,9 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
     private let library: CityLibrary
     private let baseURL: URL
     private let progress: CityDownloadProgress
+    /// nil in the app. See `CityTransferCensus`: the guard against the per-byte defect returning
+    /// counts this path's work instead of racing it against a clock.
+    private let census: CityTransferCensus?
 
     /// What `didFinishDownloadingTo` concluded, read and cleared by `didCompleteWithError`.
     ///
@@ -235,15 +238,19 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
     ///   are built on (`CityBucketFixtureProtocol`, the `file://` bucket mirror) can only reach the
     ///   code through an ordinary configuration. See `RemoteAccess`, and the PR body for what that
     ///   means the tests do and do not prove.
+    /// - Parameter census: nil in every shipping launch; a test hands one in to count the work this
+    ///   path does over the transferred bytes (`CityTransferCensus`).
     init(
         library: CityLibrary,
         baseURL: URL = CityDownloader.defaultBaseURL,
         configuration: URLSessionConfiguration,
-        progress: CityDownloadProgress
+        progress: CityDownloadProgress,
+        census: CityTransferCensus? = nil
     ) {
         self.library = library
         self.baseURL = baseURL
         self.progress = progress
+        self.census = census
         super.init()
         let queue = OperationQueue()
         // **One at a time, and load-bearing rather than tidy.** The callbacks below read and write
@@ -461,6 +468,11 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
         // A finished transfer this process holds no promise for. It cannot be verified, so it is not
         // kept: `adopt` cancels such tasks, and this covers the one that finished before it could.
         guard let record else { return }
+        // **The fact that makes a per-byte walk of the response unrepresentable**: the transport
+        // handed this app a finished file, not a stream it had to consume. Counted here rather than
+        // before the guard above, so it means "a handoff this app acted on" and an orphan task's
+        // finished file is not mistaken for this transfer's.
+        census?.recordFileHandoff()
 
         let staged = library.stagingURL
             .appendingPathComponent("\(UUID().uuidString)-\(record.id).sqlite", isDirectory: false)
@@ -473,7 +485,7 @@ final class CityDownloadService: NSObject, URLSessionDownloadDelegate, @unchecke
                 at: library.stagingURL, withIntermediateDirectories: true
             )
             try FileManager.default.moveItem(at: location, to: staged)
-            try CityDownloader.verify(fileAt: staged, against: record)
+            try CityDownloader.verify(fileAt: staged, against: record, census: census)
             try library.install(verifiedFileAt: staged, id: record.id, version: record.version)
             lock.lock(); outcome = .installed; lock.unlock()
         } catch {
