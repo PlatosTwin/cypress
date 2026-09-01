@@ -438,8 +438,14 @@ struct JournalPresentationTests {
         #expect(model.presentation != nil)
     }
 
-    /// The `.task` behind this segment fires on every reappearance, so a `load()` that re-read would
-    /// silently discard pages the reader had asked for by pressing `Show earlier`.
+    /// The `.task` behind this segment fires on every reappearance, so a `load()` that *replaced*
+    /// the list would silently discard pages the reader had asked for by pressing `Show earlier`.
+    ///
+    /// **It does re-read, and that is the owner's ruling rather than a regression.** A revisit
+    /// paints what was there and refreshes behind it, so the assertion is on the rows and not on
+    /// the read count — `JournalModel.refresh()` reconciles a fresh page one against the deeper
+    /// pages instead of overwriting them. `JournalModelLifetimeTests` covers the reconciliation
+    /// itself, including the case where something actually changed underneath.
     @Test("switching away and back does not throw away the pages already fetched")
     @MainActor
     func loadIsIdempotentOnceLoaded() async {
@@ -455,11 +461,15 @@ struct JournalPresentationTests {
 
         await model.load()
         await model.loadOlder()
-        #expect(model.presentation?.rows.count == 5)
+        let five = model.presentation?.rows.map(\.id)
+        #expect(five?.count == 5)
 
         await model.load()
-        #expect(reads.count == 2, "returning to the segment re-read page one")
-        #expect(model.presentation?.rows.count == 5, "the earlier page the reader asked for was discarded")
+        #expect(reads.count == 3, "returning to the segment did not refresh behind the list")
+        #expect(
+            model.presentation?.rows.map(\.id) == five,
+            "the earlier page the reader asked for was discarded"
+        )
     }
 
     // MARK: - The export, given an entrance at last

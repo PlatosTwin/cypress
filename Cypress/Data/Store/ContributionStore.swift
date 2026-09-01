@@ -433,10 +433,12 @@ public struct ContributionStore {
     /// The same rule as `heroPhotoIDs()`, `PhotoHero.choose` over this device's own photographs,
     /// scoped to a caller-supplied set of tree ids rather than to the whole table (ERRATA E204).
     ///
-    /// `heroPhotoIDs()` above is deliberately unscoped: grove, journal and the almanac's season
-    /// row already narrow their own candidates to "this device's own trees" before they ever ask
-    /// for a photograph, so scanning every live row in `main.photos` is scanning a set the same
-    /// order of magnitude as the answer. Screen 07 §6's `Nearby individuals` does not have that
+    /// `heroPhotoIDs()` above is deliberately unscoped: grove and the almanac's season row already
+    /// narrow their own candidates to "this device's own trees" before they ever ask for a
+    /// photograph, so scanning every live row in `main.photos` is scanning a set the same order of
+    /// magnitude as the answer. (**Journal was on that list and no longer is** — it moved to this
+    /// scoped form with the rest of PR #143; `LocalAPI.journal()`'s header argues why, and the two
+    /// forms' answers are held against each other in `JournalBatchReadTests`.) Screen 07 §6's `Nearby individuals` does not have that
     /// property — `SpeciesGuideLimits` widens the candidate search across every tree of a species
     /// near a coordinate, most of which this device has never photographed, to answer a
     /// two-or-three-row question. Reusing the unscoped read there would mean paying for the whole
@@ -512,13 +514,7 @@ public struct ContributionStore {
         // statement. `COALESCE(…, 0)` resolves it to not-own, which is also the safe reading:
         // `isPhotoVisible` then judges the row by `isPubliclyVisible`, and nobody currently asking
         // has shown they are its owner. That is the whole of the difference between the two uses.
-        let photoStatement = try connection.cachedStatement("""
-            SELECT *,
-                   COALESCE(\(Self.removalPredicate()), 0) AS is_own
-              FROM photos
-             WHERE deleted_at IS NULL
-               AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
-            """)
+        let photoStatement = try connection.cachedStatement(Self.scopedHeroPhotoCandidatesSQL)
         let treesJSON = "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]"
         _ = try photoStatement.bind(treesJSON, forName: ":trees")
         _ = try photoStatement.bind([
@@ -535,11 +531,7 @@ public struct ContributionStore {
             .map(\.0)
         guard !photos.isEmpty else { return [:] }
 
-        let talliesStatement = try connection.cachedStatement("""
-            SELECT photo_id, SUM(vote) AS score FROM photo_votes
-             WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
-             GROUP BY photo_id
-            """)
+        let talliesStatement = try connection.cachedStatement(Self.scopedHeroPhotoTalliesSQL)
         let photosJSON = "[\(photos.map { "\"\($0.id.uuidString)\"" }.joined(separator: ","))]"
         _ = try talliesStatement.bind(photosJSON, forName: ":photos")
         let tallyPairs = try talliesStatement.fetchAll { row -> (UUID, Int)? in
@@ -552,6 +544,36 @@ public struct ContributionStore {
         let byTree = Dictionary(grouping: photos, by: \.treeID)
         return byTree.compactMapValues { PhotoHero.choose(from: $0, tallies: tallies) }.mapValues(\.id)
     }
+
+    /// The scoped hero read's two statements, as properties, for `journalSQL`'s reason.
+    ///
+    /// **What the narrowing buys is not a seek, and the gate is written to say so.** `photo_votes`
+    /// carries no index leading with `photo_id` at all — its three are `(user_id, photo_id)`,
+    /// `(device_id, photo_id)` and `(tree_uuid)` — so the tally walks that table however the
+    /// predicate is spelled. `photos` does carry `idx_photos_tree(tree_uuid, captured_at DESC)`, and
+    /// the `COLLATE NOCASE` here cannot seek it for `activeNamesSQL`'s reason: the index is BINARY
+    /// and the collation is on the indexed column's own side. `JournalQueryPlanTests` records the
+    /// plan each of them actually has rather than the plan this paragraph would prefer.
+    ///
+    /// What is bought is that SQLite never *decodes* a photograph outside the caller's set: the
+    /// unscoped `heroPhotoIDs()` hands every live row in `photos` to `decodePhoto` and every row of
+    /// `photo_votes` to a `GROUP BY` whatever was asked for, and this hands over what the page draws.
+    /// Both tables hold this device's own photo library, which is the premise the gate states when
+    /// it allows them by name.
+    static let scopedHeroPhotoCandidatesSQL = """
+        SELECT *,
+               COALESCE(\(Self.removalPredicate()), 0) AS is_own
+          FROM photos
+         WHERE deleted_at IS NULL
+           AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+        """
+
+    /// See `scopedHeroPhotoCandidatesSQL`.
+    static let scopedHeroPhotoTalliesSQL = """
+        SELECT photo_id, SUM(vote) AS score FROM photo_votes
+         WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
+         GROUP BY photo_id
+        """
 
     /// Where a photo's bytes are on this device, if they are anywhere yet.
     ///
@@ -1365,7 +1387,9 @@ public struct ContributionStore {
     }
 
     /// The active nicknames for a set of trees, keyed by tree — one statement instead of one per
-    /// tree, for `LocalAPI.grove()`.
+    /// tree, for `LocalAPI.grove()` and, since PR #143, for
+    /// `LocalAPI.displayNames(for:treeQueries:contributions:connection:)` — which is the name rule
+    /// behind `journal()`, `AccountModel` and `DataLayer.treeNameResolver`.
     ///
     /// **Dropping the `LIMIT 1` loses nothing, and that is a property of the schema rather than of
     /// this query.** `idx_tree_names_one_active` is a UNIQUE partial index on `tree_uuid` where
@@ -1382,11 +1406,7 @@ public struct ContributionStore {
         connection: SQLiteConnection
     ) throws -> [UUID: TreeName] {
         guard !treeIDs.isEmpty else { return [:] }
-        let statement = try connection.cachedStatement("""
-            SELECT * FROM tree_names
-             WHERE tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
-               AND status = 'active' AND deleted_at IS NULL
-            """)
+        let statement = try connection.cachedStatement(Self.activeNamesSQL)
         _ = try statement.bind(
             "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":trees"
         )
@@ -1394,6 +1414,38 @@ public struct ContributionStore {
         for name in try statement.fetchAll(Self.decodeTreeName) { names[name.treeID] = name }
         return names
     }
+
+    /// A property for `journalSQL`'s reason: the gate explains the text the app runs.
+    ///
+    /// **The `COLLATE NOCASE` cannot seek `idx_tree_names_one_active`, and it is kept anyway.**
+    /// That index is `UNIQUE(tree_uuid) WHERE status = 'active' AND deleted_at IS NULL` with the
+    /// column's default BINARY collation, so a NOCASE comparison is not sargable against it — the
+    /// same finding `TreeQueries.identityMatch` records for `trees.uuid`, and the same one PR #131
+    /// fixed there by normalizing with `lower()` instead.
+    ///
+    /// **#131's fix does not transfer, and the reason is which side of the comparison is indexed.**
+    /// There, the indexed column is the seed's `trees.uuid`, and every published file stores it
+    /// lower case under a contract the suite asserts per arm
+    /// (`GroveQueryPlanTests.theBundledSeedIsLowercase`). So `lower()` could be applied to the
+    /// *other* operand — the contribution's uuid — leaving `trees.uuid` bare for its BINARY index
+    /// to answer. Here the indexed column is `tree_names.tree_uuid` itself, so the same move would
+    /// have to write `lower(tree_uuid)`, and an index cannot answer an expression it was not built
+    /// over. Making this seek means an expression index, which is a schema migration.
+    ///
+    /// **Dropping the collation instead would seek, and is not worth what it risks.** `UUID`'s own
+    /// `SQLiteBindable` writes Foundation's upper-case canonical string, and this app is the only
+    /// writer of this table, so an exact `IN` would match the same rows today. Nothing asserts that
+    /// as an invariant the way the seed contract is asserted, and the whole benefit is a seek on a
+    /// table holding one row per tree this contributor has personally named — tens of rows, against
+    /// the four whole-history scans `journalSQL` above it already performs on the same page.
+    ///
+    /// So the honest statement is: this walks the reader's own nicknames, deliberately, and
+    /// `JournalQueryPlanTests` allows `tree_names` by name with exactly that as the premise.
+    static let activeNamesSQL = """
+        SELECT * FROM tree_names
+         WHERE tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+           AND status = 'active' AND deleted_at IS NULL
+        """
 
     /// `POST /reports/hazard-redirect`. Analytics only, no public record (D4).
     public func log(_ event: HazardRedirectEvent, connection: SQLiteConnection) throws {
@@ -1551,31 +1603,7 @@ public struct ContributionStore {
         limit: Int,
         connection: SQLiteConnection
     ) throws -> [(id: UUID, kind: JournalEntry.Kind, treeID: UUID, capturedAt: Date, summary: String)] {
-        let statement = try connection.cachedStatement("""
-            SELECT id, kind, tree_uuid, captured_at, summary FROM (
-                SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary,
-                       user_id, device_id, client_uuid, deleted_at FROM visits
-                UNION ALL
-                SELECT id, 'observation', tree_uuid, captured_at,
-                       COALESCE(status, '') || CASE WHEN vitality IS NULL THEN ''
-                                                    ELSE ' · vitality ' || vitality END,
-                       user_id, device_id, client_uuid, deleted_at FROM observations
-                UNION ALL
-                SELECT id, 'measurement', tree_uuid, captured_at,
-                       kind || ' ' || value || ' ' || unit_entered || ', ' || method,
-                       user_id, device_id, client_uuid, deleted_at FROM measurements
-                UNION ALL
-                SELECT id, 'careEvent', tree_uuid, captured_at, actions,
-                       user_id, device_id, client_uuid, deleted_at FROM care_events
-            ) entry
-            WHERE deleted_at IS NULL
-              AND (device_id = :device COLLATE NOCASE
-                   OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-              AND \(Self.notAnonymized("entry"))
-              AND (:cursor IS NULL OR captured_at < :cursor)
-            ORDER BY captured_at DESC
-            LIMIT :limit
-            """)
+        let statement = try connection.cachedStatement(Self.journalSQL)
         _ = try statement.bind([
             ":device": deviceID.uuidString,
             ":user": userID?.uuidString,
@@ -1592,6 +1620,63 @@ public struct ContributionStore {
             )
         }
     }
+
+    /// **The statement is a property so the gate can explain the text the app runs.**
+    ///
+    /// `GroveQueries.residentNeighborhoodSQL` carries the argument: a plan gate pinned against SQL
+    /// copied into the test explains the copy, and changing the real query leaves it green.
+    /// `JournalQueryPlanTests` reads this, and nothing else builds it.
+    ///
+    /// **What this plan is, stated because the gate allows it rather than pretending otherwise —
+    /// and read off the shipped schema, because the first draft of this paragraph was wrong.**
+    /// `JournalQueryPlanTests.thePageQueryIsTheKnownScan` measures it:
+    ///
+    ///     CO-ROUTINE entry | COMPOUND QUERY | LEFT-MOST SUBQUERY
+    ///     SCAN visits | UNION ALL | SCAN observations | UNION ALL
+    ///     SCAN measurements | UNION ALL | SCAN care_events
+    ///     SCAN entry
+    ///     CORRELATED SCALAR SUBQUERY 5
+    ///       SEARCH tomb USING COVERING INDEX sqlite_autoindex_anonymized_contributions_1 (client_uuid=?)
+    ///     USE TEMP B-TREE FOR ORDER BY
+    ///
+    /// No predicate that *selects rows* can be seeked. The attribution and cursor tests apply to a
+    /// union that does not exist until its four arms are combined, so each arm is walked in full,
+    /// the union is walked again, and `captured_at DESC` is answered by a temp b-tree — which is
+    /// why `LIMIT :limit` cannot stop the read early. The cost is this contributor's whole history,
+    /// on every page including the first.
+    ///
+    /// The one `SEARCH` is `Self.notAnonymized`'s tombstone lookup. It is correctly indexed and is
+    /// not the missing index this shape is waiting for. That is exactly where the first draft was
+    /// wrong — it said nothing seeks — and the gate is what said so.
+    ///
+    /// Batching the page's *name* and *thumbnail* reads changes none of this, and
+    /// `LocalAPI.journal()` does not claim it does. Making this statement cheap needs an index per
+    /// contribution table over the ordering and attribution columns, which is a schema migration.
+    static let journalSQL = """
+        SELECT id, kind, tree_uuid, captured_at, summary FROM (
+            SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary,
+                   user_id, device_id, client_uuid, deleted_at FROM visits
+            UNION ALL
+            SELECT id, 'observation', tree_uuid, captured_at,
+                   COALESCE(status, '') || CASE WHEN vitality IS NULL THEN ''
+                                                ELSE ' · vitality ' || vitality END,
+                   user_id, device_id, client_uuid, deleted_at FROM observations
+            UNION ALL
+            SELECT id, 'measurement', tree_uuid, captured_at,
+                   kind || ' ' || value || ' ' || unit_entered || ', ' || method,
+                   user_id, device_id, client_uuid, deleted_at FROM measurements
+            UNION ALL
+            SELECT id, 'careEvent', tree_uuid, captured_at, actions,
+                   user_id, device_id, client_uuid, deleted_at FROM care_events
+        ) entry
+        WHERE deleted_at IS NULL
+          AND (device_id = :device COLLATE NOCASE
+               OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+          AND \(Self.notAnonymized("entry"))
+          AND (:cursor IS NULL OR captured_at < :cursor)
+        ORDER BY captured_at DESC
+        LIMIT :limit
+        """
 
     /// `POST /devices/claim` — attributes this device's anonymous contributions to a user (D9).
     ///

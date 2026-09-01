@@ -199,25 +199,22 @@ struct JournalListView: View {
 ///
 /// Split from the list itself so that every state of the list can be drawn — and photographed — from
 /// a value alone, with no API in sight (ERRATA E126's lesson: a state the screen cannot be *given* is
-/// a state nobody can photograph). This is the piece the two hosts mount, and it is the reason
-/// neither of them has to know that a journal is paginated.
+/// a state nobody can photograph). This is the piece the host mounts, and it is the reason the host
+/// does not have to know that a journal is paginated.
+///
+/// **It is handed its model rather than owning one, and that is the whole of the segment-switch
+/// fix.** This used to declare `@State private var model` and build it in its own initializer.
+/// SwiftUI ties `@State` to the identity of the view that declares it, and this view sits inside
+/// `JournalTabView`'s `switch` on the segment, so a glance at Neighborhood destroyed the model:
+/// every page past the first was thrown away, and `JournalModel.load()`'s idempotence guard — which
+/// is correct — met a fresh `.loading` and re-read from scratch. The model now lives on
+/// `JournalTabView`, above that `switch`, and this view observes it.
 struct JournalSection: View {
 
-    @State private var model: JournalModel
+    let model: JournalModel
 
-    private let onOpenTree: ((UUID) -> Void)?
-    private let onSeeAllOnMap: (() -> Void)?
-
-    init(
-        api: any CypressAPI,
-        now: @escaping @Sendable () -> Date = { Date() },
-        onOpenTree: ((UUID) -> Void)? = nil,
-        onSeeAllOnMap: (() -> Void)? = nil
-    ) {
-        _model = State(wrappedValue: JournalModel(api: api, now: now))
-        self.onOpenTree = onOpenTree
-        self.onSeeAllOnMap = onSeeAllOnMap
-    }
+    var onOpenTree: ((UUID) -> Void)?
+    var onSeeAllOnMap: (() -> Void)?
 
     var body: some View {
         JournalListView(
@@ -230,8 +227,10 @@ struct JournalSection: View {
             onShowOlder: { Task { await model.loadOlder() } },
             onSeeAllOnMap: onSeeAllOnMap
         )
-        // `load()` is idempotent on a successful read, so switching away from this segment and back
-        // does not throw away pages the reader has already asked for.
+        // The model outlives this view (see the type comment), so switching away from this segment
+        // and back re-runs this `.task` against a model that is already `.loaded`. `load()` then
+        // paints the pages the reader already had — no loading state, nothing cleared — and
+        // re-reads page one behind them, which is the owner's ruling in both its halves.
         .task { await model.load() }
     }
 }
