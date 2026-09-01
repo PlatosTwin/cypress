@@ -70,6 +70,12 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
     /// Makes the phone's half of a deletion fail, for the one arm that is not transactional.
     var deletionError: (any Error)?
 
+    /// How many times each of the two grove reads was asked for, when a test cares — nil when none
+    /// does, which is every test in this file. `GroveLocalFirstTests` is the caller: "the model does
+    /// not read again on a repeat visit" is a claim about a count, and a count needs somewhere to
+    /// live that the router's own copy of this struct cannot hide. See `ReadCounter`.
+    var reads: ReadCounter?
+
     func mapContent(in viewport: MapViewport) async throws -> MapContent { content }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { nearby }
 
@@ -114,9 +120,15 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
 
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {}
     func deletePhoto(id: UUID) async throws -> PhotoDeletion { throw APIError.notFound }
-    func grove() async throws -> [GroveEntry] { groveEntries }
+    func grove() async throws -> [GroveEntry] {
+        reads?.countTrees()
+        return groveEntries
+    }
     func isFavorite(treeID: UUID) async throws -> Bool { favorite }
-    func groveSpecies() async throws -> GroveSpecies { speciesKnown }
+    func groveSpecies() async throws -> GroveSpecies {
+        reads?.countSpecies()
+        return speciesKnown
+    }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { journalPage }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
     func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
@@ -258,8 +270,15 @@ struct RoutedAPITests {
         // one, and — the negative control — a Class R method's body must contain what this gate
         // forbids. Without the last of these an extractor returning the empty string would report
         // every method clean.
-        let grove = try #require(body(of: "grove()"), "the body extractor found nothing — this gate is vacuous")
-        #expect(grove.contains("remote.groveDelta()"), "the extractor did not read grove()'s body")
+        //
+        // **`refreshedGrove()` and not `grove()`.** Since the local-first round `grove()` is the
+        // paint: it names no service, so using it as the negative control would prove nothing — a
+        // body that does not contain what this gate forbids cannot show that the gate can see it.
+        // The join, and the only mention of the wire, is in the refresh.
+        let grove = try #require(
+            body(of: "refreshedGrove()"), "the body extractor found nothing — this gate is vacuous"
+        )
+        #expect(grove.contains("remote.groveDelta()"), "the extractor did not read refreshedGrove()'s body")
         #expect(
             body(of: "notAMethodOnThisType()") == nil,
             "the extractor answered for a method that does not exist"
@@ -337,7 +356,7 @@ struct RoutedAPITests {
 
         let log = RemoteReadLog()
         let router = RoutedAPI(local: local, remote: Self.remote(transport), log: log)
-        let entries = try await router.grove()
+        let entries = try await router.refreshedGrove()
 
         #expect(entries.count == 1)
         let entry = try #require(entries.first)
@@ -381,7 +400,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).grove()
+        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGrove()
 
         let entry = try #require(entries.first)
         #expect(entry.treeID == treeID)
@@ -412,7 +431,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: LocalDouble(), remote: Self.remote(transport), log: log).grove()
+        let entries = try await RoutedAPI(local: LocalDouble(), remote: Self.remote(transport), log: log).refreshedGrove()
 
         #expect(entries.isEmpty, "a row was drawn for a tree with no name and no coordinate")
         #expect(
@@ -447,7 +466,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).grove()
+        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGrove()
 
         #expect(entries.isEmpty, "a tree with no name and no species was given a fabricated label")
         #expect(await log.outcome(of: .grove) == .fellBackToLocal)
@@ -469,7 +488,7 @@ struct RoutedAPITests {
         ]
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: local, remote: Self.unreachable(), log: log).grove()
+        let entries = try await RoutedAPI(local: local, remote: Self.unreachable(), log: log).refreshedGrove()
 
         #expect(entries.count == 1, "a failed remote read emptied the grove")
         #expect(entries[0].isFavorite)
@@ -555,7 +574,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let grove = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).groveSpecies()
+        let grove = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGroveSpecies()
 
         #expect(grove.known.items.count == 2)
         #expect(grove.neighborhood?.species.items == [known], "the denominator came from somewhere other than the phone")
