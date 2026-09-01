@@ -90,6 +90,16 @@ public final class SQLiteConnection {
 
     /// Prepares a fresh statement. The caller owns it and should `finalize()` or let it deallocate.
     public func prepare(_ sql: String) throws -> SQLiteStatement {
+        #if DEBUG
+        census?.record(sql)
+        #endif
+        return try prepareUncounted(sql)
+    }
+
+    /// `prepare` without the census entry, so that `cachedStatement`'s miss does not record the
+    /// same request twice. Every path that reaches sqlite's parser goes through here; exactly one
+    /// of the two doors above it records.
+    private func prepareUncounted(_ sql: String) throws -> SQLiteStatement {
         var handle: OpaquePointer?
         let code = sqlite3_prepare_v2(self.handle, sql, -1, &handle, nil)
         guard code == SQLITE_OK, let prepared = handle else {
@@ -104,14 +114,32 @@ public final class SQLiteConnection {
     ///
     /// The map re-runs the same viewport query on every pan; re-preparing it each time is pure
     /// parser and planner overhead against a 195,309-row table.
+    ///
+    /// **The census records the request, not the parse.** A cached statement is the common case and
+    /// records exactly as a fresh one does, because the question a census answers is "which
+    /// statements did this operation run, and how many times", which the cache must not change the
+    /// answer to.
     public func cachedStatement(_ sql: String) throws -> SQLiteStatement {
+        #if DEBUG
+        census?.record(sql)
+        #endif
         if let cached = statementCache[sql] {
             return try cached.reset()
         }
-        let statement = try prepare(sql)
+        let statement = try prepareUncounted(sql)
         statementCache[sql] = statement
         return statement
     }
+
+    #if DEBUG
+    /// The census this connection is reporting to, or nil — which is every build that ships and
+    /// every test that has not asked for one.
+    ///
+    /// Installed through `DatabaseQueue.installCensus`, never set directly: the queue is the actor
+    /// that owns this connection, and a census set from anywhere else would be a second writer of
+    /// a type whose whole design note is that it has exactly one.
+    var census: StatementCensus?
+    #endif
 
     /// Drops the statement cache. Required before `DETACH`, because a cached statement referencing
     /// an attached schema keeps that schema locked.

@@ -48,8 +48,24 @@ struct JournalPreviewAPI: CypressAPI {
     var fails = false
     /// Makes only the *first* read fail, so a retry can be seen to recover.
     var failsOnce = false
+    /// The mirror of `failsOnce`: the first read succeeds and every one after it fails, which is the
+    /// only way to drive a model from `.loaded` to `.failed` — a retry that does not recover. Needed
+    /// by `JournalModelLifetimeTests.aFailureClearsThePresentation`, because a model that never
+    /// loaded has no presentation to lose and cannot show that the failure is what took it away.
+    /// Counts reads the way `failsOnce` does, so it needs a `reads` counter to be meaningful.
+    var failsAfterFirst = false
     /// Makes only `Show earlier` fail, which must not take the whole screen down.
     var olderFails = false
+    /// What page **one** answers from its second reading onwards.
+    ///
+    /// `JournalModel.load()` re-reads page one behind the list on every re-entry, and the only way
+    /// to exercise a refresh is a head that changes between reads — a contribution written while
+    /// the reader was on another segment. `older` is this idea pointed down the list; this one
+    /// points at the head. Needs a `reads` counter, like the failure flags above.
+    var refreshed: Page<JournalEntry>?
+    /// Makes only the *refresh* read fail, so the rule that a background refresh never takes the
+    /// screen down can be asserted rather than described.
+    var refreshFails = false
     var reads: JournalReadCounter?
 
     var exportBytes = Data()
@@ -60,7 +76,14 @@ struct JournalPreviewAPI: CypressAPI {
         reads?.record()
         if fails { throw APIError.serverError }
         if failsOnce, attempt == 0 { throw APIError.serverError }
-        guard cursor != nil else { return page }
+        if failsAfterFirst, attempt > 0 { throw APIError.serverError }
+        guard cursor != nil else {
+            // Page one. `attempt == 0` is the first paint; anything later is a refresh, which is
+            // the only read `refreshed`/`refreshFails` are about.
+            guard attempt > 0 else { return page }
+            if refreshFails { throw APIError.serverError }
+            return refreshed ?? page
+        }
         if olderFails { throw APIError.serverError }
         return older ?? Page(items: [])
     }
