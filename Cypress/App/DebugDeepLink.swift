@@ -293,17 +293,21 @@ enum DebugDeepLink {
             case .fullyMeasured:
                 // The data changes here, like `.memorial`, `.journalContributions` and the photo
                 // cases: no tree in the seed carries a reading, so the state F28 is about has no
-                // honest harness but one that writes the rows the way screen 16 writes them. Both
-                // client uuids are fixed, so a second run finds the readings rather than stacking a
-                // growth history a launch at a time.
+                // honest harness but one that writes the rows the way screen 16 writes them.
+                //
+                // Both client uuids are derived from the tree itself (`seededClientUUID`), so they
+                // are stable for that tree across launches — a second run finds the readings rather
+                // than stacking a growth history a launch at a time — while remaining distinct from
+                // any other tree's. A pair of global constants would key these rows to whichever
+                // record the first run chose and starve every other one.
                 let tree = try await fullyMeasuredTree(api)
                 try await api.debugSeedMeasurement(
                     treeID: tree, kind: .dbh, value: 64, unit: .centimeters,
-                    clientUUID: fullyMeasuredDBHClientUUID
+                    clientUUID: seededClientUUID(for: tree, namespace: fullyMeasuredDBHNamespace)
                 )
                 try await api.debugSeedMeasurement(
                     treeID: tree, kind: .height, value: 18, unit: .meters,
-                    clientUUID: fullyMeasuredHeightClientUUID
+                    clientUUID: seededClientUUID(for: tree, namespace: fullyMeasuredHeightNamespace)
                 )
                 router.push(.treeProfile(tree))
             case .species:
@@ -642,29 +646,86 @@ enum DebugDeepLink {
     /// card, which is a change under nine other cases that read screen 03. E133 is the record of
     /// what that costs; this is the same hazard one round later, avoided the same way.
     ///
-    /// It marches nowhere: the same tree every run, re-seeded through fixed client uuids, which is
-    /// right for a case whose whole subject is the state of two rows.
+    /// **The index is into `candidates`, not into a filtered copy of it, and that is the whole
+    /// point** (PR #139 delta review).
+    ///
+    /// The first version of this indexed `standing` — `candidates.filter { acceptsNewContributions }`
+    /// — under a comment claiming "the same tree every run". That is `anonymizedPhotoTree`'s
+    /// exposure restated wrongly for the second time in this file; `.journalContributions` already
+    /// carries the correction, in the words **"what is fixed is the index, not the tree"**.
+    /// `.memorial` and `.deadProfile` write status overrides, every override drops a tree out of
+    /// `standing`, and the 5/8 position then names a different record on every device that has
+    /// opened screen 19.
+    ///
+    /// For `.journalContributions` that is harmless, and its comment says why: it needs one row
+    /// somewhere, not a particular tree. **This case cannot tolerate it**, because the test behind
+    /// it opens *this* tree's profile and requires both measurements to be on it. A tree that moved
+    /// is a tree with no readings.
+    ///
+    /// `candidates` applies overrides with a `map`, so it keeps the seed's own length and ordering
+    /// whatever this device has been through — the `filter` was the only thing that moved. Indexing
+    /// it makes the choice a function of the pinned seed alone. The status is then checked rather
+    /// than filtered on, so a tree that genuinely cannot take a reading fails loudly and says which
+    /// record it was, instead of silently sliding to a neighbor.
     private static func fullyMeasuredTree(_ api: LocalAPI) async throws -> UUID {
         let candidates = try await candidates(api)
-        let standing = candidates.filter { $0.tree.status.acceptsNewContributions }
-        guard !standing.isEmpty else {
+        guard !candidates.isEmpty else {
             throw Failure(
                 screen: "a standing tree carrying every measurement",
-                reason: "none among the \(candidates.count) records nearest \(center.latitude), \(center.longitude)"
+                reason: "no records at all nearest \(center.latitude), \(center.longitude)"
             )
         }
-        return standing[standing.count * 5 / 8].tree.id
+        let chosen = candidates[candidates.count * 5 / 8]
+        guard chosen.tree.status.acceptsNewContributions else {
+            throw Failure(
+                screen: "a standing tree carrying every measurement",
+                reason: "the record this case pins (\(chosen.tree.id), five eighths of "
+                    + "\(candidates.count)) is \(chosen.tree.status.rawValue) on this device and "
+                    + "takes no readings — another case has marked it, or the seed changed"
+            )
+        }
+        return chosen.tree.id
     }
 
-    /// The two readings `.fullyMeasured` writes, named once so every run writes the same two rows.
+    /// The namespaces `.fullyMeasured`'s two readings are keyed under, one per measurement kind.
     ///
-    /// Literals rather than derived values, for `checkInClientUUID`'s reason: `client_uuid` is what
-    /// the insert's `ON CONFLICT … DO NOTHING` keys on, so these constants *are* the idempotency,
-    /// and a key computed from anything that changes between runs would silently stop being one.
-    private static let fullyMeasuredDBHClientUUID =
+    /// **These are not the client uuids.** They are mixed with the target tree's own id to produce
+    /// them — see `seededClientUUID`. Two constants rather than one because the same tree carries
+    /// both a DBH and a height, and they must not key to the same row.
+    private static let fullyMeasuredDBHNamespace =
         UUID(uuidString: "F28D0000-0000-4000-8000-00000000DB40")!
-    private static let fullyMeasuredHeightClientUUID =
+    private static let fullyMeasuredHeightNamespace =
         UUID(uuidString: "F28D0000-0000-4000-8000-000000004867")!
+
+    /// A `client_uuid` that is stable for a given tree and unique across trees.
+    ///
+    /// **`measurements.client_uuid` is globally `UNIQUE`**, so `ON CONFLICT … DO NOTHING` matches
+    /// across every tree rather than within one. A pair of fixed constants therefore keys the
+    /// harness's two rows to *whichever tree the first run happened to choose*, permanently: a later
+    /// run that resolves a different record asks to insert a uuid another tree already owns, the
+    /// insert is refused, and that tree is never measured. `fullyMeasuredTree` above no longer
+    /// moves, and this is the second half of the same repair — the tree and its keys are derived
+    /// together, so a target that somehow did move would write its own rows instead of colliding
+    /// with another tree's.
+    ///
+    /// **XOR, and it is chosen for being provably injective rather than for being clever.** XOR
+    /// against a fixed 16-byte constant is a bijection on 16-byte values, so two distinct tree ids
+    /// cannot produce the same key under one namespace — which is exactly the property a uniqueness
+    /// constraint needs. A hash would need an argument about collisions; this one needs none.
+    ///
+    /// The result is not a version-4 uuid and does not need to be: the column is `TEXT`, nothing
+    /// parses a version out of it, and `Foundation.UUID` is a 16-byte value with no validity rule.
+    private static func seededClientUUID(for treeID: UUID, namespace: UUID) -> UUID {
+        var raw: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        withUnsafeMutableBytes(of: &raw) { out in
+            withUnsafeBytes(of: treeID.uuid) { tree in
+                withUnsafeBytes(of: namespace.uuid) { space in
+                    for index in 0..<16 { out[index] = tree[index] ^ space[index] }
+                }
+            }
+        }
+        return UUID(uuid: raw)
+    }
 
     private static func anonymizedPhotoTree(_ api: LocalAPI) async throws -> UUID {
         let candidates = try await candidates(api)

@@ -330,6 +330,22 @@ that had not yet reached a build). What remains OPEN:
 
 ### Follow-up tickets from the 2026-08-30 rounds
 
+- **`cypressHitArea` overhangs whatever sits above it, everywhere it is used — audit the call
+  sites.** Raised by PR #139's delta review, deferred out of that PR deliberately.
+  `cypressHitArea` is a `background`, so its 44 pt rect never enters layout: a 13 pt text link
+  carries a target that reaches ~17 pt past its own label in each direction, invisibly, and the
+  later view in a `VStack` wins the overlap. PR #139 fixed the instance it created (F28's link
+  swallowing `See every reading`) but the mechanism is general. The known remaining case is
+  `TreeProfileMetrics.activityLinkTop = 8`, shared by `growthLink` and `activityLink`: on the
+  arithmetic the link's rect reaches ~6-9 pt into the stat grid above it, so the bottom sliver of an
+  empty measurement card would route to screen 11 instead of screen 16. **That figure is derived,
+  not measured on screen**, and confirming it is the first step of this ticket.
+  Deferred rather than folded into #139 for three reasons: it predates that PR on both links;
+  the token fix (8 → 44) adds 36 pt of whitespace above two links on every profile, which is a
+  larger user-visible change than the defect and is unratified; and the real repair is probably
+  structural — a `cypressHitArea` variant that enters layout — which touches every call site in the
+  app and deserves its own measurement round.
+
 - **The splice backlog (orchestrator-only).** Nine pending files under `docs/{rulings,errata}-pending/`
   predate the 2026-08-30 splice and were never spliced at their rounds' merges: nyc-ingest,
   nyc-publish, photo-upload-storage-and-provenance, s17-region-generation (both files),

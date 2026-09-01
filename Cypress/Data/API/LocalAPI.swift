@@ -2792,9 +2792,20 @@ public actor LocalAPI: CypressAPI {
                     .measurements(treeID: treeID, connection: connection)
                     .first { $0.clientUUID == clientUUID }
                 guard let existing else {
-                    // `duplicate` means the conflict clause matched a row, so not finding it means
-                    // the read and the write disagree about what is on disk. Failing loudly beats
-                    // returning an id for a row nobody can find, which is the whole defect here.
+                    // **`duplicate` alone does not mean this tree already has the reading.** The
+                    // conflict clause keys on `client_uuid`, which is `UNIQUE` across the whole
+                    // table, while this read-back is scoped `WHERE tree_uuid = :tree` — so a
+                    // duplicate held by a *different* tree lands here, and it is an ordinary state
+                    // rather than a corrupt one. An earlier version of this comment claimed the
+                    // opposite ("the read and the write disagree about what is on disk"), and that
+                    // false invariant turned a caller's key collision into a thrown deep link
+                    // (PR #139 delta review).
+                    //
+                    // It is reachable only by a caller that reuses one `clientUUID` across trees.
+                    // The one caller derives its keys per tree (`DebugDeepLink.seededClientUUID`)
+                    // precisely so it cannot, which is what makes throwing the right answer *now*:
+                    // it names a key collision the caller has to fix, rather than silently
+                    // returning an id for a row on some other tree.
                     throw APIError.notFound
                 }
                 return existing.id
