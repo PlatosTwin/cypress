@@ -110,6 +110,23 @@ extension ScreenHeader where Trailing == HeaderPill {
     }
 }
 
+extension ScreenHeader where Trailing == HeaderPillButton {
+    /// The pill as the control — screens 12 and 16, where the name in the header *is* what the
+    /// reader changes. See `HeaderPillButton`.
+    init(
+        title: String,
+        trailingPill: String,
+        pillHint: String,
+        bottomInset: BottomInset = .standard,
+        onBack: (() -> Void)? = nil,
+        onTapPill: @escaping () -> Void
+    ) {
+        self.init(title: title, bottomInset: bottomInset, onBack: onBack) {
+            HeaderPillButton(trailingPill, hint: pillHint, action: onTapPill)
+        }
+    }
+}
+
 // MARK: - Pieces
 
 /// 44×44 circle, `1px` border, `shadow.restSoft`. Already at the 44pt minimum, so no hit-area
@@ -182,5 +199,135 @@ struct HeaderPill: View {
             // an ellipsis beside it. Once C1 has moved it onto its own line there is no competition
             // and a long pill may wrap — `3 waiting · offline` at AX5 needs two lines and has one.
             .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
+    }
+}
+
+/// `HeaderPill` when the pill is *the way to change what the screen is about* — the Journal's two
+/// stats segments, 12 and 16.
+///
+/// **The place name is the control.** The picker used to be a boxed `SecondaryOutlineButton`
+/// reading `Change`, stacked under the provenance sentence; the owner's ruling retired it and moved
+/// the affordance onto the name it changes. Three things were weighed and are recorded in the
+/// picker-header ruling, pending — briefly: a `Change` box at the gutter sits directly above §2's
+/// micro-label with nothing between them, so it crowded the section it was not part of; it carried
+/// the visual weight of a primary action while §4's `Walk to it` (the screen's one directed ask) was
+/// the actual primary; and it named an operation rather than a subject, so a reader had to look up
+/// to find out what would change. The name plus a mark is the smaller, quieter, and more specific
+/// of the two.
+///
+/// **Same capsule as `HeaderPill` and deliberately so.** It is the same element it always was,
+/// still saying what the screen is about; the mark is what says it can be pressed. A filled or
+/// outlined "button" pill would have re-imported the weight the ruling removed.
+///
+/// **NOT SPECIFIED** — SCREENS.md §2 draws C1's pill as a label only. The mark's base sizes live in
+/// `CypressSpacing.Component` and the glyph is `CypressChevron`, drawn here like every other mark in
+/// the app — there are no SF Symbols (RULINGS R57, `DrawnGlyphGuardTests`).
+///
+/// **The mark is drawn in `textMuted`, the pill's own label color, and that is a contrast
+/// requirement rather than a preference.** It was `chevronDisclosure` — the token every other
+/// disclosure chevron in the app uses — and measured off rendered pixels that came to **1.96:1**
+/// against the capsule in light and **2.16:1** in dark. WCAG 2.1 SC 1.4.11 asks 3:1 of a graphical
+/// object that alone identifies a control, and by this component's own account above, this mark is
+/// exactly that. `chevronDisclosure` is fine where it lives: on a full-width row with a trailing
+/// edge, the layout is also saying "this opens something", and the chevron is not carrying the
+/// claim by itself. Here it is. Matching the label's own token measures **6.75:1** light and
+/// **6.06:1** dark, and has the second virtue of making the name and the mark one object rather
+/// than a name with a decoration attached. `chevronDisclosure` is untouched at its other sites.
+///
+/// **The mark scales with the label.** `@ScaledMetric(relativeTo: .caption)`, because `body12` — the
+/// label beside it — is built `relativeTo: .caption`, so the two ride one curve and the ratio
+/// between them holds at every setting. `AccountAskView.AccountProviderButton` is the precedent and
+/// this follows its *reasoning* rather than its literal `.body`: that comment's point is to pick the
+/// curve the paired font actually uses, and there the paired font is `body15Bold`. Fixed points
+/// here left a 5pt speck beside a ~34pt name at AX5.
+///
+/// **Accessibility.** The visual is ~24pt tall at default type, so `cypressHitArea` gives it the
+/// 44pt target without moving the drawn pill (ARCHITECTURE §6). The label is the place name and the
+/// hint is what pressing it does, which is strictly more than the retired control offered:
+/// `Change, button` named an operation without its subject, where this reads `Sunset/Parkside,
+/// button` and then the caller's hint.
+struct HeaderPillButton: View {
+
+    let text: String
+    /// What pressing it does, read after the label and the trait.
+    let hint: String
+    let action: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// The mark's drawn size, following the label's own curve — see the note above.
+    @ScaledMetric(relativeTo: .caption) private var chevronWidth =
+        CypressSpacing.Component.headerPillChevronWidth
+    @ScaledMetric(relativeTo: .caption) private var chevronHeight =
+        CypressSpacing.Component.headerPillChevronHeight
+    @ScaledMetric(relativeTo: .caption) private var chevronStroke =
+        CypressSpacing.Component.headerPillChevronStroke
+
+    /// Half the label's x-height, on the label's own curve — the offset that turns the baseline
+    /// alignment below into a midline one. See `CypressFont.body12HalfXHeight`.
+    @ScaledMetric(relativeTo: .caption) private var labelHalfXHeight =
+        CypressFont.body12HalfXHeight
+
+    init(_ text: String, hint: String, action: @escaping () -> Void) {
+        self.text = text
+        self.hint = hint
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            // ── `.firstTextBaseline`, and the wrapped pill is the reason ────────────────────────
+            //
+            // Centered, the mark sits against the *whole* height of the label, which is right while
+            // the label is one line and wrong the moment it is two. The radius fallback is the case
+            // that shows it: at AX5 `Within a 15-minute walk` wraps, the pill grows to ~101pt tall,
+            // and a centered mark floats in the white space beside the line break, touching neither
+            // line and reading as attached to nothing. Aligned to the first baseline it rides the
+            // first line, which is where a reader looks for it and where it stays at every size.
+            //
+            // A `Shape` has no baseline of its own, so its bottom edge is what SwiftUI would align.
+            // The guide below reports a point half an x-height *below* the mark's own center, so
+            // that when SwiftUI lines that point up with the text's baseline, the mark's center
+            // comes to rest half an x-height above it — which is the label's optical midline.
+            //
+            // **The version of this that shipped in the first fix round returned the mark's plain
+            // center, and the sentence here claimed that centered it on the midline. It did not:
+            // it put the center on the baseline**, a half x-height low, which measured +2.33 pt
+            // below the midline on a 402 pt device and was visible at 3x. `+ labelHalfXHeight` is
+            // the whole of the correction. Both cases have to be right — this one is every reader
+            // at default type, on both segments; the wrapped one below is AX5 on the fallback —
+            // and a guide targeting the baseline only ever got the second.
+            HStack(alignment: .firstTextBaseline, spacing: CypressSpacing.Component.headerPillChevronGap) {
+                Text(text)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(CypressColor.textMuted)
+
+                CypressChevron(direction: .down)
+                    .stroke(
+                        CypressColor.textMuted,
+                        style: StrokeStyle(
+                            lineWidth: chevronStroke,
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
+                    )
+                    .frame(width: chevronWidth, height: chevronHeight)
+                    .alignmentGuide(.firstTextBaseline) { dimensions in
+                        dimensions[.bottom] - (dimensions.height / 2) + labelHalfXHeight
+                    }
+            }
+            .padding(.vertical, CypressSpacing.Component.headerPillPaddingV)
+            .padding(.horizontal, CypressSpacing.Component.headerPillPaddingH)
+            .background { Capsule().fill(CypressColor.surfaceCard) }
+            .cypressPillBorder(CypressColor.borderCool)
+            // `HeaderPill`'s rule, and for its reason: intrinsic width while the pill shares the
+            // row with the title, free to wrap once C1 has moved it onto its own line.
+            .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .cypressHitArea()
+        .accessibilityLabel(text)
+        .accessibilityHint(hint)
     }
 }

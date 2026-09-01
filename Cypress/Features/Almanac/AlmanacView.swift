@@ -264,35 +264,29 @@ struct AlmanacScreen: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    // MARK: - Where the area came from, and how to change it (tester report F17)
+    // MARK: - Where the area came from (tester report F17)
 
-    /// One muted sentence saying who chose this area, and the button that lets the reader choose
-    /// another. Drawn in `areaNote`'s type and color because it is doing `areaNote`'s job: saying
-    /// out loud something the header alone is too quiet to say.
+    /// One muted sentence saying who chose this area. Drawn in `areaNote`'s type and color because
+    /// it is doing `areaNote`'s job: saying out loud something the header alone is too quiet to say.
+    ///
+    /// **It used to carry the picker too, and that is what the owner's 2026-08-31 ruling removed.**
+    /// A boxed `Change` button under this sentence put a control at the gutter with §2's micro-label
+    /// immediately beneath it, and the stack read as three unrelated things. The affordance moved
+    /// onto the header pill (`header`, `HeaderPillButton`); this is one line again, which is all it
+    /// was ever for.
     ///
     /// **NOT SPECIFIED** — see `AreaPickerCopy.resolvedFromFix` for why the sentence exists at all.
     @ViewBuilder
     private func provenance(_ presentation: AlmanacPresentation) -> some View {
         if let note = presentation.provenanceNote {
-            VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
-                Text(note)
-                    .font(CypressFont.body125)
-                    .foregroundStyle(CypressColor.textMuted)
-                    .lineSpacing(CypressFont.LineSpacing.body125)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if canPickArea, onOpenPicker != nil {
-                    SecondaryOutlineButton(
-                        AreaPickerCopy.change,
-                        style: .compact,
-                        action: { onOpenPicker?() }
-                    )
-                    .fixedSize()
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, CypressSpacing.labelSectionTop)
-            .padding(.horizontal, CypressSpacing.gutter)
+            Text(note)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textMuted)
+                .lineSpacing(CypressFont.LineSpacing.body125)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, CypressSpacing.labelSectionTop)
+                .padding(.horizontal, CypressSpacing.gutter)
         }
     }
 
@@ -333,10 +327,31 @@ struct AlmanacScreen: View {
     /// than the mock's colloquial `Outer Sunset` — SF's official polygon set carries no such
     /// neighborhood (A4, ERRATA E47). No pill at all when there is no fix: a header that named an
     /// area we could not determine would be the screen's first lie.
+    ///
+    /// **The pill is also the picker**, whenever there is anything to pick — the owner's ruling of
+    /// 2026-08-31, recorded in the picker-header ruling, pending. The name in the header is what the
+    /// reader is changing, so the name is the control; the boxed `Change` button that used to stand
+    /// under the provenance sentence is gone, and `provenance(_:)` is one quiet line again.
+    ///
+    /// The conditions are the retired button's, unchanged: an inert affordance over an empty list is
+    /// what `GroveTabRow` ruled out, so with nothing to pick the pill goes back to being a label.
+    /// **Where there is no pill there is no affordance either** — the coarse-fix and out-of-range
+    /// states name no area, and they keep their own `pickAnArea` button, which is the only thing on
+    /// an otherwise empty screen rather than a second control beside a first.
     @ViewBuilder
     private var header: some View {
         if let name = presentation?.neighborhoodName {
-            ScreenHeader(title: AlmanacCopy.screenTitle, trailingPill: name, onBack: onBack)
+            if canPickArea, let onOpenPicker {
+                ScreenHeader(
+                    title: AlmanacCopy.screenTitle,
+                    trailingPill: name,
+                    pillHint: AreaPickerCopy.changeAreaHint,
+                    onBack: onBack,
+                    onTapPill: onOpenPicker
+                )
+            } else {
+                ScreenHeader(title: AlmanacCopy.screenTitle, trailingPill: name, onBack: onBack)
+            }
         } else {
             ScreenHeader(title: AlmanacCopy.screenTitle, onBack: onBack)
         }

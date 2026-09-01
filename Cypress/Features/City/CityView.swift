@@ -175,41 +175,45 @@ struct CityScreen: View {
     /// `CityPresentation`'s header for the whole of it. The pill draws the name the record carries
     /// and draws nothing when the record carries none, which is the same rule screen 12's own pill
     /// follows for a neighborhood it cannot name.
+    ///
+    /// **And the pill is the picker**, on `AlmanacScreen.header`'s terms and for its reasons — the
+    /// owner's 2026-08-31 ruling, the picker-header ruling, pending. A city with no name on file has
+    /// no pill and no affordance, which is the same rule twice: the control is the name, so where
+    /// there is no name there is no control.
     @ViewBuilder
     private var header: some View {
         if let name = presentation?.cityName {
-            ScreenHeader(title: CityCopy.segmentLabel, trailingPill: name)
+            if canPickCity, let onOpenPicker {
+                ScreenHeader(
+                    title: CityCopy.segmentLabel,
+                    trailingPill: name,
+                    pillHint: AreaPickerCopy.changeCityHint,
+                    onTapPill: onOpenPicker
+                )
+            } else {
+                ScreenHeader(title: CityCopy.segmentLabel, trailingPill: name)
+            }
         } else {
             ScreenHeader(title: CityCopy.segmentLabel)
         }
     }
 
-    // MARK: - Where the city came from, and how to change it (tester report F17)
+    // MARK: - Where the city came from (tester report F17)
 
-    /// `AlmanacScreen.provenance(_:)`'s twin, in the same type and color, saying who chose this city
-    /// and offering the way to choose another. **NOT SPECIFIED** — see `AreaPickerCopy`.
+    /// `AlmanacScreen.provenance(_:)`'s twin, in the same type and color, saying who chose this
+    /// city. The way to choose another is the header pill, on that method's terms and for its
+    /// reasons. **NOT SPECIFIED** — see `AreaPickerCopy`.
     @ViewBuilder
     private func provenance(_ presentation: CityPresentation) -> some View {
         if let note = presentation.provenanceNote {
-            VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
-                Text(note)
-                    .font(CypressFont.body125)
-                    .foregroundStyle(CypressColor.textMuted)
-                    .lineSpacing(CypressFont.LineSpacing.body125)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if canPickCity, onOpenPicker != nil {
-                    SecondaryOutlineButton(
-                        AreaPickerCopy.change,
-                        style: .compact,
-                        action: { onOpenPicker?() }
-                    )
-                    .fixedSize()
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, CypressSpacing.labelSectionTop)
-            .padding(.horizontal, CypressSpacing.gutter)
+            Text(note)
+                .font(CypressFont.body125)
+                .foregroundStyle(CypressColor.textMuted)
+                .lineSpacing(CypressFont.LineSpacing.body125)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, CypressSpacing.labelSectionTop)
+                .padding(.horizontal, CypressSpacing.gutter)
         }
     }
 
