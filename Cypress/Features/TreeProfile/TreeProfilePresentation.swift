@@ -1119,6 +1119,43 @@ struct TreeProfilePresentation {
     /// that reads them back call the same thing by the same name.
     static let growthLinkTitle = "See every reading"
 
+    /// **F28's door.** Whether this screen must draw an `Add a reading` link of its own.
+    ///
+    /// ── The report ────────────────────────────────────────────────────────────────────────────
+    /// R15 gave each measurement its own entrance and said plainly what that left behind: the empty
+    /// slot "exists only while its own measurement is missing", so a tree carrying both a height and
+    /// a DBH has no slot at all. On that tree the nearest way into screen 16 is `See every reading`
+    /// and then screen 11's own `Add a reading` — two small-text taps, which is what the tester
+    /// reported.
+    ///
+    /// ── The rule this restores ────────────────────────────────────────────────────────────────
+    /// **While a tree accepts contributions, this screen offers exactly one door into screen 16.**
+    /// Usually that door is an empty stat card. When every measurement is already on file there is
+    /// no empty card to be one, and this link is. `MeasureEntranceKindTests` asserts the invariant
+    /// over the whole state space rather than this branch alone, because two doors a card apart
+    /// would be the same report from the other side.
+    ///
+    /// It is deliberately keyed off the stat items rather than off the measurements: the DBH slot is
+    /// also suppressed by a published city bucket (see `stats`), and a reader looking at a city
+    /// range has no door either. Asking the items is asking the question the reader can see.
+    ///
+    /// **NOT SPECIFIED** by SCREENS.md — no mock draws this link. Proposed under DECISIONS
+    /// constraint 21 for the owner to ratify, by ARCHITECTURE §5 rule 8's practice of going to the
+    /// nearest specified thing: that is `growthLink`, one block up, and this is built as its twin.
+    var offersAddReadingLink: Bool {
+        guard offersMeasurement else { return false }
+        return !stats.contains { $0.destination?.isMeasure == true }
+    }
+
+    /// The same three words the empty slot and screen 11 use. A reader who has seen `Add a reading`
+    /// on a half-measured tree meets the identical phrase here, which is the point of reusing it.
+    static let addReadingLinkTitle = GrowthHistoryCopy.addReadingTitle
+
+    /// The kind this link opens on, borrowed rather than restated so the two general entrances
+    /// cannot drift apart. Screen 11's `Add a reading` names no measurement either (R15); 16 §2's
+    /// drawn selection is `Trunk · DBH`, and the kind control is the first thing on that screen.
+    static let addReadingLinkKind = GrowthHistoryPresentation.addReadingKind
+
     private var badgeCarriesPlantedYear: Bool {
         if case .planted = badge { return true }
         return false

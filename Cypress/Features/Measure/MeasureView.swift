@@ -214,6 +214,20 @@ struct MeasureScreen: View {
             .cypressHitArea()
             .padding(.top, MeasureMetrics.unitSwitchTop)
 
+            // F26's annotation, directly under the digits it is about rather than above the CTA
+            // with the anomaly line: it describes the number the reader is looking at *now*, not
+            // something to weigh before saving, and a sentence about `64` belongs beside the 64.
+            // Drawn in the anomaly line's amber for the reason that line uses it — this is the
+            // screen asking about a number, which is exactly Signal Amber's job here (§1.1).
+            if let notice = presentation.unitFlipNotice {
+                Text(notice)
+                    .cypressBody135(color: CypressColor.amberChipSelectedText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, MeasureMetrics.unitSwitchTop)
+                    .padding(.horizontal, CypressSpacing.gutter)
+            }
+
             if let sanity = presentation.sanity { sanityPill(sanity) }
         }
         .frame(maxWidth: .infinity)

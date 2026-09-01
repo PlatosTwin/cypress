@@ -66,6 +66,20 @@ public enum LengthUnit: String, Codable, Sendable, Hashable, CaseIterable {
 /// `measurements` columns `value`, `unit_entered`, `si_value`.
 public struct Quantity: Hashable, Codable, Sendable {
     /// The number as the human typed it, in `unitEntered`. Never silently converted for display.
+    ///
+    /// **What this invariant governs is the stored record, and the owner's 2026-08-31 ruling on
+    /// tester report F26 turned on that distinction.** The measure sheet used to clear the keypad
+    /// when the reader flipped the unit, defended on the ground that keeping the digits would
+    /// falsify this field. It would not. A `Quantity` is only ever built at save, out of whatever
+    /// digits and unit the pad holds in that moment, so a reader who types 5, flips to feet and
+    /// saves stores `value: 5, unitEntered: ft` — the number as typed, in the unit it was typed in,
+    /// which is what this line asks for and all it asks for.
+    ///
+    /// The ruling is therefore keep-the-digits-and-annotate, and this field is unchanged by it.
+    /// What the flip genuinely risks is a *reader* who does not notice the meaning moved under an
+    /// unchanged number, and the annotation on screen 16 is what addresses that
+    /// (`MeasureDraft.switchUnit`). The thing that would still break this invariant is converting
+    /// the digits on the flip, and nothing does.
     public let value: Double
     /// The unit that was on the keypad when the value was entered (BUILD-PLAN §4 `unit_entered`).
     public let unitEntered: LengthUnit

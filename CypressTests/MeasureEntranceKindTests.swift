@@ -77,6 +77,18 @@ struct MeasureEntranceKindTests {
         )
     }
 
+    /// The state space F28's invariant is asserted over. A `static let` rather than an inline
+    /// literal because the rows mix a fixture call with an optional `IntRange`, and the failable
+    /// `IntRange` initializer has to be unwrapped somewhere the compiler can see it.
+    private static let doorCases: [(name: String, measurements: [TreeMeasurement], cityDBH: IntRange?)] = [
+        ("nothing on file", [], nil),
+        ("a height only", [height(18)], nil),
+        ("a DBH only", [dbh(64)], nil),
+        ("both", [height(18), dbh(64)], nil),
+        ("a city bucket and a height", [height(18)], IntRange(lowerBound: 30, upperBound: 36)),
+        ("a city bucket and nothing else", [], IntRange(lowerBound: 30, upperBound: 36))
+    ]
+
     private static func height(_ value: Double) -> TreeMeasurement {
         TreeMeasurement.height(
             treeID: treeID,
@@ -270,7 +282,11 @@ struct MeasureEntranceKindTests {
     /// **The hole the owner walked into.** A tree with both measures has no empty slot, so before
     /// R15 it had no door to screen 16 anywhere in the app — and it is the tree with the most growth
     /// left to record.
-    @Test("a tree with both measures has no stat-card door to screen 16")
+    ///
+    /// R15 closed it by way of screen 11, at two taps. **F28 reported those two taps**, and the
+    /// profile now carries a door of its own — so the stat cards still have none, and that is no
+    /// longer the end of the sentence.
+    @Test("a tree with both measures has no stat-card door, and gets a link instead")
     func aFullyMeasuredTreeHasNoSlotLeft() {
         let subject = Self.presentation(measurements: [Self.height(18), Self.dbh(64)])
 
@@ -280,6 +296,66 @@ struct MeasureEntranceKindTests {
         )
         // …and the way through is 11, which it can reach.
         #expect(subject.offersGrowthLink, "11 is unreachable, so the general entrance is too")
+        // F28: and now one tap, on this screen.
+        #expect(
+            subject.offersAddReadingLink,
+            "a fully measured tree reaches screen 16 only through screen 11 again, which is the two-tap path F28 reported"
+        )
+    }
+
+    /// **F28's invariant, over the state space rather than its own branch.**
+    ///
+    /// The property worth having is not "a link appears on fully measured trees" — it is that a
+    /// contributable tree is **never** without a door into screen 16, whatever it already carries.
+    /// Asserting the fully-measured branch alone would say nothing about the city-bucket case, where
+    /// the DBH slot is suppressed by a published range rather than by a reading, and the reader has
+    /// no card door either. That row is the one a "both measurements present" test would have
+    /// missed, and it passes here only because the link is keyed off the stat items.
+    ///
+    /// **The second half is what stops the fix from overshooting.** The link is drawn exactly when
+    /// no card is a door, so a half-measured tree gets its empty slot and no link beside it. Two
+    /// invitations a card apart, both saying `Add a reading`, would be the same report from the
+    /// other side.
+    ///
+    /// The count of card doors is deliberately *not* asserted to be one: a tree with nothing on
+    /// file has two empty slots, one per measurement, which is R15's per-kind door working. An
+    /// earlier draft of this test asserted exactly one door in total and went red on that row —
+    /// correctly, and the invariant is the thing that moved.
+    @Test(
+        "a contributable tree always has a door into screen 16, and the link is drawn only when no card is one",
+        arguments: Self.doorCases
+    )
+    func everyContributableTreeKeepsADoorIntoSixteen(
+        _ row: (name: String, measurements: [TreeMeasurement], cityDBH: IntRange?)
+    ) {
+        let subject = Self.presentation(status: .alive, cityDBH: row.cityDBH, measurements: row.measurements)
+
+        let cardDoors = subject.stats.filter { $0.destination?.isMeasure == true }.count
+        #expect(
+            cardDoors > 0 || subject.offersAddReadingLink,
+            "\(row.name): a standing tree had \(cardDoors) card doors into screen 16 and no link either, so screen 16 is two taps away again"
+        )
+        #expect(
+            subject.offersAddReadingLink == (cardDoors == 0),
+            "\(row.name): \(cardDoors) card doors and offersAddReadingLink=\(subject.offersAddReadingLink) — the link is for the case where no card is a door, and only that case"
+        )
+    }
+
+    /// The other half of the invariant. E95's gate reaches the link too: a record that takes no
+    /// contribution is offered no door, not even this one.
+    @Test("a read-only record is offered no door into screen 16 at all")
+    func aReadOnlyRecordGetsNoAddReadingLink() {
+        for status in TreeStatus.allCases where !status.acceptsNewContributions {
+            let subject = Self.presentation(
+                status: status,
+                measurements: [Self.height(18), Self.dbh(64)]
+            )
+            #expect(
+                !subject.offersAddReadingLink,
+                "\(status) was offered F28's link on screen 03"
+            )
+            #expect(!subject.stats.contains { $0.destination?.isMeasure == true })
+        }
     }
 
     /// Screen 11's general entrance, which is what closes that hole.

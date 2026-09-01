@@ -2717,6 +2717,102 @@ public actor LocalAPI: CypressAPI {
         return observation.id
     }
 
+    /// Test seam (tester report F28): one reading on a real seed tree, so the harness can put a
+    /// **fully measured** tree in front of a test.
+    ///
+    /// F28's affordance exists only where every measurement is already on file, and no tree in the
+    /// shipped seed is in that state — the seed carries no `measurements` rows at all, and screen 16
+    /// is the only thing that writes one. So the state the report is about is unreachable without a
+    /// write, exactly as `debugSeedCheckIn` above found for the journal.
+    ///
+    /// Inserts the row screen 16 inserts, without the outbox round trip, for the reason that seam
+    /// gives: the harness is proving a screen draws a control, not that the queue carries a
+    /// mutation — `MeasureOutboxWriter`'s own tests prove that.
+    ///
+    /// **Idempotent through `client_uuid`**, whose `ON CONFLICT … DO NOTHING` the insert already
+    /// keys on, so a second launch finds the reading rather than adding one. A caller that wants a
+    /// second reading passes its own id.
+    ///
+    /// **Returns the id of the row that is actually on disk**, which on every run after the first is
+    /// the row the *previous* run wrote, not the `TreeMeasurement` built here. Those differ: `id`
+    /// and `clientUUID` are minted separately, and only `client_uuid` is what the conflict clause
+    /// matches on — so a locally minted `id` returned after a `duplicate` names no row in the
+    /// database. That is a value a caller cannot use for anything, handed back as though it could
+    /// be. Nothing consumes it today (`@discardableResult`, and the one caller discards it), which
+    /// is why this was latent rather than broken; it is fixed rather than annotated because the
+    /// next caller has no way to know.
+    @discardableResult
+    public func debugSeedMeasurement(
+        treeID: UUID,
+        kind: MeasurementKind,
+        value: Double,
+        unit: LengthUnit,
+        clientUUID: UUID = UUID()
+    ) async throws -> UUID {
+        let moment = now()
+        // `Quantity` has one initializer and it requires a method (D7), so this seam cannot write a
+        // method-less reading any more than the screen can.
+        let quantity = Quantity(value: value, unit: unit, method: .tape)
+        let measurement: TreeMeasurement
+        switch kind {
+        case .dbh:
+            measurement = TreeMeasurement.dbh(
+                treeID: treeID,
+                attribution: attribution,
+                clientUUID: clientUUID,
+                capturedAt: moment,
+                // Inside D6's 15 m limit, so the reading is chartable and screen 11 is reachable —
+                // the two-tap path F28 reported has to exist for the one-tap fix to be about
+                // anything.
+                gpsAccuracyM: 6,
+                quantity: quantity,
+                createdAt: moment,
+                updatedAt: moment
+            )
+        case .height:
+            measurement = TreeMeasurement.height(
+                treeID: treeID,
+                attribution: attribution,
+                clientUUID: clientUUID,
+                capturedAt: moment,
+                gpsAccuracyM: 6,
+                quantity: quantity,
+                createdAt: moment,
+                updatedAt: moment
+            )
+        }
+        return try await store.queue.write { connection in
+            switch try contributions.insert(measurement, connection: connection) {
+            case .inserted:
+                return measurement.id
+            case .duplicate:
+                // A previous run wrote it. Read back the row this `client_uuid` names and return
+                // *its* id — the one a caller could actually look up.
+                let existing = try contributions
+                    .measurements(treeID: treeID, connection: connection)
+                    .first { $0.clientUUID == clientUUID }
+                guard let existing else {
+                    // **`duplicate` alone does not mean this tree already has the reading.** The
+                    // conflict clause keys on `client_uuid`, which is `UNIQUE` across the whole
+                    // table, while this read-back is scoped `WHERE tree_uuid = :tree` — so a
+                    // duplicate held by a *different* tree lands here, and it is an ordinary state
+                    // rather than a corrupt one. An earlier version of this comment claimed the
+                    // opposite ("the read and the write disagree about what is on disk"), and that
+                    // false invariant turned a caller's key collision into a thrown deep link
+                    // (PR #139 delta review).
+                    //
+                    // It is reachable only by a caller that reuses one `clientUUID` across trees.
+                    // The one caller derives its keys per tree (`DebugDeepLink.seededClientUUID`)
+                    // precisely so it cannot, which is what makes throwing the right answer *now*:
+                    // it names a key collision the caller has to fix, rather than silently
+                    // returning an id for a row on some other tree.
+                    throw APIError.notFound
+                }
+                return existing.id
+            }
+        }
+    }
+
     /// Test seam (ERRATA E124-B, widened by E170): force a tree to a status by writing its override
     /// directly, so the harness can open screen 19 — or a confirmed-dead profile — against a real seed
     /// record. The shipping path is `confirmReview`, which requires a lead and an open flag; this skips

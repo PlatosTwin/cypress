@@ -278,7 +278,60 @@
 # in this arithmetic is still a one-run snapshot from three different machines**, and the file's
 # standing instruction to re-measure Shards 1 and 4 on one machine is untouched by it.
 
+# `AddReadingReachabilityTests` (tester report F28) was added afterwards and has never been on CI.
+# Two tests: one launch onto a fully measured tree, one link tap into screen 16, and one launch onto
+# an ordinary standing tree to prove the link is NOT drawn beside an empty slot. Measured alone on
+# the iPhone 16e simulator (3A1F212D-8F3A-41F1-AF72-EC95E155A4C9, 390 pt) — a different machine and
+# device from the CI table at the top, exactly as the eight entries before it are:
+#
+#   VERIFY-OK: Executed 2 tests, with 0 failures (0 unexpected) in 13.862 (13.865) seconds
+#
+# PLACED ON SHARD 2, and **the placement should not be read as measured** — this file's standing
+# warning about small margins applies with more force than usual, because the totals it would be
+# derived from disagree about Shard 4 by roughly the size of this class.
+#
+# Totals as the entries above leave them: Shard 1 at 378.3s, Shard 2 at 367.8s, Shard 3 at 369.7s,
+# Shard 4 at 362.6s. On those numbers Shard 4 wins outright and by a wide margin:
+#
+#   this class on Shard 4:  max(378.3, 362.6 + 13.9 = 376.5) = 378.3s   <- does not move the pace
+#   this class on Shard 2:  max(378.3, 367.8 + 13.9 = 381.7) = 381.7s
+#   this class on Shard 3:  max(378.3, 369.7 + 13.9 = 383.6) = 383.6s
+#   this class on Shard 1:  max(369.7, 378.3 + 13.9 = 392.2) = 392.2s
+#
+# **But Shard 4's 362.6s is the one number above this file has already retracted forward.** The
+# `RemoteGateComplaintUITests` entry records that class gaining a third method on Shard 4 at roughly
+# one extra launch (~8s), and says in terms that the 362.6s comparator "is probably above 362.6s
+# too". Carrying that correction, Shard 4 is ~370.6s and the ordering inverts:
+#
+#   this class on Shard 2:  max(378.3, 367.8 + 13.9 = 381.7) = 381.7s   <- placed here
+#   this class on Shard 3:  max(378.3, 369.7 + 13.9 = 383.6) = 383.6s
+#   this class on Shard 4:  max(378.3, 370.6 + 13.9 = 384.5) = 384.5s
+#
+# Two candidate lines separated by 1.9s, and which of them wins depends on whether an ~8s correction
+# this file wrote down in prose is applied to a number it never re-measured. That is not a
+# measurement, and it is recorded as not being one. What IS robust across both tables: **no
+# arrangement moves the gate's longest TESTS by more than ~6s**, because Shard 1 at 378.3s already
+# sets the pace and 13.9s does not clear it from either short line. So this goes on Shard 2 — the
+# winner under the corrected numbers, and within 6s of the winner under the uncorrected ones — and
+# the file's standing instruction to re-measure Shards 1 and 4 on a single machine is what would
+# settle it. Do not move this class for a number this small without doing that first.
+#
+# IT THEN GREW from two tests to three — PR #139's review found F28's link stealing taps from
+# `See every reading`, and the third test taps the words and requires screen 11. Measured whole on
+# the same iPhone 16e (3A1F212D-8F3A-41F1-AF72-EC95E155A4C9, 390 pt) as the 13.9s above, so this is
+# a like-for-like replacement rather than two devices being compared:
+#
+#   Executed 3 tests, with 0 failures (0 unexpected) in 22.773 (22.781) seconds
+#
+# What this line contributes is therefore **+8.9s over the number already carried**, not 22.8s of
+# new cost. THE PLACEMENT DOES NOT CHANGE, and it does not need re-deriving: the paragraph above
+# already concluded that no arrangement of this class moves the gate's longest TESTS by more than
+# ~6s, because Shard 1 at 378.3s sets the pace and neither short line reaches it. Shard 2 becomes
+# 367.8 + 22.8 = 390.6s against Shard 3's 369.7 + 22.8 = 392.5s and Shard 4's ~370.6 + 22.8 =
+# 393.4s — the same ordering, the same ~2s spread, and the same warning that a 2s margin built from
+# three machines' numbers is not a measurement.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests
-MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests
+MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests
