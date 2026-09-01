@@ -204,6 +204,12 @@ conflicts with convenience, the rule wins.
   checkout and the worktrees of LIVE rounds; 25 dead worktrees accumulated by 2026-08-28 because
   no step owned this. Audit before removing: `git status` clean, HEAD an ancestor of origin/main,
   `git stash list` empty (a stash outlives its worktree — see below).
+- **The teardown is not only the worktree.** The same sitting also deletes the round's private
+  DerivedData directories (the scratchpad `dd-*` ones, and any `~/Library/Developer/Xcode/DerivedData/Cypress-*`
+  whose `info.plist` `WorkspacePath` no longer exists) and shuts down the round's simulators
+  (`xcrun simctl shutdown <udid>`). 45 GB of DerivedData from deleted worktrees and four
+  booted-idle simulators accumulated by 2026-08-31 because the rule above named only the worktree.
+  Never touch the one DerivedData directory whose `WorkspacePath` is the owner's live checkout.
 - Set up with `Tools/setup_worktree.sh <worktree-path>` — it copies the git-ignored ~103 MB seed
   into `Cypress/Resources/` and `Fixtures/seed/`; without it 13 tests fail on `seedURL → nil`
   and you will chase a defect you did not cause.
