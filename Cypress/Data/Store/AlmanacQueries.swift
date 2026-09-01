@@ -46,6 +46,30 @@ public struct AlmanacQueries {
     /// tree by address able to name a basin.
     private static let standing = "t.status IN ('alive','declining')"
 
+    /// **How `firstBloom`'s visit meets the inventory, and why it stopped being `COLLATE NOCASE`.**
+    ///
+    /// The same finding `GroveQueries.treeJoin` carries at length, on the one join in this file that
+    /// can take it. The two sides genuinely differ in case — `UUID.bind` stores Foundation's
+    /// uppercase canonical string in `main`, every seed file `Tools/build_seed.py` writes stores
+    /// `trees.uuid` lower case — so the comparison has to normalize one side or match nothing.
+    ///
+    /// It was `t.uuid = v.tree_uuid COLLATE NOCASE`, which is correct and cannot be answered by an
+    /// index: `trees.uuid` is `NOT NULL UNIQUE`, so `sqlite_autoindex_trees_1` is a **BINARY** index
+    /// and no NOCASE comparison can seek it, whichever operand carries the collation. `lower()` on
+    /// the **contributions** side leaves the indexed column bare, so the seek is back.
+    ///
+    /// Sound only while every inventory file stores its uuids lower case. That is asserted rather
+    /// than assumed: `DataGates.armsWithUppercaseUUIDs` checks it per arm, `DataGates.seedContract`
+    /// runs it on every CI run, and `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack` is
+    /// the negative control. `GroveQueries.treeJoin` carries the whole argument, including the
+    /// owner's closed decision about packs downloaded at runtime.
+    ///
+    /// **`youngTreesWithoutVisits` deliberately does not get this treatment**, and the reason is on
+    /// `youngTreesWithoutVisitsSQL(scope:)`.
+    private var bloomTreeJoin: String {
+        "t.\(schema.treeIdentityColumn) = lower(v.tree_uuid)"
+    }
+
     // MARK: - Is there an almanac to have at all
 
     /// Whether the merged inventory holds **any** record inside this scope (ERRATA E182).
@@ -66,15 +90,31 @@ public struct AlmanacQueries {
         scope: AlmanacScope,
         connection: SQLiteConnection
     ) throws -> Bool {
-        let statement = try connection.cachedStatement("""
-            SELECT 1 AS present
-              FROM \(seed).trees t
-             WHERE \(scope.predicate("t"))
-               AND t.deleted_at IS NULL
-             LIMIT 1
-            """)
+        let statement = try connection.cachedStatement(holdsAnyRecordSQL(scope: scope))
         _ = try statement.bind(scope.bindings)
         return try statement.fetchOne { _ in true } ?? false
+    }
+
+    /// **The statements in this file are properties so the gate can explain the text the app runs.**
+    ///
+    /// `MapQueryPlanTests`' header records what happened when they were not: the plans were pinned
+    /// against SQL hand-copied into `DataGates.swift`, so changing the real query left the gate
+    /// explaining the paraphrase. `AlmanacQueryPlanTests` reads these, and nothing else builds them
+    /// — and `AlmanacStatementCensusTests` proves that what screen 12 prepares is exactly this set,
+    /// which is the half a property reference alone cannot establish (PR #143's review demonstrated
+    /// that on the Journal).
+    ///
+    /// Each takes the scope because `AlmanacScope.predicate(_:)` is two different `WHERE` fragments
+    /// with two different plans — R29's polygon arm seeks `idx_trees_neighborhood`, its radius arm
+    /// seeks `idx_trees_lat_lon` — so a gate that explained one arm would be silent about the other.
+    func holdsAnyRecordSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT 1 AS present
+          FROM \(seed).trees t
+         WHERE \(scope.predicate("t"))
+           AND t.deleted_at IS NULL
+         LIMIT 1
+        """
     }
 
     // MARK: - This season · the elder
@@ -96,20 +136,7 @@ public struct AlmanacQueries {
         scope: AlmanacScope,
         connection: SQLiteConnection
     ) throws -> (treeID: UUID, speciesCommonName: String?, address: String?, plantedYear: Int)? {
-        let statement = try connection.cachedStatement("""
-            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
-                   t.address AS address,
-                   t.planted_year AS planted_year,
-                   COALESCE(s.common_name, s.scientific_name) AS species_name
-              FROM \(seed).trees t
-              LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE \(scope.predicate("t"))
-               AND t.planted_on IS NOT NULL
-               AND t.deleted_at IS NULL
-               AND \(Self.standing)
-             ORDER BY t.planted_on
-             LIMIT 1
-            """)
+        let statement = try connection.cachedStatement(elderSQL(scope: scope))
         _ = try statement.bind(scope.bindings)
         return try statement.fetchOne { row in
             (
@@ -119,6 +146,24 @@ public struct AlmanacQueries {
                 plantedYear: try row.int("planted_year")
             )
         }
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property.
+    func elderSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+               t.address AS address,
+               t.planted_year AS planted_year,
+               COALESCE(s.common_name, s.scientific_name) AS species_name
+          FROM \(seed).trees t
+          LEFT JOIN \(seed).species s ON s.id = t.species_current
+         WHERE \(scope.predicate("t"))
+           AND t.planted_on IS NOT NULL
+           AND t.deleted_at IS NULL
+           AND \(Self.standing)
+         ORDER BY t.planted_on
+         LIMIT 1
+        """
     }
 
     // MARK: - This season · newest neighbors
@@ -139,22 +184,27 @@ public struct AlmanacQueries {
         to: String,
         connection: SQLiteConnection
     ) throws -> [(name: String?, treeCount: Int)] {
-        let statement = try connection.cachedStatement("""
-            SELECT COALESCE(s.common_name, s.scientific_name) AS species_name,
-                   COUNT(*) AS tree_count
-              FROM \(seed).trees t
-              LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE \(scope.predicate("t"))
-               AND t.planted_on BETWEEN :from AND :to
-               AND t.deleted_at IS NULL
-               AND \(Self.standing)
-             GROUP BY t.species_current
-             ORDER BY tree_count DESC, species_name
-            """)
+        let statement = try connection.cachedStatement(plantingsSQL(scope: scope))
         _ = try statement.bind(scope.bindings.merging([":from": from, ":to": to] as [String: SQLiteBindable?]) { a, _ in a })
         return try statement.fetchAll { row in
             (name: try row.stringIfPresent("species_name"), treeCount: try row.int("tree_count"))
         }
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property.
+    func plantingsSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT COALESCE(s.common_name, s.scientific_name) AS species_name,
+               COUNT(*) AS tree_count
+          FROM \(seed).trees t
+          LEFT JOIN \(seed).species s ON s.id = t.species_current
+         WHERE \(scope.predicate("t"))
+           AND t.planted_on BETWEEN :from AND :to
+           AND t.deleted_at IS NULL
+           AND \(Self.standing)
+         GROUP BY t.species_current
+         ORDER BY tree_count DESC, species_name
+        """
     }
 
     /// The same trees `plantings` counted, as pins a map can draw, nearest first (ERRATA **E182**).
@@ -181,24 +231,7 @@ public struct AlmanacQueries {
         // Longitude degrees are shorter than latitude degrees by cos(lat); squaring the ratio makes
         // the two terms comparable, exactly as `TreeQueries.nearest` does it.
         let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
-        let statement = try connection.cachedStatement("""
-            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
-                   t.lat AS lat,
-                   t.lon AS lon,
-                   t.status AS status,
-                   t.source AS source,
-                   t.verification_state AS verification_state,
-                   s.\(schema.speciesIdentityColumn) AS species_uuid
-              FROM \(seed).trees t
-              LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE \(scope.predicate("t"))
-               AND t.planted_on BETWEEN :from AND :to
-               AND t.deleted_at IS NULL
-               AND \(Self.standing)
-             ORDER BY (t.lat - :lat) * (t.lat - :lat)
-                    + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
-             LIMIT :limit
-            """)
+        let statement = try connection.cachedStatement(plantingPinsSQL(scope: scope))
         _ = try statement.bind(scope.bindings.merging([
             ":from": from,
             ":to": to,
@@ -208,6 +241,28 @@ public struct AlmanacQueries {
             ":limit": limit
         ] as [String: SQLiteBindable?]) { a, _ in a })
         return try statement.fetchAll { row in try Self.pin(from: row) }
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property.
+    func plantingPinsSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+               t.lat AS lat,
+               t.lon AS lon,
+               t.status AS status,
+               t.source AS source,
+               t.verification_state AS verification_state,
+               s.\(schema.speciesIdentityColumn) AS species_uuid
+          FROM \(seed).trees t
+          LEFT JOIN \(seed).species s ON s.id = t.species_current
+         WHERE \(scope.predicate("t"))
+           AND t.planted_on BETWEEN :from AND :to
+           AND t.deleted_at IS NULL
+           AND \(Self.standing)
+         ORDER BY (t.lat - :lat) * (t.lat - :lat)
+                + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
+         LIMIT :limit
+        """
     }
 
     // MARK: - Who lives here
@@ -246,18 +301,7 @@ public struct AlmanacQueries {
         scope: AlmanacScope,
         connection: SQLiteConnection
     ) throws -> [SpeciesShare] {
-        let statement = try connection.cachedStatement("""
-            SELECT s.\(schema.speciesIdentityColumn) AS species_uuid,
-                   COALESCE(s.common_name, s.scientific_name) AS species_name,
-                   COUNT(*) AS tree_count
-              FROM \(seed).trees t
-              JOIN \(seed).species s ON s.id = t.species_current
-             WHERE \(scope.predicate("t"))
-               AND t.deleted_at IS NULL
-               AND \(Self.standing)
-             GROUP BY s.id
-             ORDER BY tree_count DESC, species_name
-            """)
+        let statement = try connection.cachedStatement(speciesMixSQL(scope: scope))
         _ = try statement.bind(scope.bindings)
         return try statement.fetchAll { row in
             SpeciesShare(
@@ -266,6 +310,22 @@ public struct AlmanacQueries {
                 treeCount: try row.int("tree_count")
             )
         }
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property.
+    func speciesMixSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT s.\(schema.speciesIdentityColumn) AS species_uuid,
+               COALESCE(s.common_name, s.scientific_name) AS species_name,
+               COUNT(*) AS tree_count
+          FROM \(seed).trees t
+          JOIN \(seed).species s ON s.id = t.species_current
+         WHERE \(scope.predicate("t"))
+           AND t.deleted_at IS NULL
+           AND \(Self.standing)
+         GROUP BY s.id
+         ORDER BY tree_count DESC, species_name
+        """
     }
 
     // MARK: - Where eyes are needed
@@ -302,34 +362,73 @@ public struct AlmanacQueries {
         limit: Int,
         connection: SQLiteConnection
     ) throws -> [TreePin] {
-        let statement = try connection.cachedStatement("""
-            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
-                   t.lat AS lat,
-                   t.lon AS lon,
-                   t.status AS status,
-                   t.source AS source,
-                   t.verification_state AS verification_state,
-                   s.\(schema.speciesIdentityColumn) AS species_uuid
-              FROM \(seed).trees t
-              LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE \(scope.predicate("t"))
-               AND t.planted_on >= :since
-               AND t.deleted_at IS NULL
-               AND \(Self.standing)
-               AND NOT EXISTS (
-                     SELECT 1 FROM visits v
-                      WHERE v.tree_uuid = t.\(schema.treeIdentityColumn) COLLATE NOCASE
-                        AND v.deleted_at IS NULL
-                        AND v.captured_at >= t.planted_on
-                   )
-             ORDER BY t.planted_on, t.id
-             LIMIT :limit
-            """)
+        let statement = try connection.cachedStatement(youngTreesWithoutVisitsSQL(scope: scope))
         _ = try statement.bind(scope.bindings.merging([
             ":since": plantedOnOrAfter,
             ":limit": limit
         ] as [String: SQLiteBindable?]) { a, _ in a })
         return try statement.fetchAll { row in try Self.pin(from: row) }
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property.
+    ///
+    /// ── **Why the `COLLATE NOCASE` in here stays, when `firstBloom`'s went** ────────────────────
+    /// ROADMAP asked for both of this file's collated joins to take `GroveQueries.treeJoin`'s
+    /// `lower()` treatment. `bloomTreeJoin` took it; this one cannot, and the difference is which
+    /// side of the comparison the index that would answer it lives on.
+    ///
+    /// `firstBloom` drives from `visits` and probes the **seed**, so `lower()` on the contributions
+    /// side leaves `trees.uuid` bare and `sqlite_autoindex_trees_1` answers — and the value it is
+    /// compared against is lower case by a contract `DataGates.armsWithUppercaseUUIDs` asserts per
+    /// published file.
+    ///
+    /// This subquery is the other way round. It is correlated on `t`, so it runs per candidate tree
+    /// and the index that would answer it is `idx_visits_tree` — over a column in **`main`**. To
+    /// seek that, `v.tree_uuid` has to be left bare, which means normalizing the seed side *up*:
+    /// `v.tree_uuid = upper(t.uuid)`. That is only correct while every row in `visits` stores its
+    /// `tree_uuid` upper case, and **nothing asserts that.** Today's single writer
+    /// (`ContributionStore.insert`, binding a `UUID` through `SQLiteValue`) does produce Foundation's
+    /// uppercase spelling, but the column is plain `TEXT` with `BINARY` collation, no gate examines
+    /// it, and `AppSchema`'s own note beside `anonymized_contributions` records why that is not
+    /// enough: a uuid reaches these tables by two routes, `SQLiteValue`'s uppercase `uuidString` and
+    /// `JSONEncoder`'s, "and the whole guarantee would turn on those two agreeing about case for
+    /// ever". That table's answer was `COLLATE NOCASE` **on the column**, which makes its index
+    /// case-insensitive and seekable — and doing the same here is a schema migration, which this
+    /// change is not the author of.
+    ///
+    /// The failure mode decides it. A wrong `lower()` in `firstBloom` returns **nothing**, which is
+    /// loud. A wrong `upper()` here returns young trees that *have* been visited, as trees nobody
+    /// has been to — the app's one directed ask (D1), sending readers to trees that need no eyes,
+    /// silently and only on a device whose rows spell a uuid the other way. Trading that for a seek
+    /// over one contributor's own visits is not a trade worth making without the migration that
+    /// makes it true.
+    ///
+    /// `AlmanacQueryPlanTests.theYoungTreeSubqueryIsTheKnownScan` pins the plan this leaves, so the
+    /// day the migration lands this paragraph goes red rather than staying wrong.
+    func youngTreesWithoutVisitsSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+               t.lat AS lat,
+               t.lon AS lon,
+               t.status AS status,
+               t.source AS source,
+               t.verification_state AS verification_state,
+               s.\(schema.speciesIdentityColumn) AS species_uuid
+          FROM \(seed).trees t
+          LEFT JOIN \(seed).species s ON s.id = t.species_current
+         WHERE \(scope.predicate("t"))
+           AND t.planted_on >= :since
+           AND t.deleted_at IS NULL
+           AND \(Self.standing)
+           AND NOT EXISTS (
+                 SELECT 1 FROM visits v
+                  WHERE v.tree_uuid = t.\(schema.treeIdentityColumn) COLLATE NOCASE
+                    AND v.deleted_at IS NULL
+                    AND v.captured_at >= t.planted_on
+               )
+         ORDER BY t.planted_on, t.id
+         LIMIT :limit
+        """
     }
 
     /// One `TreePin` out of a row of `seed.trees`.
@@ -384,28 +483,7 @@ public struct AlmanacQueries {
         since: Date,
         connection: SQLiteConnection
     ) throws -> (treeID: UUID, speciesCommonName: String?, address: String?, firstSeenAt: Date, observerCount: Int)? {
-        let statement = try connection.cachedStatement("""
-            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
-                   t.address AS address,
-                   COALESCE(s.common_name, s.scientific_name) AS species_name,
-                   MIN(v.captured_at) AS first_seen_at,
-                   COUNT(DISTINCT COALESCE(v.user_id, v.device_id)) AS observer_count
-              FROM visits v
-              JOIN \(seed).trees t ON t.\(schema.treeIdentityColumn) = v.tree_uuid COLLATE NOCASE
-              LEFT JOIN \(seed).species s ON s.id = t.species_current
-             WHERE v.deleted_at IS NULL
-               AND v.captured_at >= :since
-               AND \(scope.predicate("t"))
-               AND t.deleted_at IS NULL
-               AND \(Self.standing)
-               AND EXISTS (
-                     SELECT 1 FROM json_each(v.phenology_tags)
-                      WHERE json_each.value = :flowering
-                   )
-             GROUP BY t.id
-             ORDER BY first_seen_at, tree_uuid
-             LIMIT 1
-            """)
+        let statement = try connection.cachedStatement(firstBloomSQL(scope: scope))
         _ = try statement.bind(scope.bindings.merging([
             ":since": since,
             ":flowering": PhenologyTag.flowering.rawValue
@@ -419,6 +497,33 @@ public struct AlmanacQueries {
                 observerCount: try row.int("observer_count")
             )
         }
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property, and `bloomTreeJoin` for why the
+    /// join in it normalizes the contributions side rather than collating the comparison.
+    func firstBloomSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+               t.address AS address,
+               COALESCE(s.common_name, s.scientific_name) AS species_name,
+               MIN(v.captured_at) AS first_seen_at,
+               COUNT(DISTINCT COALESCE(v.user_id, v.device_id)) AS observer_count
+          FROM visits v
+          JOIN \(seed).trees t ON \(bloomTreeJoin)
+          LEFT JOIN \(seed).species s ON s.id = t.species_current
+         WHERE v.deleted_at IS NULL
+           AND v.captured_at >= :since
+           AND \(scope.predicate("t"))
+           AND t.deleted_at IS NULL
+           AND \(Self.standing)
+           AND EXISTS (
+                 SELECT 1 FROM json_each(v.phenology_tags)
+                  WHERE json_each.value = :flowering
+               )
+         GROUP BY t.id
+         ORDER BY first_seen_at, tree_uuid
+         LIMIT 1
+        """
     }
 
     // MARK: - Where a tree could go · the vacant planting sites
@@ -457,13 +562,7 @@ public struct AlmanacQueries {
         limit: Int,
         connection: SQLiteConnection
     ) throws -> (count: Int, nearest: [TreePin]) {
-        let counted = try connection.cachedStatement("""
-            SELECT COUNT(*) AS site_count
-              FROM \(seed).trees t
-             WHERE \(scope.predicate("t"))
-               AND t.status = 'vacant_site'
-               AND t.deleted_at IS NULL
-            """)
+        let counted = try connection.cachedStatement(vacantSiteCountSQL(scope: scope))
         _ = try counted.bind(scope.bindings)
         let count = try counted.fetchOne { try $0.int("site_count") } ?? 0
         guard count > 0 else { return (count: 0, nearest: []) }
@@ -471,22 +570,7 @@ public struct AlmanacQueries {
         // Longitude degrees are shorter than latitude degrees by cos(lat); squaring the ratio makes
         // the two terms comparable, exactly as `TreeQueries.nearest` does it.
         let longitudeWeight = pow(cos(coordinate.latitude * .pi / 180), 2)
-        let statement = try connection.cachedStatement("""
-            SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
-                   t.lat AS lat,
-                   t.lon AS lon,
-                   t.status AS status,
-                   t.source AS source,
-                   t.verification_state AS verification_state,
-                   NULL AS species_uuid
-              FROM \(seed).trees t
-             WHERE \(scope.predicate("t"))
-               AND t.status = 'vacant_site'
-               AND t.deleted_at IS NULL
-             ORDER BY (t.lat - :lat) * (t.lat - :lat)
-                    + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
-             LIMIT :limit
-            """)
+        let statement = try connection.cachedStatement(vacantSitePinsSQL(scope: scope))
         _ = try statement.bind(scope.bindings.merging([
             ":lat": coordinate.latitude,
             ":lon": coordinate.longitude,
@@ -498,5 +582,36 @@ public struct AlmanacQueries {
         // asserts it against the shipped seed), so a `LEFT JOIN` here could only ever return NULL.
         // A basin has nothing to identify — the reason `SiteCopy` exists at all (ERRATA E107).
         return (count: count, nearest: try statement.fetchAll { row in try Self.pin(from: row) })
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property.
+    func vacantSiteCountSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT COUNT(*) AS site_count
+          FROM \(seed).trees t
+         WHERE \(scope.predicate("t"))
+           AND t.status = 'vacant_site'
+           AND t.deleted_at IS NULL
+        """
+    }
+
+    /// See `holdsAnyRecordSQL(scope:)` for why this is a property.
+    func vacantSitePinsSQL(scope: AlmanacScope) -> String {
+        """
+        SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,
+               t.lat AS lat,
+               t.lon AS lon,
+               t.status AS status,
+               t.source AS source,
+               t.verification_state AS verification_state,
+               NULL AS species_uuid
+          FROM \(seed).trees t
+         WHERE \(scope.predicate("t"))
+           AND t.status = 'vacant_site'
+           AND t.deleted_at IS NULL
+         ORDER BY (t.lat - :lat) * (t.lat - :lat)
+                + (t.lon - :lon) * (t.lon - :lon) * :lonWeight
+         LIMIT :limit
+        """
     }
 }
