@@ -58,6 +58,21 @@ public struct AlmanacQueries {
     /// and no NOCASE comparison can seek it, whichever operand carries the collation. `lower()` on
     /// the **contributions** side leaves the indexed column bare, so the seek is back.
     ///
+    /// The two arms of R29 paid for it differently and both are fixed by the same line. Measured on
+    /// the shipped seed, three readings each, through an instrument calibrated against a no-op at
+    /// 0.0006 ms and a known 50 ms sleep at 53.9 ms:
+    ///
+    /// - **polygon** (Outer Richmond): `SEARCH t USING INDEX idx_trees_neighborhood | SEARCH v USING
+    ///   AUTOMATIC PARTIAL COVERING INDEX` — the neighborhood walked and a transient index built over
+    ///   `visits` per execution — **3.06–4.53 ms → 0.01–0.02 ms**;
+    /// - **radius** (1,200 m): `SCAN v | … | SEARCH t USING AUTOMATIC PARTIAL COVERING INDEX
+    ///   (uuid=?)` — a transient index built over the whole merged inventory per execution —
+    ///   **22.9–33.7 ms → 0.12–0.26 ms**.
+    ///
+    /// Both figures are with **no** contributions on the device, which is the case worth stating:
+    /// the old polygon plan drove from the inventory, so a reader who had never recorded anything
+    /// still paid for a walk of their neighborhood every time screen 12 opened.
+    ///
     /// Sound only while every inventory file stores its uuids lower case. That is asserted rather
     /// than assumed: `DataGates.armsWithUppercaseUUIDs` checks it per arm, `DataGates.seedContract`
     /// runs it on every CI run, and `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack` is
