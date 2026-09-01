@@ -145,6 +145,11 @@ conflicts with convenience, the rule wins.
   follows for SCREENS.md. The orchestrator checks at merge: does this round's diff resolve
   anything the roadmap still lists as open? If the author didn't strike it, the merge waits until
   someone does.
+- **Never surface a session task chip in this project** (owner ruling, 2026-09-01). A follow-up
+  that deserves its own task goes into `docs/ROADMAP.md`'s chip-backlog section in the round that
+  finds it — chips have been dismissed unseen and the work lost until someone re-logged it. This
+  binds subagents too: an author or reviewer that finds out-of-scope work writes it into its
+  report so the orchestrator can add it to the roadmap, and creates no chip.
 
 ## Numbering and shared files
 - Never write a number into `docs/ERRATA.md` or `docs/RULINGS.md` from a branch or agent. Write

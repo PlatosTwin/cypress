@@ -389,11 +389,12 @@ Three items queued by the owner, recorded verbatim in intent; none is scheduled 
 - **Update the repo README.** The README predates most of what shipped; bring it current with the
   app as it stands (cumulative inventories, the publish pipeline, the beta process).
 
-### Chip backlog (logged 2026-08-28, so dismissal of a session chip loses nothing)
+### Chip backlog (this file is the only queue — session chips are banned)
 
-Five follow-up tasks were surfaced as one-click session chips during the 2026-08-22..28 rounds.
-Four disappeared from the pending list without being run; whatever dismissed them, the work is
-still owed, so it is recorded here as the durable queue. Each stands alone.
+Follow-up tasks used to be surfaced as one-click session chips; several disappeared from the
+pending list without being run, and the work was lost until re-logged here. The owner ruled on
+2026-09-01: no session chips in this project — a follow-up that deserves its own task is written
+into this section in the round that finds it, and nowhere else. Each item stands alone.
 
 1. **Close `PendingCitationGuardTests`' blind spots.** The guard that keeps code comments from
    citing pending errata/rulings filenames has known gaps in what it scans; enumerate the blind
@@ -420,18 +421,36 @@ still owed, so it is recorded here as the durable queue. Each stands alone.
    over `Data/Cities/` refuses the byte-stream API outright. No clock is read anywhere. The census's
    own blind spot — `FileManager` work, which is `moveItem` today and reads no bytes — is written
    down beside the assertions.
-5. **Harden `MapPanTabSwitchUITests` against slow runners.** Four CI sightings by 2026-08-28
-   (latest: run 33208371211, on code byte-identical to a green run), always the same shape: the
-   probe records `panBegan=3 panEnded=3` yet the camera never leaves "Centered on you" — the
-   drag is delivered but the runner is too slow for MapKit to register it as a pan. Rework the
-   test's gesture (or its precondition) so a delivered-but-unregistered pan retries or fails as
-   an environment refusal rather than a red; keep the regression it guards (a deliberate pan
-   surviving a tab switch must still fail if the camera resets).
+5. **Harden `MapPanTabSwitchUITests` against slow runners.** Six CI sightings by 2026-09-01
+   (fourth: run 33208371211; fifth: run 33352801695, PR #132; sixth: run 33469599808, the
+   post-build-68 main run — each on code a rerun then passed byte-identical), always the same
+   shape: the probe records `panBegan=3 panEnded=3` yet the test ends on "Centered on you". The
+   fifth and sixth probe lines are recorded verbatim in E250's pending amendment
+   (`docs/errata-pending/e250-pan-probe-occurrences.md` until the splice) — near-identical to
+   each other and to the first instrumented occurrence, with `settles=3` against the red-proof's
+   no-pan baseline of 2; the rework starts from those three lines, not from the failure
+   sentence. Rework the test's gesture (or its precondition) so a delivered-but-unregistered pan
+   retries or fails as an environment refusal rather than a red; keep the regression it guards
+   (a deliberate pan surviving a tab switch must still fail if the camera resets).
 6. **Sweep `library.stagingURL`'s lifecycle for leaks** (chip still pending as of this note). The
    #123 reviewer left it deliberately unfiled: can a process death, failed verification, cancelled
    transfer, or refused install leave orphans in the staging directory, and does anything clean
    them? Happy path verified empty on device; the sweep is every unhappy path, pinned with
    red-proved tests.
+7. **Make `CYPRESS_SHOT_DIR` reachable for UI tests, or correct the instructions.** The unit-side
+   shot suites (`ScreenSweepShots`, `DynamicTypeScreenshotTests`) provably honor the variable
+   when `TEST_RUNNER_CYPRESS_SHOT_DIR` is **exported** before `Tools/run_tests.sh` — several
+   errata carry the receipts. The UI-test files (`AreaPickerUITests.swift:13`,
+   `AlmanacGroupTapTests.swift:14`) instruct passing it "on the `xcodebuild` command line", and
+   that spelling silently did nothing in the 2026-08-31 picker round: the shots landed in
+   `NSTemporaryDirectory()` inside the simulator container, and the round fell back to reading
+   the `CYPRESS-SHOT:` paths the tests print into the captured log (which works, and is the
+   interim instruction). Find the spelling that actually reaches a UI-test runner's environment,
+   prove it both ways (set → shot lands in the chosen directory; unset → falls back), and fix
+   the doc comments in all the files that state the convention (the two UI-test files, plus the
+   cross-references in `ScreenSweepShots.swift`, `DynamicTypeScreenshotTests.swift`,
+   `DebugDeepLink.swift`). A confident doc comment asserting an unverified invariant is this
+   repo's signature bug shape.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
