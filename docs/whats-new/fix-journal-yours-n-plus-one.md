@@ -11,10 +11,16 @@
 #      earlier`. Tapped it; AUG 24 appears below AUG 25, so page two appended.
 #   3. Tapped `Neighborhood`, then `Yours` again. The list still holds page two — scrolling
 #      reaches AUG 20, 19 and 18, rows that exist only because `Show earlier` fetched them.
+#   4. (Review round 2.) Repeated with a contribution written into the device's database while
+#      the app sat on `Neighborhood`: coming back to `Yours` draws `Visited Dawn Redwood` at the
+#      top of SEP 1, above everything that was already there, and scrolling still runs past
+#      AUG 26 — page one's old end — into AUG 25 with no `Show earlier` in between. Both halves
+#      of the ruling, in one pass.
 #
-# Step 3 is the whole of the line below. Before this change the model was `@State` on a view
-# inside the segment `switch`, so step 3 destroyed it: the reader came back to page one with a
-# `Show earlier` button again, and whatever they had loaded was gone.
+# Steps 3 and 4 are the two clauses of the line below. Before this change the model was `@State`
+# on a view inside the segment `switch`, so step 3 destroyed it: the reader came back to page one
+# with a `Show earlier` button again, and whatever they had loaded was gone. Step 4's refresh did
+# not exist at all in the first draft of this branch, which PR #143's review is what caught.
 #
 # ── WHY NO SPEED CLAIM, WHICH IS THE PART A DRAFT OF THIS FILE GOT WRONG ─────────────────────
 #
@@ -42,6 +48,6 @@
 # not claimed either.
 #
 # ── ON LENGTH ────────────────────────────────────────────────────────────────────────────────
-# 155 characters, inside the 200 the check allows and the 4000 shared with every other branch.
+# Inside the 200 the check allows and the 4000 shared with every other branch.
 
-The Journal tab's Yours list now keeps what you loaded. Switching to Neighborhood or City and back no longer throws away the earlier entries you asked for.
+The Journal tab's Yours list now keeps what you loaded when you switch to Neighborhood or City and back, and picks up anything you recorded meanwhile instead of starting over.
