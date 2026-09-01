@@ -69,9 +69,13 @@ struct JournalStatementCensusTests {
                     )
                 }
             }
-            // Photographs on half of them, so the tally statement has candidates to tally and the
-            // fifth statement is genuinely reached.
-            if index < 4 { _ = try await api.debugSeedPhotos(treeID: tree, count: 2) }
+            // Photographs on **every** tree, so the tally statement has candidates whichever page
+            // is asked for and the fifth statement is genuinely reached. It was half of them in
+            // the first draft, and `theSecondPageCostsTheSame` promptly reported four statements
+            // rather than five — correctly: `heroPhotoIDs` skips the tally when no candidate
+            // survives, so a page over unphotographed trees really does run one fewer. The
+            // fixture was wrong, not the count.
+            _ = try await api.debugSeedPhotos(treeID: tree, count: 2)
         }
         return (api, store, trees)
     }

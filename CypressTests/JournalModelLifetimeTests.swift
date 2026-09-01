@@ -175,11 +175,16 @@ struct JournalModelLifetimeTests {
         let pageTwo = (4...5).map(entry)
         let arrivedWhileAway = [entry(-2), entry(-1)]
 
+        // The counter is not decoration: `JournalPreviewAPI` keys `refreshed` on the attempt
+        // number, so without one every read is attempt zero and page one never changes. That is
+        // how the first draft of this test passed against an unchanged list.
+        let reads = JournalReadCounter()
         let model = JournalModel(
             api: JournalPreviewAPI(
                 page: Page(items: pageOne, nextCursor: "cursor"),
-                older: Page(items: pageTwo),
-                refreshed: Page(items: arrivedWhileAway + pageOne.prefix(1), nextCursor: "cursor")
+                older: Page(items: pageTwo, nextCursor: "cursor2"),
+                refreshed: Page(items: arrivedWhileAway + pageOne.prefix(1), nextCursor: "cursor"),
+                reads: reads
             ),
             now: { Self.date(2026, 7, 1) }
         )
@@ -193,6 +198,7 @@ struct JournalModelLifetimeTests {
 
         // Away to Neighborhood, and back.
         await model.load()
+        try #require(reads.count == 3, "the re-entry did not read at all, so nothing is being tested")
 
         #expect(
             model.presentation?.rows.map(\.id)
@@ -205,7 +211,11 @@ struct JournalModelLifetimeTests {
         )
         #expect(
             model.presentation?.hasOlder == true,
-            "the reconciled list runs down to the old tail, so it keeps the cursor it had"
+            """
+            the reconciled list still runs down to the old tail, so it keeps the cursor it had \
+            rather than the fresh page's — asking from the fresh page's cursor would re-fetch rows \
+            already on screen
+            """
         )
     }
 
@@ -215,11 +225,13 @@ struct JournalModelLifetimeTests {
     @Test("a failed background refresh leaves the screen exactly as it was")
     @MainActor
     func aFailedRefreshChangesNothing() async throws {
+        let reads = JournalReadCounter()
         let model = JournalModel(
             api: JournalPreviewAPI(
                 page: Page(items: (1...3).map { Self.entry($0) }, nextCursor: "cursor"),
                 older: Page(items: (4...5).map { Self.entry($0) }),
-                refreshFails: true
+                refreshFails: true,
+                reads: reads
             ),
             now: { Self.date(2026, 7, 1) }
         )
@@ -230,6 +242,7 @@ struct JournalModelLifetimeTests {
         try #require(before.count == 5)
 
         await model.load()
+        try #require(reads.count == 3, "the refusing read never happened, so nothing is being tested")
         #expect(model.presentation?.rows.map(\.id) == before, "a failed refresh disturbed the list")
         #expect(model.hasFailed == false, "a background refresh took the whole screen down")
         #expect(
@@ -249,6 +262,7 @@ struct JournalModelLifetimeTests {
     @Test("a refresh that reaches the end of the journal drops rows that no longer exist")
     @MainActor
     func aRefreshThatReachesTheEndDropsDeletedRows() async throws {
+        let reads = JournalReadCounter()
         let base = Self.date(2026, 6, 1)
         func entry(_ index: Int) -> JournalEntry {
             Self.entry(index, at: base.addingTimeInterval(-Double(index) * 3600))
@@ -262,7 +276,8 @@ struct JournalModelLifetimeTests {
                 older: Page(items: pageTwo),
                 // Everything but the first two rows has been deleted, and the page says so by
                 // coming back without a cursor.
-                refreshed: Page(items: Array(pageOne.prefix(2)))
+                refreshed: Page(items: Array(pageOne.prefix(2))),
+                reads: reads
             ),
             now: { Self.date(2026, 7, 1) }
         )
@@ -272,6 +287,7 @@ struct JournalModelLifetimeTests {
         try #require(model.presentation?.rows.count == 5)
 
         await model.load()
+        try #require(reads.count == 3, "the re-entry did not read at all, so nothing is being tested")
         #expect(
             model.presentation?.rows.map(\.id) == pageOne.prefix(2).map(\.id),
             "deleted contributions survived a refresh that had told the model the journal was shorter"
@@ -428,41 +444,51 @@ struct JournalModelLifetimeTests {
     /// and grouped under settings the reader has since changed, for as long as the model lives —
     /// which this round's other half makes strictly longer.
     ///
-    /// Two calendars an hour and a bit apart across midnight put a row on **different days**, so
-    /// this asserts the grouping and not merely the label: it is the stronger of the two effects
-    /// and the one a formatter cache alone would never fix.
+    /// **The assertion is the day fold, not the label**, because the fold is the stronger effect
+    /// and the one no formatter cache could ever fix: two contributions on either side of a
+    /// midnight in one zone are one group in another. Two rows ten hours apart on the evening of
+    /// 1 June UTC are one day in UTC and two in Tokyo.
+    ///
+    /// The `#require` is the calibration and it has already earned its place: the first version of
+    /// this test compared headers, and headers were identical in both zones — `JournalCopy.day`
+    /// did not set the formatter's zone at all, which is a real inconsistency this round fixed
+    /// rather than a fact about the two calendars.
     @Test("a time-zone change re-derives the list under the new calendar")
     @MainActor
     func aTimeZoneChangeReDerivesTheList() async throws {
-        // 23:30 UTC on 1 June. In UTC that is 1 June; in Tokyo (+09:00) it is already 2 June.
-        let captured = Date(timeIntervalSince1970: 1_780_698_600)
+        // 2026-06-01 20:00Z and 2026-06-01 10:00Z. UTC calls both 1 June; Tokyo (+09:00) calls the
+        // first 2 June and the second 1 June.
+        let evening = Date(timeIntervalSince1970: 1_780_344_000)
+        let morning = Date(timeIntervalSince1970: 1_780_308_000)
+        // Newest first, which is the order the store returns and the fold is built on.
+        let entries = [Self.entry(1, at: evening), Self.entry(2, at: morning)]
 
-        // Calibration: the two zones really do fold this row onto different days. Without this the
-        // experiment could pass on a row both zones agree about.
-        let entry = Self.entry(1, at: captured)
         let inUTC = JournalPresentation(
-            entries: [entry], nextCursor: nil, now: captured, calendar: Self.gregorian(in: "UTC"), locale: .init(identifier: "en_US")
+            entries: entries, nextCursor: nil, now: evening,
+            calendar: Self.gregorian(in: "UTC"), locale: Locale(identifier: "en_US")
         )
         let inTokyo = JournalPresentation(
-            entries: [entry], nextCursor: nil, now: captured, calendar: Self.gregorian(in: "Asia/Tokyo"), locale: .init(identifier: "en_US")
+            entries: entries, nextCursor: nil, now: evening,
+            calendar: Self.gregorian(in: "Asia/Tokyo"), locale: Locale(identifier: "en_US")
         )
         try #require(
-            inUTC.days.first?.header != inTokyo.days.first?.header,
+            inUTC.days.count == 1 && inTokyo.days.count == 2,
             """
-            the two zones fold this row onto the same day, so a re-derivation would be invisible \
-            and this test could not fail — pick a capture time nearer a midnight boundary
+            the two zones fold these rows the same way (\(inUTC.days.count) and \
+            \(inTokyo.days.count) groups), so a re-derivation would be invisible here and this \
+            test could not fail — pick capture times that straddle a midnight in one zone only
             """
         )
 
         let zone = ZoneBox(identifier: "UTC")
         let model = JournalModel(
-            api: JournalPreviewAPI(page: Page(items: [entry])),
-            now: { captured },
+            api: JournalPreviewAPI(page: Page(items: entries)),
+            now: { evening },
             calendar: { Self.gregorian(in: zone.identifier) },
             locale: { Locale(identifier: "en_US") }
         )
         await model.load()
-        try #require(model.presentation?.days.first?.header == inUTC.days.first?.header)
+        try #require(model.presentation?.days.count == 1, "the fixture did not load under UTC")
 
         // The reader crosses a time zone, or changes it in Settings.
         zone.identifier = "Asia/Tokyo"
@@ -471,11 +497,18 @@ struct JournalModelLifetimeTests {
         await Task.yield()
 
         #expect(
-            model.presentation?.days.first?.header == inTokyo.days.first?.header,
+            model.presentation?.days.count == 2,
             """
-            the list is still folded and labelled under the zone it was read in. The row belongs \
-            under \(inTokyo.days.first?.header ?? "?") now and is drawn under \
-            \(model.presentation?.days.first?.header ?? "<nil>")
+            the list is still folded under the zone it was read in: \
+            \(model.presentation?.days.map(\.header) ?? []) where the new zone puts these rows \
+            under \(inTokyo.days.map(\.header))
+            """
+        )
+        #expect(
+            model.presentation?.rows.count == 2,
+            """
+            re-deriving on a zone change lost rows, which it must never do — it re-labels and \
+            re-folds the entries the model already holds
             """
         )
     }

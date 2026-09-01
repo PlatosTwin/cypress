@@ -485,11 +485,17 @@ enum JournalCopy {
 ///
 /// **What the key has to carry.** `calendar` and `locale` are the function's own inputs and both
 /// are `Hashable` values, so two callers asking with different ones cannot be handed each other's
-/// formatter. `TimeZone.current` is in the key even though nothing here sets `formatter.timeZone`:
-/// a formatter resolves its zone when it is built, so a cached one built before the phone crossed
-/// a zone boundary would keep formatting in the old zone forever. Keying on the current zone
-/// retires it instead. The key space is therefore two templates times the handful of
-/// calendar/locale/zone triples one process ever sees.
+/// formatter. That is the whole key, and it covers the time zone: `Calendar`'s equality includes
+/// its `timeZone`, and the formatter takes its zone **from the calendar** (see below), so a phone
+/// that crosses a zone boundary produces a different `Calendar.current`, a different key, and a
+/// fresh formatter. The key space is two templates times the handful of calendar/locale pairs one
+/// process ever sees.
+///
+/// **A key alone was never enough, and PR #143's review is what found that.** This cache is only
+/// consulted while a presentation is being derived, and `JournalModel` derives once per phase
+/// change — so before that review a zone change retired nothing, because nothing re-derived.
+/// `JournalModel` now re-derives on `NSSystemTimeZoneDidChange` and the locale notification, which
+/// is what makes this retirement reachable at all.
 ///
 /// **Sharing one formatter across threads is safe and sharing the dictionary is not.**
 /// `DateFormatter` has been documented as thread-safe for formatting since iOS 7; the dictionary
@@ -502,7 +508,6 @@ private final class JournalDayFormatters: @unchecked Sendable {
         let template: String
         let calendar: Calendar
         let locale: Locale
-        let timeZone: TimeZone
     }
 
     static let shared = JournalDayFormatters()
@@ -511,15 +516,23 @@ private final class JournalDayFormatters: @unchecked Sendable {
     private var formatters: [Key: DateFormatter] = [:]
 
     func formatter(template: String, calendar: Calendar, locale: Locale) -> DateFormatter {
-        let key = Key(template: template, calendar: calendar, locale: locale, timeZone: .current)
+        let key = Key(template: template, calendar: calendar, locale: locale)
         lock.lock()
         defer { lock.unlock() }
         if let cached = formatters[key] { return cached }
-        // Built exactly as `JournalCopy.day` built it inline, in the same order: the calendar and
-        // the locale before the template, because `setLocalizedDateFormatFromTemplate` resolves
-        // against the locale it is asked on.
+        // The calendar and the locale before the template, because
+        // `setLocalizedDateFormatFromTemplate` resolves against the locale it is asked on.
+        //
+        // **`timeZone` is set from the calendar, which the inline version did not do.** A
+        // `DateFormatter` does not take its zone from its calendar; it defaults to the system's.
+        // `JournalPresentation` folds rows into days with `calendar.startOfDay(for:)`, so leaving
+        // the two apart meant the *fold* used the caller's calendar and the *label* used the
+        // machine's zone — identical whenever the caller passes `.current`, which is every
+        // shipping call, and silently inconsistent for any caller that does not. Same line, same
+        // reason, as `ActivityPresentation.formatter`.
         let formatter = DateFormatter()
         formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
         formatter.locale = locale
         formatter.setLocalizedDateFormatFromTemplate(template)
         formatters[key] = formatter
