@@ -83,10 +83,14 @@ public struct DataLayer: Sendable {
     /// has and the same shape `RootView` resolves every cross-feature destination with.
     ///
     /// **Nil when `access.allowsNetwork` is false**, and the nil is load-bearing: with the gate shut
-    /// the refresh would re-read the phone, re-merge nothing, and re-publish the value already on
-    /// screen — work and an observation cycle for no fact. `GroveModel` starts no background task at
-    /// all when it is nil, which is what makes the UI suite's Grove tab exactly the screen it was.
-    /// `DataLayerWiringTests` is where that is held.
+    /// there is no account half to merge, so a refresh would only re-read the phone and re-publish
+    /// what is already drawn. `GroveModel` starts no background task at all when it is nil.
+    ///
+    /// **That does not mean a gate-shut build stops re-reading, and the first cut of this said it
+    /// did** (PR #144 review, F3). `GroveModel.load()`'s `.loaded` arm re-reads the phone itself, so
+    /// a `.disabled` build — every DEBUG build, and the whole UI suite — still picks up a local write
+    /// on the next visit to the tab. What is nil here is the *merge*, not the read; with only the
+    /// refresh doing the re-reading, the Grove tab was frozen for the life of the process.
     ///
     /// The closure swallows the throw to nil deliberately. A refresh that failed must leave the
     /// painted answer standing: there is a whole grove on the glass, and replacing it with a failure

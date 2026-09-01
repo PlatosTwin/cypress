@@ -62,13 +62,32 @@ something had been lost.
   should be read as *refreshed after paint*. Nothing in `Features` reads the log yet (§4.3 rules
   that the sentence a screen draws about a degraded read is a copy question that is not in the
   mocks), so no surface changes meaning today — this is written down for the round that draws it.
+- **A cancelled refresh records nothing at all** (PR #144 review, F4). The model cancels an
+  in-flight refresh whenever the tab is re-entered, and `try?` cannot tell a cancellation from an
+  unreachable host — so without a check, flipping tabs twice left `.fellBackToLocal` in the log
+  against a service that was perfectly reachable. Nil is the log's spelling of "we did not ask", and
+  a read this app called off is exactly that.
+- **`.live` now means "nothing the service said was lost", not "every row it named is on screen"**
+  (PR #144 review, F1). A tree the inventories carry and D15 declines to name is dropped by a rule
+  applied to a complete answer, not by anything going missing; calling that degraded would offer a
+  §4.3 surface the sentence "showing what's on this phone" about a read where nothing was.
+- **The row D15 refuses is the one the two resolver arms used to disagree about, and the batch's
+  rule is the ruled one.** `entryFromCityFile` named a nickname-less *community* record after a
+  species somebody had claimed for it, because `treeProfile` fills that field from
+  `tree.speciesCurrentID`. `LocalAPI.grove()` has always refused to — "a self-asserted species is not
+  a name the app puts on a tree" (D15) — and the loop has been corrected to agree rather than the
+  batch loosened to match it. The reviewer proved the divergence with a probe rather than arguing it;
+  the fixture now carries the row.
 - **A refresh that fails leaves the painted answer standing.** The closures swallow the throw to nil
   and the model treats nil as "nothing to merge". Replacing a whole grove with a failure state
   because a second read did not land would be drawing an empty claim over data this phone holds
   (R72 ruling 1).
 - **The refresh is nil when the remote gate is shut**, so a `.disabled` build — which is every
   DEBUG build without `CYPRESS_REMOTE=live`, and therefore the whole UI suite — starts no background
-  task at all and behaves exactly as it did.
+  task at all. **What is nil there is the merge, not the read.** The first cut of this round left the
+  local re-read to the refresh, so a gate-shut build stopped re-reading altogether and the Grove tab
+  froze at its first read for the life of the process; the review of PR #144 found it, and the
+  `.loaded` arm below now does the local read itself in every build.
 
 Alongside it, and required by it rather than merely adjacent: **the service's JSON routes got a
 session of the app's own with `timeoutIntervalForRequest = 15 s`.** `URLSession.shared` cannot be
@@ -116,8 +135,11 @@ composition root to be handed one by.
 arm the ruling requires:
 
 - `.loading` — read the phone, paint, refresh behind it;
-- `.loaded` — **paint nothing and refresh behind it**, which is what "instantly, and refreshes"
-  means when the model already holds the answer;
+- `.loaded` — **re-read the phone, repaint, and refresh behind it**. Nothing passes back through
+  `.loading`, so there is no blank and no spinner: the reader sees what they saw, updated. The local
+  read is about 6 ms and it is what makes a *local* write — a visit logged from a tree profile, a
+  favorite — show up on the next visit in every build rather than only in one that can reach the
+  service. `JournalModel.load()` takes the same arm for the same ruling;
 - `.failed` — leave it. The retry button is the way back from a failure (ERRATA E126), and a `.task`
   firing again is not somebody asking for one.
 
