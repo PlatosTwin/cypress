@@ -61,9 +61,9 @@ final class JournalModel {
     /// `environmentObservers`. A Region, Calendar, first-weekday or time-zone change re-derives in
     /// place; a language change restarts the app and needs nothing here.
     ///
-    /// That is also what keeps `JournalDayFormatters`' `TimeZone.current` key reachable. The cache
-    /// is only consulted during a derivation, so before this a zone change retired nothing, because
-    /// nothing re-derived.
+    /// That is also what makes `JournalDayFormatters`' retirement reachable at all. The cache is
+    /// only consulted *during* a derivation, so before this a zone change retired nothing, because
+    /// nothing re-derived — the mechanism was correct and, one level up, unreachable.
     ///
     /// Set by `setPhase` alone, which is the one writer of `phase` — see it for why the pair moves
     /// together rather than through a `didSet`.

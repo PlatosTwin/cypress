@@ -228,10 +228,17 @@ struct JournalStatementCensusTests {
         statements.isEmpty ? "none" : statements.map(firstLine(of:)).sorted().joined(separator: "; ")
     }
 
-    /// A statement's first non-empty line, so a failure names it without printing a page of SQL.
+    /// A statement's first non-empty line and its length, so a failure names it without printing a
+    /// page of SQL.
+    ///
+    /// **The length is not decoration.** The drift this gate exists to catch is often a change too
+    /// far into the text to show in a first line — the review's own specimen appended `-- drift` to
+    /// the end — so without it the two halves of the failure print the same string and read as a
+    /// contradiction rather than as a diff.
     private static func firstLine(of sql: String) -> String {
-        sql.components(separatedBy: "\n")
+        let head = sql.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .first(where: { !$0.isEmpty }) ?? "<empty>"
+        return "\(head) […\(sql.count) chars]"
     }
 }
