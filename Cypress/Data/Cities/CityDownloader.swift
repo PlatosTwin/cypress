@@ -227,8 +227,15 @@ public struct CityDownloader: Sendable {
     /// Pure and I/O-only: it reads the file and throws. **It does not delete anything.** Whoever
     /// staged the file owns it, and a verifier that also tidied up would be a function two callers
     /// had to agree about.
-    static func verify(fileAt url: URL, against record: CityDownloadRecord) throws {
-        let (bytes, digest) = try verifiableFacts(ofFileAt: url)
+    ///
+    /// - Parameter census: nil in the app. A test hands one in to count the reads below rather than
+    ///   to time them — see `CityTransferCensus` for why a count and not a stopwatch.
+    static func verify(
+        fileAt url: URL,
+        against record: CityDownloadRecord,
+        census: CityTransferCensus? = nil
+    ) throws {
+        let (bytes, digest) = try verifiableFacts(ofFileAt: url, census: census)
         guard bytes == record.bytes else {
             throw DownloadError.sizeMismatch(expected: record.bytes, got: bytes)
         }
@@ -256,7 +263,14 @@ public struct CityDownloader: Sendable {
 
     /// The byte count and sha256 of a finished file, read in chunks so an 199 MB pack is never
     /// resident in memory. The same two facts the streaming version computed as it wrote.
-    private static func verifiableFacts(ofFileAt url: URL) throws -> (bytes: Int64, digest: String) {
+    ///
+    /// **This loop is the app's only contact with a transferred file's bytes**, which is why it is
+    /// where the census counts. A chunk size of one byte here walks the payload exactly as the
+    /// original defect walked the response, and nothing about the transport would notice.
+    private static func verifiableFacts(
+        ofFileAt url: URL,
+        census: CityTransferCensus? = nil
+    ) throws -> (bytes: Int64, digest: String) {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
@@ -264,13 +278,20 @@ public struct CityDownloader: Sendable {
         while let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty {
             hasher.update(data: chunk)
             total += Int64(chunk.count)
+            census?.recordPayloadRead(bytes: chunk.count)
         }
         return (total, hasher.finalize().map { String(format: "%02x", $0) }.joined())
     }
 
     /// 512 KiB: big enough that hashing dominates the per-chunk overhead, small enough that a read
     /// buffer is not a memory event.
-    private static let chunkSize = 512 * 1024
+    ///
+    /// **Readable by the suite, and deliberately not what the guard's bound is derived from.**
+    /// `CityDownloadsFeedbackTests` reports it in a failure message so a red names the chunk size
+    /// that produced the count — but it bounds the count against an absolute floor of its own,
+    /// because a bound computed from this constant would move with a regression that set it to 1
+    /// and certify the defect as fixed.
+    static let chunkSize = 512 * 1024
 
     /// `file://` fixtures return no HTTPURLResponse; only a real HTTP answer is status-checked.
     ///
