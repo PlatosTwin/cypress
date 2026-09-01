@@ -1623,15 +1623,31 @@ public struct ContributionStore {
     /// copied into the test explains the copy, and changing the real query leaves it green.
     /// `JournalQueryPlanTests` reads this, and nothing else builds it.
     ///
-    /// **What this plan is, stated because the gate allows it rather than pretending otherwise.**
-    /// There is no predicate here any index can seek. The union has to be materialized before
-    /// `captured_at DESC` can be applied to it, because the ordering is over a relation that does
-    /// not exist until the four arms are combined; the four arms are each scanned in full; and the
-    /// sort is a temp b-tree. The cost is the size of this contributor's whole history, on every
-    /// page including the first, and `LIMIT` cannot reach past the sort. Nothing about batching the
-    /// *name* reads changes that, and this file does not claim it does — see
-    /// `JournalQueryPlanTests.thePageQueryIsTheKnownScan`, which asserts the shape it actually has
-    /// so that a change to it is visible.
+    /// **What this plan is, stated because the gate allows it rather than pretending otherwise —
+    /// and read off the shipped schema, because the first draft of this paragraph was wrong.**
+    /// `JournalQueryPlanTests.thePageQueryIsTheKnownScan` measures it:
+    ///
+    ///     CO-ROUTINE entry | COMPOUND QUERY | LEFT-MOST SUBQUERY
+    ///     SCAN visits | UNION ALL | SCAN observations | UNION ALL
+    ///     SCAN measurements | UNION ALL | SCAN care_events
+    ///     SCAN entry
+    ///     CORRELATED SCALAR SUBQUERY 5
+    ///       SEARCH tomb USING COVERING INDEX sqlite_autoindex_anonymized_contributions_1 (client_uuid=?)
+    ///     USE TEMP B-TREE FOR ORDER BY
+    ///
+    /// No predicate that *selects rows* can be seeked. The attribution and cursor tests apply to a
+    /// union that does not exist until its four arms are combined, so each arm is walked in full,
+    /// the union is walked again, and `captured_at DESC` is answered by a temp b-tree — which is
+    /// why `LIMIT :limit` cannot stop the read early. The cost is this contributor's whole history,
+    /// on every page including the first.
+    ///
+    /// The one `SEARCH` is `Self.notAnonymized`'s tombstone lookup. It is correctly indexed and is
+    /// not the missing index this shape is waiting for. That is exactly where the first draft was
+    /// wrong — it said nothing seeks — and the gate is what said so.
+    ///
+    /// Batching the page's *name* and *thumbnail* reads changes none of this, and
+    /// `LocalAPI.journal()` does not claim it does. Making this statement cheap needs an index per
+    /// contribution table over the ordering and attribution columns, which is a schema migration.
     static let journalSQL = """
         SELECT id, kind, tree_uuid, captured_at, summary FROM (
             SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary,

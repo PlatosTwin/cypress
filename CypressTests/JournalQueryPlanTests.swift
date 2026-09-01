@@ -14,12 +14,12 @@ import Testing
 /// is; they are not restated here. The difference is that this file is honest about a statement it
 /// **cannot** hold to rule 1, and says which one and why:
 ///
-/// - `ContributionStore.journalSQL`, the page itself, has no seekable predicate. It unions four
-///   whole contribution tables and orders the union by `captured_at`, so the plan is four scans and
-///   a temp b-tree, and `LIMIT` cannot reach past the sort. Fixing that means an index per table on
-///   `(captured_at)` or on the attribution columns — a schema migration, which this round is
-///   explicitly not the author of. `thePageQueryIsTheKnownScan` pins the shape it has today so a
-///   change to it is visible, and `theAllowlistIsStated` is what keeps the allowance deliberate.
+/// - `ContributionStore.journalSQL`, the page itself, has no *row-selecting* predicate an index can
+///   answer. It unions four whole contribution tables and orders the union by `captured_at`, so the
+///   plan is four scans, a scan of the union, and a temp b-tree that `LIMIT` cannot reach past.
+///   Fixing that means an index per table over the ordering and attribution columns — a schema
+///   migration, which this round is explicitly not the author of. `thePageQueryIsTheKnownScan` pins
+///   the shape it has today, including the one seek it *does* have, so a change to it is visible.
 /// - `activeNamesSQL` and the two scoped hero statements walk tables that hold **this contributor's
 ///   own rows** — nicknames and a personal photo library. Each is on the allowlist by name with
 ///   that as the premise. `ContributionStore.activeNamesSQL` carries the argument for why the
@@ -104,12 +104,23 @@ struct JournalQueryPlanTests {
     /// a migration — this test goes red and has to be rewritten deliberately rather than quietly
     /// continuing to pass on a claim nobody re-derived.
     ///
-    /// Three facts, each of which is what makes the page O(this contributor's whole history):
+    /// Four facts, each part of why the page is O(this contributor's whole history):
     ///
     /// 1. all four contribution tables are walked end to end;
-    /// 2. the ordering is answered by a temp b-tree rather than by an index, so `LIMIT :limit`
-    ///    cannot stop the read early — every row is produced before any is discarded;
-    /// 3. no step seeks anything, which is the compact statement of (1) and (2) together.
+    /// 2. the union itself is then walked as a co-routine — `SCAN entry`;
+    /// 3. the ordering is answered by a temp b-tree rather than by an index, so `LIMIT :limit`
+    ///    cannot stop the read early: every row is produced before any is discarded;
+    /// 4. **the one seek in the plan is not a row-selecting seek**, and this paragraph said
+    ///    "nothing seeks" until the gate was run and disagreed. `ContributionStore.notAnonymized`
+    ///    expands to a correlated `NOT EXISTS` against `anonymized_contributions`, and it does seek:
+    ///    `SEARCH tomb USING COVERING INDEX sqlite_autoindex_anonymized_contributions_1
+    ///    (client_uuid=?)`. That is the right shape for what it is — one indexed lookup per
+    ///    candidate row rather than a scan per row — and it is not the missing index this gate is
+    ///    waiting for.
+    ///
+    /// So (4) is asserted as "every `SEARCH` names that table", which fails in both directions: if
+    /// the tombstone check loses its index, and if a *different* seek appears — which is what a fix
+    /// to the page query would look like.
     @Test("the page query is still the whole-history scan it is documented to be")
     func thePageQueryIsTheKnownScan() async throws {
         let store = try await Self.store()
@@ -118,12 +129,12 @@ struct JournalQueryPlanTests {
             let plan = steps.joined(separator: " | ")
 
             let scanned = Set(steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) })
-            for table in ["visits", "observations", "measurements", "care_events"] {
+            for relation in ["visits", "observations", "measurements", "care_events", "entry"] {
                 #expect(
-                    scanned.contains(table),
+                    scanned.contains(relation),
                     """
-                    \(table) is no longer walked end to end by the page query. If that is because \
-                    it can now be seeked, this gate is out of date and the premise in \
+                    \(relation) is no longer walked end to end by the page query. If that is \
+                    because it can now be seeked, this gate is out of date and the premise in \
                     `ContributionStore.journalSQL` with it — rewrite both. — \(plan)
                     """
                 )
@@ -138,9 +149,23 @@ struct JournalQueryPlanTests {
                 """
             )
 
+            let seeks = steps.filter { $0.contains("SEARCH") }
+            let unexpected = seeks.filter { !$0.contains("anonymized_contributions") }
             #expect(
-                !steps.contains(where: { $0.contains("SEARCH") }),
-                "the page query gained a seek, which is the fix this gate is waiting for — \(plan)"
+                unexpected.isEmpty,
+                """
+                the page query gained a seek that is not the anonymized-contributions tombstone \
+                lookup — which is the fix this gate is waiting for, and means this gate and \
+                `ContributionStore.journalSQL`'s premise both need rewriting: \
+                \(unexpected.joined(separator: " | ")) — \(plan)
+                """
+            )
+            #expect(
+                !seeks.isEmpty,
+                """
+                the tombstone check no longer seeks its index. It runs once per candidate row, so \
+                losing that index turns four scans into a scan per row — \(plan)
+                """
             )
         }
     }
@@ -150,20 +175,32 @@ struct JournalQueryPlanTests {
     /// Written as the plan each one has rather than as the plan one might want, because the point of
     /// narrowing them was never a seek — `ContributionStore.scopedHeroPhotoCandidatesSQL` says so —
     /// and a gate asserting a seek that cannot happen would have to be widened until it meant
-    /// nothing. What is pinned is that each statement narrows through `json_each` on its own bound
-    /// list, which is the property that keeps a page of 25 trees from decoding the whole photo
-    /// library, and that none of them materializes a relation.
-    @Test("the three narrowed statements narrow through their bound list and materialize nothing")
+    /// nothing. Two things are pinned:
+    ///
+    /// - each statement narrows through `json_each` over its own bound list, which is the property
+    ///   that keeps a page of 25 trees from decoding this device's whole photo library, and nothing
+    ///   is materialized;
+    /// - each one **walks the table named beside it**, which is the load-bearing half. It is asserted
+    ///   rather than described because the descriptions live in shipping doc comments —
+    ///   `activeNamesSQL` argues at length that its `COLLATE NOCASE` cannot seek
+    ///   `idx_tree_names_one_active` and that fixing it needs an expression index, and
+    ///   `scopedHeroPhotoCandidatesSQL` says the same of `idx_photos_tree`. A prose claim about a
+    ///   query plan is exactly the kind of confident comment this project has been wrong in before;
+    ///   this is the line that makes each of them a measurement.
+    ///
+    /// If one of these ever *does* seek, this test fails, and the right response is to delete the
+    /// paragraph that said it could not — not to widen the assertion.
+    @Test("the three narrowed statements narrow through their bound list and walk their own table")
     func theNarrowedStatementsNarrow() async throws {
         let store = try await Self.store()
-        let statements: [(label: String, sql: String)] = [
-            ("the page's nicknames", ContributionStore.activeNamesSQL),
-            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL),
-            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL)
+        let statements: [(label: String, sql: String, walks: String)] = [
+            ("the page's nicknames", ContributionStore.activeNamesSQL, "tree_names"),
+            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL, "photos"),
+            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL, "photo_votes")
         ]
 
         try await store.queue.read { connection in
-            for (label, sql) in statements {
+            for (label, sql, walks) in statements {
                 let steps = try connection.queryPlan(for: sql)
                 let plan = steps.joined(separator: " | ")
 
@@ -178,6 +215,14 @@ struct JournalQueryPlanTests {
                 #expect(
                     materialized.isEmpty,
                     "\(label): materializes a relation — \(materialized.joined(separator: " | "))"
+                )
+                let scanned = Set(steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) })
+                #expect(
+                    scanned.contains(walks),
+                    """
+                    \(label) no longer walks \(walks) end to end. If it now seeks, the doc comment \
+                    on this statement saying it cannot is wrong and has to go — \(plan)
+                    """
                 )
             }
         }
