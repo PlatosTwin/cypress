@@ -2179,13 +2179,34 @@ public actor LocalAPI: CypressAPI {
     public func grove() async throws -> [GroveEntry] {
         let userID = userID
         let deviceID = deviceID
+        let attribution = attribution
         let (rows, records, heroPhotoIDs) = try await store.queue.read { connection in
-            (
-                try contributions.groveTreeIDs(userID: userID, deviceID: deviceID, connection: connection),
+            let rows = try contributions.groveTreeIDs(userID: userID, deviceID: deviceID, connection: connection)
+            return (
+                rows,
                 try contributions.groveRecords(userID: userID, deviceID: deviceID, connection: connection),
-                // One statement for every row on the pill, not one per tree (#176). See
-                // `ContributionStore.heroPhotoIDs`.
-                try contributions.heroPhotoIDs(connection: connection)
+                // One statement for every row on the pill, not one per tree (#176), and **the scoped
+                // statement** (ERRATA E204) rather than the unscoped one this call site used to make.
+                //
+                // `heroPhotoIDs()`'s own comment argues that the unscoped read is right for this
+                // caller because the grove is already "this device's own trees" and the photo table
+                // is the same order of magnitude. That argument holds for the *rows*; what it leaves
+                // on the table is the two full scans — every live row of `main.photos` and a
+                // `GROUP BY` over the whole of `photo_votes` — to answer a question about the trees
+                // named one line above. Narrowing to them costs a bound `json_each` list and is
+                // never wider than the answer.
+                //
+                // **It is not only narrower, it is stricter**, and that is deliberate: the scoped
+                // statement judges each row through `TreeProfile.isPhotoVisible` (ERRATA E215/E277)
+                // where the unscoped one filters on `deleted_at IS NULL` alone. Today the two agree
+                // on every row this call sees, because `main.photos` holds what this device wrote;
+                // the day anything syncs a stranger's photograph down they stop agreeing, and this
+                // is the side that does not put an unmoderated one on somebody's grove.
+                try contributions.heroPhotoIDs(
+                    treeIDs: Set(rows.map(\.treeID)),
+                    attribution: attribution,
+                    connection: connection
+                )
             )
         }
         let treeIDs = rows.map(\.treeID)
@@ -2227,6 +2248,72 @@ public actor LocalAPI: CypressAPI {
             )
         }
         return entries
+    }
+
+    /// Names and positions for a set of trees, for a grove row the **service** named.
+    ///
+    /// `RoutedAPI.resolveGroveRows` is the only caller and `DataLayer.boot` is what connects them.
+    /// The router holds an `any CypressAPI`, so the widest tree read it can reach through the
+    /// protocol is `treeProfile(id:)` — one tree, one call — and resolving a second device's rows
+    /// that way ran the app's most expensive single-row query once per row, which is the N+1 `grove()`
+    /// above had removed from itself (#250) and `speciesGuide` had removed from itself before that.
+    ///
+    /// **The same three statements `grove()` runs, and the same rule for the name**: the tree's one
+    /// active nickname, else the *seed* species' common name (D15). That second fallback deliberately
+    /// does not consult the community row, for the reason `grove()` states — a self-asserted species
+    /// is not a name the app puts on a tree.
+    ///
+    /// A tree with neither a nickname nor a seed species name, or one the installed inventories do
+    /// not carry at all, is **absent** from the answer rather than named. Under D16 that is an
+    /// ordinary case: the other device may have been in a city this installation has not installed.
+    /// `RoutedAPI` drops such a row and marks the read degraded, which is what it did when the
+    /// resolution was per-row.
+    public func groveCityFileRows(for treeIDs: [UUID]) async -> [UUID: RoutedAPI.CityFileRow] {
+        guard !treeIDs.isEmpty else { return [:] }
+        let resolved = try? await store.queue.read { connection in
+            (
+                try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
+                try communityTrees.trees(ids: treeIDs, connection: connection),
+                try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            )
+        }
+        guard let (seedRecords, community, activeNames) = resolved else { return [:] }
+
+        var rows: [UUID: RoutedAPI.CityFileRow] = [:]
+        rows.reserveCapacity(treeIDs.count)
+        for treeID in treeIDs {
+            let seedRecord = seedRecords[treeID]
+            guard let tree = seedRecord?.tree ?? community[treeID] else { continue }
+            guard let name = activeNames[treeID]?.name ?? seedRecord?.species?.commonName,
+                  !name.isEmpty
+            else { continue }
+            rows[treeID] = RoutedAPI.CityFileRow(displayName: name, coordinate: tree.coordinate)
+        }
+        return rows
+    }
+
+    /// A set of species by id, in **one** trip to the database.
+    ///
+    /// `RoutedAPI.resolveSpecies`' provider, and the species half of `groveCityFileRows`' argument:
+    /// the router's per-row form is `species(id:)` in a loop, and every turn of that loop is its own
+    /// `store.queue.read` — an actor hop and a fresh transaction each, for a lookup on a primary key.
+    /// One block runs the same statement over the same ids without paying either.
+    ///
+    /// A species the installed inventories do not carry is absent from the answer, which is how the
+    /// caller already read a throwing `species(id:)`.
+    public func species(ids: [UUID]) async -> [UUID: Species] {
+        guard !ids.isEmpty else { return [:] }
+        let found = try? await store.queue.read { connection -> [UUID: Species] in
+            guard let speciesQueries else { return [:] }
+            var species: [UUID: Species] = [:]
+            species.reserveCapacity(ids.count)
+            for id in ids {
+                guard let match = try speciesQueries.species(id: id, connection: connection) else { continue }
+                species[id] = match
+            }
+            return species
+        }
+        return found ?? [:]
     }
 
     /// `GET /me/grove`, Species tab — screen 08.

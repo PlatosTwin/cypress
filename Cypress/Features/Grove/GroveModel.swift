@@ -54,10 +54,41 @@ final class GroveModel {
     private let api: any CypressAPI
     private let now: @Sendable () -> Date
 
-    init(api: any CypressAPI, now: @escaping @Sendable () -> Date = { Date() }, tab: GroveTab = .species) {
+    /// The Species read again, with the account's half merged in — or nil when there is no service
+    /// to merge from (`DataLayer.refreshGroveSpecies`, which is where the whole argument lives).
+    ///
+    /// Nil is the default and nil means *no background task at all*: every preview, every
+    /// screenshot fixture and every unit test that builds this model passes nothing and gets the
+    /// pure-local model they have always had.
+    private let refreshSpecies: (@Sendable () async -> GroveSpecies?)?
+
+    /// The Trees read again, on the same terms.
+    private let refreshTrees: (@Sendable () async -> [GroveEntry]?)?
+
+    /// The background refresh currently in flight, or nil.
+    ///
+    /// **Held so that it can be awaited**, which is the only way a test can assert what the refresh
+    /// did without reading a clock: `await model.speciesRefresh?.value` returns when the merge has
+    /// been applied, and until then the assertion available is that the *local* answer is already
+    /// on screen. `GroveLocalFirstTests` is built on exactly those two facts and no timing at all.
+    ///
+    /// `@ObservationIgnored` because nothing draws it — a view that observed it would re-render on
+    /// the task's creation as well as on the phase change it produces.
+    @ObservationIgnored private(set) var speciesRefresh: Task<Void, Never>?
+    @ObservationIgnored private(set) var treesRefresh: Task<Void, Never>?
+
+    init(
+        api: any CypressAPI,
+        now: @escaping @Sendable () -> Date = { Date() },
+        tab: GroveTab = .species,
+        refreshSpecies: (@Sendable () async -> GroveSpecies?)? = nil,
+        refreshTrees: (@Sendable () async -> [GroveEntry]?)? = nil
+    ) {
         self.api = api
         self.now = now
         self.tab = tab
+        self.refreshSpecies = refreshSpecies
+        self.refreshTrees = refreshTrees
     }
 
     /// The derivation the species grid draws, or nil while loading or after a failure.
@@ -68,11 +99,37 @@ final class GroveModel {
 
     var hasFailed: Bool { phase == .failed }
 
+    /// Reads the species grove once, then keeps it current in the background.
+    ///
+    /// ── Three arms, because the `.task` that drives this fires on every appearance ──────────────
+    ///
+    /// The view this is attached to is mounted afresh on **every** switch back to the My Grove tab,
+    /// so this method is called again each time. It used to have no guard at all, which meant every
+    /// visit re-ran the read — and at the time the read awaited a network round trip, so every visit
+    /// paid for one. `loadTreesIfNeeded()` below has had the guard since it was written and states
+    /// the reason: "once" has to be a property of the model rather than of the view, which is what
+    /// makes it testable.
+    ///
+    /// - `.loading` — nothing has been read yet. Read the phone, paint it, then refresh behind it.
+    /// - `.loaded` — the answer is already on the glass. **Paint nothing and refresh behind it**,
+    ///   which is the owner's ruling of 2026-09-01 made literal: revisiting the tab shows the last
+    ///   data instantly and picks up anything new without a spinner.
+    /// - `.failed` — leave it. The retry button is the way back from a failure (ERRATA E126), and a
+    ///   `.task` firing again is not somebody asking for one.
     func load() async {
-        do {
-            phase = .loaded(try await api.groveSpecies())
-        } catch {
-            phase = .failed
+        switch phase {
+        case .loading:
+            do {
+                phase = .loaded(try await api.groveSpecies())
+            } catch {
+                phase = .failed
+                return
+            }
+            startSpeciesRefresh()
+        case .loaded:
+            startSpeciesRefresh()
+        case .failed:
+            break
         }
     }
 
@@ -81,6 +138,25 @@ final class GroveModel {
     func retry() async {
         phase = .loading
         await load()
+    }
+
+    /// Merges the account's half in behind the painted screen.
+    ///
+    /// Nothing here can blank the grove. The refresh answers nil when it could not reach the
+    /// service, and a nil leaves the painted phase exactly as it is — "an empty state is a claim,
+    /// and this project has already drawn one over a failed read" (R72 ruling 1).
+    ///
+    /// The guard on `.loaded` before assigning is not ceremony: `retry()` can move the phase back to
+    /// `.loading` while a refresh is in flight, and a merge landing after that would paint a grove
+    /// over a screen that is deliberately reading again.
+    private func startSpeciesRefresh() {
+        guard let refreshSpecies else { return }
+        speciesRefresh?.cancel()
+        speciesRefresh = Task { [weak self] in
+            let merged = await refreshSpecies()
+            guard !Task.isCancelled, let self, let merged, case .loaded = self.phase else { return }
+            self.phase = .loaded(merged)
+        }
     }
 
     // MARK: - The Trees pill
@@ -99,21 +175,40 @@ final class GroveModel {
     /// reappearance of the view it is attached to, so a reader switching pills back and forth would
     /// otherwise re-run the read on every switch. "Once" has to be a property of the model rather
     /// than of the view, which is what makes it testable.
+    ///
+    /// **A pill already loaded refreshes rather than doing nothing** — `load()`'s `.loaded` arm, for
+    /// the same ruling. That is the one thing this method gained: the guard still stops the *read*
+    /// from running twice, and the background merge runs behind whatever is drawn.
     func loadTreesIfNeeded() async {
-        guard case .idle = treesPhase else { return }
-        await readTrees()
+        switch treesPhase {
+        case .idle:
+            do {
+                treesPhase = .loaded(try await api.grove())
+            } catch {
+                treesPhase = .failed
+                return
+            }
+            startTreesRefresh()
+        case .loaded:
+            startTreesRefresh()
+        case .failed:
+            break
+        }
     }
 
     func retryTrees() async {
         treesPhase = .idle
-        await readTrees()
+        await loadTreesIfNeeded()
     }
 
-    private func readTrees() async {
-        do {
-            treesPhase = .loaded(try await api.grove())
-        } catch {
-            treesPhase = .failed
+    /// `startSpeciesRefresh()`, over the Trees pill. Its whole argument applies unchanged.
+    private func startTreesRefresh() {
+        guard let refreshTrees else { return }
+        treesRefresh?.cancel()
+        treesRefresh = Task { [weak self] in
+            let merged = await refreshTrees()
+            guard !Task.isCancelled, let self, let merged, case .loaded = self.treesPhase else { return }
+            self.treesPhase = .loaded(merged)
         }
     }
 }
