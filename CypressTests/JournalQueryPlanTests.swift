@@ -25,12 +25,24 @@ import Testing
 ///   that as the premise. `ContributionStore.activeNamesSQL` carries the argument for why the
 ///   `lower()` normalization that fixed the Grove joins does not transfer to `tree_names`.
 ///
-/// ── Calibration ─────────────────────────────────────────────────────────────────────────────
-/// `theStatementsAreTheOnesTheAppRuns` is the guard against the failure mode that produced this
-/// file's older sibling: SQL hand-copied into a test explains the copy. It reads the four strings
-/// off `ContributionStore` itself, which is where `journal`, `activeNames` and
-/// `heroPhotoIDs(treeIDs:attribution:)` take them from, so the gate cannot drift from the app
-/// without failing to compile.
+/// ── What binds these strings to the app, and what does not ──────────────────────────────────
+/// **This header used to claim the coupling was the compiler's, and that was false.** It said the
+/// gate "cannot drift from the app without failing to compile", on the grounds that it reads the
+/// strings off `ContributionStore` rather than copying them. PR #143's review disproved it in one
+/// edit: make `ContributionStore.journal` run `Self.journalSQL + " -- drift"` and the app executes
+/// a statement this file has never seen, while the whole suite stays green. Referencing a property
+/// from a test makes the *property* exist; it does not make the property be what runs. That is
+/// exactly the `MapQueryPlanTests` failure mode this file cites as the thing it avoids, reached
+/// from the other side.
+///
+/// The coupling is real now and it lives next door. **`JournalStatementCensusTests`** records what
+/// `LocalAPI.journal()` prepares, as it prepares it, and asserts the set is precisely the texts
+/// these properties hold — so the reviewer's drift edit is red there. This file explains plans;
+/// that file is what makes "these are the statements the app runs" a measurement rather than a
+/// sentence.
+///
+/// `theStatementsAreTheOnesTheAppRuns` below stays, narrowed to what it can honestly do on its
+/// own: prove each string still parses and plans against the real schema.
 @Suite("Journal · query plans")
 struct JournalQueryPlanTests {
 
@@ -230,14 +242,12 @@ struct JournalQueryPlanTests {
 
     // MARK: - The calibration
 
-    /// **The strings above are the app's own, not a paraphrase of them.**
+    /// **Every string above still parses and plans against the real schema.**
     ///
-    /// `MapQueryPlanTests`' header records what a paraphrase costs: the plans were pinned against
-    /// SQL hand-copied into `DataGates`, so changing the real query left the gate explaining the
-    /// copy. This asks the question the other way round — every statement this file explains has to
-    /// be one a `ContributionStore` method prepares — and it is asserted by *running* each one
-    /// against the real schema. A string that no longer parses, or that names a column the app
-    /// dropped, fails here rather than being explained forever.
+    /// That is all this one proves, and the header says why the stronger claim it used to carry —
+    /// that these are the statements the app runs — is `JournalStatementCensusTests`' to make and
+    /// was never this file's. What is left is still worth having: a string naming a column a
+    /// migration dropped fails here, on the shipped schema, rather than being explained forever.
     @Test("every statement this gate explains prepares against the real schema")
     func theStatementsAreTheOnesTheAppRuns() async throws {
         let store = try await Self.store()

@@ -227,10 +227,10 @@ struct JournalSection: View {
             onShowOlder: { Task { await model.loadOlder() } },
             onSeeAllOnMap: onSeeAllOnMap
         )
-        // `load()` is idempotent on a successful read, and the model outlives this view (see the
-        // type comment), so switching away from this segment and back re-runs this `.task` against
-        // a model that is already `.loaded` — the pages the reader asked for are still there and
-        // nothing is re-read.
+        // The model outlives this view (see the type comment), so switching away from this segment
+        // and back re-runs this `.task` against a model that is already `.loaded`. `load()` then
+        // paints the pages the reader already had — no loading state, nothing cleared — and
+        // re-reads page one behind them, which is the owner's ruling in both its halves.
         .task { await model.load() }
     }
 }

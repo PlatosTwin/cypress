@@ -2284,17 +2284,36 @@ public actor LocalAPI: CypressAPI {
 
     /// `GET /me/journal`, one page.
     ///
-    /// **Two round-trips and four statements, whatever the page holds.** It used to be two
-    /// statements plus a loop: `displayNames(for:)` was a serial `for` over the page's distinct
-    /// trees, one `store.queue.read` hop apiece, and each miss fell through to
+    /// **Two round-trips and five statements, whatever the page holds** — and both numbers are
+    /// asserted rather than described, by `JournalStatementCensusTests`, which records what this
+    /// method prepares as it prepares it. The sentence this replaces said "four statements" and was
+    /// simply miscounted: `heroPhotoIDs(treeIDs:attribution:)` is two. The census is what said so,
+    /// which is most of the argument for having one.
+    ///
+    /// It used to be two statements plus a loop: `displayNames(for:)` was a serial `for` over the
+    /// page's distinct trees, one `store.queue.read` hop apiece, and each miss fell through to
     /// `TreeQueries.tree(id:)` — the wide four-join projection this file's own header calls the
     /// app's most expensive single-row query. That is the shape PR #131 took out of `grove()` and
     /// it was still here, on the tab's *default* segment, paid on every first paint and again on
-    /// every `Show earlier`.
+    /// every `Show earlier`. PR #143's review put the loop back and found the suite still green:
+    /// every other gate compares *answers*, and the loop answers identically by construction. The
+    /// census is the one that goes red on it.
     ///
     /// The second read is a second read because its statements need the page's tree ids, which the
     /// first read is what produces — the same two-stage shape `grove()` has for the same reason.
-    /// The three statements inside it are:
+    ///
+    /// **What that split costs, stated because the sentence above reads as a reassurance and is
+    /// not one.** The rows and their names and thumbnails used to come out of a single
+    /// `store.queue.read`, so they were one snapshot; they now come from two, with a window
+    /// between in which this device can write. A nickname added, a photograph deleted or a
+    /// contribution anonymized inside that window hands a row a name or a hero from a slightly
+    /// different instant than the row itself. It cannot invent a row or lose one — read A fixes
+    /// which rows the page has and read B only decorates them — so the worst case is a label or a
+    /// thumbnail one beat stale, on a list `JournalModel`'s refresh arm is about to re-read
+    /// anyway. `readConsistently` would close the window at the price of a transaction per page;
+    /// `grove()` made that trade and this follows it deliberately, not by inheritance.
+    ///
+    /// The four statements inside the second read are:
     ///
     /// - `TreeQueries.trees(ids:)` and `ContributionStore.activeNames(treeIDs:)`, through
     ///   `Self.displayNames(for:treeQueries:contributions:connection:)`, which is the one

@@ -56,6 +56,16 @@ struct JournalPreviewAPI: CypressAPI {
     var failsAfterFirst = false
     /// Makes only `Show earlier` fail, which must not take the whole screen down.
     var olderFails = false
+    /// What page **one** answers from its second reading onwards.
+    ///
+    /// `JournalModel.load()` re-reads page one behind the list on every re-entry, and the only way
+    /// to exercise a refresh is a head that changes between reads — a contribution written while
+    /// the reader was on another segment. `older` is this idea pointed down the list; this one
+    /// points at the head. Needs a `reads` counter, like the failure flags above.
+    var refreshed: Page<JournalEntry>?
+    /// Makes only the *refresh* read fail, so the rule that a background refresh never takes the
+    /// screen down can be asserted rather than described.
+    var refreshFails = false
     var reads: JournalReadCounter?
 
     var exportBytes = Data()
@@ -67,7 +77,13 @@ struct JournalPreviewAPI: CypressAPI {
         if fails { throw APIError.serverError }
         if failsOnce, attempt == 0 { throw APIError.serverError }
         if failsAfterFirst, attempt > 0 { throw APIError.serverError }
-        guard cursor != nil else { return page }
+        guard cursor != nil else {
+            // Page one. `attempt == 0` is the first paint; anything later is a refresh, which is
+            // the only read `refreshed`/`refreshFails` are about.
+            guard attempt > 0 else { return page }
+            if refreshFails { throw APIError.serverError }
+            return refreshed ?? page
+        }
         if olderFails { throw APIError.serverError }
         return older ?? Page(items: [])
     }

@@ -433,10 +433,12 @@ public struct ContributionStore {
     /// The same rule as `heroPhotoIDs()`, `PhotoHero.choose` over this device's own photographs,
     /// scoped to a caller-supplied set of tree ids rather than to the whole table (ERRATA E204).
     ///
-    /// `heroPhotoIDs()` above is deliberately unscoped: grove, journal and the almanac's season
-    /// row already narrow their own candidates to "this device's own trees" before they ever ask
-    /// for a photograph, so scanning every live row in `main.photos` is scanning a set the same
-    /// order of magnitude as the answer. Screen 07 §6's `Nearby individuals` does not have that
+    /// `heroPhotoIDs()` above is deliberately unscoped: grove and the almanac's season row already
+    /// narrow their own candidates to "this device's own trees" before they ever ask for a
+    /// photograph, so scanning every live row in `main.photos` is scanning a set the same order of
+    /// magnitude as the answer. (**Journal was on that list and no longer is** — it moved to this
+    /// scoped form with the rest of PR #143; `LocalAPI.journal()`'s header argues why, and the two
+    /// forms' answers are held against each other in `JournalBatchReadTests`.) Screen 07 §6's `Nearby individuals` does not have that
     /// property — `SpeciesGuideLimits` widens the candidate search across every tree of a species
     /// near a coordinate, most of which this device has never photographed, to answer a
     /// two-or-three-row question. Reusing the unscoped read there would mean paying for the whole
@@ -1385,7 +1387,9 @@ public struct ContributionStore {
     }
 
     /// The active nicknames for a set of trees, keyed by tree — one statement instead of one per
-    /// tree, for `LocalAPI.grove()`.
+    /// tree, for `LocalAPI.grove()` and, since PR #143, for
+    /// `LocalAPI.displayNames(for:treeQueries:contributions:connection:)` — which is the name rule
+    /// behind `journal()`, `AccountModel` and `DataLayer.treeNameResolver`.
     ///
     /// **Dropping the `LIMIT 1` loses nothing, and that is a property of the schema rather than of
     /// this query.** `idx_tree_names_one_active` is a UNIQUE partial index on `tree_uuid` where

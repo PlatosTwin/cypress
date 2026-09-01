@@ -4,28 +4,38 @@
 //
 //  Two claims `JournalModel` makes about itself that nothing in the suite could see.
 //
-//  ── 1. The guard that was true about the model and false about the screen ────────────────────
-//  `JournalModel.load()` returns early when the phase is already `.loaded`, and its doc comment
-//  said — for two rounds — that this is what stops a segment switch throwing away pages the reader
-//  had asked for. The guard is correct. The sentence was not: the model it guarded was `@State` on
-//  `JournalSection`, and `JournalSection` was mounted from inside `JournalTabView`'s `switch` on
-//  the segment. SwiftUI ties `@State` to the identity of the declaring view, and a `switch` arm
-//  that is not taken has no identity, so a glance at Neighborhood destroyed the model outright. The
-//  next `.task` met a brand new one in `.loading` and re-read page one; everything `Show earlier`
-//  had fetched was gone.
+//  ── 1. The claim that was true about the model and false about the screen ────────────────────
+//  `JournalModel.load()` declines to overwrite a list it already has, and its doc comment said —
+//  for two rounds — that this is what stops a segment switch throwing away pages the reader asked
+//  for. The behavior was right. The sentence was not: the model was `@State` on `JournalSection`,
+//  and `JournalSection` was mounted from inside `JournalTabView`'s `switch` on the segment. SwiftUI
+//  ties `@State` to the identity of the declaring view, and a `switch` arm that is not taken has no
+//  identity, so a glance at Neighborhood destroyed the model outright. The next `.task` met a brand
+//  new one in `.loading`; everything `Show earlier` had fetched was gone.
 //
 //  That is this project's named defect class — a confident comment asserting an invariant nobody
-//  verified — and the model-level test alone cannot catch it, because at the model level the guard
+//  verified — and a model-level test alone cannot catch it, because at the model level the behavior
 //  works. What decides it is *which view declares the state*, which is a fact about the source. So
-//  there are two tests: `loadIsIdempotent…` for the guard, and `theModelIsOwnedAboveTheSegment
-//  Switch` for the structure the guard depends on.
+//  it takes both: `aReappearancePaintsWhatItHad` / `showEarliersPagesSurvive…` for the behavior,
+//  and `theModelIsOwnedAboveTheSegmentSwitch` for the structure it depends on.
+//
+//  ── 1b. And the other half of the owner's ruling ─────────────────────────────────────────────
+//  "Pages survive AND refresh in the background." PR #143's review pointed out that the first
+//  version delivered only the first half, and had in fact *removed* an accidental refresh: before
+//  the lifetime fix, a segment flip re-read everything because it destroyed the model. So `load()`
+//  now repaints instantly and re-reads page one behind the list, reconciling it against the deeper
+//  pages rather than replacing them. Four tests: the new contribution appears, the kept pages stay,
+//  a failed refresh disturbs nothing, and a journal that shrank drops what is gone.
 //
 //  ── 2. The derivation that ran on every body pass ────────────────────────────────────────────
 //  `presentation` was a computed property. SwiftUI evaluates a body many times per visible change,
 //  and each evaluation rebuilt every row title, the day fold, and a `DateFormatter` per day group.
-//  `presentationIsDerivedOncePerPhaseChange` proves it is now derived once, using the one input the
-//  derivation has that a repeated read could reveal: `now`, which decides whether a day header
-//  carries its year.
+//  `presentationIsDerivedOncePerPhaseChange` proves it is now derived once.
+//
+//  Memoizing it froze three environment inputs, not one — `now`, `locale` and `calendar` — and the
+//  last of those decides the day fold itself. `aTimeZoneChangeReDerivesTheList` and
+//  `aLocaleChangeReDerivesTheList` are what make "sampled at phase change" safe rather than stale:
+//  the model re-derives on the system's own notifications.
 //
 
 import Foundation
@@ -40,6 +50,17 @@ struct JournalModelLifetimeTests {
     private static var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        return calendar
+    }
+
+    /// A gregorian calendar in a named zone.
+    ///
+    /// At type scope rather than as a local function inside the tests: the tests are `@MainActor`,
+    /// so a local `func` in one is main-actor isolated and a `@Sendable` closure handed to
+    /// `JournalModel` cannot call it.
+    private static func gregorian(in identifier: String) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: identifier)!
         return calendar
     }
 
@@ -61,33 +82,44 @@ struct JournalModelLifetimeTests {
 
     // MARK: - 1 · The guard, and the structure it depends on
 
-    /// The guard itself: a second `load()` on a model that already read does not read again.
+    /// **A reappearance never passes through `.loading` and never changes what is on screen when
+    /// nothing changed underneath.**
     ///
-    /// This is what a `.task` firing on every reappearance of the segment does, so the read count is
-    /// the assertion rather than the row count — a model that re-read and happened to get the same
-    /// page back would look identical on screen while paying for the trip.
-    @Test("load is idempotent, so a reappearing segment does not re-read")
+    /// The owner's ruling has two halves — a revisit paints what was there, *and* refreshes behind
+    /// it — so a re-entry does read again, and a read count is no longer the right assertion. What
+    /// it must not do is what the destroyed-model version did: blank the screen and start over.
+    /// `aReappearanceRefreshesBehindTheListItKeeps` asserts the other half.
+    @Test("a reappearing segment paints what it had, with no loading state")
     @MainActor
-    func loadIsIdempotentOnASuccessfulRead() async {
-        let reads = JournalReadCounter()
+    func aReappearancePaintsWhatItHad() async throws {
+        let entries = (1...3).map { Self.entry($0) }
         let model = JournalModel(
-            api: JournalPreviewAPI(page: Page(items: [Self.entry(1)]), reads: reads),
+            api: JournalPreviewAPI(page: Page(items: entries)),
             now: { Self.date(2026, 7, 1) }
         )
 
         await model.load()
-        #expect(reads.count == 1)
+        let drawn = try #require(model.presentation?.rows.map(\.id))
+        try #require(drawn.count == 3)
 
         // Away to Neighborhood and back, twice.
-        await model.load()
-        await model.load()
-        #expect(reads.count == 1, "a segment the reader looked away from re-read its first page")
+        for _ in 0..<2 {
+            await model.load()
+            #expect(model.phase != .loading, "a reappearance blanked the screen")
+            #expect(model.hasFailed == false)
+            #expect(
+                model.presentation?.rows.map(\.id) == drawn,
+                "a reappearance changed the rows on screen when nothing had changed underneath"
+            )
+        }
     }
 
     /// And the pages `Show earlier` fetched survive that reappearance.
     ///
-    /// The count is the point: `load()`'s guard returning early is only worth something if what it
-    /// declines to overwrite is the *accumulated* list rather than page one.
+    /// This is the property the whole lifetime change exists for, and the refresh arm must not cost
+    /// it: `JournalModel.refresh()`'s reconciliation keeps every held row the fresh page one does
+    /// not cover. Nothing changed underneath here, so all five have to still be there — and the
+    /// read count has to show the refresh actually ran, or this passes for the wrong reason.
     @Test("pages fetched by Show earlier survive a reappearance")
     @MainActor
     func showEarliersPagesSurviveAReappearance() async {
@@ -103,16 +135,151 @@ struct JournalModelLifetimeTests {
 
         await model.load()
         await model.loadOlder()
-        #expect(model.presentation?.rows.count == 5)
+        let five = model.presentation?.rows.map(\.id)
+        #expect(five?.count == 5)
         #expect(reads.count == 2)
 
         await model.load()
         #expect(
-            model.presentation?.rows.count == 5,
-            "the reader came back to page one, which is exactly what the segment switch used to do"
+            model.presentation?.rows.map(\.id) == five,
+            """
+            the reader came back to page one — exactly what the segment switch used to do — or the \
+            refresh dropped rows its reconciliation was supposed to keep
+            """
         )
-        #expect(reads.count == 2)
+        #expect(reads.count == 3, "the reappearance did not refresh behind the list")
     }
+
+    // MARK: - 1b · The other half of the ruling: it refreshes behind what it keeps
+
+    /// **A contribution written while the reader was elsewhere appears on re-entry, and the pages
+    /// they had fetched are still under it.**
+    ///
+    /// This is the owner's ruling in one assertion. The fixture is the real sequence: read page
+    /// one, press `Show earlier`, leave the segment, two new contributions land, come back. The
+    /// list must then be `new, new, page one…, page two…` — newest first, nothing duplicated,
+    /// nothing lost.
+    ///
+    /// The ids are what is compared rather than the count, because a count of seven is also what
+    /// you get from the wrong list.
+    @Test("a contribution written while the reader was away appears on re-entry, above the pages they kept")
+    @MainActor
+    func aReappearanceRefreshesBehindTheListItKeeps() async throws {
+        let base = Self.date(2026, 6, 1)
+        // Distinct, descending capture times — the order the store returns and the paging is built
+        // on. `refresh()`'s reconciliation is written against exactly this ordering.
+        func entry(_ index: Int) -> JournalEntry {
+            Self.entry(index, at: base.addingTimeInterval(-Double(index) * 3600))
+        }
+        let pageOne = (1...3).map(entry)
+        let pageTwo = (4...5).map(entry)
+        let arrivedWhileAway = [entry(-2), entry(-1)]
+
+        let model = JournalModel(
+            api: JournalPreviewAPI(
+                page: Page(items: pageOne, nextCursor: "cursor"),
+                older: Page(items: pageTwo),
+                refreshed: Page(items: arrivedWhileAway + pageOne.prefix(1), nextCursor: "cursor")
+            ),
+            now: { Self.date(2026, 7, 1) }
+        )
+
+        await model.load()
+        await model.loadOlder()
+        try #require(
+            model.presentation?.rows.map(\.id) == (pageOne + pageTwo).map(\.id),
+            "the fixture did not produce the two-page list this test is about"
+        )
+
+        // Away to Neighborhood, and back.
+        await model.load()
+
+        #expect(
+            model.presentation?.rows.map(\.id)
+                == (arrivedWhileAway + pageOne + pageTwo).map(\.id),
+            """
+            re-entry did not reconcile. Expected the two new contributions above the seven rows the \
+            reader already had, newest first; got \
+            \(model.presentation?.rows.map(\.title) ?? [])
+            """
+        )
+        #expect(
+            model.presentation?.hasOlder == true,
+            "the reconciled list runs down to the old tail, so it keeps the cursor it had"
+        )
+    }
+
+    /// **A refresh that fails changes nothing** — not the rows, not `hasFailed`, and not
+    /// `hasFailedOlder`, which belongs to `Show earlier` and would put a note on screen about a read
+    /// the reader never asked for.
+    @Test("a failed background refresh leaves the screen exactly as it was")
+    @MainActor
+    func aFailedRefreshChangesNothing() async throws {
+        let model = JournalModel(
+            api: JournalPreviewAPI(
+                page: Page(items: (1...3).map { Self.entry($0) }, nextCursor: "cursor"),
+                older: Page(items: (4...5).map { Self.entry($0) }),
+                refreshFails: true
+            ),
+            now: { Self.date(2026, 7, 1) }
+        )
+
+        await model.load()
+        await model.loadOlder()
+        let before = try #require(model.presentation?.rows.map(\.id))
+        try #require(before.count == 5)
+
+        await model.load()
+        #expect(model.presentation?.rows.map(\.id) == before, "a failed refresh disturbed the list")
+        #expect(model.hasFailed == false, "a background refresh took the whole screen down")
+        #expect(
+            model.hasFailedOlder == false,
+            """
+            a failed background refresh raised `Show earlier`'s flag, putting a note on screen \
+            about a read the reader never asked for
+            """
+        )
+    }
+
+    /// **A journal that shrank to less than a page loses the rows that are gone.**
+    ///
+    /// The reconciliation's second case, and the one a "keep everything held" merge gets wrong: a
+    /// fresh page one that comes back with no cursor *is* the whole journal, so anything held
+    /// beyond it has been deleted and must not linger.
+    @Test("a refresh that reaches the end of the journal drops rows that no longer exist")
+    @MainActor
+    func aRefreshThatReachesTheEndDropsDeletedRows() async throws {
+        let base = Self.date(2026, 6, 1)
+        func entry(_ index: Int) -> JournalEntry {
+            Self.entry(index, at: base.addingTimeInterval(-Double(index) * 3600))
+        }
+        let pageOne = (1...3).map(entry)
+        let pageTwo = (4...5).map(entry)
+
+        let model = JournalModel(
+            api: JournalPreviewAPI(
+                page: Page(items: pageOne, nextCursor: "cursor"),
+                older: Page(items: pageTwo),
+                // Everything but the first two rows has been deleted, and the page says so by
+                // coming back without a cursor.
+                refreshed: Page(items: Array(pageOne.prefix(2)))
+            ),
+            now: { Self.date(2026, 7, 1) }
+        )
+
+        await model.load()
+        await model.loadOlder()
+        try #require(model.presentation?.rows.count == 5)
+
+        await model.load()
+        #expect(
+            model.presentation?.rows.map(\.id) == pageOne.prefix(2).map(\.id),
+            "deleted contributions survived a refresh that had told the model the journal was shorter"
+        )
+        #expect(model.presentation?.hasOlder == false)
+    }
+
+    // MARK: - 2 · The structure the guard depends on
 
     /// **The structural half: the model is declared above the segment `switch`, not inside it.**
     ///
@@ -250,6 +417,120 @@ struct JournalModelLifetimeTests {
             """
         )
         #expect(ticks.count == 1, "the clock was sampled \(ticks.count) times for one loaded page")
+    }
+
+    /// **The memoization must not outlive the settings it sampled.**
+    ///
+    /// `presentation` freezes three environment inputs, not one: `now`, `locale` and `calendar`.
+    /// The last two decide the header's format, and `calendar` decides the day fold itself through
+    /// `startOfDay(for:)` — so a time-zone change can restack which rows sit under which header.
+    /// They used to be re-read on every body pass; memoizing them would have meant a list formatted
+    /// and grouped under settings the reader has since changed, for as long as the model lives —
+    /// which this round's other half makes strictly longer.
+    ///
+    /// Two calendars an hour and a bit apart across midnight put a row on **different days**, so
+    /// this asserts the grouping and not merely the label: it is the stronger of the two effects
+    /// and the one a formatter cache alone would never fix.
+    @Test("a time-zone change re-derives the list under the new calendar")
+    @MainActor
+    func aTimeZoneChangeReDerivesTheList() async throws {
+        // 23:30 UTC on 1 June. In UTC that is 1 June; in Tokyo (+09:00) it is already 2 June.
+        let captured = Date(timeIntervalSince1970: 1_780_698_600)
+
+        // Calibration: the two zones really do fold this row onto different days. Without this the
+        // experiment could pass on a row both zones agree about.
+        let entry = Self.entry(1, at: captured)
+        let inUTC = JournalPresentation(
+            entries: [entry], nextCursor: nil, now: captured, calendar: Self.gregorian(in: "UTC"), locale: .init(identifier: "en_US")
+        )
+        let inTokyo = JournalPresentation(
+            entries: [entry], nextCursor: nil, now: captured, calendar: Self.gregorian(in: "Asia/Tokyo"), locale: .init(identifier: "en_US")
+        )
+        try #require(
+            inUTC.days.first?.header != inTokyo.days.first?.header,
+            """
+            the two zones fold this row onto the same day, so a re-derivation would be invisible \
+            and this test could not fail — pick a capture time nearer a midnight boundary
+            """
+        )
+
+        let zone = ZoneBox(identifier: "UTC")
+        let model = JournalModel(
+            api: JournalPreviewAPI(page: Page(items: [entry])),
+            now: { captured },
+            calendar: { Self.gregorian(in: zone.identifier) },
+            locale: { Locale(identifier: "en_US") }
+        )
+        await model.load()
+        try #require(model.presentation?.days.first?.header == inUTC.days.first?.header)
+
+        // The reader crosses a time zone, or changes it in Settings.
+        zone.identifier = "Asia/Tokyo"
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        // The observer is registered on the main queue; let it run.
+        await Task.yield()
+
+        #expect(
+            model.presentation?.days.first?.header == inTokyo.days.first?.header,
+            """
+            the list is still folded and labelled under the zone it was read in. The row belongs \
+            under \(inTokyo.days.first?.header ?? "?") now and is drawn under \
+            \(model.presentation?.days.first?.header ?? "<nil>")
+            """
+        )
+    }
+
+    /// The same, for the locale notification, which is what a Region or Calendar change posts.
+    @Test("a locale change re-derives the list under the new locale")
+    @MainActor
+    func aLocaleChangeReDerivesTheList() async throws {
+        let captured = Self.date(2026, 6, 1)
+        let entry = Self.entry(1, at: captured)
+        let calendar = Self.calendar
+
+        let inUS = JournalPresentation(
+            entries: [entry], nextCursor: nil, now: captured,
+            calendar: calendar, locale: Locale(identifier: "en_US")
+        )
+        let inJP = JournalPresentation(
+            entries: [entry], nextCursor: nil, now: captured,
+            calendar: calendar, locale: Locale(identifier: "ja_JP")
+        )
+        try #require(
+            inUS.days.first?.header != inJP.days.first?.header,
+            "the two locales write this day identically, so the experiment is inert"
+        )
+
+        let box = ZoneBox(identifier: "en_US")
+        let model = JournalModel(
+            api: JournalPreviewAPI(page: Page(items: [entry])),
+            now: { captured },
+            calendar: { calendar },
+            locale: { Locale(identifier: box.identifier) }
+        )
+        await model.load()
+        try #require(model.presentation?.days.first?.header == inUS.days.first?.header)
+
+        box.identifier = "ja_JP"
+        NotificationCenter.default.post(name: NSLocale.currentLocaleDidChangeNotification, object: nil)
+        await Task.yield()
+
+        #expect(
+            model.presentation?.days.first?.header == inJP.days.first?.header,
+            "the header is still written in the locale the list was read in"
+        )
+    }
+
+    /// A mutable identifier a `@Sendable` closure can read, so a test can move the environment
+    /// under a model the way Settings does. `NSLock` for the reason `JournalReadCounter` gives.
+    final class ZoneBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: String
+        init(identifier: String) { self.value = identifier }
+        var identifier: String {
+            get { lock.lock(); defer { lock.unlock() }; return value }
+            set { lock.lock(); defer { lock.unlock() }; value = newValue }
+        }
     }
 
     /// A phase change *does* re-derive, which is the other half of "once per phase change" and the

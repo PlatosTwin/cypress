@@ -107,8 +107,9 @@ struct JournalTabView: View {
     /// inside the `switch` below. SwiftUI ties `@State` to the identity of the view that declares
     /// it, and a `switch` arm that is not taken has no identity, so looking at Neighborhood for a
     /// second destroyed the model: the reader came back to page one, whatever `Show earlier` had
-    /// fetched, and `JournalModel.load()`'s idempotence guard could not help — it met a brand new
-    /// model in `.loading`. Owner ruling, 2026-09-01: a revisit paints what was there.
+    /// fetched, and `JournalModel.load()`'s guard could not help — it met a brand new model in
+    /// `.loading`. Owner ruling, 2026-09-01: a revisit paints what was there **and refreshes behind
+    /// it**; `JournalModel.load()`'s `.loaded` arm is the second half.
     ///
     /// Here it is above the `switch`, so it lives as long as this tab view does, which is what makes
     /// that guard true across Yours ↔ Neighborhood ↔ City. Across the **bottom** tabs it lives as
