@@ -3,7 +3,7 @@
 //  CypressTests
 //
 //  **My Grove paints from the phone and merges the account's half behind it** — the owner's ruling
-//  of 2026-09-01, and the two gates that make it unrepeatable.
+//  of 2026-09-01, and the gates that make it unrepeatable.
 //
 //  ── Why there is not a single number in this file ─────────────────────────────────────────────
 //
@@ -11,69 +11,26 @@
 //  read returned in under N milliseconds". That test is a coin toss on a loaded machine and it has
 //  already cost this project a flaky suite once (`docs/whats-new/test-perf-margin-redesign.md`:
 //  count work, do not race a clock). PR #140's principle is that **no clock is read anywhere**, and
-//  what replaces it here are two structural facts, each doing a different job.
+//  what replaces it here are two censuses, neither of which can be nearly-right.
 //
-//  1. **The paint made zero requests.** `transport.calls` is the census, read *after* the read
-//     returned. This is the assertion that carries the defect: a paint that awaited the service
-//     would have a call in it, whatever the machine was doing. Nothing is compared to a threshold
-//     and there is no margin to tune.
-//  2. **The merge cannot arrive early.** `GateTransport` holds every request until this test opens
-//     it, so "the second species appeared" can only be true after the release — which is what makes
-//     the before/after pair below an ordering rather than a race, and what makes the call counts in
-//     `aRepeatLoadStillRefreshes` exact rather than lucky.
+//  1. **The paint made zero requests, and the phone's answer is what it drew.** `transport.calls` is
+//     read *after* the read returned, and the phone's grove holds one species where the merged one
+//     holds two. A paint that awaited the service would have a call in the census and two species in
+//     the answer, whatever the machine was doing at the time.
+//  2. **The merge is awaited, not waited for.** `GroveModel.speciesRefresh` is the model's own handle
+//     on the background task, so `await model.speciesRefresh?.value` returns exactly when the merge
+//     has been applied. That is a structural fact about the work rather than a guess about how long
+//     it takes, and it is what makes the call counts in `aRepeatLoadStillRefreshes` exact.
 //
+//  **A deliberately absent third idea: a transport that blocks.** Holding the service's answer behind
+//  a latch reads as the strongest possible statement of the defect — assert while the far side is
+//  provably still in flight — and it is the wrong instrument here. A regression to the blocking paint
+//  would **hang** on such a latch rather than fail, and a hang is not a red-proof: it is a stalled
+//  suite that has to be killed and interpreted. The censuses above go red, and say why.
 
 import Foundation
 import Testing
 @testable import Cypress
-
-// MARK: - A service that answers only when the test says so
-
-/// A latch every waiter parks on until `open()` is called.
-///
-/// `open()` is safe to call before anybody has waited and safe to call twice — which is what makes a
-/// test using it free of an ordering assumption between the background refresh reaching the wire and
-/// the test releasing it. Without that property this file would be racing exactly the thing it
-/// refuses to race.
-actor RemoteGate {
-
-    private var isOpen = false
-    private var waiting: [CheckedContinuation<Void, Never>] = []
-
-    func wait() async {
-        if isOpen { return }
-        await withCheckedContinuation { continuation in
-            waiting.append(continuation)
-        }
-    }
-
-    func open() {
-        isOpen = true
-        let parked = waiting
-        waiting = []
-        for continuation in parked { continuation.resume() }
-    }
-}
-
-/// `ScriptedTransport`, behind `RemoteGate`.
-///
-/// Scripting is delegated rather than reimplemented, so a route that is not scripted throws
-/// `notFound` exactly as it does everywhere else in this target — after the gate opens, which is the
-/// point: **nothing this transport can answer is reachable before `gate.open()`.**
-final class GateTransport: AuthorizedTransport, @unchecked Sendable {
-
-    let gate = RemoteGate()
-    private let scripted = ScriptedTransport()
-
-    func answer(_ route: String, with json: String) { scripted.answer(route, with: json) }
-
-    var calls: [ScriptedTransport.Call] { scripted.calls }
-
-    func send(_ request: URLRequest) async throws -> Data {
-        await gate.wait()
-        return try await scripted.send(request)
-    }
-}
 
 // MARK: - The gates
 
@@ -140,8 +97,8 @@ struct GroveLocalFirstTests {
     }
 
     /// A service holding one species and one tree this phone has never met.
-    static func gatedService() -> GateTransport {
-        let transport = GateTransport()
+    static func scriptedService() -> ScriptedTransport {
+        let transport = ScriptedTransport()
         transport.answer(
             "GET /me/grove/species",
             with: """
@@ -159,7 +116,7 @@ struct GroveLocalFirstTests {
         return transport
     }
 
-    static func router(_ local: LocalDouble, _ transport: GateTransport, log: RemoteReadLog) -> RoutedAPI {
+    static func router(_ local: LocalDouble, _ transport: ScriptedTransport, log: RemoteReadLog) -> RoutedAPI {
         RoutedAPI(
             local: local,
             remote: RemoteAPI(
@@ -178,45 +135,43 @@ struct GroveLocalFirstTests {
     /// Three things have to be true or every gate below is vacuous, and each of them is a way a
     /// green suite here would mean nothing:
     ///
-    /// - the gate really **releases** — a gate that never opened would make every merge assertion
-    ///   unreachable rather than wrong, and this file would be asserting only that nothing happened;
+    /// - the phone really **answers** — one species, which is what the paint assertions are about;
     /// - the scripted routes really **decode** — an unscripted or malformed answer comes back as a
-    ///   throw the router swallows into its fallback, so "the merge did not arrive" would be true
-    ///   for a reason that has nothing to do with the code under test;
-    /// - the phone's answer and the merged answer are **distinguishable** — one species against two.
-    ///   Without that, "the paint drew the phone's grove" and "the merge landed" are the same
-    ///   observation.
-    @Test("the gate releases, the routes decode, and one species is not two")
+    ///   throw the router swallows into its documented fallback, so "the merge did not arrive"
+    ///   would be true for a reason that has nothing to do with the code under test, and the whole
+    ///   file would be green on a service that was never reached;
+    /// - the two answers are **distinguishable** — one species against two. Without that, "the paint
+    ///   drew the phone's grove" and "the merge landed" are the same observation.
+    @Test("the phone answers one species, the service's route decodes, and two is not one")
     func theFixtureAnswersWhatItClaimsTo() async throws {
-        let transport = Self.gatedService()
+        let transport = Self.scriptedService()
         let log = RemoteReadLog()
         let router = Self.router(try Self.localDouble(), transport, log: log)
 
         #expect(try await router.groveSpecies().known.items.count == 1, "the phone's half is not one species")
 
-        let held = Task { try await router.refreshedGroveSpecies() }
-        await transport.gate.open()
-        let merged = try await held.value
+        let merged = try await router.refreshedGroveSpecies()
 
-        #expect(merged.known.items.count == 2, "the gate never released, or the route did not decode")
+        #expect(merged.known.items.count == 2, "the route did not decode, or the merge dropped a row")
         #expect(transport.calls.count == 1, "the refresh asked the service \(transport.calls.count) times")
         #expect(await log.outcome(of: .groveSpecies) == .live, "the refresh did not resolve every row")
     }
 
     // MARK: The paint
 
-    /// **`groveSpecies()` answers from the phone while the service is still held.**
+    /// **`groveSpecies()` answers from the phone and asks the service nothing.**
     ///
     /// This is the reported defect as a test. The Species pill is the tab My Grove opens on, and its
     /// read used to `await remote.groveSpeciesDelta()` before returning anything — so the first frame
     /// cost a round trip, and on an unreachable host it cost `URLSession`'s untouched 60-second
     /// default.
     ///
-    /// The gate is never opened in this test. If the paint asked the service, this `await` would not
-    /// return at all.
-    @Test("the species read answers from the phone with the service still held")
+    /// The service here answers instantly and correctly, which is what makes the census decisive
+    /// rather than incidental: there is nothing slow to notice, and the assertion is still that the
+    /// paint did not ask.
+    @Test("the species read answers from the phone and asks the service nothing")
     func theSpeciesReadAnswersFromThePhone() async throws {
-        let transport = Self.gatedService()
+        let transport = Self.scriptedService()
         let log = RemoteReadLog()
         let router = Self.router(try Self.localDouble(), transport, log: log)
 
@@ -232,13 +187,12 @@ struct GroveLocalFirstTests {
             "the paint recorded an outcome for a service it never consulted"
         )
 
-        await transport.gate.open()
     }
 
     /// The Trees pill, on the same terms.
-    @Test("the trees read answers from the phone with the service still held")
+    @Test("the trees read answers from the phone and asks the service nothing")
     func theTreesReadAnswersFromThePhone() async throws {
-        let transport = Self.gatedService()
+        let transport = Self.scriptedService()
         let log = RemoteReadLog()
         let router = Self.router(try Self.localDouble(), transport, log: log)
 
@@ -249,20 +203,20 @@ struct GroveLocalFirstTests {
         #expect(transport.calls.isEmpty, "the paint reached the service")
         #expect(await log.outcome(of: .grove) == nil)
 
-        await transport.gate.open()
     }
 
     // MARK: The model, which is where the two halves are visible at once
 
     /// **The screen is drawn from the phone, and the account's species appears when it arrives.**
     ///
-    /// Both halves of the ruling in one test, and neither half reads a clock: the first assertion is
-    /// made while the gate is shut, and the second is made after `speciesRefresh` — the model's own
-    /// handle on the background task — has completed. "Await the task" is a structural fact about
-    /// the work, not a guess about how long it takes.
+    /// Both halves of the ruling in one test, and neither half reads a clock. The first assertion is
+    /// a census — one species drawn, no request made — taken the instant `load()` returns; the second
+    /// is taken after `speciesRefresh`, the model's own handle on the background task, has completed.
+    /// A `load()` that awaited the merge would fail the first assertion with two species in hand,
+    /// which is the shape this whole round is about.
     @Test("the model paints one species, then two when the service answers")
     func theModelPaintsThenMerges() async throws {
-        let transport = Self.gatedService()
+        let transport = Self.scriptedService()
         let router = Self.router(try Self.localDouble(), transport, log: RemoteReadLog())
         let model = GroveModel(
             api: router,
@@ -279,7 +233,6 @@ struct GroveLocalFirstTests {
         #expect(painted.known.items.count == 1, "the paint waited for the service")
         #expect(transport.calls.isEmpty, "the paint reached the service")
 
-        await transport.gate.open()
         await model.speciesRefresh?.value
 
         guard case let .loaded(merged) = model.phase else {
@@ -299,7 +252,7 @@ struct GroveLocalFirstTests {
     /// The Trees pill's half of the same property.
     @Test("the trees pill paints one tree, then two when the service answers")
     func theTreesPillPaintsThenMerges() async throws {
-        let transport = Self.gatedService()
+        let transport = Self.scriptedService()
         let router = Self.router(try Self.localDouble(), transport, log: RemoteReadLog())
         let model = GroveModel(
             api: router,
@@ -317,7 +270,6 @@ struct GroveLocalFirstTests {
         #expect(painted.count == 1, "the paint waited for the service")
         #expect(transport.calls.isEmpty, "the paint reached the service")
 
-        await transport.gate.open()
         await model.treesRefresh?.value
 
         guard case let .loaded(merged) = model.treesPhase else {
@@ -337,7 +289,7 @@ struct GroveLocalFirstTests {
     /// read that did not land is not evidence against it.
     @Test("a refresh that fails does not blank the screen")
     func aFailedRefreshLeavesThePaintStanding() async throws {
-        let router = Self.router(try Self.localDouble(), GateTransport(), log: RemoteReadLog())
+        let router = Self.router(try Self.localDouble(), ScriptedTransport(), log: RemoteReadLog())
         let model = GroveModel(
             api: router,
             now: { Self.laterMet },
@@ -394,7 +346,7 @@ struct GroveLocalFirstTests {
     /// the background", and a guard that skipped both halves would deliver only the first.
     @Test("a repeat load still starts a background refresh")
     func aRepeatLoadStillRefreshes() async throws {
-        let transport = Self.gatedService()
+        let transport = Self.scriptedService()
         let router = Self.router(try Self.localDouble(), transport, log: RemoteReadLog())
         let model = GroveModel(
             api: router,
@@ -403,7 +355,6 @@ struct GroveLocalFirstTests {
         )
 
         await model.load()
-        await transport.gate.open()
         await model.speciesRefresh?.value
 
         // The second visit: nothing is re-read, and the refresh runs again.

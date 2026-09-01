@@ -149,9 +149,22 @@ struct RemoteAccessTests {
             _ = try await router.remote.groveDelta()
         }
 
-        // And the fallback the router documents really is what a screen gets: `grove()` answers
-        // from the phone and marks itself rather than throwing.
+        // And the fallback the router documents really is what a screen gets: the read answers from
+        // the phone and marks itself rather than throwing.
+        //
+        // **`refreshedGrove()` and not `grove()`.** Since the local-first round `grove()` is the
+        // paint and does not consult the service at all, so it records nothing — nil, which
+        // `RemoteReadLog.outcome(of:)` defines as "the service was not asked" and which is the truth
+        // about it. The refresh is the call that asks, so it is the one whose refusal has to be
+        // marked. Both halves are asserted: "the paint records nothing" and "the refresh records the
+        // refusal" are two claims, and only the second of them was here before.
         _ = try await data.api.grove()
+        #expect(
+            await data.readLog.outcome(of: .grove) == nil,
+            "the paint recorded an outcome for a service it never consulted"
+        )
+
+        _ = try await router.refreshedGrove()
         #expect(await data.readLog.degradedReads.contains(.grove), "a refused read was not marked")
     }
 
