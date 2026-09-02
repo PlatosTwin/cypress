@@ -42,8 +42,17 @@ struct TreePhotosView: View {
     /// screen is on the navigation stack, not in the cover that ERRATA E142 caught.
     @Environment(PhotoImageStore.self) private var images: PhotoImageStore?
 
-    init(treeID: UUID, api: (any CypressAPI)? = nil) {
-        _model = State(wrappedValue: TreePhotosModel(treeID: treeID, api: api))
+    /// - Parameter refreshProfile: the profile again with the community half merged in, from the
+    ///   composition root (`DataLayer.refreshTreeProfile`). Nil draws the phone's photographs and
+    ///   starts no background task.
+    init(
+        treeID: UUID,
+        api: (any CypressAPI)? = nil,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil
+    ) {
+        _model = State(
+            wrappedValue: TreePhotosModel(treeID: treeID, api: api, refreshProfile: refreshProfile)
+        )
     }
 
     /// A finished model, for previews and the screen sweep.
