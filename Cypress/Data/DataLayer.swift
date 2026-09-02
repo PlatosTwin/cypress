@@ -101,6 +101,25 @@ public struct DataLayer: Sendable {
     /// The Trees pill's read again, on `refreshGroveSpecies`' terms exactly.
     public let refreshGrove: (@Sendable () async -> [GroveEntry]?)?
 
+    /// A tree profile's community half, merged in — or nil when there is no service to merge from.
+    /// `refreshGroveSpecies`' terms exactly, over `RoutedAPI.refreshedTreeProfile(id:)`.
+    ///
+    /// **Handed only to the three surfaces that draw somebody else's photograph** — screen 03, the
+    /// photo browser and the map's tree card. The community half is photographs and nothing else,
+    /// so the other thirteen `treeProfile(id:)` callers read the phone and lose nothing; see
+    /// `RoutedAPI.refreshedTreeProfile(id:)`.
+    public let refreshTreeProfile: (@Sendable (UUID) async -> TreeProfile?)?
+
+    /// The heart's R2 re-read, asked of the service — or nil when there is no service to ask.
+    ///
+    /// The owner's ruling of 2026-09-02: the tap answers from the phone and this reconciles behind
+    /// it. See `RoutedAPI.isFavorite(treeID:)` for what that amends and what it leaves alone.
+    public let reconcileFavorite: (@Sendable (UUID) async -> Bool?)?
+
+    /// The membership chip's id set, unioned with the account's — or nil with the gate shut.
+    /// `RoutedAPI.refreshedMapMembership(_:)`, on the same terms as the two above.
+    public let refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
+
     /// Opens the store, runs migrations, attaches the seed, and wires the router and both outbox
     /// sinks.
     ///
@@ -379,9 +398,15 @@ public struct DataLayer: Sendable {
         // task when they are nil.
         var refreshGroveSpecies: (@Sendable () async -> GroveSpecies?)?
         var refreshGrove: (@Sendable () async -> [GroveEntry]?)?
+        var refreshTreeProfile: (@Sendable (UUID) async -> TreeProfile?)?
+        var reconcileFavorite: (@Sendable (UUID) async -> Bool?)?
+        var refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
         if access.allowsNetwork {
             refreshGroveSpecies = { try? await api.refreshedGroveSpecies() }
             refreshGrove = { try? await api.refreshedGrove() }
+            refreshTreeProfile = { id in try? await api.refreshedTreeProfile(id: id) }
+            reconcileFavorite = { id in try? await api.reconciledIsFavorite(treeID: id) }
+            refreshMapMembership = { kind in try? await api.refreshedMapMembership(kind) }
         }
 
         // ── Two sinks, and this is the round that wires the second (RULINGS R72 §1) ─────────────
@@ -425,7 +450,10 @@ public struct DataLayer: Sendable {
             remoteAccess: access,
             readLog: readLog,
             refreshGroveSpecies: refreshGroveSpecies,
-            refreshGrove: refreshGrove
+            refreshGrove: refreshGrove,
+            refreshTreeProfile: refreshTreeProfile,
+            reconcileFavorite: reconcileFavorite,
+            refreshMapMembership: refreshMapMembership
         )
     }
 

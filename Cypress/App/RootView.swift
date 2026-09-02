@@ -680,7 +680,25 @@ struct RootView: View {
 
     /// Screen 03's heart, as this app performs it (RULINGS R2, ERRATA E112).
     private var favoriteWriter: ProfileFavoriteWriter {
-        ProfileFavoriteWriter(api: data.api, local: data.local, outbox: data.outbox)
+        ProfileFavoriteWriter(
+            api: data.api,
+            local: data.local,
+            outbox: data.outbox,
+            reconcile: data.reconcileFavorite
+        )
+    }
+
+    /// The heart's reconcile, or nil with the gate shut.
+    ///
+    /// Written out as a property rather than inline at the call site because the nil case has to
+    /// stay nil: a closure that always exists and answers nil inside would start a background task
+    /// on every read in every gate-shut build — which is every DEBUG build and the whole UI suite —
+    /// to learn nothing. `TreeProfileModel` reads a nil closure as "start no task at all", which is
+    /// the same contract `DataLayer.refreshGroveSpecies` states for the grove.
+    private var favoriteReconciler: ((UUID) async -> Bool?)? {
+        guard data.reconcileFavorite != nil else { return nil }
+        let writer = favoriteWriter
+        return { treeID in await writer.reconciledState(treeID: treeID) }
     }
 
     /// Screen 15's sign-in: the real Sign in with Apple exchange (spec §5.2 and §10 step 5,
@@ -851,7 +869,14 @@ struct RootView: View {
                 // `ProfileFavoriteWriter.storedState`.
                 readFavorite: { [favoriteWriter] treeID in
                     await favoriteWriter.storedState(treeID: treeID)
-                }
+                },
+                // The community half, merged in behind the painted profile — screen 03 is one of the
+                // three surfaces that draws a photograph somebody else took. Nil with the gate shut.
+                refreshProfile: data.refreshTreeProfile,
+                // The service half of the R2 re-read, behind the painted heart (the owner's ruling
+                // of 2026-09-02). See `ProfileFavoriteWriter.reconciledState` for why the queue is
+                // still asked ahead of it.
+                reconcileFavorite: favoriteReconciler
             )
 
         case .checkIn(let id):
@@ -1170,13 +1195,18 @@ struct RootView: View {
 /// was — which is the state R2 says the screen now has and E101 said it did not.
 struct ProfileFavoriteWriter: Sendable {
     /// **The router**, because the re-read is Class R (spec §3.1) and #167's whole point is that a
-    /// favorite set on one phone shows as set on another. `RoutedAPI.isFavorite` asks the service
-    /// and falls back to the phone, saying which it did.
+    /// favorite set on one phone shows as set on another.
+    ///
+    /// `RoutedAPI.isFavorite` answers from the phone since the owner's ruling of 2026-09-02, and the
+    /// service's answer arrives through `reconcile` below. The cross-device fact #167 is about is
+    /// therefore still delivered — a beat later, and no longer between a finger and the control.
     let api: any CypressAPI
     /// **The phone**, for `attribution` alone: who this device is writing as is a fact about this
     /// installation's `app_state` (D9, ERRATA E86) and is not on `CypressAPI`.
     let local: LocalAPI
     let outbox: OutboxQueue
+    /// The service's answer to the heart, or nil with the gate shut (`DataLayer.reconcileFavorite`).
+    var reconcile: (@Sendable (UUID) async -> Bool?)?
 
     /// - Parameter isFavorite: the resulting state, not a verb. A favorite syncs as a toggle event
     ///   with a tombstone (BUILD-PLAN §4), so the payload carries where the heart ended up.
@@ -1215,6 +1245,23 @@ struct ProfileFavoriteWriter: Sendable {
             return pending
         }
         return (try? await api.isFavorite(treeID: treeID)) ?? false
+    }
+
+    /// The service's word on this tree, behind the painted heart — or nil to leave it alone.
+    ///
+    /// **The queue is still asked first, and that is the whole of why this is not just `reconcile`.**
+    /// `storedState` asks it for #167's reason: a toggle that is enqueued but not yet drained is the
+    /// contributor's last word, and the service has not heard it yet. A reconcile that skipped the
+    /// queue would answer with the state *before* the tap and take the heart back off — which is
+    /// exactly the "my favoriting got undone" report of #139, #153 and #167, arriving from the one
+    /// direction those three tickets did not close.
+    ///
+    /// Nil when there is no service, and nil when the queue holds the answer already — both mean
+    /// "nothing here for the heart to learn", which the model reads as leave-it-as-it-is.
+    func reconciledState(treeID: UUID) async -> Bool? {
+        guard let reconcile else { return nil }
+        if (try? await outbox.pendingFavoriteState(treeID: treeID)) != nil { return nil }
+        return await reconcile(treeID)
     }
 }
 
