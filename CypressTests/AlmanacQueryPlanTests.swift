@@ -20,12 +20,20 @@ import Testing
 ///   `SCAN v | … | SEARCH t USING AUTOMATIC PARTIAL COVERING INDEX (uuid=?)` — a transient index
 ///   built over `temp.trees`, the whole merged inventory, per execution.
 ///
-/// With `lower()` on the contributions side both arms plan
+/// With `lower()` on the contributions side both arms planned
 /// `SCAN v | … | SEARCH t USING INDEX sqlite_autoindex_trees_1 (uuid=?)`: drive from the
-/// contributor's own visits, seek the inventory once per visit, build nothing. The statement goes
+/// contributor's own visits, seek the inventory once per visit, build nothing. The statement went
 /// from 3.06–4.53 ms to 0.01–0.02 ms in the polygon arm and from 22.9–33.7 ms to 0.12–0.26 ms in the
 /// radius arm, on a device with no contributions at all — `AlmanacQueries.bloomTreeJoin` carries the
 /// figures and how they were taken.
+///
+/// **Since `AppSchema` v19 the leading `SCAN v` is a `SEARCH` as well**, in both arms:
+/// `SEARCH v USING INDEX idx_visits_captured (captured_at>?)`. Nothing in `AlmanacQueries` changed
+/// for it. v19 added `idx_visits_captured` on `(captured_at DESC, id COLLATE NOCASE DESC)` for the
+/// journal's page query, and this statement already bounded `captured_at` to the current year
+/// (SCREENS.md 12 §2), so the year bound became a range seek. It is recorded here because it is a
+/// plan this file explains that moved without this file's subject moving, and because it is half of
+/// why `scannable` no longer carries `visits` — see that property.
 ///
 /// ── The rules ───────────────────────────────────────────────────────────────────────────────
 /// The first two are `GroveQueryPlanTests`', and its header states why each is written the way it
@@ -114,12 +122,31 @@ struct AlmanacQueryPlanTests {
 
     /// Relations a plan may walk end to end, and why each one is small.
     ///
-    /// Two entries, and the shortness is the point: **the inventory is not on this list under any
-    /// alias.** `visits` is the contributor's own record, bounded by what one person did on one
-    /// phone; `json_each` is a co-routine over a bound array. Every relation an almanac statement
-    /// touches other than those two is the merged inventory or a translation table beside it, and
-    /// walking any of them is the regression this file exists to catch.
-    private static let scannable: Set<String> = ["visits", "v", "json_each"]
+    /// One entry, and the shortness is the point: **the inventory is not on this list under any
+    /// alias.** `json_each` is a co-routine over a bound array. Every relation an almanac statement
+    /// touches other than that one is either the merged inventory, a translation table beside it, or
+    /// the contributor's own `visits` — and walking any of them is now a regression this file
+    /// catches.
+    ///
+    /// **`visits` and `v` were on this list until `AppSchema` v19, and were taken off by
+    /// measurement rather than by tidying.** They were here because both statements that touch the
+    /// contributor's record walked it: `firstBloom` drove from `visits` end to end, and
+    /// `youngTreesWithoutVisits` walked it once per candidate tree because its `COLLATE NOCASE`
+    /// could not reach a BINARY `idx_visits_tree`. v19 ended both, and the second one was not
+    /// predicted — the round expected only the young-tree flip:
+    ///
+    /// - `youngTreesWithoutVisits` → `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND
+    ///   captured_at>?)`, from the recollation. `theYoungTreeSubquerySeeksTheRecollatedIndex` pins it.
+    /// - `firstBloom` → `SEARCH v USING INDEX idx_visits_captured (captured_at>?)`, in both arms,
+    ///   from an index v19 added for the *journal*: the statement bounds `captured_at` to this year
+    ///   (SCREENS.md 12 §2), and `idx_visits_captured` leads on `captured_at`, so the year bound
+    ///   became a range seek. Nothing in `AlmanacQueries` changed for it.
+    ///
+    /// Keeping the two entries would have left a permission nothing used, which is the same artifact
+    /// as a stale pin: a later edit could put either walk back and rule 2 would certify it. The
+    /// narrowing was verified before it was written — with this list cut to `["json_each"]`,
+    /// `plansStayIndexedAndBuildNothing` passes on all nine statements in both arms.
+    private static let scannable: Set<String> = ["json_each"]
 
     /// label, the statement, and the index whose `SEARCH` must answer it in this arm.
     ///
@@ -240,10 +267,14 @@ struct AlmanacQueryPlanTests {
     /// it. Both of R29's arms now plan
     /// `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)`, measured
     /// 0.319 ms → 0.008 ms per candidate tree; a §4 card with 200 candidates goes 64 ms → 1.5 ms.
-    /// The pin is therefore inverted: it **requires** the seek and forbids the walk. Rule 2's
-    /// allowlist still permits `v` to be scanned — it is there for `firstBloom`, which drives from
-    /// the contributor's visits — so this is the only expectation in the file that would notice
-    /// this statement going back to a walk.
+    /// The pin is therefore inverted: it **requires** the seek, requires both of the constraints the
+    /// index can carry, and forbids the walk.
+    ///
+    /// Rule 2 now forbids that walk too — v19 took `visits` and `v` off `scannable`, because it also
+    /// gave `firstBloom` a seek and left the almanac with no walk of the contributor's record at
+    /// all. That is deliberate overlap and it is worth its cost: rule 2 catches the walk coming back
+    /// on any statement, and this test says which index the walk is supposed to have been replaced
+    /// by, which rule 2 cannot.
     ///
     /// ── The counterfactual, which v19 inverted too ──────────────────────────────────────────────
     /// The old form of this test built `v.tree_uuid = upper(t.uuid)` by substitution and showed that
@@ -303,9 +334,10 @@ struct AlmanacQueryPlanTests {
                 #expect(
                     !steps.contains(where: { GroveQueryPlanTests.scannedRelation(in: $0) == "v" }),
                     """
-                    the young-tree subquery walks `visits` end to end in the \(arm.name) arm. Rule \
-                    2's allowlist permits that — the entry is there for `firstBloom` — so this \
-                    expectation is the only one in the file that sees it — \(plan)
+                    the young-tree subquery walks `visits` end to end in the \(arm.name) arm — the \
+                    plan v19 removed, at one pass over the reader's whole record per candidate \
+                    tree. Rule 2 reports this too, since v19 took `v` off the allowlist; this \
+                    expectation is the one that names the index it should have used — \(plan)
                     """
                 )
 
