@@ -135,7 +135,13 @@ struct GrovePaginationTests {
             "the fixture has no run of never-visited trees, so the NULL half of the order is untested"
         )
 
-        let resorted = grove.sorted { $0.orderKey > $1.orderKey }
+        // **Reversed before it is re-sorted, and the test was vacuous without it.** The first
+        // draft sorted `grove` itself — already in the query's order — and Swift's sort leaves an
+        // ordered array alone, so a comparator that had *forgotten* the tie-break entirely came
+        // back with the right answer and the suite stayed green. Measured: deleting `left.tree <
+        // right.tree` from `GroveOrderKey` passed all seven tests in this file. Reversing first
+        // means every tie has to be put back deliberately.
+        let resorted = Array(grove.reversed()).sorted { $0.orderKey > $1.orderKey }
         let queryOrder = grove.map(\.treeID)
         let keyOrder = resorted.map(\.treeID)
         let firstDisagreement: String = keyOrder.indices

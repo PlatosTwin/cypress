@@ -35,16 +35,17 @@ import UIKit
 @Suite("My Grove · the Trees column, photographed while it is loading")
 struct GroveDrawnLoadingShot {
 
-    /// The band between the pill row and the bottom tab bar, in points.
+    /// The band between the pill row and the bottom tab bar, in points, measured off a capture
+    /// rather than guessed: at `.large` on a 393 × 852 viewport the pills end at about 117 pt and
+    /// C16 begins at about 800.
     ///
-    /// Top: screen 08's title block plus the pill row is about 150 pt at `.large`; 200 clears it
-    /// with room to spare, and clearing it is what matters — a crop that included the pills would
-    /// never be flat and the test would pass on the chrome.
-    ///
-    /// Bottom: C16 is about 100 pt plus the home indicator. 700 is well above the column's floor at
-    /// this viewport and well below the bar.
-    static let columnTop: CGFloat = 200
-    static let columnBottom: CGFloat = 700
+    /// Clearing the chrome is the whole requirement — a crop containing the pills or the tab bar
+    /// would never be flat, and the test would pass on furniture that is drawn in every state.
+    /// The other side of it is that the band must still contain the column's *top*, where a
+    /// loading treatment sits: a band starting at 200 pt clears the pills comfortably and misses
+    /// the spinner entirely, which is what the first draft of this file did.
+    static let columnTop: CGFloat = 135
+    static let columnBottom: CGFloat = 780
 
     @Test("the column draws something while the first page is in flight")
     func theLoadingColumnIsNotBlank() async throws {
@@ -61,7 +62,7 @@ struct GroveDrawnLoadingShot {
         api.answer([])
 
         let column = try #require(Self.crop(image), "the crop fell outside the capture")
-        let verdict = ShotBlankGuard.verdict(for: column)
+        let verdict = ShotBlankGuard.verdict(reading: column.cgImage)
         #expect(
             verdict.isDrawn,
             """
@@ -91,19 +92,19 @@ struct GroveDrawnLoadingShot {
             // Chrome at the top and the bottom, which is what a blank column has around it and
             // what a careless crop would find instead of the column.
             UIColor.black.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: size.width, height: Self.columnTop - 20))
+            context.fill(CGRect(x: 0, y: 0, width: size.width, height: Self.columnTop - 10))
             UIColor.black.setFill()
             context.fill(
                 CGRect(
-                    x: 0, y: Self.columnBottom + 20,
-                    width: size.width, height: size.height - Self.columnBottom - 20
+                    x: 0, y: Self.columnBottom + 10,
+                    width: size.width, height: size.height - Self.columnBottom - 10
                 )
             )
         }
 
         let column = try #require(Self.crop(flat))
         #expect(
-            !ShotBlankGuard.verdict(for: column).isDrawn,
+            !ShotBlankGuard.verdict(reading: column.cgImage).isDrawn,
             """
             the crop reported a deliberately empty column as drawn. Either it is not landing on the \
             column, or the blank guard cannot see a flat frame — in both cases the test above is \
@@ -112,20 +113,31 @@ struct GroveDrawnLoadingShot {
         )
     }
 
-    /// The band, in pixels, out of a capture whose `size` is in points.
+    /// The band, redrawn into a bitmap of its own.
+    ///
+    /// **`CGImage.cropping(to:)` is deliberately not used**, and it is the kind of thing that would
+    /// have made this whole file lie. A cropped `CGImage` keeps the *parent's* data provider: its
+    /// `width` and `height` are the crop's, and `dataProvider.data` is still the full capture. A
+    /// reader that walks `width × height` from offset zero — which is what
+    /// `ShotBlankGuard.verdict(reading:)` correctly does for an ordinary bitmap — would therefore
+    /// be reading the top-left corner of the screen, chrome and all, and answering `.ok` no matter
+    /// what the column held. Redrawing produces a standalone buffer whose geometry is its own.
+    ///
+    /// The verdict is then taken at **full resolution**, not through
+    /// `ShotBlankGuard.verdict(for:)`. That entry point downscales to 16 × 16 first, which is right
+    /// for its own job — judging a whole screen — and wrong here: a 20 pt spinner in a 645 pt band
+    /// is less than a pixel of a 16 × 16 thumbnail, so the drawn column and the blank one would
+    /// downscale to the same flat frame. Measured: the first draft of this test did exactly that
+    /// and reported "only 1 unique color" for a column with a spinner plainly in it.
     static func crop(_ image: UIImage) -> UIImage? {
-        guard let cgImage = image.cgImage else { return nil }
-        let scale = CGFloat(cgImage.width) / image.size.width
-        let rect = CGRect(
-            x: 0,
-            y: columnTop * scale,
-            width: CGFloat(cgImage.width),
-            height: (columnBottom - columnTop) * scale
-        )
-        guard rect.maxY <= CGFloat(cgImage.height), let cropped = cgImage.cropping(to: rect) else {
-            return nil
+        guard columnBottom <= image.size.height else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = true
+        let size = CGSize(width: image.size.width, height: columnBottom - columnTop)
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(at: CGPoint(x: 0, y: -columnTop))
         }
-        return UIImage(cgImage: cropped)
     }
 }
 

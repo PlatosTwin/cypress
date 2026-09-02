@@ -13,9 +13,9 @@
 //  a gray line ending in a date, which is one grammar for two meanings. Two things were changed to
 //  fix it structurally rather than with words:
 //
-//  - **the date is gone from the row.** Recency lives in the ordering (`last_visited DESC NULLS
-//    LAST`, the store's, unchanged), which is where a stable collection should keep it. Nothing on
-//    this screen is a chronology any more.
+//  - **the date is gone from the row.** Recency lives in the ordering
+//    (`ContributionStore.groveOrderSQL`, the store's), which is where a stable collection should
+//    keep it. Nothing on this screen is a chronology any more.
 //  - **the row carries the shape of the relationship instead** — `Favorite · 4 visits · 1
 //    measurement`. This is the one fact the journal cannot state without printing twenty rows, and
 //    it is what makes "one row per tree, forever" visible.
@@ -107,10 +107,11 @@ struct GroveTreesPresentation: Equatable {
     /// Jul 12`, and that clause is gone — see `GroveCopy.treeSubtitle`.
     init(entries: [GroveEntry], hasMore: Bool = false) {
         self.hasMore = hasMore
-        // **The store's order, unchanged.** `groveTreeIDs` orders by `last_visited DESC NULLS LAST`,
-        // which puts the tree you saw most recently at the top and the ones you have only favorited
-        // at the bottom. Re-sorting here would be a second ordering, and two orderings is two
-        // chances to disagree — the one in SQL is the one the index is built for.
+        // **The store's order, unchanged.** `ContributionStore.groveOrderSQL` puts the tree you saw
+        // most recently at the top and the ones you have only favorited at the bottom, and breaks
+        // ties on the tree's own uuid so that the order is total. Re-sorting here would be a second
+        // ordering, and two orderings is two chances to disagree — which stopped being hypothetical
+        // when a page boundary became a position in this sequence (`GroveOrderKey`).
         //
         // It is also the *only* place recency is now expressed, and the only ordering this list may
         // have: sorting by the tally would turn a description into a ranking (D1, `GroveRecord`).

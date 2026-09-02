@@ -149,10 +149,15 @@ struct GroveTreesPagingTests {
 
     // MARK: - Ruling 1: it pages
 
+    /// The grove is **two full pages and a short one**, deliberately: a grove of exactly three
+    /// pages ends on a full page, which carries a cursor and offers `Show more` once more —
+    /// correct, and `LocalAPI.grove(cursor:limit:)`'s stated rule, but not the state this test is
+    /// about.
     @Test("the first read is one page, and the rest is behind Show more")
     @MainActor
     func theFirstReadIsOnePage() async {
-        let api = WholeGroveAPI(Self.grove(GroveLimits.pageSize * 3, visitedThrough: GroveLimits.pageSize))
+        let total = GroveLimits.pageSize * 2 + 7
+        let api = WholeGroveAPI(Self.grove(total, visitedThrough: GroveLimits.pageSize))
         let model = GroveModel(api: api, tab: .trees)
 
         await model.loadTreesIfNeeded()
@@ -160,7 +165,10 @@ struct GroveTreesPagingTests {
             Issue.record("the first read drew \(model.treesDrawing)")
             return
         }
-        #expect(first.rows.count == GroveLimits.pageSize)
+        #expect(
+            first.rows.count == GroveLimits.pageSize,
+            "the first read drew \(first.rows.count) of \(total) trees, not one page"
+        )
         #expect(first.moreNote != nil, "a grove three pages long offered no way to see page two")
 
         await model.loadMoreTrees()
@@ -179,7 +187,7 @@ struct GroveTreesPagingTests {
             Issue.record("the last page drew \(model.treesDrawing)")
             return
         }
-        #expect(third.rows.count == GroveLimits.pageSize * 3)
+        #expect(third.rows.count == total, "the last page drew \(third.rows.count) of \(total)")
         #expect(third.moreNote == nil, "the end of the grove still offered `Show more`")
     }
 
@@ -334,18 +342,28 @@ struct GroveTreesPagingTests {
 /// `AlmanacLateFixTests.Held` exists for the same reason and says it at length: an `async` function
 /// with no `await` in its body is not guaranteed to yield, so a double that simply returns can
 /// never show a caller what the model looks like *during* a read.
+/// **The handshake is two continuations and not a polling loop**, which is a correction rather than
+/// a style: the first draft spun on `Task.yield()` until a flag flipped, and that passed on its
+/// first run and failed on the next — the whole suite is `@MainActor` and runs in parallel, so how
+/// many yields it takes for one main-actor task to reach a suspension depends on what the other
+/// tests happen to be doing. A test that is a race with the scheduler reports the scheduler.
 final class SuspendingGroveAPI: CypressAPI, @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<[GroveEntry], Error>?
+    private var askedSignal: CheckedContinuation<Void, Never>?
     private var answer: [GroveEntry]?
     private var asked = false
 
+    /// Returns once the model has entered `grove()` and suspended there.
     func waitUntilAsked() async {
-        for _ in 0..<2_000 {
-            if lock.withLock({ asked }) { return }
-            await Task.yield()
+        await withCheckedContinuation { (signal: CheckedContinuation<Void, Never>) in
+            let alreadyAsked: Bool = lock.withLock {
+                if asked { return true }
+                askedSignal = signal
+                return false
+            }
+            if alreadyAsked { signal.resume() }
         }
-        Issue.record("the model never asked for the grove")
     }
 
     func answer(_ entries: [GroveEntry]) {
@@ -360,12 +378,17 @@ final class SuspendingGroveAPI: CypressAPI, @unchecked Sendable {
 
     func grove() async throws -> [GroveEntry] {
         try await withCheckedThrowingContinuation { continuation in
-            let ready: [GroveEntry]? = lock.withLock {
+            let (ready, signal): ([GroveEntry]?, CheckedContinuation<Void, Never>?) = lock.withLock {
                 asked = true
-                if let answer { return answer }
+                let signal = askedSignal
+                askedSignal = nil
+                if let answer { return (answer, signal) }
                 self.continuation = continuation
-                return nil
+                return (nil, signal)
             }
+            // Signalled *after* this call has committed to suspending, so a test that wakes on it
+            // is looking at a model whose read is genuinely in flight.
+            signal?.resume()
             if let ready { continuation.resume(returning: ready) }
         }
     }
