@@ -225,16 +225,27 @@ public protocol CypressAPI: Sendable {
     ///
     /// A second entry point rather than a limit on `grove()` because the two answer different
     /// questions and both have callers: the whole grove is what a background refresh joins the
-    /// account's half into and what the map's `Yours` filter is derived from, and a page is what a
-    /// list draws. `journal(cursor:limit:)` one screen over is the same pair for the same reason.
+    /// account's half into, and a page is what a list draws. `journal(cursor:limit:)` one screen
+    /// over is the same pair for the same reason.
+    ///
+    /// **`grovePage` and not an overload of `grove`, and the reason is a gate rather than taste.**
+    /// `APIConformanceGuardTests` keys its existential probe on a requirement's *base name* — it
+    /// erases a conformance to `any CypressAPI`, calls every requirement, and reads back which one
+    /// was reached — and it asserts that base names are unique so that key is sufficient. A second
+    /// `grove` would make the two indistinguishable to it and the gate would stop measuring what it
+    /// claims to. `journal(cursor:limit:)` keeps its plain name because it has no unlabelled
+    /// sibling. Widening the probe to full signatures is the alternative and is a change to a gate
+    /// for the convenience of a name.
     ///
     /// **Declared here and defaulted below, which is not the shape ERRATA E125 forbids.** E125 is
     /// about a method that exists *only* in an extension: it has no witness-table entry, so it
     /// dispatches statically and every screen holding `any CypressAPI` reaches the default rather
     /// than the conformance. A requirement with a default in an extension dispatches dynamically —
     /// `LocalAPI`'s implementation is reached through the existential — and the default is there so
-    /// a double with nothing but a `grove()` needs to learn nothing new.
-    func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry>
+    /// a preview double with nothing but a `grove()` needs to learn nothing new. Every *shipping*
+    /// conformance still declares it: that is `APIConformanceGuardTests`' other gate, and it is why
+    /// `RemoteAPI` carries a refusal of its own rather than inheriting one.
+    func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry>
 
     /// `GET /me/grove` narrowed to one tree: whether this contributor currently holds it (#167).
     ///
@@ -346,7 +357,7 @@ public extension CypressAPI {
         try await grove().first { $0.treeID == treeID }?.isFavorite ?? false
     }
 
-    /// The grove-derived default for `grove(cursor:limit:)` — the whole answer, cut where the
+    /// The grove-derived default for `grovePage(cursor:limit:)` — the whole answer, cut where the
     /// cursor says.
     ///
     /// **It is truthful and it is not a performance fix**, and the two halves of that sentence are
@@ -361,7 +372,7 @@ public extension CypressAPI {
     /// (`ContributionStore.groveOrderSQL`), so "after the cursor" is "past that element", and a
     /// cursor naming an element this answer does not contain starts from the beginning — the same
     /// wrong-but-safe reading `JournalCursor` chooses for an unparsable cursor.
-    func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+    func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
         let all = try await grove()
         let capped = min(limit, Page<GroveEntry>.maximumLimit)
         let start = cursor
@@ -371,7 +382,7 @@ public extension CypressAPI {
         guard start < all.count, capped > 0 else { return Page(items: [], nextCursor: nil) }
         let page = Array(all[start..<min(start + capped, all.count)])
         // A full page carries a cursor even when it happens to be the last one, which is
-        // `LocalAPI.grove(cursor:limit:)`'s rule and `journal()`'s before it: the read cannot know
+        // `LocalAPI.grovePage(cursor:limit:)`'s rule and `journal()`'s before it: the read cannot know
         // it reached the end without asking again, and one empty page is cheaper than a list that
         // wrongly says it is complete.
         let nextCursor = page.count == capped
@@ -1319,7 +1330,7 @@ public extension GroveEntry {
         )
     }
 
-    /// This entry's position as the opaque cursor `grove(cursor:limit:)` takes, so that a caller
+    /// This entry's position as the opaque cursor `grovePage(cursor:limit:)` takes, so that a caller
     /// holding entries and no store can ask for what comes after the last one it is showing.
     var groveCursor: String {
         ContributionStore.GroveCursor(lastVisitedAt: lastVisitedAt, treeID: treeID).string

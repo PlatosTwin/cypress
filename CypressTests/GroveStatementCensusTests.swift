@@ -99,7 +99,7 @@ struct GroveStatementCensusTests {
 
         let census = StatementCensus()
         await store.queue.installCensus(census)
-        let page = try await api.grove(cursor: nil, limit: GroveLimits.pageSize)
+        let page = try await api.grovePage(cursor: nil, limit: GroveLimits.pageSize)
         await store.queue.installCensus(nil)
 
         try #require(
@@ -185,12 +185,12 @@ struct GroveStatementCensusTests {
     @Test("Show more is also two hops and the bounded statement")
     func theSecondPageCostsTheSame() async throws {
         let (api, store, _) = try await Self.seededGrove()
-        let first = try await api.grove(cursor: nil, limit: GroveLimits.pageSize)
+        let first = try await api.grovePage(cursor: nil, limit: GroveLimits.pageSize)
         let cursor = try #require(first.nextCursor, "the fixture produced no second page to ask for")
 
         let census = StatementCensus()
         await store.queue.installCensus(census)
-        let second = try await api.grove(cursor: cursor, limit: GroveLimits.pageSize)
+        let second = try await api.grovePage(cursor: cursor, limit: GroveLimits.pageSize)
         await store.queue.installCensus(nil)
 
         #expect(second.items.count == GroveLimits.pageSize, "the second page came back short")

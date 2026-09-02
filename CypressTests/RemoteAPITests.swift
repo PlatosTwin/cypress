@@ -764,7 +764,9 @@ struct RemoteAPITests {
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
             "logHazardRedirect", "exportLatest",
             // Halves: the service answers part and the whole client type needs the city file.
-            "treeProfile", "deletePhoto", "grove", "groveSpecies", "journal",
+            // `grovePage` sits with `grove` and for its reason: the service sends no display
+            // name and no coordinate, so there is no `GroveEntry` here to cut into pages.
+            "treeProfile", "deletePhoto", "grove", "grovePage", "groveSpecies", "journal",
             // The one refusal that is about a missing *provider* rather than a missing route.
             "deleteAccount"
         ]

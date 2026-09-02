@@ -2180,7 +2180,7 @@ public actor LocalAPI: CypressAPI {
     /// **Screen 08 no longer calls this**, and the sentence above is why it still exists: this is
     /// the whole-grove answer, which `RoutedAPI.refreshedGrove` joins the account's half into and
     /// which `GrovePaginationTests` concatenates pages against. What the pill paints from is
-    /// `grove(cursor:limit:)` below.
+    /// `grovePage(cursor:limit:)` below.
     public func grove() async throws -> [GroveEntry] {
         try await groveEntries(after: nil, limit: nil).entries
     }
@@ -2205,7 +2205,7 @@ public actor LocalAPI: CypressAPI {
     /// full page. Deciding on `entries.count` would have ended the list early at the first
     /// unresolvable tree, which is the same class of mistake as printing a page's size as a total
     /// (ERRATA E38).
-    public func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+    public func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
         let position = cursor.flatMap(ContributionStore.GroveCursor.init(string:))
         let capped = min(limit, Page<GroveEntry>.maximumLimit)
         let (entries, rows) = try await groveEntries(after: position, limit: capped)

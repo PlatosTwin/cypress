@@ -66,7 +66,7 @@ enum GroveLimits {
 
 // MARK: - Presentation
 
-/// Everything the `Trees` pill draws, derived from one `grove(cursor:limit:)` read.
+/// Everything the `Trees` pill draws, derived from one `grovePage(cursor:limit:)` read.
 struct GroveTreesPresentation: Equatable {
 
     /// One C10 row — the same component the journal list and screens 12 and 13 use, because it is

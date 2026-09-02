@@ -103,7 +103,7 @@ struct GrovePaginationTests {
         var cursor: String?
         var pages = 0
         while pages < 200 {
-            let page = try await api.grove(cursor: cursor, limit: size)
+            let page = try await api.grovePage(cursor: cursor, limit: size)
             pages += 1
             entries += page.items
             guard let next = page.nextCursor else { return (entries, pages) }
@@ -200,7 +200,7 @@ struct GrovePaginationTests {
         let tied = whole.filter { $0.lastVisitedAt == Self.tieInstant }
         try #require(tied.count == 6, "the fixture's tie is \(tied.count) trees, not 6")
 
-        let first = try await api.grove(cursor: nil, limit: 37)
+        let first = try await api.grovePage(cursor: nil, limit: 37)
         // The boundary has to fall *inside* the tie, or this test is about an ordinary page. It is
         // asserted as a range rather than an exact count because which of the seven tied ids fall
         // before the cut is decided by their uuids, which are the seed's and not this file's.
@@ -213,7 +213,7 @@ struct GrovePaginationTests {
             """
         )
         let cursor = try #require(first.nextCursor)
-        let second = try await api.grove(cursor: cursor, limit: 37)
+        let second = try await api.grovePage(cursor: cursor, limit: 37)
 
         let across = (first.items + second.items).filter { $0.lastVisitedAt == Self.tieInstant }
         #expect(
@@ -224,7 +224,7 @@ struct GrovePaginationTests {
     }
 
     /// **A page that read a full set of ids carries a cursor even when some of them produced no
-    /// entry**, which is the rule `LocalAPI.grove(cursor:limit:)` states and the reason the cursor
+    /// entry**, which is the rule `LocalAPI.grovePage(cursor:limit:)` states and the reason the cursor
     /// is decided by `rows` rather than by `entries`. Deciding on the entries would stop the list
     /// at the first tree the inventories do not hold.
     @Test("an unresolvable row shortens a page without ending the list")
@@ -233,7 +233,7 @@ struct GrovePaginationTests {
 
         // The phantom's visit shares the tie instant, so it sits inside the tie block — rows 35
         // through 41 of the ordering. A page of 41 ids therefore contains it.
-        let page = try await api.grove(cursor: nil, limit: 41)
+        let page = try await api.grovePage(cursor: nil, limit: 41)
         #expect(
             page.items.count == 40,
             """
@@ -285,7 +285,7 @@ struct GrovePaginationTests {
         var entries: [GroveEntry] = []
         var cursor: String?
         for _ in 0..<40 {
-            let page = try await paging.grove(cursor: cursor, limit: 7)
+            let page = try await paging.grovePage(cursor: cursor, limit: 7)
             entries += page.items
             guard let next = page.nextCursor else { break }
             cursor = next
@@ -310,7 +310,7 @@ struct GrovePaginationTests {
     }
 }
 
-/// A grove that answers whole, so `grove(cursor:limit:)` reaches the protocol default. Every other
+/// A grove that answers whole, so `grovePage(cursor:limit:)` reaches the protocol default. Every other
 /// requirement is a stub: this exists to exercise one extension member.
 private struct WholeGroveDouble: CypressAPI {
     let entries: [GroveEntry]

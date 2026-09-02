@@ -151,7 +151,7 @@ struct GroveTreesPagingTests {
 
     /// The grove is **two full pages and a short one**, deliberately: a grove of exactly three
     /// pages ends on a full page, which carries a cursor and offers `Show more` once more —
-    /// correct, and `LocalAPI.grove(cursor:limit:)`'s stated rule, but not the state this test is
+    /// correct, and `LocalAPI.grovePage(cursor:limit:)`'s stated rule, but not the state this test is
     /// about.
     @Test("the first read is one page, and the rest is behind Show more")
     @MainActor

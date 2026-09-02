@@ -279,7 +279,7 @@ final class GroveModel {
     private func readFirstTreesPage() async {
         treesPhase = .loading
         do {
-            let page = try await api.grove(cursor: nil, limit: GroveLimits.pageSize)
+            let page = try await api.grovePage(cursor: nil, limit: GroveLimits.pageSize)
             treesPhase = .loaded(entries: page.items, nextCursor: page.nextCursor)
             hasFailedMoreTrees = false
         } catch {
@@ -297,7 +297,7 @@ final class GroveModel {
     /// The next page, appended.
     ///
     /// **Guarded on the cursor, not on the row count**, for `JournalModel.loadOlder`'s reason:
-    /// without it this would re-read page one — `grove(cursor: nil, …)` is a valid call that always
+    /// without it this would re-read page one — `grovePage(cursor: nil, …)` is a valid call that always
     /// returns the newest rows — and draw every one of them a second time. The guard is also what
     /// makes the control's absence and the read's refusal the same condition.
     func loadMoreTrees() async {
@@ -307,7 +307,7 @@ final class GroveModel {
         isLoadingMoreTrees = true
         defer { isLoadingMoreTrees = false }
         do {
-            let page = try await api.grove(cursor: cursor, limit: GroveLimits.pageSize)
+            let page = try await api.grovePage(cursor: cursor, limit: GroveLimits.pageSize)
             treesPhase = .loaded(
                 entries: entries + page.items, nextCursor: page.nextCursor
             )
@@ -351,7 +351,7 @@ final class GroveModel {
         isRefreshingTrees = true
         defer { isRefreshingTrees = false }
 
-        guard let fresh = try? await api.grove(cursor: nil, limit: GroveLimits.pageSize) else {
+        guard let fresh = try? await api.grovePage(cursor: nil, limit: GroveLimits.pageSize) else {
             return
         }
         guard let oldest = fresh.items.last?.orderKey, fresh.nextCursor != nil else {

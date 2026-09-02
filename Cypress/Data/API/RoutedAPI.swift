@@ -550,8 +550,8 @@ public struct RoutedAPI: CypressAPI {
     ///
     /// It does not touch the wire and records nothing in `log`, exactly as `grove()` does not. The
     /// account's half arrives through `refreshedGrove()`, behind the painted page.
-    public func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
-        try await local.grove(cursor: cursor, limit: limit)
+    public func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+        try await local.grovePage(cursor: cursor, limit: limit)
     }
 
     /// `grove()` again, with `GET /me/grove` merged in — the read that reaches the service.
