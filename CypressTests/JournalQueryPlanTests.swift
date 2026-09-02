@@ -172,6 +172,20 @@ struct JournalQueryPlanTests {
                     permitted list \(Self.scannable.sorted()) nor a bounded derived table — \(plan)
                     """
                 )
+
+                // And nothing builds an index at run time. `AUTOMATIC PARTIAL COVERING INDEX` is
+                // SQLite deciding mid-execution that a relation is walked often enough to index on
+                // the spot; it is a missing index reported as a `SEARCH`, which is exactly the
+                // spelling every seek rule in this file is looking for. `GroveQueryPlanTests`
+                // carries the same check, and `AlmanacQueryPlanTests` is where it was written.
+                let automatic = steps.filter { $0.contains("AUTOMATIC") }
+                #expect(
+                    automatic.isEmpty,
+                    """
+                    \(label): SQLite builds an index at run time — \
+                    \(automatic.joined(separator: " | ")) — \(plan)
+                    """
+                )
             }
         }
     }

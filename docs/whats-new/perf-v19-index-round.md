@@ -63,6 +63,20 @@
 # — the five per-tree indexes had been unusable since v1, so opening a tree you have visited
 # often walked its whole index and then sorted.
 #
+# ── A THIRD BENEFICIARY, MEASURED BUT NOT CLAIMED HERE ───────────────────────────────────────
+#
+# `AlmanacQueries.youngTreesWithoutVisits` runs a correlated `NOT EXISTS` against `visits` once
+# per candidate tree, spelled `v.tree_uuid = t.uuid COLLATE NOCASE` — so it is the same dead
+# index this round revives, reached from a screen this round did not set out to touch. On the
+# scratch fixture the probe goes `SCAN v` at 0.319 ms to
+# `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)` at 0.008 — both columns
+# of the recollated index used, and 41x per tree, which is 64 ms against 1.5 for a 200-tree card.
+#
+# It is NOT in the lines below, on this round's own rule: nothing here has opened that card on a
+# device before and after. The almanac PR (#145) merges ahead of this one and its plan gate pins
+# that scan deliberately; the gate has to be re-derived on the merged tree, where the seek is
+# available. Recorded so the person doing that has the measurement rather than a surprise.
+#
 # ── ON LENGTH ────────────────────────────────────────────────────────────────────────────────
 # Two lines, each inside the 200 the check allows.
 

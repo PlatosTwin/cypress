@@ -178,6 +178,24 @@ struct GroveQueryPlanTests {
                     permitted list \(Self.scannable.sorted()) — \(plan)
                     """
                 )
+
+                // Rule 2c. Nothing builds an index at run time.
+                //
+                // `AUTOMATIC PARTIAL COVERING INDEX` is SQLite deciding, per execution, that a
+                // relation is walked often enough to be worth indexing on the spot — so it builds
+                // one, uses it, and throws it away. It is a report that a real index is missing,
+                // and it is spelled `SEARCH …`, so every seek-counting rule in this file reads it
+                // as the seek being present. Adopted from `AlmanacQueryPlanTests`, which is where
+                // it was first written down.
+                let automatic = steps.filter { $0.contains("AUTOMATIC") }
+                #expect(
+                    automatic.isEmpty,
+                    """
+                    \(label): SQLite builds an index at run time — \
+                    \(automatic.joined(separator: " | ")). That is a missing index reported as a \
+                    SEARCH, so rule 1 above cannot see it — \(plan)
+                    """
+                )
             }
         }
     }
