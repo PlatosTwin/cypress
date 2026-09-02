@@ -156,8 +156,8 @@ struct GroveView: View {
     /// reads; at 26 ms on a forty-tree grove a loading state was considered and declined, on the
     /// grounds that a spinner visible for two frames reads as a flicker. The measurement was right
     /// and the conclusion did not survive a bigger grove: at 1,027 trees the same column was blank
-    /// for 3.47 s, photographed, because the cost had moved from the query to building a thousand
-    /// rows. The owner ruled on 2026-09-02 that the blank is a defect at any duration.
+    /// for 3.3–3.7 s, photographed, because the cost had moved from the query to building a
+    /// thousand rows. The owner ruled on 2026-09-02 that the blank is a defect at any duration.
     ///
     /// So the `switch` below is over `GroveModel.TreesDrawing`, which is total, and it has no
     /// `default`. There is no longer an arm to leave out.

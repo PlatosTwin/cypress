@@ -57,8 +57,8 @@ enum GroveLimits {
     /// was tried first and rejected for the opposite failure: three screenfuls on a grove of a
     /// thousand puts the control in front of somebody twenty times.
     ///
-    /// The upper bound is the one this round exists for. At 1,027 trees the whole list took 3.47 s
-    /// of blank column to build; the numbers are in
+    /// The upper bound is the one this round exists for. At 1,027 trees the whole list took
+    /// 3.3–3.7 s of blank column to build; the numbers are in
     /// `docs/whats-new/perf-grove-trees-paging.md`, measured with timestamped screenshot bursts
     /// before and after on the same device.
     static let pageSize = 50

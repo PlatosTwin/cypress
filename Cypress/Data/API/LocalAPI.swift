@@ -2193,8 +2193,9 @@ public actor LocalAPI: CypressAPI {
     /// At **1,027 trees** the same five statements still total about 38 ms — and the pill went blank
     /// for three and a half seconds anyway, because the cost had moved off the database entirely: a
     /// thousand `GroveEntry`s become a thousand `IconTextRow`s in a non-lazy `VStack`, built before
-    /// the frame that shows any of them. Photographed at 3.47 s of byte-identical empty frames on an
-    /// iPhone 16 Pro before this change.
+    /// the frame that shows any of them. Photographed before this change on an iPhone 16 Pro as a
+    /// run of empty frames bounding the blank to **3.3–3.7 s** — the bound rather than a point,
+    /// because the burst samples every 250–380 ms and the tap lands inside one of those gaps.
     ///
     /// So the fix is the one `journal()` already has, and this method is deliberately its twin: a
     /// bounded id read, the same four projection statements scoped to *those* ids, and a cursor.
