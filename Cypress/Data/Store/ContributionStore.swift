@@ -1597,7 +1597,7 @@ public struct ContributionStore {
     /// `SQLiteTimestamp` says in as many words about the outbox. A page that ended inside a run of
     /// rows sharing one `captured_at` could only ask the next page for rows *strictly older*, so
     /// the rest of that run was never returned to anybody: not on the next page, not on any page.
-    /// `JournalPaginationTieTests` is the measurement, and the errata entry for it carries the
+    /// `JournalPaginationTieTests` is the measurement, and this round's errata entry carries the
     /// repro.
     ///
     /// Pairing the timestamp with the row's id makes the ordering total, so "the row after this

@@ -2079,7 +2079,7 @@ public enum AppSchema {
     /// instead of the timestamp after it. Rows sharing one `captured_at` are ordinary — a walk
     /// through three trees, a check-in and a measurement saved together — and paging on the
     /// timestamp alone silently dropped every one of them that fell after a page boundary
-    /// (`JournalPaginationTieTests`, and the errata entry it cites). With `id` in the index the
+    /// (`JournalPaginationTieTests`, and this round's errata entry). With `id` in the index the
     /// cursor's row-value comparison is answered by a seek,
     /// `SEARCH e USING INDEX idx_visits_captured ((captured_at,id)<(?,?))`, and no arm sorts at all.
     ///

@@ -57,6 +57,34 @@ import Testing
 ///
 /// `theStatementsAreTheOnesTheAppRuns` below stays, narrowed to what it can honestly do on its
 /// own: prove each string still parses and plans against the real schema.
+///
+/// ── Calibration ─────────────────────────────────────────────────────────────────────────────
+/// v19 has two halves that can be reverted independently, and they were, separately, on this
+/// branch. **The two reverts fail different tests for different reasons**, which is what says this
+/// file is measuring two things rather than one thing twice. Run with
+/// `JournalPaginationTieTests`, `SchemaV19Tests` and `GroveQueryPlanTests` beside it, 16 tests:
+///
+/// - **SQL only** (`ContributionStore.journalSQL` and its bind back to the pre-round union; the
+///   v19 DDL left in place): **4 tests fail, 9 issues.** `thePageQueryStops` takes 5 of them —
+///   one per arm, `the visits arm does not SEARCH idx_visits_captured …`, plus
+///   `walked → ["visits", "observations", "measurements", "care_events", "entry"]`.
+///   `plansTouchOnlyTheContributorsOwnRows` reports the same five relations.
+///   `JournalPaginationTieTests` goes red on the dropped rows and the short export, because the
+///   total order lives in the SQL. `SchemaV19Tests` stays green throughout: the indexes are there,
+///   nothing is asking for them. Note what does **not** fire — the temp-b-tree count is still 1
+///   and there is still no `MULTI-INDEX OR`; the old plan had one sort too, over everything.
+/// - **DDL only** (v19's statement body replaced by `SELECT 1`, so the migration still runs and
+///   does nothing; the restructured SQL left in place): **4 tests fail, 20 issues**, and only one
+///   of the four is the same test. `thePageQueryStops` takes 6 — the four missing seeks,
+///   `walked → ["e", "e", "e", "e"]` where the arms fell back to scanning their tables under the
+///   alias, and `sorts.count → 5 == 1`, which is fact 3 doing exactly what it is written for: each
+///   arm has to sort for itself once no index answers its `ORDER BY`.
+///   `theNarrowedStatementsNarrow` takes 4 (both hero statements lose their seek and walk their
+///   table), `plansTouchOnlyTheContributorsOwnRows` 3, and `SchemaV19Tests` 7. The tie tests stay
+///   **green**: paging correctly is the SQL's doing, not the index's.
+///
+/// Both reverts were restored by copying the file back and the suite re-run green, because
+/// `git checkout --` on a file that carries both the revert and the fix takes the fix with it.
 @Suite("Journal · query plans")
 struct JournalQueryPlanTests {
 

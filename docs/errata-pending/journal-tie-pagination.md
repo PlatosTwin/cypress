@@ -32,6 +32,14 @@ Page one ends four rows into the tie; the cursor carries that timestamp; page tw
 strictly older and the remaining **eight** are skipped. The same fixture at 240 rows with the tie
 straddling `Page.maximumLimit` puts 232 rows in the CSV export instead of 240.
 
+### And it shows up without a fixture built for it
+
+Paging a scratch database of 16,000 randomly-timed contributions through to the end, at
+`Page.maximumLimit`, the old form returned **14,324** rows and the new one **14,326**; at 32,000
+rows, 28,648 against 28,652. Nothing in that generator was trying to produce a tie — two rows
+landing on the same second out of sixteen thousand is just what happens — and two of them fell on
+a page boundary. The defect does not need a pathological history to fire; it needs a long one.
+
 ## The second half, which is why an index round is where this surfaced
 
 Within a tie the ordering had nothing to break on, so SQLite was free to return the tied rows in

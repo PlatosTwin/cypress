@@ -24,6 +24,19 @@ import Testing
 /// whole reason the readers say `COLLATE NOCASE` and the whole reason v19 recollates the indexes to
 /// match. That makes case the axis the migration moves along, so it is the axis the fixture is
 /// built on.
+///
+/// ── Calibration ─────────────────────────────────────────────────────────────────────────────
+/// With v19's statement body replaced by `SELECT 1` — the migration still present, still applied,
+/// doing nothing — `theIndexesCarryTheirCollation` fails with **7 issues**: five of the six index
+/// names are stored without `COLLATE NOCASE`, and `idx_photo_votes_photo` is absent altogether,
+/// which is two issues on its own (missing, and therefore no collation to check).
+///
+/// The other three tests here stay **green** under that revert, and that is correct rather than a
+/// gap: `aV18DatabaseRunsOnlyV19` is about the version ladder and not about what the step does;
+/// `recollationChangesNoAnswer` is a *no-change* assertion, so a migration that changes nothing
+/// trivially satisfies it — it exists to catch a recollation that changes an answer, not one that
+/// is missing. `theIndexesCarryTheirCollation` is the one that says the DDL landed, and it is the
+/// one that goes red. The full distribution of both v19 reverts is in `JournalQueryPlanTests`.
 @Suite("AppSchema · v19")
 struct SchemaV19Tests {
 

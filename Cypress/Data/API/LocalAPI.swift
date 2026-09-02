@@ -3483,8 +3483,20 @@ public actor LocalAPI: CypressAPI {
     /// the person holding it has no way to tell it is short.
     ///
     /// Termination is not an assumption: `journal` only returns a cursor when the page came back
-    /// full, and each page asks for rows strictly older than the last one seen, so the window moves
-    /// backwards every time and the rows are finite.
+    /// full, and each page asks for rows strictly after the last one seen in the total order, so
+    /// the window moves backwards every time and the rows are finite.
+    ///
+    /// **It is linear now, and it was quadratic.** Each page used to cost the contributor's whole
+    /// history — the `LIMIT` sat outside the union and could not stop the read — so an export of
+    /// *n* rows cost n/limit pages × O(n). `AppSchema` v19's ordering indexes and `journalSQL`'s
+    /// per-arm push-down make a page cost O(limit) whatever its depth, so the export costs O(n).
+    /// Measured by paging a scratch database to the end at `Page.maximumLimit`, then doubling the
+    /// history: the old form went 638 ms → 2,574 (**4.03×** for 2× the rows, which is the shape of
+    /// an n² and not a coincidence), the new one 91 ms → 127.
+    ///
+    /// The same measurement is where the tie defect showed itself without being looked for: the
+    /// old form returned 14,324 rows where the new one returns 14,326, and 28,648 against 28,652
+    /// at double the size. See this round's errata entry.
     private func wholeJournal() async throws -> [JournalEntry] {
         var entries: [JournalEntry] = []
         var cursor: String?

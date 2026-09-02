@@ -1,5 +1,29 @@
 # The v19 index round. Two tester-visible clauses, and the reason there are two rather than one.
 #
+# ── WHAT WAS SEEN, on the running screen rather than inferred ────────────────────────────────
+#
+# iPhone 16 Pro Max (DE8E11AE), a FRESH install of this branch's build — fresh because an
+# earlier build on this branch had already carried that database to user_version 19 with only
+# half of v19's DDL, so the migration would not have re-run. (An artifact of splitting the round
+# into two commits; v19 ships as one step.) 60 visits written into the app's own database
+# against real bundled-seed trees, twelve of them sharing one capture time at rows 20…31, so the
+# run straddles the 25-row page boundary. Journal > Yours, paged by hand:
+#
+#   1. Page one paints, names resolved from the seed — Monterey Pine, Yew Pine, Evergreen Pear,
+#      Italian Buckthorn, Sweet Bay, Cherry Plum, Small-leaf Tristania 'Elegant', Crape Myrtle —
+#      grouped under SEP 1 and AUG 31, `walk 0` … `walk 19` in order.
+#   2. Inside the tie the notes stop being consecutive — 28, 22, 29, 23, 24 — which is the total
+#      order doing its job: within one capture time the rows sort by id, and the note numbers are
+#      just the order they were written in. Page one ends at `walk 24`, four rows into the tie,
+#      with "There are earlier entries than these." and `Show earlier`.
+#   3. Tapped it. Page two begins `walk 27` — still inside the tie — and runs on through 32, 33,
+#      … 49 with no gap. Page two *continuing inside the run* is the fix, visible: a cursor that
+#      carried only the timestamp could not express that position and had to skip to the next
+#      distinct one. What the old build does at this exact step was measured in the unit suite
+#      rather than photographed — 8 rows dropped of 40 — and is not claimed as an observation.
+#   4. Tapped `Show earlier` again. The list ends at `walk 59` and the button is gone. All sixty
+#      rows, across three pages, none dropped and none repeated.
+#
 # ── THE FIRST CLAUSE IS A CORRECTNESS FIX, NOT A SPEED CLAIM ─────────────────────────────────
 #
 # `Show earlier` could skip entries. The list was ordered by capture time and the cursor was the
