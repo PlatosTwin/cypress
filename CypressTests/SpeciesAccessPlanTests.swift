@@ -349,6 +349,22 @@ struct SpeciesAccessPlanTests {
     /// The pack is a **copy of the shipped seed**, for the reason that file gives at length: the
     /// catalogue merges species on uuid, so a hand-built fixture beside the real seed is refused by
     /// the union and the test would quietly be back to examining one file.
+    ///
+    /// ── Why the broken pack carries ONE ADDED species and not 731 upper-cased ones ────────────
+    /// The trees gate breaks its pack with `UPDATE trees SET uuid = upper(uuid)`, and the obvious
+    /// translation here — `UPDATE species SET uuid = upper(uuid)` — **cannot be attached at all**,
+    /// which the first draft of this test discovered by being red: `badArms → 1`, the pack refused.
+    /// That is the union working exactly as `InventoryUnionSQL.createSpecies` documents.
+    /// `species.uuid` is the key later arms merge on, so upper-casing all 731 makes every one of
+    /// them unknown to the catalogue and re-inserted — and each re-insert carries a
+    /// `scientific_name` the catalogue already has, against a UNIQUE index. The arm's own `INSERT`
+    /// throws inside its `contributing` block and the file is refused, whole.
+    ///
+    /// So a pack cannot break this contract on a species the bundle already knows. What it *can*
+    /// do, and what this fixture is, is carry a **new** species — one the catalogue has never seen,
+    /// with a scientific name that collides with nothing — whose uuid is upper case. That merges
+    /// cleanly, attaches, and reaches all five comparisons as a species no `lower(:uuid)` will ever
+    /// match. It is the reachable failure, and it is the one worth a control.
     @Test("the lowercase species-uuid contract is asked of each arm, and can fail on a pack")
     func theSpeciesContractCanFailOnAPack() async throws {
         let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
@@ -361,11 +377,20 @@ struct SpeciesAccessPlanTests {
         let shouty = dir.appendingPathComponent("upper.sqlite")
         try FileManager.default.copyItem(at: seedURL, to: wellFormed)
         try FileManager.default.copyItem(at: seedURL, to: shouty)
-        // The one difference. Upper-casing every species uuid keeps the file valid in every other
-        // respect — still 36 characters, still unique, still parsing as a UUID — which is precisely
-        // why no other gate would notice.
+        // The one difference: one species the catalogue has never seen, whose uuid is upper case.
+        // Valid in every other respect — 36 characters, unique, parses as a UUID, and its
+        // scientific name collides with nothing — which is precisely why no other gate notices it.
+        // See the doc comment for why this is an added row rather than `upper(uuid)` over all 731.
         let scrub = try SQLiteConnection(path: shouty.path)
-        try scrub.execute("UPDATE species SET uuid = upper(uuid)")
+        try scrub.execute("""
+            INSERT INTO species
+                (id, uuid, scientific_name, common_name, id_tips, seasonal, care_notes,
+                 curated, created_at, updated_at)
+            VALUES ((SELECT MAX(id) + 1 FROM species),
+                    'AAAAAAAA-0000-4000-8000-00000000FFFF',
+                    'Cypressus nonexistentia', NULL, '[]', '{}', '[]', 0,
+                    '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            """)
 
         let good = try await CypressStore.inMemory(inventories: [
             .bundled(url: seedURL),
@@ -387,7 +412,15 @@ struct SpeciesAccessPlanTests {
             InventoryFile(id: "manhattan", url: shouty, isBundled: false)
         ])
         let badArms = bad.inventory?.arms.count ?? 0
-        try #require(badArms == 2, "the upper-cased pack was refused rather than opened")
+        try #require(
+            badArms == 2,
+            """
+            the pack carrying an upper-case species uuid was refused rather than opened, so this \
+            proves nothing: \(bad.inventory?.refused ?? []). A refusal here means the fixture broke \
+            the catalogue merge instead of the collation contract — see this test's doc comment, \
+            which records the version of it that did exactly that
+            """
+        )
         let caught = try await DataGates.armsWithUppercaseSpeciesUUIDs(bad)
         #expect(
             caught == ["manhattan"],
