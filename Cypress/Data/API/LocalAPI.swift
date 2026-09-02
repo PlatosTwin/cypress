@@ -2332,13 +2332,13 @@ public actor LocalAPI: CypressAPI {
     /// belonging to somebody else that a sync brought down, and there the scoped form withholds an
     /// unapproved one — which is E215, not a regression. `JournalBatchReadTests` holds both halves.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
-        let cursorDate = cursor.flatMap(SQLiteTimestamp.date(from:))
+        let position = cursor.flatMap(ContributionStore.JournalCursor.init(string:))
         let capped = min(limit, Page<JournalEntry>.maximumLimit)
         let rows = try await store.queue.read { connection in
             try contributions.journal(
                 userID: userID,
                 deviceID: deviceID,
-                before: cursorDate,
+                before: position,
                 limit: capped,
                 connection: connection
             )
@@ -2376,10 +2376,15 @@ public actor LocalAPI: CypressAPI {
                 heroPhotoID: heroPhotoIDs[row.treeID]
             )
         }
-        // The cursor is the last row's capture time. Contributions are append-only and never
-        // back-dated across a page boundary, so this is stable under concurrent writes.
+        // The cursor is the last row — its capture time **and its id**. The time alone is not a
+        // position in this list: rows sharing one `captured_at` are ordinary, and a strict `<` on
+        // the timestamp stepped over every one of them that fell after a page boundary. See
+        // `ContributionStore.JournalCursor`. Contributions are append-only and never back-dated
+        // across a page boundary, so the pair is stable under concurrent writes.
         let nextCursor = entries.count == capped
-            ? entries.last.map { SQLiteTimestamp.string(from: $0.capturedAt) }
+            ? entries.last.map {
+                ContributionStore.JournalCursor(capturedAt: $0.capturedAt, id: $0.id).string
+            }
             : nil
         return Page(items: entries, nextCursor: nextCursor)
     }

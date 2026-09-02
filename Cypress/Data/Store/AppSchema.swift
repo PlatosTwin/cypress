@@ -49,7 +49,7 @@ public enum AppSchema {
         Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16),
         Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17),
         Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18),
-        Migration(version: 19, name: "an index is collated the way its readers ask", sql: v19)
+        Migration(version: 19, name: "an index is collated the way its readers ask, and the journal has an order", sql: v19)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2065,12 +2065,43 @@ public enum AppSchema {
     /// `GroveQueryPlanTests.plansStayIndexed` asserts that no plan contains `MULTI-INDEX OR`, which
     /// is the signature that appears the moment somebody adds one.
     ///
+    /// ── The four `_captured` indexes, and why they are in this version rather than their own ──
+    /// They exist for `ContributionStore.journalSQL`, whose restructured form pushes `ORDER BY` and
+    /// `LIMIT` into each arm of its union so a page is four early-terminating ordered walks instead
+    /// of a sort over the contributor's whole history. That statement is worthless without these
+    /// and these are dead weight without it, so they ship together: a half-landed pair is a version
+    /// whose only effect is to make writes slower. Measured on the 16,000-row fixture at 90 %
+    /// ownership, page one goes 6.66 → 0.17 ms and page six 7.10 → 0.18 — the second number is the
+    /// one that matters, because the old plan got worse with depth and this one does not.
+    ///
+    /// **`(captured_at DESC, id DESC)`, and both columns are load-bearing.** `captured_at` gives the
+    /// ordering; `id` makes it a *total* order, which is what lets a cursor name the row after a tie
+    /// instead of the timestamp after it. Rows sharing one `captured_at` are ordinary — a walk
+    /// through three trees, a check-in and a measurement saved together — and paging on the
+    /// timestamp alone silently dropped every one of them that fell after a page boundary
+    /// (`JournalPaginationTieTests`, and the errata entry it cites). With `id` in the index the
+    /// cursor's row-value comparison is answered by a seek,
+    /// `SEARCH e USING INDEX idx_visits_captured ((captured_at,id)<(?,?))`, and no arm sorts at all.
+    ///
+    /// **Not partial.** The obvious form is `WHERE deleted_at IS NULL`, which every journal arm
+    /// tests and which would keep tombstones out of the index. It was measured and rejected: a
+    /// partial index also *satisfies* that predicate, so the planner starts preferring it for the
+    /// three statements that read a whole contribution table — `ContributionStore.groveRecords`,
+    /// `groveTreeIDs` and `GroveQueries.ownContributions` each changed from `SCAN visits` to
+    /// `SCAN visits USING INDEX idx_visits_captured`, an index walk plus a row lookup apiece, for
+    /// queries that want every row anyway. The journal gained nothing for it — 0.173 ms partial
+    /// against 0.175 ms non-partial on the same fixture — and the two forms are within 1 % on
+    /// storage. Non-partial, every Grove plan is byte-identical to v18's, which is what keeps
+    /// `GroveQueryPlanTests`' allowlist saying what it says.
+    ///
     /// ── Cost ──────────────────────────────────────────────────────────────────────────────────
-    /// Six index builds over data that does not move, inside the migration's own transaction: well
+    /// Ten index builds over data that does not move, inside the migration's own transaction: well
     /// under a second on a fixture of 20,000 visits, 16,000 other contributions, 6,000 photographs
     /// and 12,000 votes. Nothing is backfilled and no row is rewritten, so there is no
-    /// `unmigratableData` case to reach. Five of the six replace an index that was already there,
-    /// so the storage is a wash; the outbox drain's indexes are untouched.
+    /// `unmigratableData` case to reach. Five of the ten replace an index that was already there;
+    /// the other five are additions, and the fixture grew about a tenth. Insert cost on `visits`
+    /// goes 3.2 → 3.6 µs, three orders of magnitude below the fsync the write already waits on, and
+    /// the outbox drain's indexes are untouched.
     ///
     /// **Idempotent in v13's shape.** Every statement is `DROP INDEX IF EXISTS` or
     /// `CREATE INDEX IF NOT EXISTS`, so a run interrupted between the DDL and the version bump
@@ -2110,6 +2141,19 @@ public enum AppSchema {
     -- `photo_votes` is indexed by voter and by tree, never by the photograph a vote is about.
     CREATE INDEX IF NOT EXISTS idx_photo_votes_photo
         ON photo_votes(photo_id COLLATE NOCASE);
+
+    -- ─── The journal page's ordering, one index per arm ──────────────────────────────────────
+    -- `id` is not decoration: it is what makes `(captured_at, id)` a total order, so a cursor can
+    -- name the row after a tie. Not partial on `deleted_at IS NULL` — see the doc comment; the
+    -- partial form drags three whole-table readers onto an index walk they do not want.
+    CREATE INDEX IF NOT EXISTS idx_visits_captured
+        ON visits(captured_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_observations_captured
+        ON observations(captured_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_measurements_captured
+        ON measurements(captured_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_care_events_captured
+        ON care_events(captured_at DESC, id DESC);
     """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary

@@ -1590,21 +1590,68 @@ public struct ContributionStore {
         })
     }
 
+    /// Where a journal page left off: the last row's capture time **and its id**.
+    ///
+    /// **The id is the whole reason this is a type.** The cursor used to be a bare `Date`, and
+    /// `captured_at` is not unique — two contributions in the same millisecond are ordinary, which
+    /// `SQLiteTimestamp` says in as many words about the outbox. A page that ended inside a run of
+    /// rows sharing one `captured_at` could only ask the next page for rows *strictly older*, so
+    /// the rest of that run was never returned to anybody: not on the next page, not on any page.
+    /// `JournalPaginationTieTests` is the measurement, and the errata entry for it carries the
+    /// repro.
+    ///
+    /// Pairing the timestamp with the row's id makes the ordering total, so "the row after this
+    /// one" is a fact about the row rather than about which plan SQLite happened to pick — which
+    /// mattered twice over, because the index round that found this also changes the plan.
+    ///
+    /// `string` / `init?(string:)` are the wire form for `Page.nextCursor`, which is an opaque
+    /// `String?` to everything above `LocalAPI`. A cursor that does not parse is `nil` — the caller
+    /// then reads from the newest row, which is wrong-but-safe (a repeated page) rather than
+    /// wrong-and-silent (a skipped one).
+    public struct JournalCursor: Sendable, Equatable {
+        public let capturedAt: Date
+        public let id: UUID
+
+        public init(capturedAt: Date, id: UUID) {
+            self.capturedAt = capturedAt
+            self.id = id
+        }
+
+        /// The separator is a character neither half can contain: `SQLiteTimestamp` writes digits,
+        /// `-`, `:`, `.`, `T` and `Z`, and a `uuidString` is hex and `-`.
+        private static let separator: Character = "|"
+
+        public var string: String {
+            "\(SQLiteTimestamp.string(from: capturedAt))\(Self.separator)\(id.uuidString)"
+        }
+
+        public init?(string: String) {
+            let halves = string.split(separator: Self.separator, maxSplits: 1)
+            guard halves.count == 2,
+                  let capturedAt = SQLiteTimestamp.date(from: String(halves[0])),
+                  let id = UUID(uuidString: String(halves[1]))
+            else { return nil }
+            self.init(capturedAt: capturedAt, id: id)
+        }
+    }
+
     /// `GET /me/journal`. One stream over the four contribution kinds, newest first.
     ///
-    /// The cursor is the `captured_at` of the last row returned, which is stable under insertion —
-    /// contributions are append-only and are never back-dated past a page boundary.
+    /// The cursor is the last row returned — its `captured_at` **and its id**, because the
+    /// timestamp alone is not a position in the list; see `JournalCursor`. It is stable under
+    /// insertion, contributions being append-only and never back-dated past a page boundary.
     ///
     /// **The device arm reads "this phone's own unclaimed work", and a record an account deletion
     /// anonymized is not that** (`AppSchema` v13). Without the tombstone clause, the person who signs
     /// in on a handed-down phone opens their journal and reads a stranger's visits — the rows kept
     /// their `device_id`, which is the whole of what the device arm asks for. The user arm cannot
-    /// reach them either way, because an anonymized row has no `user_id`; the clause is written once
-    /// at the top rather than inside the device arm for that reason.
+    /// reach them either way, because an anonymized row has no `user_id`; the clause is now written
+    /// once inside each arm rather than once over the union, which changes nothing about which rows
+    /// it excludes — see `journalSQL` for why every predicate had to move inside.
     public func journal(
         userID: UUID?,
         deviceID: UUID,
-        before cursor: Date?,
+        before cursor: JournalCursor?,
         limit: Int,
         connection: SQLiteConnection
     ) throws -> [(id: UUID, kind: JournalEntry.Kind, treeID: UUID, capturedAt: Date, summary: String)] {
@@ -1612,7 +1659,8 @@ public struct ContributionStore {
         _ = try statement.bind([
             ":device": deviceID.uuidString,
             ":user": userID?.uuidString,
-            ":cursor": cursor.map(SQLiteTimestamp.string(from:)),
+            ":cursorAt": cursor.map { SQLiteTimestamp.string(from: $0.capturedAt) },
+            ":cursorID": cursor.map(\.id.uuidString),
             ":limit": limit
         ])
         return try statement.fetchAll { row in
@@ -1632,54 +1680,102 @@ public struct ContributionStore {
     /// copied into the test explains the copy, and changing the real query leaves it green.
     /// `JournalQueryPlanTests` reads this, and nothing else builds it.
     ///
-    /// **What this plan is, stated because the gate allows it rather than pretending otherwise —
-    /// and read off the shipped schema, because the first draft of this paragraph was wrong.**
-    /// `JournalQueryPlanTests.thePageQueryIsTheKnownScan` measures it:
+    /// **What this plan is, measured, and what it was.** `JournalQueryPlanTests.thePageQueryStops`
+    /// asserts it; `AppSchema` v19's `idx_<table>_captured` family is what makes it available:
     ///
-    ///     CO-ROUTINE entry | COMPOUND QUERY | LEFT-MOST SUBQUERY
-    ///     SCAN visits | UNION ALL | SCAN observations | UNION ALL
-    ///     SCAN measurements | UNION ALL | SCAN care_events
-    ///     SCAN entry
-    ///     CORRELATED SCALAR SUBQUERY 5
-    ///       SEARCH tomb USING COVERING INDEX sqlite_autoindex_anonymized_contributions_1 (client_uuid=?)
+    ///     CO-ROUTINE (subquery-N) | COMPOUND QUERY | LEFT-MOST SUBQUERY
+    ///       CO-ROUTINE (subquery-N)
+    ///         SEARCH e USING INDEX idx_visits_captured ((captured_at,id)<(?,?))
+    ///         CORRELATED SCALAR SUBQUERY N
+    ///           SEARCH tomb USING COVERING INDEX sqlite_autoindex_anonymized_contributions_1 (client_uuid=?)
+    ///       SCAN (subquery-N)
+    ///     …the same three lines per arm for observations, measurements and care_events…
+    ///     SCAN (subquery-N)
     ///     USE TEMP B-TREE FOR ORDER BY
     ///
-    /// No predicate that *selects rows* can be seeked. The attribution and cursor tests apply to a
-    /// union that does not exist until its four arms are combined, so each arm is walked in full,
-    /// the union is walked again, and `captured_at DESC` is answered by a temp b-tree — which is
-    /// why `LIMIT :limit` cannot stop the read early. The cost is this contributor's whole history,
-    /// on every page including the first.
+    /// Until v19 this was four full table scans, a scan of the union, and a temp b-tree over the
+    /// contributor's entire history — on every page, including the first, because `LIMIT :limit`
+    /// sat outside the union and could not stop the read early. Page one cost 6.66 ms at 16,000
+    /// rows and page six 7.10; they are now 0.17 and 0.18.
     ///
-    /// The one `SEARCH` is `Self.notAnonymized`'s tombstone lookup. It is correctly indexed and is
-    /// not the missing index this shape is waiting for. That is exactly where the first draft was
-    /// wrong — it said nothing seeks — and the gate is what said so.
+    /// **Every predicate had to move inside the arms, and that is the change.** The old form
+    /// applied attribution, the tombstone check and the cursor to a union that does not exist until
+    /// its four arms have been produced in full. Pushed inside, each arm is its own bounded query:
+    /// a seek down `idx_<table>_captured` in the order the page wants, stopping after `:limit`
+    /// rows. The outer `ORDER BY` then merges at most `4 × :limit` rows, which is what makes the
+    /// one remaining temp b-tree acceptable — it is bounded by the page size and not by the
+    /// history, and `JournalQueryPlanTests` says so where it allows it.
     ///
-    /// Batching the page's *name* and *thumbnail* reads changes none of this, and
-    /// `LocalAPI.journal()` does not claim it does. Making this statement cheap needs an index per
-    /// contribution table over the ordering and attribution columns, which is a schema migration.
+    /// **Why taking the top `:limit` of each arm is the top `:limit` of the union.** Any row in the
+    /// true top-L of the union is in the top-L of its own arm — it has at most L−1 rows above it
+    /// overall, so at most L−1 within its arm. The arms are disjoint tables, so no row is in two of
+    /// them and no `DISTINCT` is needed. Verified over six consecutive pages at 90 % and 10 %
+    /// ownership, signed in and out: identical row sets to the unrestructured query.
+    ///
+    /// **The cursor is a row-value comparison against a sentinel, not `:cursor IS NULL OR …`.**
+    /// That disjunction is what the old form used, and an `OR` cannot become a range constraint on
+    /// an index — the arm falls back to a walk and page N costs O(N × limit). `char(0x10FFFF)` is
+    /// the largest character SQLite can produce; under BINARY it sorts above any `SQLiteTimestamp`
+    /// (which begins with an ASCII digit) and above any `uuidString`, so `COALESCE(:cursorAt, …)`
+    /// means "from the newest row" without a branch. With it, page six costs what page one costs.
+    ///
+    /// **`(captured_at, id)` and not `captured_at`.** The pair is a total order; the timestamp
+    /// alone is not, and paging on it dropped every row of a tie that fell after a page boundary.
+    /// See `JournalCursor`.
+    ///
+    /// The `SEARCH tomb` step is `Self.notAnonymized`'s lookup, one indexed probe per candidate
+    /// row. It is correctly indexed, it is inside each arm now rather than over the union, and it
+    /// excludes exactly the rows it excluded before.
     static let journalSQL = """
         SELECT id, kind, tree_uuid, captured_at, summary FROM (
-            SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary,
-                   user_id, device_id, client_uuid, deleted_at FROM visits
+            SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary
+              FROM (SELECT * FROM visits e
+                     WHERE deleted_at IS NULL
+                       AND (device_id = :device COLLATE NOCASE
+                            OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+                       AND (captured_at, id)
+                           < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
+                       AND \(Self.notAnonymized("e"))
+                     ORDER BY captured_at DESC, id DESC
+                     LIMIT :limit)
             UNION ALL
             SELECT id, 'observation', tree_uuid, captured_at,
                    COALESCE(status, '') || CASE WHEN vitality IS NULL THEN ''
-                                                ELSE ' · vitality ' || vitality END,
-                   user_id, device_id, client_uuid, deleted_at FROM observations
+                                                ELSE ' · vitality ' || vitality END
+              FROM (SELECT * FROM observations e
+                     WHERE deleted_at IS NULL
+                       AND (device_id = :device COLLATE NOCASE
+                            OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+                       AND (captured_at, id)
+                           < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
+                       AND \(Self.notAnonymized("e"))
+                     ORDER BY captured_at DESC, id DESC
+                     LIMIT :limit)
             UNION ALL
             SELECT id, 'measurement', tree_uuid, captured_at,
-                   kind || ' ' || value || ' ' || unit_entered || ', ' || method,
-                   user_id, device_id, client_uuid, deleted_at FROM measurements
+                   kind || ' ' || value || ' ' || unit_entered || ', ' || method
+              FROM (SELECT * FROM measurements e
+                     WHERE deleted_at IS NULL
+                       AND (device_id = :device COLLATE NOCASE
+                            OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+                       AND (captured_at, id)
+                           < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
+                       AND \(Self.notAnonymized("e"))
+                     ORDER BY captured_at DESC, id DESC
+                     LIMIT :limit)
             UNION ALL
-            SELECT id, 'careEvent', tree_uuid, captured_at, actions,
-                   user_id, device_id, client_uuid, deleted_at FROM care_events
-        ) entry
-        WHERE deleted_at IS NULL
-          AND (device_id = :device COLLATE NOCASE
-               OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-          AND \(Self.notAnonymized("entry"))
-          AND (:cursor IS NULL OR captured_at < :cursor)
-        ORDER BY captured_at DESC
+            SELECT id, 'careEvent', tree_uuid, captured_at, actions
+              FROM (SELECT * FROM care_events e
+                     WHERE deleted_at IS NULL
+                       AND (device_id = :device COLLATE NOCASE
+                            OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+                       AND (captured_at, id)
+                           < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
+                       AND \(Self.notAnonymized("e"))
+                     ORDER BY captured_at DESC, id DESC
+                     LIMIT :limit)
+        )
+        ORDER BY captured_at DESC, id DESC
         LIMIT :limit
         """
 
