@@ -49,7 +49,8 @@ public enum AppSchema {
         Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16),
         Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17),
         Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18),
-        Migration(version: 19, name: "an index is collated the way its readers ask, and the journal has an order", sql: v19)
+        Migration(version: 19, name: "an index is collated the way its readers ask, and the journal has an order", sql: v19),
+        Migration(version: 20, name: "the species chain and the community rows are reachable by the identity their readers bind", sql: v20)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2176,6 +2177,95 @@ public enum AppSchema {
         ON measurements(captured_at DESC, id COLLATE NOCASE DESC);
     CREATE INDEX IF NOT EXISTS idx_care_events_captured
         ON care_events(captured_at DESC, id COLLATE NOCASE DESC);
+    """
+
+    // MARK: - v20
+
+    /// v19's pattern, applied to the two families it left behind: `species_assertions` and
+    /// `community_trees`. Both are dead the way `visits` was — an index exists, or a primary key
+    /// does, and the readers cannot reach it because they compare `COLLATE NOCASE` against a BINARY
+    /// index. Two statements, DDL only, no row rewritten.
+    ///
+    /// ── 1. `species_assertions`, and the index that is deliberately NOT touched ────────────────
+    /// `SpeciesAssertionStore.chain` and `.current` both predicate `tree_uuid = :tree COLLATE
+    /// NOCASE`, and neither could seek. Measured before, on the shipped schema:
+    ///
+    /// ```
+    /// chain    SCAN species_assertions | USE TEMP B-TREE FOR ORDER BY
+    /// current  SCAN species_assertions USING INDEX idx_species_assertions_head
+    /// ```
+    ///
+    /// Recollating `idx_species_assertions_tree` alone fixes **both**:
+    ///
+    /// ```
+    /// chain    SEARCH species_assertions USING INDEX idx_species_assertions_tree (tree_uuid=?)
+    ///          | USE TEMP B-TREE FOR LAST TERM OF ORDER BY
+    /// current  SEARCH species_assertions USING INDEX idx_species_assertions_tree (tree_uuid=?)
+    /// ```
+    ///
+    /// `chain`'s remaining b-tree is the `created_at ASC` half against the index's `DESC`, and it is
+    /// unchanged from what a BINARY comparison already produced on this index — the sort narrowed
+    /// from the whole result to the last term, it did not appear.
+    ///
+    /// **`idx_species_assertions_head` keeps its BINARY collation, and that is the finding rather
+    /// than an omission.** It is a partial **UNIQUE** index — "one current claim per tree", D15's
+    /// instrument for `tree_names` applied to the same kind of invariant (see v14). Recollating it
+    /// would change *which pairs of rows the schema calls a conflict*: two un-superseded rows whose
+    /// `tree_uuid` differs only by case are legal today and would become a constraint failure,
+    /// which is a decision about the invariant and not about an access path — exactly the reason
+    /// `JournalQueryPlanTests` gives for leaving `idx_tree_names_one_active` alone. It would also
+    /// give this migration an `unmigratableData` case it does not otherwise have, on a database
+    /// that cannot be un-migrated. The measurement above is what makes the refusal free: with
+    /// `idx_species_assertions_tree` recollated, `current` no longer reads the head index at all,
+    /// so there is nothing left to buy. The invariant index stays exactly as v14 wrote it.
+    ///
+    /// ── 2. `community_trees`, whose primary key cannot be recollated ───────────────────────────
+    /// `community_trees.id` is `TEXT PRIMARY KEY` on a rowid table, so its index is
+    /// `sqlite_autoindex_community_trees_1` — SQLite's own, with no `CREATE INDEX` text to rewrite
+    /// and no way to declare a collation on it short of rebuilding the table. Every reader compares
+    /// `id = :id COLLATE NOCASE`, so every one of them walked:
+    /// `SCAN community_trees`, in both the `=` and the `IN (SELECT value FROM json_each(:ids))`
+    /// forms. A plain NOCASE index beside the key is the whole fix, and both forms seek it:
+    /// `SEARCH community_trees USING INDEX idx_community_trees_id (id=?)`.
+    ///
+    /// It is a second index over a column that already has one, which is the cost: an insert
+    /// maintains both. `community_trees` holds tens of rows on a phone — the table's own comment
+    /// says so, and it is why there is no R*Tree on it either — so the write cost is not the axis
+    /// this decision turns on.
+    ///
+    /// **Not partial on `deleted_at IS NULL`,** for v19's measured reason: a partial index also
+    /// *satisfies* that predicate, so the planner starts preferring it for readers that want every
+    /// row anyway, turning a straight scan into an index walk plus a row lookup apiece.
+    ///
+    /// ── Cost ──────────────────────────────────────────────────────────────────────────────────
+    /// Two index builds over data that does not move, inside the migration's own transaction. One
+    /// replaces an index that was already there; the other is an addition to a table holding tens
+    /// of rows. Nothing is backfilled and no row is rewritten, so there is no `unmigratableData`
+    /// case to reach.
+    ///
+    /// **Idempotent in v13's shape.** Every statement is `DROP INDEX IF EXISTS` or
+    /// `CREATE INDEX IF NOT EXISTS`, so a run interrupted between the DDL and the version bump
+    /// replays cleanly — which `DataGates.sqliteStore` checks by setting `user_version` to 0 and
+    /// running the whole ladder again.
+    ///
+    /// **Readable by v19 code.** An index is transparent to a query; a v20 file opened by a v19
+    /// build refuses on `MigrationError.databaseIsAhead` for the ordinary reason and not because of
+    /// anything here.
+    private static let v20 = """
+    -- ─── The species chain, recollated where its two readers can reach it ─────────────────────
+    -- Same name, same columns, same order. Only the collation of the leading column changes,
+    -- which is where `SpeciesAssertionStore`'s `tree_uuid = :tree COLLATE NOCASE` needs it.
+    -- This one index answers both `chain` and `current`; see the doc comment for why
+    -- `idx_species_assertions_head` is deliberately left BINARY.
+    DROP INDEX IF EXISTS idx_species_assertions_tree;
+    CREATE INDEX IF NOT EXISTS idx_species_assertions_tree
+        ON species_assertions(tree_uuid COLLATE NOCASE, created_at DESC);
+
+    -- ─── The community rows, whose primary key is SQLite's and cannot be recollated ───────────
+    -- Not a replacement for `sqlite_autoindex_community_trees_1`, which still enforces the key;
+    -- this is the collation the readers actually compare in, sitting beside it.
+    CREATE INDEX IF NOT EXISTS idx_community_trees_id
+        ON community_trees(id COLLATE NOCASE);
     """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
