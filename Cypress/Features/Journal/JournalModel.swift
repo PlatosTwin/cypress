@@ -216,14 +216,28 @@ final class JournalModel {
     ///    contribution, so the `capturedAt <= oldest` test drops exactly those. This is why the
     ///    merge is not simply "fresh + everything held it does not have".
     ///
-    /// **The comparison is `<=` and not `<`, and the boundary case is a deliberate choice.** Two
-    /// contributions can share a `captured_at`. A held row tying with the fresh page's last row is
-    /// ambiguous — it could be a row pushed out of page one by newer arrivals (case 1, keep it) or
-    /// a deletion (case 3, drop it) — and the two directions cost different things: dropping loses
-    /// a contribution the reader is looking at, which is the thing the owner's ruling forbids,
-    /// while keeping leaves one stale row until the tab is next re-entered from scratch. So a tie
-    /// is kept. Note the same tie is already invisible to paging itself: the cursor asks for
-    /// `captured_at < :cursor`, so page two never contained a row tying with page one's last.
+    /// **The comparison is `<=` and not `<`, and as of `AppSchema` v19 that is load-bearing rather
+    /// than a boundary curiosity.** Two contributions can share a `captured_at`. A held row tying
+    /// with the fresh page's last row is ambiguous — it could be a row that belongs *after* page
+    /// one in the ordering (case 1, keep it) or a deletion (case 3, drop it) — and the two
+    /// directions cost different things: dropping loses a contribution the reader is looking at,
+    /// which is what the owner's ruling forbids, while keeping leaves one stale row until the tab
+    /// is next re-entered from scratch. So a tie is kept.
+    ///
+    /// **This paragraph used to end on a sentence that is now false, and this round's own change is
+    /// what falsified it.** It said the tie was "already invisible to paging itself: the cursor
+    /// asks for `captured_at < :cursor`, so page two never contained a row tying with page one's
+    /// last." That was true, and it was true because of a defect: those rows were absent from page
+    /// two because they were being dropped from the journal altogether
+    /// (`JournalPaginationTieTests`, and this round's errata entry). v19's cursor carries
+    /// `(captured_at, id)`, so page two now holds exactly the tie-mates page one did not fit.
+    ///
+    /// The reconciliation is unchanged by that and is still correct — but its weakest justification
+    /// has become its strongest. A held row tying with `oldest` is now, in the ordinary case, a
+    /// genuine page-two row rather than a transient, so a strict `<` here would drop real rows on
+    /// every background refresh: the same defect a third time.
+    /// `JournalModelLifetimeTests.aRefreshKeepsATieMateThatLivesOnPageTwo` is what makes that a
+    /// test rather than this sentence.
     ///
     /// The cursor follows the same logic: if held rows survive, the list still runs down to the old
     /// tail and the old cursor is still the right place to ask from; if none do, the list is exactly

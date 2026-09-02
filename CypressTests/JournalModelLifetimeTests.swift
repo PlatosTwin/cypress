@@ -295,6 +295,85 @@ struct JournalModelLifetimeTests {
         #expect(model.presentation?.hasOlder == false)
     }
 
+    /// **A refresh keeps a held row that ties with page one's last, because that row is page two.**
+    ///
+    /// `refresh()`'s reconciliation drops held rows *newer* than the fresh page's last row — that
+    /// is how a deletion inside the fresh window is noticed — and the boundary is `<=`, so a row
+    /// tying with `oldest` is kept. Until `AppSchema` v19 that boundary was nearly unreachable and
+    /// its own doc comment said so: the cursor asked for `captured_at < :cursor`, so page two never
+    /// held a row tying with page one's last. **It never held one because those rows were being
+    /// dropped from the journal entirely**, which is the defect `JournalPaginationTieTests`
+    /// records. Now that the cursor carries `(captured_at, id)`, a tie straddling the boundary is
+    /// the ordinary shape of a second page — so this boundary is on the common path and needs a
+    /// test rather than a paragraph.
+    ///
+    /// The fixture is the smallest thing that has it: page one ends on a tie, page two opens on the
+    /// other half of that tie, and the refresh returns a page one that is unchanged. The tie-mate
+    /// is held, absent from the fresh page, and exactly equal to `oldest` — the one case `<` and
+    /// `<=` disagree about.
+    ///
+    /// **Red-proof, measured.** Changing `refresh()`'s `$0.capturedAt <= oldest` to `<` fails here
+    /// on four rows against five, having dropped `tieMate` — a real contribution, off a screen the
+    /// reader was looking at, on a refresh they did not ask for:
+    ///
+    ///     Expectation failed: (model.presentation?.rows.map(\.id) → [460908A7…, 297B4590…,
+    ///       22A493BA…, 464E3F07…]) == (whole → […five ids…])
+    ///
+    /// `aReappearanceKeepsThePagesItHad` goes red on the same edit, which is worth stating rather
+    /// than treating as noise: its fixture leaves every row on one capture time, so under a strict
+    /// `<` the refresh discards the whole held list. Two tests, one boundary.
+    @Test("a background refresh keeps a held row that ties with page one's last row")
+    @MainActor
+    func aRefreshKeepsATieMateThatLivesOnPageTwo() async throws {
+        let reads = JournalReadCounter()
+        let base = Self.date(2026, 6, 1)
+        let boundary = base.addingTimeInterval(-3 * 3600)
+
+        // Page one's last row and page two's first share `boundary` — the tie continues across the
+        // page break, which is what v19's cursor made possible and what the old cursor skipped.
+        let head = [Self.entry(1, at: base), Self.entry(2, at: base.addingTimeInterval(-3600))]
+        let lastOfPageOne = Self.entry(3, at: boundary)
+        let tieMate = Self.entry(4, at: boundary)
+        let deeper = Self.entry(5, at: base.addingTimeInterval(-9 * 3600))
+
+        let model = JournalModel(
+            api: JournalPreviewAPI(
+                page: Page(items: head + [lastOfPageOne], nextCursor: "cursor"),
+                older: Page(items: [tieMate, deeper]),
+                // Nothing changed underneath: the fresh page one is the same three rows.
+                refreshed: Page(items: head + [lastOfPageOne], nextCursor: "cursor"),
+                reads: reads
+            ),
+            now: { Self.date(2026, 7, 1) }
+        )
+
+        await model.load()
+        await model.loadOlder()
+        let whole = (head + [lastOfPageOne, tieMate, deeper]).map(\.id)
+        try #require(
+            model.presentation?.rows.map(\.id) == whole,
+            "the fixture did not produce the tie-straddling two-page list this test is about"
+        )
+        try #require(
+            tieMate.capturedAt == lastOfPageOne.capturedAt,
+            """
+            the fixture's page-two row no longer ties with page one's last, so the `<=` boundary \
+            this test exists for is never reached
+            """
+        )
+
+        await model.load()
+        try #require(reads.count == 3, "the re-entry did not refresh, so nothing is being tested")
+        #expect(
+            model.presentation?.rows.map(\.id) == whole,
+            """
+            the refresh dropped a held row that ties with page one's last. Since v19 that row is an \
+            ordinary page-two row and not a transient — `refresh()`'s boundary has to be `<=`, and \
+            a strict `<` loses a real contribution off a screen the reader is looking at
+            """
+        )
+    }
+
     // MARK: - 2 · The structure the guard depends on
 
     /// **The structural half: the model is declared above the segment `switch`, not inside it.**

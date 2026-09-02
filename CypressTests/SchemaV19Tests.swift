@@ -17,7 +17,10 @@ import Testing
 /// 1. runs the migration against a **v18 database with rows already in it**, written as rows rather
 ///    than through the shipping API, and asserts that v19 and only v19 is what runs;
 /// 2. asks the four readers whose indexes were recollated for their answers **before and after**,
-///    on rows deliberately spelled in mixed case, and requires the two to be identical.
+///    on rows deliberately spelled in mixed case, and requires the two to be identical — as
+///    *ordered* sequences, over a fixture big enough for an order to exist. PR #146's review found
+///    this at one row per table, where "the same rows before and after" is satisfied by any answer
+///    at all: a one-element array cannot come back out of order.
 ///
 /// The second is the one worth the file. `tree_uuid` reaches these tables in two spellings — the
 /// upper-case `uuidString` a stored row carries and whatever a decoded payload holds — which is the
@@ -48,8 +51,8 @@ struct SchemaV19Tests {
 
     // MARK: - The upgrade
 
-    /// A v18 database carrying a row in each table v19 touches, spelled in **lower case** —
-    /// which is not how this app writes a uuid, and is the point.
+    /// A v18 database carrying **several** rows in each table v19 touches, with ids in mixed case
+    /// — which is not how this app writes a uuid, and is the point.
     ///
     /// Written with `execute` rather than through `ContributionStore.insert` for
     /// `PhotoProvenanceTests.upgradedFromV15`'s reason: the shipping write path is not what an
@@ -68,49 +71,75 @@ struct SchemaV19Tests {
         let treeText = tree.uuidString.lowercased()
         let device = deviceID.uuidString.lowercased()
 
+        /// Distinct, descending capture times. **Several rows per table, not one** — PR #146's
+        /// review found this fixture at one row apiece, where "the same rows before and after" is
+        /// satisfied by any answer at all: a single-element array cannot be out of order. With four
+        /// it can, and `recollationChangesNoAnswer` compares ordered arrays.
+        func at(_ index: Int) -> String {
+            SQLiteTimestamp.string(from: moment.addingTimeInterval(-Double(index) * 3600))
+        }
+        /// Ids alternating upper and lower case, because that is the axis the migration moves and a
+        /// fixture spelled all one way would not exercise it.
+        func mixedID(_ index: Int) -> String {
+            let raw = UUID().uuidString
+            return index.isMultiple(of: 2) ? raw.lowercased() : raw
+        }
+
         try await store.queue.write { connection in
             let opened = try connection.userVersion
             #expect(opened == 18, "the fixture opened at user_version \(opened), not 18")
             try connection.execute("""
                 INSERT INTO app_state (key, value) VALUES ('device_uuid','\(deviceID.uuidString)');
-
-                INSERT INTO visits (id, tree_uuid, device_id, client_uuid, note,
-                                    captured_at, created_at, updated_at)
-                VALUES ('\(UUID().uuidString.lowercased())','\(treeText)','\(device)',
-                        '\(UUID().uuidString.lowercased())','a walk','\(stamp)','\(stamp)','\(stamp)');
-
-                INSERT INTO observations (id, tree_uuid, device_id, client_uuid, captured_at,
-                                          status, created_at, updated_at)
-                VALUES ('\(UUID().uuidString.lowercased())','\(treeText)','\(device)',
-                        '\(UUID().uuidString.lowercased())','\(stamp)','alive','\(stamp)','\(stamp)');
-
-                INSERT INTO measurements (id, tree_uuid, device_id, client_uuid, captured_at, kind,
-                                          value, unit_entered, si_value, method,
-                                          created_at, updated_at)
-                VALUES ('\(UUID().uuidString.lowercased())','\(treeText)','\(device)',
-                        '\(UUID().uuidString.lowercased())','\(stamp)','height',12.0,'m',12.0,
-                        'tape','\(stamp)','\(stamp)');
-
-                INSERT INTO care_events (id, tree_uuid, device_id, client_uuid, captured_at,
-                                         actions, created_at, updated_at)
-                VALUES ('\(UUID().uuidString.lowercased())','\(treeText)','\(device)',
-                        '\(UUID().uuidString.lowercased())','\(stamp)','["watering"]',
-                        '\(stamp)','\(stamp)');
-
-                INSERT INTO tree_names (id, tree_uuid, name, created_at, updated_at)
-                VALUES ('\(UUID().uuidString.lowercased())','\(treeText)','Old Friend',
-                        '\(stamp)','\(stamp)');
-
-                INSERT INTO photos (id, tree_uuid, shot_type, moderation_state, device_id,
-                                    taken_on_device, captured_at, created_at, updated_at)
-                VALUES ('\(photo.uuidString.lowercased())','\(treeText)','full_tree','approved',
-                        '\(device)','\(device)','\(stamp)','\(stamp)','\(stamp)');
-
-                INSERT INTO photo_votes (id, photo_id, tree_uuid, device_id, vote,
-                                         created_at, updated_at)
-                VALUES ('\(UUID().uuidString.lowercased())','\(photo.uuidString.lowercased())',
-                        '\(treeText)','\(device)',1,'\(stamp)','\(stamp)');
                 """)
+
+            for index in 0..<4 {
+                try connection.execute("""
+                    INSERT INTO visits (id, tree_uuid, device_id, client_uuid, note,
+                                        captured_at, created_at, updated_at)
+                    VALUES ('\(mixedID(index))','\(treeText)','\(device)',
+                            '\(mixedID(index))','walk \(index)','\(at(index))','\(stamp)','\(stamp)');
+
+                    INSERT INTO observations (id, tree_uuid, device_id, client_uuid, captured_at,
+                                              status, created_at, updated_at)
+                    VALUES ('\(mixedID(index))','\(treeText)','\(device)',
+                            '\(mixedID(index))','\(at(index))','alive','\(stamp)','\(stamp)');
+
+                    INSERT INTO measurements (id, tree_uuid, device_id, client_uuid, captured_at,
+                                              kind, value, unit_entered, si_value, method,
+                                              created_at, updated_at)
+                    VALUES ('\(mixedID(index))','\(treeText)','\(device)',
+                            '\(mixedID(index))','\(at(index))','height',\(10 + index).0,'m',
+                            \(10 + index).0,'tape','\(stamp)','\(stamp)');
+
+                    INSERT INTO care_events (id, tree_uuid, device_id, client_uuid, captured_at,
+                                             actions, created_at, updated_at)
+                    VALUES ('\(mixedID(index))','\(treeText)','\(device)',
+                            '\(mixedID(index))','\(at(index))','["watering"]','\(stamp)','\(stamp)');
+                    """)
+            }
+
+            // One name, because D15 is one active name per tree — `idx_tree_names_one_active` is a
+            // partial UNIQUE index and a second active row is a constraint failure, not a fixture.
+            try connection.execute("""
+                INSERT INTO tree_names (id, tree_uuid, name, created_at, updated_at)
+                VALUES ('\(mixedID(0))','\(treeText)','Old Friend','\(stamp)','\(stamp)');
+                """)
+
+            // Three photographs, one of them the hero the vote elects.
+            for index in 0..<3 {
+                let id = index == 0 ? photo.uuidString.lowercased() : mixedID(index)
+                try connection.execute("""
+                    INSERT INTO photos (id, tree_uuid, shot_type, moderation_state, device_id,
+                                        taken_on_device, captured_at, created_at, updated_at)
+                    VALUES ('\(id)','\(treeText)','full_tree','approved',
+                            '\(device)','\(device)','\(at(index))','\(stamp)','\(stamp)');
+
+                    INSERT INTO photo_votes (id, photo_id, tree_uuid, device_id, vote,
+                                             created_at, updated_at)
+                    VALUES ('\(mixedID(index))','\(id)','\(treeText)','\(device)',
+                            \(index == 0 ? 1 : -1),'\(stamp)','\(stamp)');
+                    """)
+            }
         }
         return store
     }
@@ -239,12 +268,14 @@ struct SchemaV19Tests {
 
         let before = try await Self.answers(tree: tree, attribution: attribution, store: store)
         try #require(
-            !before.visits.isEmpty && !before.photos.isEmpty
+            before.visits.count > 1 && before.photos.count > 1
                 && !before.names.isEmpty && !before.heroes.isEmpty,
             """
-            the v18 readers already answered nothing for this tree, so "identical afterwards" \
-            would be satisfied by two empty answers — visits \(before.visits.count), photos \
-            \(before.photos.count), names \(before.names.count), heroes \(before.heroes.count)
+            the readers answered too little for an ordering change to be detectable — visits \
+            \(before.visits.count), photos \(before.photos.count), names \(before.names.count), \
+            heroes \(before.heroes.count). Two empty answers compare equal, and so do two \
+            one-element ones however they are ordered; this fixture writes four contributions per \
+            table and three photographs so that `==` on an ordered array means something
             """
         )
 
@@ -253,8 +284,20 @@ struct SchemaV19Tests {
         }
         let after = try await Self.answers(tree: tree, attribution: attribution, store: store)
 
-        #expect(before.visits == after.visits, "visits(treeID:) answers differently after v19")
-        #expect(before.photos == after.photos, "photos(treeID:) answers differently after v19")
+        // Ordered comparisons, and the order is the reader's own. A recollation that changed
+        // which index answers an ORDER BY would show up here and nowhere else in this file.
+        #expect(
+            before.visits == after.visits,
+            """
+            visits(treeID:) answers differently after v19: \(before.visits) became \
+            \(after.visits). Same rows in a different order is a failure here too — the reader's \
+            ORDER BY is answered by `idx_visits_tree`, which is the index v19 recollates
+            """
+        )
+        #expect(
+            before.photos == after.photos,
+            "photos(treeID:) answers differently after v19: \(before.photos) became \(after.photos)"
+        )
         #expect(before.names == after.names, "activeNames(treeIDs:) answers differently after v19")
         #expect(
             before.heroes == after.heroes,

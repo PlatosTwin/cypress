@@ -25,8 +25,10 @@ import Testing
 ///    *optimization* could change what a person reads, which is not a trade this project gets to
 ///    make silently.
 ///
-/// The fix is a total order — `ORDER BY captured_at DESC, id DESC`, with the cursor carrying the
-/// pair — so that "the row after this one" is a fact about the row rather than about the plan.
+/// The fix is a total order — `ORDER BY captured_at DESC, id COLLATE NOCASE DESC`, with the cursor
+/// carrying the pair — so that "the row after this one" is a fact about the row rather than about
+/// the plan. **The collation is part of the fix and not a flourish**; `theCursorIsCaseSafe` is the
+/// second defect of this exact shape, found in review, and its own comment carries the argument.
 ///
 /// ── What this file asserts, and why it is a comparison ──────────────────────────────────────
 /// Every test here compares **paginating** against **one unpaginated read of the same statement**.
@@ -36,7 +38,7 @@ import Testing
 /// the reader: *the pages, concatenated, are the list.*
 ///
 /// ── Red-proof ───────────────────────────────────────────────────────────────────────────────
-/// Run against this branch's base (`ecf8879`, PR #143 merged), **two of the four tests fail with
+/// Run against this branch's base (`ecf8879`, PR #143 merged), **two of the five tests fail with
 /// two issues each**, and the counts are the measured ones:
 ///
 /// - `pagingAcrossATieDropsNothing`: 40 rows written, 40 read unpaginated, **32** read across
@@ -46,10 +48,14 @@ import Testing
 /// - `theExportIsNotTruncatedByATie`: 240 rows written, **232** in the CSV — the same 8, at the
 ///   `Page.maximumLimit` boundary `wholeJournal` pages on.
 ///
-/// The other two pass on that build and say in their own comments why: one asserts the fixture,
-/// one is the negative control. The tie itself is asserted by
+/// Two of the remaining three pass on that build and say in their own comments why: one asserts the
+/// fixture, one is the negative control. The tie itself is asserted by
 /// `theFixtureReallyStraddlesAPageBoundary`, so a fixture that stopped containing one would fail
 /// loudly rather than let the pair above pass vacuously.
+///
+/// The fifth, `theCursorIsCaseSafe`, is about a different precondition and has its own red-proof
+/// against the BINARY tie-break — see its comment. It passes on `ecf8879` for a reason worth
+/// stating: that build had no tie-break at all, so there was no collation to get wrong yet.
 @Suite("Journal · paging across a tie")
 struct JournalPaginationTieTests {
 
@@ -237,6 +243,98 @@ struct JournalPaginationTieTests {
         )
     }
 
+    // MARK: - The same defect, one layer down
+
+    /// **A tie-break is only a total order if both sides agree about case.**
+    ///
+    /// This is PR #146's review finding, and it is the file's own defect class under a precondition
+    /// nobody had written down. `UUID.uuidString` is always upper case, so the cursor `LocalAPI`
+    /// re-emits is upper case. Nothing in `AppSchema` constrains the case of a stored `id` — this
+    /// suite's sibling `SchemaV19Tests` writes lower-case ones on purpose — and under BINARY every
+    /// upper-case hex letter (0x41–0x46) sorts *below* its lower-case twin (0x61–0x66). So a
+    /// lower-case row is "greater than" the upper-case cursor that was made from a row above it,
+    /// `id < :cursorID` excludes it, and it is dropped exactly as the timestamp-only cursor dropped
+    /// ties.
+    ///
+    /// **Rows written as rows, and lower case on purpose.** `ContributionStore.insert` takes a
+    /// `Visit` whose `id` is a `UUID`, so the shipping write path physically cannot produce the
+    /// state under test — the case is lost at the type. Going around it is the only way to express
+    /// a database this app can encounter but not currently create, which is the same argument
+    /// `SchemaV19Tests` makes for its own fixture.
+    ///
+    /// **Red-proof, measured.** With the three `COLLATE NOCASE` declarations removed — the index's,
+    /// the `ORDER BY`'s and the row value's — this fails with two issues and the paging returns
+    /// **1 of 3**:
+    ///
+    ///     Expectation failed: (paged.map(\.id) → [F1111111-…])
+    ///       == (unpaginated.map(\.id) → [F1111111-…, E2222222-…, D3333333-…])
+    ///
+    /// and nothing else in this file moves — the other four tests stay green, because their
+    /// fixtures go through `ContributionStore.insert` and get upper-case ids, which is the case a
+    /// BINARY tie-break handles correctly. That is the discrimination worth having: this test is
+    /// the only one that can see the precondition. `LIMIT 1` is deliberate — it makes every row a
+    /// page boundary, so the tie cannot be crossed by luck.
+    @Test("paging a tie is exact when the stored ids are not in the case UUID.uuidString writes")
+    func theCursorIsCaseSafe() async throws {
+        let (api, store) = try await Self.openSeeded()
+        let tree = UUID(uuidString: "F0000000-0000-4000-8000-00000000051C")!
+        let deviceID = Self.deviceID
+        let moment = Date(timeIntervalSince1970: 1_780_000_000)
+        let stamp = SQLiteTimestamp.string(from: moment)
+
+        // Three rows on one capture time, ids stored LOWER case and leading with a hex letter —
+        // the two properties that make BINARY and the cursor disagree.
+        let ids = [
+            "f1111111-1111-4111-8111-111111111111",
+            "e2222222-2222-4222-8222-222222222222",
+            "d3333333-3333-4333-8333-333333333333"
+        ]
+        try await store.queue.write { connection in
+            for (index, id) in ids.enumerated() {
+                try connection.execute("""
+                    INSERT INTO visits (id, tree_uuid, device_id, client_uuid, note,
+                                        captured_at, created_at, updated_at)
+                    VALUES ('\(id)','\(tree.uuidString)','\(deviceID.uuidString)',
+                            '\(UUID().uuidString)','tied \(index)','\(stamp)','\(stamp)','\(stamp)');
+                    """)
+            }
+        }
+
+        let stored = try await store.queue.read { connection -> [String] in
+            let statement = try connection.prepare("SELECT id FROM visits")
+            defer { statement.finalize() }
+            return try statement.fetchAll { try $0.string("id") }
+        }
+        try #require(
+            stored.allSatisfy { $0 == $0.lowercased() } && stored.count == ids.count,
+            """
+            the fixture no longer stores lower-case ids (\(stored)), so the case disagreement this \
+            test is about is not present and it would pass over the wrong state
+            """
+        )
+
+        // LIMIT 1: every row is a page boundary, so the tie cannot be crossed by luck.
+        let paged = try await Self.paginate(api, limit: 1)
+        let unpaginated = try await api.journal(
+            cursor: nil, limit: Page<JournalEntry>.maximumLimit
+        ).items
+
+        #expect(
+            paged.map(\.id) == unpaginated.map(\.id),
+            """
+            paging three tied rows one at a time returned \(paged.count) of \(unpaginated.count). \
+            The cursor carries `UUID.uuidString`, which is upper case; a BINARY tie-break sorts \
+            that below every lower-case id, so `id < :cursorID` excludes the rows it was added to \
+            include. The collation has to match in three places — `idx_<table>_captured`, the \
+            ORDER BY, and the row-value comparison
+            """
+        )
+        #expect(
+            Set(paged.map { $0.id.uuidString.lowercased() }) == Set(ids),
+            "the rows returned are not the three that were written: \(paged.map(\.id))"
+        )
+    }
+
     /// **The same property with the tie sitting on the boundary itself**, rather than across it.
     ///
     /// `pageSize` rows of history in front of a `pageSize`-wide tie puts the run's first row at
@@ -244,7 +342,7 @@ struct JournalPaginationTieTests {
     /// nothing to step over. **It therefore passes on a build with the defect, and it is kept
     /// anyway as the negative control** — it is the case a fix must not break, and a fix that
     /// over-corrected by making the cursor inclusive would return the tie twice and fail here on
-    /// the repeat. Stated because a test whose only recorded behaviour is passing proves nothing
+    /// the repeat. Stated because a test whose only recorded behavior is passing proves nothing
     /// about the instrument.
     @Test("paging is exact when a tie begins precisely at a page boundary")
     func pagingWithATieOnTheBoundaryDropsNothing() async throws {

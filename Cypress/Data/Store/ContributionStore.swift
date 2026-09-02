@@ -1685,7 +1685,7 @@ public struct ContributionStore {
     ///
     ///     CO-ROUTINE (subquery-N) | COMPOUND QUERY | LEFT-MOST SUBQUERY
     ///       CO-ROUTINE (subquery-N)
-    ///         SEARCH e USING INDEX idx_visits_captured ((captured_at,id)<(?,?))
+    ///         SEARCH e USING INDEX idx_visits_captured (captured_at<?)
     ///         CORRELATED SCALAR SUBQUERY N
     ///           SEARCH tomb USING COVERING INDEX sqlite_autoindex_anonymized_contributions_1 (client_uuid=?)
     ///       SCAN (subquery-N)
@@ -1719,9 +1719,12 @@ public struct ContributionStore {
     /// (which begins with an ASCII digit) and above any `uuidString`, so `COALESCE(:cursorAt, …)`
     /// means "from the newest row" without a branch. With it, page six costs what page one costs.
     ///
-    /// **`(captured_at, id)` and not `captured_at`.** The pair is a total order; the timestamp
-    /// alone is not, and paging on it dropped every row of a tie that fell after a page boundary.
-    /// See `JournalCursor`.
+    /// **`(captured_at, id COLLATE NOCASE)` and not `captured_at`.** The pair is a total order;
+    /// the timestamp alone is not, and paging on it dropped every row of a tie that fell after a
+    /// page boundary. The collation is not decoration either: `UUID.uuidString` is upper case and
+    /// a stored `id`'s case is unconstrained, so a BINARY tie-break dropped tied rows all over
+    /// again — three of them became one. It has to match `idx_<table>_captured`'s own collation and
+    /// the `ORDER BY`'s; all three are `NOCASE`. See `JournalCursor` and `AppSchema` v19.
     ///
     /// The `SEARCH tomb` step is `Self.notAnonymized`'s lookup, one indexed probe per candidate
     /// row. It is correctly indexed, it is inside each arm now rather than over the union, and it
@@ -1733,10 +1736,10 @@ public struct ContributionStore {
                      WHERE deleted_at IS NULL
                        AND (device_id = :device COLLATE NOCASE
                             OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-                       AND (captured_at, id)
+                       AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                     ORDER BY captured_at DESC, id DESC
+                     ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
             SELECT id, 'observation', tree_uuid, captured_at,
@@ -1746,10 +1749,10 @@ public struct ContributionStore {
                      WHERE deleted_at IS NULL
                        AND (device_id = :device COLLATE NOCASE
                             OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-                       AND (captured_at, id)
+                       AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                     ORDER BY captured_at DESC, id DESC
+                     ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
             SELECT id, 'measurement', tree_uuid, captured_at,
@@ -1758,10 +1761,10 @@ public struct ContributionStore {
                      WHERE deleted_at IS NULL
                        AND (device_id = :device COLLATE NOCASE
                             OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-                       AND (captured_at, id)
+                       AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                     ORDER BY captured_at DESC, id DESC
+                     ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
             SELECT id, 'careEvent', tree_uuid, captured_at, actions
@@ -1769,13 +1772,13 @@ public struct ContributionStore {
                      WHERE deleted_at IS NULL
                        AND (device_id = :device COLLATE NOCASE
                             OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-                       AND (captured_at, id)
+                       AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                     ORDER BY captured_at DESC, id DESC
+                     ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
         )
-        ORDER BY captured_at DESC, id DESC
+        ORDER BY captured_at DESC, id COLLATE NOCASE DESC
         LIMIT :limit
         """
 

@@ -133,8 +133,16 @@ struct JournalQueryPlanTests {
     /// even reordering the four, renumbers every one of them. A gate pinned to `(subquery-12)`
     /// would fail on a change that altered nothing about its cost, which trains the reader to
     /// re-baseline it, which is how a gate stops being read.
-    private static func isPermittedScan(_ relation: String) -> Bool {
+    ///
+    /// **`derivedTablesAllowed` is per statement, and only the page query gets it.** PR #146's
+    /// review: shape-matching is the right relaxation for the one statement that *has* derived
+    /// tables, and granting it to all four Journal statements handed the other three a licence they
+    /// have no use for. `activeNamesSQL` and the two scoped hero statements are single `SELECT`s
+    /// over one table apiece — a `(subquery-N)` in one of their plans means a nested read nobody
+    /// wrote down, which is the kind of change this file exists to notice, and it would have passed.
+    private static func isPermittedScan(_ relation: String, derivedTablesAllowed: Bool) -> Bool {
         if scannable.contains(relation) { return true }
+        guard derivedTablesAllowed else { return false }
         return relation.hasPrefix("(subquery-") && relation.hasSuffix(")")
             && relation.dropFirst("(subquery-".count).dropLast().allSatisfy(\.isNumber)
     }
@@ -152,24 +160,33 @@ struct JournalQueryPlanTests {
     func plansTouchOnlyTheContributorsOwnRows() async throws {
         let store = try await Self.store()
 
-        let statements: [(label: String, sql: String)] = [
-            ("the page", ContributionStore.journalSQL),
-            ("the page's nicknames", ContributionStore.activeNamesSQL),
-            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL),
-            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL)
+        // Only the page query builds derived tables, and only it may have them walked. The other
+        // three are single `SELECT`s over one table apiece: a `(subquery-N)` scan appearing in one
+        // of those is a new nested read nobody wrote down, and permitting it everywhere would have
+        // let that through silently. PR #146's review.
+        let statements: [(label: String, sql: String, derivedTablesAllowed: Bool)] = [
+            ("the page", ContributionStore.journalSQL, true),
+            ("the page's nicknames", ContributionStore.activeNamesSQL, false),
+            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL, false),
+            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL, false)
         ]
 
         try await store.queue.read { connection in
-            for (label, sql) in statements {
+            for (label, sql, derivedTablesAllowed) in statements {
                 let steps = try connection.queryPlan(for: sql)
                 let plan = steps.joined(separator: " | ")
                 let scanned = steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) }
-                let unexpected = scanned.filter { !Self.isPermittedScan($0) }
+                let unexpected = scanned.filter {
+                    !Self.isPermittedScan($0, derivedTablesAllowed: derivedTablesAllowed)
+                }
+                let alsoAllowed = derivedTablesAllowed
+                    ? "and is not one of the page query's bounded derived tables"
+                    : "and this statement may not walk a derived table at all — only the page query may"
                 #expect(
                     unexpected.isEmpty,
                     """
-                    \(label): walks \(unexpected.sorted()) end to end, which is neither on the \
-                    permitted list \(Self.scannable.sorted()) nor a bounded derived table — \(plan)
+                    \(label): walks \(unexpected.sorted()) end to end, which is not on the \
+                    permitted list \(Self.scannable.sorted()) \(alsoAllowed) — \(plan)
                     """
                 )
 
@@ -242,7 +259,7 @@ struct JournalQueryPlanTests {
 
             // 2. No contribution table is walked end to end.
             let scanned = steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) }
-            let walked = scanned.filter { !Self.isPermittedScan($0) }
+            let walked = scanned.filter { !Self.isPermittedScan($0, derivedTablesAllowed: true) }
             #expect(
                 walked.isEmpty,
                 """

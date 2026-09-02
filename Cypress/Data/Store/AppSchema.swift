@@ -2074,14 +2074,36 @@ public enum AppSchema {
     /// ownership, page one goes 6.66 → 0.17 ms and page six 7.10 → 0.18 — the second number is the
     /// one that matters, because the old plan got worse with depth and this one does not.
     ///
-    /// **`(captured_at DESC, id DESC)`, and both columns are load-bearing.** `captured_at` gives the
-    /// ordering; `id` makes it a *total* order, which is what lets a cursor name the row after a tie
-    /// instead of the timestamp after it. Rows sharing one `captured_at` are ordinary — a walk
-    /// through three trees, a check-in and a measurement saved together — and paging on the
-    /// timestamp alone silently dropped every one of them that fell after a page boundary
-    /// (`JournalPaginationTieTests`, and this round's errata entry). With `id` in the index the
-    /// cursor's row-value comparison is answered by a seek,
-    /// `SEARCH e USING INDEX idx_visits_captured ((captured_at,id)<(?,?))`, and no arm sorts at all.
+    /// **`(captured_at DESC, id COLLATE NOCASE DESC)`, and all three parts are load-bearing.**
+    /// `captured_at` gives the ordering; `id` makes it a *total* order, which is what lets a cursor
+    /// name the row after a tie instead of the timestamp after it. Rows sharing one `captured_at`
+    /// are ordinary — a walk through three trees, a check-in and a measurement saved together — and
+    /// paging on the timestamp alone silently dropped every one of them that fell after a page
+    /// boundary (`JournalPaginationTieTests`, and this round's errata entry).
+    ///
+    /// **`COLLATE NOCASE` on `id` is the same defect one layer down, and review found it.** The
+    /// tie-break is a total order only if both sides of the cursor comparison agree about case.
+    /// `UUID.uuidString` is always upper case, so `LocalAPI` re-emits an upper-case cursor id —
+    /// while nothing in this schema constrains the case of a stored `id`, and a BINARY comparison
+    /// sorts every upper-case hex letter (0x41–0x46) *below* its lower-case twin (0x61–0x66). Three
+    /// tied rows with lower-case ids, paged at `LIMIT 1`, returned **one**: the cursor
+    /// `F1111111-…` excluded `e2222222-…` and `d3333333-…`, both of which are greater than it under
+    /// BINARY. That is exactly the defect this index was added to fix, under a precondition nobody
+    /// had written down. The collation is therefore declared in the three places that have to
+    /// agree — here, the `ORDER BY`, and the row-value comparison's left operand — and
+    /// `JournalPaginationTieTests.theCursorIsCaseSafe` is the red-proof.
+    ///
+    /// **What that costs, measured rather than assumed.** A row-value comparison whose collation
+    /// differs from its index's can silently stop seeking, so this was checked rather than hoped
+    /// for: the seek narrows from `((captured_at,id)<(?,?))` to
+    /// `SEARCH e USING INDEX idx_visits_captured (captured_at<?)` — the `id` half becomes a filter
+    /// instead of part of the range constraint. It is still a seek, each arm still early-terminates
+    /// on `LIMIT`, and **no arm sorts**: one temp b-tree in the whole plan, not five. Page one at
+    /// 16,000 rows with mixed-case ids is 0.162 ms against BINARY's 0.161, because the `id` half of
+    /// a range constraint is worth nothing when a tie is a handful of rows. The `lower(id)`
+    /// alternative with a matching expression index was measured too — same plan, same answers —
+    /// and it needs an expression index plus a normalization at the Swift boundary, so it buys
+    /// nothing for the extra moving parts.
     ///
     /// **Not partial.** The obvious form is `WHERE deleted_at IS NULL`, which every journal arm
     /// tests and which would keep tombstones out of the index. It was measured and rejected: a
@@ -2147,13 +2169,13 @@ public enum AppSchema {
     -- name the row after a tie. Not partial on `deleted_at IS NULL` — see the doc comment; the
     -- partial form drags three whole-table readers onto an index walk they do not want.
     CREATE INDEX IF NOT EXISTS idx_visits_captured
-        ON visits(captured_at DESC, id DESC);
+        ON visits(captured_at DESC, id COLLATE NOCASE DESC);
     CREATE INDEX IF NOT EXISTS idx_observations_captured
-        ON observations(captured_at DESC, id DESC);
+        ON observations(captured_at DESC, id COLLATE NOCASE DESC);
     CREATE INDEX IF NOT EXISTS idx_measurements_captured
-        ON measurements(captured_at DESC, id DESC);
+        ON measurements(captured_at DESC, id COLLATE NOCASE DESC);
     CREATE INDEX IF NOT EXISTS idx_care_events_captured
-        ON care_events(captured_at DESC, id DESC);
+        ON care_events(captured_at DESC, id COLLATE NOCASE DESC);
     """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
