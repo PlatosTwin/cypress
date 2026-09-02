@@ -381,9 +381,19 @@ struct RoutedAPITests {
         let treeID = UUID()
         let speciesID = UUID()
         var local = LocalDouble()
+        // **`.cityImport`, and the source is load-bearing** (PR #144 review, F1). "Resolved through
+        // the city file" means an inventory row, and D15's species fallback is only for one: a
+        // *community* record's species is a self-assertion by whoever added it, and
+        // `LocalAPI.grove()` has always refused to name a tree after one. The fixture said
+        // `.community` and asserted the species name, which is the pair the reviewer's probe found
+        // the two resolver arms disagreeing over.
         local.profilesByID = [
             treeID: TreeProfile(
-                tree: Self.tree(treeID, latitude: 37.7601, longitude: -122.505),
+                tree: Tree(
+                    id: treeID,
+                    source: .cityImport,
+                    coordinate: Coordinate(latitude: 37.7601, longitude: -122.505)
+                ),
                 species: try Self.species(speciesID, scientific: "Quercus agrifolia", common: "Coast Live Oak")
             )
         ]
@@ -446,7 +456,14 @@ struct RoutedAPITests {
     /// city file has no such tree, so the name rule is never reached. A conformance that named an
     /// unnameable tree would have shipped past it. "Never a fabricated label"
     /// (`LocalAPI.displayNameIfPresent`) needs a tree that exists and has no name, which is this.
-    @Test("a tree the city file cannot name is dropped rather than labeled")
+    ///
+    /// **And the read stays `.live`, which is the half PR #144's review changed.** Dropping this row
+    /// is D15 being applied to an answer that arrived whole, not a piece of the answer going
+    /// missing; `.fellBackToLocal` would offer a §4.3 surface the sentence "showing what's on this
+    /// phone" about a read where nothing was. The case that *does* degrade is
+    /// `anUnresolvableRowIsDroppedAndTheReadSaysSo` above — a tree no installed inventory carries at
+    /// all — and the two being told apart is what `RoutedAPI.CityFileRows` exists for.
+    @Test("a tree the city file cannot name is dropped rather than labeled, and the read stays live")
     func aTreeTheCityFileCannotNameIsDropped() async throws {
         let treeID = UUID()
         var local = LocalDouble()
@@ -467,7 +484,11 @@ struct RoutedAPITests {
         let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGrove()
 
         #expect(entries.isEmpty, "a tree with no name and no species was given a fabricated label")
-        #expect(await log.outcome(of: .grove) == .fellBackToLocal)
+        let outcome = await log.outcome(of: .grove)
+        #expect(
+            outcome == .live,
+            "a D15 refusal on a complete answer was recorded as \(String(describing: outcome))"
+        )
     }
 
     /// The service being unreachable answers from the phone, and records that it did.
