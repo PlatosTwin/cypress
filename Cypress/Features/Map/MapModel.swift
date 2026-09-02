@@ -152,7 +152,10 @@ final class MapModel {
     /// whole answer, on the owner's instruction (task #165).
     private(set) var membershipIDs: Set<UUID>?
 
-    private var membershipTask: Task<Void, Never>?
+    /// The chip's narrow read, in flight. Held rather than private so a test can await the narrowing
+    /// before asserting on what the union did to it — `GroveModel.speciesRefresh`'s reasoning, and
+    /// the only way to order the two reads without a clock.
+    @ObservationIgnored private(set) var membershipTask: Task<Void, Never>?
 
     private var searchTask: Task<Void, Never>?
 

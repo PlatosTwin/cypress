@@ -526,14 +526,33 @@ struct RoutedAPITests {
         transport.answer("GET /me/grove/\(treeID.uuidString)/favorite", with: #"{"is_favorite":true}"#)
 
         let log = RemoteReadLog()
-        #expect(try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).isFavorite(treeID: treeID))
+        #expect(
+            try await RoutedAPI(local: local, remote: Self.remote(transport), log: log)
+                .reconciledIsFavorite(treeID: treeID)
+        )
         #expect(await log.outcome(of: .isFavorite) == .live)
 
         let offline = RemoteReadLog()
         #expect(
-            try await RoutedAPI(local: local, remote: Self.unreachable(), log: offline).isFavorite(treeID: treeID) == false
+            try await RoutedAPI(local: local, remote: Self.unreachable(), log: offline)
+                .reconciledIsFavorite(treeID: treeID) == false
         )
         #expect(await offline.outcome(of: .isFavorite) == .fellBackToLocal)
+
+        // **The paint, which is the half the owner's ruling of 2026-09-02 moved.** The same router
+        // whose service says `true` answers the phone's `false` from `isFavorite`, and asks nothing:
+        // a `.live` outcome here would mean the tap was still waiting on the wire.
+        let painted = RemoteReadLog()
+        let paintTransport = ScriptedTransport()
+        paintTransport.answer(
+            "GET /me/grove/\(treeID.uuidString)/favorite", with: #"{"is_favorite":true}"#
+        )
+        let paint = try await RoutedAPI(
+            local: local, remote: Self.remote(paintTransport), log: painted
+        ).isFavorite(treeID: treeID)
+        #expect(paint == false, "the heart waited for the service before answering the finger")
+        #expect(paintTransport.calls.isEmpty, "the painted heart reached the wire")
+        #expect(await painted.outcome(of: .isFavorite) == nil)
     }
 
     /// `mapMembership` **unions** rather than replacing.
@@ -550,8 +569,21 @@ struct RoutedAPITests {
         let transport = ScriptedTransport()
         transport.answer("GET /me/map-membership", with: #"{"kind":"favorites","tree_ids":["\#(account.uuidString)"]}"#)
 
-        let ids = try await RoutedAPI(local: local, remote: Self.remote(transport)).mapMembership(.favorites)
+        let ids = try await RoutedAPI(local: local, remote: Self.remote(transport))
+            .refreshedMapMembership(.favorites)
         #expect(ids == [queued, account], "a not-yet-drained favorite was dropped by the join")
+
+        // **The paint answers the phone's set and asks nothing.** The chip narrows the map from the
+        // local table; the account's half joins through the union above, behind the narrowing.
+        let paintTransport = ScriptedTransport()
+        paintTransport.answer(
+            "GET /me/map-membership",
+            with: #"{"kind":"favorites","tree_ids":["\#(account.uuidString)"]}"#
+        )
+        let painted = try await RoutedAPI(local: local, remote: Self.remote(paintTransport))
+            .mapMembership(.favorites)
+        #expect(painted == [queued], "the chip waited for the service before narrowing")
+        #expect(paintTransport.calls.isEmpty, "the painted membership read reached the wire")
     }
 
     /// The species grove joins the numerator and keeps the phone's denominator.
@@ -657,7 +689,7 @@ struct RoutedAPITests {
 
         let log = RemoteReadLog()
         let profile = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log)
-            .treeProfile(id: treeID)
+            .refreshedTreeProfile(id: treeID)
 
         #expect(profile.tree.id == treeID, "the city half did not survive the join")
         #expect(profile.species?.commonName == "Coast Live Oak")
@@ -734,7 +766,7 @@ struct RoutedAPITests {
 
         let log = RemoteReadLog()
         let profile = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log)
-            .treeProfile(id: treeID)
+            .refreshedTreeProfile(id: treeID)
 
         #expect(await log.outcome(of: .treeProfile) == .live, "this test proves nothing on the fallback path")
         #expect(profile.statusProvenance == .communityReview)
@@ -757,10 +789,22 @@ struct RoutedAPITests {
         local.profile = TreeProfile(tree: Self.tree(treeID))
 
         let log = RemoteReadLog()
-        let profile = try await RoutedAPI(local: local, remote: Self.unreachable(), log: log).treeProfile(id: treeID)
+        let profile = try await RoutedAPI(local: local, remote: Self.unreachable(), log: log)
+            .refreshedTreeProfile(id: treeID)
 
         #expect(profile.tree.id == treeID, "screen 03 lost its tree because a service was unreachable")
         #expect(await log.outcome(of: .treeProfile) == .fellBackToLocal)
+
+        // **The paint answers the same profile and asks nothing.** Opening a tree is the read all
+        // sixteen call sites make, and before the split every one of them awaited the community
+        // half first — a sheet that wanted only the tree's name paid for photographs it never drew.
+        let painted = RemoteReadLog()
+        let transport = ScriptedTransport()
+        let quick = try await RoutedAPI(local: local, remote: Self.remote(transport), log: painted)
+            .treeProfile(id: treeID)
+        #expect(quick.tree.id == treeID)
+        #expect(transport.calls.isEmpty, "the painted profile reached the wire")
+        #expect(await painted.outcome(of: .treeProfile) == nil)
     }
 
     /// The phone is asked for bytes first, and the service only for what it never wrote.
@@ -981,7 +1025,8 @@ struct RoutedAPITests {
     @Test("an unasked read has no outcome at all")
     func anUnaskedReadHasNoOutcome() async throws {
         let log = RemoteReadLog()
-        _ = try await RoutedAPI(local: LocalDouble(), remote: Self.unreachable(), log: log).mapMembership(.yours)
+        _ = try await RoutedAPI(local: LocalDouble(), remote: Self.unreachable(), log: log)
+            .refreshedMapMembership(.yours)
 
         #expect(await log.outcome(of: .mapMembership) != nil)
         #expect(await log.outcome(of: .treeProfile) == nil, "a read nobody performed reported an outcome")

@@ -167,9 +167,12 @@ struct AccountLinkTests {
             ),
             remoteAccess: .disabled,
             readLog: RemoteReadLog(),
-            // Both nil: these suites hold the local half, and there is no service to refresh from.
+            // All nil: these suites hold the local half, and there is no service to refresh from.
             refreshGroveSpecies: nil,
-            refreshGrove: nil
+            refreshGrove: nil,
+            refreshTreeProfile: nil,
+            reconcileFavorite: nil,
+            refreshMapMembership: nil
         )
     }
 
