@@ -641,13 +641,48 @@ public struct RoutedAPI: CypressAPI {
     ///
     /// The heart re-reads its own state after every write (RULINGS R2), so this is the read that
     /// makes a favorite set on one phone show as set on another.
+    /// ── This method is the **paint**, and the owner's ruling of 2026-09-02 is why ───────────────
+    ///
+    /// It used to ask the service *first* and fall back to the phone. The heart re-reads its own
+    /// state after every write (RULINGS R2), so that round trip sat between a finger and the control
+    /// answering it: `TreeProfileModel.write()` paints the tap optimistically, calls the writer, and
+    /// then `await readFavorite()` — which is this read. On an unreachable host the heart therefore
+    /// hung on `URLSession`'s failure path before settling, on a screen where the whole point of the
+    /// re-read is that the control ends up agreeing with what is stored.
+    ///
+    /// **The owner ruled on 2026-09-02 that favorites answer from the phone.** The tap and the read
+    /// are local and instant; the R2 re-read still reaches the service, in
+    /// `reconciledIsFavorite(treeID:)` below, behind the painted control. This amends R2 in *where
+    /// the answer comes from first* and in nothing else — R2's substance is that the heart is read
+    /// rather than remembered, and that a write which did not land puts it back. Both still hold:
+    /// the phone is the store R2 means, `OutboxQueue.pendingFavoriteState` still supplies the
+    /// in-flight word ahead of it (#167), and a terminally failed toggle still reverts the control.
+    ///
+    /// **It records nothing in `log`** — `grove()`'s note, for the same reason.
     public func isFavorite(treeID: UUID) async throws -> Bool {
+        try await local.isFavorite(treeID: treeID)
+    }
+
+    /// `isFavorite(treeID:)` again, asked of the service — the R2 re-read, moved off the tap.
+    ///
+    /// **What it is for**: a favorite set on another phone. It is delivered behind the painted
+    /// heart, and it is the half that makes a favorite mean something on a second device, which is
+    /// what this read was always for (§4.2). `DataLayer.boot` hands it over as a closure and it is
+    /// nil when the gate is shut.
+    ///
+    /// **The service wins when it answers, and the phone answers otherwise** — the ordering the
+    /// method had before the split, unchanged. What changed is only that nothing waits for it.
+    ///
+    /// **A cancelled reconcile records nothing**, for `refreshedGrove()`'s reason: the model cancels
+    /// this when a tap overtakes it, and a cancellation must not be logged as a service that could
+    /// not be reached.
+    public func reconciledIsFavorite(treeID: UUID) async throws -> Bool {
         do {
             let answer = try await remote.isFavorite(treeID: treeID)
             await log.record(.isFavorite, .live)
             return answer
         } catch {
-            await log.record(.isFavorite, .fellBackToLocal)
+            if !Task.isCancelled { await log.record(.isFavorite, .fellBackToLocal) }
             return try await local.isFavorite(treeID: treeID)
         }
     }
@@ -735,14 +770,38 @@ public struct RoutedAPI: CypressAPI {
     /// **The two sets are unioned rather than replaced.** A tree hearted on this phone and not yet
     /// drained is in the local set and not the service's, and dropping it would take the heart off a
     /// tree the person just tapped — the same window `OutboxQueue.pendingFavorite` exists for.
+    /// ── This method is the **paint** ────────────────────────────────────────────────────────────
+    ///
+    /// `refreshedMapMembership(_:)` below is the union. This returns the phone's set and returns it
+    /// now: pressing `Yours` or `Favorites` on screen 01 used to await the service before the map
+    /// could narrow at all, so a filter chip over a table of tens of rows — already on this disk —
+    /// cost a round trip before a single pin moved. `MapModel.membershipDidChange` deliberately
+    /// resolves the narrow set *before* the wide query over 145,837 trees, which meant the wide
+    /// query waited on the network too.
+    ///
+    /// **It records nothing in `log`** — `grove()`'s note, for the same reason.
     public func mapMembership(_ kind: MapMembership) async throws -> Set<UUID> {
+        try await local.mapMembership(kind)
+    }
+
+    /// `mapMembership(_:)` again, unioned with `GET /me/map-membership`.
+    ///
+    /// **The two sets are unioned rather than replaced**, which is the semantic this read has always
+    /// had and the reason it is a union: a tree hearted on this phone and not yet drained is in the
+    /// local set and not the service's, and dropping it would take the heart off a tree the person
+    /// just tapped — the same window `OutboxQueue.pendingFavorite` exists for.
+    ///
+    /// It is delivered behind a narrowed map, so a tree the account hearted on another device joins
+    /// the filter a beat later rather than holding the chip. **A cancelled union records nothing**,
+    /// for `refreshedGrove()`'s reason — `MapModel` cancels this whenever the chip changes again.
+    public func refreshedMapMembership(_ kind: MapMembership) async throws -> Set<UUID> {
         let mine = try await local.mapMembership(kind)
         do {
             let theirs = try await remote.mapMembership(kind)
             await log.record(.mapMembership, .live)
             return mine.union(theirs)
         } catch {
-            await log.record(.mapMembership, .fellBackToLocal)
+            if !Task.isCancelled { await log.record(.mapMembership, .fellBackToLocal) }
             return mine
         }
     }
@@ -811,10 +870,45 @@ public struct RoutedAPI: CypressAPI {
     /// The own and deletable sets are unioned for the same reason they exist as separate sets —
     /// "own" is what this reader may *see* and "deletable" is what they may *unmake*, and the two
     /// differ on exactly the rows an account deletion anonymized.
+    /// ── This method is the **paint**, and it does not touch the wire ────────────────────────────
+    ///
+    /// `refreshedTreeProfile(id:)` below is the merge. This returns the phone's profile and returns
+    /// it now, on the owner's ruling of 2026-09-01 extended to this read: every screen that opens a
+    /// tree used to `await remote.treeCommunityHalf(id:)` before it drew anything, so opening *any*
+    /// tree profile cost a network round trip — and there are sixteen call sites, not one. A sheet
+    /// that only wanted the tree's name (`CareLogModel.loadName`) or its species
+    /// (`CheckInModel.loadSpecies`) paid for the community half it never read.
+    ///
+    /// **It records nothing in `log`, and that is the honest mark** — `grove()`'s note above, for
+    /// the same reason: nil is "the service was not consulted", which is what happened here.
     public func treeProfile(id: UUID) async throws -> TreeProfile {
+        try await local.treeProfile(id: id)
+    }
+
+    /// `treeProfile(id:)` again, with `GET /trees/{id}`'s community half merged in.
+    ///
+    /// **What it is for**: it is delivered *behind* a painted profile, by the three surfaces that
+    /// actually draw a photograph somebody else took — screen 03, the photo browser, and the map's
+    /// tree card. `DataLayer.boot` hands it over as a closure on `refreshGrove`'s terms exactly, and
+    /// it is nil when the gate is shut.
+    ///
+    /// **The merge is unchanged** — every rule below is the one this method carried when it was
+    /// `treeProfile(id:)` itself, including which halves are deliberately the phone's.
+    ///
+    /// **The other thirteen call sites do not take this closure, and that is the point.** The
+    /// community half is photographs and nothing else (`TreeCommunityHalfResponse`), so a caller
+    /// reading a name, a species, a land context, a measurement or a visit list loses nothing at all
+    /// by reading the phone alone — it simply stops paying a round trip for a field it never touched.
+    ///
+    /// **A cancelled refresh records nothing**, for `refreshedGrove()`'s reason and no other: these
+    /// refreshes are cancelled when a profile is dismissed or a second pin is tapped, and
+    /// `try? await remote.treeCommunityHalf(id:)` answers nil for a cancellation exactly as it does
+    /// for an unreachable host.
+    public func refreshedTreeProfile(id: UUID) async throws -> TreeProfile {
         let mine = try await local.treeProfile(id: id)
         guard let community = try? await remote.treeCommunityHalf(id: id) else {
-            await log.record(.treeProfile, .fellBackToLocal)
+            // Nothing is recorded for a refresh we cancelled ourselves — `refreshedGrove()`'s note.
+            if !Task.isCancelled { await log.record(.treeProfile, .fellBackToLocal) }
             return mine
         }
 
