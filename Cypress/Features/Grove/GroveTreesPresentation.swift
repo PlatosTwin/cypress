@@ -41,7 +41,32 @@
 
 import Foundation
 
-/// Everything the `Trees` pill draws, derived from one `grove()` read.
+// MARK: - Limits
+
+enum GroveLimits {
+    /// How many trees one read asks for.
+    ///
+    /// **NOT SPECIFIED**, and chosen the way `JournalLimits.pageSize` was: by what a phone can
+    /// draw, not by what the store can answer. `Page.maximumLimit` is 100 and that is a ceiling.
+    ///
+    /// **Fifty, measured on the running screen at the size the defect was found at.** A grove row
+    /// is `IconTextRow` at about 100 pt drawn, so an iPhone 16 Pro shows between seven and eight of
+    /// them; fifty is six or seven screenfuls, which is enough that the first `Show more` is a
+    /// deliberate act rather than something a reader trips over on the way down the first page —
+    /// `JournalLimits`' own rule, at this list's row height rather than the journal's. Twenty-five
+    /// was tried first and rejected for the opposite failure: three screenfuls on a grove of a
+    /// thousand puts the control in front of somebody twenty times.
+    ///
+    /// The upper bound is the one this round exists for. At 1,027 trees the whole list took 3.47 s
+    /// of blank column to build; the numbers are in
+    /// `docs/whats-new/perf-grove-trees-paging.md`, measured with timestamped screenshot bursts
+    /// before and after on the same device.
+    static let pageSize = 50
+}
+
+// MARK: - Presentation
+
+/// Everything the `Trees` pill draws, derived from one `grove(cursor:limit:)` read.
 struct GroveTreesPresentation: Equatable {
 
     /// One C10 row — the same component the journal list and screens 12 and 13 use, because it is
@@ -58,18 +83,30 @@ struct GroveTreesPresentation: Equatable {
 
     let rows: [Row]
 
+    /// Whether the read came back with a cursor — the one fact this screen has about its own extent.
+    let hasMore: Bool
+
+    /// The sentence under the list when there are more trees, and nil when the read reached the end.
+    /// `JournalPresentation.olderNote`'s shape exactly; see `GroveCopy.moreNote` for the one word
+    /// that differs and why.
+    var moreNote: String? { hasMore ? GroveCopy.moreNote : nil }
+
     /// The cold-start sentence, or nil when there is a grove to draw.
     ///
-    /// Unlike the journal's, this one needs no cursor guard: `grove()` returns an array rather than a
-    /// `Page` and there is no read behind it that could have stopped early, so an empty result really
-    /// is an empty grove. The distinction that *does* have to be kept is the other one — an empty
-    /// grove against a read that failed — and that is `GroveModel`'s job, not this type's.
-    var emptyState: String? { rows.isEmpty ? GroveCopy.treesEmptyState : nil }
+    /// **`!hasMore` is new and it is `JournalPresentation.emptyState`'s guard, arriving with the
+    /// cursor.** The paragraph this replaces said the guard was unnecessary because "`grove()`
+    /// returns an array rather than a `Page` and there is no read behind it that could have stopped
+    /// early". That is no longer true of this list, and the guard is what keeps a first page that
+    /// came back empty *with* a cursor from telling somebody their grove is empty — E38 pointed at
+    /// the emptiest possible page. The other distinction, an empty grove against a read that
+    /// failed, is still `GroveModel`'s job and not this type's.
+    var emptyState: String? { rows.isEmpty && !hasMore ? GroveCopy.treesEmptyState : nil }
 
     /// No clock, and it is worth saying why one is not taken: **nothing this list draws is a date**.
     /// The parameters this used to carry (`now`, `calendar`, `locale`) existed to format `last visit
     /// Jul 12`, and that clause is gone — see `GroveCopy.treeSubtitle`.
-    init(entries: [GroveEntry]) {
+    init(entries: [GroveEntry], hasMore: Bool = false) {
+        self.hasMore = hasMore
         // **The store's order, unchanged.** `groveTreeIDs` orders by `last_visited DESC NULLS LAST`,
         // which puts the tree you saw most recently at the top and the ones you have only favorited
         // at the bottom. Re-sorting here would be a second ordering, and two orderings is two
@@ -119,6 +156,33 @@ extension GroveCopy {
     /// would change it.
     static let treesEmptyState =
         "No trees here yet. Favoriting a tree or saving a visit to one puts it in your grove."
+
+    // MARK: The end of a page
+
+    /// Under the last row when a cursor came back, and the control that fetches the next page.
+    ///
+    /// **The owner ruled the affordance in on 2026-09-02** — page this list the way `Journal >
+    /// Yours` is paged, reusing that list's own vocabulary and tokens and inventing no new one. So
+    /// the control is `SecondaryOutlineButton(style: .compact)` under a `body12` muted line, which
+    /// is `JournalListView.olderBlock` down to the modifier, and these three strings are
+    /// `JournalCopy.olderNote` / `olderAction` / `olderFailed` with one word changed.
+    ///
+    /// **The word is `more` and not `earlier`, and the change is the point rather than a
+    /// paraphrase.** `JournalCopy.olderNote`'s own comment gives the rule it is following:
+    /// "'Earlier' rather than 'more' is deliberate: the list is ordered by time, so what is behind
+    /// the cursor is a *direction*, not a remainder." Applying that rule to this list gives the
+    /// opposite word. A grove is a set of nouns, not a chronology — this file's first paragraph is
+    /// about nothing else — and its tail is the trees nobody has visited, which are not *earlier*
+    /// than anything. What is behind the cursor here really is a remainder. Copying the journal's
+    /// sentence verbatim would have been reusing its words while contradicting its reason, on the
+    /// one screen the owner has already had to tell us reads too much like the journal.
+    ///
+    /// It does not say how many, for `olderNote`'s reason: how many is the one thing a cursor read
+    /// cannot know (ERRATA E38).
+    static let moreNote = "There are more trees than these."
+    static let moreAction = "Show more"
+    /// A `Show more` that failed. The rows already on screen stay; only this line is new.
+    static let moreFailed = "More trees could not be read just now."
 
     /// **A read that failed, said as a failure** (ERRATA E126). Not "no trees here yet": that is a
     /// sentence about the person's grove, and saying it over a database that could not be read tells

@@ -1281,6 +1281,51 @@ public struct GroveEntry: Hashable, Sendable, Identifiable {
     }
 }
 
+/// Where one grove entry sits in the grove's order, as a value that can be compared.
+///
+/// **The order is the store's and this is a mirror of it, which is a thing that can go wrong.**
+/// `ContributionStore.groveOrderSQL` is the definition — `COALESCE(last_visited, '') DESC,
+/// tree_uuid COLLATE NOCASE DESC` — and this type restates it in Swift so that two callers who
+/// cannot reach SQLite can still ask "which of these two rows comes first": `GroveModel`, which
+/// reconciles a refreshed page against pages already on screen, and `RoutedAPI.refreshedGrove`,
+/// which re-sorts after joining the account's half in.
+///
+/// A mirror that drifts would put a page boundary in a different place from the query that
+/// produced it, which is how a row gets shown twice or not at all. So it is not asserted here:
+/// `GrovePaginationTests.theSwiftOrderKeyAgreesWithTheQuery` sorts a fixture by this key and
+/// compares it, element for element, with the order `LocalAPI.grove()` returns.
+///
+/// **Descending.** `a > b` means `a` is drawn above `b`, because the newest visit is at the top.
+public struct GroveOrderKey: Comparable, Hashable, Sendable {
+    /// The stored spelling of `last_visited`, or `""` for a tree nobody has visited — which is what
+    /// `COALESCE(last_visited, '')` compares, and it sorts below every timestamp because a
+    /// `SQLiteTimestamp` begins with a digit.
+    let stamp: String
+    /// `COLLATE NOCASE` over a `uuidString`, which is ASCII, so case folding is exactly
+    /// `lowercased()`.
+    let tree: String
+
+    public static func < (left: Self, right: Self) -> Bool {
+        left.stamp == right.stamp ? left.tree < right.tree : left.stamp < right.stamp
+    }
+}
+
+public extension GroveEntry {
+    /// This entry's place in the grove's order. See `GroveOrderKey`.
+    var orderKey: GroveOrderKey {
+        GroveOrderKey(
+            stamp: lastVisitedAt.map(SQLiteTimestamp.string(from:)) ?? "",
+            tree: treeID.uuidString.lowercased()
+        )
+    }
+
+    /// This entry's position as the opaque cursor `grove(cursor:limit:)` takes, so that a caller
+    /// holding entries and no store can ask for what comes after the last one it is showing.
+    var groveCursor: String {
+        ContributionStore.GroveCursor(lastVisitedAt: lastVisitedAt, treeID: treeID).string
+    }
+}
+
 /// A row of `GET /me/journal`.
 ///
 /// Carries no counts of any kind. "No streaks, points, ranks, badges, or public counts of user

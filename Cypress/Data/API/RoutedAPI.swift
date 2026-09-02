@@ -637,17 +637,18 @@ public struct RoutedAPI: CypressAPI {
         }
 
         await log.record(.grove, everythingResolved ? .live : .fellBackToLocal)
-        // The local read's order is `last_visited DESC NULLS LAST` and `GroveRecord`'s header pins
-        // that it is never an ordering by size. Re-sorting on the joined dates keeps that ordering
-        // rather than appending the account's rows in whatever order the service listed them.
-        return byTree.values.sorted { left, right in
-            switch (left.lastVisitedAt, right.lastVisitedAt) {
-            case let (leftDate?, rightDate?): return leftDate > rightDate
-            case (nil, _?): return false
-            case (_?, nil): return true
-            case (nil, nil): return left.displayName < right.displayName
-            }
-        }
+        // The local read's order is `ContributionStore.groveOrderSQL` and `GroveRecord`'s header
+        // pins that it is never an ordering by size. Re-sorting on the joined dates keeps that
+        // ordering rather than appending the account's rows in whatever order the service listed
+        // them.
+        //
+        // **It sorts by `GroveOrderKey` now, and the tie-break is the change.** This used to fall
+        // back to `displayName` for two rows with no visit between them, which is a *different*
+        // order from the one the query produces — and once screen 08 pages, two orders is two
+        // answers to "which row comes after this one". A cursor derived from a list sorted one way
+        // and handed to a query sorted the other lands in the wrong place, which shows a row twice
+        // or not at all. `GroveOrderKey` is the query's own order, restated once and used by both.
+        return byTree.values.sorted { $0.orderKey > $1.orderKey }
     }
 
     /// `GET /me/grove/{treeID}/favorite` — one of the two Class R reads the service can answer whole.
