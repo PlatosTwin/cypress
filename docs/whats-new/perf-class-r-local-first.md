@@ -59,4 +59,5 @@
 #     the membership sets are unioned rather than replaced, and this device's status provenance is
 #     still this device's.
 
-Opening a tree no longer waits for the network, the heart answers the moment you tap it, and the map's Yours and Favorites chips narrow instantly. The map also keeps where you were, and what you had searched or filtered to, when you come back to it. Anything added on another device — a photograph, a favorite — turns up a moment after the screen draws.
+Tree profiles, the heart and the map's Yours and Favorites chips answer instantly now instead of waiting on the network.
+The map also keeps your search and filter when you come back to it, and a photo or favorite added on another device turns up a moment after the screen draws.
