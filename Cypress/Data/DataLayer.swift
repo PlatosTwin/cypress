@@ -104,10 +104,12 @@ public struct DataLayer: Sendable {
     /// A tree profile's community half, merged in — or nil when there is no service to merge from.
     /// `refreshGroveSpecies`' terms exactly, over `RoutedAPI.refreshedTreeProfile(id:)`.
     ///
-    /// **Handed only to the three surfaces that draw somebody else's photograph** — screen 03, the
-    /// photo browser and the map's tree card. The community half is photographs and nothing else,
-    /// so the other thirteen `treeProfile(id:)` callers read the phone and lose nothing; see
-    /// `RoutedAPI.refreshedTreeProfile(id:)`.
+    /// **Handed to the six surfaces that read `TreeProfile`'s photographs** — screen 03, the photo
+    /// browser, the map's tree card, the memorial, the activity screen and the share sheet. The
+    /// remaining twelve router call sites read a name, a species, a measurement or a visit list, and
+    /// the community half carries none of those, so they read the phone and lose nothing.
+    /// `RoutedAPI.refreshedTreeProfile(id:)` names all six and says why the list is six and not the
+    /// three PR #147's first cut named.
     public let refreshTreeProfile: (@Sendable (UUID) async -> TreeProfile?)?
 
     /// The heart's R2 re-read, asked of the service — or nil when there is no service to ask.

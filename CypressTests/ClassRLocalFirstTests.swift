@@ -57,6 +57,49 @@ struct ClassRLocalFirstTests {
         )
     }
 
+    static func myPhoto() -> Photo {
+        Photo(id: myPhotoID, treeID: treeID, shotType: .fullTree, capturedAt: moment)
+    }
+
+    /// Somebody else's photograph, as the community half's decode produces it: `.approved`, which
+    /// is the state no local write path in this app can set.
+    static func theirPhoto() -> Photo {
+        Photo(
+            id: theirPhotoID,
+            treeID: treeID,
+            shotType: .fullTree,
+            moderationState: .approved,
+            capturedAt: moment.addingTimeInterval(60)
+        )
+    }
+
+    static func twoPhotoProfile() -> TreeProfile {
+        TreeProfile(
+            tree: tree(treeID),
+            photos: Series(complete: [myPhoto(), theirPhoto()]),
+            ownPhotoIDs: [myPhotoID],
+            deletablePhotoIDs: [myPhotoID]
+        )
+    }
+
+    /// The merged profile the share sheet needs: the local `.pending` row plus an `.approved` one.
+    static func approvedProfile() -> TreeProfile { twoPhotoProfile() }
+
+    /// A removed tree, so `MemorialModel`'s one gate admits it.
+    static func memorialProfile(photos: [Photo]) -> TreeProfile {
+        TreeProfile(
+            tree: Tree(
+                id: treeID,
+                source: .community,
+                coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+                status: .removed
+            ),
+            photos: Series(complete: photos),
+            ownPhotoIDs: [myPhotoID],
+            deletablePhotoIDs: [myPhotoID]
+        )
+    }
+
     static func localDouble() -> LocalDouble {
         var local = LocalDouble()
         local.profile = localProfile()
@@ -447,6 +490,107 @@ struct ClassRLocalFirstTests {
         // ── No service at all: nil for the other reason ──────────────────────────────────────
         let shut = ProfileFavoriteWriter(api: local, local: local, outbox: outbox, reconcile: nil)
         #expect(await shut.reconciledState(treeID: Self.treeID) == nil)
+    }
+
+    // MARK: - The three surfaces PR #147's review found excluded
+
+    /// **A photograph this device never wrote has to reach the memorial, the activity screen and the
+    /// share sheet** — the three surfaces the first cut of this split left on the phone's profile.
+    ///
+    /// The reasoning that excluded them was that the community half is photographs, so only the
+    /// surfaces that *draw* one need it. All three read `TreeProfile`'s photographs: the memorial
+    /// for its hero, its `First photo` milestone and its count pill; the activity screen for its
+    /// per-month counts and first-photo date; the share sheet for its whole card. And the phone can
+    /// never supply the missing rows — nothing syncs anybody else's photographs down, and the seed
+    /// has no photo table — so without the merge these three are not "usually" short of a
+    /// photograph, they are permanently short of every photograph they do not own.
+    ///
+    /// Each arm asserts the paint first, so a merge that silently replaced the paint would not read
+    /// as a pass.
+    @Test("a photograph this device never wrote reaches the memorial, the activity screen and the share sheet")
+    func theCommunityHalfReachesTheOtherThreeSurfaces() async throws {
+        // ── The memorial ─────────────────────────────────────────────────────────────────────
+        var memorialLocal = LocalDouble()
+        memorialLocal.profile = Self.memorialProfile(photos: [Self.myPhoto()])
+        let memorial = MemorialModel(
+            treeID: Self.treeID,
+            api: Self.router(memorialLocal, ScriptedTransport()),
+            refreshProfile: { _ in Self.memorialProfile(photos: [Self.myPhoto(), Self.theirPhoto()]) }
+        )
+        await memorial.load()
+        guard case let .loaded(painted) = memorial.phase else {
+            Issue.record("the memorial did not paint: \(memorial.phase)")
+            return
+        }
+        #expect(painted.photos.items.count == 1, "the memorial waited for the merge")
+        await memorial.profileRefresh?.value
+        guard case let .loaded(merged) = memorial.phase else {
+            Issue.record("the memorial lost its phase across the merge: \(memorial.phase)")
+            return
+        }
+        #expect(
+            merged.photos.items.contains { $0.id == Self.theirPhotoID },
+            "the memorial's hero, milestone and count pill cannot see a photograph from another phone"
+        )
+
+        // ── The activity screen ──────────────────────────────────────────────────────────────
+        var activityLocal = LocalDouble()
+        activityLocal.profile = Self.localProfile()
+        let activity = ActivityModel(
+            treeID: Self.treeID,
+            api: Self.router(activityLocal, ScriptedTransport()),
+            refreshProfile: { _ in Self.twoPhotoProfile() }
+        )
+        await activity.load()
+        #expect(
+            activity.presentation?.profile.photos.items.count == 1,
+            "the activity screen waited for the merge"
+        )
+        await activity.profileRefresh?.value
+        let activityPhotos = try #require(activity.presentation?.profile.photos.items)
+        #expect(
+            activityPhotos.contains { $0.id == Self.theirPhotoID },
+            "the activity screen's per-month counts cannot see a photograph from another phone"
+        )
+
+        // ── The share sheet, which is the sharpest case ───────────────────────────────────────
+        //
+        // `SharePresentation` takes `publiclyVisiblePhotos` — `moderationState == .approved` — and
+        // `.approved` is produced in exactly one place in the shipping app, the community half's own
+        // decode. So this arm is not "the card gains a row", it is "the card can carry a photograph
+        // at all": without the merge the set is unconditionally empty. The local fixture therefore
+        // carries a `.pending` photograph, which is what a phone can actually hold.
+        var shareLocal = LocalDouble()
+        shareLocal.profile = Self.localProfile()
+        let share = ShareModel(
+            treeID: Self.treeID,
+            api: Self.router(shareLocal, ScriptedTransport()),
+            refreshProfile: { _ in Self.approvedProfile() }
+        )
+        await share.load()
+        guard case let .loaded(paintedCard) = share.phase else {
+            Issue.record("the share sheet did not paint: \(share.phase)")
+            return
+        }
+        #expect(
+            paintedCard.publiclyVisiblePhotos.items.isEmpty,
+            """
+            the phone painted an approved photograph — this fixture is wrong, because `.approved` \
+            is produced only by the community half's decode
+            """
+        )
+        await share.profileRefresh?.value
+        guard case let .loaded(mergedCard) = share.phase else {
+            Issue.record("the share sheet lost its phase across the merge: \(share.phase)")
+            return
+        }
+        #expect(
+            mergedCard.publiclyVisiblePhotos.items.contains { $0.id == Self.theirPhotoID },
+            """
+            the share card cannot carry a photograph at all: `.approved` reaches this app only \
+            through the community half, and this sheet is not being handed it
+            """
+        )
     }
 
     // MARK: - The map's membership chip

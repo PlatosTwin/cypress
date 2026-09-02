@@ -52,7 +52,7 @@ final class TreePhotosModel {
     /// The profile again with the community half merged in, or nil when there is no service to merge
     /// from (`DataLayer.refreshTreeProfile`). Nil means no background task at all.
     ///
-    /// This browser is one of the three surfaces the closure is handed to, and it is the one the
+    /// This browser is one of the six surfaces the closure is handed to, and it is the one the
     /// acceptance criterion is actually about: *"when I add a photo on my device, the photo
     /// propagates to all other users"* is a row appearing in this list that this device never wrote.
     private let refreshProfile: ((UUID) async -> TreeProfile?)?

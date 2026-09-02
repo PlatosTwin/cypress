@@ -637,10 +637,12 @@ public struct RoutedAPI: CypressAPI {
         }
     }
 
-    /// `GET /me/grove/{treeID}/favorite` — one of the two Class R reads the service can answer whole.
+    /// **The phone's `favorites` table — this read issues no request.**
     ///
-    /// The heart re-reads its own state after every write (RULINGS R2), so this is the read that
-    /// makes a favorite set on one phone show as set on another.
+    /// The endpoint it used to call is `GET /me/grove/{treeID}/favorite`, and that call now lives in
+    /// `reconciledIsFavorite(treeID:)` below, which is the read that makes a favorite set on one
+    /// phone show as set on another.
+    ///
     /// ── This method is the **paint**, and the owner's ruling of 2026-09-02 is why ───────────────
     ///
     /// It used to ask the service *first* and fall back to the phone. The heart re-reads its own
@@ -762,14 +764,10 @@ public struct RoutedAPI: CypressAPI {
         )
     }
 
-    /// `GET /me/map-membership` — the other Class R read the service can answer whole.
+    /// **The phone's membership table — this read issues no request.**
     ///
-    /// It returns ids and nothing else, deliberately (a count of one's own contributions is what D1
-    /// forbids as a user-visible figure), and an id set needs no city fact to be complete.
-    ///
-    /// **The two sets are unioned rather than replaced.** A tree hearted on this phone and not yet
-    /// drained is in the local set and not the service's, and dropping it would take the heart off a
-    /// tree the person just tapped — the same window `OutboxQueue.pendingFavorite` exists for.
+    /// The endpoint is `GET /me/map-membership` and the union with it is
+    /// `refreshedMapMembership(_:)` below, which is where the both-sets rule is stated.
     /// ── This method is the **paint** ────────────────────────────────────────────────────────────
     ///
     /// `refreshedMapMembership(_:)` below is the union. This returns the phone's set and returns it
@@ -852,7 +850,31 @@ public struct RoutedAPI: CypressAPI {
 
     // MARK: - Class R, R-required: the community layer
 
-    /// `GET /trees/{id}`'s community half, **merged onto** the phone's profile.
+    /// **The phone's profile — this read issues no request.**
+    ///
+    /// The merge it used to perform is `refreshedTreeProfile(id:)` below, whose head carries every
+    /// rule of the join: what R-required means for the fallback, why the city half is never asked
+    /// for, and how photographs and the two id sets combine.
+    ///
+    /// ── This method is the **paint**, and it does not touch the wire ────────────────────────────
+    ///
+    /// It returns the phone's profile and returns it now, on the owner's ruling of 2026-09-01
+    /// extended to this read: every screen that opens a tree used to
+    /// `await remote.treeCommunityHalf(id:)` before it drew anything, so opening *any* tree profile
+    /// cost a network round trip. There are **fifteen** call sites through this router, not one — a
+    /// sheet that only wanted the tree's name (`CareLogModel.loadName`) or its species
+    /// (`CheckInModel.loadSpecies`) paid for a community half it never read.
+    ///
+    /// (`Features/Visit/VisitGates.swift` calls `treeProfile(id:)` five more times and is not one of
+    /// the fifteen: it builds its own `LocalAPI` and has never gone through this router at all.)
+    ///
+    /// **It records nothing in `log`, and that is the honest mark** — `grove()`'s note above, for
+    /// the same reason: nil is "the service was not consulted", which is what happened here.
+    public func treeProfile(id: UUID) async throws -> TreeProfile {
+        try await local.treeProfile(id: id)
+    }
+
+    /// `treeProfile(id:)` again, with `GET /trees/{id}`'s community half merged in.
     ///
     /// This is the acceptance criterion's last mile in one method: *"when I add a photo on my
     /// device, the photo propagates to all other users"* is this call returning a photograph the
@@ -870,35 +892,38 @@ public struct RoutedAPI: CypressAPI {
     /// The own and deletable sets are unioned for the same reason they exist as separate sets —
     /// "own" is what this reader may *see* and "deletable" is what they may *unmake*, and the two
     /// differ on exactly the rows an account deletion anonymized.
-    /// ── This method is the **paint**, and it does not touch the wire ────────────────────────────
     ///
-    /// `refreshedTreeProfile(id:)` below is the merge. This returns the phone's profile and returns
-    /// it now, on the owner's ruling of 2026-09-01 extended to this read: every screen that opens a
-    /// tree used to `await remote.treeCommunityHalf(id:)` before it drew anything, so opening *any*
-    /// tree profile cost a network round trip — and there are sixteen call sites, not one. A sheet
-    /// that only wanted the tree's name (`CareLogModel.loadName`) or its species
-    /// (`CheckInModel.loadSpecies`) paid for the community half it never read.
+    /// **What it is for**: it is delivered *behind* a painted profile, by the **six** surfaces that
+    /// read `TreeProfile`'s photographs. `DataLayer.boot` hands it over as a closure on
+    /// `refreshGrove`'s terms exactly, and it is nil when the gate is shut.
     ///
-    /// **It records nothing in `log`, and that is the honest mark** — `grove()`'s note above, for
-    /// the same reason: nil is "the service was not consulted", which is what happened here.
-    public func treeProfile(id: UUID) async throws -> TreeProfile {
-        try await local.treeProfile(id: id)
-    }
-
-    /// `treeProfile(id:)` again, with `GET /trees/{id}`'s community half merged in.
+    ///   1. screen 03 (`TreeProfileModel`) — the hero;
+    ///   2. the photo browser (`TreePhotosModel`) — the timeline itself;
+    ///   3. the map's tree card (`MapModel.select`);
+    ///   4. the memorial (`MemorialModel`) — hero, `First photo` milestone, the photo-count pill;
+    ///   5. the activity screen (`ActivityModel`) — per-month counts and the first-photo date;
+    ///   6. the share sheet (`ShareModel`) — and this one is the sharpest case in the app.
     ///
-    /// **What it is for**: it is delivered *behind* a painted profile, by the three surfaces that
-    /// actually draw a photograph somebody else took — screen 03, the photo browser, and the map's
-    /// tree card. `DataLayer.boot` hands it over as a closure on `refreshGrove`'s terms exactly, and
-    /// it is nil when the gate is shut.
+    /// **PR #147's review is why that list has six entries rather than three.** The first cut of
+    /// this split reasoned that the community half is photographs, therefore only the surfaces that
+    /// *draw* a photograph need it — and then named three of the six. The other three read
+    /// `TreeProfile.visiblePhotos` too, and the phone can never supply the missing rows: nothing
+    /// syncs anybody else's photographs down (`ContributionStore`), and the seed carries no photo
+    /// table at all.
     ///
-    /// **The merge is unchanged** — every rule below is the one this method carried when it was
+    /// Share is the sharpest because its predicate is different. `SharePresentation` takes
+    /// `publiclyVisiblePhotos` — `moderationState == .approved` — and `.approved` is produced in
+    /// exactly one place in the shipping app: this method's own decode
+    /// (`RemoteAPI.treeCommunityHalf`). `moderation_state` defaults to `pending` and no local write
+    /// path changes it, so a share card cut off from this closure carries **no** photograph
+    /// unconditionally, rather than merely usually.
+    ///
+    /// The remaining **twelve** router call sites are not handed this and lose nothing by it: they
+    /// read a name, a species, a land context, a measurement, a visit list or a status, and the
+    /// community half carries none of those (`TreeCommunityDelta` is photographs and two id sets).
+    ///
+    /// **The merge is unchanged** — every rule above is the one this method carried when it was
     /// `treeProfile(id:)` itself, including which halves are deliberately the phone's.
-    ///
-    /// **The other thirteen call sites do not take this closure, and that is the point.** The
-    /// community half is photographs and nothing else (`TreeCommunityHalfResponse`), so a caller
-    /// reading a name, a species, a land context, a measurement or a visit list loses nothing at all
-    /// by reading the phone alone — it simply stops paying a round trip for a field it never touched.
     ///
     /// **A cancelled refresh records nothing**, for `refreshedGrove()`'s reason and no other: these
     /// refreshes are cancelled when a profile is dismissed or a second pin is tapped, and

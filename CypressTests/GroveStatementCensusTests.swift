@@ -44,20 +44,29 @@ import Testing
 /// ── How the expected texts are obtained, and the one thing that is honestly weaker here ────────
 /// `JournalStatementCensusTests` reads all five of its texts off `static let …SQL` properties, so
 /// its set assertion is a genuine drift gate on every one of them. The grove's read is not built
-/// that way: only two of its seven statements have a named property (`TreeQueries.treesSQL()` and
-/// `ContributionStore.activeNamesSQL`); the other five are string literals inside their store
-/// methods. Copying those five into this file would produce exactly the gate PR #143's review
-/// disproved — a test explaining its own copy.
+/// that way: **three** of its seven statements have a named property today
+/// (`TreeQueries.treesSQL()`, `ContributionStore.activeNamesSQL`, and
+/// `ContributionStore.scopedHeroPhotoTalliesSQL`, which is byte-identical to the literal
+/// `heroPhotoIDs` prepares). The other four are string literals inside their store methods.
 ///
-/// So they are obtained the only other way that binds them to production: by **running the store
-/// methods themselves** under a second census, on the same store, in the order `grove()` calls them,
-/// and taking the texts they prepare. `Self.expected(…)` is that probe. What it certifies is that
-/// `grove()` runs the store's statements and no others — the shape of drift that matters, since a
-/// hand-rolled statement inlined into `grove()` would diverge from the store method the rest of the
-/// app reads through. What it cannot certify, and nothing in this file claims it does, is that
-/// `groveTreeIDs`' own text has not changed; a rewrite of that method moves probe and app together.
-/// The two property-backed texts are asserted against their properties separately, below, where the
-/// stronger statement is available.
+/// **There are three ways to write this test, not two, and an earlier draft of this header claimed
+/// two** (PR #147's review, F4). They are: copy the literals into the test — which is exactly the
+/// gate PR #143's review disproved, a test explaining its own copy; **hoist the literals to named
+/// properties on the store and pin the test to those**, which is what
+/// `AlmanacStatementCensusTests` does for all nine of its statements and what `journalSQL` and
+/// `activeNamesSQL` already are; or probe. The third horn is the better one and it is available —
+/// it is a production change, and this round is not the round for it (see the PR's out-of-scope
+/// notes), but nothing about the grove's read prevents it.
+///
+/// So the four literal-only texts are obtained by the remaining route that binds them to
+/// production: by **running the store methods themselves** under a second census, on the same store,
+/// in the order `grove()` calls them, and taking the texts they prepare. `Self.expected(…)` is that
+/// probe. What it certifies is that `grove()` runs the store's statements and no others — the shape
+/// of drift that matters, since a hand-rolled statement inlined into `grove()` would diverge from
+/// the store method the rest of the app reads through. What it cannot certify, and nothing in this
+/// file claims it does, is that `groveTreeIDs`' own text has not changed; a rewrite of that method
+/// moves probe and app together. The three property-backed texts are asserted against their
+/// properties directly, below, where the stronger statement is available.
 @Suite("My Grove · what the list actually runs")
 struct GroveStatementCensusTests {
 
@@ -145,6 +154,24 @@ struct GroveStatementCensusTests {
         return probe.statements
     }
 
+    /// The statements that have a named property on their store, and can therefore be pinned to it
+    /// rather than to the probe.
+    ///
+    /// `scopedHeroPhotoTalliesSQL` is in here on PR #147's review (F4): `heroPhotoIDs` prepares a
+    /// literal that is byte-identical to that property after Swift's multiline indent-stripping, so
+    /// pinning it costs nothing and is strictly stronger than the probe. That `ContributionStore`
+    /// holds two copies of one statement is a production defect this test does not fix and the PR
+    /// reports.
+    private static func propertyBacked(_ store: CypressStore) throws -> [String] {
+        let schema = try #require(store.seed, "the store opened without a seed attached")
+        let trees = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
+        return [
+            trees.treesSQL(),
+            ContributionStore.activeNamesSQL,
+            ContributionStore.scopedHeroPhotoTalliesSQL
+        ]
+    }
+
     // MARK: - The gate
 
     @Test("one grove read is two queue hops and seven statements, each run exactly once")
@@ -162,6 +189,32 @@ struct GroveStatementCensusTests {
             \(Self.statementCount): \(Self.histogram(expected))
             """
         )
+
+        // **"each run exactly once" is only implied by the assertions below if the seven texts are
+        // distinct** (PR #147's review, F4b). `ran.count == expected.count` plus
+        // `Set(ran) == Set(expected)` permits a duplicate on both sides: if a refactor made two of
+        // the seven texts equal, `expected.count` would stay 7 while `Set(expected)` dropped to 6,
+        // and a `ran` carrying one text twice would satisfy both. `AlmanacStatementCensusTests` has
+        // the same line for the same reason.
+        try #require(
+            expected.count == Set(expected).count,
+            """
+            two of the seven statements hold the same text, so "each run exactly once" no longer \
+            follows from the count and the set together: \(Self.histogram(expected))
+            """
+        )
+
+        // The three that have a property are pinned to it rather than to the probe — a genuine
+        // text-drift gate on those, which the probe cannot be.
+        for sql in try Self.propertyBacked(store) {
+            try #require(
+                expected.contains(sql),
+                """
+                a statement this repository names in a property is not among the ones the store's \
+                own methods prepare: \(Self.firstLine(of: sql))
+                """
+            )
+        }
 
         let census = StatementCensus()
         await store.queue.installCensus(census)

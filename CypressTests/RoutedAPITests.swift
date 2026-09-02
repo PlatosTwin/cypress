@@ -796,8 +796,9 @@ struct RoutedAPITests {
         #expect(await log.outcome(of: .treeProfile) == .fellBackToLocal)
 
         // **The paint answers the same profile and asks nothing.** Opening a tree is the read all
-        // sixteen call sites make, and before the split every one of them awaited the community
-        // half first — a sheet that wanted only the tree's name paid for photographs it never drew.
+        // fifteen router call sites make, and before the split every one of them awaited the
+        // community half first — a sheet that wanted only the tree's name paid for photographs it
+        // never drew.
         let painted = RemoteReadLog()
         let transport = ScriptedTransport()
         let quick = try await RoutedAPI(local: local, remote: Self.remote(transport), log: painted)

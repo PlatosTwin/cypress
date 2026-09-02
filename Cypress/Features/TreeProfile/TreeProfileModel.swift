@@ -399,9 +399,14 @@ final class TreeProfileModel {
     /// if that has moved — and cancelled outright when the next read starts, so a reconcile cannot
     /// queue up behind its own predecessor.
     ///
-    /// **A nil answer changes nothing.** Nil is "the service was not reached", and the phone's
-    /// answer is already on the glass; replacing it with `false` would take the heart off a tree
-    /// this device holds because a network failed (R72 ruling 1).
+    /// **A nil answer changes nothing, and it is worth being exact about where nil comes from** —
+    /// the first draft of this comment said "nil is the service was not reached", and that is not
+    /// this code's behavior. `RoutedAPI.reconciledIsFavorite` never answers nil for an unreachable
+    /// service: it catches and returns the phone's own `isFavorite`, which equals what is already
+    /// painted, so that path assigns a no-op rather than a nil. Nil reaches this model from
+    /// `ProfileFavoriteWriter.reconciledState`'s two deliberate refusals — no service wired, or the
+    /// queue is holding a toggle — and from a local read that itself threw. Leaving the painted
+    /// heart alone is the right response to all three (R72 ruling 1).
     private func startFavoriteReconcile() {
         guard let reconcileFavorite else { return }
         favoriteReconcile?.cancel()

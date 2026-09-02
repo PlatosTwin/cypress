@@ -93,10 +93,23 @@ struct RootView: View {
     /// state, so a reader who narrowed the map to `Yours`, looked something up in the Journal and
     /// came back found the whole city again, with no chip pressed to explain it.
     ///
-    /// **The You tab needed no such change and did not get one.** `YouTabView` owns no `@State` at
-    /// all — `outbox`, `moderation` and `account` are already owned here and handed to it — so it is
-    /// already a view over models that survive the switch. Hoisting anything there would have been
-    /// ceremony.
+    /// **The You tab was checked and deliberately not changed, and the precise reason matters.**
+    /// `YouTabView` itself declares no `@State` — `outbox`, `moderation` and `account` are owned
+    /// here and handed to it. Three of its *subviews* do own `@State` (`AccountSection`,
+    /// `AccountDeletionSheet`, `ModerationReviewList`), so "nothing under that tab has state" would
+    /// be false; PR #147's review corrected that overstatement. What they own is
+    /// presentation-transient and is **meant** to reset on the way out — `AccountSection` argues at
+    /// length that a destructive-confirmation flag must not survive leaving the screen. So there is
+    /// nothing under this tab whose loss on a switch costs a read or a filter, and hoisting would
+    /// have been ceremony.
+    ///
+    /// **The search survives the switch too, and that is a visible behavior change rather than a
+    /// side effect** (PR #147's review, F8). `searchText`, the resolved `search` narrowing and the
+    /// chosen species all live on `MapModel`, so a reader who searches a species, leaves for the
+    /// Journal and comes back now finds the map still narrowed to it and the term still in C20 —
+    /// where before the field came back empty and the map came back whole. That is the same sentence
+    /// the filter chip gets and it is kept for the same reason: a narrowing the reader asked for
+    /// out loud should not be undone by a tab switch they did not connect to it.
     ///
     /// What deliberately stays inside `MapHomeView`: the camera (`position`, `region`), which has
     /// its own cross-switch mechanism in `MapCameraMemory` and is argued out there against task
@@ -479,6 +492,10 @@ struct RootView: View {
             ShareView(
                 treeID: id,
                 api: data.api,
+                // The community half. Screen 10's photo set is `publiclyVisiblePhotos`, and
+                // `.approved` is produced only by that half's decode — without this the card can
+                // never carry a photograph at all. See `ShareModel.refreshProfile`.
+                refreshProfile: data.refreshTreeProfile,
                 onClose: { router.sheet = nil }
             )
 
@@ -993,7 +1010,7 @@ struct RootView: View {
             // relationship nothing states. The link draws only where the feed does, so nobody is
             // routed to the empty state every tree in the shipped seed is in (E67). See ERRATA
             // (E66, E98).
-            ActivityView(treeID: id, api: data.api)
+            ActivityView(treeID: id, api: data.api, refreshProfile: data.refreshTreeProfile)
 
         case .memorial(let id):
             // Screen 19, and the rare one whose entrance the design actually draws: screen 01's
@@ -1010,6 +1027,8 @@ struct RootView: View {
             MemorialView(
                 treeID: id,
                 api: data.api,
+                // The community half — 19 draws a hero, a first-photo milestone and a photo count.
+                refreshProfile: data.refreshTreeProfile,
                 onBack: { router.pop() },
                 // ERRATA E144. The one control on 19, and it writes nothing — see
                 // `MemorialPresentation.locateSet`.
@@ -1280,12 +1299,29 @@ struct ProfileFavoriteWriter: Sendable {
 
     /// The service's word on this tree, behind the painted heart — or nil to leave it alone.
     ///
-    /// **The queue is still asked first, and that is the whole of why this is not just `reconcile`.**
-    /// `storedState` asks it for #167's reason: a toggle that is enqueued but not yet drained is the
-    /// contributor's last word, and the service has not heard it yet. A reconcile that skipped the
-    /// queue would answer with the state *before* the tap and take the heart back off — which is
-    /// exactly the "my favoriting got undone" report of #139, #153 and #167, arriving from the one
-    /// direction those three tickets did not close.
+    /// **The queue is asked first for #167's reason**: a toggle that is enqueued and not yet drained
+    /// is the contributor's last word, and the service has not heard it yet. Answering with the
+    /// service's view of such a tree would report the state *before* the tap.
+    ///
+    /// ── What this guard does and does not close (PR #147's review, F6) ──────────────────────────
+    ///
+    /// **It is not what closes the tap race, and an earlier draft of this comment implied it was.**
+    /// The check runs once, *before* the network call, and is never re-checked — so a toggle
+    /// enqueued while the round trip is in flight is invisible to it. What actually keeps a stale
+    /// answer off the heart is a mechanism a file away: `TreeProfileModel.startFavoriteReconcile`
+    /// stamps each reconcile with the tap count it was taken under and drops the answer if that has
+    /// moved (ERRATA E184). The reviewer tried to drive the heart backwards through this window and
+    /// could not, because of that counter.
+    ///
+    /// What this guard adds is narrower and still worth having: it means a reconcile is not even
+    /// *issued* against a tree whose answer the queue already holds, so the common case costs no
+    /// request and cannot depend on the counter at all.
+    ///
+    /// **One window stays open and this is the honest place to say so.** If the toggle drains, the
+    /// queue empties, and a stale server answer then arrives — read-replica lag — with `taps`
+    /// unmoved, the reconcile assigns the pre-tap value. That is **pre-existing rather than a
+    /// regression**: main's remote-first `isFavorite` had the same exposure through the same lag.
+    /// It is not closed here, and the round's ruling does not claim to close it.
     ///
     /// Nil when there is no service, and nil when the queue holds the answer already — both mean
     /// "nothing here for the heart to learn", which the model reads as leave-it-as-it-is.

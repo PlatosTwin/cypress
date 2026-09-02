@@ -55,9 +55,12 @@ struct ShareView: View {
     init(
         treeID: UUID,
         api: any CypressAPI,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
         onClose: @escaping () -> Void = {}
     ) {
-        _model = State(wrappedValue: ShareModel(treeID: treeID, api: api))
+        _model = State(
+            wrappedValue: ShareModel(treeID: treeID, api: api, refreshProfile: refreshProfile)
+        )
         self.onClose = onClose
     }
 

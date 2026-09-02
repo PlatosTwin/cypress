@@ -38,16 +38,42 @@ final class ActivityModel {
     private let calendar: Calendar
     private let now: @Sendable () -> Date
 
+    /// The profile again with the community half merged in, or nil with no service to merge from
+    /// (`DataLayer.refreshTreeProfile`). Nil means no background task at all.
+    ///
+    /// **This screen counts photographs and therefore needs it** — `ActivityPresentation` reads
+    /// `visiblePhotos` for the per-month counts and for the first-photo date, and the phone cannot
+    /// supply a row it never wrote. PR #147's review found this screen excluded on a wrong premise.
+    private let refreshProfile: ((UUID) async -> TreeProfile?)?
+
+    /// The background merge in flight, or nil. Held so a test can await it rather than time it.
+    @ObservationIgnored private(set) var profileRefresh: Task<Void, Never>?
+
     init(
         treeID: UUID,
         api: any CypressAPI,
         calendar: Calendar = .current,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil
     ) {
         self.treeID = treeID
         self.api = api
         self.calendar = calendar
         self.now = now
+        self.refreshProfile = refreshProfile
+    }
+
+    /// Merges the community half in behind the painted screen. A nil answer leaves it standing
+    /// (R72 ruling 1).
+    private func startProfileRefresh() {
+        guard let refreshProfile else { return }
+        profileRefresh?.cancel()
+        let treeID = self.treeID
+        profileRefresh = Task { [weak self] in
+            let merged = await refreshProfile(treeID)
+            guard !Task.isCancelled, let self, let merged, case .loaded = self.phase else { return }
+            self.phase = .loaded(merged)
+        }
     }
 
     var presentation: ActivityPresentation? {
@@ -58,6 +84,7 @@ final class ActivityModel {
     func load() async {
         do {
             phase = .loaded(try await api.treeProfile(id: treeID))
+            startProfileRefresh()
         } catch let error as APIError {
             phase = .failed(error)
         } catch {
