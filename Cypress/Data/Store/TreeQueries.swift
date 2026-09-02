@@ -90,17 +90,25 @@ public struct TreeQueries {
     /// caller and giving the map a second thing to keep in sync.
     private func speciesRowIDs(for ids: Set<UUID>, connection: SQLiteConnection) throws -> [Int64] {
         guard !ids.isEmpty else { return [] }
-        // `COLLATE NOCASE` goes on the **left operand**, and that placement is load-bearing: the
-        // seed writes uuids in lower case and `UUID.uuidString` produces upper, so this comparison is
-        // case-insensitive or it matches nothing at all. Written the way the rest of this file writes
-        // an equality — `… IN (…) COLLATE NOCASE` — the collation binds to the subquery instead of to
-        // the comparison, and the whole search silently returned an empty map. That is a syntax that
-        // reads correct, compiles, runs, and answers zero; `CypressTests/MapSearchTests` caught it
-        // because it compares against a second read of the seed rather than against a pin count.
+        // `lower(value)`, normalizing the **bound list** rather than collating the comparison —
+        // `treesSQL()`'s form, for `identityMatch`'s reason. Until v20 this read
+        // `sp.<identity> COLLATE NOCASE IN (SELECT value FROM json_each(:uuids))`, which matched
+        // correctly and could not seek: `species.uuid` is `NOT NULL UNIQUE`, so its index is BINARY
+        // and a NOCASE comparison overrides the collation it was built with, whichever operand
+        // carries it. The plan was `SCAN sp USING COVERING INDEX sqlite_autoindex_species_1` — all
+        // 731 rows — and is now `SEARCH sp USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)`
+        // behind a bloom filter. 0.063 → 0.034 ms for 25 uuids.
+        //
+        // The placement lesson the old comment recorded still holds and is why this is written as a
+        // `lower()` of the list rather than as a collation anywhere: written `… IN (…) COLLATE
+        // NOCASE` the collation binds to the subquery instead of to the comparison, and the whole
+        // search silently returns an empty map — a syntax that reads correct, compiles, runs, and
+        // answers zero. `CypressTests/MapSearchTests` caught that one because it compares against a
+        // second read of the seed rather than against a pin count.
         let statement = try connection.cachedStatement("""
         SELECT sp.id AS species_rowid
           FROM \(seed).species sp
-         WHERE sp.\(schema.speciesIdentityColumn) COLLATE NOCASE IN (SELECT value FROM json_each(:uuids))
+         WHERE sp.\(schema.speciesIdentityColumn) IN (SELECT lower(value) FROM json_each(:uuids))
         """)
         let json = "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]"
         _ = try statement.bind(json, forName: ":uuids")
@@ -785,9 +793,15 @@ public struct TreeQueries {
         // A `LEFT JOIN` with a predicate on the right-hand table is an inner join, which is what
         // narrowing to one species means: a tree the city recorded no species for is not one of
         // them.
+        // `lower(:speciesUUID)`, `identityMatch`'s form: `COLLATE NOCASE` here could not seek
+        // `sqlite_autoindex_species_1` and left the planner driving from the bounding box, doing a
+        // rowid lookup into `species` per tree in it. Driving from the one species row instead is
+        // 1.65 → 1.20 ms at 400 m and 10.36 → 1.38 ms at `AlmanacLimits.fallbackRadiusM`, the same
+        // twenty rows both times — the win grows with the radius, because the box grows and the
+        // species does not. See `SpeciesQueries.species(id:)` for the contract it stands on.
         let speciesPredicate = speciesID == nil
             ? ""
-            : "AND s.\(schema.speciesIdentityColumn) = :speciesUUID COLLATE NOCASE"
+            : "AND s.\(schema.speciesIdentityColumn) = lower(:speciesUUID)"
 
         let sql = """
         SELECT \(treeColumns),
