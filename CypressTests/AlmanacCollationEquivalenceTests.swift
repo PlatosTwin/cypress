@@ -231,23 +231,23 @@ struct AlmanacCollationEquivalenceTests {
         let (store, queries, scope, trees, since, _) = try await Self.seeded()
         let order: [Spelling] = [.mixed, .lower, .upper]
 
-        var window = since
         for (index, spelling) in order.enumerated() {
             let expected = try #require(trees[spelling])
-            let found: UUID? = try await store.queue.read { [window] connection in
+            // Half a day before this spelling's visit, so it is the earliest one still in the
+            // window and the ones before it are excluded. The fixture's visits are a day apart in
+            // the order mixed, lower, upper, and `since` is half a day before the first.
+            let window = since.addingTimeInterval(Double(index) * 86_400 + 43_200)
+            let found: UUID? = try await store.queue.read { connection in
                 try queries.firstBloom(scope: scope, since: window, connection: connection)?.treeID
             }
             #expect(
                 found == expected,
                 """
                 asking for the first bloom since \(window) answered \(String(describing: found)), \
-                not the \(spelling.rawValue)-cased row's tree \(expected). The fixture's visits are \
-                a day apart in the order mixed, lower, upper, so answer \(index) is the \
-                \(spelling.rawValue) one
+                not the \(spelling.rawValue)-cased row's tree \(expected). Answer \(index) is the \
+                \(spelling.rawValue) one, so the join cannot reach a visit row spelled that way
                 """
             )
-            // Step past the visit just found, so the next spelling is the earliest remaining.
-            window = window.addingTimeInterval(86_400)
         }
     }
 
