@@ -365,10 +365,41 @@ that had not yet reached a build). What remains OPEN:
   next city winning when the winning city's pack has been removed — are in
   **RULINGS R87/R88** and were **ratified by the owner on 2026-08-31**, via
   the orchestrator, after the adversarial review.
-- **Screen 12's `COLLATE NOCASE` joins.** `AlmanacQueries` lines ~321 and ~394 carry the same
-  index-defeating collation the Grove round (PR #131) removed from its own path; the almanac pays
-  the same class of full-inventory walk. Same fix shape (`lower()` + the seed-contract test PR
-  #131 added), and the query-plan gate should grow to cover these two statements.
+- ~~**Screen 12's `COLLATE NOCASE` joins.**~~ **SHIPPED, one of the two**
+  (`perf/almanac-nocase-joins`). `firstBloom`'s join took PR #131's `lower()` shape and both of
+  R29's arms stopped building a transient index per execution — 4.5 → 0.02 ms by polygon, 33.7 →
+  0.13 ms by radius. `AlmanacQueryPlanTests`, `AlmanacStatementCensusTests` and
+  `AlmanacCollationEquivalenceTests` are the gates.
+
+  **The entry's other half was refuted by measurement and is deliberately not fixed.**
+  `youngTreesWithoutVisits`' collation is not "the same class of full-inventory walk": its plan is
+  `SEARCH t USING INDEX idx_trees_neighborhood_planted | CORRELATED SCALAR SUBQUERY 1 | SCAN v`, a
+  walk of the contributor's own visits per candidate tree, never of the inventory. Seeking it means
+  normalizing the *seed* side up (`v.tree_uuid = upper(t.uuid)`), which is sound only while every
+  `visits` row spells its uuid upper case — a property nothing asserts, whose violation returns
+  visited trees as unvisited, silently. The argument is on
+  `AlmanacQueries.youngTreesWithoutVisitsSQL(scope:)` and the plan is pinned.
+
+- **`visits.tree_uuid` has no case contract, and that is what a seek there costs.** For whichever
+  round holds the migration seat: `anonymized_contributions` already solves this shape by declaring
+  `COLLATE NOCASE` **on the column**, which makes its index case-insensitive and seekable without
+  any reader having to remember. The same declaration on the contribution tables' `tree_uuid` would
+  let `youngTreesWithoutVisits` seek `idx_visits_tree`, and would also reach
+  `ContributionStore.visits(treeID:)`, `SpeciesAssertionStore` and `CommunityTreeStore`, which all
+  carry `= :param COLLATE NOCASE` against `main` columns for the same reason and cannot seek either.
+  Migration-only; not costed.
+
+- **`species.uuid` is compared `COLLATE NOCASE` and has no lowercase gate.**
+  `SpeciesQueries.species(id:)`, its two siblings at ~411/~436, and `TreeQueries.swift:790` compare
+  the species identity column to a bound parameter with `COLLATE NOCASE` — the shape
+  `TreeQueries.identityMatch` fixed for `trees.uuid` with `lower(:uuid)`. It was **not** done here
+  because `DataGates.armsWithUppercaseUUIDs` gates `trees.uuid` only, so the contract the fix stands
+  on does not exist for species. Two things to check in one sitting: whether the seed's
+  `species.uuid` is in fact lower case per arm (and if so, extend the gate), and whether
+  `SpeciesQueries.species(id:)`'s doc comment — which claims
+  `SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)` — is true, since the same file
+  argues thirty lines later that a NOCASE comparison cannot match a BINARY index. Unverified either
+  way; noted rather than claimed.
 
 ### Owner backlog additions, 2026-08-28
 
