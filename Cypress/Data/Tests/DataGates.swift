@@ -916,6 +916,25 @@ public enum DataGates {
 
     // MARK: - Gate 2: the seed contract
 
+    /// The `species by uuid` plan probe, in the shape the app's own five readers compare in.
+    ///
+    /// **`lower('X')`, because that is the comparison the app makes.** This probe read
+    /// `s.uuid = 'x'` — a BINARY equality no statement in `Cypress/` emits, while all five real
+    /// readers said `= :uuid COLLATE NOCASE` and scanned. The probe passed throughout, because the
+    /// index it names is perfectly reachable from a comparison nobody writes. v20 moved those
+    /// readers to `lower(:uuid)` and this to the matching shape, so the gate now fails if the seek
+    /// the app depends on stops being available. Upper case in the literal on purpose: it is what
+    /// `UUID.uuidString` produces, so `lower()` has something to do.
+    ///
+    /// **A property rather than a literal in the list below, so a test can read the probe the gate
+    /// actually runs.** `SpeciesAccessPlanTests.theProbeMatchesTheComparisonTheAppMakes` asserts on
+    /// this string. It used to assert on `SpeciesQueries.species(id:)`'s captured SQL instead —
+    /// which meant the test named for this probe did not read this probe, and putting the BINARY
+    /// literal back here left the whole suite green. That is the defect class this comment is
+    /// about, reintroduced in the guard written to close it; PR #148's review caught it.
+    static let speciesIdentityProbeSQL =
+        "SELECT s.id FROM \(SeedDatabase.schemaName).species s WHERE s.uuid = lower('X')"
+
     /// **The seed database's schema and row invariants are pinned; a diff fails the test.**
     ///
     /// Also pins the query plans, because a plan that silently degrades to `SCAN trees` is a
@@ -1088,6 +1107,21 @@ public enum DataGates {
             into: &failures
         )
 
+        // The same contract for `species.uuid`, which v20's five `lower()` reads depend on. A
+        // separate list because it breaks a different half of the app — see
+        // `armsWithUppercaseSpeciesUUIDs`.
+        let shoutySpecies = try await armsWithUppercaseSpeciesUUIDs(store)
+        expect(
+            shoutySpecies.isEmpty,
+            """
+            seed contract: \(shoutySpecies) store species.uuid in something other than lower case, \
+            so SpeciesQueries' and TreeQueries' `lower()` comparisons would match none of their \
+            rows — no field guide entry, no inventory or nearby counts, and an empty species \
+            filter on the map, none of them reported as an error
+            """,
+            into: &failures
+        )
+
         // Coordinates are inside their own city's declared bbox.
         //
         // **The box belongs to the id space, not to the file.** This used to be San Francisco's box
@@ -1234,8 +1268,10 @@ public enum DataGates {
                     "sqlite_autoindex_trees_1"
                 ),
                 (
+                    // See `speciesIdentityProbeSQL` for why this compares through `lower()` and
+                    // why it is a property rather than a literal here.
                     "species by uuid",
-                    "SELECT s.id FROM \(SeedDatabase.schemaName).species s WHERE s.uuid = 'x'",
+                    speciesIdentityProbeSQL,
                     "sqlite_autoindex_species_1"
                 ),
                 (
@@ -1648,6 +1684,45 @@ public enum DataGates {
                 let statement = try connection.cachedStatement("""
                 SELECT EXISTS(
                     SELECT 1 FROM \(arm.schemaName).trees
+                     WHERE \(column) <> lower(\(column))
+                ) AS present
+                """)
+                return (try statement.fetchOne { try $0.bool("present") } ?? false) ? arm.id : nil
+            }
+        }
+    }
+
+    /// The same question about `species.uuid`, which five reads started depending on in v20.
+    ///
+    /// **Why it is a second function and not a widened first one.** The two contracts fail
+    /// differently and a caller has to be able to say which one broke. An upper-case `trees.uuid`
+    /// empties the Grove and the tree profile; an upper-case `species.uuid` leaves both working and
+    /// takes out the field guide, the two `In this inventory` / `Near you` counts, `Nearby
+    /// individuals`, and the map's species filter. Folding them into one list of arm ids would name
+    /// the file and not the column, on a gate whose whole job is to say what is wrong before a
+    /// reader finds out.
+    ///
+    /// **Only arms whose species identity column is `uuid`, and that guard is load-bearing.**
+    /// `SeedSchema.speciesIdentityColumn` falls back to `id` on a file with no `uuid` column — and
+    /// unlike `trees`, whose legacy identity was a TEXT id, `species.id` is `INTEGER PRIMARY KEY`.
+    /// `<column> <> lower(<column>)` is **true for every integer**: SQLite's `lower(5)` is the text
+    /// `'5'`, and an integer compares unequal to any text whatever it spells. Without the guard
+    /// this gate would report every legacy file as breaking a contract it cannot break, which is a
+    /// false red on a gate nobody would then trust. Verified rather than reasoned:
+    /// `SELECT 5 <> lower(5)` returns 1.
+    ///
+    /// Such a file is not silently exempted from anything real: with an integer identity column the
+    /// `lower(:uuid)` comparisons those five reads make cannot match a uuid at all, which is what
+    /// the `COLLATE NOCASE` form they replaced also did. There is no contract to keep.
+    public static func armsWithUppercaseSpeciesUUIDs(_ store: CypressStore) async throws -> [String] {
+        let arms = store.inventory?.arms ?? []
+        return try await store.queue.read { connection in
+            try arms.compactMap { arm -> String? in
+                let column = arm.schema.speciesIdentityColumn
+                guard column == "uuid" else { return nil }
+                let statement = try connection.cachedStatement("""
+                SELECT EXISTS(
+                    SELECT 1 FROM \(arm.schemaName).species
                      WHERE \(column) <> lower(\(column))
                 ) AS present
                 """)
