@@ -36,13 +36,17 @@ import Testing
 ///
 /// ── Calibration ─────────────────────────────────────────────────────────────────────────────
 /// With v20's statement body replaced by `SELECT 1` — the migration still present, still applied,
-/// doing nothing — `theIndexesCarryTheirCollation` fails with **3 issues**: `idx_species_assertions_tree`
-/// is stored without `COLLATE NOCASE`, and `idx_community_trees_id` is absent altogether, which is
-/// two on its own (missing, and therefore no collation to check). The other three tests stay green
-/// under that revert, and that is correct rather than a gap: `aV19DatabaseRunsOnlyV20` is about the
-/// version ladder and not about what the step does; `recollationChangesNoAnswer` is a *no-change*
-/// assertion that a migration doing nothing trivially satisfies; and the head index is BINARY
-/// before and after, so the fourth test cannot distinguish them. The full distribution of both v20
+/// doing nothing — `theIndexesCarryTheirCollation` fails with **3 issues**, measured:
+/// `idx_species_assertions_tree` is stored without `COLLATE NOCASE`, and `idx_community_trees_id`
+/// is absent altogether, which is two on its own (missing, and therefore no collation to check).
+///
+/// The other three tests stay green under that revert, and that is correct rather than a gap:
+/// `aV19DatabaseRunsOnlyV20` is about the version ladder and not about what the step does;
+/// `recollationChangesNoAnswer` is a *no-change* assertion that a migration doing nothing trivially
+/// satisfies — it exists to catch a recollation that changes an answer, not one that is missing;
+/// and the head index is BINARY before and after, so `theHeadIndexKeepsItsBinaryCollation` cannot
+/// distinguish them. Under the **SQL-only** revert this whole suite stays green, because `species`
+/// lives in the read-only seed and no migration touches it. The full distribution of both v20
 /// reverts is in `SpeciesAccessPlanTests`.
 @Suite("AppSchema · v20")
 struct SchemaV20Tests {

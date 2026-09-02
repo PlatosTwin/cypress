@@ -27,18 +27,30 @@ import Testing
 /// thing twice. Run with `SchemaV20Tests` beside it, 9 tests:
 ///
 /// - **DDL only** (v20's statement body replaced by `SELECT 1`, so the migration still runs and
-///   does nothing; the `lower()` query changes left in place): **3 tests fail, 11 issues.**
-///   `theSpeciesChainSeeks` takes 2 — both readers back to `SCAN species_assertions` and
-///   `SCAN species_assertions USING INDEX idx_species_assertions_head`. `theCommunityRowsSeek`
-///   takes 6, one per statement, all `SCAN community_trees`. `SchemaV20Tests
-///   .theIndexesCarryTheirCollation` takes 3. The species half stays **green** throughout: it is
-///   the seed's own index and no migration touches it.
+///   does nothing; the `lower()` query changes left in place): **3 tests fail, 19 issues.**
+///   `theCommunityRowsSeek` takes 12 — six statements, each failing twice, once for the missing
+///   `SEARCH` and once for walking `community_trees`, and the six plans in the messages are the
+///   three `UPDATE`s and `tree(id:)` at `SCAN community_trees`, `trees(ids:)` at
+///   `SCAN community_trees | LIST SUBQUERY 1 | SCAN json_each …`, and `exists(id:)` at
+///   `SCAN community_trees USING COVERING INDEX sqlite_autoindex_community_trees_1` — the covering
+///   walk that wears the index's name, which is why the rule asks for `SEARCH` and not for the
+///   name. `theSpeciesChainSeeks` takes 4, the same two-per-statement shape, at
+///   `SCAN main.species_assertions | USE TEMP B-TREE FOR ORDER BY` and
+///   `SCAN main.species_assertions USING INDEX idx_species_assertions_head`.
+///   `SchemaV20Tests.theIndexesCarryTheirCollation` takes 3 — `idx_species_assertions_tree` stored
+///   without the collation, and `idx_community_trees_id` absent, which is two on its own. The
+///   species half stays **green** throughout: it is the seed's own index and no migration touches
+///   it.
 /// - **SQL only** (the five `lower()` comparisons put back to `COLLATE NOCASE`; the v20 DDL left in
-///   place): **2 tests fail, 6 issues**, and neither is one of the three above.
-///   `theSpeciesLookupsSeek` takes 5, one per reader, each back to a walk of all 731 rows.
-///   `theProbeMatchesTheComparisonTheAppMakes` takes 1. `SchemaV20Tests` stays green — the indexes
-///   are there, nothing is asking for them — and so do the two migration tests above, because
-///   `species` is in the read-only seed and the migration never touched it.
+///   place): **3 tests fail, 7 issues**, and not one of them is a test the DDL revert failed.
+///   `theSpeciesLookupsSeek` takes 4, one per statement it plans; `theSpeciesFilterSeeks` takes 1,
+///   which is the fifth reader; `theProbeMatchesTheComparisonTheAppMakes` takes 2, one for the
+///   missing `lower(:uuid)` and one for the `COLLATE NOCASE` that came back. `SchemaV20Tests`
+///   stays green — the indexes are there, nothing is asking for them — and so do the two migration
+///   plan tests, because `species` is in the read-only seed and the migration never touched it.
+///
+/// The two distributions share no failing test, which is the property that says the round's two
+/// halves are independently gated rather than both resting on one assertion.
 ///
 /// Both reverts were restored by copying the files back and the suite re-run green, because
 /// `git checkout --` on a file carrying both the revert and the fix takes the fix with it.
