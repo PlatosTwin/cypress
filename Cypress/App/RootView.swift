@@ -84,6 +84,27 @@ struct RootView: View {
     /// how the model knows not to start a background task at all.
     @State private var grove: GroveModel
 
+    /// Screen 01's model, owned here for the reason `grove` is: **`tabRoot` destroys the tab it is
+    /// not showing.**
+    ///
+    /// The map was the more expensive of the two to lose. A rebuilt `MapModel` re-fetched the whole
+    /// viewport from cold on every return to the tab — the wide query over the city's trees, and the
+    /// species palette behind it — and it also **silently reset the filter chip**: `filter` is model
+    /// state, so a reader who narrowed the map to `Yours`, looked something up in the Journal and
+    /// came back found the whole city again, with no chip pressed to explain it.
+    ///
+    /// **The You tab needed no such change and did not get one.** `YouTabView` owns no `@State` at
+    /// all — `outbox`, `moderation` and `account` are already owned here and handed to it — so it is
+    /// already a view over models that survive the switch. Hoisting anything there would have been
+    /// ceremony.
+    ///
+    /// What deliberately stays inside `MapHomeView`: the camera (`position`, `region`), which has
+    /// its own cross-switch mechanism in `MapCameraMemory` and is argued out there against task
+    /// #128; and the one-shots and the heading session, which are scoped to an appearance on
+    /// purpose (task #155). The transient selection is cleared on disappear, which the teardown
+    /// used to do for free — see `MapHomeView`'s `onDisappear`.
+    @State private var map: MapModel
+
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     /// - Parameters:
@@ -137,6 +158,13 @@ struct RootView: View {
                 api: data.api,
                 refreshSpecies: data.refreshGroveSpecies,
                 refreshTrees: data.refreshGrove
+            )
+        )
+        _map = State(
+            wrappedValue: MapModel(
+                api: data.api,
+                refreshProfile: data.refreshTreeProfile,
+                refreshMembership: data.refreshMapMembership
             )
         )
     }
@@ -520,6 +548,7 @@ struct RootView: View {
                 caption: caption,
                 treeID: treeID,
                 api: data.api,
+                refreshProfile: data.refreshTreeProfile,
                 onClose: { router.sheet = nil },
                 // The way onward E173 named and did not build. `sheet` first, so the cover is on its
                 // way out before the stack under it changes — `AppRouter.goToTab`'s ordering, for
@@ -562,6 +591,8 @@ struct RootView: View {
             // `MapHomeView.location`.
             MapHomeView(
                 api: data.api,
+                // The model is `RootView`'s, not this view's — see the `map` property.
+                model: map,
                 location: location,
                 // The last of the three things the opening camera tries: with no remembered camera
                 // and no location fix, open on the largest downloaded inventory rather than on San
@@ -1008,7 +1039,7 @@ struct RootView: View {
             // Screen 20 (ERRATA E125). Its entrance is the hero on screen 03: the photograph a tree
             // leads with is the control that opens the set it was chosen from, which is the only
             // place in the app where tapping a picture has an obvious meaning.
-            TreePhotosView(treeID: id, api: data.api)
+            TreePhotosView(treeID: id, api: data.api, refreshProfile: data.refreshTreeProfile)
 
         case .almanac:
             // Screen 12, **pushed**. Its entrance is the Journal tab, which renders the almanac as
