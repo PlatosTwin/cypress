@@ -49,9 +49,26 @@ final class TreePhotosModel {
     /// what makes one tap on the control destroy nothing.
     var pendingDeletion: Photo?
 
-    init(treeID: UUID, api: (any CypressAPI)? = nil) {
+    /// The profile again with the community half merged in, or nil when there is no service to merge
+    /// from (`DataLayer.refreshTreeProfile`). Nil means no background task at all.
+    ///
+    /// This browser is one of the six surfaces the closure is handed to, and it is the one the
+    /// acceptance criterion is actually about: *"when I add a photo on my device, the photo
+    /// propagates to all other users"* is a row appearing in this list that this device never wrote.
+    private let refreshProfile: ((UUID) async -> TreeProfile?)?
+
+    /// The background merge in flight, or nil. Held so a test can await it rather than time it —
+    /// `GroveModel.speciesRefresh`'s reasoning, and its `@ObservationIgnored` for its reason.
+    @ObservationIgnored private(set) var profileRefresh: Task<Void, Never>?
+
+    init(
+        treeID: UUID,
+        api: (any CypressAPI)? = nil,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil
+    ) {
         self.treeID = treeID
         self.api = api
+        self.refreshProfile = refreshProfile
     }
 
     /// Fixture initializer — a finished state, for previews and the screen sweep.
@@ -66,6 +83,7 @@ final class TreePhotosModel {
     ) {
         self.treeID = treeID
         self.api = nil
+        self.refreshProfile = nil
         self.photos = photos
         self.tallies = tallies
         self.treeName = treeName
@@ -109,6 +127,13 @@ final class TreePhotosModel {
         isLoading = true
         defer { isLoading = false }
         guard let profile = try? await api.treeProfile(id: treeID) else { return }
+        apply(profile)
+        startProfileRefresh()
+    }
+
+    /// Everything this browser reads off a profile, in one place so the paint and the merge behind it
+    /// cannot drift into two different readings of the same payload.
+    private func apply(_ profile: TreeProfile) {
         // The set this device may show — `TreeProfile.visiblePhotos` (ERRATA E215), the same
         // predicate screen 03's hero reads. Own photos stay visible pre-moderation
         // (`isVisibleToItsContributor`); moderation gates publication for everyone else's
@@ -122,6 +147,22 @@ final class TreePhotosModel {
         deletableIDs = profile.deletablePhotoIDs
         anonymizedIDs = profile.anonymizedPhotoIDs
         isCommunityAdded = profile.tree.source == .community
+    }
+
+    /// Merges the community half in behind the painted list — the row this device never wrote.
+    ///
+    /// A nil answer leaves the list exactly as it is: the phone's photographs are already drawn, and
+    /// emptying them because a network failed would draw a claim over data this device holds
+    /// (R72 ruling 1).
+    private func startProfileRefresh() {
+        guard let refreshProfile else { return }
+        profileRefresh?.cancel()
+        let treeID = self.treeID
+        profileRefresh = Task { [weak self] in
+            let merged = await refreshProfile(treeID)
+            guard !Task.isCancelled, let self, let merged else { return }
+            self.apply(merged)
+        }
     }
 
     func isDeletable(_ photo: Photo) -> Bool { deletableIDs.contains(photo.id) }

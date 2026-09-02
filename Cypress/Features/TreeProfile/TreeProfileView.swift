@@ -58,13 +58,21 @@ struct TreeProfileView: View {
     /// - Parameter readFavorite: the store's answer for the heart, supplied by the composition
     ///   root because "the store" includes the outbox and the outbox is not a view's to reach
     ///   (#167, and `TreeProfileModel.readFavorite`). Nil falls back to the API's applied-rows read.
+    /// - Parameter refreshProfile: the profile again with the community half merged in, from the
+    ///   composition root because a second read of the same question is a property of the router and
+    ///   not of `CypressAPI` (`DataLayer.refreshTreeProfile`). Nil paints the phone's profile and
+    ///   starts no background task, which is what every preview and unit test gets.
+    /// - Parameter reconcileFavorite: the service's word on the heart, behind the painted control
+    ///   (the owner's ruling of 2026-09-02). Nil on the same terms.
     init(
         treeID: UUID,
         api: any CypressAPI,
         caretakerInitials: [String] = [],
         onVisit: @escaping (UUID) -> Void = { _ in },
         onFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in },
-        readFavorite: ((UUID) async -> Bool)? = nil
+        readFavorite: ((UUID) async -> Bool)? = nil,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
+        reconcileFavorite: ((UUID) async -> Bool?)? = nil
     ) {
         _model = State(
             wrappedValue: TreeProfileModel(
@@ -72,7 +80,9 @@ struct TreeProfileView: View {
                 api: api,
                 caretakerInitials: caretakerInitials,
                 setFavorite: onFavorite,
-                readFavorite: readFavorite
+                readFavorite: readFavorite,
+                refreshProfile: refreshProfile,
+                reconcileFavorite: reconcileFavorite
             )
         )
         self.api = api

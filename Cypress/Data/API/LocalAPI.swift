@@ -2211,7 +2211,7 @@ public actor LocalAPI: CypressAPI {
         // **The lower bound is not decoration: in SQLite a negative `LIMIT` means no limit at
         // all.** Without it `grovePage(cursor: nil, limit: -1)` runs the *paged* statement text
         // and returns the entire grove — the whole projection built for one page, which is the
-        // cost this method exists to avoid — while `GroveStatementCensusTests` stays green,
+        // cost this method exists to avoid — while `GrovePagedStatementCensusTests` stays green,
         // because its gate is which statement ran and the paged one is what ran. `groveEntries`
         // below already names that hazard for the internal `limit == nil` path; the public
         // parameter had not been held to it. Clamped to zero rather than one so this agrees with
@@ -2238,7 +2238,7 @@ public actor LocalAPI: CypressAPI {
     ///
     /// `limit == nil` is the unbounded read and takes the unbounded statement — not `LIMIT -1`,
     /// which would be the same rows through the paged text and would leave
-    /// `GroveStatementCensusTests` unable to tell the two reads apart.
+    /// `GrovePagedStatementCensusTests` unable to tell the two reads apart.
     private func groveEntries(
         after cursor: ContributionStore.GroveCursor?,
         limit: Int?

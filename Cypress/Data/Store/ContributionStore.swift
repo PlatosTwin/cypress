@@ -1701,7 +1701,7 @@ public struct ContributionStore {
          ORDER BY \(Self.groveOrderSQL)
         """
 
-    /// The paged form. `GroveStatementCensusTests` uses the presence of one of these two texts and
+    /// The paged form. `GrovePagedStatementCensusTests` uses the presence of one of these two texts and
     /// the absence of the other as its whole gate, which is why they are two properties.
     static let groveTreeIDsPageSQL = """
         SELECT tree_uuid, last_visited, is_favorite

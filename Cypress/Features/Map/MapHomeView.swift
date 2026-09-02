@@ -54,7 +54,9 @@ struct MapHomeView: View {
     /// occupy is the one reservation on this screen that a single AX5 constant would be wildly
     /// wrong about at the default size. See `MapLayout.legendChipHeight(isAccessibilitySize:)`.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var model: MapModel
+    /// Screen 01's model, **owned by the composition root** so it survives a bottom-tab switch. See
+    /// the `model:` parameter on `init` for what was lost when this was `@State` here.
+    let model: MapModel
     /// **Where the map opens: the camera this install was last left on** (#115).
     ///
     /// It was `MapLayout.defaultCenter` — Mission Dolores Park — unconditionally, for everyone,
@@ -131,14 +133,21 @@ struct MapHomeView: View {
     ///   when nothing has been downloaded, in which case the map opens exactly where it always did.
     ///   Passed in from the composition root rather than read from a global, because it is a fact
     ///   about the attached inventories and `Features` does not hold those.
+    /// - Parameter model: **the composition root's, not this view's** — see `RootView.map`.
+    ///   `RootView.tabRoot` is a `switch`, so this view and everything it holds through `@State` is
+    ///   destroyed on every switch to another tab. With the model inside it, every return to the map
+    ///   re-fetched the whole viewport from cold *and* silently reset the filter chip to `All`; the
+    ///   owner ruled on 2026-09-01 that a tab paints its last data instantly and refreshes behind
+    ///   it, and a model that does not survive the switch cannot do either.
     init(
         api: any CypressAPI,
+        model: MapModel,
         location: MapLocationProvider,
         downloadedCityCenter: Coordinate? = nil
     ) {
         self.api = api
+        self.model = model
         self.location = location
-        _model = State(initialValue: MapModel(api: api))
         let opening = MapOpening.openingRegion(
             remembered: MapCameraMemory.shared.openingSnapshot,
             downloadedCityCenter: downloadedCityCenter
@@ -292,6 +301,12 @@ struct MapHomeView: View {
         }
         .onDisappear {
             rememberCamera()
+            // **Explicit now that the model outlives this view.** The tree card used to be cleared
+            // by the teardown itself — a new `MapModel` on every return to the tab had no selection
+            // to draw. A hoisted model keeps one, and a card left standing over the map would come
+            // back on a tab switch for a pin the reader tapped some time ago. The camera and the
+            // filter are deliberately kept across the switch; a transient selection is not.
+            model.clearSelection()
             // The other half of `startHeading()`. Nothing off this screen draws a cone, so nothing
             // off this screen needs the sensor spinning — and `stopHeading()` also forgets the last
             // bearing, so a return to the map cannot open on a stale one (task #155).

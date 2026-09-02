@@ -32,7 +32,29 @@ final class ShareModel {
     private let api: any CypressAPI
     private let calendar: Calendar
 
-    init(treeID: UUID, api: any CypressAPI, calendar: Calendar = .current) {
+    /// The profile again with the community half merged in, or nil with no service to merge from
+    /// (`DataLayer.refreshTreeProfile`). Nil means no background task at all.
+    ///
+    /// **This sheet needs it more than any other surface in the app.** `SharePresentation` takes
+    /// `publiclyVisiblePhotos`, which is `moderationState == .approved` — and `.approved` is produced
+    /// in exactly one place in the shipping app, the community half's own decode
+    /// (`RemoteAPI.treeCommunityHalf`). `moderation_state` defaults to `pending` and there is no
+    /// local write path to change it, so without this closure the card's photo set is
+    /// **unconditionally** empty rather than merely usually empty. The file header above says
+    /// "nothing in the shipping app can set `.approved`"; this is the one thing that can, and it
+    /// reaches this sheet only through here. PR #147's review found this.
+    private let refreshProfile: ((UUID) async -> TreeProfile?)?
+
+    /// The background merge in flight, or nil. Held so a test can await it rather than time it.
+    @ObservationIgnored private(set) var profileRefresh: Task<Void, Never>?
+
+    init(
+        treeID: UUID,
+        api: any CypressAPI,
+        calendar: Calendar = .current,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil
+    ) {
+        self.refreshProfile = refreshProfile
         self.treeID = treeID
         self.api = api
         self.calendar = calendar
@@ -50,8 +72,25 @@ final class ShareModel {
         do {
             let profile = try await api.treeProfile(id: treeID)
             phase = .loaded(SharePresentation(profile: profile, calendar: calendar))
+            startProfileRefresh()
         } catch {
             phase = .failed
+        }
+    }
+
+    /// Merges the community half in behind the painted card — the only way an approved photograph
+    /// reaches this sheet at all. See `refreshProfile`.
+    ///
+    /// A nil answer leaves the painted card standing (R72 ruling 1).
+    private func startProfileRefresh() {
+        guard let refreshProfile else { return }
+        profileRefresh?.cancel()
+        let treeID = self.treeID
+        let calendar = self.calendar
+        profileRefresh = Task { [weak self] in
+            let merged = await refreshProfile(treeID)
+            guard !Task.isCancelled, let self, let merged, case .loaded = self.phase else { return }
+            self.phase = .loaded(SharePresentation(profile: merged, calendar: calendar))
         }
     }
 

@@ -40,11 +40,16 @@ struct MemorialView: View {
         treeID: UUID,
         api: any CypressAPI,
         now: @escaping @Sendable () -> Date = { Date() },
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
         onBack: (() -> Void)? = nil,
         onOpenSuccessor: ((UUID) -> Void)? = nil,
         onShowWhere: ((PinSet) -> Void)? = nil
     ) {
-        _model = State(wrappedValue: MemorialModel(treeID: treeID, api: api, now: now))
+        _model = State(
+            wrappedValue: MemorialModel(
+                treeID: treeID, api: api, now: now, refreshProfile: refreshProfile
+            )
+        )
         self.onBack = onBack
         self.onOpenSuccessor = onOpenSuccessor
         self.onShowWhere = onShowWhere

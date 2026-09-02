@@ -40,9 +40,14 @@ struct ActivityView: View {
         treeID: UUID,
         api: any CypressAPI,
         calendar: Calendar = .current,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil
     ) {
-        _model = State(wrappedValue: ActivityModel(treeID: treeID, api: api, calendar: calendar, now: now))
+        _model = State(
+            wrappedValue: ActivityModel(
+                treeID: treeID, api: api, calendar: calendar, now: now, refreshProfile: refreshProfile
+            )
+        )
     }
 
     var body: some View {

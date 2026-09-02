@@ -14,13 +14,31 @@ public struct SpeciesQueries {
     /// `GET /species/{id}`.
     ///
     /// ```
-    /// SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)
+    /// SEARCH s USING INDEX sqlite_autoindex_species_1 (uuid=?)
     /// ```
+    ///
+    /// **That plan is v20's, and the comment above it used to be false.** It claimed a seek —
+    /// `SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)` — while the predicate
+    /// read `= :uuid COLLATE NOCASE`, which cannot reach that index: `species.uuid` is `NOT NULL
+    /// UNIQUE`, so `sqlite_autoindex_species_1` is BINARY, and a NOCASE comparison overrides the
+    /// collation it was built with. The measured plan was a bare `SCAN s` — all 731 species walked,
+    /// on every lookup. This file's own autocomplete discussion had recorded the mechanism for
+    /// years; the two comments simply never met.
+    ///
+    /// `lower(:uuid)` is `TreeQueries.identityMatch`'s fix, for its reason: the app binds
+    /// Foundation's uppercase `uuidString`, every published file stores uuids lower case, and
+    /// `lower()` of a bound parameter is a constant per execution, so the seek is available again.
+    /// Measured on the bundled seed, 0.044 → 0.010 ms. Normalized in the SQL rather than at the
+    /// binding site so the plan gates read the statement the app actually runs.
+    ///
+    /// Sound only while every inventory file stores `species.uuid` lower case, which
+    /// `DataGates.armsWithUppercaseSpeciesUUIDs` asserts per arm — the same contract, and the same
+    /// instrument, `trees.uuid` has had since PR #131.
     public func species(id: UUID, connection: SQLiteConnection) throws -> Species? {
         let sql = """
         SELECT \(Self.projection(identityColumn: schema.speciesIdentityColumn))
           FROM \(seed).species s
-         WHERE s.\(schema.speciesIdentityColumn) = :uuid COLLATE NOCASE
+         WHERE s.\(schema.speciesIdentityColumn) = lower(:uuid)
         """
         let statement = try connection.cachedStatement(sql)
         _ = try statement.bind(id.uuidString, forName: ":uuid")
@@ -386,8 +404,16 @@ public struct SpeciesQueries {
     ///
     /// ```
     /// SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)
-    /// SEARCH t USING COVERING INDEX idx_trees_species_current (species_current=?)
+    /// SEARCH t USING INDEX idx_trees_species_current (species_current=?)
     /// ```
+    ///
+    /// **The first line became true in v20.** With `= :uuid COLLATE NOCASE` the species side was
+    /// `SCAN s USING COVERING INDEX sqlite_autoindex_species_1` — a walk of all 731 rows wearing
+    /// the index's name, which is exactly the spelling `GroveQueryPlanTests`' rule 1 exists to
+    /// catch. `lower(:uuid)` restores the seek; see `species(id:)` for the mechanism and the
+    /// contract it stands on. This statement is the one where the win is smallest — 1.13 → 1.10 ms
+    /// — because the count over `idx_trees_species_current` dominates either way, and it is changed
+    /// with its two neighbours so the three read alike rather than for its own timing.
     ///
     /// A `COUNT(*)` over the whole inventory, which is what makes the number printable at all:
     /// anything short of the whole attached file is the wrong number wearing the right label
@@ -408,7 +434,7 @@ public struct SpeciesQueries {
         SELECT count(*) AS species_tree_count
           FROM \(seed).trees t
           JOIN \(seed).species s ON s.id = t.species_current
-         WHERE s.\(schema.speciesIdentityColumn) = :uuid COLLATE NOCASE
+         WHERE s.\(schema.speciesIdentityColumn) = lower(:uuid)
            AND t.deleted_at IS NULL
         """
         let statement = try connection.cachedStatement(sql)
@@ -424,6 +450,25 @@ public struct SpeciesQueries {
     /// San Francisco's 41 polygons and nothing else, so a San Jose reader's `Near you` card
     /// silently did not draw: the defect family E182 closed for screen 12. For a `.neighborhood`
     /// scope the rendered predicate is the identical string, so San Francisco's count cannot move.
+    ///
+    /// ── v20 inverted this plan, and that is the intended effect rather than a side effect ──────
+    /// ```
+    /// SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)
+    /// SEARCH t USING INDEX idx_trees_species_current (species_current=?)
+    /// ```
+    /// Before, the species side could not seek (see `species(id:)`), so the planner drove from the
+    /// area instead — `SEARCH t USING INDEX idx_trees_lat_lon (lat>? AND lat<?)`, then a bloom
+    /// filter and a rowid lookup into `species` **per tree in the box**. For the radius arm that
+    /// meant evaluating the scope's exact-distance arithmetic over every tree in the bounding box
+    /// to keep a few hundred. Driving from the one species row instead is strictly less work:
+    /// 5.75 → 1.10 ms on the 1,200 m radius arm and 1.46 → 0.94 ms on the neighborhood arm,
+    /// same counts both times.
+    ///
+    /// **Measured with the scope predicate this function actually renders.** A first pass used a
+    /// hand-written `lat`/`lon` box without the distance term and reported the change as a
+    /// *pessimization* — 0.65 → 1.03 ms — because a tight box with no arithmetic in it is a
+    /// different query from the one `AlmanacScope.radius` produces. The reading was answering a
+    /// question this function never asks.
     public func treeCount(
         speciesID: UUID,
         scope: AlmanacScope,
@@ -433,7 +478,7 @@ public struct SpeciesQueries {
         SELECT count(*) AS species_tree_count
           FROM \(seed).trees t
           JOIN \(seed).species s ON s.id = t.species_current
-         WHERE s.\(schema.speciesIdentityColumn) = :uuid COLLATE NOCASE
+         WHERE s.\(schema.speciesIdentityColumn) = lower(:uuid)
            AND \(scope.predicate("t"))
            AND t.deleted_at IS NULL
         """
