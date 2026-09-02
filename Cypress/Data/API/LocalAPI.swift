@@ -2176,11 +2176,77 @@ public actor LocalAPI: CypressAPI {
     /// `GroveBatchReadTests` holds this against the per-tree form over a grove carrying one of each
     /// case, because "preserved one for one" is exactly the kind of claim this project has been
     /// wrong about in a comment.
+    ///
+    /// **Screen 08 no longer calls this**, and the sentence above is why it still exists: this is
+    /// the whole-grove answer, which `RoutedAPI.refreshedGrove` joins the account's half into and
+    /// which `GrovePaginationTests` concatenates pages against. What the pill paints from is
+    /// `grove(cursor:limit:)` below.
     public func grove() async throws -> [GroveEntry] {
+        try await groveEntries(after: nil, limit: nil).entries
+    }
+
+    /// `GET /me/grove`, Trees tab — **one page of it**, which is what screen 08 paints from.
+    ///
+    /// ── Why the pill is paged when its store reads are already fast ─────────────────────────────
+    /// Task #250 took this read from 13–22 s to about 26 ms on a forty-tree grove, and a loading
+    /// state was measured-then-declined at that number (`docs/whats-new/fix-grove-tab-performance.md`).
+    /// At **1,027 trees** the same five statements still total about 38 ms — and the pill went blank
+    /// for three and a half seconds anyway, because the cost had moved off the database entirely: a
+    /// thousand `GroveEntry`s become a thousand `IconTextRow`s in a non-lazy `VStack`, built before
+    /// the frame that shows any of them. Photographed at 3.47 s of byte-identical empty frames on an
+    /// iPhone 16 Pro before this change.
+    ///
+    /// So the fix is the one `journal()` already has, and this method is deliberately its twin: a
+    /// bounded id read, the same four projection statements scoped to *those* ids, and a cursor.
+    ///
+    /// **`nextCursor` is decided by the ids, not by the entries.** A grove row whose tree resolves
+    /// to neither inventory is skipped (see `grove()` above), so a full page of ids can produce
+    /// fewer entries than it read — and a page that returned nine entries out of ten ids is still a
+    /// full page. Deciding on `entries.count` would have ended the list early at the first
+    /// unresolvable tree, which is the same class of mistake as printing a page's size as a total
+    /// (ERRATA E38).
+    public func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+        let position = cursor.flatMap(ContributionStore.GroveCursor.init(string:))
+        let capped = min(limit, Page<GroveEntry>.maximumLimit)
+        let (entries, rows) = try await groveEntries(after: position, limit: capped)
+        let nextCursor = rows.count == capped
+            ? rows.last.map {
+                ContributionStore.GroveCursor(
+                    lastVisitedAt: $0.lastVisitedAt, treeID: $0.treeID
+                ).string
+            }
+            : nil
+        return Page(items: entries, nextCursor: nextCursor)
+    }
+
+    /// The projection both forms share: the grove's rows — all of them, or one page — and the
+    /// entries for them.
+    ///
+    /// Everything after `rows` is identical in the two, and it is identical because it is one body.
+    /// `GrovePaginationTests` compares the two answers, and this is what makes that comparison a
+    /// question about the *cut* rather than about two hand-copied projections agreeing.
+    ///
+    /// `limit == nil` is the unbounded read and takes the unbounded statement — not `LIMIT -1`,
+    /// which would be the same rows through the paged text and would leave
+    /// `GroveStatementCensusTests` unable to tell the two reads apart.
+    private func groveEntries(
+        after cursor: ContributionStore.GroveCursor?,
+        limit: Int?
+    ) async throws -> (entries: [GroveEntry], rows: [(treeID: UUID, lastVisitedAt: Date?, isFavorite: Bool)]) {
         let userID = userID
         let deviceID = deviceID
         let (rows, records, heroPhotoIDs) = try await store.queue.read { connection in
-            let rows = try contributions.groveTreeIDs(userID: userID, deviceID: deviceID, connection: connection)
+            let rows = try limit.map {
+                try contributions.groveTreeIDs(
+                    userID: userID,
+                    deviceID: deviceID,
+                    after: cursor,
+                    limit: $0,
+                    connection: connection
+                )
+            } ?? contributions.groveTreeIDs(
+                userID: userID, deviceID: deviceID, connection: connection
+            )
             return (
                 rows,
                 try contributions.groveRecords(userID: userID, deviceID: deviceID, connection: connection),
@@ -2250,7 +2316,7 @@ public actor LocalAPI: CypressAPI {
                 )
             )
         }
-        return entries
+        return (entries, rows)
     }
 
     /// Names and positions for a set of trees, for a grove row the **service** named.

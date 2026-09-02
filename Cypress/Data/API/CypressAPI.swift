@@ -221,6 +221,21 @@ public protocol CypressAPI: Sendable {
     /// `GET /me/grove`.
     func grove() async throws -> [GroveEntry]
 
+    /// `GET /me/grove`, cursor-paginated — the read screen 08's `Trees` pill paints from.
+    ///
+    /// A second entry point rather than a limit on `grove()` because the two answer different
+    /// questions and both have callers: the whole grove is what a background refresh joins the
+    /// account's half into and what the map's `Yours` filter is derived from, and a page is what a
+    /// list draws. `journal(cursor:limit:)` one screen over is the same pair for the same reason.
+    ///
+    /// **Declared here and defaulted below, which is not the shape ERRATA E125 forbids.** E125 is
+    /// about a method that exists *only* in an extension: it has no witness-table entry, so it
+    /// dispatches statically and every screen holding `any CypressAPI` reaches the default rather
+    /// than the conformance. A requirement with a default in an extension dispatches dynamically —
+    /// `LocalAPI`'s implementation is reached through the existential — and the default is there so
+    /// a double with nothing but a `grove()` needs to learn nothing new.
+    func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry>
+
     /// `GET /me/grove` narrowed to one tree: whether this contributor currently holds it (#167).
     ///
     /// Screen 03's heart re-reads its state after every write (RULINGS R2), and it used to do that
@@ -329,6 +344,44 @@ public extension CypressAPI {
     /// whose `grove()` tells the truth; `LocalAPI` overrides it with the narrow query.
     func isFavorite(treeID: UUID) async throws -> Bool {
         try await grove().first { $0.treeID == treeID }?.isFavorite ?? false
+    }
+
+    /// The grove-derived default for `grove(cursor:limit:)` — the whole answer, cut where the
+    /// cursor says.
+    ///
+    /// **It is truthful and it is not a performance fix**, and the two halves of that sentence are
+    /// both deliberate. Truthful: it returns exactly the page `LocalAPI` returns, cursor and all,
+    /// so a double or a preview that only knows `grove()` pages correctly without being taught
+    /// anything. Not a fix: it builds the whole grove and then throws most of it away, which is the
+    /// cost this round exists to remove. Every conformance whose `grove()` is expensive therefore
+    /// overrides it — `LocalAPI` with a bounded query, `RoutedAPI` by forwarding to that.
+    ///
+    /// The cut is the store's own total order, restated here rather than re-sorted: the sequence
+    /// `grove()` returns is already `last_visited DESC, tree_uuid DESC`
+    /// (`ContributionStore.groveOrderSQL`), so "after the cursor" is "past that element", and a
+    /// cursor naming an element this answer does not contain starts from the beginning — the same
+    /// wrong-but-safe reading `JournalCursor` chooses for an unparsable cursor.
+    func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+        let all = try await grove()
+        let capped = min(limit, Page<GroveEntry>.maximumLimit)
+        let start = cursor
+            .flatMap(ContributionStore.GroveCursor.init(string:))
+            .flatMap { position in all.firstIndex { $0.treeID == position.treeID }.map { $0 + 1 } }
+            ?? 0
+        guard start < all.count, capped > 0 else { return Page(items: [], nextCursor: nil) }
+        let page = Array(all[start..<min(start + capped, all.count)])
+        // A full page carries a cursor even when it happens to be the last one, which is
+        // `LocalAPI.grove(cursor:limit:)`'s rule and `journal()`'s before it: the read cannot know
+        // it reached the end without asking again, and one empty page is cheaper than a list that
+        // wrongly says it is complete.
+        let nextCursor = page.count == capped
+            ? page.last.map {
+                ContributionStore.GroveCursor(
+                    lastVisitedAt: $0.lastVisitedAt, treeID: $0.treeID
+                ).string
+            }
+            : nil
+        return Page(items: page, nextCursor: nextCursor)
     }
 }
 

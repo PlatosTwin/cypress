@@ -1534,47 +1534,183 @@ public struct ContributionStore {
 
     // MARK: - Personal surfaces
 
-    /// `GET /me/grove` — favorited and visited trees. Carries no counts (D1).
-    public func groveTreeIDs(userID: UUID?, deviceID: UUID, connection: SQLiteConnection) throws -> [(treeID: UUID, lastVisitedAt: Date?, isFavorite: Bool)] {
-        let statement = try connection.cachedStatement("""
-            SELECT tree_uuid,
-                   MAX(last_visited) AS last_visited,
-                   MAX(is_favorite)  AS is_favorite
-              FROM (
-                    SELECT tree_uuid, MAX(captured_at) AS last_visited, 0 AS is_favorite
-                      FROM visits
-                     WHERE deleted_at IS NULL
-                       AND (device_id = :device COLLATE NOCASE
-                            OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-                       -- A visit an account deletion anonymized is nobody's, including this
-                       -- phone's, so it does not put a tree in the next person's grove
-                       -- (`AppSchema` v13). The favorites arm below needs no such clause: a
-                       -- favorite is deleted with its account under both doors.
-                       AND \(Self.notAnonymized("visits"))
-                     GROUP BY tree_uuid
-                    UNION ALL
-                    -- Both owners, for the reason the visits arm above reads both: a favorite saved
-                    -- before sign-in is the device's until a claim moves it, and nothing forces a
-                    -- claim to have happened (E89, and the same argument as `privateReminders`).
-                    -- Reading only the user's arm is what made the heart's absence invisible.
-                    SELECT tree_uuid, NULL AS last_visited, 1 AS is_favorite
-                      FROM favorites
-                     WHERE deleted_at IS NULL
-                       AND (device_id = :device COLLATE NOCASE
-                            OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-                   )
-             GROUP BY tree_uuid
-             ORDER BY last_visited DESC NULLS LAST
-            """)
-        _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
-        return try statement.fetchAll { row in
-            (
-                treeID: try row.uuid("tree_uuid"),
-                lastVisitedAt: try row.dateIfPresent("last_visited"),
-                isFavorite: try row.boolIfPresent("is_favorite") ?? false
+    /// Where a grove page left off: the last row's last-visit time **and its tree**.
+    ///
+    /// The same type `JournalCursor` is, for the same reason and with one difference. The reason:
+    /// `last_visited` is not a position in this list. Two trees visited in the same millisecond are
+    /// ordinary, and every tree that has only ever been favorited shares one `last_visited` — NULL —
+    /// so on a grove of a thousand trees the timestamp alone names a *block* rather than a row.
+    /// Pairing it with the tree's own uuid makes the ordering total, which is what lets a page
+    /// boundary fall anywhere without dropping the rest of the block it fell inside.
+    ///
+    /// The difference: **`capturedAt` is optional here and is not on the journal**, because a
+    /// favorite nobody has visited is a real grove row with no time against it, and a page boundary
+    /// can land in the middle of that run exactly as it can land inside a tie. Nil is written as the
+    /// empty string, which is what the query compares against — see `groveOrderSQL`.
+    public struct GroveCursor: Sendable, Equatable {
+        public let lastVisitedAt: Date?
+        public let treeID: UUID
+
+        public init(lastVisitedAt: Date?, treeID: UUID) {
+            self.lastVisitedAt = lastVisitedAt
+            self.treeID = treeID
+        }
+
+        /// `JournalCursor`'s separator, for its reason: neither half can contain it.
+        private static let separator: Character = "|"
+
+        /// The sort key's first half as the query spells it — a timestamp, or `""` for a tree with
+        /// no visit. This is the value bound to `:cursorAt`, so the wire form and the comparison
+        /// cannot disagree about what "no visit" sorts as.
+        var sortStamp: String {
+            lastVisitedAt.map(SQLiteTimestamp.string(from:)) ?? ""
+        }
+
+        public var string: String {
+            "\(sortStamp)\(Self.separator)\(treeID.uuidString)"
+        }
+
+        public init?(string: String) {
+            // `omittingEmptySubsequences: false`, or a cursor for an unvisited tree — whose first
+            // half is empty — parses as one component and is refused.
+            let halves = string.split(
+                separator: Self.separator, maxSplits: 1, omittingEmptySubsequences: false
             )
+            guard halves.count == 2, let treeID = UUID(uuidString: String(halves[1])) else {
+                return nil
+            }
+            let stamp = String(halves[0])
+            if stamp.isEmpty {
+                self.init(lastVisitedAt: nil, treeID: treeID)
+            } else {
+                guard let date = SQLiteTimestamp.date(from: stamp) else { return nil }
+                self.init(lastVisitedAt: date, treeID: treeID)
+            }
         }
     }
+
+    /// `GET /me/grove` — favorited and visited trees. Carries no counts (D1).
+    ///
+    /// **The unbounded form, and it stays.** `LocalAPI.grove()` reads it, `RoutedAPI.refreshedGrove`
+    /// is behind that, and `GrovePaginationTests` uses it as the control the pages are concatenated
+    /// against. What screen 08 paints from is the paged form below.
+    public func groveTreeIDs(userID: UUID?, deviceID: UUID, connection: SQLiteConnection) throws -> [(treeID: UUID, lastVisitedAt: Date?, isFavorite: Bool)] {
+        let statement = try connection.cachedStatement(Self.groveTreeIDsSQL)
+        _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
+        return try statement.fetchAll(Self.decodeGroveRow)
+    }
+
+    /// `GET /me/grove`, one page — the read screen 08's `Trees` pill actually runs.
+    ///
+    /// **What paging is for here is not the store.** These ids cost about 16 ms at a thousand trees
+    /// and the `GROUP BY` above them is unindexable either way, so the `LIMIT` does not make *this*
+    /// statement much cheaper. What it makes cheap is everything downstream: `LocalAPI.grove`'s four
+    /// projection statements are scoped to the ids this returns, and the list SwiftUI is handed is
+    /// a page rather than the whole grove — which is where the seconds were. See
+    /// `docs/whats-new/perf-grove-trees-paging.md`.
+    ///
+    /// The cursor is a row-value comparison against a sentinel rather than `:cursor IS NULL OR …`,
+    /// for `journalSQL`'s reason: `char(0x10FFFF)` sorts above any timestamp and above any
+    /// `uuidString`, so "from the newest row" needs no branch.
+    public func groveTreeIDs(
+        userID: UUID?,
+        deviceID: UUID,
+        after cursor: GroveCursor?,
+        limit: Int,
+        connection: SQLiteConnection
+    ) throws -> [(treeID: UUID, lastVisitedAt: Date?, isFavorite: Bool)] {
+        let statement = try connection.cachedStatement(Self.groveTreeIDsPageSQL)
+        _ = try statement.bind([
+            ":device": deviceID.uuidString,
+            ":user": userID?.uuidString,
+            ":cursorAt": cursor?.sortStamp,
+            ":cursorID": cursor?.treeID.uuidString,
+            ":limit": limit
+        ])
+        return try statement.fetchAll(Self.decodeGroveRow)
+    }
+
+    private static func decodeGroveRow(
+        _ row: SQLiteRow
+    ) throws -> (treeID: UUID, lastVisitedAt: Date?, isFavorite: Bool) {
+        (
+            treeID: try row.uuid("tree_uuid"),
+            lastVisitedAt: try row.dateIfPresent("last_visited"),
+            isFavorite: try row.boolIfPresent("is_favorite") ?? false
+        )
+    }
+
+    /// The rows of a grove, before they are ordered or cut into pages.
+    ///
+    /// One fragment shared by both forms above, so the paged read and the unbounded control cannot
+    /// come to disagree about *which* trees are in a grove — which is the only way
+    /// `GrovePaginationTests`' concatenation could pass while being wrong about both.
+    static let groveOwnedTreesSQL = """
+        SELECT tree_uuid,
+               MAX(last_visited) AS last_visited,
+               MAX(is_favorite)  AS is_favorite
+          FROM (
+                SELECT tree_uuid, MAX(captured_at) AS last_visited, 0 AS is_favorite
+                  FROM visits
+                 WHERE deleted_at IS NULL
+                   AND (device_id = :device COLLATE NOCASE
+                        OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+                   -- A visit an account deletion anonymized is nobody's, including this
+                   -- phone's, so it does not put a tree in the next person's grove
+                   -- (`AppSchema` v13). The favorites arm below needs no such clause: a
+                   -- favorite is deleted with its account under both doors.
+                   AND \(Self.notAnonymized("visits"))
+                 GROUP BY tree_uuid
+                UNION ALL
+                -- Both owners, for the reason the visits arm above reads both: a favorite saved
+                -- before sign-in is the device's until a claim moves it, and nothing forces a
+                -- claim to have happened (E89, and the same argument as `privateReminders`).
+                -- Reading only the user's arm is what made the heart's absence invisible.
+                SELECT tree_uuid, NULL AS last_visited, 1 AS is_favorite
+                  FROM favorites
+                 WHERE deleted_at IS NULL
+                   AND (device_id = :device COLLATE NOCASE
+                        OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+               )
+         GROUP BY tree_uuid
+        """
+
+    /// The grove's order, in one place because two spellings of it is two chances to disagree.
+    ///
+    /// **It was `last_visited DESC NULLS LAST` and the two are the same order**, which is worth
+    /// stating rather than assuming. SQLite's NULL is the smallest value, so `DESC` already put the
+    /// never-visited trees last and the `NULLS LAST` was saying so twice; `COALESCE(…, '')` says it
+    /// a third way — the empty string sorts below every `SQLiteTimestamp`, which begins with a
+    /// digit — and it is the spelling chosen here because it is the one the cursor comparison can
+    /// also use. A row-value comparison containing NULL evaluates to NULL and excludes its own row,
+    /// so a paged read spelled with the bare column would have lost every favorite nobody had
+    /// visited: the whole tail of the list, silently.
+    ///
+    /// **`tree_uuid COLLATE NOCASE DESC` is new and it is the total order.** Without it the
+    /// ordering had ties — trees sharing a visit instant, and the entire never-visited run sharing
+    /// NULL — and a cursor cannot name a position inside a tie. That is the defect this round fixed
+    /// one screen over (`JournalCursor`, `AppSchema` v19); it is not being introduced here. The
+    /// collation is not decoration: `UUID.uuidString` is upper case, a stored `tree_uuid`'s case is
+    /// unconstrained, and a BINARY tie-break would sort the two spellings into different places.
+    static let groveOrderSQL = "COALESCE(last_visited, '') DESC, tree_uuid COLLATE NOCASE DESC"
+
+    /// A property for `journalSQL`'s reason: the gate explains the text the app runs.
+    static let groveTreeIDsSQL = """
+        SELECT tree_uuid, last_visited, is_favorite
+          FROM (\(Self.groveOwnedTreesSQL))
+         ORDER BY \(Self.groveOrderSQL)
+        """
+
+    /// The paged form. `GroveStatementCensusTests` uses the presence of one of these two texts and
+    /// the absence of the other as its whole gate, which is why they are two properties.
+    static let groveTreeIDsPageSQL = """
+        SELECT tree_uuid, last_visited, is_favorite
+          FROM (\(Self.groveOwnedTreesSQL))
+         WHERE (COALESCE(last_visited, ''), tree_uuid COLLATE NOCASE)
+             < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
+         ORDER BY \(Self.groveOrderSQL)
+         LIMIT :limit
+        """
 
     /// What this contributor has done to each tree in their grove, by kind.
     ///

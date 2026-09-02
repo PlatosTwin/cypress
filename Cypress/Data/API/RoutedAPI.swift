@@ -541,6 +541,19 @@ public struct RoutedAPI: CypressAPI {
         try await local.grove()
     }
 
+    /// `grove()`, one page — screen 08's read, forwarded to the phone for `grove()`'s reason above.
+    ///
+    /// **Overridden rather than left to the protocol default**, and the difference is the whole
+    /// point of the page: the default builds the entire grove and cuts it, so on this route the
+    /// pill would still pay for a thousand rows before drawing fifty. `LocalAPI`'s form asks the
+    /// database for fifty.
+    ///
+    /// It does not touch the wire and records nothing in `log`, exactly as `grove()` does not. The
+    /// account's half arrives through `refreshedGrove()`, behind the painted page.
+    public func grove(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+        try await local.grove(cursor: cursor, limit: limit)
+    }
+
     /// `grove()` again, with `GET /me/grove` merged in — the read that reaches the service.
     ///
     /// **What it is for**: it is delivered *behind* a painted screen. `DataLayer.boot` hands it to
