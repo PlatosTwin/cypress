@@ -53,7 +53,9 @@ import Testing
 /// `firstBloom` is pinned on `sqlite_autoindex_trees_1`, which is exactly the index the transient
 /// one stands in for, so **rule 1 fires on both arms** and rule 3 is redundant there. PR #145's
 /// review caught it; a confident comment about a query plan is precisely the artifact this file
-/// exists to replace with a measurement, and it was wrong here first.
+/// exists to replace with a measurement, and it was wrong here first. (Since v19, rule 3 does not
+/// merely duplicate rule 1 on this statement — it does not fire at all. The calibration below has
+/// the re-derivation.)
 ///
 /// What rule 3 is actually for is **the other eight statements**, which are pinned on a *scope*
 /// index — `idx_trees_neighborhood`, `idx_trees_lat_lon`, `idx_trees_species_current` — rather than
@@ -73,13 +75,25 @@ import Testing
 ///
 /// ── Calibration ─────────────────────────────────────────────────────────────────────────────
 /// With only `AlmanacQueries.bloomTreeJoin` reverted to `t.uuid = v.tree_uuid COLLATE NOCASE` and
-/// nothing else changed, `plansStayIndexedAndBuildNothing` fails with **four issues**: `first bloom`
-/// in each arm loses its `sqlite_autoindex_trees_1` seek (rule 1) and gains an `AUTOMATIC` step
-/// (rule 3), and the two `AUTOMATIC` steps are different relations in the two arms — `v` under the
-/// polygon, `t` under the radius. The verbatim messages are in the pull request.
+/// nothing else changed, `plansStayIndexedAndBuildNothing` fails with **two issues**: `first bloom`
+/// loses its `sqlite_autoindex_trees_1` seek (rule 1), in each arm. Re-derived on the merged tree
+/// at `AppSchema` v19; the verbatim messages are in that round's pull request.
 ///
-/// Two issues per arm rather than one is the redundancy the rules paragraph above admits to: on this
-/// statement rule 1 alone would have gone red, and rule 3 reports the same regression a second time.
+/// **It used to fail with four, and v19 is why it no longer does — which is a loss, not a
+/// simplification.** The reverted statement also used to gain an `AUTOMATIC PARTIAL COVERING INDEX`
+/// step (rule 3) in each arm, over different relations: `v` under the polygon, `t` under the radius.
+/// SQLite fabricated those because the query gave it no usable index. v19 gave it one. The reverted
+/// NOCASE join now plans `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)` off
+/// the recollated index, so nothing is built at run time and rule 3 stays silent.
+///
+/// The plan is still wrong, and rule 1 still says so in both arms: it drives from the scope and
+/// probes the contributor once per tree, which is the inverse of the tuned plan and is the shape
+/// whose cost tracks the size of the *neighborhood* rather than of the reader's own record. So the
+/// coverage did not change. **The redundancy did**, and the paragraph above that claims rule 3
+/// "reports the same regression a second time" is the sentence this one exists to correct: on this
+/// tree, for this statement, rule 1 is the only witness. Rule 3 is not thereby idle — it remains the
+/// only rule that can see a fabricated index on the other eight statements, which is what it was
+/// written for — but it is no longer a second opinion about `firstBloom`.
 ///
 /// The three tests below that are *not* about the collation carry their own calibration in their own
 /// doc comments, for the reason `GroveQueryPlanTests`' header gives: a calibration claim nobody
@@ -293,11 +307,24 @@ struct AlmanacQueryPlanTests {
     /// Each `#require`s that its substitution matched, which is what keeps a counterfactual from
     /// quietly explaining the shipped statement instead.
     ///
-    /// **Calibration.** With only v19's DDL reverted — `AppSchema.v19`'s index statements, nothing
-    /// else, so `idx_visits_tree` goes back to BINARY — this test goes red in both arms on the seek
-    /// it requires, reporting the `SCAN v` it used to pin, *and* on the `upper()` counterfactual,
-    /// which reaches `idx_visits_tree` again exactly as the old test asserted. Four issues. The
-    /// verbatim messages are in the pull request. No expectation here passes vacuously.
+    /// **Calibration, and it took two attempts to get an honest one.** With `AppSchema.v19`'s DDL
+    /// parked whole — nothing else on the tree changed, so the database plans as v18 — this test
+    /// goes red with **ten** issues, five per arm: the required seek is gone (`seeks → []`), the
+    /// constraint expectation goes with it vacuously, `SCAN v` is back, and *both* counterfactuals
+    /// reach `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)` — which is
+    /// exactly what the old test asserted, from the other side. `plansStayIndexedAndBuildNothing`
+    /// goes red beside it with four, `unexpected → ["v"]` on `first bloom` and on
+    /// `the young trees nobody has visited` in each arm, which is the narrowed `scannable`'s own
+    /// red-proof. Fourteen in the suite. The verbatim messages are in the pull request.
+    ///
+    /// **The first attempt reverted only the `idx_visits_tree` statement and was not a red-proof of
+    /// what it looked like.** The seek expectation went red, so it read as one — but `SCAN v` did
+    /// *not* come back and rule 2 stayed green, because `idx_visits_captured` was still there and
+    /// answered the subquery's `captured_at >= t.planted_on` on its own. That is worth keeping,
+    /// because it is why the seek expectation and the no-walk expectation are not redundant: the
+    /// walk is prevented by *either* of v19's two indexes on `visits`, and only `idx_visits_tree`
+    /// makes the correlated lookup a seek on the column it is correlated by. A partial revert can
+    /// take the seek away and leave the plan looking fine to every other rule in this file.
     @Test("the young-tree subquery seeks the recollated visits index, and neither rewrite of it can")
     func theYoungTreeSubquerySeeksTheRecollatedIndex() async throws {
         let store = try await Self.store()
