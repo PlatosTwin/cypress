@@ -398,40 +398,52 @@ public struct AlmanacQueries {
     /// published file.
     ///
     /// This subquery is the other way round. It is correlated on `t`, so it runs per candidate tree
-    /// and the index that would answer it is `idx_visits_tree` — over a column in **`main`**. To
-    /// seek that, `v.tree_uuid` has to be left bare, which means normalizing the seed side *up*:
-    /// `v.tree_uuid = upper(t.uuid)`. That is only correct while every row in `visits` stores its
-    /// `tree_uuid` upper case, and **nothing asserts that.** Today's single writer
-    /// (`ContributionStore.insert`, binding a `UUID` through `SQLiteValue`) does produce Foundation's
-    /// uppercase spelling, but the column is plain `TEXT` with `BINARY` collation, no gate examines
-    /// it, and `AppSchema`'s own note beside `anonymized_contributions` records why that is not
-    /// enough: a uuid reaches these tables by two routes, `SQLiteValue`'s uppercase `uuidString` and
-    /// `JSONEncoder`'s, "and the whole guarantee would turn on those two agreeing about case for
-    /// ever". That table's answer was `COLLATE NOCASE` **on the column**, which makes its index
-    /// case-insensitive and seekable — and doing the same here is a schema migration, which this
-    /// change is not the author of.
+    /// and the index that answers it is `idx_visits_tree` — over a column in **`main`**. Under the
+    /// `lower()` treatment that would have meant leaving `v.tree_uuid` bare and normalizing the seed
+    /// side *up*: `v.tree_uuid = upper(t.uuid)`. That is only correct while every row in `visits`
+    /// stores its `tree_uuid` upper case, and **nothing asserts that** — then or now. Today's single
+    /// writer (`ContributionStore.insert`, binding a `UUID` through `SQLiteValue`) does produce
+    /// Foundation's uppercase spelling, but the column is plain `TEXT` with `BINARY` collation, no
+    /// gate examines it, and `AppSchema`'s own note beside `anonymized_contributions` records why
+    /// that is not enough: a uuid reaches these tables by two routes, `SQLiteValue`'s uppercase
+    /// `uuidString` and `JSONEncoder`'s, "and the whole guarantee would turn on those two agreeing
+    /// about case for ever". That table's answer was `COLLATE NOCASE` **on the column**, which makes
+    /// its index case-insensitive and seekable.
     ///
-    /// **What decides it is which claim has a gate behind it, not how the two fail.** An earlier
-    /// draft of this paragraph argued that a wrong `lower()` in `firstBloom` "returns nothing, which
-    /// is loud", and PR #145's review disproved it on the running screen: `AlmanacPresentation`
-    /// draws the bloom row under `if let bloom = area.firstBloom`, so a nil draws no row, no error
-    /// and no gap — and nil is the **ordinary** state, since most devices hold no flowering visit
-    /// this year. A broken `lower()` would look exactly like an ordinary spring. Both failures are
-    /// silent; the asymmetry is somewhere else.
+    /// **What separated the two joins was which claim had a gate behind it, not how the two fail** —
+    /// PR #145's review earned that sentence and it is kept because the distinction still governs
+    /// `bloomTreeJoin`. An earlier draft argued that a wrong `lower()` in `firstBloom` "returns
+    /// nothing, which is loud"; the review disproved it on the running screen, since
+    /// `AlmanacPresentation` draws the bloom row under `if let bloom = area.firstBloom`, so a nil
+    /// draws no row, no error and no gap — and nil is the **ordinary** state, most devices holding
+    /// no flowering visit this year. Both failures are silent. The asymmetry is that `lower()` rests
+    /// on a property this repository re-derives every CI run (`DataGates.armsWithUppercaseUUIDs`,
+    /// red-proved against a pack by `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack`)
+    /// and `upper()` would rest on one nothing checks at all.
     ///
-    /// It is that `lower()` rests on an asserted property and `upper()` would rest on an assumed
-    /// one. Every published inventory file is checked, per arm, on every CI run
-    /// (`DataGates.armsWithUppercaseUUIDs`, red-proved against a pack by
-    /// `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack`), so the case `bloomTreeJoin`
-    /// depends on is a fact this repository re-derives. Nothing whatsoever checks the case of a
-    /// `visits` row. And what the unchecked one would buy is small — a seek over *one contributor's
-    /// own* visits — while what it would cost is the app's one directed ask (D1) sending readers to
-    /// trees that have already been visited. A seek that size is not worth an unasserted invariant;
-    /// the migration that would assert it is what makes this trade available, and this change is not
-    /// its author.
+    /// ── **v19 ended the trade rather than winning it** ──────────────────────────────────────────
+    /// The paragraph this replaces closed by saying that the migration which would assert the case
+    /// "is what makes this trade available, and this change is not its author". `AppSchema` **v19**
+    /// is that migration, and it took `anonymized_contributions`' route instead of the contract
+    /// route: it recreates `idx_visits_tree` as `(tree_uuid COLLATE NOCASE, captured_at DESC)`, so
+    /// the index is case-insensitive and the statement below — unchanged, still collated, still
+    /// right about a mixed-case `visits` row — seeks it. Both of R29's arms plan
+    /// `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)`: 0.319 ms per
+    /// candidate tree down to 0.008, so a §4 card with 200 candidates goes 64 ms to 1.5.
     ///
-    /// `AlmanacQueryPlanTests.theYoungTreeSubqueryIsTheKnownScan` pins the plan this leaves, so the
-    /// day the migration lands this paragraph goes red rather than staying wrong.
+    /// So the `upper()` rewrite is now **worse in both directions**, and it was only ever wrong in
+    /// one of them. It has always returned the wrong rows for a mixed-case visit —
+    /// `AlmanacCollationEquivalenceTests.mixedCaseVisitsStillSuppressAYoungTree` holds that as a
+    /// fact rather than as this paragraph — and it is now also slower, because leaving
+    /// `v.tree_uuid` bare takes the *column's* collation, which is still `BINARY`: v19 recollated
+    /// the index, not the column, and a BINARY comparison cannot reach a NOCASE index. Measured,
+    /// both arms: `SEARCH v USING INDEX idx_visits_captured (captured_at>?)`, a range on the wrong
+    /// index.
+    ///
+    /// What is *not* claimed here is a case contract. There still is none on `visits.tree_uuid`, and
+    /// none is needed: the collation is declared where both sides of the comparison can see it.
+    /// `AlmanacQueryPlanTests.theYoungTreeSubquerySeeksTheRecollatedIndex` pins the seek and both
+    /// rewrites' failure to reach it, so this paragraph goes red rather than staying wrong.
     func youngTreesWithoutVisitsSQL(scope: AlmanacScope) -> String {
         """
         SELECT t.\(schema.treeIdentityColumn) AS tree_uuid,

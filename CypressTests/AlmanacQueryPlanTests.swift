@@ -20,12 +20,20 @@ import Testing
 ///   `SCAN v | … | SEARCH t USING AUTOMATIC PARTIAL COVERING INDEX (uuid=?)` — a transient index
 ///   built over `temp.trees`, the whole merged inventory, per execution.
 ///
-/// With `lower()` on the contributions side both arms plan
+/// With `lower()` on the contributions side both arms planned
 /// `SCAN v | … | SEARCH t USING INDEX sqlite_autoindex_trees_1 (uuid=?)`: drive from the
-/// contributor's own visits, seek the inventory once per visit, build nothing. The statement goes
+/// contributor's own visits, seek the inventory once per visit, build nothing. The statement went
 /// from 3.06–4.53 ms to 0.01–0.02 ms in the polygon arm and from 22.9–33.7 ms to 0.12–0.26 ms in the
 /// radius arm, on a device with no contributions at all — `AlmanacQueries.bloomTreeJoin` carries the
 /// figures and how they were taken.
+///
+/// **Since `AppSchema` v19 the leading `SCAN v` is a `SEARCH` as well**, in both arms:
+/// `SEARCH v USING INDEX idx_visits_captured (captured_at>?)`. Nothing in `AlmanacQueries` changed
+/// for it. v19 added `idx_visits_captured` on `(captured_at DESC, id COLLATE NOCASE DESC)` for the
+/// journal's page query, and this statement already bounded `captured_at` to the current year
+/// (SCREENS.md 12 §2), so the year bound became a range seek. It is recorded here because it is a
+/// plan this file explains that moved without this file's subject moving, and because it is half of
+/// why `scannable` no longer carries `visits` — see that property.
 ///
 /// ── The rules ───────────────────────────────────────────────────────────────────────────────
 /// The first two are `GroveQueryPlanTests`', and its header states why each is written the way it
@@ -45,7 +53,9 @@ import Testing
 /// `firstBloom` is pinned on `sqlite_autoindex_trees_1`, which is exactly the index the transient
 /// one stands in for, so **rule 1 fires on both arms** and rule 3 is redundant there. PR #145's
 /// review caught it; a confident comment about a query plan is precisely the artifact this file
-/// exists to replace with a measurement, and it was wrong here first.
+/// exists to replace with a measurement, and it was wrong here first. (Since v19, rule 3 does not
+/// merely duplicate rule 1 on this statement — it does not fire at all. The calibration below has
+/// the re-derivation.)
 ///
 /// What rule 3 is actually for is **the other eight statements**, which are pinned on a *scope*
 /// index — `idx_trees_neighborhood`, `idx_trees_lat_lon`, `idx_trees_species_current` — rather than
@@ -65,13 +75,25 @@ import Testing
 ///
 /// ── Calibration ─────────────────────────────────────────────────────────────────────────────
 /// With only `AlmanacQueries.bloomTreeJoin` reverted to `t.uuid = v.tree_uuid COLLATE NOCASE` and
-/// nothing else changed, `plansStayIndexedAndBuildNothing` fails with **four issues**: `first bloom`
-/// in each arm loses its `sqlite_autoindex_trees_1` seek (rule 1) and gains an `AUTOMATIC` step
-/// (rule 3), and the two `AUTOMATIC` steps are different relations in the two arms — `v` under the
-/// polygon, `t` under the radius. The verbatim messages are in the pull request.
+/// nothing else changed, `plansStayIndexedAndBuildNothing` fails with **two issues**: `first bloom`
+/// loses its `sqlite_autoindex_trees_1` seek (rule 1), in each arm. Re-derived on the merged tree
+/// at `AppSchema` v19; the verbatim messages are in that round's pull request.
 ///
-/// Two issues per arm rather than one is the redundancy the rules paragraph above admits to: on this
-/// statement rule 1 alone would have gone red, and rule 3 reports the same regression a second time.
+/// **It used to fail with four, and v19 is why it no longer does — which is a loss, not a
+/// simplification.** The reverted statement also used to gain an `AUTOMATIC PARTIAL COVERING INDEX`
+/// step (rule 3) in each arm, over different relations: `v` under the polygon, `t` under the radius.
+/// SQLite fabricated those because the query gave it no usable index. v19 gave it one. The reverted
+/// NOCASE join now plans `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)` off
+/// the recollated index, so nothing is built at run time and rule 3 stays silent.
+///
+/// The plan is still wrong, and rule 1 still says so in both arms: it drives from the scope and
+/// probes the contributor once per tree, which is the inverse of the tuned plan and is the shape
+/// whose cost tracks the size of the *neighborhood* rather than of the reader's own record. So the
+/// coverage did not change. **The redundancy did**, and the paragraph above that claims rule 3
+/// "reports the same regression a second time" is the sentence this one exists to correct: on this
+/// tree, for this statement, rule 1 is the only witness. Rule 3 is not thereby idle — it remains the
+/// only rule that can see a fabricated index on the other eight statements, which is what it was
+/// written for — but it is no longer a second opinion about `firstBloom`.
 ///
 /// The three tests below that are *not* about the collation carry their own calibration in their own
 /// doc comments, for the reason `GroveQueryPlanTests`' header gives: a calibration claim nobody
@@ -114,12 +136,31 @@ struct AlmanacQueryPlanTests {
 
     /// Relations a plan may walk end to end, and why each one is small.
     ///
-    /// Two entries, and the shortness is the point: **the inventory is not on this list under any
-    /// alias.** `visits` is the contributor's own record, bounded by what one person did on one
-    /// phone; `json_each` is a co-routine over a bound array. Every relation an almanac statement
-    /// touches other than those two is the merged inventory or a translation table beside it, and
-    /// walking any of them is the regression this file exists to catch.
-    private static let scannable: Set<String> = ["visits", "v", "json_each"]
+    /// One entry, and the shortness is the point: **the inventory is not on this list under any
+    /// alias.** `json_each` is a co-routine over a bound array. Every relation an almanac statement
+    /// touches other than that one is either the merged inventory, a translation table beside it, or
+    /// the contributor's own `visits` — and walking any of them is now a regression this file
+    /// catches.
+    ///
+    /// **`visits` and `v` were on this list until `AppSchema` v19, and were taken off by
+    /// measurement rather than by tidying.** They were here because both statements that touch the
+    /// contributor's record walked it: `firstBloom` drove from `visits` end to end, and
+    /// `youngTreesWithoutVisits` walked it once per candidate tree because its `COLLATE NOCASE`
+    /// could not reach a BINARY `idx_visits_tree`. v19 ended both, and the second one was not
+    /// predicted — the round expected only the young-tree flip:
+    ///
+    /// - `youngTreesWithoutVisits` → `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND
+    ///   captured_at>?)`, from the recollation. `theYoungTreeSubquerySeeksTheRecollatedIndex` pins it.
+    /// - `firstBloom` → `SEARCH v USING INDEX idx_visits_captured (captured_at>?)`, in both arms,
+    ///   from an index v19 added for the *journal*: the statement bounds `captured_at` to this year
+    ///   (SCREENS.md 12 §2), and `idx_visits_captured` leads on `captured_at`, so the year bound
+    ///   became a range seek. Nothing in `AlmanacQueries` changed for it.
+    ///
+    /// Keeping the two entries would have left a permission nothing used, which is the same artifact
+    /// as a stale pin: a later edit could put either walk back and rule 2 would certify it. The
+    /// narrowing was verified before it was written — with this list cut to `["json_each"]`,
+    /// `plansStayIndexedAndBuildNothing` passes on all nine statements in both arms.
+    private static let scannable: Set<String> = ["json_each"]
 
     /// label, the statement, and the index whose `SEARCH` must answer it in this arm.
     ///
@@ -223,33 +264,69 @@ struct AlmanacQueryPlanTests {
         }
     }
 
-    // MARK: - The one collated join that stays, pinned as what it is
+    // MARK: - The one collated join that stays, pinned as the seek v19 gave it
 
-    /// **The young-tree subquery's plan, pinned as the scan it is — and the seek it would have.**
+    /// **The young-tree subquery's plan, pinned as the seek `AppSchema` v19 made available.**
     ///
-    /// `AlmanacQueries.youngTreesWithoutVisitsSQL(scope:)` keeps its `COLLATE NOCASE`, and its doc
-    /// comment argues why: the index that would answer it is `idx_visits_tree`, over a column in
-    /// `main`, so seeking it means normalizing the **seed** side up — `v.tree_uuid = upper(t.uuid)`
-    /// — which is correct only while every row in `visits` stores an upper-case uuid, and nothing
-    /// asserts that. This is the line that makes both halves of that paragraph a measurement rather
-    /// than a confident comment:
+    /// This gate was written to pin a `SCAN v`, and it pinned one honestly:
+    /// `AlmanacQueries.youngTreesWithoutVisitsSQL(scope:)` compares
+    /// `v.tree_uuid = t.uuid COLLATE NOCASE`, and while `idx_visits_tree` was `BINARY` no NOCASE
+    /// comparison could seek it. That pin named the event that would end it — "the day a migration
+    /// gives `visits.tree_uuid` a case-insensitive index … this test goes red on the first half and
+    /// the paragraph has to be rewritten deliberately, rather than staying wrong."
     ///
-    /// - the shipped statement's correlated subquery is `SCAN v`, a full pass over the contributor's
-    ///   visits per candidate tree;
-    /// - the `upper()` form of the *same* statement, built here by substitution, is
-    ///   `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)`.
+    /// **v19 is that migration**, and it is the reason this is a rewrite rather than a relaxation.
+    /// It recreates `idx_visits_tree` as `(tree_uuid COLLATE NOCASE, captured_at DESC)`, so the
+    /// statement — unchanged, still collated, still right about a mixed-case `visits` row — reaches
+    /// it. Both of R29's arms now plan
+    /// `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)`, measured
+    /// 0.319 ms → 0.008 ms per candidate tree; a §4 card with 200 candidates goes 64 ms → 1.5 ms.
+    /// The pin is therefore inverted: it **requires** the seek, requires both of the constraints the
+    /// index can carry, and forbids the walk.
     ///
-    /// So the day a migration gives `visits.tree_uuid` a case-insensitive index — or gives the case
-    /// a contract — this test goes red on the first half and the paragraph has to be rewritten
-    /// deliberately, rather than staying wrong. It also fails if the substitution stops matching,
-    /// which is what keeps the counterfactual honest.
+    /// Rule 2 now forbids that walk too — v19 took `visits` and `v` off `scannable`, because it also
+    /// gave `firstBloom` a seek and left the almanac with no walk of the contributor's record at
+    /// all. That is deliberate overlap and it is worth its cost: rule 2 catches the walk coming back
+    /// on any statement, and this test says which index the walk is supposed to have been replaced
+    /// by, which rule 2 cannot.
     ///
-    /// **Calibration.** Both halves have been run against the opposite state: deleting `COLLATE
-    /// NOCASE` from the shipped statement (leaving `v.tree_uuid = t.uuid`) makes the first
-    /// expectation red — the plan becomes the `idx_visits_tree` seek — while the substitution then
-    /// finds nothing and the `#require` reports it. Neither expectation passes vacuously.
-    @Test("the young-tree subquery scans the reader's visits, and would seek if the case were contracted")
-    func theYoungTreeSubqueryIsTheKnownScan() async throws {
+    /// ── The counterfactual, which v19 inverted too ──────────────────────────────────────────────
+    /// The old form of this test built `v.tree_uuid = upper(t.uuid)` by substitution and showed that
+    /// it *would* seek: against a BINARY index, normalizing the seed side up was the only way to
+    /// reach one, and the statement declined to because nothing constrains the case of a stored
+    /// `visits` uuid. That is now backwards, and being backwards is the cleanest proof available
+    /// that the collation is what does the work. `upper(t.uuid)` leaves `v.tree_uuid` bare, so the
+    /// comparison takes the **column's** collation — still `BINARY`, because v19 recollated the
+    /// index and not the column — and a BINARY comparison cannot reach a NOCASE index. Measured,
+    /// both arms: `SEARCH v USING INDEX idx_visits_captured (captured_at>?)`, a range on the wrong
+    /// index.
+    ///
+    /// Two substitutions are checked, because they are the two edits that would silently undo this:
+    /// `upper()` on the seed side (the rewrite this statement used to be tempted by) and simply
+    /// deleting the `COLLATE NOCASE` (the "simplification"). Neither may reach `idx_visits_tree`.
+    /// Each `#require`s that its substitution matched, which is what keeps a counterfactual from
+    /// quietly explaining the shipped statement instead.
+    ///
+    /// **Calibration, and it took two attempts to get an honest one.** With `AppSchema.v19`'s DDL
+    /// parked whole — nothing else on the tree changed, so the database plans as v18 — this test
+    /// goes red with **ten** issues, five per arm: the required seek is gone (`seeks → []`), the
+    /// constraint expectation goes with it vacuously, `SCAN v` is back, and *both* counterfactuals
+    /// reach `SEARCH v USING INDEX idx_visits_tree (tree_uuid=? AND captured_at>?)` — which is
+    /// exactly what the old test asserted, from the other side. `plansStayIndexedAndBuildNothing`
+    /// goes red beside it with four, `unexpected → ["v"]` on `first bloom` and on
+    /// `the young trees nobody has visited` in each arm, which is the narrowed `scannable`'s own
+    /// red-proof. Fourteen in the suite. The verbatim messages are in the pull request.
+    ///
+    /// **The first attempt reverted only the `idx_visits_tree` statement and was not a red-proof of
+    /// what it looked like.** The seek expectation went red, so it read as one — but `SCAN v` did
+    /// *not* come back and rule 2 stayed green, because `idx_visits_captured` was still there and
+    /// answered the subquery's `captured_at >= t.planted_on` on its own. That is worth keeping,
+    /// because it is why the seek expectation and the no-walk expectation are not redundant: the
+    /// walk is prevented by *either* of v19's two indexes on `visits`, and only `idx_visits_tree`
+    /// makes the correlated lookup a seek on the column it is correlated by. A partial revert can
+    /// take the seek away and leave the plan looking fine to every other rule in this file.
+    @Test("the young-tree subquery seeks the recollated visits index, and neither rewrite of it can")
+    func theYoungTreeSubquerySeeksTheRecollatedIndex() async throws {
         let store = try await Self.store()
         let schema = try #require(store.seed, "the store opened without a seed attached")
         let queries = AlmanacQueries(schema: schema)
@@ -262,37 +339,66 @@ struct AlmanacQueryPlanTests {
                 let steps = try connection.queryPlan(for: sql)
                 let plan = steps.joined(separator: " | ")
 
+                let seeks = steps.filter { $0.contains("SEARCH") && $0.contains("idx_visits_tree") }
                 #expect(
-                    steps.contains(where: { GroveQueryPlanTests.scannedRelation(in: $0) == "v" }),
+                    !seeks.isEmpty,
                     """
-                    the young-tree subquery no longer walks `visits` end to end in the \(arm.name) \
-                    arm. If it can now be seeked, `youngTreesWithoutVisitsSQL`'s doc comment saying \
-                    it cannot is out of date and has to go with this gate — \(plan)
+                    the young-tree subquery no longer seeks `idx_visits_tree` in the \(arm.name) \
+                    arm, so every candidate tree walks the reader's visits again — the plan \
+                    AppSchema v19 recollated that index to remove, at 0.319 ms per tree against \
+                    0.008 — \(plan)
+                    """
+                )
+                #expect(
+                    seeks.contains(where: { $0.contains("tree_uuid=?") && $0.contains("captured_at") }),
+                    """
+                    the \(arm.name) arm reaches `idx_visits_tree` on fewer of its columns than the \
+                    subquery bounds: `captured_at >= t.planted_on` is a range this index carries \
+                    beside `tree_uuid`, and a seek that drops it re-reads rows the index could have \
+                    skipped — \(seeks.joined(separator: " | "))
+                    """
+                )
+                #expect(
+                    !steps.contains(where: { GroveQueryPlanTests.scannedRelation(in: $0) == "v" }),
+                    """
+                    the young-tree subquery walks `visits` end to end in the \(arm.name) arm — the \
+                    plan v19 removed, at one pass over the reader's whole record per candidate \
+                    tree. Rule 2 reports this too, since v19 took `v` off the allowlist; this \
+                    expectation is the one that names the index it should have used — \(plan)
                     """
                 )
 
-                // The counterfactual: the same statement with the seed side normalized up.
-                let hypothetical = sql.replacingOccurrences(
-                    of: "v.tree_uuid = t.\(schema.treeIdentityColumn) COLLATE NOCASE",
-                    with: "v.tree_uuid = upper(t.\(schema.treeIdentityColumn))"
-                )
-                try #require(
-                    hypothetical != sql,
-                    """
-                    the substitution matched nothing, so the counterfactual below is explaining the \
-                    shipped statement rather than the `upper()` form of it. The collated comparison \
-                    in `youngTreesWithoutVisitsSQL` has been rewritten — re-derive this test
-                    """
-                )
-                let wouldBe = try connection.queryPlan(for: hypothetical)
-                #expect(
-                    wouldBe.contains(where: { $0.contains("SEARCH") && $0.contains("idx_visits_tree") }),
-                    """
-                    the `upper()` form does not seek idx_visits_tree in the \(arm.name) arm either, \
-                    so the cost this statement is documented as accepting is not the cost of the \
-                    missing contract — \(wouldBe.joined(separator: " | "))
-                    """
-                )
+                // The two rewrites that would give the seek back to BINARY, each built by
+                // substitution from the shipped text so a statement rewrite is reported, not
+                // explained away.
+                let collated = "v.tree_uuid = t.\(schema.treeIdentityColumn) COLLATE NOCASE"
+                let rewrites = [
+                    ("`upper()` on the seed side", "v.tree_uuid = upper(t.\(schema.treeIdentityColumn))"),
+                    ("bare, with the collation deleted", "v.tree_uuid = t.\(schema.treeIdentityColumn)")
+                ]
+                for (name, replacement) in rewrites {
+                    let hypothetical = sql.replacingOccurrences(of: collated, with: replacement)
+                    try #require(
+                        hypothetical != sql,
+                        """
+                        the substitution matched nothing, so the \(name) counterfactual below is \
+                        explaining the shipped statement rather than a rewrite of it. The collated \
+                        comparison in `youngTreesWithoutVisitsSQL` has been rewritten — re-derive \
+                        this test
+                        """
+                    )
+                    let wouldBe = try connection.queryPlan(for: hypothetical)
+                    #expect(
+                        !wouldBe.contains(where: { $0.contains("SEARCH") && $0.contains("idx_visits_tree") }),
+                        """
+                        the \(name) form still seeks `idx_visits_tree` in the \(arm.name) arm, so \
+                        the statement's `COLLATE NOCASE` is not what buys the seek and the \
+                        expectation above is measuring something else. `visits.tree_uuid` is a \
+                        BINARY column; v19 recollated its index, not the column — \
+                        \(wouldBe.joined(separator: " | "))
+                        """
+                    )
+                }
             }
         }
     }

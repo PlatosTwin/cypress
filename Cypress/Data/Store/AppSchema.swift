@@ -48,7 +48,8 @@ public enum AppSchema {
         Migration(version: 15, name: "applying a mutation locally and sending it are two facts", migrate: applyV15),
         Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16),
         Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17),
-        Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18)
+        Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18),
+        Migration(version: 19, name: "an index is collated the way its readers ask, and the journal has an order", sql: v19)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2019,6 +2020,163 @@ public enum AppSchema {
             END;
             """)
     }
+
+    // MARK: - v19
+
+    /// **Five indexes this schema has carried since v1 could never be used, and one lookup had no
+    /// index at all.**
+    ///
+    /// Every reader of a contribution table spells its predicate `tree_uuid = :tree COLLATE NOCASE`
+    /// — `ContributionStore` does it in fourteen statements, for the reason `anonymized_contributions`
+    /// states in v13: a UUID reaches these tables by two routes, `SQLiteValue`'s upper-case
+    /// `uuidString` and `JSONEncoder`'s, and no reader should have to remember which. That decision
+    /// is right and is not revisited here. What was never noticed is that **a NOCASE comparison
+    /// cannot seek a BINARY index**, and `idx_visits_tree`, `idx_observations_tree`,
+    /// `idx_measurements_tree`, `idx_care_events_tree` and `idx_photos_tree` are all BINARY, because
+    /// their columns are. So the whole family was dead: every tree-profile read walked the index end
+    /// to end and then sorted, on a screen that opens from a map pin.
+    ///
+    /// The fix is not a column change and needs no rebuild. Collation belongs to the *index* as
+    /// readily as to the column, so recreating each index with `COLLATE NOCASE` on the leading
+    /// column is a `DROP`/`CREATE` pair against data that does not move. Measured on a 16,000-row
+    /// fixture carrying this DDL, the visits-by-tree read goes from
+    /// `SCAN visits USING INDEX idx_visits_tree | USE TEMP B-TREE FOR ORDER BY` at 0.299 ms to
+    /// `SEARCH visits USING INDEX idx_visits_tree (tree_uuid=?)` at 0.009 ms — the sort disappears
+    /// with the scan, because a seek arrives in the index's own order.
+    ///
+    /// **`idx_photo_votes_photo` is new.** `photo_votes` carried indexes on `(user_id, photo_id)`,
+    /// `(device_id, photo_id)` and `(tree_uuid)`, and nothing leading with `photo_id` — so the
+    /// scoped hero read's tally, which asks for a bound list of photo ids, walked every vote on the
+    /// device. `ContributionStore.scopedHeroPhotoCandidatesSQL`'s doc comment said so in as many
+    /// words and is corrected by this migration rather than by an edit.
+    ///
+    /// **Not done here, deliberately: no `lower()` normalization.** PR #131 normalized the
+    /// *contributions* side of three joins with `lower(c.tree_uuid)` and left `trees.uuid` bare, and
+    /// that is the right move only because the seed is read-only and provably lower case — a
+    /// property `GroveQueryPlanTests` asserts of every arm on every run. `main` is written by this
+    /// app in upper case and has no such contract, so the analogous trick here would need a backfill
+    /// plus a guarantee about every future writer. Recollating the index needs neither.
+    ///
+    /// **Not done here, deliberately: no index on `device_id` or `user_id`.** Measured, they are
+    /// picked up through `MULTI-INDEX OR` with no query change and they are *slower* on a personal
+    /// database, where the caller owns most of the rows: at 16,000 rows and 90 % ownership the
+    /// journal page went 6.85 → 8.75 ms, `groveRecords` 9.43 → 11.85, `groveTreeIDs` 2.20 → 2.57 and
+    /// `GroveQueries.ownContributions` 4.72 → 7.35. Reading most of a table is what a scan is for.
+    /// `GroveQueryPlanTests.plansStayIndexed` asserts that no plan contains `MULTI-INDEX OR`, which
+    /// is the signature that appears the moment somebody adds one.
+    ///
+    /// ── The four `_captured` indexes, and why they are in this version rather than their own ──
+    /// They exist for `ContributionStore.journalSQL`, whose restructured form pushes `ORDER BY` and
+    /// `LIMIT` into each arm of its union so a page is four early-terminating ordered walks instead
+    /// of a sort over the contributor's whole history. That statement is worthless without these
+    /// and these are dead weight without it, so they ship together: a half-landed pair is a version
+    /// whose only effect is to make writes slower. Measured on the 16,000-row fixture at 90 %
+    /// ownership, page one goes 6.66 → 0.17 ms and page six 7.10 → 0.18 — the second number is the
+    /// one that matters, because the old plan got worse with depth and this one does not.
+    ///
+    /// **`(captured_at DESC, id COLLATE NOCASE DESC)`, and all three parts are load-bearing.**
+    /// `captured_at` gives the ordering; `id` makes it a *total* order, which is what lets a cursor
+    /// name the row after a tie instead of the timestamp after it. Rows sharing one `captured_at`
+    /// are ordinary — a walk through three trees, a check-in and a measurement saved together — and
+    /// paging on the timestamp alone silently dropped every one of them that fell after a page
+    /// boundary (`JournalPaginationTieTests`, and this round's errata entry).
+    ///
+    /// **`COLLATE NOCASE` on `id` is the same defect one layer down, and review found it.** The
+    /// tie-break is a total order only if both sides of the cursor comparison agree about case.
+    /// `UUID.uuidString` is always upper case, so `LocalAPI` re-emits an upper-case cursor id —
+    /// while nothing in this schema constrains the case of a stored `id`, and a BINARY comparison
+    /// sorts every upper-case hex letter (0x41–0x46) *below* its lower-case twin (0x61–0x66). Three
+    /// tied rows with lower-case ids, paged at `LIMIT 1`, returned **one**: the cursor
+    /// `F1111111-…` excluded `e2222222-…` and `d3333333-…`, both of which are greater than it under
+    /// BINARY. That is exactly the defect this index was added to fix, under a precondition nobody
+    /// had written down. The collation is therefore declared in the three places that have to
+    /// agree — here, the `ORDER BY`, and the row-value comparison's left operand — and
+    /// `JournalPaginationTieTests.theCursorIsCaseSafe` is the red-proof.
+    ///
+    /// **What that costs, measured rather than assumed.** A row-value comparison whose collation
+    /// differs from its index's can silently stop seeking, so this was checked rather than hoped
+    /// for: the seek narrows from `((captured_at,id)<(?,?))` to
+    /// `SEARCH e USING INDEX idx_visits_captured (captured_at<?)` — the `id` half becomes a filter
+    /// instead of part of the range constraint. It is still a seek, each arm still early-terminates
+    /// on `LIMIT`, and **no arm sorts**: one temp b-tree in the whole plan, not five. Page one at
+    /// 16,000 rows with mixed-case ids is 0.162 ms against BINARY's 0.161, because the `id` half of
+    /// a range constraint is worth nothing when a tie is a handful of rows. The `lower(id)`
+    /// alternative with a matching expression index was measured too — same plan, same answers —
+    /// and it needs an expression index plus a normalization at the Swift boundary, so it buys
+    /// nothing for the extra moving parts.
+    ///
+    /// **Not partial.** The obvious form is `WHERE deleted_at IS NULL`, which every journal arm
+    /// tests and which would keep tombstones out of the index. It was measured and rejected: a
+    /// partial index also *satisfies* that predicate, so the planner starts preferring it for the
+    /// three statements that read a whole contribution table — `ContributionStore.groveRecords`,
+    /// `groveTreeIDs` and `GroveQueries.ownContributions` each changed from `SCAN visits` to
+    /// `SCAN visits USING INDEX idx_visits_captured`, an index walk plus a row lookup apiece, for
+    /// queries that want every row anyway. The journal gained nothing for it — 0.173 ms partial
+    /// against 0.175 ms non-partial on the same fixture — and the two forms are within 1 % on
+    /// storage. Non-partial, every Grove plan is byte-identical to v18's, which is what keeps
+    /// `GroveQueryPlanTests`' allowlist saying what it says.
+    ///
+    /// ── Cost ──────────────────────────────────────────────────────────────────────────────────
+    /// Ten index builds over data that does not move, inside the migration's own transaction: well
+    /// under a second on a fixture of 20,000 visits, 16,000 other contributions, 6,000 photographs
+    /// and 12,000 votes. Nothing is backfilled and no row is rewritten, so there is no
+    /// `unmigratableData` case to reach. Five of the ten replace an index that was already there;
+    /// the other five are additions, and the fixture grew about a tenth. Insert cost on `visits`
+    /// goes 3.2 → 3.6 µs, three orders of magnitude below the fsync the write already waits on, and
+    /// the outbox drain's indexes are untouched.
+    ///
+    /// **Idempotent in v13's shape.** Every statement is `DROP INDEX IF EXISTS` or
+    /// `CREATE INDEX IF NOT EXISTS`, so a run interrupted between the DDL and the version bump
+    /// replays cleanly — which `DataGates.sqliteStore` checks by setting `user_version` to 0 and
+    /// running the whole ladder again.
+    ///
+    /// **Readable by v18 code.** An index is transparent to a query; a v19 file opened by a v18
+    /// build refuses on `MigrationError.databaseIsAhead` for the ordinary reason and not because of
+    /// anything here.
+    private static let v19 = """
+    -- ─── The dead per-tree family, recollated where their readers can reach them ──────────────
+    -- Same names, same columns, same order. The only change is the collation of the leading
+    -- column, which is where `ContributionStore`'s fourteen `tree_uuid = :tree COLLATE NOCASE`
+    -- predicates have always needed it to be.
+    DROP INDEX IF EXISTS idx_visits_tree;
+    CREATE INDEX IF NOT EXISTS idx_visits_tree
+        ON visits(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    DROP INDEX IF EXISTS idx_observations_tree;
+    CREATE INDEX IF NOT EXISTS idx_observations_tree
+        ON observations(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    -- `kind` in the middle is v1's and is kept: the growth chart asks for one tree's dbh series.
+    DROP INDEX IF EXISTS idx_measurements_tree;
+    CREATE INDEX IF NOT EXISTS idx_measurements_tree
+        ON measurements(tree_uuid COLLATE NOCASE, kind, captured_at);
+
+    DROP INDEX IF EXISTS idx_care_events_tree;
+    CREATE INDEX IF NOT EXISTS idx_care_events_tree
+        ON care_events(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    DROP INDEX IF EXISTS idx_photos_tree;
+    CREATE INDEX IF NOT EXISTS idx_photos_tree
+        ON photos(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    -- ─── The lookup that had no index at all ─────────────────────────────────────────────────
+    -- `photo_votes` is indexed by voter and by tree, never by the photograph a vote is about.
+    CREATE INDEX IF NOT EXISTS idx_photo_votes_photo
+        ON photo_votes(photo_id COLLATE NOCASE);
+
+    -- ─── The journal page's ordering, one index per arm ──────────────────────────────────────
+    -- `id` is not decoration: it is what makes `(captured_at, id)` a total order, so a cursor can
+    -- name the row after a tie. Not partial on `deleted_at IS NULL` — see the doc comment; the
+    -- partial form drags three whole-table readers onto an index walk they do not want.
+    CREATE INDEX IF NOT EXISTS idx_visits_captured
+        ON visits(captured_at DESC, id COLLATE NOCASE DESC);
+    CREATE INDEX IF NOT EXISTS idx_observations_captured
+        ON observations(captured_at DESC, id COLLATE NOCASE DESC);
+    CREATE INDEX IF NOT EXISTS idx_measurements_captured
+        ON measurements(captured_at DESC, id COLLATE NOCASE DESC);
+    CREATE INDEX IF NOT EXISTS idx_care_events_captured
+        ON care_events(captured_at DESC, id COLLATE NOCASE DESC);
+    """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.

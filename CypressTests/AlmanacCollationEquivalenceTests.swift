@@ -21,12 +21,19 @@ import Testing
 ///
 /// ── The second half: the join that did *not* change ─────────────────────────────────────────
 /// `youngTreesWithoutVisits` keeps its `COLLATE NOCASE`, and
-/// `AlmanacQueries.youngTreesWithoutVisitsSQL(scope:)` argues why at length: seeking `idx_visits_tree`
-/// means normalizing the seed side **up**, which is only correct while every `visits` row stores an
-/// upper-case uuid, and nothing asserts that. `mixedCaseVisitsStillSuppressAYoungTree` is that
-/// argument as a fact rather than as a paragraph — a visit whose row spells the uuid the other way
-/// still has to take its tree off §4's list, which is exactly what an `upper()` rewrite would break
-/// and no plan gate would notice.
+/// `AlmanacQueries.youngTreesWithoutVisitsSQL(scope:)` argues why at length: the `lower()` treatment
+/// would have meant normalizing the seed side **up** (`v.tree_uuid = upper(t.uuid)`), which is only
+/// correct while every `visits` row stores an upper-case uuid, and nothing asserts that.
+/// `mixedCaseVisitsStillSuppressAYoungTree` is that argument as a fact rather than as a paragraph —
+/// a visit whose row spells the uuid the other way still has to take its tree off §4's list, which
+/// is exactly what an `upper()` rewrite would break and no plan gate would notice.
+///
+/// **`AppSchema` v19 answered the speed half and left this half exactly where it was**, which is why
+/// nothing below moved for it. v19 recollates `idx_visits_tree` to `NOCASE`, so the collated
+/// comparison seeks it and the `upper()` rewrite — which leaves `v.tree_uuid` bare, and so takes the
+/// column's still-`BINARY` collation — cannot (`AlmanacQueryPlanTests`). The rewrite is therefore no
+/// longer even the fast-and-wrong option; it is just wrong, for the rows this fixture holds. This
+/// suite is what says "wrong", and it says it the same way it did before the migration.
 @Suite("Almanac · the collated joins answer the same rows")
 struct AlmanacCollationEquivalenceTests {
 
@@ -256,10 +263,12 @@ struct AlmanacCollationEquivalenceTests {
     /// **A mixed-case visit row still takes its tree off §4's list.**
     ///
     /// This is the fact `youngTreesWithoutVisitsSQL`'s doc comment turns on. The subquery's
-    /// `COLLATE NOCASE` is what makes it true; the `upper(t.uuid)` rewrite that would let it seek
-    /// `idx_visits_tree` makes it false for exactly the rows this fixture holds, and it fails
-    /// *silently* — the tree comes back as one nobody has visited, and screen 12 asks a reader to go
-    /// and look at a tree that has already been looked at.
+    /// `COLLATE NOCASE` is what makes it true; the `upper(t.uuid)` rewrite makes it false for
+    /// exactly the rows this fixture holds, and it fails *silently* — the tree comes back as one
+    /// nobody has visited, and screen 12 asks a reader to go and look at a tree that has already
+    /// been looked at. Since `AppSchema` v19 that rewrite does not even buy a seek
+    /// (`AlmanacQueryPlanTests.theYoungTreeSubquerySeeksTheRecollatedIndex`), but this test is the
+    /// reason it was refused back when it did.
     /// **Absence, with the control that makes absence mean something.** The three trees are the
     /// newest the neighborhood holds and the `plantedOnOrAfter` bound is the oldest of the three, so
     /// nothing but suppression can keep them off the answer — and the second half proves it by

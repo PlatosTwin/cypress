@@ -14,16 +14,30 @@ import Testing
 /// is; they are not restated here. The difference is that this file is honest about a statement it
 /// **cannot** hold to rule 1, and says which one and why:
 ///
-/// - `ContributionStore.journalSQL`, the page itself, has no *row-selecting* predicate an index can
-///   answer. It unions four whole contribution tables and orders the union by `captured_at`, so the
-///   plan is four scans, a scan of the union, and a temp b-tree that `LIMIT` cannot reach past.
-///   Fixing that means an index per table over the ordering and attribution columns — a schema
-///   migration, which this round is explicitly not the author of. `thePageQueryIsTheKnownScan` pins
-///   the shape it has today, including the one seek it *does* have, so a change to it is visible.
-/// - `activeNamesSQL` and the two scoped hero statements walk tables that hold **this contributor's
-///   own rows** — nicknames and a personal photo library. Each is on the allowlist by name with
-///   that as the premise. `ContributionStore.activeNamesSQL` carries the argument for why the
-///   `lower()` normalization that fixed the Grove joins does not transfer to `tree_names`.
+/// - `ContributionStore.journalSQL`, the page itself, held that place until `AppSchema` v19. It had
+///   no row-selecting predicate an index could answer: four whole contribution tables unioned and
+///   the union ordered, so the plan was four scans, a scan of the union, and a temp b-tree that
+///   `LIMIT` could not reach past. **That is fixed and this file is the record of it.** v19's
+///   `idx_<table>_captured` family plus the per-arm `ORDER BY`/`LIMIT` push-down make each arm an
+///   early-terminating seek, and `thePageQueryStops` asserts the four seeks by index name, the
+///   absence of any table scan, and the one bounded merge that is left. The paragraph this replaces
+///   said the fix "is a schema migration, which this round is explicitly not the author of" — the
+///   next round was.
+/// - `activeNamesSQL` walks `tree_names`, which holds **this contributor's own rows** — one per
+///   tree they have personally named. It is on the allowlist by name with that as the premise.
+///   `ContributionStore.activeNamesSQL` carries the argument for why the `lower()` normalization
+///   that fixed the Grove joins does not transfer to `tree_names`, and `AppSchema` v19 adds the
+///   second reason it was left alone when its two neighbours were fixed: the only index on
+///   `tree_uuid` there is `idx_tree_names_one_active`, a partial UNIQUE index that *is* D15 —
+///   recollating it would change which pairs of rows the schema calls a conflict, which is a
+///   decision about the invariant and not about an access path.
+///
+/// **The two scoped hero statements used to be on that list beside it and are not any more.**
+/// `AppSchema` v19 recollated `idx_photos_tree` and added `idx_photo_votes_photo`, so both now
+/// seek: `SEARCH photos USING INDEX idx_photos_tree (tree_uuid=?)` and `SEARCH photo_votes USING
+/// INDEX idx_photo_votes_photo (photo_id=?)`. `theNarrowedStatementsNarrow` asserts the seek, and
+/// `photos`/`photo_votes` were taken off `scannable` in the same edit, so a regression to a walk
+/// fails twice rather than being quietly permitted by a list that outlived its reason.
 ///
 /// ── What binds these strings to the app, and what does not ──────────────────────────────────
 /// **This header used to claim the coupling was the compiler's, and that was false.** It said the
@@ -43,6 +57,34 @@ import Testing
 ///
 /// `theStatementsAreTheOnesTheAppRuns` below stays, narrowed to what it can honestly do on its
 /// own: prove each string still parses and plans against the real schema.
+///
+/// ── Calibration ─────────────────────────────────────────────────────────────────────────────
+/// v19 has two halves that can be reverted independently, and they were, separately, on this
+/// branch. **The two reverts fail different tests for different reasons**, which is what says this
+/// file is measuring two things rather than one thing twice. Run with
+/// `JournalPaginationTieTests`, `SchemaV19Tests` and `GroveQueryPlanTests` beside it, 16 tests:
+///
+/// - **SQL only** (`ContributionStore.journalSQL` and its bind back to the pre-round union; the
+///   v19 DDL left in place): **4 tests fail, 9 issues.** `thePageQueryStops` takes 5 of them —
+///   one per arm, `the visits arm does not SEARCH idx_visits_captured …`, plus
+///   `walked → ["visits", "observations", "measurements", "care_events", "entry"]`.
+///   `plansTouchOnlyTheContributorsOwnRows` reports the same five relations.
+///   `JournalPaginationTieTests` goes red on the dropped rows and the short export, because the
+///   total order lives in the SQL. `SchemaV19Tests` stays green throughout: the indexes are there,
+///   nothing is asking for them. Note what does **not** fire — the temp-b-tree count is still 1
+///   and there is still no `MULTI-INDEX OR`; the old plan had one sort too, over everything.
+/// - **DDL only** (v19's statement body replaced by `SELECT 1`, so the migration still runs and
+///   does nothing; the restructured SQL left in place): **4 tests fail, 20 issues**, and only one
+///   of the four is the same test. `thePageQueryStops` takes 6 — the four missing seeks,
+///   `walked → ["e", "e", "e", "e"]` where the arms fell back to scanning their tables under the
+///   alias, and `sorts.count → 5 == 1`, which is fact 3 doing exactly what it is written for: each
+///   arm has to sort for itself once no index answers its `ORDER BY`.
+///   `theNarrowedStatementsNarrow` takes 4 (both hero statements lose their seek and walk their
+///   table), `plansTouchOnlyTheContributorsOwnRows` 3, and `SchemaV19Tests` 7. The tie tests stay
+///   **green**: paging correctly is the SQL's doing, not the index's.
+///
+/// Both reverts were restored by copying the file back and the suite re-run green, because
+/// `git checkout --` on a file that carries both the revert and the fix takes the fix with it.
 @Suite("Journal · query plans")
 struct JournalQueryPlanTests {
 
@@ -61,122 +103,205 @@ struct JournalQueryPlanTests {
     /// the seed's `trees` at all — the tree records a page needs come from `TreeQueries.trees(ids:)`,
     /// which that file already gates as "a grove's worth of trees by uuid".
     private static let scannable: Set<String> = [
-        // The four contribution tables `journalSQL` unions, and the alias it gives the union.
-        "visits", "observations", "measurements", "care_events", "entry",
         // This contributor's nicknames: one row per tree they have personally named. See
-        // `ContributionStore.activeNamesSQL` for why the collation that forbids the seek is kept.
+        // `ContributionStore.activeNamesSQL` for why the collation that forbids the seek is kept,
+        // and the file header for why `AppSchema` v19 fixed its two neighbours and not this one.
         "tree_names",
-        // This device's own photo library and the votes on it. `ContributionStore
-        // .scopedHeroPhotoCandidatesSQL` states what the narrowing buys, which is not a seek.
-        "photos", "photo_votes",
         // The `IN` list of a batched read, a virtual table over a bound JSON array.
         "json_each"
+        //
+        // **Four names came off this list in v19 and one alias with them.** `visits`,
+        // `observations`, `measurements` and `care_events` were here because the page query walked
+        // all four, and `entry` was the alias it gave their union; `photos` and `photo_votes` were
+        // here because the two scoped hero statements walked them. Every one of those now seeks.
+        // Leaving a relation on a list of things that *may* be walked, after it stopped needing to
+        // be, is how a gate goes quietly vacuous — so the page query's four arms are asserted as
+        // seeks by `thePageQueryStops` instead, and the derived tables it produces are permitted by
+        // shape through `isPermittedScan`.
     ]
+
+    /// Whether a `SCAN` of this relation is allowed in a Journal plan.
+    ///
+    /// Two forms: a table on `scannable` by name, or **a derived table, matched by shape**. The
+    /// restructured page query is a union of four `(SELECT … ORDER BY … LIMIT …)` subqueries, and
+    /// SQLite reports scanning each as `SCAN (subquery-2)`, `SCAN (subquery-5)` and so on. Those
+    /// scans are the co-routine drain of an already-bounded arm — at most `:limit` rows apiece —
+    /// and not a table walk at all.
+    ///
+    /// **Matched by shape and not by number, deliberately.** The numbers are SQLite's internal
+    /// select ids and they shift whenever an arm is edited: adding a fifth contribution kind, or
+    /// even reordering the four, renumbers every one of them. A gate pinned to `(subquery-12)`
+    /// would fail on a change that altered nothing about its cost, which trains the reader to
+    /// re-baseline it, which is how a gate stops being read.
+    ///
+    /// **`derivedTablesAllowed` is per statement, and only the page query gets it.** PR #146's
+    /// review: shape-matching is the right relaxation for the one statement that *has* derived
+    /// tables, and granting it to all four Journal statements handed the other three a licence they
+    /// have no use for. `activeNamesSQL` and the two scoped hero statements are single `SELECT`s
+    /// over one table apiece — a `(subquery-N)` in one of their plans means a nested read nobody
+    /// wrote down, which is the kind of change this file exists to notice, and it would have passed.
+    private static func isPermittedScan(_ relation: String, derivedTablesAllowed: Bool) -> Bool {
+        if scannable.contains(relation) { return true }
+        guard derivedTablesAllowed else { return false }
+        return relation.hasPrefix("(subquery-") && relation.hasSuffix(")")
+            && relation.dropFirst("(subquery-".count).dropLast().allSatisfy(\.isNumber)
+    }
 
     // MARK: - Rule 2, over every statement the Journal tab runs
 
     /// **Nothing a journal page reads walks anything but this contributor's own rows.**
     ///
-    /// Rule 1 is not asserted over the set, because two of the four statements have no seekable
-    /// predicate and saying "they all seek" would be false. What is asserted over the set is the
-    /// half that holds for all of them: no inventory relation is walked and nothing is materialized
-    /// beyond the union the page query is documented to need.
+    /// Rule 1 is not asserted over the whole set here, because `activeNamesSQL` has no seekable
+    /// predicate and saying "they all seek" would be false; the three that do seek are held to it
+    /// by `thePageQueryStops` and `theNarrowedStatementsNarrow`. What is asserted over the set is
+    /// the half that holds for all four: no inventory relation is walked, and nothing outside the
+    /// permitted forms is.
     @Test("every Journal statement walks only the contributor's own rows")
     func plansTouchOnlyTheContributorsOwnRows() async throws {
         let store = try await Self.store()
 
-        let statements: [(label: String, sql: String)] = [
-            ("the page", ContributionStore.journalSQL),
-            ("the page's nicknames", ContributionStore.activeNamesSQL),
-            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL),
-            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL)
+        // Only the page query builds derived tables, and only it may have them walked. The other
+        // three are single `SELECT`s over one table apiece: a `(subquery-N)` scan appearing in one
+        // of those is a new nested read nobody wrote down, and permitting it everywhere would have
+        // let that through silently. PR #146's review.
+        let statements: [(label: String, sql: String, derivedTablesAllowed: Bool)] = [
+            ("the page", ContributionStore.journalSQL, true),
+            ("the page's nicknames", ContributionStore.activeNamesSQL, false),
+            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL, false),
+            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL, false)
         ]
 
         try await store.queue.read { connection in
-            for (label, sql) in statements {
+            for (label, sql, derivedTablesAllowed) in statements {
                 let steps = try connection.queryPlan(for: sql)
                 let plan = steps.joined(separator: " | ")
                 let scanned = steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) }
-                let unexpected = scanned.filter { !Self.scannable.contains($0) }
+                let unexpected = scanned.filter {
+                    !Self.isPermittedScan($0, derivedTablesAllowed: derivedTablesAllowed)
+                }
+                let alsoAllowed = derivedTablesAllowed
+                    ? "and is not one of the page query's bounded derived tables"
+                    : "and this statement may not walk a derived table at all — only the page query may"
                 #expect(
                     unexpected.isEmpty,
                     """
                     \(label): walks \(unexpected.sorted()) end to end, which is not on the \
-                    permitted list \(Self.scannable.sorted()) — \(plan)
+                    permitted list \(Self.scannable.sorted()) \(alsoAllowed) — \(plan)
+                    """
+                )
+
+                // And nothing builds an index at run time. `AUTOMATIC PARTIAL COVERING INDEX` is
+                // SQLite deciding mid-execution that a relation is walked often enough to index on
+                // the spot; it is a missing index reported as a `SEARCH`, which is exactly the
+                // spelling every seek rule in this file is looking for. `GroveQueryPlanTests`
+                // carries the same check, and `AlmanacQueryPlanTests` is where it was written.
+                let automatic = steps.filter { $0.contains("AUTOMATIC") }
+                #expect(
+                    automatic.isEmpty,
+                    """
+                    \(label): SQLite builds an index at run time — \
+                    \(automatic.joined(separator: " | ")) — \(plan)
                     """
                 )
             }
         }
     }
 
-    /// **The page query's plan, pinned as the scan it is.**
+    /// **The page query stops early, and this is the four facts that say so.**
     ///
-    /// This is the opposite of an aspiration: it asserts that the statement does the expensive thing
-    /// it does today, so that the day somebody makes it cheaper — which takes indexes and therefore
-    /// a migration — this test goes red and has to be rewritten deliberately rather than quietly
-    /// continuing to pass on a claim nobody re-derived.
+    /// This test replaces `thePageQueryIsTheKnownScan`, which pinned the opposite: it asserted that
+    /// the page walked all four contribution tables and sorted the result, so that the day somebody
+    /// made it cheaper the claim would have to be rewritten deliberately rather than left to rot.
+    /// That is what happened. `AppSchema` v19 added the ordering indexes and
+    /// `ContributionStore.journalSQL` pushed `ORDER BY`/`LIMIT` into each arm; the old test went red
+    /// on every one of its assertions, which is the whole reason it was written that way round.
     ///
-    /// Four facts, each part of why the page is O(this contributor's whole history):
+    /// Four facts, each part of why a page now costs the page and not the history:
     ///
-    /// 1. all four contribution tables are walked end to end;
-    /// 2. the union itself is then walked as a co-routine — `SCAN entry`;
-    /// 3. the ordering is answered by a temp b-tree rather than by an index, so `LIMIT :limit`
-    ///    cannot stop the read early: every row is produced before any is discarded;
-    /// 4. **the one seek in the plan is not a row-selecting seek**, and this paragraph said
-    ///    "nothing seeks" until the gate was run and disagreed. `ContributionStore.notAnonymized`
-    ///    expands to a correlated `NOT EXISTS` against `anonymized_contributions`, and it does seek:
-    ///    `SEARCH tomb USING COVERING INDEX sqlite_autoindex_anonymized_contributions_1
-    ///    (client_uuid=?)`. That is the right shape for what it is — one indexed lookup per
-    ///    candidate row rather than a scan per row — and it is not the missing index this gate is
-    ///    waiting for.
-    ///
-    /// So (4) is asserted as "every `SEARCH` names that table", which fails in both directions: if
-    /// the tombstone check loses its index, and if a *different* seek appears — which is what a fix
-    /// to the page query would look like.
-    @Test("the page query is still the whole-history scan it is documented to be")
-    func thePageQueryIsTheKnownScan() async throws {
+    /// 1. **each of the four arms seeks its own `idx_<table>_captured`.** Asserted by index name
+    ///    per table, and as a `SEARCH` — `GroveQueryPlanTests`' rule 1 exists because
+    ///    `SCAN t USING INDEX x` contains the index's name while walking the whole thing;
+    /// 2. **no contribution table is walked.** The only scans left are the co-routine drains of the
+    ///    four bounded arms and of their union, permitted by shape through `isPermittedScan`;
+    /// 3. **one temp b-tree, and it is bounded.** The outer `ORDER BY` merges the arms, and each
+    ///    arm has already been cut to `:limit`, so the sort is over at most `4 × :limit` rows —
+    ///    100 at `JournalLimits.pageSize`. That is why this one is allowed where the old one was
+    ///    the defect: the old sort was over every row the contributor had ever written. **The
+    ///    count is asserted**, so a second sort appearing — a per-arm `USE TEMP B-TREE FOR LAST
+    ///    TERM OF ORDER BY`, which is exactly what a `(captured_at)` index without `id` produces —
+    ///    fails here rather than passing as "still one b-tree, more or less";
+    /// 4. **no `MULTI-INDEX OR`.** Same rule and same reason as
+    ///    `GroveQueryPlanTests.noPlanUsesMultiIndexOr`: an owner index on `device_id`/`user_id`
+    ///    needs no query change to be adopted, and it costs the arms their ordering — the
+    ///    restructured query measured 8.46 ms with both index sets present against 0.17 with only
+    ///    the ordering set. It is the one regression that would look like an optimization in the
+    ///    diff.
+    @Test("the page query seeks each arm, walks no table, and sorts a bounded merge")
+    func thePageQueryStops() async throws {
         let store = try await Self.store()
         try await store.queue.read { connection in
             let steps = try connection.queryPlan(for: ContributionStore.journalSQL)
             let plan = steps.joined(separator: " | ")
 
-            let scanned = Set(steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) })
-            for relation in ["visits", "observations", "measurements", "care_events", "entry"] {
+            // 1. One seek per arm, by index name.
+            for table in ["visits", "observations", "measurements", "care_events"] {
+                let index = "idx_\(table)_captured"
+                let seeks = steps.filter { $0.contains("SEARCH") && $0.contains(index) }
                 #expect(
-                    scanned.contains(relation),
+                    !seeks.isEmpty,
                     """
-                    \(relation) is no longer walked end to end by the page query. If that is \
-                    because it can now be seeked, this gate is out of date and the premise in \
-                    `ContributionStore.journalSQL` with it — rewrite both. — \(plan)
+                    the \(table) arm does not SEARCH \(index). Without that seek the arm cannot \
+                    stop after :limit rows and the page is back to costing the contributor's whole \
+                    history — which is what this query looked like before `AppSchema` v19 — \(plan)
                     """
                 )
             }
 
+            // 2. No contribution table is walked end to end.
+            let scanned = steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) }
+            let walked = scanned.filter { !Self.isPermittedScan($0, derivedTablesAllowed: true) }
             #expect(
-                steps.contains(where: { $0.contains("TEMP B-TREE") }),
+                walked.isEmpty,
                 """
-                the page query no longer sorts through a temp b-tree, which is the step that makes \
-                LIMIT unable to stop the read early. Re-derive the cost claim before relaxing \
-                this. — \(plan)
+                the page query walks \(walked.sorted()) end to end. The arms are supposed to be \
+                bounded seeks and their drains the only scans — \(plan)
                 """
             )
 
-            let seeks = steps.filter { $0.contains("SEARCH") }
-            let unexpected = seeks.filter { !$0.contains("anonymized_contributions") }
+            // 3. Exactly one temp b-tree, and the reason it is allowed.
+            let sorts = steps.filter { $0.contains("TEMP B-TREE") }
             #expect(
-                unexpected.isEmpty,
+                sorts.count == 1,
                 """
-                the page query gained a seek that is not the anonymized-contributions tombstone \
-                lookup — which is the fix this gate is waiting for, and means this gate and \
-                `ContributionStore.journalSQL`'s premise both need rewriting: \
-                \(unexpected.joined(separator: " | ")) — \(plan)
+                the page query has \(sorts.count) temp b-trees, not 1: \
+                \(sorts.joined(separator: " | ")). Exactly one is correct and bounded — the outer \
+                merge of four arms already cut to :limit, so at most 4 × :limit rows. A second one \
+                is a per-arm sort, which means an arm's index stopped answering its ORDER BY (drop \
+                `id` from `idx_<table>_captured` and this is what you get). Zero would be a \
+                different query — \(plan)
                 """
             )
+
+            // 4. No MULTI-INDEX OR.
+            let multiIndex = steps.filter { $0.contains("MULTI-INDEX OR") }
             #expect(
-                !seeks.isEmpty,
+                multiIndex.isEmpty,
+                """
+                the page query answers its owner predicate through MULTI-INDEX OR — \
+                \(multiIndex.joined(separator: " | ")). That is what an index on device_id or \
+                user_id buys, with no query change: the arms lose their ordering and the page goes \
+                from 0.17 ms back to 8.46. See `AppSchema` v19's doc comment — \(plan)
+                """
+            )
+
+            // The tombstone lookup is still one indexed probe per candidate row, not a scan.
+            #expect(
+                steps.contains(where: {
+                    $0.contains("SEARCH") && $0.contains("anonymized_contributions")
+                }),
                 """
                 the tombstone check no longer seeks its index. It runs once per candidate row, so \
-                losing that index turns four scans into a scan per row — \(plan)
+                losing that index turns each bounded arm into a scan per row — \(plan)
                 """
             )
         }
@@ -184,35 +309,50 @@ struct JournalQueryPlanTests {
 
     /// **The three narrowed statements, and what each of their plans actually is.**
     ///
-    /// Written as the plan each one has rather than as the plan one might want, because the point of
-    /// narrowing them was never a seek — `ContributionStore.scopedHeroPhotoCandidatesSQL` says so —
-    /// and a gate asserting a seek that cannot happen would have to be widened until it meant
-    /// nothing. Two things are pinned:
+    /// Written as the plan each one has rather than as the plan one might want. That produced the
+    /// right answer twice over: the first draft asserted a walk for all three because none of them
+    /// could seek, and `AppSchema` v19 then made two of them seek — so the same rule, unchanged,
+    /// caught the improvement and had to be rewritten to say what is true now. Three things are
+    /// pinned per statement:
     ///
-    /// - each statement narrows through `json_each` over its own bound list, which is the property
-    ///   that keeps a page of 25 trees from decoding this device's whole photo library, and nothing
-    ///   is materialized;
-    /// - each one **walks the table named beside it**, which is the load-bearing half. It is asserted
-    ///   rather than described because the descriptions live in shipping doc comments —
-    ///   `activeNamesSQL` argues at length that its `COLLATE NOCASE` cannot seek
-    ///   `idx_tree_names_one_active` and that fixing it needs an expression index, and
-    ///   `scopedHeroPhotoCandidatesSQL` says the same of `idx_photos_tree`. A prose claim about a
-    ///   query plan is exactly the kind of confident comment this project has been wrong in before;
-    ///   this is the line that makes each of them a measurement.
+    /// - each narrows through `json_each` over its own bound list, which is the property that keeps
+    ///   a page of 25 trees from decoding this device's whole photo library, and nothing is
+    ///   materialized;
+    /// - each **reaches its own table the way named beside it** — a `SEARCH` on the index named, or
+    ///   a walk. Both directions fail: a seek that becomes a walk is a lost index, and a walk that
+    ///   becomes a seek means a doc comment somewhere says something that stopped being true.
     ///
-    /// If one of these ever *does* seek, this test fails, and the right response is to delete the
-    /// paragraph that said it could not — not to widen the assertion.
-    @Test("the three narrowed statements narrow through their bound list and walk their own table")
+    /// `tree_names` is the one still walked, and its two reasons are on `scannable` and in the file
+    /// header. `photos` and `photo_votes` are the two v19 fixed, and their `SEARCH`es are asserted
+    /// by index name rather than by the word — `GroveQueryPlanTests`' rule 1 exists because
+    /// `SCAN t USING INDEX …` contains the index's name and walks the whole thing.
+    @Test("the three narrowed statements narrow through their bound list and reach their own table")
     func theNarrowedStatementsNarrow() async throws {
         let store = try await Self.store()
-        let statements: [(label: String, sql: String, walks: String)] = [
-            ("the page's nicknames", ContributionStore.activeNamesSQL, "tree_names"),
-            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL, "photos"),
-            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL, "photo_votes")
+
+        /// How a statement is expected to reach its table: `SEARCH`ing the named index, or walking.
+        enum Access {
+            case seeks(index: String)
+            case walks
+        }
+        let statements: [(label: String, sql: String, table: String, access: Access)] = [
+            ("the page's nicknames", ContributionStore.activeNamesSQL, "tree_names", .walks),
+            (
+                "the page's hero candidates",
+                ContributionStore.scopedHeroPhotoCandidatesSQL,
+                "photos",
+                .seeks(index: "idx_photos_tree")
+            ),
+            (
+                "the page's hero vote tallies",
+                ContributionStore.scopedHeroPhotoTalliesSQL,
+                "photo_votes",
+                .seeks(index: "idx_photo_votes_photo")
+            )
         ]
 
         try await store.queue.read { connection in
-            for (label, sql, walks) in statements {
+            for (label, sql, table, access) in statements {
                 let steps = try connection.queryPlan(for: sql)
                 let plan = steps.joined(separator: " | ")
 
@@ -228,14 +368,32 @@ struct JournalQueryPlanTests {
                     materialized.isEmpty,
                     "\(label): materializes a relation — \(materialized.joined(separator: " | "))"
                 )
+
                 let scanned = Set(steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) })
-                #expect(
-                    scanned.contains(walks),
-                    """
-                    \(label) no longer walks \(walks) end to end. If it now seeks, the doc comment \
-                    on this statement saying it cannot is wrong and has to go — \(plan)
-                    """
-                )
+                switch access {
+                case let .seeks(index):
+                    let seeks = steps.filter { $0.contains("SEARCH") && $0.contains(index) }
+                    #expect(
+                        !seeks.isEmpty,
+                        """
+                        \(label) no longer SEARCHes \(index). That index is `AppSchema` v19's, and \
+                        the collation on it is what lets a `COLLATE NOCASE` predicate reach it — a \
+                        plan that lost the seek has lost the migration's whole effect — \(plan)
+                        """
+                    )
+                    #expect(
+                        !scanned.contains(table),
+                        "\(label) walks \(table) end to end as well as seeking it — \(plan)"
+                    )
+                case .walks:
+                    #expect(
+                        scanned.contains(table),
+                        """
+                        \(label) no longer walks \(table) end to end. If it now seeks, the doc \
+                        comment on this statement saying it cannot is wrong and has to go — \(plan)
+                        """
+                    )
+                }
             }
         }
     }

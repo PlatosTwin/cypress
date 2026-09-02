@@ -2448,13 +2448,13 @@ public actor LocalAPI: CypressAPI {
     /// belonging to somebody else that a sync brought down, and there the scoped form withholds an
     /// unapproved one — which is E215, not a regression. `JournalBatchReadTests` holds both halves.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
-        let cursorDate = cursor.flatMap(SQLiteTimestamp.date(from:))
+        let position = cursor.flatMap(ContributionStore.JournalCursor.init(string:))
         let capped = min(limit, Page<JournalEntry>.maximumLimit)
         let rows = try await store.queue.read { connection in
             try contributions.journal(
                 userID: userID,
                 deviceID: deviceID,
-                before: cursorDate,
+                before: position,
                 limit: capped,
                 connection: connection
             )
@@ -2492,10 +2492,15 @@ public actor LocalAPI: CypressAPI {
                 heroPhotoID: heroPhotoIDs[row.treeID]
             )
         }
-        // The cursor is the last row's capture time. Contributions are append-only and never
-        // back-dated across a page boundary, so this is stable under concurrent writes.
+        // The cursor is the last row — its capture time **and its id**. The time alone is not a
+        // position in this list: rows sharing one `captured_at` are ordinary, and a strict `<` on
+        // the timestamp stepped over every one of them that fell after a page boundary. See
+        // `ContributionStore.JournalCursor`. Contributions are append-only and never back-dated
+        // across a page boundary, so the pair is stable under concurrent writes.
         let nextCursor = entries.count == capped
-            ? entries.last.map { SQLiteTimestamp.string(from: $0.capturedAt) }
+            ? entries.last.map {
+                ContributionStore.JournalCursor(capturedAt: $0.capturedAt, id: $0.id).string
+            }
             : nil
         return Page(items: entries, nextCursor: nextCursor)
     }
@@ -3594,8 +3599,20 @@ public actor LocalAPI: CypressAPI {
     /// the person holding it has no way to tell it is short.
     ///
     /// Termination is not an assumption: `journal` only returns a cursor when the page came back
-    /// full, and each page asks for rows strictly older than the last one seen, so the window moves
-    /// backwards every time and the rows are finite.
+    /// full, and each page asks for rows strictly after the last one seen in the total order, so
+    /// the window moves backwards every time and the rows are finite.
+    ///
+    /// **It is linear now, and it was quadratic.** Each page used to cost the contributor's whole
+    /// history — the `LIMIT` sat outside the union and could not stop the read — so an export of
+    /// *n* rows cost n/limit pages × O(n). `AppSchema` v19's ordering indexes and `journalSQL`'s
+    /// per-arm push-down make a page cost O(limit) whatever its depth, so the export costs O(n).
+    /// Measured by paging a scratch database to the end at `Page.maximumLimit`, then doubling the
+    /// history: the old form went 638 ms → 2,574 (**4.03×** for 2× the rows, which is the shape of
+    /// an n² and not a coincidence), the new one 91 ms → 127.
+    ///
+    /// The same measurement is where the tie defect showed itself without being looked for: the
+    /// old form returned 14,324 rows where the new one returns 14,326, and 28,648 against 28,652
+    /// at double the size. See this round's errata entry.
     private func wholeJournal() async throws -> [JournalEntry] {
         var entries: [JournalEntry] = []
         var cursor: String?
