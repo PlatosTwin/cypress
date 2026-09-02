@@ -371,23 +371,36 @@ that had not yet reached a build). What remains OPEN:
   0.13 ms by radius. `AlmanacQueryPlanTests`, `AlmanacStatementCensusTests` and
   `AlmanacCollationEquivalenceTests` are the gates.
 
-  **The entry's other half was refuted by measurement and is deliberately not fixed.**
-  `youngTreesWithoutVisits`' collation is not "the same class of full-inventory walk": its plan is
-  `SEARCH t USING INDEX idx_trees_neighborhood_planted | CORRELATED SCALAR SUBQUERY 1 | SCAN v`, a
-  walk of the contributor's own visits per candidate tree, never of the inventory. Seeking it means
-  normalizing the *seed* side up (`v.tree_uuid = upper(t.uuid)`), which is sound only while every
-  `visits` row spells its uuid upper case — a property nothing asserts, whose violation returns
-  visited trees as unvisited, silently. The argument is on
-  `AlmanacQueries.youngTreesWithoutVisitsSQL(scope:)` and the plan is pinned.
+  **The entry's other half was refuted as stated, then closed by the next round.**
+  `youngTreesWithoutVisits`' collation was never "the same class of full-inventory walk" — its plan
+  was `SEARCH t USING INDEX idx_trees_neighborhood_planted | CORRELATED SCALAR SUBQUERY 1 | SCAN v`,
+  a walk of the contributor's own visits per candidate tree, never of the inventory — and this round
+  declined the only fix available to it, normalizing the *seed* side up
+  (`v.tree_uuid = upper(t.uuid)`), because that is sound only while every `visits` row spells its
+  uuid upper case, a property nothing asserts and whose violation returns visited trees as
+  unvisited, silently. **`AppSchema` v19 (`perf/v19-index-round`) closed it the other way**, by
+  recollating `idx_visits_tree` to `NOCASE` so the statement seeks it unchanged: 0.319 → 0.008 ms
+  per candidate tree, 64 → 1.5 ms for a 200-tree card. The pin was rewritten with it —
+  `AlmanacQueryPlanTests.theYoungTreeSubquerySeeksTheRecollatedIndex` now requires the seek, and
+  proves that neither the `upper()` rewrite nor a bare comparison can reach it.
 
-- **`visits.tree_uuid` has no case contract, and that is what a seek there costs.** For whichever
-  round holds the migration seat: `anonymized_contributions` already solves this shape by declaring
-  `COLLATE NOCASE` **on the column**, which makes its index case-insensitive and seekable without
-  any reader having to remember. The same declaration on the contribution tables' `tree_uuid` would
-  let `youngTreesWithoutVisits` seek `idx_visits_tree`, and would also reach
-  `ContributionStore.visits(treeID:)`, `SpeciesAssertionStore` and `CommunityTreeStore`, which all
-  carry `= :param COLLATE NOCASE` against `main` columns for the same reason and cannot seek either.
-  Migration-only; not costed.
+- ~~**`visits.tree_uuid` has no case contract, and that is what a seek there costs.**~~
+  **SHIPPED for the contribution tables** (`AppSchema` v19). The entry proposed
+  `anonymized_contributions`' answer — `COLLATE NOCASE` **on the column** — for whichever round held
+  the migration seat. v19 took the cheaper half of it: the collation on the *leading column of the
+  index*, which the same predicates can seek and which needs no backfill, applied to
+  `idx_visits_tree`, `idx_observations_tree`, `idx_measurements_tree`, `idx_care_events_tree` and
+  `idx_photos_tree`. That reaches both readers this entry named on the contribution side —
+  `youngTreesWithoutVisits` and `ContributionStore.visits(treeID:)` (0.299 → 0.009 ms).
+
+  **Still open, and the two halves are not the same size.** `SpeciesAssertionStore` reads
+  `tree_uuid = :tree COLLATE NOCASE`, and `idx_species_assertions_tree` and
+  `idx_species_assertions_head` are both BINARY and were not recollated — that is v19's fix again,
+  two more `DROP`/`CREATE` pairs, and it is the cheap half. `CommunityTreeStore` is the expensive
+  one: five of its reads are `id = :id COLLATE NOCASE`, and the index there is
+  `sqlite_autoindex_community_trees_1`, implied by `id TEXT PRIMARY KEY` — an implicit index cannot
+  be dropped and recreated, so reaching it needs `COLLATE NOCASE` **on the column**, which is the
+  table rebuild this entry originally proposed. Neither is measured. Migration-only; not costed.
 
 - **`species.uuid` is compared `COLLATE NOCASE` and has no lowercase gate.**
   `SpeciesQueries.species(id:)`, its two siblings at ~411/~436, and `TreeQueries.swift:790` compare
