@@ -75,7 +75,23 @@ struct GroveQueryPlanTests {
     /// inventory is not on this list under any alias, which is the whole of rule 2.
     private static let scannable: Set<String> = [
         // The four contribution tables `GroveQueries.ownContributions` unions, and the subquery
-        // alias it gives them. One person's record.
+        // alias it gives them.
+        //
+        // **These are the tuned plan, not a concession.** This list used to say "one person's
+        // record", which is true and is the wrong argument: it reads as "small enough to get away
+        // with" and invites the next author to index the predicate and take them off the list. That
+        // was measured in the v19 index round and it is a pessimization. `ownContributions` selects
+        // by `device_id`/`user_id`, and on a personal database the caller owns most of the rows —
+        // so an owner index is a covering-index walk plus a row lookup for nearly every row, in
+        // place of a straight scan. At 16,000 rows and 90 % ownership, NOCASE indexes on
+        // `(device_id, captured_at DESC)` and its `user_id` twin were picked up through
+        // `MULTI-INDEX OR` with no query change and cost: `ownContributions` 4.72 → 7.35 ms,
+        // `ContributionStore.groveRecords` 9.43 → 11.85, `groveTreeIDs` 2.20 → 2.57, the journal
+        // page 6.85 → 8.75. (At 10 % ownership — a handed-down phone — they win. That is the corner
+        // case, and it is not what this list is written for.)
+        //
+        // `noPlanUsesMultiIndexOr` below is the falsifiable half of this paragraph: it fails the
+        // day somebody adds one, rather than leaving this comment to be re-derived.
         "visits", "observations", "measurements", "care_events", "c",
         // `speciesIDs`' inner `SELECT DISTINCT` — a few hundred arm-local species ids, already
         // filtered to the area. Scanning it is the plan that costs 2 ms.
@@ -86,9 +102,14 @@ struct GroveQueryPlanTests {
 
     // MARK: - Rule 1 and rule 2, over every hot statement
 
-    @Test("every hot Grove and tree statement seeks its index, and none of them walks the inventory")
-    func plansStayIndexed() async throws {
-        let store = try await Self.store()
+    /// The eight statements this file gates, read off the objects the app builds them from.
+    ///
+    /// Factored out of `plansStayIndexed` so `noPlanUsesMultiIndexOr` runs over the identical set:
+    /// a second list would drift, and a rule that covers seven of eight statements is a rule with a
+    /// hole in it that nothing reports.
+    private static func gatedStatements(
+        _ store: CypressStore
+    ) async throws -> [(label: String, sql: String, index: String)] {
         let schema = try Self.schema(store)
         let grove = GroveQueries(schema: schema)
         let trees = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
@@ -96,7 +117,7 @@ struct GroveQueryPlanTests {
         try #require(hood.id > 0, "the seed carries no neighborhoods, so the polygon arm is untested")
 
         /// label, the statement the app runs, and the index whose `SEARCH` must answer it.
-        let statements: [(label: String, sql: String, index: String)] = [
+        return [
             // The three uuid joins. `sqlite_autoindex_trees_1` is the index SQLite derives from
             // `trees.uuid NOT NULL UNIQUE`; a NOCASE comparison cannot seek it, which is cause A.
             ("the resident neighborhood", grove.residentNeighborhoodSQL, "sqlite_autoindex_trees_1"),
@@ -122,6 +143,12 @@ struct GroveQueryPlanTests {
             ("a grove's worth of trees by uuid", trees.treesSQL(), "sqlite_autoindex_trees_1"),
             ("whether a tree is in the inventory", trees.existsSQL, "sqlite_autoindex_trees_1")
         ]
+    }
+
+    @Test("every hot Grove and tree statement seeks its index, and none of them walks the inventory")
+    func plansStayIndexed() async throws {
+        let store = try await Self.store()
+        let statements = try await Self.gatedStatements(store)
 
         try await store.queue.read { connection in
             for (label, sql, index) in statements {
@@ -149,6 +176,50 @@ struct GroveQueryPlanTests {
                     """
                     \(label): walks \(unexpected.sorted()) end to end, which is not on the \
                     permitted list \(Self.scannable.sorted()) — \(plan)
+                    """
+                )
+            }
+        }
+    }
+
+    // MARK: - Rule 3, which is the allowlist's argument made falsifiable
+
+    /// **No Grove plan may answer the owner predicate through `MULTI-INDEX OR`.**
+    ///
+    /// This is the one shape that turns the allowlist above from an admission into a claim. The
+    /// four contribution tables are scanned because scanning them is *right* — the caller owns most
+    /// of the rows on their own phone — and the comment on `scannable` carries the measurements. An
+    /// author who reads "walks `visits` end to end" as a defect will reach for the obvious fix, an
+    /// index on `device_id` and `user_id`; SQLite will accept it with no query change at all,
+    /// through `MULTI-INDEX OR`; every one of these plans will stop scanning; and every one of them
+    /// will get slower. Nothing else in this file would notice — the allowlist only *permits*
+    /// scans, it does not require them, and rule 1 keeps passing because the seek it names is on
+    /// the inventory side.
+    ///
+    /// So the tuning is asserted by naming the plan that replaces it. `MULTI-INDEX OR` appears in
+    /// `EXPLAIN QUERY PLAN` output only when SQLite unions two index lookups for one `OR`, which is
+    /// exactly the construction here and is not a shape any of these statements has a legitimate
+    /// use for.
+    ///
+    /// If a future round establishes that owner indexes are right — the handed-down-phone case,
+    /// where the caller owns a tenth of the rows, measures the other way — the correct response is
+    /// to delete this test and rewrite `scannable`'s comment with the new numbers, not to widen it.
+    @Test("no Grove plan answers the owner predicate through MULTI-INDEX OR")
+    func noPlanUsesMultiIndexOr() async throws {
+        let store = try await Self.store()
+        let statements = try await Self.gatedStatements(store)
+
+        try await store.queue.read { connection in
+            for (label, sql, _) in statements {
+                let steps = try connection.queryPlan(for: sql)
+                let offending = steps.filter { $0.contains("MULTI-INDEX OR") }
+                #expect(
+                    offending.isEmpty,
+                    """
+                    \(label): answers an OR through MULTI-INDEX OR — \
+                    \(offending.joined(separator: " | ")). On a personal database that is slower \
+                    than the scan it replaces; see the measurements on `scannable`. Full plan: \
+                    \(steps.joined(separator: " | "))
                     """
                 )
             }

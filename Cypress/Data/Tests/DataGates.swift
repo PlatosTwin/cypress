@@ -108,12 +108,25 @@ public enum DataGates {
             _ = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
 
             // A database from the future is refused rather than half-understood.
-            try connection.setUserVersion(999)
-            do {
-                _ = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
-                failures.append("migrations: a database ahead of this build was accepted")
-            } catch is MigrationError {
-                // expected
+            //
+            // **Both distances, and the near one is the one that happens.** 999 is a version
+            // nothing will ever ship and it proves the refusal exists; `currentVersion + 1` is the
+            // case a person actually reaches — a phone that ran a newer build once and opened an
+            // older one afterwards — and it is the distance an off-by-one in the comparison would
+            // let through while 999 went on being refused. Derived from `currentVersion` rather
+            // than written down, so it follows the schema instead of dating from whenever this
+            // line was last edited.
+            for ahead in [AppSchema.currentVersion + 1, 999] {
+                try connection.setUserVersion(ahead)
+                do {
+                    _ = try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+                    failures.append(
+                        "migrations: a database at user_version \(ahead), ahead of this build's "
+                            + "\(AppSchema.currentVersion), was accepted"
+                    )
+                } catch is MigrationError {
+                    // expected
+                }
             }
         }
 

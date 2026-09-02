@@ -48,7 +48,8 @@ public enum AppSchema {
         Migration(version: 15, name: "applying a mutation locally and sending it are two facts", migrate: applyV15),
         Migration(version: 16, name: "a photograph remembers which installation took it", migrate: applyV16),
         Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17),
-        Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18)
+        Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18),
+        Migration(version: 19, name: "an index is collated the way its readers ask", sql: v19)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2019,6 +2020,97 @@ public enum AppSchema {
             END;
             """)
     }
+
+    // MARK: - v19
+
+    /// **Five indexes this schema has carried since v1 could never be used, and one lookup had no
+    /// index at all.**
+    ///
+    /// Every reader of a contribution table spells its predicate `tree_uuid = :tree COLLATE NOCASE`
+    /// — `ContributionStore` does it in fourteen statements, for the reason `anonymized_contributions`
+    /// states in v13: a UUID reaches these tables by two routes, `SQLiteValue`'s upper-case
+    /// `uuidString` and `JSONEncoder`'s, and no reader should have to remember which. That decision
+    /// is right and is not revisited here. What was never noticed is that **a NOCASE comparison
+    /// cannot seek a BINARY index**, and `idx_visits_tree`, `idx_observations_tree`,
+    /// `idx_measurements_tree`, `idx_care_events_tree` and `idx_photos_tree` are all BINARY, because
+    /// their columns are. So the whole family was dead: every tree-profile read walked the index end
+    /// to end and then sorted, on a screen that opens from a map pin.
+    ///
+    /// The fix is not a column change and needs no rebuild. Collation belongs to the *index* as
+    /// readily as to the column, so recreating each index with `COLLATE NOCASE` on the leading
+    /// column is a `DROP`/`CREATE` pair against data that does not move. Measured on a 16,000-row
+    /// fixture carrying this DDL, the visits-by-tree read goes from
+    /// `SCAN visits USING INDEX idx_visits_tree | USE TEMP B-TREE FOR ORDER BY` at 0.299 ms to
+    /// `SEARCH visits USING INDEX idx_visits_tree (tree_uuid=?)` at 0.009 ms — the sort disappears
+    /// with the scan, because a seek arrives in the index's own order.
+    ///
+    /// **`idx_photo_votes_photo` is new.** `photo_votes` carried indexes on `(user_id, photo_id)`,
+    /// `(device_id, photo_id)` and `(tree_uuid)`, and nothing leading with `photo_id` — so the
+    /// scoped hero read's tally, which asks for a bound list of photo ids, walked every vote on the
+    /// device. `ContributionStore.scopedHeroPhotoCandidatesSQL`'s doc comment said so in as many
+    /// words and is corrected by this migration rather than by an edit.
+    ///
+    /// **Not done here, deliberately: no `lower()` normalization.** PR #131 normalized the
+    /// *contributions* side of three joins with `lower(c.tree_uuid)` and left `trees.uuid` bare, and
+    /// that is the right move only because the seed is read-only and provably lower case — a
+    /// property `GroveQueryPlanTests` asserts of every arm on every run. `main` is written by this
+    /// app in upper case and has no such contract, so the analogous trick here would need a backfill
+    /// plus a guarantee about every future writer. Recollating the index needs neither.
+    ///
+    /// **Not done here, deliberately: no index on `device_id` or `user_id`.** Measured, they are
+    /// picked up through `MULTI-INDEX OR` with no query change and they are *slower* on a personal
+    /// database, where the caller owns most of the rows: at 16,000 rows and 90 % ownership the
+    /// journal page went 6.85 → 8.75 ms, `groveRecords` 9.43 → 11.85, `groveTreeIDs` 2.20 → 2.57 and
+    /// `GroveQueries.ownContributions` 4.72 → 7.35. Reading most of a table is what a scan is for.
+    /// `GroveQueryPlanTests.plansStayIndexed` asserts that no plan contains `MULTI-INDEX OR`, which
+    /// is the signature that appears the moment somebody adds one.
+    ///
+    /// ── Cost ──────────────────────────────────────────────────────────────────────────────────
+    /// Six index builds over data that does not move, inside the migration's own transaction: well
+    /// under a second on a fixture of 20,000 visits, 16,000 other contributions, 6,000 photographs
+    /// and 12,000 votes. Nothing is backfilled and no row is rewritten, so there is no
+    /// `unmigratableData` case to reach. Five of the six replace an index that was already there,
+    /// so the storage is a wash; the outbox drain's indexes are untouched.
+    ///
+    /// **Idempotent in v13's shape.** Every statement is `DROP INDEX IF EXISTS` or
+    /// `CREATE INDEX IF NOT EXISTS`, so a run interrupted between the DDL and the version bump
+    /// replays cleanly — which `DataGates.sqliteStore` checks by setting `user_version` to 0 and
+    /// running the whole ladder again.
+    ///
+    /// **Readable by v18 code.** An index is transparent to a query; a v19 file opened by a v18
+    /// build refuses on `MigrationError.databaseIsAhead` for the ordinary reason and not because of
+    /// anything here.
+    private static let v19 = """
+    -- ─── The dead per-tree family, recollated where their readers can reach them ──────────────
+    -- Same names, same columns, same order. The only change is the collation of the leading
+    -- column, which is where `ContributionStore`'s fourteen `tree_uuid = :tree COLLATE NOCASE`
+    -- predicates have always needed it to be.
+    DROP INDEX IF EXISTS idx_visits_tree;
+    CREATE INDEX IF NOT EXISTS idx_visits_tree
+        ON visits(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    DROP INDEX IF EXISTS idx_observations_tree;
+    CREATE INDEX IF NOT EXISTS idx_observations_tree
+        ON observations(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    -- `kind` in the middle is v1's and is kept: the growth chart asks for one tree's dbh series.
+    DROP INDEX IF EXISTS idx_measurements_tree;
+    CREATE INDEX IF NOT EXISTS idx_measurements_tree
+        ON measurements(tree_uuid COLLATE NOCASE, kind, captured_at);
+
+    DROP INDEX IF EXISTS idx_care_events_tree;
+    CREATE INDEX IF NOT EXISTS idx_care_events_tree
+        ON care_events(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    DROP INDEX IF EXISTS idx_photos_tree;
+    CREATE INDEX IF NOT EXISTS idx_photos_tree
+        ON photos(tree_uuid COLLATE NOCASE, captured_at DESC);
+
+    -- ─── The lookup that had no index at all ─────────────────────────────────────────────────
+    -- `photo_votes` is indexed by voter and by tree, never by the photograph a vote is about.
+    CREATE INDEX IF NOT EXISTS idx_photo_votes_photo
+        ON photo_votes(photo_id COLLATE NOCASE);
+    """
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.

@@ -20,10 +20,21 @@ import Testing
 ///   Fixing that means an index per table over the ordering and attribution columns — a schema
 ///   migration, which this round is explicitly not the author of. `thePageQueryIsTheKnownScan` pins
 ///   the shape it has today, including the one seek it *does* have, so a change to it is visible.
-/// - `activeNamesSQL` and the two scoped hero statements walk tables that hold **this contributor's
-///   own rows** — nicknames and a personal photo library. Each is on the allowlist by name with
-///   that as the premise. `ContributionStore.activeNamesSQL` carries the argument for why the
-///   `lower()` normalization that fixed the Grove joins does not transfer to `tree_names`.
+/// - `activeNamesSQL` walks `tree_names`, which holds **this contributor's own rows** — one per
+///   tree they have personally named. It is on the allowlist by name with that as the premise.
+///   `ContributionStore.activeNamesSQL` carries the argument for why the `lower()` normalization
+///   that fixed the Grove joins does not transfer to `tree_names`, and `AppSchema` v19 adds the
+///   second reason it was left alone when its two neighbours were fixed: the only index on
+///   `tree_uuid` there is `idx_tree_names_one_active`, a partial UNIQUE index that *is* D15 —
+///   recollating it would change which pairs of rows the schema calls a conflict, which is a
+///   decision about the invariant and not about an access path.
+///
+/// **The two scoped hero statements used to be on that list beside it and are not any more.**
+/// `AppSchema` v19 recollated `idx_photos_tree` and added `idx_photo_votes_photo`, so both now
+/// seek: `SEARCH photos USING INDEX idx_photos_tree (tree_uuid=?)` and `SEARCH photo_votes USING
+/// INDEX idx_photo_votes_photo (photo_id=?)`. `theNarrowedStatementsNarrow` asserts the seek, and
+/// `photos`/`photo_votes` were taken off `scannable` in the same edit, so a regression to a walk
+/// fails twice rather than being quietly permitted by a list that outlived its reason.
 ///
 /// ── What binds these strings to the app, and what does not ──────────────────────────────────
 /// **This header used to claim the coupling was the compiler's, and that was false.** It said the
@@ -64,13 +75,15 @@ struct JournalQueryPlanTests {
         // The four contribution tables `journalSQL` unions, and the alias it gives the union.
         "visits", "observations", "measurements", "care_events", "entry",
         // This contributor's nicknames: one row per tree they have personally named. See
-        // `ContributionStore.activeNamesSQL` for why the collation that forbids the seek is kept.
+        // `ContributionStore.activeNamesSQL` for why the collation that forbids the seek is kept,
+        // and the file header for why `AppSchema` v19 fixed its two neighbours and not this one.
         "tree_names",
-        // This device's own photo library and the votes on it. `ContributionStore
-        // .scopedHeroPhotoCandidatesSQL` states what the narrowing buys, which is not a seek.
-        "photos", "photo_votes",
         // The `IN` list of a batched read, a virtual table over a bound JSON array.
         "json_each"
+        //
+        // `photos` and `photo_votes` were here until v19 and are deliberately gone: both scoped
+        // hero statements seek now, and leaving them on a list of things that *may* be walked
+        // would let that quietly stop being true.
     ]
 
     // MARK: - Rule 2, over every statement the Journal tab runs
@@ -184,35 +197,50 @@ struct JournalQueryPlanTests {
 
     /// **The three narrowed statements, and what each of their plans actually is.**
     ///
-    /// Written as the plan each one has rather than as the plan one might want, because the point of
-    /// narrowing them was never a seek — `ContributionStore.scopedHeroPhotoCandidatesSQL` says so —
-    /// and a gate asserting a seek that cannot happen would have to be widened until it meant
-    /// nothing. Two things are pinned:
+    /// Written as the plan each one has rather than as the plan one might want. That produced the
+    /// right answer twice over: the first draft asserted a walk for all three because none of them
+    /// could seek, and `AppSchema` v19 then made two of them seek — so the same rule, unchanged,
+    /// caught the improvement and had to be rewritten to say what is true now. Three things are
+    /// pinned per statement:
     ///
-    /// - each statement narrows through `json_each` over its own bound list, which is the property
-    ///   that keeps a page of 25 trees from decoding this device's whole photo library, and nothing
-    ///   is materialized;
-    /// - each one **walks the table named beside it**, which is the load-bearing half. It is asserted
-    ///   rather than described because the descriptions live in shipping doc comments —
-    ///   `activeNamesSQL` argues at length that its `COLLATE NOCASE` cannot seek
-    ///   `idx_tree_names_one_active` and that fixing it needs an expression index, and
-    ///   `scopedHeroPhotoCandidatesSQL` says the same of `idx_photos_tree`. A prose claim about a
-    ///   query plan is exactly the kind of confident comment this project has been wrong in before;
-    ///   this is the line that makes each of them a measurement.
+    /// - each narrows through `json_each` over its own bound list, which is the property that keeps
+    ///   a page of 25 trees from decoding this device's whole photo library, and nothing is
+    ///   materialized;
+    /// - each **reaches its own table the way named beside it** — a `SEARCH` on the index named, or
+    ///   a walk. Both directions fail: a seek that becomes a walk is a lost index, and a walk that
+    ///   becomes a seek means a doc comment somewhere says something that stopped being true.
     ///
-    /// If one of these ever *does* seek, this test fails, and the right response is to delete the
-    /// paragraph that said it could not — not to widen the assertion.
-    @Test("the three narrowed statements narrow through their bound list and walk their own table")
+    /// `tree_names` is the one still walked, and its two reasons are on `scannable` and in the file
+    /// header. `photos` and `photo_votes` are the two v19 fixed, and their `SEARCH`es are asserted
+    /// by index name rather than by the word — `GroveQueryPlanTests`' rule 1 exists because
+    /// `SCAN t USING INDEX …` contains the index's name and walks the whole thing.
+    @Test("the three narrowed statements narrow through their bound list and reach their own table")
     func theNarrowedStatementsNarrow() async throws {
         let store = try await Self.store()
-        let statements: [(label: String, sql: String, walks: String)] = [
-            ("the page's nicknames", ContributionStore.activeNamesSQL, "tree_names"),
-            ("the page's hero candidates", ContributionStore.scopedHeroPhotoCandidatesSQL, "photos"),
-            ("the page's hero vote tallies", ContributionStore.scopedHeroPhotoTalliesSQL, "photo_votes")
+
+        /// How a statement is expected to reach its table: `SEARCH`ing the named index, or walking.
+        enum Access {
+            case seeks(index: String)
+            case walks
+        }
+        let statements: [(label: String, sql: String, table: String, access: Access)] = [
+            ("the page's nicknames", ContributionStore.activeNamesSQL, "tree_names", .walks),
+            (
+                "the page's hero candidates",
+                ContributionStore.scopedHeroPhotoCandidatesSQL,
+                "photos",
+                .seeks(index: "idx_photos_tree")
+            ),
+            (
+                "the page's hero vote tallies",
+                ContributionStore.scopedHeroPhotoTalliesSQL,
+                "photo_votes",
+                .seeks(index: "idx_photo_votes_photo")
+            )
         ]
 
         try await store.queue.read { connection in
-            for (label, sql, walks) in statements {
+            for (label, sql, table, access) in statements {
                 let steps = try connection.queryPlan(for: sql)
                 let plan = steps.joined(separator: " | ")
 
@@ -228,14 +256,32 @@ struct JournalQueryPlanTests {
                     materialized.isEmpty,
                     "\(label): materializes a relation — \(materialized.joined(separator: " | "))"
                 )
+
                 let scanned = Set(steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) })
-                #expect(
-                    scanned.contains(walks),
-                    """
-                    \(label) no longer walks \(walks) end to end. If it now seeks, the doc comment \
-                    on this statement saying it cannot is wrong and has to go — \(plan)
-                    """
-                )
+                switch access {
+                case let .seeks(index):
+                    let seeks = steps.filter { $0.contains("SEARCH") && $0.contains(index) }
+                    #expect(
+                        !seeks.isEmpty,
+                        """
+                        \(label) no longer SEARCHes \(index). That index is `AppSchema` v19's, and \
+                        the collation on it is what lets a `COLLATE NOCASE` predicate reach it — a \
+                        plan that lost the seek has lost the migration's whole effect — \(plan)
+                        """
+                    )
+                    #expect(
+                        !scanned.contains(table),
+                        "\(label) walks \(table) end to end as well as seeking it — \(plan)"
+                    )
+                case .walks:
+                    #expect(
+                        scanned.contains(table),
+                        """
+                        \(label) no longer walks \(table) end to end. If it now seeks, the doc \
+                        comment on this statement saying it cannot is wrong and has to go — \(plan)
+                        """
+                    )
+                }
             }
         }
     }

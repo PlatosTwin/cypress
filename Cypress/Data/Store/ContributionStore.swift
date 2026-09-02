@@ -547,19 +547,24 @@ public struct ContributionStore {
 
     /// The scoped hero read's two statements, as properties, for `journalSQL`'s reason.
     ///
-    /// **What the narrowing buys is not a seek, and the gate is written to say so.** `photo_votes`
-    /// carries no index leading with `photo_id` at all — its three are `(user_id, photo_id)`,
-    /// `(device_id, photo_id)` and `(tree_uuid)` — so the tally walks that table however the
-    /// predicate is spelled. `photos` does carry `idx_photos_tree(tree_uuid, captured_at DESC)`, and
-    /// the `COLLATE NOCASE` here cannot seek it for `activeNamesSQL`'s reason: the index is BINARY
-    /// and the collation is on the indexed column's own side. `JournalQueryPlanTests` records the
-    /// plan each of them actually has rather than the plan this paragraph would prefer.
+    /// **Both of these seek, and until `AppSchema` v19 neither could.** This paragraph used to
+    /// argue that the narrowing buys no seek: `photo_votes` carried no index leading with
+    /// `photo_id` at all — its three were `(user_id, photo_id)`, `(device_id, photo_id)` and
+    /// `(tree_uuid)` — and `idx_photos_tree(tree_uuid, captured_at DESC)` was BINARY, which a
+    /// `COLLATE NOCASE` predicate cannot reach, for `activeNamesSQL`'s reason. Both were true and
+    /// neither was necessary: v19 recollated `idx_photos_tree` and added `idx_photo_votes_photo`,
+    /// against data that did not move. The plans are now
+    /// `SEARCH photos USING INDEX idx_photos_tree (tree_uuid=?)` and
+    /// `SEARCH photo_votes USING INDEX idx_photo_votes_photo (photo_id=?)`, measured over 6,000
+    /// photographs and 12,000 votes on 30 trees at 1.144 → 0.460 ms and 2.313 → 0.285 ms, for
+    /// identical rows. `JournalQueryPlanTests.theNarrowedStatementsNarrow` asserts each seek by
+    /// index name, so this cannot go stale again without a red test.
     ///
-    /// What is bought is that SQLite never *decodes* a photograph outside the caller's set: the
-    /// unscoped `heroPhotoIDs()` hands every live row in `photos` to `decodePhoto` and every row of
-    /// `photo_votes` to a `GROUP BY` whatever was asked for, and this hands over what the page draws.
-    /// Both tables hold this device's own photo library, which is the premise the gate states when
-    /// it allows them by name.
+    /// The narrowing was worth having before those indexes existed and is worth having on its own
+    /// terms now: SQLite never *decodes* a photograph outside the caller's set. The unscoped
+    /// `heroPhotoIDs()` hands every live row in `photos` to `decodePhoto` and every row of
+    /// `photo_votes` to a `GROUP BY` whatever was asked for, and this hands over what the page
+    /// draws. Both tables hold this device's own photo library.
     static let scopedHeroPhotoCandidatesSQL = """
         SELECT *,
                COALESCE(\(Self.removalPredicate()), 0) AS is_own
