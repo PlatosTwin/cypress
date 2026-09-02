@@ -106,7 +106,7 @@ public struct DataLayer: Sendable {
     ///
     /// **Handed to the six surfaces that read `TreeProfile`'s photographs** — screen 03, the photo
     /// browser, the map's tree card, the memorial, the activity screen and the share sheet. The
-    /// remaining twelve router call sites read a name, a species, a measurement or a visit list, and
+    /// remaining nine router call sites read a name, a species, a measurement or a visit list, and
     /// the community half carries none of those, so they read the phone and lose nothing.
     /// `RoutedAPI.refreshedTreeProfile(id:)` names all six and says why the list is six and not the
     /// three PR #147's first cut named.

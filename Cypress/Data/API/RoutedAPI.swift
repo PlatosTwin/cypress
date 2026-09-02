@@ -918,7 +918,7 @@ public struct RoutedAPI: CypressAPI {
     /// path changes it, so a share card cut off from this closure carries **no** photograph
     /// unconditionally, rather than merely usually.
     ///
-    /// The remaining **twelve** router call sites are not handed this and lose nothing by it: they
+    /// The remaining **nine** router call sites are not handed this and lose nothing by it: they
     /// read a name, a species, a land context, a measurement, a visit list or a status, and the
     /// community half carries none of those (`TreeCommunityDelta` is photographs and two id sets).
     ///
