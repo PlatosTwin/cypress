@@ -7,7 +7,46 @@
 #
 # ── WHAT WAS SEEN, on the running screen rather than inferred ────────────────────────────────
 #
-# PLACEHOLDER-DEVICE-OBSERVATION
+# iPhone 16 Pro Max (DE8E11AE), on a database that was genuinely carried across the version —
+# not a fresh install reporting the new number. The v19 build (origin/main at e574a0a) was
+# installed and launched, which produced a real `user_version = 19` file with
+# `idx_species_assertions_tree` BINARY and no `idx_community_trees_id`; one community tree and a
+# two-link species chain were written into it; the file was copied out; the v20 build was
+# installed and the file put back under it. That indirection is deliberate and it is worth
+# stating: `simctl install` replaced the data container on every attempt here, fresh database
+# and all, so "install the new build over the old one" silently produces a FIRST RUN. The first
+# attempt did exactly that and reported `user_version = 20` — the right number for the wrong
+# reason. What was actually checked is a v19 file opened by the v20 build, which is the
+# migration path.
+#
+#   1. The file came up at 20. All rows survived: one community tree, two assertions, and
+#      exactly one un-superseded head — the invariant v20 refuses to touch, intact.
+#   2. `idx_species_assertions_tree` is `COLLATE NOCASE` and `idx_community_trees_id` exists;
+#      `idx_species_assertions_head` is still the BINARY partial UNIQUE index v14 wrote, byte for
+#      byte. Read out of `sqlite_master` on the device's own file.
+#   3. Planned against that same file, with the app's own predicates: the chain and head reads
+#      both `SEARCH species_assertions USING INDEX idx_species_assertions_tree (tree_uuid=?)`, and
+#      the community lookup `SEARCH community_trees USING INDEX idx_community_trees_id (id=?)`.
+#      The cross-case lookup — upper-case bound against a lower-case stored id — returns its row.
+#   4. **The species resolution path, on screen.** Map, species filter still set to Southern
+#      Magnolia from the carried-over state, magenta pins drawn — that filter is
+#      `TreeQueries.speciesRowIDs`, one of the five statements this round changed. Tapped a pin:
+#      `Southern Magnolia · Magnolia grandiflora · 110 m NE`. Opened it: the full profile, with
+#      the scientific name, `SF Public Works street tree inventory`, the recognition tip ("Big
+#      leathery leaves, glossy dark green above, with rusty-brown felt underneath"), DBH 250–255
+#      cm marked `city record`, site `Sidewalk: Curb side : Cutout`, city record #5440. Every one
+#      of those fields comes through the species projection whose comparison changed.
+#   5. **The community-tree path, on screen.** The added tree drew as the dashed ring the
+#      unverified layer uses (DECISIONS §3.16) — invisible at first because it had been placed at
+#      exactly the simulated device coordinate and was underneath the location dot, which is a
+#      fixture mistake and not a defect; moving the device 120 m separated them. Tapped it:
+#      `Unidentified · 117 m NE`, correct, because the row carries no `species_current`. Opened
+#      it: `Tree — community-added, unverified · position from GPS`, with the community
+#      affordances (`Say what species you think this is`, `Report that there is no tree here`).
+#
+# What is NOT claimed from any of this: a speed observation. None of these screens was timed by
+# eye and none of them was slow before. The numbers below are measured separately and stated as
+# what they are.
 #
 # ── WHAT THE ROUND ACTUALLY CHANGES ──────────────────────────────────────────────────────────
 #
