@@ -69,6 +69,38 @@ public struct DataLayer: Sendable {
     /// here so that the round which draws that copy has one log to read rather than one per screen.
     public let readLog: RemoteReadLog
 
+    /// The Species pill's read **again**, with the account's half merged in — or nil when there is
+    /// no service to merge from.
+    ///
+    /// ── Why the composition root hands this over as a closure ──────────────────────────────────
+    ///
+    /// The owner ruled on 2026-09-01 that My Grove paints from the phone and merges the account's
+    /// half when it arrives. `RoutedAPI.groveSpecies()` is therefore the paint and
+    /// `RoutedAPI.refreshedGroveSpecies()` is the merge — and the merge is not on `CypressAPI`,
+    /// because a second read of the same question is a property of *this router*, not of the
+    /// protocol every preview double implements. `GroveModel` is handed the one operation it needs
+    /// rather than the router, which is the same shape `makeOutboxViewState`'s `treeNameResolver`
+    /// has and the same shape `RootView` resolves every cross-feature destination with.
+    ///
+    /// **Nil when `access.allowsNetwork` is false**, and the nil is load-bearing: with the gate shut
+    /// there is no account half to merge, so a refresh would only re-read the phone and re-publish
+    /// what is already drawn. `GroveModel` starts no background task at all when it is nil.
+    ///
+    /// **That does not mean a gate-shut build stops re-reading, and the first cut of this said it
+    /// did** (PR #144 review, F3). `GroveModel.load()`'s `.loaded` arm re-reads the phone itself, so
+    /// a `.disabled` build — every DEBUG build, and the whole UI suite — still picks up a local write
+    /// on the next visit to the tab. What is nil here is the *merge*, not the read; with only the
+    /// refresh doing the re-reading, the Grove tab was frozen for the life of the process.
+    ///
+    /// The closure swallows the throw to nil deliberately. A refresh that failed must leave the
+    /// painted answer standing: there is a whole grove on the glass, and replacing it with a failure
+    /// state because the second read did not land is drawing an empty claim over data this phone
+    /// has (R72 ruling 1).
+    public let refreshGroveSpecies: (@Sendable () async -> GroveSpecies?)?
+
+    /// The Trees pill's read again, on `refreshGroveSpecies`' terms exactly.
+    public let refreshGrove: (@Sendable () async -> [GroveEntry]?)?
+
     /// Opens the store, runs migrations, attaches the seed, and wires the router and both outbox
     /// sinks.
     ///
@@ -171,11 +203,27 @@ public struct DataLayer: Sendable {
         // wire is and decided nothing about this one, so the override deliberately does not reach
         // here. `RemoteAccessTests` proves the resulting build opens no socket, with the
         // interception calibrated by a control request first.
+        // ── One session for this service's JSON routes, and it has a timeout ────────────────────
+        //
+        // Both halves of the wire take it: `/auth/*` through `AuthClient` here, and every
+        // authenticated route through `SessionTransport` below. It used to be `URLSession.shared` on
+        // both, and `URLSession.shared` cannot be configured — so nothing in this app had ever set
+        // `timeoutIntervalForRequest` and every request to this service sat on the platform's
+        // 60-second default. That was invisible for as long as no paint path awaited one; My Grove's
+        // two reads did. `SyncService.makeSession` carries the value and the argument for it,
+        // including which two sessions must **not** be this one (the photo binary's and the city
+        // pack's — both are large transfers on their own sessions, and neither would survive a
+        // timeout written for a JSON route).
+        //
+        // Built once and shared between the two clients rather than made twice: two sessions is two
+        // connection pools to the same host, which is a slower first request for no gain.
+        let apiSession = SyncService.makeSession()
+
         let session = AppSession(
             deviceUUID: deviceID,
             client: AuthClient(
                 baseURL: baseURL,
-                http: authHTTP ?? (remoteAccess.allowsNetwork ? URLSession.shared : OfflineSession.make())
+                http: authHTTP ?? (remoteAccess.allowsNetwork ? apiSession : OfflineSession.make())
             ),
             credentials: credentials
         )
@@ -269,7 +317,7 @@ public struct DataLayer: Sendable {
         // `remoteAccess` records it so nothing downstream has to consult two facts to know one.
         let access: RemoteAccess = transport == nil ? remoteAccess : .live
         let authorized = transport ?? (access.allowsNetwork
-            ? SessionTransport(session: session)
+            ? SessionTransport(session: session, http: apiSession)
             : RefusingTransport())
 
         // `DELETE /me` tombstones the keys still queued at the moment of deletion, "even though this
@@ -312,7 +360,29 @@ public struct DataLayer: Sendable {
             signedInUserID = { await session.signedInUserID }
         }
 
-        let api = RoutedAPI(local: local, remote: remote, log: readLog, signedInUserID: signedInUserID)
+        // The two batched resolvers the router cannot reach through `CypressAPI` (see
+        // `RoutedAPI.resolveGroveRows`). They are asked only about rows the *service* named that
+        // this phone's own grove did not, so on a single-device installation neither is ever called.
+        let api = RoutedAPI(
+            local: local,
+            remote: remote,
+            log: readLog,
+            signedInUserID: signedInUserID,
+            resolveGroveRows: { ids in await local.groveCityFileRows(for: ids) },
+            resolveSpecies: { ids in await local.species(ids: ids) }
+        )
+
+        // ── The background half of the grove's two reads (the owner's ruling of 2026-09-01) ─────
+        //
+        // Nil when the gate is shut, for the reason on the properties: a refresh with no service
+        // behind it re-reads the phone and republishes what is already drawn. `GroveModel` starts no
+        // task when they are nil.
+        var refreshGroveSpecies: (@Sendable () async -> GroveSpecies?)?
+        var refreshGrove: (@Sendable () async -> [GroveEntry]?)?
+        if access.allowsNetwork {
+            refreshGroveSpecies = { try? await api.refreshedGroveSpecies() }
+            refreshGrove = { try? await api.refreshedGrove() }
+        }
 
         // ── Two sinks, and this is the round that wires the second (RULINGS R72 §1) ─────────────
         //
@@ -353,7 +423,9 @@ public struct DataLayer: Sendable {
             deviceID: deviceID,
             session: session,
             remoteAccess: access,
-            readLog: readLog
+            readLog: readLog,
+            refreshGroveSpecies: refreshGroveSpecies,
+            refreshGrove: refreshGrove
         )
     }
 

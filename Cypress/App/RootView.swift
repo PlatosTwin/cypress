@@ -71,6 +71,19 @@ struct RootView: View {
     /// so a screen that shows a photograph does not have to be handed one.
     @State private var photoImages: PhotoImageStore
 
+    /// Screen 08's model, owned here because **`tabRoot` destroys the tab it is not showing.**
+    ///
+    /// `tabRoot` is a `switch` on `router.tab`, so `GroveView` and everything it holds through
+    /// `@State` are torn down on every switch to another tab and rebuilt on every switch back. With
+    /// the model inside the view, every visit to My Grove was a cold read; the owner ruled on
+    /// 2026-09-01 that a tab paints its last data instantly and refreshes behind it, and a model
+    /// that does not survive the switch cannot do that. Owned here for the reason `outbox`,
+    /// `moderation` and `account` are — one instance, from the composition root (ARCHITECTURE §3).
+    ///
+    /// The two refreshers come from `DataLayer` and are nil when the remote gate is shut, which is
+    /// how the model knows not to start a background task at all.
+    @State private var grove: GroveModel
+
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     /// - Parameters:
@@ -119,6 +132,13 @@ struct RootView: View {
             wrappedValue: AccountModel(api: data.local, session: data.session, router: data.api)
         )
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
+        _grove = State(
+            wrappedValue: GroveModel(
+                api: data.api,
+                refreshSpecies: data.refreshGroveSpecies,
+                refreshTrees: data.refreshGrove
+            )
+        )
     }
 
     /// The one shared location provider (ARCHITECTURE §3: "Shared services (`CypressAPI`, `Outbox`,
@@ -556,8 +576,12 @@ struct RootView: View {
             // Its other two pills work now. Both the `Trees` list and the `Journal` list are lists
             // of things that happened to a tree, so a row on either opens that tree's profile —
             // the same destination the almanac's season rows and the outbox's rows already use.
+            //
+            // The model is `RootView`'s, not this view's — see the `grove` property. A `switch`
+            // rebuilds the arm it selects, so a model built here would be built again on every
+            // return to the tab.
             GroveView(
-                api: data.api,
+                model: grove,
                 onOpenSpecies: { id in router.push(.species(id)) },
                 onOpenTree: { id in router.push(.treeProfile(id)) }
             )

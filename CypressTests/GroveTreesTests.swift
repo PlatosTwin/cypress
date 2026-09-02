@@ -585,11 +585,26 @@ struct GroveTreesTests {
         #expect(recovering.treesPresentation?.rows.count == 1)
     }
 
-    /// The read is deferred until the pill is asked for, and runs once. A `.task(id:)` fires again
-    /// on every switch back, so "once" has to be a property of the model rather than of the view.
-    @Test("the trees read runs when the pill is asked for, and only once")
+    /// The read is deferred until the pill is asked for, and a switch back re-reads **the phone**
+    /// without the list ever going away.
+    ///
+    /// ── What "once" meant here, and what replaced it (PR #144) ──────────────────────────────────
+    ///
+    /// This used to assert one read for two visits, on the argument that `.task(id:)` fires again on
+    /// every switch back and the list was already held. The first half of that is still the reason
+    /// the guard exists; the second half was too strong, and the owner's ruling of 2026-09-01 is
+    /// what settles it: a revisit paints what was there **and refreshes behind it**. A model that
+    /// re-read nothing was a pill frozen at its first read for the life of the process — a favorite
+    /// or a visit logged elsewhere never appeared on it.
+    ///
+    /// So what the guard buys is not "no read" but **"no `.idle`"**: the phase never returns to the
+    /// blank arm, so the rows on screen stay on screen while the fresh read runs. That is asserted
+    /// here as the phase across the second call, which is the property a reader actually sees;
+    /// `GroveLocalFirstTests.aRepeatVisitRepaintsFromThePhone` asserts the same contract from the
+    /// other side, over an answer that changes between visits.
+    @Test("the trees read waits for the pill, then re-reads on a revisit without blanking")
     @MainActor
-    func theReadIsLazyAndIdempotent() async {
+    func theReadIsLazyAndRepaintsOnRevisit() async {
         let counter = GroveReadCounter()
         let model = GroveModel(
             api: GrovePreviewAPI(trees: [Self.entry(1)], groveReads: counter),
@@ -601,8 +616,13 @@ struct GroveTreesTests {
 
         await model.loadTreesIfNeeded()
         #expect(counter.count == 1)
+        #expect(model.treesPresentation != nil, "the first read drew nothing")
 
         await model.loadTreesIfNeeded()
-        #expect(counter.count == 1, "switching back to the pill re-read a list that was already held")
+        #expect(counter.count == 2, "switching back to the pill did not pick up the phone's answer")
+        #expect(
+            model.treesPresentation != nil,
+            "the revisit passed through the blank arm — the rows left the screen to be re-read"
+        )
     }
 }

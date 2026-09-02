@@ -96,7 +96,10 @@ struct AccountSurfaceTests {
                 credentials: InMemoryCredentialStore()
             ),
             remoteAccess: .disabled,
-            readLog: RemoteReadLog()
+            readLog: RemoteReadLog(),
+            // Both nil: these suites hold the local half, and there is no service to refresh from.
+            refreshGroveSpecies: nil,
+            refreshGrove: nil
         )
     }
 

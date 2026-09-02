@@ -423,11 +423,75 @@ public struct ContributionStore {
             guard let id = try row.uuidIfPresent("photo_id") else { return nil }
             return (id, try row.int("score"))
         }
-        let tallies = Dictionary(uniqueKeysWithValues: tallyPairs.compactMap { $0 })
-            .mapValues { PhotoTally(score: $0) }
+        return Self.chooseHeroes(from: photos, tallies: tallyPairs)
+    }
 
+    /// **`heroPhotoIDs(connection:)`'s rule exactly, over a caller-supplied set of trees.**
+    ///
+    /// Same predicate (`deleted_at IS NULL`), same `PhotoHero.choose`, same tallies — the only
+    /// difference is that the two statements are narrowed to the trees the caller is drawing rather
+    /// than sweeping `main.photos` and the whole of `photo_votes`. For a caller whose candidates are
+    /// already "this device's own trees", this returns the same dictionary the unscoped read returns,
+    /// restricted to `treeIDs`, and `GroveCityFileBatchTests` holds the two against each other over a
+    /// grove that carries an anonymized photograph.
+    ///
+    /// ── Why this exists beside `heroPhotoIDs(treeIDs:attribution:connection:)`, which also scopes ─
+    ///
+    /// Because the two answer **different questions**, and PR #144's review found what happens when
+    /// that is missed. The `attribution:` form is 07 §6's: its candidates come from
+    /// `SpeciesGuideLimits`' widened search, so a row it finds may be a stranger's, and it judges
+    /// every row through `TreeProfile.isPhotoVisible` with an `own` derived from `removalPredicate()`
+    /// (ERRATA E215, RULINGS R82). Pointed at the grove, that predicate is not merely stricter — it
+    /// is **wrong for one row shape**: `AccountDeletion.anonymizeContributions` sets
+    /// `user_id = NULL, taken_on_device = NULL`, `removalPredicate()` leads with an ownerless
+    /// refusal (R3/E157, deliberately), so an anonymized photograph arrives `own: false`, is judged
+    /// by `isPubliclyVisible`, is `.pending` — nothing in the shipping app sets `.approved` — and is
+    /// dropped. `TreeProfile.isPhotoVisible`'s own doc rules the opposite outcome for this device:
+    /// "an anonymized photograph is still *shown* to the person holding the phone… with no delete.
+    /// Shown-and-not-deletable is the ruled outcome there." The grove is the person's own screen, so
+    /// it draws what `ownPhotoIDs` draws, which is every live row.
+    ///
+    /// So the scoping and the visibility rule are separated: this is the narrow read for a caller
+    /// whose rows are already its own, and the `attribution:` form stays the read for a caller whose
+    /// rows are not.
+    public func heroPhotoIDs(treeIDs: Set<UUID>, connection: SQLiteConnection) throws -> [UUID: UUID] {
+        guard !treeIDs.isEmpty else { return [:] }
+        let photoStatement = try connection.cachedStatement("""
+            SELECT * FROM photos
+             WHERE deleted_at IS NULL
+               AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+            """)
+        _ = try photoStatement.bind(
+            "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":trees"
+        )
+        let photos = try photoStatement.fetchAll(Self.decodePhoto)
+        guard !photos.isEmpty else { return [:] }
+
+        let talliesStatement = try connection.cachedStatement("""
+            SELECT photo_id, SUM(vote) AS score FROM photo_votes
+             WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
+             GROUP BY photo_id
+            """)
+        _ = try talliesStatement.bind(
+            "[\(photos.map { "\"\($0.id.uuidString)\"" }.joined(separator: ","))]", forName: ":photos"
+        )
+        let tallyPairs = try talliesStatement.fetchAll { row -> (UUID, Int)? in
+            guard let id = try row.uuidIfPresent("photo_id") else { return nil }
+            return (id, try row.int("score"))
+        }
+        return Self.chooseHeroes(from: photos, tallies: tallyPairs)
+    }
+
+    /// The pure half every hero read ends with: tally, then `PhotoHero.choose` per tree.
+    ///
+    /// Shared because it is the *choice*, and two copies of a choice rule is how one of them drifts
+    /// (`removalPredicate()`'s argument). The SQL is deliberately **not** shared: each of the three
+    /// reads has its own predicate, and those predicates are the whole of what distinguishes them.
+    private static func chooseHeroes(from photos: [Photo], tallies: [(UUID, Int)?]) -> [UUID: UUID] {
+        let scores = Dictionary(uniqueKeysWithValues: tallies.compactMap { $0 })
+            .mapValues { PhotoTally(score: $0) }
         let byTree = Dictionary(grouping: photos, by: \.treeID)
-        return byTree.compactMapValues { PhotoHero.choose(from: $0, tallies: tallies) }.mapValues(\.id)
+        return byTree.compactMapValues { PhotoHero.choose(from: $0, tallies: scores) }.mapValues(\.id)
     }
 
     /// The same rule as `heroPhotoIDs()`, `PhotoHero.choose` over this device's own photographs,

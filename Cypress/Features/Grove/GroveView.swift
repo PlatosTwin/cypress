@@ -44,6 +44,29 @@ struct GroveView: View {
         self.onOpenTree = onOpenTree
     }
 
+    /// The shipping entrance: **the model comes from outside and outlives this view.**
+    ///
+    /// `RootView.tabRoot` is a `switch` on the selected tab, so every switch away from My Grove
+    /// destroys this view — and with the initializer above, the `@State` model with it. Every visit
+    /// was therefore a cold load, which is what turned the read's cost into a cost the reader paid
+    /// again on every return. The owner ruled on 2026-09-01 that a tab keeps its state across
+    /// switches; the model is owned by the composition root now, the same way `OutboxViewState` and
+    /// `AccountModel` already are, and this initializer is how it reaches the view.
+    ///
+    /// It stays `@State`, which is correct rather than leftover: `State(wrappedValue:)` seeds this
+    /// view's storage on each fresh mount with whatever it is handed, and what it is handed is the
+    /// **same instance** every time. The phase is already `.loaded`, so `.task` repaints from it
+    /// instantly and refreshes behind it (`GroveModel.load()`).
+    init(
+        model: GroveModel,
+        onOpenSpecies: ((UUID) -> Void)? = nil,
+        onOpenTree: ((UUID) -> Void)? = nil
+    ) {
+        _model = State(wrappedValue: model)
+        self.onOpenSpecies = onOpenSpecies
+        self.onOpenTree = onOpenTree
+    }
+
     var body: some View {
         @Bindable var model = model
 

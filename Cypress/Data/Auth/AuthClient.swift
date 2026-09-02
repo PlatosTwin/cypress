@@ -24,6 +24,51 @@ public enum SyncService {
     /// `CityDownloader.defaultBaseURL` is: a base URL that could be supplied by a rewritable remote
     /// object is a redirect waiting to happen, so this is app configuration and nothing else.
     public static let defaultBaseURL = URL(string: "https://cypress-sync.fly.dev/api/v1")!
+
+    /// How long a request to this service may go without producing anything before it is given up on.
+    ///
+    /// **`URLSession`'s default is 60 seconds and nothing in this app used to change it**, which is
+    /// how a single unreachable host cost a screen a minute. That was survivable only for as long as
+    /// nothing on a paint path awaited one; the grove's two reads did, and a reader on a hotel
+    /// captive portal watched an empty tab for the whole of it.
+    ///
+    /// **It is `timeoutIntervalForRequest`, which is an idle timeout and not a deadline.** The clock
+    /// restarts every time a byte arrives, so this is not a cap on how long a large response may
+    /// take — it is how long a stalled connection is tolerated. Fifteen seconds is far longer than
+    /// any of this service's JSON routes takes when it is answering (the slowest,
+    /// `GET /me/grove`, is a single indexed query on a machine that Fly may have to autostart first
+    /// — the autostart is the reason this is fifteen and not three) and far shorter than the minute
+    /// a reader spends deciding the app is broken.
+    ///
+    /// **What it does not govern.** The photo binary travels on `DataLayer.boot`'s `storageSession`
+    /// to a presigned storage URL, and a city pack travels on `CityDownloadService`'s own background
+    /// session; neither is this session, both are large transfers, and neither would survive a
+    /// timeout written for a JSON route. The outbox *does* share this session — its mutations go
+    /// through `SessionTransport` — and that is intended: an outbox item that meets a timeout gets a
+    /// `URLError`, which is outside the taxonomy, so it stays alive on the backoff and is retried
+    /// (ERRATA **E261** §3) rather than failing terminally.
+    public static let requestTimeout: TimeInterval = 15
+
+    /// A session for this service's JSON routes, with `requestTimeout` on it.
+    ///
+    /// **A session of this app's own, rather than `URLSession.shared`, and that is the whole point.**
+    /// `URLSession.shared` cannot be configured — its `configuration` property hands back a *copy*,
+    /// so assigning to that copy changes nothing about the session — which means `requestTimeout`
+    /// above is unreachable for as long as the wire is the shared session.
+    ///
+    /// **A function and not a stored `static let`**, because ARCHITECTURE §3 is "no singletons, no
+    /// `.shared`": `DataLayer.boot` makes one and hands it to both halves of the wire, so the thing
+    /// that decides what the app's network behaves like is the composition root, in one place, where
+    /// a test can pass something else. A `boot` that runs again — an inventory change re-boots the
+    /// layer — makes a second one, which is a connection pool and not a leak.
+    ///
+    /// `.default` and not `.ephemeral`: the same on-disk URL cache and cookie behavior `.shared`
+    /// had, so the timeout is the only thing that changes.
+    public static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = requestTimeout
+        return URLSession(configuration: configuration)
+    }
 }
 
 /// The `/auth/*` and `/devices/register` client. Holds no state: `AppSession` owns the credentials
@@ -33,7 +78,17 @@ public struct AuthClient: Sendable {
     public let baseURL: URL
     private let http: any AuthHTTP
 
-    public init(baseURL: URL = SyncService.defaultBaseURL, http: any AuthHTTP = URLSession.shared) {
+    /// - Parameter http: **`SyncService.makeSession()`, and deliberately not `URLSession.shared`.**
+    ///   The defect PR #144 closed was never "somebody chose 60 seconds" — it was that the wire was
+    ///   the one session that *cannot* be configured, so no value could be set. Leaving `.shared` as
+    ///   the default here would leave that trap armed for the next call site that omits the argument.
+    ///   A default argument is evaluated at the call site, so each construction gets its own session;
+    ///   the app constructs one `AuthClient` per boot, and `DataLayer.boot` passes the session it
+    ///   shares with `SessionTransport` explicitly rather than taking this default.
+    public init(
+        baseURL: URL = SyncService.defaultBaseURL,
+        http: any AuthHTTP = SyncService.makeSession()
+    ) {
         self.baseURL = baseURL
         self.http = http
     }
