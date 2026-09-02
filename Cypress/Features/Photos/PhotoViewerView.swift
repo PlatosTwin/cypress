@@ -143,6 +143,7 @@ struct PhotoViewerView: View {
         caption: String,
         treeID: UUID,
         api: (any CypressAPI)? = nil,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
         onClose: @escaping () -> Void,
         onOpenBrowser: @escaping () -> Void
     ) {
@@ -150,7 +151,9 @@ struct PhotoViewerView: View {
         self.caption = caption
         self.onClose = onClose
         self.onOpenBrowser = onOpenBrowser
-        _model = State(wrappedValue: TreePhotosModel(treeID: treeID, api: api))
+        _model = State(
+            wrappedValue: TreePhotosModel(treeID: treeID, api: api, refreshProfile: refreshProfile)
+        )
     }
 
     /// A finished model, for previews and the screen sweep.

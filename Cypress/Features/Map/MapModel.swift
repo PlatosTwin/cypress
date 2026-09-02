@@ -36,16 +36,37 @@ final class MapModel {
     /// would put three seconds of wall clock into the suite for one assertion.
     private let needsCareToastDuration: Duration
 
+    /// A tapped tree's profile with the community half merged in, or nil with no service to merge
+    /// from (`DataLayer.refreshTreeProfile`). The tree card is the third surface that draws a
+    /// photograph somebody else took.
+    ///
+    /// Nil means the card fills in from the phone alone, which is what every preview and unit test
+    /// that builds this model gets.
+    private let refreshProfile: ((UUID) async -> TreeProfile?)?
+
+    /// The membership set unioned with the account's, or nil with the gate shut
+    /// (`DataLayer.refreshMapMembership`).
+    private let refreshMembership: ((MapMembership) async -> Set<UUID>?)?
+
+    /// The membership union in flight behind a narrowed map, or nil. Held so a test can await it
+    /// rather than time it — `GroveModel.speciesRefresh`'s reasoning, and its `@ObservationIgnored`
+    /// for its reason: nothing draws it.
+    @ObservationIgnored private(set) var membershipRefresh: Task<Void, Never>?
+
     init(
         api: any CypressAPI,
         calendar: Calendar = .current,
         now: @escaping () -> Date = Date.init,
-        needsCareToastDuration: Duration = MapModel.defaultNeedsCareToastDuration
+        needsCareToastDuration: Duration = MapModel.defaultNeedsCareToastDuration,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
+        refreshMembership: ((MapMembership) async -> Set<UUID>?)? = nil
     ) {
         self.api = api
         self.calendar = calendar
         self.now = now
         self.needsCareToastDuration = needsCareToastDuration
+        self.refreshProfile = refreshProfile
+        self.refreshMembership = refreshMembership
     }
 
     // MARK: - State
@@ -131,7 +152,10 @@ final class MapModel {
     /// whole answer, on the owner's instruction (task #165).
     private(set) var membershipIDs: Set<UUID>?
 
-    private var membershipTask: Task<Void, Never>?
+    /// The chip's narrow read, in flight. Held rather than private so a test can await the narrowing
+    /// before asserting on what the union did to it — `GroveModel.speciesRefresh`'s reasoning, and
+    /// the only way to order the two reads without a clock.
+    @ObservationIgnored private(set) var membershipTask: Task<Void, Never>?
 
     private var searchTask: Task<Void, Never>?
 
@@ -793,6 +817,31 @@ final class MapModel {
             // not the whole city.
             self.membershipIDs = ids
             self.refetchThroughNarrowing()
+            self.startMembershipRefresh(kind)
+        }
+    }
+
+    /// Unions the account's membership in behind the narrowed map.
+    ///
+    /// The read above is now the phone's alone and answers in a statement or two, so the chip
+    /// narrows the map immediately; a tree the account hearted on another device joins the set a
+    /// beat later. Before the split, `api.mapMembership` awaited the service, so the *whole* chip —
+    /// including the wide query over 145,837 trees that `membershipDidChange` deliberately runs
+    /// second — waited on the network.
+    ///
+    /// **A nil answer changes nothing, and neither does an unchanged set.** Nil is an unreached
+    /// service, and refetching the map through a set identical to the one already drawn would spend
+    /// the wide query to redraw the same pins.
+    private func startMembershipRefresh(_ kind: MapMembership) {
+        guard let refreshMembership else { return }
+        membershipRefresh?.cancel()
+        membershipRefresh = Task { [weak self] in
+            let merged = await refreshMembership(kind)
+            guard !Task.isCancelled, let self, let merged,
+                  self.filter.membership == kind, merged != self.membershipIDs
+            else { return }
+            self.membershipIDs = merged
+            self.refetchThroughNarrowing()
         }
     }
 
@@ -830,12 +879,21 @@ final class MapModel {
         selectedPinID = pin.id
         selection = MapCardSubject(pin: pin)
         selectionTask?.cancel()
-        selectionTask = Task { [weak self, api] in
+        selectionTask = Task { [weak self, api, refreshProfile] in
             let profile = try? await api.treeProfile(id: pin.id)
             guard let self, !Task.isCancelled, self.selectedPinID == pin.id else { return }
             if let profile {
                 self.selection = MapCardSubject(pin: pin, profile: profile)
             }
+            // **The community half, merged behind the filled-in card.** This selection was already a
+            // background task, so the card never blocked on the network — but the read it awaited
+            // did, which is why a tap could sit on the pin's own sparse knowledge for the length of
+            // `URLSession`'s failure path. The phone answers first now and the photograph somebody
+            // else took arrives after it.
+            guard let refreshProfile else { return }
+            let merged = await refreshProfile(pin.id)
+            guard !Task.isCancelled, let merged, self.selectedPinID == pin.id else { return }
+            self.selection = MapCardSubject(pin: pin, profile: merged)
         }
     }
 

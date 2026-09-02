@@ -84,6 +84,40 @@ struct RootView: View {
     /// how the model knows not to start a background task at all.
     @State private var grove: GroveModel
 
+    /// Screen 01's model, owned here for the reason `grove` is: **`tabRoot` destroys the tab it is
+    /// not showing.**
+    ///
+    /// The map was the more expensive of the two to lose. A rebuilt `MapModel` re-fetched the whole
+    /// viewport from cold on every return to the tab — the wide query over the city's trees, and the
+    /// species palette behind it — and it also **silently reset the filter chip**: `filter` is model
+    /// state, so a reader who narrowed the map to `Yours`, looked something up in the Journal and
+    /// came back found the whole city again, with no chip pressed to explain it.
+    ///
+    /// **The You tab was checked and deliberately not changed, and the precise reason matters.**
+    /// `YouTabView` itself declares no `@State` — `outbox`, `moderation` and `account` are owned
+    /// here and handed to it. Three of its *subviews* do own `@State` (`AccountSection`,
+    /// `AccountDeletionSheet`, `ModerationReviewList`), so "nothing under that tab has state" would
+    /// be false; PR #147's review corrected that overstatement. What they own is
+    /// presentation-transient and is **meant** to reset on the way out — `AccountSection` argues at
+    /// length that a destructive-confirmation flag must not survive leaving the screen. So there is
+    /// nothing under this tab whose loss on a switch costs a read or a filter, and hoisting would
+    /// have been ceremony.
+    ///
+    /// **The search survives the switch too, and that is a visible behavior change rather than a
+    /// side effect** (PR #147's review, F8). `searchText`, the resolved `search` narrowing and the
+    /// chosen species all live on `MapModel`, so a reader who searches a species, leaves for the
+    /// Journal and comes back now finds the map still narrowed to it and the term still in C20 —
+    /// where before the field came back empty and the map came back whole. That is the same sentence
+    /// the filter chip gets and it is kept for the same reason: a narrowing the reader asked for
+    /// out loud should not be undone by a tab switch they did not connect to it.
+    ///
+    /// What deliberately stays inside `MapHomeView`: the camera (`position`, `region`), which has
+    /// its own cross-switch mechanism in `MapCameraMemory` and is argued out there against task
+    /// #128; and the one-shots and the heading session, which are scoped to an appearance on
+    /// purpose (task #155). The transient selection is cleared on disappear, which the teardown
+    /// used to do for free — see `MapHomeView`'s `onDisappear`.
+    @State private var map: MapModel
+
     /// `@MainActor` because `makeOutboxViewState()` is: the model is a `@MainActor @Observable`, and
     /// building it in `init` is what lets both screens receive the same one.
     /// - Parameters:
@@ -137,6 +171,13 @@ struct RootView: View {
                 api: data.api,
                 refreshSpecies: data.refreshGroveSpecies,
                 refreshTrees: data.refreshGrove
+            )
+        )
+        _map = State(
+            wrappedValue: MapModel(
+                api: data.api,
+                refreshProfile: data.refreshTreeProfile,
+                refreshMembership: data.refreshMapMembership
             )
         )
     }
@@ -451,6 +492,10 @@ struct RootView: View {
             ShareView(
                 treeID: id,
                 api: data.api,
+                // The community half. Screen 10's photo set is `publiclyVisiblePhotos`, and
+                // `.approved` is produced only by that half's decode — without this the card can
+                // never carry a photograph at all. See `ShareModel.refreshProfile`.
+                refreshProfile: data.refreshTreeProfile,
                 onClose: { router.sheet = nil }
             )
 
@@ -520,6 +565,7 @@ struct RootView: View {
                 caption: caption,
                 treeID: treeID,
                 api: data.api,
+                refreshProfile: data.refreshTreeProfile,
                 onClose: { router.sheet = nil },
                 // The way onward E173 named and did not build. `sheet` first, so the cover is on its
                 // way out before the stack under it changes — `AppRouter.goToTab`'s ordering, for
@@ -562,6 +608,8 @@ struct RootView: View {
             // `MapHomeView.location`.
             MapHomeView(
                 api: data.api,
+                // The model is `RootView`'s, not this view's — see the `map` property.
+                model: map,
                 location: location,
                 // The last of the three things the opening camera tries: with no remembered camera
                 // and no location fix, open on the largest downloaded inventory rather than on San
@@ -680,7 +728,25 @@ struct RootView: View {
 
     /// Screen 03's heart, as this app performs it (RULINGS R2, ERRATA E112).
     private var favoriteWriter: ProfileFavoriteWriter {
-        ProfileFavoriteWriter(api: data.api, local: data.local, outbox: data.outbox)
+        ProfileFavoriteWriter(
+            api: data.api,
+            local: data.local,
+            outbox: data.outbox,
+            reconcile: data.reconcileFavorite
+        )
+    }
+
+    /// The heart's reconcile, or nil with the gate shut.
+    ///
+    /// Written out as a property rather than inline at the call site because the nil case has to
+    /// stay nil: a closure that always exists and answers nil inside would start a background task
+    /// on every read in every gate-shut build — which is every DEBUG build and the whole UI suite —
+    /// to learn nothing. `TreeProfileModel` reads a nil closure as "start no task at all", which is
+    /// the same contract `DataLayer.refreshGroveSpecies` states for the grove.
+    private var favoriteReconciler: ((UUID) async -> Bool?)? {
+        guard data.reconcileFavorite != nil else { return nil }
+        let writer = favoriteWriter
+        return { treeID in await writer.reconciledState(treeID: treeID) }
     }
 
     /// Screen 15's sign-in: the real Sign in with Apple exchange (spec §5.2 and §10 step 5,
@@ -851,7 +917,14 @@ struct RootView: View {
                 // `ProfileFavoriteWriter.storedState`.
                 readFavorite: { [favoriteWriter] treeID in
                     await favoriteWriter.storedState(treeID: treeID)
-                }
+                },
+                // The community half, merged in behind the painted profile — screen 03 is one of the
+                // three surfaces that draws a photograph somebody else took. Nil with the gate shut.
+                refreshProfile: data.refreshTreeProfile,
+                // The service half of the R2 re-read, behind the painted heart (the owner's ruling
+                // of 2026-09-02). See `ProfileFavoriteWriter.reconciledState` for why the queue is
+                // still asked ahead of it.
+                reconcileFavorite: favoriteReconciler
             )
 
         case .checkIn(let id):
@@ -937,7 +1010,7 @@ struct RootView: View {
             // relationship nothing states. The link draws only where the feed does, so nobody is
             // routed to the empty state every tree in the shipped seed is in (E67). See ERRATA
             // (E66, E98).
-            ActivityView(treeID: id, api: data.api)
+            ActivityView(treeID: id, api: data.api, refreshProfile: data.refreshTreeProfile)
 
         case .memorial(let id):
             // Screen 19, and the rare one whose entrance the design actually draws: screen 01's
@@ -954,6 +1027,8 @@ struct RootView: View {
             MemorialView(
                 treeID: id,
                 api: data.api,
+                // The community half — 19 draws a hero, a first-photo milestone and a photo count.
+                refreshProfile: data.refreshTreeProfile,
                 onBack: { router.pop() },
                 // ERRATA E144. The one control on 19, and it writes nothing — see
                 // `MemorialPresentation.locateSet`.
@@ -983,7 +1058,7 @@ struct RootView: View {
             // Screen 20 (ERRATA E125). Its entrance is the hero on screen 03: the photograph a tree
             // leads with is the control that opens the set it was chosen from, which is the only
             // place in the app where tapping a picture has an obvious meaning.
-            TreePhotosView(treeID: id, api: data.api)
+            TreePhotosView(treeID: id, api: data.api, refreshProfile: data.refreshTreeProfile)
 
         case .almanac:
             // Screen 12, **pushed**. Its entrance is the Journal tab, which renders the almanac as
@@ -1170,13 +1245,18 @@ struct RootView: View {
 /// was — which is the state R2 says the screen now has and E101 said it did not.
 struct ProfileFavoriteWriter: Sendable {
     /// **The router**, because the re-read is Class R (spec §3.1) and #167's whole point is that a
-    /// favorite set on one phone shows as set on another. `RoutedAPI.isFavorite` asks the service
-    /// and falls back to the phone, saying which it did.
+    /// favorite set on one phone shows as set on another.
+    ///
+    /// `RoutedAPI.isFavorite` answers from the phone since the owner's ruling of 2026-09-02, and the
+    /// service's answer arrives through `reconcile` below. The cross-device fact #167 is about is
+    /// therefore still delivered — a beat later, and no longer between a finger and the control.
     let api: any CypressAPI
     /// **The phone**, for `attribution` alone: who this device is writing as is a fact about this
     /// installation's `app_state` (D9, ERRATA E86) and is not on `CypressAPI`.
     let local: LocalAPI
     let outbox: OutboxQueue
+    /// The service's answer to the heart, or nil with the gate shut (`DataLayer.reconcileFavorite`).
+    var reconcile: (@Sendable (UUID) async -> Bool?)?
 
     /// - Parameter isFavorite: the resulting state, not a verb. A favorite syncs as a toggle event
     ///   with a tombstone (BUILD-PLAN §4), so the payload carries where the heart ended up.
@@ -1215,6 +1295,40 @@ struct ProfileFavoriteWriter: Sendable {
             return pending
         }
         return (try? await api.isFavorite(treeID: treeID)) ?? false
+    }
+
+    /// The service's word on this tree, behind the painted heart — or nil to leave it alone.
+    ///
+    /// **The queue is asked first for #167's reason**: a toggle that is enqueued and not yet drained
+    /// is the contributor's last word, and the service has not heard it yet. Answering with the
+    /// service's view of such a tree would report the state *before* the tap.
+    ///
+    /// ── What this guard does and does not close (PR #147's review, F6) ──────────────────────────
+    ///
+    /// **It is not what closes the tap race, and an earlier draft of this comment implied it was.**
+    /// The check runs once, *before* the network call, and is never re-checked — so a toggle
+    /// enqueued while the round trip is in flight is invisible to it. What actually keeps a stale
+    /// answer off the heart is a mechanism a file away: `TreeProfileModel.startFavoriteReconcile`
+    /// stamps each reconcile with the tap count it was taken under and drops the answer if that has
+    /// moved (ERRATA E184). The reviewer tried to drive the heart backwards through this window and
+    /// could not, because of that counter.
+    ///
+    /// What this guard adds is narrower and still worth having: it means a reconcile is not even
+    /// *issued* against a tree whose answer the queue already holds, so the common case costs no
+    /// request and cannot depend on the counter at all.
+    ///
+    /// **One window stays open and this is the honest place to say so.** If the toggle drains, the
+    /// queue empties, and a stale server answer then arrives — read-replica lag — with `taps`
+    /// unmoved, the reconcile assigns the pre-tap value. That is **pre-existing rather than a
+    /// regression**: main's remote-first `isFavorite` had the same exposure through the same lag.
+    /// It is not closed here, and the round's ruling does not claim to close it.
+    ///
+    /// Nil when there is no service, and nil when the queue holds the answer already — both mean
+    /// "nothing here for the heart to learn", which the model reads as leave-it-as-it-is.
+    func reconciledState(treeID: UUID) async -> Bool? {
+        guard let reconcile else { return nil }
+        if (try? await outbox.pendingFavoriteState(treeID: treeID)) != nil { return nil }
+        return await reconcile(treeID)
     }
 }
 

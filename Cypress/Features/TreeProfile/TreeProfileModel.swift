@@ -73,18 +73,42 @@ final class TreeProfileModel {
     /// the one line that changes. Empty against `LocalAPI`, which is why the row does not render.
     var caretakerInitials: [String]
 
+    /// The profile again, with the community half merged in — or nil when there is no service to
+    /// merge from (`DataLayer.refreshTreeProfile`).
+    ///
+    /// Nil is the default and nil means *no background task at all*: every preview and every unit
+    /// test that builds this model passes nothing and gets the pure-local model it has always had.
+    private let refreshProfile: ((UUID) async -> TreeProfile?)?
+
+    /// The heart's R2 re-read, asked of the service — nil when there is none
+    /// (`DataLayer.reconcileFavorite`). The owner's ruling of 2026-09-02.
+    private let reconcileFavorite: ((UUID) async -> Bool?)?
+
+    /// The background merge currently in flight, or nil.
+    ///
+    /// Held so it can be awaited — the only way a test can assert what the refresh did without
+    /// reading a clock. `GroveModel.speciesRefresh`'s reasoning exactly, including the
+    /// `@ObservationIgnored`: nothing draws these, and a view that observed them would re-render on
+    /// a task's creation as well as on the phase change it produces.
+    @ObservationIgnored private(set) var profileRefresh: Task<Void, Never>?
+    @ObservationIgnored private(set) var favoriteReconcile: Task<Void, Never>?
+
     init(
         treeID: UUID,
         api: any CypressAPI,
         caretakerInitials: [String] = [],
         setFavorite: @escaping (UUID, Bool) async -> Void = { _, _ in },
-        readFavorite: ((UUID) async -> Bool)? = nil
+        readFavorite: ((UUID) async -> Bool)? = nil,
+        refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
+        reconcileFavorite: ((UUID) async -> Bool?)? = nil
     ) {
         self.treeID = treeID
         self.api = api
         self.caretakerInitials = caretakerInitials
         self.setFavorite = setFavorite
         self.readFavorite = readFavorite
+        self.refreshProfile = refreshProfile
+        self.reconcileFavorite = reconcileFavorite
     }
 
     var presentation: TreeProfilePresentation? {
@@ -110,6 +134,7 @@ final class TreeProfileModel {
             phase = .loaded(
                 TreeProfilePresentation(profile: profile, caretakerInitials: caretakerInitials)
             )
+            startProfileRefresh()
         } catch let error as APIError {
             phase = .failed(error)
         } catch {
@@ -121,6 +146,29 @@ final class TreeProfileModel {
     /// visit that just synced does not blank the profile it was made from.
     func reload() async {
         await load()
+    }
+
+    /// Merges the community half in behind the painted profile.
+    ///
+    /// Nothing here can blank the screen. The refresh answers nil when it could not reach the
+    /// service, and a nil leaves the painted phase exactly as it is — "an empty state is a claim,
+    /// and this project has already drawn one over a failed read" (R72 ruling 1).
+    ///
+    /// The guard on `.loaded` before assigning is not ceremony: `load()` can move the phase to
+    /// `.failed` or `.elsewhere` while a merge is in flight, and a merge landing after that would
+    /// paint a profile over a screen that has deliberately gone somewhere else (E113).
+    private func startProfileRefresh() {
+        guard let refreshProfile else { return }
+        profileRefresh?.cancel()
+        let treeID = self.treeID
+        let initials = caretakerInitials
+        profileRefresh = Task { [weak self] in
+            let merged = await refreshProfile(treeID)
+            guard !Task.isCancelled, let self, let merged, case .loaded = self.phase else { return }
+            self.phase = .loaded(
+                TreeProfilePresentation(profile: merged, caretakerInitials: initials)
+            )
+        }
     }
 
     // MARK: - Naming the species, after the fact
@@ -332,6 +380,43 @@ final class TreeProfileModel {
         let stored = await storedFavorite()
         guard generation == taps else { return }
         isFavorite = stored
+        startFavoriteReconcile()
+    }
+
+    /// Asks the service what it holds, behind the painted heart — the R2 re-read, moved off the tap.
+    ///
+    /// ── What the owner's ruling of 2026-09-02 moved, and what it did not ────────────────────────
+    ///
+    /// `storedFavorite()` above used to reach the service *first* (`RoutedAPI.isFavorite` was
+    /// remote-first), so the re-read at the end of `write()` put a network round trip between a
+    /// finger and the control settling. The phone answers that now and this reconciles behind it.
+    /// R2 is otherwise untouched: the heart is still read rather than remembered, and a write that
+    /// did not land still puts it back — `storedFavorite()` is what does that, unchanged.
+    ///
+    /// **The tap still wins, by the same counter** (ERRATA E184). A reconcile is a read like any
+    /// other, and it is a *slower* one, so it is exactly the read most likely to be holding a stale
+    /// answer when a finger arrives. It is stamped with the tap count it was taken under and dropped
+    /// if that has moved — and cancelled outright when the next read starts, so a reconcile cannot
+    /// queue up behind its own predecessor.
+    ///
+    /// **A nil answer changes nothing, and it is worth being exact about where nil comes from** —
+    /// the first draft of this comment said "nil is the service was not reached", and that is not
+    /// this code's behavior. `RoutedAPI.reconciledIsFavorite` never answers nil for an unreachable
+    /// service: it catches and returns the phone's own `isFavorite`, which equals what is already
+    /// painted, so that path assigns a no-op rather than a nil. Nil reaches this model from
+    /// `ProfileFavoriteWriter.reconciledState`'s two deliberate refusals — no service wired, or the
+    /// queue is holding a toggle — and from a local read that itself threw. Leaving the painted
+    /// heart alone is the right response to all three (R72 ruling 1).
+    private func startFavoriteReconcile() {
+        guard let reconcileFavorite else { return }
+        favoriteReconcile?.cancel()
+        let generation = taps
+        let treeID = self.treeID
+        favoriteReconcile = Task { [weak self] in
+            let answer = await reconcileFavorite(treeID)
+            guard !Task.isCancelled, let self, let answer, generation == self.taps else { return }
+            self.isFavorite = answer
+        }
     }
 
     /// Whether the store holds this tree for whoever is contributing right now.
