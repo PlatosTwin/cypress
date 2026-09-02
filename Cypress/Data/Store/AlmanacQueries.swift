@@ -411,12 +411,24 @@ public struct AlmanacQueries {
     /// case-insensitive and seekable — and doing the same here is a schema migration, which this
     /// change is not the author of.
     ///
-    /// The failure mode decides it. A wrong `lower()` in `firstBloom` returns **nothing**, which is
-    /// loud. A wrong `upper()` here returns young trees that *have* been visited, as trees nobody
-    /// has been to — the app's one directed ask (D1), sending readers to trees that need no eyes,
-    /// silently and only on a device whose rows spell a uuid the other way. Trading that for a seek
-    /// over one contributor's own visits is not a trade worth making without the migration that
-    /// makes it true.
+    /// **What decides it is which claim has a gate behind it, not how the two fail.** An earlier
+    /// draft of this paragraph argued that a wrong `lower()` in `firstBloom` "returns nothing, which
+    /// is loud", and PR #145's review disproved it on the running screen: `AlmanacPresentation`
+    /// draws the bloom row under `if let bloom = area.firstBloom`, so a nil draws no row, no error
+    /// and no gap — and nil is the **ordinary** state, since most devices hold no flowering visit
+    /// this year. A broken `lower()` would look exactly like an ordinary spring. Both failures are
+    /// silent; the asymmetry is somewhere else.
+    ///
+    /// It is that `lower()` rests on an asserted property and `upper()` would rest on an assumed
+    /// one. Every published inventory file is checked, per arm, on every CI run
+    /// (`DataGates.armsWithUppercaseUUIDs`, red-proved against a pack by
+    /// `GroveQueryPlanTests.theLowercaseUUIDContractCanFailOnAPack`), so the case `bloomTreeJoin`
+    /// depends on is a fact this repository re-derives. Nothing whatsoever checks the case of a
+    /// `visits` row. And what the unchecked one would buy is small — a seek over *one contributor's
+    /// own* visits — while what it would cost is the app's one directed ask (D1) sending readers to
+    /// trees that have already been visited. A seek that size is not worth an unasserted invariant;
+    /// the migration that would assert it is what makes this trade available, and this change is not
+    /// its author.
     ///
     /// `AlmanacQueryPlanTests.theYoungTreeSubqueryIsTheKnownScan` pins the plan this leaves, so the
     /// day the migration lands this paragraph goes red rather than staying wrong.

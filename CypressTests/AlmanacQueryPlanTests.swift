@@ -29,18 +29,35 @@ import Testing
 ///
 /// ── The rules ───────────────────────────────────────────────────────────────────────────────
 /// The first two are `GroveQueryPlanTests`', and its header states why each is written the way it
-/// is; they are not restated here. The third is this file's, and it is here because the defect above
-/// **would have passed rules 1 and 2 in one of its two arms**:
+/// is; they are not restated here. The third is this file's:
 ///
 /// 1. **The seek that answers the statement is in the plan**, named, as a `SEARCH`.
 /// 2. **Nothing may scan the inventory, and nothing may materialize it**, stated as an allowlist of
 ///    relations permitted to be walked, each with a reason.
 /// 3. **Nothing may build an index at run time.** A step reading `AUTOMATIC PARTIAL COVERING INDEX`
 ///    or `AUTOMATIC COVERING INDEX` is SQLite constructing a transient b-tree over a relation
-///    *because the query gave it no usable one*, and it pays for it on every execution. It is
-///    spelled `SEARCH`, so rule 1 counts it as a seek and rule 2 does not see it as a scan — the
-///    radius arm's `SEARCH t USING AUTOMATIC PARTIAL COVERING INDEX (uuid=?)` is a full pass over
-///    the merged inventory that both of the other rules would have certified.
+///    *because the query gave it no usable one*, and it pays for it on every execution.
+///
+/// **Rule 3 is not what would have caught the defect above, and this paragraph said it was.** The
+/// first draft argued that the radius arm's `SEARCH t USING AUTOMATIC PARTIAL COVERING INDEX
+/// (uuid=?)` was "a full pass over the merged inventory that both of the other rules would have
+/// certified". That is false, and the calibration four paragraphs down says so in the same file:
+/// `firstBloom` is pinned on `sqlite_autoindex_trees_1`, which is exactly the index the transient
+/// one stands in for, so **rule 1 fires on both arms** and rule 3 is redundant there. PR #145's
+/// review caught it; a confident comment about a query plan is precisely the artifact this file
+/// exists to replace with a measurement, and it was wrong here first.
+///
+/// What rule 3 is actually for is **the other eight statements**, which are pinned on a *scope*
+/// index — `idx_trees_neighborhood`, `idx_trees_lat_lon`, `idx_trees_species_current` — rather than
+/// on the identity index a uuid join would lose. An `AUTOMATIC` step on one of those would sit
+/// beside a scope seek that is still there and still named, so rule 1 is satisfied; and because the
+/// step is spelled `SEARCH` rather than `SCAN`, `scannedRelation` returns nil for it and rule 2 does
+/// not see it either. Both rules would certify a plan that rebuilds a b-tree over a relation on
+/// every execution.
+///
+/// No such plan has been observed on these eight — stated plainly, because a rule justified by a
+/// defect that did not happen is how the sentence above went wrong. Rule 3 is written against a
+/// shape the other two are structurally blind to, not against a measurement.
 ///
 /// Every statement is explained in **both of R29's arms**, because `AlmanacScope.predicate(_:)` is
 /// two different `WHERE` clauses with two different plans — a gate that explained one would be
@@ -52,6 +69,9 @@ import Testing
 /// in each arm loses its `sqlite_autoindex_trees_1` seek (rule 1) and gains an `AUTOMATIC` step
 /// (rule 3), and the two `AUTOMATIC` steps are different relations in the two arms — `v` under the
 /// polygon, `t` under the radius. The verbatim messages are in the pull request.
+///
+/// Two issues per arm rather than one is the redundancy the rules paragraph above admits to: on this
+/// statement rule 1 alone would have gone red, and rule 3 reports the same regression a second time.
 ///
 /// The three tests below that are *not* about the collation carry their own calibration in their own
 /// doc comments, for the reason `GroveQueryPlanTests`' header gives: a calibration claim nobody
