@@ -70,6 +70,12 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
     /// Makes the phone's half of a deletion fail, for the one arm that is not transactional.
     var deletionError: (any Error)?
 
+    /// What the two grove reads report and answer, when a test cares — nil when none does, which is
+    /// every test in this file. `GroveLocalFirstTests` is the caller: what a repeat visit does is a
+    /// claim about both a count and the answer that comes back, and neither can live in a `var` on
+    /// this struct because the router holds its own copy of it. See `GroveReadProbe`.
+    var reads: GroveReadProbe?
+
     func mapContent(in viewport: MapViewport) async throws -> MapContent { content }
     func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { nearby }
 
@@ -114,9 +120,13 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
 
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws {}
     func deletePhoto(id: UUID) async throws -> PhotoDeletion { throw APIError.notFound }
-    func grove() async throws -> [GroveEntry] { groveEntries }
+    func grove() async throws -> [GroveEntry] {
+        reads?.takeTrees(or: groveEntries) ?? groveEntries
+    }
     func isFavorite(treeID: UUID) async throws -> Bool { favorite }
-    func groveSpecies() async throws -> GroveSpecies { speciesKnown }
+    func groveSpecies() async throws -> GroveSpecies {
+        reads?.takeSpecies(or: speciesKnown) ?? speciesKnown
+    }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { journalPage }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
     func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
@@ -258,8 +268,15 @@ struct RoutedAPITests {
         // one, and — the negative control — a Class R method's body must contain what this gate
         // forbids. Without the last of these an extractor returning the empty string would report
         // every method clean.
-        let grove = try #require(body(of: "grove()"), "the body extractor found nothing — this gate is vacuous")
-        #expect(grove.contains("remote.groveDelta()"), "the extractor did not read grove()'s body")
+        //
+        // **`refreshedGrove()` and not `grove()`.** Since the local-first round `grove()` is the
+        // paint: it names no service, so using it as the negative control would prove nothing — a
+        // body that does not contain what this gate forbids cannot show that the gate can see it.
+        // The join, and the only mention of the wire, is in the refresh.
+        let grove = try #require(
+            body(of: "refreshedGrove()"), "the body extractor found nothing — this gate is vacuous"
+        )
+        #expect(grove.contains("remote.groveDelta()"), "the extractor did not read refreshedGrove()'s body")
         #expect(
             body(of: "notAMethodOnThisType()") == nil,
             "the extractor answered for a method that does not exist"
@@ -337,7 +354,7 @@ struct RoutedAPITests {
 
         let log = RemoteReadLog()
         let router = RoutedAPI(local: local, remote: Self.remote(transport), log: log)
-        let entries = try await router.grove()
+        let entries = try await router.refreshedGrove()
 
         #expect(entries.count == 1)
         let entry = try #require(entries.first)
@@ -364,9 +381,19 @@ struct RoutedAPITests {
         let treeID = UUID()
         let speciesID = UUID()
         var local = LocalDouble()
+        // **`.cityImport`, and the source is load-bearing** (PR #144 review, F1). "Resolved through
+        // the city file" means an inventory row, and D15's species fallback is only for one: a
+        // *community* record's species is a self-assertion by whoever added it, and
+        // `LocalAPI.grove()` has always refused to name a tree after one. The fixture said
+        // `.community` and asserted the species name, which is the pair the reviewer's probe found
+        // the two resolver arms disagreeing over.
         local.profilesByID = [
             treeID: TreeProfile(
-                tree: Self.tree(treeID, latitude: 37.7601, longitude: -122.505),
+                tree: Tree(
+                    id: treeID,
+                    source: .cityImport,
+                    coordinate: Coordinate(latitude: 37.7601, longitude: -122.505)
+                ),
                 species: try Self.species(speciesID, scientific: "Quercus agrifolia", common: "Coast Live Oak")
             )
         ]
@@ -381,7 +408,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).grove()
+        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGrove()
 
         let entry = try #require(entries.first)
         #expect(entry.treeID == treeID)
@@ -412,7 +439,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: LocalDouble(), remote: Self.remote(transport), log: log).grove()
+        let entries = try await RoutedAPI(local: LocalDouble(), remote: Self.remote(transport), log: log).refreshedGrove()
 
         #expect(entries.isEmpty, "a row was drawn for a tree with no name and no coordinate")
         #expect(
@@ -429,7 +456,14 @@ struct RoutedAPITests {
     /// city file has no such tree, so the name rule is never reached. A conformance that named an
     /// unnameable tree would have shipped past it. "Never a fabricated label"
     /// (`LocalAPI.displayNameIfPresent`) needs a tree that exists and has no name, which is this.
-    @Test("a tree the city file cannot name is dropped rather than labeled")
+    ///
+    /// **And the read stays `.live`, which is the half PR #144's review changed.** Dropping this row
+    /// is D15 being applied to an answer that arrived whole, not a piece of the answer going
+    /// missing; `.fellBackToLocal` would offer a §4.3 surface the sentence "showing what's on this
+    /// phone" about a read where nothing was. The case that *does* degrade is
+    /// `anUnresolvableRowIsDroppedAndTheReadSaysSo` above — a tree no installed inventory carries at
+    /// all — and the two being told apart is what `RoutedAPI.CityFileRows` exists for.
+    @Test("a tree the city file cannot name is dropped rather than labeled, and the read stays live")
     func aTreeTheCityFileCannotNameIsDropped() async throws {
         let treeID = UUID()
         var local = LocalDouble()
@@ -447,10 +481,14 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).grove()
+        let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGrove()
 
         #expect(entries.isEmpty, "a tree with no name and no species was given a fabricated label")
-        #expect(await log.outcome(of: .grove) == .fellBackToLocal)
+        let outcome = await log.outcome(of: .grove)
+        #expect(
+            outcome == .live,
+            "a D15 refusal on a complete answer was recorded as \(String(describing: outcome))"
+        )
     }
 
     /// The service being unreachable answers from the phone, and records that it did.
@@ -469,7 +507,7 @@ struct RoutedAPITests {
         ]
 
         let log = RemoteReadLog()
-        let entries = try await RoutedAPI(local: local, remote: Self.unreachable(), log: log).grove()
+        let entries = try await RoutedAPI(local: local, remote: Self.unreachable(), log: log).refreshedGrove()
 
         #expect(entries.count == 1, "a failed remote read emptied the grove")
         #expect(entries[0].isFavorite)
@@ -555,7 +593,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let grove = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).groveSpecies()
+        let grove = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGroveSpecies()
 
         #expect(grove.known.items.count == 2)
         #expect(grove.neighborhood?.species.items == [known], "the denominator came from somewhere other than the phone")

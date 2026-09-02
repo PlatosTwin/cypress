@@ -36,7 +36,10 @@ public struct SessionTransport: AuthorizedTransport {
     private let session: AppSession
     private let http: any AuthHTTP
 
-    public init(session: AppSession, http: any AuthHTTP = URLSession.shared) {
+    /// - Parameter http: `AuthClient.init`'s note, for the same reason — the default is the app's
+    ///   own configured session, never `URLSession.shared`, so the 60-second trap is unreachable by
+    ///   omission. `DataLayer.boot` passes one explicitly so both halves of the wire share it.
+    public init(session: AppSession, http: any AuthHTTP = SyncService.makeSession()) {
         self.session = session
         self.http = http
     }

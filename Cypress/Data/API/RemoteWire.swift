@@ -367,7 +367,8 @@ struct ProximityConflictDetail: Decodable {
 ///
 /// **Not a `GroveEntry`**, and the missing fields are the point: there is no `display_name` and no
 /// coordinate here because both are facts about the city's inventory, which this service does not
-/// hold. `RoutedAPI.grove()` is where the two halves meet.
+/// hold. `RoutedAPI.refreshedGrove()` is where the two halves meet; `grove()` is the paint and
+/// does not consult this route.
 struct GroveDeltaResponse: Decodable {
     struct Row: Decodable {
         let treeUUID: UUID
