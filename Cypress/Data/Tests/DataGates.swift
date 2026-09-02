@@ -916,6 +916,25 @@ public enum DataGates {
 
     // MARK: - Gate 2: the seed contract
 
+    /// The `species by uuid` plan probe, in the shape the app's own five readers compare in.
+    ///
+    /// **`lower('X')`, because that is the comparison the app makes.** This probe read
+    /// `s.uuid = 'x'` — a BINARY equality no statement in `Cypress/` emits, while all five real
+    /// readers said `= :uuid COLLATE NOCASE` and scanned. The probe passed throughout, because the
+    /// index it names is perfectly reachable from a comparison nobody writes. v20 moved those
+    /// readers to `lower(:uuid)` and this to the matching shape, so the gate now fails if the seek
+    /// the app depends on stops being available. Upper case in the literal on purpose: it is what
+    /// `UUID.uuidString` produces, so `lower()` has something to do.
+    ///
+    /// **A property rather than a literal in the list below, so a test can read the probe the gate
+    /// actually runs.** `SpeciesAccessPlanTests.theProbeMatchesTheComparisonTheAppMakes` asserts on
+    /// this string. It used to assert on `SpeciesQueries.species(id:)`'s captured SQL instead —
+    /// which meant the test named for this probe did not read this probe, and putting the BINARY
+    /// literal back here left the whole suite green. That is the defect class this comment is
+    /// about, reintroduced in the guard written to close it; PR #148's review caught it.
+    static let speciesIdentityProbeSQL =
+        "SELECT s.id FROM \(SeedDatabase.schemaName).species s WHERE s.uuid = lower('X')"
+
     /// **The seed database's schema and row invariants are pinned; a diff fails the test.**
     ///
     /// Also pins the query plans, because a plan that silently degrades to `SCAN trees` is a
@@ -1249,16 +1268,10 @@ public enum DataGates {
                     "sqlite_autoindex_trees_1"
                 ),
                 (
-                    // **`lower('X')`, because that is the comparison the app makes.** This probe
-                    // read `s.uuid = 'x'` — a BINARY equality no statement in `Cypress/` emits,
-                    // while all five real readers said `= :uuid COLLATE NOCASE` and scanned. The
-                    // probe passed throughout, because the index it names is perfectly reachable
-                    // from a comparison nobody writes. v20 moved those readers to `lower(:uuid)`
-                    // and this to the matching shape, so the gate now fails if the seek the app
-                    // depends on stops being available. Upper case in the literal on purpose: it
-                    // is what `UUID.uuidString` produces, so `lower()` has something to do.
+                    // See `speciesIdentityProbeSQL` for why this compares through `lower()` and
+                    // why it is a property rather than a literal here.
                     "species by uuid",
-                    "SELECT s.id FROM \(SeedDatabase.schemaName).species s WHERE s.uuid = lower('X')",
+                    speciesIdentityProbeSQL,
                     "sqlite_autoindex_species_1"
                 ),
                 (

@@ -17,9 +17,16 @@ import Testing
 /// exist; it does not make the property be what runs.
 ///
 /// So this file does not read any SQL off a property. It installs a `StatementCensus`, **calls the
-/// eleven readers**, and plans the text they actually prepared. A statement whose text drifts is
-/// planned in its drifted form; a reader that stops being called at all fails the count assertion
-/// before any plan is examined.
+/// readers**, and plans the text they actually prepared. A statement whose text drifts is planned
+/// in its drifted form; a reader that stops being called at all fails the count assertion before
+/// any plan is examined.
+///
+/// **Thirteen statements, and the number is the `#require`s rather than a tally kept by hand.**
+/// `theSpeciesChainSeeks` requires 2, `theCommunityRowsSeek` 6, `theSpeciesLookupsSeek` 4, and
+/// `theSpeciesFilterSeeks` 1 — 2 + 6 + 4 + 1 = 13. This said "the eleven readers" until PR #148's
+/// review counted them; the DDL-revert distribution below confirms the thirteen arithmetically,
+/// since its 19 issues are 12 + 4 + 3 over those same statements. A count in prose beside four
+/// assertions that carry the real one is exactly the thing CONTRIBUTING's pass 4 is looking for.
 ///
 /// ── Calibration ─────────────────────────────────────────────────────────────────────────────
 /// v20 has two halves that revert independently, and both were reverted separately on this branch.
@@ -267,9 +274,12 @@ struct SpeciesAccessPlanTests {
                 )
             }
         }
-        // `speciesRowIDs` is private and reached through the map's species filter; the four public
-        // readers above are what a census can call directly. Five statements, because `nearest`
-        // prepares one and the species filter is exercised by `theSpeciesFilterSeeks` below.
+        // **Four here, and the fifth reader is in the next test.** The four public readers above
+        // are what a census can call directly, and they prepare one statement each. `speciesRowIDs`
+        // is the fifth; it is private, reached through the map's species filter, and planned by
+        // `theSpeciesFilterSeeks` below. This comment used to say "Five statements" immediately
+        // above the `#require(count == 4)` on the next line — it was counting readers in a sentence
+        // about statements (PR #148 review).
         try #require(
             statements.count == 4,
             "expected four species-by-uuid statements, got \(statements.count): \(statements)"
@@ -455,8 +465,42 @@ struct SpeciesAccessPlanTests {
     /// This pins the repair rather than trusting it — the probe must use `lower(`, so a future
     /// edit that quietly puts the BINARY literal back fails here instead of going unnoticed for
     /// another few rounds.
+    ///
+    /// ── It did not, for one round, and the shape of that miss is the point ──────────────────────
+    /// As first written this test read `SpeciesQueries.species(id:)`'s captured SQL and asserted on
+    /// **that**. So the test named for the probe never read the probe: reverting only
+    /// `DataGates.speciesIdentityProbeSQL` to `s.uuid = 'x'` — the exact literal this round
+    /// identifies as the years-long defect — left the whole suite green, which PR #148's review
+    /// demonstrated. A guard green because the case it guards is not present, in the guard written
+    /// to close exactly that. It is the third instance of the family in this round's own diff.
+    ///
+    /// **Both halves are asserted now, and they are the two that can drift apart.** The probe is
+    /// read out of `DataGates` rather than restated here, so this fails on a one-line edit there;
+    /// the app statement is captured from a real call, so it fails on a one-line edit in
+    /// `SpeciesQueries`. Asserting only one of them is what went wrong, so neither is dropped for
+    /// being redundant with the other — they are two different files.
     @Test("the seed contract's species probe uses the comparison the app makes")
     func theProbeMatchesTheComparisonTheAppMakes() async throws {
+        // ── 1. The probe the gate actually runs, read out of the gate ───────────────────────────
+        let probe = DataGates.speciesIdentityProbeSQL
+        #expect(
+            probe.contains("lower("),
+            """
+            `DataGates.speciesIdentityProbeSQL` no longer normalizes with `lower()`, so the \
+            `species by uuid` plan probe is back to a BINARY equality no statement in `Cypress/` \
+            emits. It will keep certifying a seek the app's own comparison cannot reach, which is \
+            what it did for years before v20 — \(probe)
+            """
+        )
+        #expect(
+            !probe.uppercased().contains("COLLATE NOCASE"),
+            """
+            the `species by uuid` probe collates, so it is no longer the comparison the app makes \
+            and the seek it certifies is not the one the five readers need — \(probe)
+            """
+        )
+
+        // ── 2. The app's own statement, captured from a real call ───────────────────────────────
         let store = try await Self.store()
         let schema = try #require(store.seed, "the store opened without a seed attached")
         let species = SpeciesQueries(schema: schema)
@@ -479,6 +523,18 @@ struct SpeciesAccessPlanTests {
         #expect(
             !sql.uppercased().contains("COLLATE NOCASE"),
             "the species lookup still collates, so it cannot reach the seed's BINARY index — \(sql)"
+        )
+
+        // ── 3. And that the two are the same comparison, which is the property the name claims ──
+        // Neither half above notices if one file normalizes and the other stops: each is checked
+        // against a constant, not against the other. This is the assertion that makes the two
+        // travel together, and it is why the probe is a property rather than a literal.
+        #expect(
+            probe.contains("s.uuid = lower(") && sql.contains("= lower(:uuid)"),
+            """
+            the probe and the app no longer compare `species.uuid` the same way, so the gate is \
+            certifying an access path the app does not use — probe: \(probe) — app: \(sql)
+            """
         )
     }
 }

@@ -17,10 +17,11 @@ import Testing
 /// 1. runs the migration against a **v19 database with rows already in it**, written as rows rather
 ///    than through the shipping API, and asserts that v20 and only v20 is what runs;
 /// 2. asks the five readers whose access paths v20 moves for their answers **before and after**, on
-///    rows deliberately spelled in mixed case, and requires the two to be identical as *ordered*
-///    sequences over a fixture big enough for an order to exist — PR #146's review found v19's
-///    fixture at one row per table, where "the same rows before and after" is satisfied by any
-///    answer at all;
+///    rows whose indexed ids are stored lower case while every reader binds `uuidString`'s upper —
+///    the case difference the recollation is *for* — and requires the two to be identical as
+///    *ordered* sequences over a fixture big enough for an order to exist — PR #146's review found
+///    v19's fixture at one row per table, where "the same rows before and after" is satisfied by
+///    any answer at all;
 /// 3. asserts the DDL landed: the recollated index carries `COLLATE NOCASE`, and the added one
 ///    exists and carries it too;
 /// 4. asserts the index v20 deliberately **did not** touch still has its BINARY collation.
@@ -59,8 +60,19 @@ struct SchemaV20Tests {
 
     // MARK: - The upgrade
 
-    /// A v19 database carrying **several** rows in each table v20 touches, with ids in mixed case —
-    /// which is not how this app writes a uuid, and is the point.
+    /// A v19 database carrying **several** rows in each table v20 touches.
+    ///
+    /// **The two columns v20 indexes are stored lower case, and that is the real-world case rather
+    /// than a weaker one.** `community_trees.id` and `species_assertions.tree_uuid` are written
+    /// `uuidString.lowercased()` here because that is how every file this app reads stores a uuid,
+    /// while every reader binds Foundation's upper-case `uuidString` — so the fixture is exactly the
+    /// lower-stored / upper-bound mismatch the recollation exists to bridge, and
+    /// `theFixtureIsGenuinelyMixedCase` pins it.
+    ///
+    /// This comment used to say "with ids in mixed case", and PR #148's review showed that was a
+    /// claim about the wrong columns: `mixedID` reaches `community_trees.client_uuid` and
+    /// `species_assertions.id`, neither of which either v20 index covers. The fixture was right and
+    /// the sentence over it was not.
     ///
     /// Written with `execute` rather than through the shipping stores for
     /// `PhotoProvenanceTests.upgradedFromV15`'s reason: the shipping write path is not what an
@@ -76,8 +88,10 @@ struct SchemaV20Tests {
         let stamp = SQLiteTimestamp.string(from: moment)
         let device = deviceID.uuidString.lowercased()
 
-        /// Ids alternating upper and lower case, because case is the axis this migration moves and
-        /// a fixture spelled all one way would not exercise it.
+        /// Ids alternating upper and lower case. **These are the columns v20 does *not* index** —
+        /// `community_trees.client_uuid` and `species_assertions.id` — so this varies the payload
+        /// the migration carries across, not the access path it changes. The indexed columns are
+        /// spelled lower case at their call sites, deliberately; see this function's own comment.
         func mixedID(_ index: Int) -> String {
             let raw = UUID().uuidString
             return index.isMultiple(of: 2) ? raw.lowercased() : raw

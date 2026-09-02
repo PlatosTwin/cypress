@@ -2257,6 +2257,16 @@ public enum AppSchema {
     -- which is where `SpeciesAssertionStore`'s `tree_uuid = :tree COLLATE NOCASE` needs it.
     -- This one index answers both `chain` and `current`; see the doc comment for why
     -- `idx_species_assertions_head` is deliberately left BINARY.
+    --
+    -- **Unqualified, and that is safe here for a reason worth writing down** (PR #148 review).
+    -- SQLite's unqualified `DROP INDEX` searches attached databases too, and `IF EXISTS` does not
+    -- save it: with `main` lacking the name and a READ-ONLY attachment holding it, the drop errors
+    -- `attempt to write a readonly database (8)`. When `main` holds the name, main wins and the
+    -- attachment is untouched. Neither hazard is reachable on this ladder — `CypressStore.open`
+    -- and `.inMemory` run `SchemaMigrator.migrate` BEFORE `InventoryUnion.build`, so nothing is
+    -- attached when this runs, and the shipped seed carries no index of this name anyway. A `main.`
+    -- qualifier would close it for good; it is left off to keep the statement identical in shape to
+    -- every other migration here. A future round that attaches before migrating must add it.
     DROP INDEX IF EXISTS idx_species_assertions_tree;
     CREATE INDEX IF NOT EXISTS idx_species_assertions_tree
         ON species_assertions(tree_uuid COLLATE NOCASE, created_at DESC);
