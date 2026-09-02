@@ -8,7 +8,8 @@
 //
 //  ── Two reads, kept apart ─────────────────────────────────────────────────────────────────────
 //  The screen's two pills each have data behind them and they are two different endpoints:
-//  `groveSpecies()` for the species grid and `grove()` for the list of trees. Each therefore has its
+//  `groveSpecies()` for the species grid and `grovePage(cursor:limit:)` for the list of trees, which
+//  is paged. Each therefore has its
 //  own way to fail, and a single `phase` would mean one failing read blanked the other pill — a
 //  reader whose species read failed would find an empty-looking Trees list and conclude they had no
 //  trees. So there are two phases, and `GroveTreesTests.thePhasesAreIndependent` is the assertion
@@ -244,6 +245,21 @@ final class GroveModel {
     /// Whether the re-entry refresh is in flight. Nothing on screen changes while it is.
     private(set) var isRefreshingTrees = false
 
+    /// The whole joined grove from the last background refresh that landed, and **the only list
+    /// this model holds that contains the account's rows as well as the phone's**.
+    ///
+    /// `LocalAPI.grovePage` reads the phone's contributions alone; the account's half arrives only
+    /// through `refreshTrees` (`RoutedAPI.refreshedGrove`). Keeping the merged answer is what makes
+    /// an account-only tree that sorts *beyond* the drawn window reachable by `Show more` — see
+    /// `loadMoreTrees`, which serves the next page from here while the drawn rows are still this
+    /// list's prefix. Dropping it, which is what an earlier draft of `startTreesRefresh` did, left
+    /// such a row in no page the reader could get to until a later refresh happened to widen the
+    /// window past it.
+    ///
+    /// Holding it costs memory and nothing else: the expense this round removed was *drawing* a
+    /// thousand rows, not having them. Only `entries` reaches SwiftUI.
+    private var mergedGrove: [GroveEntry]?
+
     /// Reads the grove's **first page** the first time the pill is asked for, and not again.
     ///
     /// **Lazy**, because a reader who opens My Grove and stays on `Species` should not pay for a
@@ -278,6 +294,8 @@ final class GroveModel {
     /// state that draws nothing.
     private func readFirstTreesPage() async {
         treesPhase = .loading
+        // Whatever merged answer we were holding described a list that is about to be replaced.
+        mergedGrove = nil
         do {
             let page = try await api.grovePage(cursor: nil, limit: GroveLimits.pageSize)
             treesPhase = .loaded(entries: page.items, nextCursor: page.nextCursor)
@@ -300,16 +318,54 @@ final class GroveModel {
     /// without it this would re-read page one — `grovePage(cursor: nil, …)` is a valid call that always
     /// returns the newest rows — and draw every one of them a second time. The guard is also what
     /// makes the control's absence and the read's refusal the same condition.
+    ///
+    /// **Two sources, and which one answers is decided by whether the drawn rows are still the
+    /// merged grove's prefix.** `mergedGrove` holds the account's rows and the phone's;
+    /// `api.grovePage` holds only the phone's. Serving from the merged list while it still
+    /// describes what is on screen is what makes an account-only row beyond the window reachable
+    /// (see `mergedGrove`). Once a reconcile has made the drawn rows something other than its
+    /// prefix, the merged list no longer describes them and the store answers instead — the
+    /// account's half then returns on the next refresh, which is the behavior that arm always had.
+    ///
+    /// **The store arm re-reads the phase after its `await` and appends only if the list still ends
+    /// where it asked from.** Without that, a `Show more` resuming after a re-entry refresh writes
+    /// `entries + page` from a snapshot taken before the refresh reconciled, and either loses the
+    /// refresh's work or leaves a gap where the fresh page's tail and the old cursor disagree.
+    /// The mirror of the same defect in `refreshTreesPageOne` is the one that lost a revealed page;
+    /// both are fixed the same way and `GroveTreesPagingTests` drives the interleaving in both
+    /// orders.
     func loadMoreTrees() async {
         guard case let .loaded(entries, cursor) = treesPhase, let cursor, !isLoadingMoreTrees else {
             return
         }
         isLoadingMoreTrees = true
         defer { isLoadingMoreTrees = false }
+
+        // The merged arm touches no `await`, so nothing can interleave inside it.
+        if let merged = mergedGrove,
+           entries.count < merged.count,
+           merged.prefix(entries.count).map(\.treeID) == entries.map(\.treeID) {
+            let end = min(entries.count + GroveLimits.pageSize, merged.count)
+            let grown = entries + merged[entries.count..<end]
+            treesPhase = .loaded(
+                entries: grown,
+                nextCursor: grown.count < merged.count ? grown.last?.groveCursor : nil
+            )
+            hasFailedMoreTrees = false
+            return
+        }
+
         do {
             let page = try await api.grovePage(cursor: cursor, limit: GroveLimits.pageSize)
+            guard case let .loaded(current, currentCursor) = treesPhase, currentCursor == cursor
+            else {
+                // Something reconciled underneath this read — its answer is the newer one, and
+                // appending a page fetched from a cursor the list no longer ends at would show
+                // rows twice or skip the ones between. The control is still there to press again.
+                return
+            }
             treesPhase = .loaded(
-                entries: entries + page.items, nextCursor: page.nextCursor
+                entries: current + page.items, nextCursor: page.nextCursor
             )
             hasFailedMoreTrees = false
         } catch {
@@ -347,13 +403,22 @@ final class GroveModel {
     /// down a column that is already showing them their trees (R72 ruling 1), and it must not raise
     /// `hasFailedMoreTrees` either — that flag is `Show more`'s, and this is not that.
     private func refreshTreesPageOne() async {
-        guard case let .loaded(held, heldCursor) = treesPhase, !isRefreshingTrees else { return }
+        guard case .loaded = treesPhase, !isRefreshingTrees else { return }
         isRefreshingTrees = true
         defer { isRefreshingTrees = false }
 
         guard let fresh = try? await api.grovePage(cursor: nil, limit: GroveLimits.pageSize) else {
             return
         }
+        // **The held rows are read AFTER the await, never before it**, and that is a fix rather
+        // than a tidy-up. `loadMoreTrees` guards only its own flag and this method guards only
+        // its own, so the two can be in flight together: two ordinary taps — press `Show more`,
+        // then switch pill and back — put a `Show more` inside this read. Reconciling against a
+        // snapshot taken before the `await` then wrote the pre-press list back over the phase and
+        // **threw the revealed page away**, which is exactly the property this screen advertises.
+        // Reading here instead makes the appended page part of `held`, so it is reconciled rather
+        // than discarded. `GroveTreesPagingTests` drives that interleaving directly.
+        guard case let .loaded(held, heldCursor) = treesPhase else { return }
         guard let oldest = fresh.items.last?.orderKey, fresh.nextCursor != nil else {
             treesPhase = .loaded(entries: fresh.items, nextCursor: fresh.nextCursor)
             return
@@ -376,11 +441,22 @@ final class GroveModel {
     /// merged answer is cut to the window the reader has actually asked for: at least a page, and
     /// as much as they have revealed.
     ///
+    /// **The whole merged answer is kept, and only the window is drawn.** An earlier draft cut the
+    /// merged list to the window and dropped the rest, and the comment here claimed "nothing is
+    /// shown twice and nothing is skipped". That was true only of the case it reasoned about — an
+    /// account row arriving *inside* the window. An account-only tree sorting **beyond** the window
+    /// was in no page the reader could reach: not drawn, and not in any `Show more`, because every
+    /// later page came from `LocalAPI.grovePage`, which holds the phone's rows alone. It resurfaced
+    /// only when some later refresh happened to widen the window past it.
+    ///
+    /// So the merged list is stored (`mergedGrove`) and `loadMoreTrees` serves the next page from
+    /// it while the drawn rows are still its prefix. The claim is now true in the general form:
+    /// every row of the merged answer is reachable, in order, without waiting for another refresh.
+    ///
     /// **The cursor is derived from the merged list and that is sound because both lists carry one
     /// order.** `refreshedGrove` sorts by `GroveOrderKey`, which is the query's order, so the last
-    /// kept row names the same position in both. A tree the account has and this phone does not,
-    /// arriving inside the window, pushes a local row past the cursor — where the next `Show more`
-    /// will read it. Nothing is shown twice and nothing is skipped.
+    /// drawn row names the same position in both — which is what lets the store take over cleanly
+    /// if a reconcile later makes the drawn rows something other than this list's prefix.
     private func startTreesRefresh() {
         guard let refreshTrees else { return }
         treesRefresh?.cancel()
@@ -391,6 +467,7 @@ final class GroveModel {
             else { return }
             let window = max(GroveLimits.pageSize, held.count)
             let kept = Array(merged.prefix(window))
+            self.mergedGrove = merged
             self.treesPhase = .loaded(
                 entries: kept,
                 nextCursor: merged.count > window ? kept.last?.groveCursor : nil

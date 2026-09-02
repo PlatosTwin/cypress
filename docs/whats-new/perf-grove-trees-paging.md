@@ -42,11 +42,14 @@
 #
 # ── WHAT IS DELIBERATELY NOT CLAIMED ────────────────────────────────────────────────────────
 #
-# **No loading spinner is mentioned.** There is one now, and every phase draws something, but on
-# this device at this grove it was never captured on screen — the page arrives faster than the
-# burst samples. Announcing a spinner would send a tester looking for something they will not
-# see. It is guarded by `GroveDrawnLoadingShot`, which photographs the column and carries its own
-# calibration case, not by this line.
+# **No loading spinner is mentioned.** There is one now, and every phase draws something. My burst
+# on the 16 Pro did not catch it — the page arrived inside one 234 ms sample — but the reviewer,
+# on their device, captured it in a frame. So "it is never visible" would have been the wrong
+# claim; the honest one is that **how long it shows depends on the device and on the size of the
+# grove**, and on a fast phone it may be a frame or two. That is not something to send a tester
+# looking for, so the line below does not mention it. What guarantees it exists is
+# `GroveDrawnLoadingShot`, which photographs the column and carries its own calibration case —
+# not an observation on any one device.
 #
 # **No number is given to a tester.** "Straight away" is what they can feel; 3.3–3.7 s is a
 # figure about the old build, and the note is about the new one.

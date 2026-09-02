@@ -44,11 +44,60 @@ struct GroveTreesPagingTests {
             lock.withLock { self.failing = failing }
         }
 
-        func grove() async throws -> [GroveEntry] {
-            let (entries, failing) = lock.withLock {
-                reads += 1
-                return (self.entries, self.failing)
+        /// The read currently parked inside `grove()`, if one is.
+        private var gate: CheckedContinuation<Void, Never>?
+        /// Whether the *next* read parks rather than answering.
+        private var holdNext = false
+        /// Somebody waiting to be told that a read has parked.
+        private var parked: CheckedContinuation<Void, Never>?
+
+        /// **Holds the next read open**, which is the whole instrument for the interleaving tests
+        /// below. Without a read that can be left in flight, `loadMoreTrees` and
+        /// `refreshTreesPageOne` can only be driven one after the other — and the defect review
+        /// found lives precisely in the case where one resumes inside the other.
+        func holdNextRead() { lock.withLock { holdNext = true } }
+
+        /// Suspends until a read is parked, so a test can act while one is genuinely in flight
+        /// rather than sleeping and hoping.
+        func awaitParkedRead() async {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let alreadyParked: Bool = lock.withLock {
+                    if gate != nil { return true }
+                    parked = continuation
+                    return false
+                }
+                if alreadyParked { continuation.resume() }
             }
+        }
+
+        func releaseHeldRead() {
+            let held: CheckedContinuation<Void, Never>? = lock.withLock {
+                let held = gate
+                gate = nil
+                return held
+            }
+            held?.resume()
+        }
+
+        func grove() async throws -> [GroveEntry] {
+            let shouldHold: Bool = lock.withLock {
+                reads += 1
+                let hold = holdNext
+                holdNext = false
+                return hold
+            }
+            if shouldHold {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    let waiter: CheckedContinuation<Void, Never>? = lock.withLock {
+                        gate = continuation
+                        let waiter = parked
+                        parked = nil
+                        return waiter
+                    }
+                    waiter?.resume()
+                }
+            }
+            let (entries, failing) = lock.withLock { (self.entries, self.failing) }
             if failing { throw APIError.serverError }
             return entries
         }
@@ -331,6 +380,187 @@ struct GroveTreesPagingTests {
         #expect(
             GroveTreesPresentation(entries: [], hasMore: true).emptyState == nil,
             "a read that stopped early told the reader they have no trees"
+        )
+    }
+
+    /// …and the same page offers the **control** without the **sentence**. "There are more trees
+    /// than these" needs a "these"; the button is still the right thing to press, because pressing
+    /// it fetches the next page.
+    @Test("an empty page that stopped early offers Show more without the sentence")
+    func anEmptyPageWithACursorDrawsTheControlWithoutTheNote() {
+        let empty = GroveTreesPresentation(entries: [], hasMore: true)
+        #expect(empty.hasMore, "the control's own condition went away with the sentence")
+        #expect(
+            empty.moreNote == nil,
+            "the list said there are more trees “than these” over no rows at all"
+        )
+        // The ordinary case still says it, or the guard above is just deleting the sentence.
+        #expect(GroveTreesPresentation(entries: Self.grove(3), hasMore: true).moreNote != nil)
+        #expect(GroveTreesPresentation(entries: Self.grove(3), hasMore: false).moreNote == nil)
+    }
+
+    // MARK: - Two reads in flight at once
+
+    /// **A `Show more` that lands while the re-entry refresh is in flight must keep the page it
+    /// revealed**, and before this round it did not.
+    ///
+    /// The input is two ordinary taps, in the order a reader produces them: press `Show more`, and
+    /// while that read is running switch the pill (or leave the tab and come back). `GroveView`'s
+    /// `.task(id:)` calls `loadTreesIfNeeded`, whose `.loaded` arm is `refreshTreesPageOne` — so a
+    /// refresh is now running inside the `Show more`.
+    ///
+    /// `loadMoreTrees` guards only `isLoadingMoreTrees` and `refreshTreesPageOne` guards only
+    /// `isRefreshingTrees`, so neither excludes the other. The refresh used to capture `held`
+    /// **before** its `await` and write that snapshot back when it resumed, discarding the appended
+    /// page. The fix is to read the phase *after* the await; this test is the order that proves it,
+    /// and `theReverseInterleavingLosesNothing` is the other order.
+    @Test("a Show more that lands while the re-entry refresh is in flight keeps the revealed page")
+    @MainActor
+    func aShowMoreInsideARefreshKeepsItsPage() async {
+        let api = WholeGroveAPI(Self.grove(GroveLimits.pageSize * 3))
+        let model = GroveModel(api: api, tab: .trees)
+        await model.loadTreesIfNeeded()
+
+        // The revisit's refresh starts and parks mid-read.
+        api.holdNextRead()
+        let revisit = Task { @MainActor in await model.loadTreesIfNeeded() }
+        await api.awaitParkedRead()
+
+        // The reader presses `Show more` while it is parked. This read is not held, so it lands
+        // first — which is exactly the interleaving that used to lose the page.
+        await model.loadMoreTrees()
+        guard case let .loaded(revealed, _) = model.treesPhase else {
+            Issue.record("Show more did not land at all: \(model.treesPhase)")
+            return
+        }
+        #expect(
+            revealed.count == GroveLimits.pageSize * 2,
+            "the fixture never revealed a second page, so the race below is untested"
+        )
+
+        api.releaseHeldRead()
+        await revisit.value
+
+        guard case let .loaded(after, cursor) = model.treesPhase else {
+            Issue.record("the refresh lost the list entirely: \(model.treesPhase)")
+            return
+        }
+        #expect(
+            after.count == GroveLimits.pageSize * 2,
+            """
+            the refresh resumed and wrote \(after.count) rows over the \
+            \(GroveLimits.pageSize * 2) the reader had revealed: it reconciled against the \
+            snapshot it took before its await, so the page pressed during the read was thrown away
+            """
+        )
+        #expect(after.count == Set(after.map(\.treeID)).count, "the reconciliation drew a tree twice")
+        #expect(cursor != nil, "page three became unreachable")
+    }
+
+    /// **The other order: the refresh lands first and the `Show more` resumes into it.**
+    ///
+    /// This one never lost rows — it discarded the refresh instead, which is benign — but it is
+    /// where the symmetric fix in `loadMoreTrees` has to be right: appending a page fetched from a
+    /// cursor the list no longer ends at would either repeat rows or leave a hole between the
+    /// fresh page's tail and the old cursor. The assertion is therefore not a count but the shape:
+    /// whatever is drawn is a **gapless prefix of the grove, in order, with nothing twice**.
+    @Test("a refresh that lands while Show more is in flight leaves a gapless list")
+    @MainActor
+    func theReverseInterleavingLosesNothing() async {
+        let whole = Self.grove(GroveLimits.pageSize * 3)
+        let api = WholeGroveAPI(whole)
+        let model = GroveModel(api: api, tab: .trees)
+        await model.loadTreesIfNeeded()
+
+        api.holdNextRead()
+        let showMore = Task { @MainActor in await model.loadMoreTrees() }
+        await api.awaitParkedRead()
+
+        // The revisit's refresh runs to completion inside the parked `Show more`.
+        await model.loadTreesIfNeeded()
+
+        api.releaseHeldRead()
+        await showMore.value
+
+        guard case let .loaded(after, _) = model.treesPhase else {
+            Issue.record("the interleaving lost the list: \(model.treesPhase)")
+            return
+        }
+        #expect(after.count == Set(after.map(\.treeID)).count, "a tree was drawn twice")
+        #expect(
+            after.map(\.treeID) == whole.prefix(after.count).map(\.treeID),
+            """
+            the drawn list is not the grove's own prefix — the two reads were spliced at \
+            different places and left a hole
+            """
+        )
+        #expect(after.count >= GroveLimits.pageSize, "the list shrank below the page it started at")
+    }
+
+    // MARK: - The account's half beyond the drawn window
+
+    /// **An account-only tree that sorts beyond the drawn window has to stay reachable.**
+    ///
+    /// `refreshTrees` (`RoutedAPI.refreshedGrove`) is the only read that returns the account's rows
+    /// as well as the phone's; `grovePage` returns the phone's alone. `startTreesRefresh` used to
+    /// cut the merged answer to the window and drop the rest, which put such a row in no page the
+    /// reader could reach — not drawn, and not in any `Show more` — until some later refresh
+    /// happened to widen the window past it. The comment on that method claimed "nothing is shown
+    /// twice and nothing is skipped", which was true only of a row arriving *inside* the window.
+    @Test("an account-only tree beyond the window is reachable by Show more")
+    @MainActor
+    func anAccountOnlyRowBeyondTheWindowIsReachable() async {
+        let local = Self.grove(150)
+        // Sorts between local rows 59 and 60, so it lands at merged index 60 — outside the first
+        // window of 50, and in no page `grovePage` can produce, because this phone has never
+        // heard of it.
+        let accountOnly = GroveEntry(
+            treeID: UUID(uuidString: "0EAAAAAA-0000-4000-8000-000000000060")!,
+            displayName: "A tree from the other phone",
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            lastVisitedAt: Self.start.addingTimeInterval(-60 * 59.5),
+            isFavorite: true,
+            record: GroveRecord.none
+        )
+        let merged = (local + [accountOnly]).sorted { $0.orderKey > $1.orderKey }
+        // The fixture only means something if the row really is past the first window.
+        #expect(
+            merged.firstIndex { $0.treeID == accountOnly.treeID } == 60,
+            "the fixture put the account's tree inside the window, where the defect is not"
+        )
+
+        let api = WholeGroveAPI(local)
+        let model = GroveModel(api: api, tab: .trees, refreshTrees: { merged })
+
+        await model.loadTreesIfNeeded()
+        await model.treesRefresh?.value
+
+        guard case let .loaded(drawn, _) = model.treesPhase else {
+            Issue.record("the first read did not land: \(model.treesPhase)")
+            return
+        }
+        // Not drawn yet is correct: the window is one page, and this row is past it.
+        #expect(drawn.count == GroveLimits.pageSize)
+        #expect(!drawn.contains { $0.treeID == accountOnly.treeID })
+
+        await model.loadMoreTrees()
+
+        guard case let .loaded(after, _) = model.treesPhase else {
+            Issue.record("Show more lost the list: \(model.treesPhase)")
+            return
+        }
+        #expect(
+            after.contains { $0.treeID == accountOnly.treeID },
+            """
+            the account's tree at merged position 60 is in no page the reader can reach: \
+            `Show more` returned \(after.count) rows from the phone's own read, which does not \
+            contain it, and the merged answer that did was thrown away
+            """
+        )
+        #expect(after.count == Set(after.map(\.treeID)).count, "a tree was drawn twice")
+        #expect(
+            after.map(\.treeID) == merged.prefix(after.count).map(\.treeID),
+            "the second page is not the merged grove's next slice, in order"
         )
     }
 }

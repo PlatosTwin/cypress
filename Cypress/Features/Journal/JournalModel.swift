@@ -249,13 +249,22 @@ final class JournalModel {
     /// flag is `Show earlier`'s, and this is not that. The list stays exactly as it was, which is
     /// the same reasoning the file comment gives for keeping the two failure kinds apart.
     private func refresh() async {
-        guard case let .loaded(held, heldCursor) = phase, !isRefreshing else { return }
+        guard case .loaded = phase, !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         guard let fresh = try? await api.journal(cursor: nil, limit: JournalLimits.pageSize) else {
             return
         }
+
+        // **Read after the await, never before it.** This method guards only `isRefreshing` and
+        // `loadOlder` guards only `isLoadingOlder`, so the two run together: press `Show earlier`,
+        // then leave the tab and come back, and a `Show earlier` is in flight inside this read.
+        // Reconciling against a snapshot taken before the `await` writes the pre-press list back
+        // and discards the page the reader just revealed. Found by review on the grove, which is
+        // this method's twin (`GroveModel.refreshTreesPageOne`); the shape was here first, so it is
+        // fixed here in the same change rather than left for the next person to hit at 1,027 rows.
+        guard case let .loaded(held, heldCursor) = phase else { return }
 
         guard let oldest = fresh.items.last?.capturedAt, fresh.nextCursor != nil else {
             // Case 2: the fresh page reached the end of the journal, so it is the whole of it.
@@ -296,12 +305,18 @@ final class JournalModel {
     /// every one of them a second time. The guard is also what makes the button's absence and the
     /// read's refusal the same condition: `hasOlder` is `nextCursor != nil` and so is this.
     func loadOlder() async {
-        guard case let .loaded(entries, cursor) = phase, let cursor, !isLoadingOlder else { return }
+        guard case let .loaded(_, cursor) = phase, let cursor, !isLoadingOlder else { return }
         isLoadingOlder = true
         defer { isLoadingOlder = false }
         do {
             let page = try await api.journal(cursor: cursor, limit: JournalLimits.pageSize)
-            setPhase(.loaded(entries: entries + page.items, nextCursor: page.nextCursor))
+            // `refresh()`'s note, from the other side: append only if the list still ends where
+            // this read asked from, or a refresh that reconciled underneath it gets overwritten
+            // from a stale snapshot.
+            guard case let .loaded(current, currentCursor) = phase, currentCursor == cursor else {
+                return
+            }
+            setPhase(.loaded(entries: current + page.items, nextCursor: page.nextCursor))
             hasFailedOlder = false
         } catch {
             // The rows already read stay on screen. Only the note changes — see the file comment.

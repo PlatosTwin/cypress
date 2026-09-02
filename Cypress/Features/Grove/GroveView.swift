@@ -210,14 +210,21 @@ struct GroveView: View {
     /// ruling of 2026-09-02 is that this list pages the way that one does and invents no vocabulary
     /// of its own. Both are absent when the read reached the end, which is the honest drawing of a
     /// finished list: nothing here states or implies how many trees there are (D1, ERRATA E38).
+    ///
+    /// **Gated on `hasMore`, and the sentence on `moreNote` inside it**, which are the same thing
+    /// except for the empty page that still carries a cursor: there the control draws and the
+    /// sentence does not, because "there are more trees than these" needs a "these". See
+    /// `GroveTreesPresentation.moreNote`.
     @ViewBuilder
     private func moreBlock(_ presentation: GroveTreesPresentation) -> some View {
-        if let more = presentation.moreNote {
+        if presentation.hasMore {
             VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
-                Text(more)
-                    .font(CypressFont.body12)
-                    .foregroundStyle(CypressColor.textMuted)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let more = presentation.moreNote {
+                    Text(more)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 // A failed `Show more` keeps every row already on screen and adds one line. The
                 // control stays, because the thing to do about it is press it again.

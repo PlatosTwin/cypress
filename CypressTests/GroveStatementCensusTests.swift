@@ -198,4 +198,53 @@ struct GroveStatementCensusTests {
         #expect(!census.statements.contains(ContributionStore.groveTreeIDsSQL))
         #expect(census.statements.contains(ContributionStore.groveTreeIDsPageSQL))
     }
+
+    /// **A negative limit must not become the unbounded read wearing the paged statement's name.**
+    ///
+    /// In SQLite a negative `LIMIT` is no limit at all, so before the clamp
+    /// `grovePage(cursor: nil, limit: -1)` ran `groveTreeIDsPageSQL` and came back with the entire
+    /// grove — the whole projection built for one page, which is the exact cost this round exists
+    /// to remove. Every other gate in this file stayed green through it, because they ask *which
+    /// statement ran* and the paged one is what ran. That is why this one asks about the size of
+    /// the answer instead.
+    ///
+    /// The protocol default in `CypressAPI` already refused a non-positive limit and returned an
+    /// empty page; `LocalAPI` returning the whole grove for the same call meant the two
+    /// implementations disagreed on an input `GrovePaginationTests`' equivalence sweep never uses.
+    @Test("a non-positive limit returns nothing, not everything", arguments: [-1, 0])
+    func aNonPositiveLimitIsNotTheUnboundedRead(_ limit: Int) async throws {
+        let (api, store, trees) = try await Self.seededGrove()
+        try #require(trees > GroveLimits.pageSize, "the fixture cannot show the difference")
+
+        let census = StatementCensus()
+        await store.queue.installCensus(census)
+        let page = try await api.grovePage(cursor: nil, limit: limit)
+        await store.queue.installCensus(nil)
+
+        #expect(
+            page.items.isEmpty,
+            """
+            a limit of \(limit) returned \(page.items.count) of \(trees) trees. A negative LIMIT \
+            is no limit in SQLite, so this is the unbounded read running through the paged \
+            statement — invisible to every gate that asks which text ran
+            """
+        )
+        #expect(page.nextCursor == nil, "an empty page carried a cursor")
+        #expect(
+            !census.statements.contains(ContributionStore.groveTreeIDsSQL),
+            "the clamp sent this down the unbounded path instead of returning nothing"
+        )
+    }
+
+    /// The same clamp on the journal, which had the identical shape one screen over. `journal()`
+    /// is not this file's subject, so this asserts only the property the clamp is for.
+    @Test("the journal's limit is clamped the same way", arguments: [-1, 0])
+    func theJournalsLimitIsClampedToo(_ limit: Int) async throws {
+        let (api, _, _) = try await Self.seededGrove()
+        let page = try await api.journal(cursor: nil, limit: limit)
+        #expect(
+            page.items.isEmpty,
+            "the journal returned \(page.items.count) rows for a limit of \(limit)"
+        )
+    }
 }

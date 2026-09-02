@@ -233,7 +233,7 @@ public protocol CypressAPI: Sendable {
     /// erases a conformance to `any CypressAPI`, calls every requirement, and reads back which one
     /// was reached — and it asserts that base names are unique so that key is sufficient. A second
     /// `grove` would make the two indistinguishable to it and the gate would stop measuring what it
-    /// claims to. `journal(cursor:limit:)` keeps its plain name because it has no unlabelled
+    /// claims to. `journal(cursor:limit:)` keeps its plain name because it has no unlabeled
     /// sibling. Widening the probe to full signatures is the alternative and is a change to a gate
     /// for the convenience of a name.
     ///
@@ -1308,9 +1308,26 @@ public struct GroveEntry: Hashable, Sendable, Identifiable {
 ///
 /// **Descending.** `a > b` means `a` is drawn above `b`, because the newest visit is at the top.
 public struct GroveOrderKey: Comparable, Hashable, Sendable {
-    /// The stored spelling of `last_visited`, or `""` for a tree nobody has visited — which is what
-    /// `COALESCE(last_visited, '')` compares, and it sorts below every timestamp because a
-    /// `SQLiteTimestamp` begins with a digit.
+    /// `SQLiteTimestamp`'s canonical spelling of `last_visited`, or `""` for a tree nobody has
+    /// visited — which sorts below every timestamp because a `SQLiteTimestamp` begins with a digit.
+    ///
+    /// **This equals what the query compares only while the database has one writer of
+    /// `last_visited`, and nothing enforces that.** `COALESCE(last_visited, '')` sorts the *raw
+    /// column text*; this field is a decoded `Date` re-encoded by `SQLiteTimestamp.string(from:)`.
+    /// Every write of `captured_at` today goes through `Date`'s `SQLiteBindable` conformance, so
+    /// every stored value is canonical and the two agree — but `SQLiteTimestamp.date(from:)`
+    /// deliberately *reads* a second spelling, its own comment saying "the seed generator emits
+    /// `+00:00` without fractional seconds". A row stored that way would sort apart in SQL
+    /// (`'+'` is 0x2B, `'.'` is 0x2E) while tying here and falling through to the uuid.
+    ///
+    /// Normalizing on read does not close it: this side is already canonical and it is the SQL
+    /// side that reads raw text. Closing it means either rewriting the column — a migration — or
+    /// wrapping the `ORDER BY` in an expression, which gives up the index v19 added for exactly
+    /// this query. Neither is worth doing for a spelling nothing currently writes.
+    ///
+    /// So the assumption is stated rather than asserted: **if a second writer of `last_visited` is
+    /// ever added, this mirror is where it breaks**, and
+    /// `GrovePaginationTests.theSwiftOrderKeyAgreesWithTheQuery` is what will say so.
     let stamp: String
     /// `COLLATE NOCASE` over a `uuidString`, which is ASCII, so case folding is exactly
     /// `lowercased()`.

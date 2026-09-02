@@ -2208,7 +2208,16 @@ public actor LocalAPI: CypressAPI {
     /// (ERRATA E38).
     public func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
         let position = cursor.flatMap(ContributionStore.GroveCursor.init(string:))
-        let capped = min(limit, Page<GroveEntry>.maximumLimit)
+        // **The lower bound is not decoration: in SQLite a negative `LIMIT` means no limit at
+        // all.** Without it `grovePage(cursor: nil, limit: -1)` runs the *paged* statement text
+        // and returns the entire grove — the whole projection built for one page, which is the
+        // cost this method exists to avoid — while `GroveStatementCensusTests` stays green,
+        // because its gate is which statement ran and the paged one is what ran. `groveEntries`
+        // below already names that hazard for the internal `limit == nil` path; the public
+        // parameter had not been held to it. Clamped to zero rather than one so this agrees with
+        // the protocol default in `CypressAPI`, which answers a non-positive limit with an empty
+        // page rather than a row nobody asked for.
+        let capped = max(0, min(limit, Page<GroveEntry>.maximumLimit))
         let (entries, rows) = try await groveEntries(after: position, limit: capped)
         let nextCursor = rows.count == capped
             ? rows.last.map {
@@ -2516,7 +2525,11 @@ public actor LocalAPI: CypressAPI {
     /// unapproved one — which is E215, not a regression. `JournalBatchReadTests` holds both halves.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
         let position = cursor.flatMap(ContributionStore.JournalCursor.init(string:))
-        let capped = min(limit, Page<JournalEntry>.maximumLimit)
+        // `grovePage`'s clamp, for its reason and on the same day: a negative `LIMIT` is no limit
+        // in SQLite, so `journal(cursor: nil, limit: -1)` returned the whole journal through the
+        // paged path. This shape was here first and the grove copied it; both are fixed together
+        // rather than leaving the older one for whoever finds it next.
+        let capped = max(0, min(limit, Page<JournalEntry>.maximumLimit))
         let rows = try await store.queue.read { connection in
             try contributions.journal(
                 userID: userID,

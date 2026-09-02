@@ -89,7 +89,15 @@ struct GroveTreesPresentation: Equatable {
     /// The sentence under the list when there are more trees, and nil when the read reached the end.
     /// `JournalPresentation.olderNote`'s shape exactly; see `GroveCopy.moreNote` for the one word
     /// that differs and why.
-    var moreNote: String? { hasMore ? GroveCopy.moreNote : nil }
+    ///
+    /// **`!rows.isEmpty` is the empty-page case, and it is about the sentence rather than the
+    /// control.** A first page can come back with no rows *and* a cursor — every id in it resolved
+    /// to neither inventory, which is the state `emptyState`'s guard below also exists for (E38).
+    /// "There are more trees than these" over nothing is a sentence about a list that is not there,
+    /// so it is withheld; `hasMore` still draws the control, because pressing it is exactly the
+    /// right thing to do and it fetches the next page. No new copy — the alternative would have
+    /// been a sentence for a state the mocks do not show (DECISIONS constraint 21).
+    var moreNote: String? { hasMore && !rows.isEmpty ? GroveCopy.moreNote : nil }
 
     /// The cold-start sentence, or nil when there is a grove to draw.
     ///

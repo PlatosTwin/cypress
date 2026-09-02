@@ -704,4 +704,135 @@ struct JournalModelLifetimeTests {
             """
         )
     }
+
+    // MARK: - 3 · Two reads in flight at once
+
+    /// A journal whose next read can be held open, so `Show earlier` and the re-entry refresh can
+    /// be put in flight together. `JournalPreviewAPI` is a struct that answers immediately, which
+    /// is right for every other test here and cannot express an interleaving.
+    private final class HoldableJournalAPI: CypressAPI, @unchecked Sendable {
+        private let lock = NSLock()
+        private let first: Page<JournalEntry>
+        private let older: Page<JournalEntry>
+        private var gate: CheckedContinuation<Void, Never>?
+        private var holdNext = false
+        private var parked: CheckedContinuation<Void, Never>?
+
+        init(first: Page<JournalEntry>, older: Page<JournalEntry>) {
+            self.first = first
+            self.older = older
+        }
+
+        func holdNextRead() { lock.withLock { holdNext = true } }
+
+        func awaitParkedRead() async {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let alreadyParked: Bool = lock.withLock {
+                    if gate != nil { return true }
+                    parked = continuation
+                    return false
+                }
+                if alreadyParked { continuation.resume() }
+            }
+        }
+
+        func releaseHeldRead() {
+            let held: CheckedContinuation<Void, Never>? = lock.withLock {
+                let held = gate
+                gate = nil
+                return held
+            }
+            held?.resume()
+        }
+
+        func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
+            let shouldHold: Bool = lock.withLock {
+                let hold = holdNext
+                holdNext = false
+                return hold
+            }
+            if shouldHold {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    let waiter: CheckedContinuation<Void, Never>? = lock.withLock {
+                        gate = continuation
+                        let waiter = parked
+                        parked = nil
+                        return waiter
+                    }
+                    waiter?.resume()
+                }
+            }
+            return cursor == nil ? first : older
+        }
+
+        func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
+        func treesNear(_ c: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { [] }
+        func treeProfile(id: UUID) async throws -> TreeProfile { throw APIError.notFound }
+        func addTree(_ draft: TreeDraft) async throws -> Tree { throw APIError.forbidden }
+        func species(id: UUID) async throws -> Species { throw APIError.notFound }
+        func searchSpecies(query: String, limit: Int) async throws -> [Species] { [] }
+        func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { [] }
+        func beginPhotoUpload(_ r: PhotoUploadRequest) async throws -> PhotoUploadTicket {
+            throw APIError.forbidden
+        }
+        func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
+        func grove() async throws -> [GroveEntry] { [] }
+        func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
+        func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+            throw APIError.unauthorized
+        }
+        func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
+        func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
+    }
+
+    /// **A `Show earlier` that lands while the re-entry refresh is in flight keeps its page.**
+    ///
+    /// `refresh()` and `loadOlder()` each guard on their own flag and not on the other's, and
+    /// `refresh()` captured `held` before its `await`. Two ordinary actions — press `Show earlier`,
+    /// then glance at another segment and come back — put a refresh inside the `Show earlier`, and
+    /// the refresh resumed by writing its pre-press snapshot back over the appended page.
+    ///
+    /// **Found by review on `GroveModel`, whose `refreshTreesPageOne` is this method's twin.** The
+    /// shape was here first and the grove copied it, so it is fixed here in the same change rather
+    /// than left for whoever hits it next; the journal simply never advertised the property in a
+    /// release note the way screen 08 now does.
+    @Test("a Show earlier that lands while the re-entry refresh is in flight keeps its page")
+    @MainActor
+    func aShowEarlierInsideARefreshKeepsItsPage() async {
+        let firstPage = (1...5).map { Self.entry($0, at: Self.date(2026, 6, 20)) }
+        let olderPage = (6...10).map { Self.entry($0, at: Self.date(2026, 6, 1)) }
+        let api = HoldableJournalAPI(
+            first: Page(items: firstPage, nextCursor: "cursor"),
+            older: Page(items: olderPage)
+        )
+        let model = JournalModel(api: api, now: { Self.date(2026, 7, 1) })
+
+        await model.load()
+        #expect(model.presentation?.rows.count == 5)
+
+        // The re-entry refresh starts and parks mid-read.
+        api.holdNextRead()
+        let revisit = Task { @MainActor in await model.load() }
+        await api.awaitParkedRead()
+
+        // `Show earlier` lands while it is parked, so it appends first.
+        await model.loadOlder()
+        #expect(
+            model.presentation?.rows.count == 10,
+            "the fixture never revealed a second page, so the race below is untested"
+        )
+
+        api.releaseHeldRead()
+        await revisit.value
+
+        let after = model.presentation?.rows.count ?? 0
+        #expect(
+            after == 10,
+            """
+            the refresh resumed and left \(after) rows where the reader had revealed 10: it \
+            reconciled against the snapshot it took before its await, discarding the page that \
+            `Show earlier` appended while it was in flight
+            """
+        )
+    }
 }
