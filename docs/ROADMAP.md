@@ -393,26 +393,67 @@ that had not yet reached a build). What remains OPEN:
   `idx_photos_tree`. That reaches both readers this entry named on the contribution side —
   `youngTreesWithoutVisits` and `ContributionStore.visits(treeID:)` (0.299 → 0.009 ms).
 
-  **Still open, and the two halves are not the same size.** `SpeciesAssertionStore` reads
-  `tree_uuid = :tree COLLATE NOCASE`, and `idx_species_assertions_tree` and
-  `idx_species_assertions_head` are both BINARY and were not recollated — that is v19's fix again,
-  two more `DROP`/`CREATE` pairs, and it is the cheap half. `CommunityTreeStore` is the expensive
-  one: five of its reads are `id = :id COLLATE NOCASE`, and the index there is
-  `sqlite_autoindex_community_trees_1`, implied by `id TEXT PRIMARY KEY` — an implicit index cannot
-  be dropped and recreated, so reaching it needs `COLLATE NOCASE` **on the column**, which is the
-  table rebuild this entry originally proposed. Neither is measured. Migration-only; not costed.
+  ~~**Still open, and the two halves are not the same size.**~~ **SHIPPED, both halves**
+  (`AppSchema` v20, `perf/v20-index-round`). `idx_species_assertions_tree` recollated the v19 way;
+  `idx_species_assertions_head` deliberately stays BINARY — it is a partial UNIQUE index, and
+  recollating it changes which rows the schema calls a conflict (the review constructed the
+  two-case pair that would refuse to migrate). The community half turned out **not** to need the
+  table rebuild this entry proposed: an *added* secondary index,
+  `idx_community_trees_id ON community_trees(id COLLATE NOCASE)`, gives every
+  `id = :id COLLATE NOCASE` read a seek without touching the PK. `SpeciesAccessPlanTests` and
+  `SchemaV20Tests` are the gates. Two readers in the same family were out of v20's declared scope
+  and still walk: `SpeciesAssertionStore.assertion(id:)` and `.supersede(id:)` predicate
+  `id = :id COLLATE NOCASE` against `species_assertions`' BINARY autoindex — one more added-index
+  fix, unmeasured, migration seat required.
 
-- **`species.uuid` is compared `COLLATE NOCASE` and has no lowercase gate.**
-  `SpeciesQueries.species(id:)`, its two siblings at ~411/~436, and `TreeQueries.swift:790` compare
-  the species identity column to a bound parameter with `COLLATE NOCASE` — the shape
-  `TreeQueries.identityMatch` fixed for `trees.uuid` with `lower(:uuid)`. It was **not** done here
-  because `DataGates.armsWithUppercaseUUIDs` gates `trees.uuid` only, so the contract the fix stands
-  on does not exist for species. Two things to check in one sitting: whether the seed's
-  `species.uuid` is in fact lower case per arm (and if so, extend the gate), and whether
-  `SpeciesQueries.species(id:)`'s doc comment — which claims
-  `SEARCH s USING COVERING INDEX sqlite_autoindex_species_1 (uuid=?)` — is true, since the same file
-  argues thirty lines later that a NOCASE comparison cannot match a BINARY index. Unverified either
-  way; noted rather than claimed.
+- ~~**`species.uuid` is compared `COLLATE NOCASE` and has no lowercase gate.**~~ **SHIPPED**
+  (`AppSchema` v20 round, `perf/v20-index-round`). Both checks the entry asked for were run and
+  both broke the way it suspected: the seed's `species.uuid` is lower case per arm (0 of 731
+  uppercase; `verify_seed.py` check 16d already enforces it for packs at publish time), and
+  `SpeciesQueries.species(id:)`'s doc comment was indeed false — the real plan was
+  `SCAN s USING COVERING INDEX`, a 731-row walk per lookup. The contract gate now covers
+  `species.uuid` per arm (red-proved against a pack), the five readers moved to `lower(:uuid)`,
+  and `SpeciesAccessPlanTests` pins the seeks — including a probe-bound test that goes red on the
+  exact one-line BINARY-literal revert (the review found the first version of that test did not).
+
+### Perf campaign close, 2026-09-04
+
+The 2026-09-01 owner directive ("the app highly performant; that takes precedence") closed with
+seven merged PRs — #143 Journal, #144 Grove paint, #145 Almanac, #146 v19, #147 Class-R
+local-first, #148 v20, #149 Grove Trees paging — plus three rulings (local-first paint; tab models
+keep state; favorites local-first amending R2) and two ruled in-round (Grove > Trees pages at 50
+like the Journal; every phase draws, superseding the 26 ms decision whose small-grove premise broke
+at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
+
+- **The post-drain favorite reconcile is exposed to read-replica lag.** Toggle drains, the queue
+  empties, a stale server answer lands with the tap counter unmoved, and the reconcile assigns the
+  pre-tap value. Pre-existing (remote-first `isFavorite` had the same exposure); documented in
+  `ProfileFavoriteWriter.reconciledState`, not closed. Needs a server-side read-your-writes answer
+  or a version/timestamp on the favorite row.
+- **Hoist the remaining grove SQL literals to named properties** (`groveTreeIDs`, `groveRecords`,
+  `CommunityTreeStore.trees(ids:)`) so `GroveStatementCensusTests` can pin by property the way the
+  almanac census does, instead of deriving five of seven expected texts by probe. The tallies
+  literal was already collapsed onto `scopedHeroPhotoTalliesSQL` in #147.
+- **`Tools/run_tests.sh` hardening, one sitting:** (a) a wedged `simctl bootstatus -b` is
+  indistinguishable from a slow preflight and silently blocks every later run on that device;
+  (b) the collision guard can self-match the *caller's own command line* when the wrapper
+  invocation embeds both `xcodebuild` and the UDID (three refusals against a dead pid, 2026-09-02);
+  (c) the guard's leftover-build refusal fires for ~1–2 minutes after a `-only-testing` run's
+  wrapper exits, which the merge train should expect; (d) at the sanctioned three-concurrent-build
+  cap the UI phase flakes with "Timed out while synthesizing event" — either lower the effective
+  cap during UI phases or teach the harness to tell an event-synthesis timeout from an assertion.
+- **Screen 14's Activity list shows Photos / Check-ins / Care rows but no Visits row** (feel-check
+  observation, 2026-09-02, at merged `e574a0a`). Whether that is intended is a mocks question —
+  DECISIONS constraint 21 says ask, not infer; **owner to rule** before anyone "fixes" it.
+- **Flake-watch sightings from the campaign** (all cleared by evidence, kept for the aggregate):
+  `CityDownloadTests.swift:504` time-limit (60 s trait, 109 s under load; run 33586187828 — fourth
+  in the family chip 4 tracks); `DeepLinkSweepTests` a11y check stalled 1,043 s under three
+  concurrent builds (#145 review, solo re-run green); `PrimaryCTAReachabilityTests.testReportCTA`
+  AX5 miss on main run 33676401718, red-then-green on a **byte-identical tree** (the PR run had
+  passed the same tree minutes earlier); three `MapSearchTests` `TestWait.ceiling` timeouts on
+  #149's first CI (E222 liveness bound, re-run green);
+  `MapFilterAccessibilityTests.testTurningAChipOnIsAnnouncedInBothChannels` red only on a stale
+  merge ref that no longer exists (run 33663399211, green on the true merged tree).
 
 ### Owner backlog additions, 2026-08-28
 
