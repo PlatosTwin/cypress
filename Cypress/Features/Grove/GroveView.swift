@@ -149,22 +149,32 @@ struct GroveView: View {
     /// the Journal tab (`JournalTabView.explanation`), and the two are written to be read against
     /// each other.
     ///
-    /// ── There are three arms and `.idle` is not one of them, on purpose ─────────────────────────
-    /// While `loadTreesIfNeeded()` is in flight `model.treesPresentation` is nil and
-    /// `treesHaveFailed` is false, so **none** of the arms below match and this column draws
-    /// nothing. That was a 13-to-22-second blank until task #250 batched `LocalAPI.grove()`'s
-    /// per-tree reads; it is now about 26 ms, and a loading state was considered and declined at
-    /// that number. A spinner visible for a frame or two reads as a flicker rather than as progress,
-    /// and it would be copy that appears in no mock (DECISIONS constraint 21). Measured first, then
-    /// decided — in that order, which is the only order in which the answer means anything.
+    /// ── There used to be three arms and no arm for the read in flight ───────────────────────────
+    /// While `loadTreesIfNeeded()` was running, `model.treesPresentation` was nil and
+    /// `treesHaveFailed` was false, so **none** of the arms matched and this column drew nothing.
+    /// That was a 13-to-22-second blank until task #250 batched `LocalAPI.grove()`'s per-tree
+    /// reads; at 26 ms on a forty-tree grove a loading state was considered and declined, on the
+    /// grounds that a spinner visible for two frames reads as a flicker. The measurement was right
+    /// and the conclusion did not survive a bigger grove: at 1,027 trees the same column was blank
+    /// for 3.3–3.7 s, photographed, because the cost had moved from the query to building a
+    /// thousand rows. The owner ruled on 2026-09-02 that the blank is a defect at any duration.
     ///
-    /// So the blank arm is a deliberate omission rather than an oversight. What would re-open it is
-    /// the read getting slow again, and `GroveQueryPlanTests` is what would notice that first.
+    /// So the `switch` below is over `GroveModel.TreesDrawing`, which is total, and it has no
+    /// `default`. There is no longer an arm to leave out.
     @ViewBuilder
     private var treesTab: some View {
-        if model.treesHaveFailed {
+        switch model.treesDrawing {
+        case .failed:
             treesFailure
-        } else if let presentation = model.treesPresentation {
+        case .loading:
+            // The treatment every other screen in this app uses for a read in flight — screens 03,
+            // 07, 11, 13, 15 and the launch gate are all a bare `ProgressView()` — rather than a
+            // skeleton or a message, which would be a drawing and a sentence that appear in no mock
+            // (DECISIONS constraint 21).
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.top, CypressSpacing.labelSectionTop)
+        case let .list(presentation):
             if let empty = presentation.emptyState {
                 GroveNote(empty)
                     .padding(.top, CypressSpacing.labelSectionTop)
@@ -185,10 +195,53 @@ struct GroveView: View {
                             action: onOpenTree.map { open in { open(row.treeID) } }
                         )
                     }
+
+                    moreBlock(presentation)
                 }
                 .padding(.top, CypressSpacing.labelSectionTop)
                 .padding(.horizontal, CypressSpacing.gutter)
             }
+        }
+    }
+
+    /// The sentence about there being more trees, and the control that fetches them.
+    ///
+    /// **`JournalListView.olderBlock`, component for component and token for token** — the owner's
+    /// ruling of 2026-09-02 is that this list pages the way that one does and invents no vocabulary
+    /// of its own. Both are absent when the read reached the end, which is the honest drawing of a
+    /// finished list: nothing here states or implies how many trees there are (D1, ERRATA E38).
+    ///
+    /// **Gated on `hasMore`, and the sentence on `moreNote` inside it**, which are the same thing
+    /// except for the empty page that still carries a cursor: there the control draws and the
+    /// sentence does not, because "there are more trees than these" needs a "these". See
+    /// `GroveTreesPresentation.moreNote`.
+    @ViewBuilder
+    private func moreBlock(_ presentation: GroveTreesPresentation) -> some View {
+        if presentation.hasMore {
+            VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+                if let more = presentation.moreNote {
+                    Text(more)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // A failed `Show more` keeps every row already on screen and adds one line. The
+                // control stays, because the thing to do about it is press it again.
+                if model.hasFailedMoreTrees {
+                    Text(GroveCopy.moreFailed)
+                        .font(CypressFont.body12)
+                        .foregroundStyle(CypressColor.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                SecondaryOutlineButton(GroveCopy.moreAction, style: .compact) {
+                    Task { await model.loadMoreTrees() }
+                }
+                .fixedSize()
+                .disabled(model.isLoadingMoreTrees)
+            }
+            .padding(.top, CypressSpacing.labelSectionTop)
         }
     }
 

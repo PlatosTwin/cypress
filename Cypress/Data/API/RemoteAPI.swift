@@ -488,6 +488,18 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.communityHalfOnly
     }
 
+    /// **Community half only, for `grove()`'s reason**, which is why this refuses rather than
+    /// paging: the service's `GET /me/grove` carries no display name and no coordinate, so there is
+    /// no `GroveEntry` to cut into pages here at all. The paged read screen 08 runs is the phone's
+    /// (`LocalAPI.grovePage`), routed straight through by `RoutedAPI`.
+    ///
+    /// Declared rather than left to the protocol's default, which would call `grove()` above and
+    /// arrive at the same refusal by a longer road — every shipping conformance answers every
+    /// requirement in its own body (ERRATA E125, `APIConformanceGuardTests`).
+    public func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+        throw RemoteSurface.communityHalfOnly
+    }
+
     /// `GET /me/grove/{treeID}/favorite` — the whole answer, in one bit (#167).
     ///
     /// **One of exactly two reads whose remote answer is complete on its own**, the other being

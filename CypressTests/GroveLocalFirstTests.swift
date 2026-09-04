@@ -319,7 +319,7 @@ struct GroveLocalFirstTests {
 
         await model.loadTreesIfNeeded()
 
-        guard case let .loaded(painted) = model.treesPhase else {
+        guard case let .loaded(painted, _) = model.treesPhase else {
             Issue.record("the first read did not paint: \(model.treesPhase)")
             return
         }
@@ -328,7 +328,7 @@ struct GroveLocalFirstTests {
 
         await model.treesRefresh?.value
 
-        guard case let .loaded(merged) = model.treesPhase else {
+        guard case let .loaded(merged, _) = model.treesPhase else {
             Issue.record("the refresh did not publish: \(model.treesPhase)")
             return
         }
@@ -464,7 +464,8 @@ struct GroveLocalFirstTests {
         #expect(probe.speciesReads == 2, "the second visit made \(probe.speciesReads) species reads")
         #expect(probe.treeReads == 2, "the second visit made \(probe.treeReads) trees reads")
 
-        guard case let .loaded(species) = model.phase, case let .loaded(trees) = model.treesPhase else {
+        guard case let .loaded(species) = model.phase,
+              case let .loaded(trees, _) = model.treesPhase else {
             Issue.record("a repeat visit lost the grove: \(model.phase) / \(model.treesPhase)")
             return
         }

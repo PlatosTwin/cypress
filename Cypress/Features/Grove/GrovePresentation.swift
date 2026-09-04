@@ -53,8 +53,8 @@ import Foundation
 /// with evidence the earlier round did not have.
 ///
 /// ── What is left, and why constraint 21 is satisfied ──────────────────────────────────────
-/// - `Trees` is `CypressAPI.grove()` — one row per tree you have a relationship with, however many
-///   times you have been. See `GroveTreesPresentation`.
+/// - `Trees` is `CypressAPI.grovePage(cursor:limit:)` — one row per tree you have a relationship
+///   with, however many times you have been, a page at a time. See `GroveTreesPresentation`.
 /// - `Species` is screen 08 proper.
 ///
 /// The journal keeps its own tab, where C16 draws it and where the export beside it lives. Nothing

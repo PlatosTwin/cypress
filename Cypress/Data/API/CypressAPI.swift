@@ -221,6 +221,32 @@ public protocol CypressAPI: Sendable {
     /// `GET /me/grove`.
     func grove() async throws -> [GroveEntry]
 
+    /// `GET /me/grove`, cursor-paginated — the read screen 08's `Trees` pill paints from.
+    ///
+    /// A second entry point rather than a limit on `grove()` because the two answer different
+    /// questions and both have callers: the whole grove is what a background refresh joins the
+    /// account's half into, and a page is what a list draws. `journal(cursor:limit:)` one screen
+    /// over is the same pair for the same reason.
+    ///
+    /// **`grovePage` and not an overload of `grove`, and the reason is a gate rather than taste.**
+    /// `APIConformanceGuardTests` keys its existential probe on a requirement's *base name* — it
+    /// erases a conformance to `any CypressAPI`, calls every requirement, and reads back which one
+    /// was reached — and it asserts that base names are unique so that key is sufficient. A second
+    /// `grove` would make the two indistinguishable to it and the gate would stop measuring what it
+    /// claims to. `journal(cursor:limit:)` keeps its plain name because it has no unlabeled
+    /// sibling. Widening the probe to full signatures is the alternative and is a change to a gate
+    /// for the convenience of a name.
+    ///
+    /// **Declared here and defaulted below, which is not the shape ERRATA E125 forbids.** E125 is
+    /// about a method that exists *only* in an extension: it has no witness-table entry, so it
+    /// dispatches statically and every screen holding `any CypressAPI` reaches the default rather
+    /// than the conformance. A requirement with a default in an extension dispatches dynamically —
+    /// `LocalAPI`'s implementation is reached through the existential — and the default is there so
+    /// a preview double with nothing but a `grove()` needs to learn nothing new. Every *shipping*
+    /// conformance still declares it: that is `APIConformanceGuardTests`' other gate, and it is why
+    /// `RemoteAPI` carries a refusal of its own rather than inheriting one.
+    func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry>
+
     /// `GET /me/grove` narrowed to one tree: whether this contributor currently holds it (#167).
     ///
     /// Screen 03's heart re-reads its state after every write (RULINGS R2), and it used to do that
@@ -329,6 +355,44 @@ public extension CypressAPI {
     /// whose `grove()` tells the truth; `LocalAPI` overrides it with the narrow query.
     func isFavorite(treeID: UUID) async throws -> Bool {
         try await grove().first { $0.treeID == treeID }?.isFavorite ?? false
+    }
+
+    /// The grove-derived default for `grovePage(cursor:limit:)` — the whole answer, cut where the
+    /// cursor says.
+    ///
+    /// **It is truthful and it is not a performance fix**, and the two halves of that sentence are
+    /// both deliberate. Truthful: it returns exactly the page `LocalAPI` returns, cursor and all,
+    /// so a double or a preview that only knows `grove()` pages correctly without being taught
+    /// anything. Not a fix: it builds the whole grove and then throws most of it away, which is the
+    /// cost this round exists to remove. Every conformance whose `grove()` is expensive therefore
+    /// overrides it — `LocalAPI` with a bounded query, `RoutedAPI` by forwarding to that.
+    ///
+    /// The cut is the store's own total order, restated here rather than re-sorted: the sequence
+    /// `grove()` returns is already `last_visited DESC, tree_uuid DESC`
+    /// (`ContributionStore.groveOrderSQL`), so "after the cursor" is "past that element", and a
+    /// cursor naming an element this answer does not contain starts from the beginning — the same
+    /// wrong-but-safe reading `JournalCursor` chooses for an unparsable cursor.
+    func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> {
+        let all = try await grove()
+        let capped = min(limit, Page<GroveEntry>.maximumLimit)
+        let start = cursor
+            .flatMap(ContributionStore.GroveCursor.init(string:))
+            .flatMap { position in all.firstIndex { $0.treeID == position.treeID }.map { $0 + 1 } }
+            ?? 0
+        guard start < all.count, capped > 0 else { return Page(items: [], nextCursor: nil) }
+        let page = Array(all[start..<min(start + capped, all.count)])
+        // A full page carries a cursor even when it happens to be the last one, which is
+        // `LocalAPI.grovePage(cursor:limit:)`'s rule and `journal()`'s before it: the read cannot know
+        // it reached the end without asking again, and one empty page is cheaper than a list that
+        // wrongly says it is complete.
+        let nextCursor = page.count == capped
+            ? page.last.map {
+                ContributionStore.GroveCursor(
+                    lastVisitedAt: $0.lastVisitedAt, treeID: $0.treeID
+                ).string
+            }
+            : nil
+        return Page(items: page, nextCursor: nextCursor)
     }
 }
 
@@ -1225,6 +1289,68 @@ public struct GroveEntry: Hashable, Sendable, Identifiable {
         self.isFavorite = isFavorite
         self.record = record
         self.heroPhotoID = heroPhotoID
+    }
+}
+
+/// Where one grove entry sits in the grove's order, as a value that can be compared.
+///
+/// **The order is the store's and this is a mirror of it, which is a thing that can go wrong.**
+/// `ContributionStore.groveOrderSQL` is the definition — `COALESCE(last_visited, '') DESC,
+/// tree_uuid COLLATE NOCASE DESC` — and this type restates it in Swift so that two callers who
+/// cannot reach SQLite can still ask "which of these two rows comes first": `GroveModel`, which
+/// reconciles a refreshed page against pages already on screen, and `RoutedAPI.refreshedGrove`,
+/// which re-sorts after joining the account's half in.
+///
+/// A mirror that drifts would put a page boundary in a different place from the query that
+/// produced it, which is how a row gets shown twice or not at all. So it is not asserted here:
+/// `GrovePaginationTests.theSwiftOrderKeyAgreesWithTheQuery` sorts a fixture by this key and
+/// compares it, element for element, with the order `LocalAPI.grove()` returns.
+///
+/// **Descending.** `a > b` means `a` is drawn above `b`, because the newest visit is at the top.
+public struct GroveOrderKey: Comparable, Hashable, Sendable {
+    /// `SQLiteTimestamp`'s canonical spelling of `last_visited`, or `""` for a tree nobody has
+    /// visited — which sorts below every timestamp because a `SQLiteTimestamp` begins with a digit.
+    ///
+    /// **This equals what the query compares only while the database has one writer of
+    /// `last_visited`, and nothing enforces that.** `COALESCE(last_visited, '')` sorts the *raw
+    /// column text*; this field is a decoded `Date` re-encoded by `SQLiteTimestamp.string(from:)`.
+    /// Every write of `captured_at` today goes through `Date`'s `SQLiteBindable` conformance, so
+    /// every stored value is canonical and the two agree — but `SQLiteTimestamp.date(from:)`
+    /// deliberately *reads* a second spelling, its own comment saying "the seed generator emits
+    /// `+00:00` without fractional seconds". A row stored that way would sort apart in SQL
+    /// (`'+'` is 0x2B, `'.'` is 0x2E) while tying here and falling through to the uuid.
+    ///
+    /// Normalizing on read does not close it: this side is already canonical and it is the SQL
+    /// side that reads raw text. Closing it means either rewriting the column — a migration — or
+    /// wrapping the `ORDER BY` in an expression, which gives up the index v19 added for exactly
+    /// this query. Neither is worth doing for a spelling nothing currently writes.
+    ///
+    /// So the assumption is stated rather than asserted: **if a second writer of `last_visited` is
+    /// ever added, this mirror is where it breaks**, and
+    /// `GrovePaginationTests.theSwiftOrderKeyAgreesWithTheQuery` is what will say so.
+    let stamp: String
+    /// `COLLATE NOCASE` over a `uuidString`, which is ASCII, so case folding is exactly
+    /// `lowercased()`.
+    let tree: String
+
+    public static func < (left: Self, right: Self) -> Bool {
+        left.stamp == right.stamp ? left.tree < right.tree : left.stamp < right.stamp
+    }
+}
+
+public extension GroveEntry {
+    /// This entry's place in the grove's order. See `GroveOrderKey`.
+    var orderKey: GroveOrderKey {
+        GroveOrderKey(
+            stamp: lastVisitedAt.map(SQLiteTimestamp.string(from:)) ?? "",
+            tree: treeID.uuidString.lowercased()
+        )
+    }
+
+    /// This entry's position as the opaque cursor `grovePage(cursor:limit:)` takes, so that a caller
+    /// holding entries and no store can ask for what comes after the last one it is showing.
+    var groveCursor: String {
+        ContributionStore.GroveCursor(lastVisitedAt: lastVisitedAt, treeID: treeID).string
     }
 }
 
