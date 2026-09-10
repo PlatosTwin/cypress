@@ -14,11 +14,14 @@
 # Exit status, and there are THREE of them:
 #   0  VERIFY-OK           — a real pass line, from a complete run
 #   1  VERIFY-FAIL         — a red, or a log this script refuses to judge
-#   2  VERIFY-ENV-REFUSED  — every failure in the log is an XCUITest event-synthesis timeout,
-#                            which is a fact about the host and not about the app. Not a pass:
-#                            any caller that treats nonzero as failure is unaffected. See the
-#                            long comment above ENVIRONMENT_REFUSAL_PATTERN for why this is a
-#                            separate verdict rather than a red or a silence.
+#   2  VERIFY-ENV-REFUSED  — every failure in the log is an XCUITest event-synthesis timeout AND
+#                            no counter in the log reports a failure beyond them: no crash
+#                            marker, no Swift Testing aggregate issue count, and no XCTest
+#                            `with M failures` larger than the number of timeouts classified.
+#                            Not a pass: any caller that treats nonzero as failure is unaffected.
+#                            See the long comment above ENVIRONMENT_REFUSAL_PATTERN for why this
+#                            is a separate verdict rather than a red or a silence, and for why
+#                            the counters are consulted before the classification and not after.
 #
 # It also prints the XCTest skip count as a VERIFY-NOTE, and appends the XCTest summary to
 # VERIFY-OK when both frameworks ran — see the block above that line for why the count is
@@ -307,8 +310,17 @@ fi
 #
 # Three of these across two runs on 2026-09-02, all green at lower concurrency, alongside a
 # 1,043 s accessibility stall in the same conditions (ROADMAP, perf-campaign leftovers). The
-# sentence is a fact about the HOST: XCUITest asked the simulator to deliver a tap and the event
-# never arrived. Nothing was asserted about the app, and nothing about the app was learned.
+# sentence describes XCUITest asking the simulator for an accessibility snapshot and not getting
+# one in time.
+#
+# WHAT THE SENTENCE DOES NOT SAY, and the first draft of this comment asserted anyway (review of
+# #153, F2): that the host is the only thing that can produce it. It is not. A main-thread stall
+# in the APP presents identically from XCUITest's side — a process that is not servicing its
+# runloop cannot answer a snapshot request either — and with performance ahead of the feature
+# queue that is a live defect shape, not a hypothetical. The evidence on record is that the host
+# CAN cause this (three occurrences at the cap, green below it), which is not evidence that only
+# the host does. So this verdict says which explanation is likely and tells the reader to check
+# the app's own timings before assuming the machine; it does not certify that the app is fine.
 #
 # In the log it is indistinguishable, by shape, from an assertion the app failed — same
 # `error: -[…]` prefix, same `** TEST FAILED **`, same nonzero exit. So three of them were read
@@ -332,6 +344,53 @@ fi
 # appears is what a genuine layout defect looks like, and E216's own symptom is a pin that never
 # arrives. Widening this pattern is how a guard starts hiding the defects it was built beside.
 ENVIRONMENT_REFUSAL_PATTERN='Timed out while synthesizing event|Failed to synthesize event'
+
+# ── The log's own counters, read BEFORE anything is classified (review of #153, F1) ──────────
+#
+# WHY THESE ARE ABOVE THE CLASSIFIER AND NOT BELOW IT. The first cut of this block decided the
+# verdict from `test_failure_lines()` alone — and that function answers the EXCERPT printer's
+# question, not this one. It matches three per-test line shapes and then deliberately strips
+# Swift Testing's aggregate `✘ Test run with …`, which is right for an excerpt (the aggregate
+# says only how many) and wrong for a verdict (the aggregate is how many the run itself counted).
+# It also never sees XCTest's `Executed N tests, with M failures`, and the two checks that DO
+# read those counters ran ~50 lines further down, after the exit.
+#
+# Three logs built by adversarial review, each genuinely red by its own numbers, each carrying
+# exactly one classified line, all three answered `VERIFY-ENV-REFUSED` — which prints "do not
+# file it as one" over a log recording a CRASH. The pre-change judge called all three reds:
+#
+#   1. `Restarting after unexpected exit, crash, or test timeout in …`, `Test Case '…' failed`,
+#      `Executed 7 tests, with 2 failures (1 unexpected)`, plus one synthesis timeout.
+#   2. `Executed 5 tests, with 3 failures` plus one synthesis timeout.
+#   3. `✘ Test run with 1925 tests in 199 suites failed … with 2 issues.` plus one timeout.
+#
+# So an environment refusal may now be declared only when the log carries NO evidence of failure
+# beyond the timeouts that were classified, and "evidence" means what the log states about itself:
+#
+#   * a crash marker. An unexpected exit is never an event that failed to synthesize.
+#   * a Swift Testing aggregate `✘ Suite …` / `✘ Test run with … failed … with K issues`. The
+#     unit suite synthesizes no events, so an issue it counted belongs to the code.
+#   * an XCTest `Executed N tests, with M failures` whose M EXCEEDS the number of classified
+#     timeout lines. Deliberately NOT `M > 0`: the timeouts are themselves counted in M, so a run
+#     genuinely refused by the host reports `with 1 failure`, and refusing on that would delete
+#     this verdict entirely rather than correct it.
+#
+# MAX and not SUM over the `Executed` lines, and the reason is arithmetic rather than taste:
+# XCTest prints one line per suite AND an aggregate that re-counts them, so a sum double-counts
+# every real run and would call a single-timeout run (`with 1 failure` twice) a red. The
+# aggregate is the largest of them and is the run's total. A run that never printed an aggregate
+# is an interrupted run, and interrupted runs are refused above for having no terminal marker.
+#
+# Calibrated against cases whose answers were known before any of it was believed (CLAUDE.md):
+# the extraction was run over `Executed 70 tests, with 4 tests skipped, with 1 failure (0
+# unexpected) in 12.0 seconds` → 1, over `Executed 7 tests, with 2 failures (1 unexpected)` → 2,
+# and over `Executed 3 tests, with 0 failures` → 0. The middle `with 4 tests skipped` is the one
+# that makes a naive `with \([0-9]*\)` report 4.
+CRASH_MARKER_LINES="$(grep -E 'Restarting after unexpected exit, crash, or test timeout' "$LOG")"
+SWIFT_AGGREGATE_FAILURES="$(grep -E '^[[:space:]]*✘ (Suite |Test run with )' "$LOG")"
+MAX_XCTEST_FAILURES="$(grep -E 'Executed [0-9]+ tests?,' "$LOG" \
+  | sed -n 's/.*with \([0-9][0-9]*\) failures*.*/\1/p' | sort -n | tail -1)"
+
 FAILURE_LINES="$(test_failure_lines)"
 if [ -n "$FAILURE_LINES" ]; then
   ENV_LINES=$(printf '%s\n' "$FAILURE_LINES" | grep -cE "$ENVIRONMENT_REFUSAL_PATTERN")
@@ -339,18 +398,33 @@ if [ -n "$FAILURE_LINES" ]; then
   # this a red, however many synthesis timeouts came with it — a mixed run is a red run, because
   # the environment did not refuse the test that failed on its own merits.
   OTHER_LINES="$(printf '%s\n' "$FAILURE_LINES" | grep -vE "$ENVIRONMENT_REFUSAL_PATTERN")"
-  if [ "${ENV_LINES:-0}" -gt 0 ] && [ -z "$OTHER_LINES" ]; then
+  # Why the log is not eligible, in the reader's words rather than as a boolean, so that a log
+  # full of timeouts that is judged a red says why it was not classified instead of leaving the
+  # reader to rediscover this block.
+  NOT_ELIGIBLE=""
+  add_reason() { NOT_ELIGIBLE="${NOT_ELIGIBLE:+$NOT_ELIGIBLE; }$1"; }
+  [ -n "$OTHER_LINES" ] && add_reason "it also contains failure lines that are not timeouts"
+  [ -n "$CRASH_MARKER_LINES" ] && add_reason "it contains a crash / unexpected-exit marker"
+  [ -n "$SWIFT_AGGREGATE_FAILURES" ] && add_reason "Swift Testing's own aggregate reports failures"
+  if [ "${MAX_XCTEST_FAILURES:-0}" -gt "${ENV_LINES:-0}" ]; then
+    add_reason "XCTest counted ${MAX_XCTEST_FAILURES} failure(s) and only ${ENV_LINES:-0} of them is a timeout"
+  fi
+  if [ "${ENV_LINES:-0}" -gt 0 ] && [ -z "$NOT_ELIGIBLE" ]; then
     echo "VERIFY-ENV-REFUSED: this run was refused by the environment, not by the code." >&2
-    echo "  All ${ENV_LINES} failure line(s) in $LOG are XCUITest event-synthesis timeouts: the host never" >&2
-    echo "  delivered the event to the simulator. Nothing was asserted about the app, so this log is" >&2
-    echo "  evidence about the machine and about nothing else." >&2
+    echo "  All ${ENV_LINES} failure line(s) in $LOG are XCUITest event-synthesis timeouts, and no counter" >&2
+    echo "  in the log reports a failure beyond them: the simulator did not answer in time." >&2
     echo "  Concurrent xcodebuilds when this run started: ${STAMP_CONCURRENCY:-unknown (no CYPRESS-RUN stamp)}" >&2
-    echo "  Every occurrence on record was at the three-build cap and green below it. Re-run this" >&2
-    echo "  shard alone before concluding anything; a re-run at the same concurrency proves nothing." >&2
+    echo "  Every occurrence on record was at the three-build cap and green below it — but a stalled" >&2
+    echo "  MAIN THREAD in the app looks exactly like this from outside, so check the app's own" >&2
+    echo "  timings before concluding the machine. Re-run this shard alone; a re-run at the same" >&2
+    echo "  concurrency proves nothing." >&2
     echo "VERIFY-ENV-REFUSED-DETAIL: the timeouts, from $LOG —" >&2
     print_test_failures
     echo "  This is NOT a pass (exit 2). It is also not a red — do not file it as one." >&2
     exit 2
+  fi
+  if [ "${ENV_LINES:-0}" -gt 0 ] && [ -n "$NOT_ELIGIBLE" ]; then
+    note "this log holds ${ENV_LINES} event-synthesis timeout line(s) but is NOT an environment refusal: ${NOT_ELIGIBLE}. Judged below on its merits."
   fi
 fi
 

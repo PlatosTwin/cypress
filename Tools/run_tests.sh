@@ -174,7 +174,7 @@ collision_check() {
     # three shells up (an agent's `bash -c` inside a login shell inside a tool runner), and only
     # the whole chain excludes it.
     is_ancestor "$pid" && continue
-    case "$cmd" in *xcodebuild*) ;; *) continue ;; esac
+    xcodebuild_line "$cmd" || continue
     # The worktree test matches the *project path*, not the repo root. `$REPO` alone is a
     # prefix of every sibling worktree — main is `…/cypress` and the agents' are
     # `…/cypress-w8b`, `…/cypress-w8c` — so `*"$REPO"*` made a run from main refuse
@@ -228,19 +228,53 @@ EOF
 }
 
 # How many real xcodebuild invocations are live besides this one, for the header (roadmap item
-# (d)). Counted by argv[0], unlike the collision guard above: this is a LOAD number, not a
-# refusal, so it must not be inflated by every child process whose command line happens to hold a
-# DerivedData path — and being one short of the truth costs nothing, where a false refusal costs
-# a round. The cap is three machine-wide (CLAUDE.md), and the UI phase's event-synthesis timeouts
+# (d)). The cap is three machine-wide (CLAUDE.md), and the UI phase's event-synthesis timeouts
 # were all observed at it, so the number belongs in the log that gets judged.
+#
+# ONE DEFINITION OF "AN XCODEBUILD", SHARED WITH THE COLLISION GUARD ABOVE (review of #153, F3).
+# This function used to count argv[0] only — the narrowing E283 offers and this file rejects a
+# hundred lines above, because `nohup xcodebuild test …&` has argv[0] `nohup`. Measured live on
+# one process table during review: a `nohup /…/xcodebuild test -destination …id=<UDID>` was
+# refused by `collision_check` and counted **0** here, with an argv[0]-shaped build alongside it
+# counting 1, so the zero was not vacuously zero. Two spellings of one question, disagreeing.
+#
+# That undercount stopped being cosmetic when `verify_test_log.sh` began reprinting the number as
+# "Concurrent xcodebuilds when this run started: N" — the corroboration offered for the
+# VERIFY-ENV-REFUSED verdict. A reader checking a verdict against an undercount is checking it
+# against nothing. The old comment's defence ("being one short of the truth costs nothing, where
+# a false refusal costs a round") was written when this was a header line and expired the day the
+# number became evidence.
+#
+# So both callers now ask `xcodebuild_line`, which matches the binary as a COMMAND rather than as
+# a substring:
+#   * a token ending in `/xcodebuild`, anywhere in the line — that is the binary by path, however
+#     many wrappers precede it;
+#   * the bare name `xcodebuild` as argv[0] or as the word right after argv[0] — `nohup
+#     xcodebuild …`, `caffeinate xcodebuild …`.
+# and matches neither of the two shapes the argv[0] test was protecting against: a shell that
+# merely says the word (`bash -c echo xcodebuild …`) and a compiler child whose DerivedData path
+# contains it (`…/dd/xcodebuild-ish/File.swift`). Both are pinned in Tools/test_harness_guards.sh,
+# on both callers.
+xcodebuild_line() {
+  local after_first
+  case "$1" in
+    xcodebuild|xcodebuild\ *) return 0 ;;
+    */xcodebuild|*/xcodebuild\ *) return 0 ;;
+  esac
+  after_first="${1#* }"
+  case "$after_first" in
+    xcodebuild|xcodebuild\ *) return 0 ;;
+  esac
+  return 1
+}
+
 count_live_xcodebuilds() {
-  local pid ppid etime cmd first n=0
+  local pid ppid etime cmd n=0
   while read -r pid ppid etime cmd; do
     [ -n "${pid:-}" ] || continue
     [ "$pid" = "$$" ] && continue
     is_ancestor "$pid" && continue
-    first="${cmd%% *}"
-    case "${first##*/}" in xcodebuild) ;; *) continue ;; esac
+    xcodebuild_line "$cmd" || continue
     n=$((n + 1))
   done <<EOF
 $PS_SNAPSHOT
@@ -297,7 +331,7 @@ bounded_run() {
   return "${BOUNDED_RC:-1}"
 }
 
-# A pid and everything descended from it. `xcrun` execs a `simctl` child, and signalling only the
+# A pid and everything descended from it. `xcrun` execs a `simctl` child, and signaling only the
 # pid bash knows about leaves the wedged `simctl` behind — which is the exact leftover the guard
 # below refuses on, so a timeout that manufactured one would make the next run worse.
 #

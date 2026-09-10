@@ -68,6 +68,42 @@ $(printf '%s' "$1" | sed 's/^/         | /')"
   esac
   return 0
 }
+# `expect_empty <output>`, because the spelling it replaces could not fail (review of #153, F7):
+#
+#     expect_contains "${out}(no output)" "(no output)"
+#
+# glues the needle onto the haystack, so the haystack holds it whatever `out` held. It read as
+# "and it printed nothing" and asserted nothing — in the one file whose thesis is that a guard
+# proved only on the case it was written for may be passing vacuously.
+expect_empty() {
+  [ -z "$1" ] && return 0
+  bad "expected no output. Output was:
+$(printf '%s' "$1" | sed 's/^/         | /')"
+  return 1
+}
+
+# Capture a command's output under a bound, through a FILE rather than a `$( )` pipe.
+#
+# WHY (review of #153, F8). A command substitution cannot return while ANY process holds the
+# write end of its pipe, including one the command left behind. Regress `bounded_run`'s subtree
+# kill and this file correctly reports it — and then stalls for the orphan's full 600 s at the
+# next end-to-end check, because the orphaned `sleep` inherited that pipe. The `elapsed > 60`
+# guard inside such a check is computed AFTER the substitution returns, so it never fires: the
+# maintainer of the guards meets a ten-minute hang instead of a red. Output goes to a file, the
+# bound is `bounded_run`'s, and a timeout is reported as a failed check.
+BOUNDED_OUT=""
+bounded_capture() {  # <seconds> <outfile> <shell command string>
+  local secs="$1" outfile="$2" cmd="$3" rc
+  : >"$outfile"
+  # The newline before the closing brace is load-bearing: callers append a `# …` marker to their
+  # command (E283's shape is a caller whose own command line names the binary), and on one line
+  # that comment would swallow the brace.
+  bounded_run "$secs" bash -c "{ $cmd
+} >'$outfile' 2>&1"
+  rc=$?
+  BOUNDED_OUT="$(cat "$outfile" 2>/dev/null)"
+  return "$rc"
+}
 
 FAKE_UDID="00000000-DEAD-BEEF-0000-000000000000"
 
@@ -94,13 +130,19 @@ ps() { printf '%s\n' "$PS_FIXTURE"; }
 DEAD_PIDS=""
 pid_is_live() { case " $DEAD_PIDS " in *" $1 "*) return 1 ;; esac; return 0; }
 
-# The ancestor chain the fixtures share: this shell, a wrapper that mentions both `xcodebuild`
-# and the UDID (E283's exact shape), and launchd.
+# The ancestor chain the fixtures share: this shell, a wrapper that mentions both the xcodebuild
+# binary and the UDID (E283's exact shape), and launchd.
+#
+# The wrapper names the binary BY PATH deliberately. `grep -F xcodebuild` — the bare word, late
+# in the line — is no longer matched at all since the two matchers were unified (F3), so a
+# fixture using it would exercise the new matcher instead of the ancestor skip, and every check
+# below that exists to pin the skip would pass with the skip deleted. This shape is matched, and
+# is excluded only by ancestry.
 WRAPPER_PID=90001
 fixture_ancestors() {
   cat <<EOF
 $$ $WRAPPER_PID 00:12 bash $HERE/test_harness_guards.sh
-$WRAPPER_PID 1 00:20 zsh -c Tools/run_tests.sh $FAKE_UDID /tmp/x.log; ps aux | grep -F xcodebuild
+$WRAPPER_PID 1 00:20 zsh -c Tools/run_tests.sh $FAKE_UDID /tmp/x.log; ps aux | grep -F $XCB
 1 0 10-01:02:03 /sbin/launchd
 EOF
 }
@@ -123,7 +165,7 @@ if check "(b) a wrapper shell that merely mentions xcodebuild is not a collision
   PS_FIXTURE="$(fixture_ancestors)"
   DEAD_PIDS=""
   out="$(collision_check 2>&1)"; rc=$?
-  expect_rc "$rc" 0 && expect_contains "${out}(no output)" "(no output)" && ok
+  expect_rc "$rc" 0 && expect_empty "$out" && ok
 fi
 
 # THE CONTROL. The same guard, the same fixture, plus one genuine foreign build. It must still
@@ -191,6 +233,27 @@ if check "(c) an old hit is named as a live build or an orphan, not as a tail"; 
     && ok
 fi
 
+# THE INVARIANT THE ANCESTOR SKIP RESTS ON, PINNED WHERE IT IS TAKEN (review of #153, F5).
+# `run_tests.sh` skips its whole ancestor chain on the stated ground that "no real xcodebuild can
+# be an ancestor of this script". Review constructed the counter-case — a process whose `ps` line
+# is byte-identical to a real build on this UDID, and which IS an ancestor — and the guard
+# returned 0, silently. That is the correct trade (the false positive it removes is real and the
+# true positive it gives up cannot occur while the scheme's only buildable is the app and
+# `project.pbxproj` has no shell-script build phase), but it was asserted in a comment and
+# nowhere else. Here is the behaviour, stated; `DeployPathsAgreeTests` pins the project-file half
+# of the premise from Swift, so that the day someone adds a build phase that shells out, a test
+# says so rather than this skip quietly widening.
+if check "(b) the ancestor skip is unconditional: a build in our own chain is not refused on"; then
+  PS_FIXTURE="$(fixture_ancestors)"
+  # Same pid as the wrapper in the chain, wearing a real build's command line.
+  PS_FIXTURE="$$ $WRAPPER_PID 00:12 bash $HERE/test_harness_guards.sh
+$WRAPPER_PID 1 00:20 $XCB test -project $REPO/Cypress.xcodeproj -destination platform=iOS Simulator,id=$FAKE_UDID
+1 0 10-01:02:03 /sbin/launchd"
+  DEAD_PIDS=""
+  out="$(collision_check 2>&1)"; rc=$?
+  expect_rc "$rc" 0 && expect_empty "$out" && ok
+fi
+
 echo "run_tests.sh — concurrency count (roadmap item (d))"
 if check "(d) the load count counts real invocations and not mentions of the word"; then
   PS_FIXTURE="$(fixture_ancestors)
@@ -202,6 +265,66 @@ if check "(d) the load count counts real invocations and not mentions of the wor
   take_ps_snapshot; read_ancestors
   got="$(count_live_xcodebuilds)"
   if [ "$got" = "2" ]; then ok; else bad "expected 2 live xcodebuilds, got '$got'"; fi
+fi
+
+# THE DEFECT (review of #153, F3). The count matched argv[0] while the collision guard matched
+# the whole command line, so a live `nohup … xcodebuild test` was REFUSED by one and counted 0 by
+# the other — and that zero is what `verify_test_log.sh` reprints as the corroboration for its
+# environment-refusal verdict. Measured on one real process table during review, both directions.
+if check "(d) the load count sees a nohup-launched build, exactly as the collision guard does"; then
+  PS_FIXTURE="$(fixture_ancestors)
+9993 1 03:00 nohup $XCB test -destination platform=iOS Simulator,id=$FAKE_UDID"
+  DEAD_PIDS=""
+  take_ps_snapshot; read_ancestors
+  got="$(count_live_xcodebuilds)"
+  out="$(collision_check 2>&1)"; rc=$?
+  if [ "$got" != "1" ]; then
+    bad "the collision guard refuses this build but the load count says '$got', not 1"
+  else
+    expect_rc "$rc" 1 && expect_contains "$out" "pid 9993" && ok
+  fi
+fi
+
+# One matcher, asked both questions over the same table: whatever the guard refuses on, the count
+# counts, and whatever it ignores, the count ignores. A per-line control, so a future divergence
+# names the line it disagreed about instead of a total.
+#
+# The last two lines are the same shell command with the binary named two ways, and they are
+# deliberately opposite answers: the bare word late in a line is a MENTION, the absolute path is
+# the BINARY. A non-ancestor process that merely greps for the path is refused on, which is the
+# over-match this matcher accepts — it costs a wait, and the shape it protects (a build under a
+# wrapper) is the one E283 forbids narrowing away. A caller's OWN line in either spelling is
+# excluded by ancestry, which is what the check above this one pins.
+if check "(d) control: the collision guard and the load count agree line by line"; then
+  disagreed=""
+  for line in \
+    "$XCB test -destination platform=iOS Simulator,id=$FAKE_UDID|yes" \
+    "nohup $XCB test -destination platform=iOS Simulator,id=$FAKE_UDID|yes" \
+    "nohup xcodebuild test -destination platform=iOS Simulator,id=$FAKE_UDID|yes" \
+    "xcodebuild test -destination platform=iOS Simulator,id=$FAKE_UDID|yes" \
+    "bash -c echo xcodebuild is a word in this command line|no" \
+    "/usr/bin/swift-frontend -c /tmp/dd/xcodebuild-ish/File.swift|no" \
+    "zsh -c Tools/run_tests.sh $FAKE_UDID /tmp/x.log; ps aux | grep -F xcodebuild|no" \
+    "zsh -c Tools/run_tests.sh $FAKE_UDID /tmp/x.log; ps aux | grep -F $XCB|yes"
+  do
+    cmd="${line%|*}"; want="${line##*|}"
+    PS_FIXTURE="$(fixture_ancestors)
+9997 1 00:30 $cmd"
+    DEAD_PIDS=""
+    take_ps_snapshot; read_ancestors
+    got_count="$(count_live_xcodebuilds)"
+    # In a subshell: `collision_check` refuses by calling `exit`, which would otherwise end this
+    # file — silently, before the summary line, which is how a suite reports 11 of 30 checks and
+    # looks like it finished.
+    ( collision_check ) >/dev/null 2>&1; got_guard=$?
+    [ "$want" = "yes" ] && expected_count=1 || expected_count=0
+    [ "$want" = "yes" ] && expected_guard=1 || expected_guard=0
+    if [ "$got_count" != "$expected_count" ] || [ "$got_guard" != "$expected_guard" ]; then
+      disagreed="${disagreed}    count=$got_count guard-rc=$got_guard (wanted $expected_count/$expected_guard) for: $cmd"$'\n'
+    fi
+  done
+  if [ -z "$disagreed" ]; then ok; else bad "the two matchers do not agree:
+$disagreed"; fi
 fi
 
 echo "run_tests.sh — bootstatus (roadmap item (a))"
@@ -304,10 +427,17 @@ chmod +x "$FAKEBIN/xcrun"
 
 if check "(a) end to end: a wedged bootstatus is bounded, and the refusal says what to do"; then
   start="$(date +%s)"
-  out="$(PATH="$FAKEBIN:$PATH" CYPRESS_BOOTSTATUS_TIMEOUT_S=3 \
-         "$HERE/run_tests.sh" "$FAKE_UDID" "$WORK/e2e-a.log" 2>&1)"; rc=$?
+  # Captured through a file under a 60 s bound, NOT through `$( )` — see `bounded_capture`. With
+  # a pipe, a regression in `bounded_run`'s subtree kill turns this check from a 40 s red into a
+  # ten-minute hang, because the orphan it leaves holds the write end (review of #153, F8).
+  bounded_capture 60 "$WORK/e2e-a.out" \
+    "PATH=\"$FAKEBIN:\$PATH\" CYPRESS_BOOTSTATUS_TIMEOUT_S=3 '$HERE/run_tests.sh' '$FAKE_UDID' '$WORK/e2e-a.log'"
+  rc=$?
+  out="$BOUNDED_OUT"
   elapsed=$(( $(date +%s) - start ))
-  if [ "$elapsed" -gt 60 ]; then
+  if [ "$rc" = "124" ]; then
+    bad "the run did not return within 60s against a 3s bound — bounded_run left something behind"
+  elif [ "$elapsed" -gt 60 ]; then
     bad "took ${elapsed}s against a 3s bound — the bound is not bounding"
   else
     expect_rc "$rc" 1 \
@@ -324,8 +454,9 @@ fi
 # fake xcrun, with a different message. "It failed differently" is the assertion, because "it
 # failed" is what the defect looked like too.
 if check "(b) end to end: a caller whose own command line says 'xcodebuild' is not a collision"; then
-  out="$(PATH="$FAKEBIN:$PATH" CYPRESS_BOOTSTATUS_TIMEOUT_S=3 bash -c \
-         "'$HERE/run_tests.sh' '$FAKE_UDID' '$WORK/e2e-b.log' 2>&1; echo rc=\$? # xcodebuild")"
+  bounded_capture 60 "$WORK/e2e-b.out" \
+    "PATH=\"$FAKEBIN:\$PATH\" CYPRESS_BOOTSTATUS_TIMEOUT_S=3 '$HERE/run_tests.sh' '$FAKE_UDID' '$WORK/e2e-b.log'; echo rc=\$? # $XCB"
+  out="$BOUNDED_OUT"
   expect_contains "$out" "rc=1" \
     && expect_missing "$out" "already live against this simulator" \
     && expect_contains "$out" "bootstatus" \
@@ -358,7 +489,12 @@ write_log() {
 }
 
 SYNTH_TIMEOUT="<unknown>:0: error: -[CypressUITests.MapSearchTests testTypingNarrows] : Failed to get matching snapshot: Timed out while synthesizing event."
+SYNTH_TIMEOUT2="<unknown>:0: error: -[CypressUITests.MapPinTests testPinTapOpensCard] : Failed to get matching snapshot: Timed out while synthesizing event."
 SYNTH_ASSERT="/Users/x/CypressUITests/MapSearchTests.swift:88: error: -[CypressUITests.MapSearchTests testTypingNarrows] : XCTAssertTrue failed - the result list never narrowed"
+# An assertion whose TEXT holds the word, which is not the same thing as a synthesis timeout and
+# must not be classified as one.
+SYNTH_ASSERT_WORD="/Users/x/CypressUITests/MapSearchTests.swift:91: error: -[CypressUITests.MapSearchTests testResultsArrive] : XCTAssertTrue failed - the result list never arrived before the timeout"
+CRASH_MARKER="Restarting after unexpected exit, crash, or test timeout in MapPinTests.testPinTapOpensCard(); summary will include totals from previous launches."
 
 if check "(d) a run whose every failure is an event-synthesis timeout exits 2"; then
   write_log "$WORK/env.log" \
@@ -431,6 +567,121 @@ if check "(d) control: an incomplete run is refused for being incomplete, not cl
     && ok
 fi
 
+# ───────────────────────────────────────────────────────────────────────────────────────────
+# (d), the part adversarial review found broken (#153, F1): the classifier decided the verdict
+# from `test_failure_lines()`, which matches three per-test line shapes and strips Swift
+# Testing's aggregates, and it decided BEFORE the checks that read the log's own counters. Three
+# logs that are red by every number they contain were answered `VERIFY-ENV-REFUSED` — over a
+# CRASH, in one case, with the message "do not file it as one".
+#
+# All three are rebuilt here verbatim from the review, and each asserts the reason it was NOT
+# classified, not merely the exit code: a fixture that goes red for the wrong reason is the
+# red-proof failure CLAUDE.md names.
+# ───────────────────────────────────────────────────────────────────────────────────────────
+if check "(d) F1: a CRASHED test alongside a timeout is a red, not an environment refusal"; then
+  write_log "$WORK/f1-crash.log" \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
+    "$SYNTH_TIMEOUT" \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' failed (12.004 seconds)." \
+    "Test Case '-[CypressUITests.MapPinTests testPinTapOpensCard]' started." \
+    "$CRASH_MARKER" \
+    "Test Case '-[CypressUITests.MapPinTests testPinTapOpensCard]' failed (30.100 seconds)." \
+    "Executed 7 tests, with 2 failures (1 unexpected) in 62.0 (62.4) seconds" \
+    "** TEST FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/f1-crash.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "VERIFY-FAIL" \
+    && expect_missing "$out" "VERIFY-ENV-REFUSED" \
+    && expect_contains "$out" "crash / unexpected-exit marker" \
+    && ok
+fi
+
+if check "(d) F1: an XCTest counter larger than the classified lines is a red"; then
+  write_log "$WORK/f1-counter.log" \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
+    "$SYNTH_TIMEOUT" \
+    "Executed 5 tests, with 3 failures (0 unexpected) in 40.0 (40.4) seconds" \
+    "** TEST FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/f1-counter.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "VERIFY-FAIL" \
+    && expect_missing "$out" "VERIFY-ENV-REFUSED" \
+    && expect_contains "$out" "XCTest counted 3 failure(s) and only 1 of them is a timeout" \
+    && ok
+fi
+
+if check "(d) F1: Swift Testing's aggregate issue count is a red, however it is stripped"; then
+  write_log "$WORK/f1-swift.log" \
+    "✘ Test run with 1925 tests in 199 suites failed after 130.0 seconds with 2 issues." \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
+    "$SYNTH_TIMEOUT" \
+    "Executed 3 tests, with 1 failure (0 unexpected) in 12.0 (12.1) seconds" \
+    "** TEST FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/f1-swift.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "VERIFY-FAIL" \
+    && expect_missing "$out" "VERIFY-ENV-REFUSED" \
+    && expect_contains "$out" "Swift Testing's own aggregate reports failures" \
+    && ok
+fi
+
+# The shapes review tried that did NOT break it, pinned so they cannot start breaking it.
+if check "(d) control: order does not decide — assertion first, timeout last, is still a red"; then
+  write_log "$WORK/order.log" \
+    "$SYNTH_ASSERT" \
+    "$SYNTH_TIMEOUT2" \
+    "Executed 5 tests, with 2 failures (0 unexpected) in 40.0 (40.4) seconds" \
+    "** TEST FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/order.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_missing "$out" "VERIFY-ENV-REFUSED" && ok
+fi
+
+if check "(d) control: two timeouts and one assertion is a red"; then
+  write_log "$WORK/two-plus-one.log" \
+    "$SYNTH_TIMEOUT" \
+    "$SYNTH_TIMEOUT2" \
+    "$SYNTH_ASSERT_WORD" \
+    "Executed 5 tests, with 3 failures (0 unexpected) in 40.0 (40.4) seconds" \
+    "** TEST FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/two-plus-one.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_missing "$out" "VERIFY-ENV-REFUSED" && ok
+fi
+
+if check "(d) control: an assertion whose text merely says 'timeout' is a red"; then
+  write_log "$WORK/word.log" \
+    "$SYNTH_ASSERT_WORD" \
+    "Executed 3 tests, with 1 failure (0 unexpected) in 12.0 (12.1) seconds" \
+    "** TEST FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/word.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_missing "$out" "VERIFY-ENV-REFUSED" && ok
+fi
+
+# And the verdict still exists: two timeouts, two counted failures, nothing else — exit 2. This
+# is the check that fails if the F1 repair is over-applied into "any nonzero failure count is a
+# red", which would delete the classification rather than correct it.
+if check "(d) control: two timeouts and nothing else is still an environment refusal, exit 2"; then
+  write_log "$WORK/env2.log" \
+    "$SYNTH_TIMEOUT" \
+    "$SYNTH_TIMEOUT2" \
+    "Executed 5 tests, with 2 failures (0 unexpected) in 40.0 (40.4) seconds" \
+    "** TEST FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/env2.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 2 \
+    && expect_contains "$out" "VERIFY-ENV-REFUSED" \
+    && expect_contains "$out" "All 2 failure line(s)" \
+    && ok
+fi
+
+# F2: the verdict must not tell the reader that nothing about the app was learned, because a
+# main-thread stall in the app presents identically from XCUITest's side.
+if check "(d) the refusal names the app's main thread as the other explanation"; then
+  out="$("$HERE/verify_test_log.sh" "$WORK/env.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 2 \
+    && expect_contains "$out" "MAIN THREAD" \
+    && expect_missing "$out" "about nothing else" \
+    && ok
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════════════════════
 # Part 4 — fetch_seed.sh's exit paths (ROADMAP chip 3).
 #
@@ -446,7 +697,13 @@ else
   SERVE="$WORK/serve"
   mkdir -p "$SERVE"
   PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
-  ( cd "$SERVE" && python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 ) &
+  # No wrapping subshell, and that is the whole fix (review of #153, F11). `( … ) &` sets `$!` to
+  # the SUBSHELL, so `kill "$SERVER_PID"` killed the subshell and left `python3` running,
+  # reparented to launchd, holding its loopback port for the life of the machine — one per run,
+  # twelve of them on the reviewer's Mac, the oldest two and a half hours old. It is the same
+  # defect this round fixes in `bounded_run` forty lines away, in the file whose job is to catch
+  # it. `--directory` (python 3.7+) removes the need for the `cd` that the subshell was for.
+  python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$SERVE" >/dev/null 2>&1 &
   SERVER_PID=$!
   # Wait for it rather than sleeping at it: a fixed sleep is how a check starts depending on how
   # loaded the machine is.
@@ -555,8 +812,26 @@ PY
     fi
   fi
 
-  kill "$SERVER_PID" 2>/dev/null
+  # The teardown, and then the assertion that the teardown worked — because "the file leaves no
+  # orphan" is exactly the kind of claim this file exists to stop taking on trust. Killed by
+  # subtree, for the reason `bounded_run` does: whatever python spawned goes with it.
+  for k in $(process_tree_pids "$SERVER_PID"); do kill -TERM "$k" 2>/dev/null; done
   wait "$SERVER_PID" 2>/dev/null
+  if check "the seam leaves no orphaned http.server behind (F11)"; then
+    gone=0
+    for _ in $(seq 1 20); do
+      kill -0 "$SERVER_PID" 2>/dev/null || { gone=1; break; }
+      sleep 0.25
+    done
+    still="$(pgrep -f "http.server $PORT" 2>/dev/null | tr '\n' ' ')"
+    if [ "$gone" != "1" ]; then
+      bad "the server pid $SERVER_PID is still alive after the teardown"
+    elif [ -n "$still" ]; then
+      bad "an http.server on port $PORT survived the teardown: pid(s) $still"
+    else
+      ok
+    fi
+  fi
 fi
 
 echo
