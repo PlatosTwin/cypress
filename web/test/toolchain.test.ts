@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   atLeast,
+  declaredPorts,
   dockerfileNodeVersions,
   engineFloor,
   engineRange,
@@ -105,5 +106,46 @@ describe('this checkout pins one Node version everywhere', () => {
       atLeast(running, floor),
       `this suite is running on Node ${running}, below the pinned ${floor}`,
     );
+  });
+
+  it('every declared port agrees, across all four directives', () => {
+    // Specimens first, with the answers known before the parser saw them — including the two
+    // traps that made this worth writing: a comment naming the port, and a directive whose value
+    // differs from the rest.
+    assert.deepEqual(
+      declaredPorts(
+        [
+          '# fly.toml states the same 8080 and must move with it',
+          'ENV PORT=8080',
+          'EXPOSE 8080',
+          "  PORT = '8080'",
+          '  internal_port = 8080',
+          'ENV OTHER=9999',
+        ].join('\n'),
+      ),
+      [8080, 8080, 8080, 8080],
+    );
+
+    const ports = [...declaredPorts(read('Dockerfile')), ...declaredPorts(read('fly.toml'))];
+    // The control. `fly.toml`'s comment said the port appears THREE times in this repository;
+    // it appears four, and it said so while promising a guard that was never written. A floor of
+    // four is the finding, pinned.
+    assert.equal(
+      ports.length,
+      4,
+      `web/Dockerfile and web/fly.toml declare ${ports.length} port(s) between them (${ports.join(', ')}); `
+        + 'this check expects the four directives ENV PORT, EXPOSE, PORT and internal_port. A fifth '
+        + 'copy of the port needs adding here; a missing one means this is reading the wrong file '
+        + 'or the wrong pattern, and is asserting nothing.',
+    );
+    for (const port of ports) {
+      assert.equal(
+        port,
+        ports[0],
+        `the declared ports disagree (${ports.join(', ')}) — the container listens on one and Fly's `
+          + 'health check talks to another, which fails as a deploy that never becomes healthy '
+          + 'rather than as anything that looks like a port problem.',
+      );
+    }
   });
 });

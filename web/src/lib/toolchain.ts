@@ -74,6 +74,33 @@ export function dockerfileNodeVersions(dockerfile: string): readonly string[] {
   return found;
 }
 
+/**
+ * Every port this file states, in file order, from the four directives that carry one.
+ *
+ * `Dockerfile`: `ENV PORT=<n>` and `EXPOSE <n>`. `fly.toml`: `PORT = '<n>'` and
+ * `internal_port = <n>`. Comments are deliberately NOT matched — `fly.toml`'s own comment named
+ * the number and the count of copies, said "three", and was wrong the day it was written. A
+ * matcher that read comments would have agreed with it.
+ *
+ * Four copies of one fact is the shape this repository has been bitten by twice, and the fix is
+ * the same both times: assert that the copies agree. `fly.toml` promised this guard ("the shape
+ * of guard to extend if a fourth appears") without writing it, and by then there were four.
+ */
+export function declaredPorts(text: string): readonly number[] {
+  const found: number[] = [];
+  for (const line of text.split('\n')) {
+    // A comment is not a directive. `#` is the comment character in both file formats.
+    const code = line.replace(/#.*$/, '');
+    const match =
+      /^\s*ENV\s+PORT=(\d+)\s*$/i.exec(code)
+      ?? /^\s*EXPOSE\s+(\d+)\s*$/i.exec(code)
+      ?? /^\s*PORT\s*=\s*'(\d+)'\s*$/.exec(code)
+      ?? /^\s*internal_port\s*=\s*(\d+)\s*$/.exec(code);
+    if (match?.[1] !== undefined) found.push(Number(match[1]));
+  }
+  return found;
+}
+
 /** `process.version` (`v24.13.1`) as a bare `24.13.1`. */
 export function runningNodeVersion(processVersion: string): string {
   return processVersion.replace(/^v/, '');

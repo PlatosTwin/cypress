@@ -19,9 +19,17 @@ primary_region = 'sjc'
 [env]
   # Both are also set in the Dockerfile, deliberately, because they govern different things:
   # there they make the image correct when run by hand or by any other host, here they make the
-  # deployment self-describing next to `internal_port`. They must agree; the port appears three
-  # times in this repository and `web/test/toolchain.test.ts` is the shape of guard to extend if
-  # a fourth appears.
+  # deployment self-describing next to `internal_port`. They must agree, and `web/test/
+  # toolchain.test.ts` asserts that they do: `every declared port agrees, across all four
+  # directives` reads `ENV PORT` and `EXPOSE` from the Dockerfile and `PORT` and `internal_port`
+  # from here, and refuses if it does not find exactly four.
+  #
+  # This comment previously said the port appears THREE times and named
+  # `web/test/toolchain.test.ts` as "the shape of guard to extend if a fourth appears". It was
+  # already four when that was written, and no guard had been extended — a confident comment
+  # asserting an invariant nobody had counted, which is the class CLAUDE.md names first. Found by
+  # adversarial review on #162; the guard is now real, which is why this comment can state a
+  # number at all.
   HOST = '0.0.0.0'
   PORT = '8080'
 
