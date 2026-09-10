@@ -215,11 +215,34 @@ growth loop" — terminate at the moment of sharing. W1 is the page those links 
 - **No photos on the public surface in v1.** W1's specified hero is a gradient. `cypress-photos` is
   private by design and opening it is a D11 privacy decision with its own round.
 
+### Corrected 2026-09-10, before any web code was written
+
+Two decisions in the proposal were refuted by opening a real published pack (`us-ca-sj`, hash-verified
+against the manifest, `count(*)` matching the manifest's tree count as the control). The amendment is
+§8a of the proposal.
+
+- **W1's fact column is about half contributed data.** Name, vitality, height, the taped DBH reading,
+  the photo count and the recent-visits panel all live in the *writable* database and reach the
+  server as contributions; the packs carry the city record. The API's public read surface is Class R
+  — the contributor's own data — so v1 has no public read for any of it. W-C's scope is therefore an
+  owner decision, not an implementation detail. The pack *does* answer the page's spine: address,
+  city, species (though `common_name` is null on real rows), `planted_year`, `external_ref`,
+  `inventory_source`, status, and the city's published DBH bucket.
+- **W-6 is withdrawn as a general answer.** "Explore draws pins over the neighborhood polygons already
+  in the seed" holds for San Francisco and nowhere else: `Tools/build_seed.py:2105` loads exactly one
+  polygon file, DataSF's SF-only `j2bu-swwd`, and `neighborhoods` is **0 rows** in the San Jose pack.
+  Six of seven packs have no neighborhoods, which hits the `Neighborhoods` nav destination hardest.
+
 ### Open, and named as open
 
-1. **Is `cypress.app` registered?** It appears in `ShareCopy.publicURLPrefix` and throughout the docs,
-   and no config file in this repository confirms ownership. W-E cannot finish without an answer.
-   Until then the site lives at its `.fly.dev` hostname and the prefix constant does not move.
+1. **`cypress.app` is registered, and it expires 2026-11-03.** Measured by RDAP on 2026-09-10,
+   calibrated against controls (a known-registered `.app` returns 200, an unregistered one 404):
+   registered 2024-11-03 through **2026-11-03**, registrar Spaceship, status
+   `client transfer prohibited`, nameservers `launch1/launch2.spaceship.net` plus a
+   `verify.hn` verification record, **no A record and nothing served**. Registrant is redacted, so
+   whether it is the owner's is not answerable from outside. W-E cannot finish without knowing, and
+   the expiry is eight weeks out. Until then the site lives at its `.fly.dev` hostname and
+   `ShareCopy.publicURLPrefix` does not move.
 2. **What a withdrawn or moderated record does to an indexed public page.** Not v1 — v1 renders
    city-record facts only — but it lands the moment anything contributed reaches W1.
 3. **Server CORS and Sign in with Apple JS**, both prerequisites for any web surface that *writes*.
