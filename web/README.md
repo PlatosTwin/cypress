@@ -111,9 +111,18 @@ out at the assignment.
 ## Deploying it
 
 **Not yet.** `fly.toml` describes the deployment and no `cypress-web` app exists. W-E creates the
-app, creates the volume the published city packs are mounted from, and answers the open question
-of whether `cypress.app` is registered — until it is, the site lives at its `.fly.dev` hostname
-and `SharePresentation.publicURLPrefix` does not move.
+app and the volume the published city packs are mounted from.
+
+**The site is `cypressgrove.app`**, ruled by the owner on 2026-09-10 (`docs/rulings-pending/
+web-round-owner-decisions.md`, decision 2). Not `cypress.app`: that domain is **registered to a
+third party**, expiring 2026-11-03, parked with no A record — which means every share card the iOS
+app has ever produced points at a hostname somebody else controls. It is dead today and is not
+guaranteed to stay dead. Moving `ShareCopy.publicURLPrefix` is shipped iOS copy and therefore a
+Swift round with its own review, not a web change; until it moves, no link in the wild resolves
+and the site answers on its `.fly.dev` hostname.
+
+The Fly app keeps the name `cypress-web` — a machine, not a brand. It is deliberately not renamed
+to match the domain, because the domain can move and a Fly app name cannot.
 
 `fly.toml` deliberately declares **no `[mounts]`**. A mount naming a volume that does not exist
 fails a deploy halfway through creating the app.

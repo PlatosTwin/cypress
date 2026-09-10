@@ -5,6 +5,11 @@
 # Shaped after `server/fly.toml`, which runs `cypress-sync`: one small machine in `sjc`, scaling
 # to zero when idle. The differences from that file are all downstream of one fact — this process
 # answers anonymous public reads, where the sync service answers authenticated ones.
+#
+# **The site's domain is `cypressgrove.app`** (owner ruling, 2026-09-10). The Fly app keeps the
+# machine-shaped name below and is deliberately not renamed to match: a domain can move and a Fly
+# app name cannot. No `[[certificates]]` here, for the same reason there is no `[mounts]` — W-E
+# attaches the certificate against a real app.
 app = 'cypress-web'
 primary_region = 'sjc'
 
