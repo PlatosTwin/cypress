@@ -30,6 +30,12 @@
 //  in `Tools/run_tests.sh`'s header, in one place, with the both-ways evidence, and every other
 //  file points at it rather than restating it.
 //
+//  That leaves the originating defect with no regression guard, and #152's review proved it by
+//  planting a reworded false instruction and watching all three tests below pass. The decision is
+//  deliberate; the residual risk is filed in `docs/ROADMAP.md` — backlog item 7, gaps (a) and (b),
+//  (b) being that this sweep does not read `docs/` — so a later round meets it there rather than
+//  only by opening this file.
+//
 
 import Foundation
 import Testing

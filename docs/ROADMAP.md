@@ -555,9 +555,27 @@ into this section in the round that finds it, and nowhere else. Each item stands
    directory listed empty first: exported → the PNG in the chosen directory; unset → the runner's
    own container tmp; argument → the same container tmp and the chosen directory still empty.
    Receipts in `docs/errata-pending/shot-dir-runner-forwarding.md`. The convention is now argued
-   once, in `Tools/run_tests.sh`'s header, and the five files that stated it point there;
-   `CypressTests/ShotDirectoryConventionTests` keeps the key the writers read and the name the
-   prose tells an operator to export from drifting apart.
+   once, in `Tools/run_tests.sh`'s header, and the four files that stated it point there (a fifth,
+   `DebugDeepLink.swift`, named the key only as a naming example and now separates key from
+   channel); `CypressTests/ShotDirectoryConventionTests` keeps the key the writers read and the
+   name the prose tells an operator to export from drifting apart.
+
+   **Two gaps this left open, both deliberate, both unguarded — read them before touching these
+   files again.**
+   (a) *The original defect has no regression guard.* `ShotDirectoryConventionTests` pins the key
+   and the forwarded name, not the prose that says how to set the variable, because a gate matching
+   "command line" would go green on the same false instruction reworded — the worst shape a guard
+   takes here. #152's reviewer confirmed it by planting a fresh false instruction that avoids the
+   phrase entirely ("hand `TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` to xcodebuild after the script's own
+   arguments") and watching all three tests pass. The decision stands; what is filed here is that
+   the exact class of defect this round cured can recur silently, so a *reader* is the only check.
+   (b) *The gate does not sweep `docs/`.* It reads `Cypress/`, `CypressTests/`, `CypressUITests/`
+   and `Tools/run_tests.sh`. That is why `docs/ERRATA.md` carried the unprefixed spelling in its own
+   reproduction instructions until #152's review found it by hand (corrected in place there, not
+   renumbered). Widening the sweep to `docs/` is the obvious move and was not taken in that round:
+   the errata shelf discusses these names as text far more often than it instructs them, so the
+   gate would need a notion of "instructing" it does not have — which is gap (a), one directory
+   over.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

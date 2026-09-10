@@ -10,8 +10,10 @@ internal: names the grove's SQL so its census pins by property, and corrects the
 #    changed — the census's own set assertion is what proves that, since it compares what the app
 #    prepares against the properties byte for byte.
 #
-# 2. The four screenshot suites' doc comments said to pass `CYPRESS_SHOT_DIR` on the `xcodebuild`
-#    command line. That is a build-setting override, it reaches no process, and it fails by doing
-#    nothing. The spelling that works is an exported `TEST_RUNNER_CYPRESS_SHOT_DIR`; it is argued
-#    once in `Tools/run_tests.sh`'s header with the evidence, and `ShotDirectoryConventionTests`
-#    keeps the key the writers read and the name the prose exports in agreement.
+# 2. One of the four screenshot suites — `AreaPickerUITests` — told a reader to pass
+#    `CYPRESS_SHOT_DIR` on the `xcodebuild` command line. That is a build-setting override, it
+#    reaches no process, and it fails by doing nothing. The other three named the variable without
+#    saying how to set it, so none of the four could be acted on. The spelling that works is an
+#    exported `TEST_RUNNER_CYPRESS_SHOT_DIR`; it is argued once in `Tools/run_tests.sh`'s header
+#    with the evidence, and `ShotDirectoryConventionTests` keeps the key the writers read and the
+#    name the prose exports in agreement — on a sweep that now proves it reached those files.

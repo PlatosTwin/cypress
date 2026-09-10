@@ -3813,8 +3813,12 @@ The images were one `*-SHEET.png` 2×2 light/dark × default/AX5 contact sheet p
 `CypressTests/ScreenSweepShots.swift` and written to the directory named by the `CYPRESS_SHOT_DIR`
 environment variable (a temporary directory if unset — see the test's own `outputDirectory`); the run
 that found these two questions printed its `SWEEP DIR` to the test log at the time and that directory
-was a session-local scratch path that no longer exists. To reproduce, set `CYPRESS_SHOT_DIR` to a
-durable path and run `CypressTests/ScreenSweepShots.swift`. The one surprise worth recording is how
+was a session-local scratch path that no longer exists. To reproduce, `export
+TEST_RUNNER_CYPRESS_SHOT_DIR=<durable path>` in the shell **before** `Tools/run_tests.sh`, and run
+`CypressTests/ScreenSweepShots.swift`. (Corrected 2026-09-10, PR #152: this sentence named the
+unprefixed `CYPRESS_SHOT_DIR`, which is the key the *test process* reads and not a name any shell can
+put there — `Tools/run_tests.sh`'s header argues the forwarding, with the measurement both ways.)
+The one surprise worth recording is how
 little there was to find: the defect rate on fifteen never-before-photographed screens was zero, which
 says the token layer and the component catalog are carrying dark and AX5 correctly on their own, and
 that the two defects that were found by eye earlier were failures of *coverage* — screens nobody had
