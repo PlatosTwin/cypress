@@ -119,15 +119,21 @@ var vitalityRatings = map[int]bool{1: true, 2: true, 3: true, 4: true, 5: true}
 // publicKinds is the set of contribution kinds any part of the public read may look at.
 //
 // **An allow-list, and the shape is the decision.** `contributions.kind` is a closed CHECK
-// vocabulary of seventeen values (`004_measurement_withdrawal_kind.sql`) and it has widened twice
+// vocabulary of seventeen values — declared across the migrations, last declaration wins, which as
+// of this round is `004_measurement_withdrawal_kind.sql` — and it has widened twice
 // already. Under a deny-list the *next* kind would be public the day it was added, decided by
 // nobody — which is precisely how `testflight.yml`'s path classifier came to treat a new top-level
 // directory as "run the whole iOS suite and mint a TestFlight build". Under an allow-list a new kind
 // is invisible until somebody writes down why it should not be.
 //
 // `withheldKinds` states the reason for each of the other fifteen, and
-// `TestEveryContributionKindIsClassified` reads the vocabulary out of the migration and fails when a
-// value is in neither map. That test is the mechanism; this map is only the decision.
+// `TestEveryContributionKindIsClassified` reads the vocabulary out of **every** migration — the way
+// `loadMigrations` applies them — and fails when a value is in neither map. That test is the
+// mechanism; this map is only the decision. It reads a directory rather than a filename because the
+// single-file version of it was green with an unclassified kind live in the schema: a widening can
+// only arrive as a new file, since an applied migration is frozen, and a new file was exactly what
+// it could not see. `TestTheLiveSchemaAgreesWithTheMigrationFiles` asks the running database the
+// same question without parsing any SQL at all.
 var publicKinds = map[string]bool{
 	"measurement": true,
 	"observation": true,

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -542,20 +544,34 @@ func TestThePublicReadIsStillLimited(t *testing.T) {
 // `contributions.kind` is a closed CHECK vocabulary and it has widened twice already (002, 004). A
 // kind in neither `publicKinds` nor `withheldKinds` fails here, so the next author to widen it has
 // to decide whether it is public — the ordering an allow-list buys and a deny-list does not. The
-// vocabulary is read out of the migration rather than restated, for the reason `golden_test.go`
+// vocabulary is read out of the migrations rather than restated, for the reason `golden_test.go`
 // reads `TreePlacement` off `Tree.swift`: a test that declares its own answer proves only that the
 // author transcribed it.
+//
+// ── This guard was green with the defect present, and that is why it reads a directory ─────────
+//
+// Until the adversarial review of this round's PR it read **one hardcoded path**,
+// `../../migrations/004_measurement_withdrawal_kind.sql`. `loadMigrations`
+// (`internal/store/migrate.go`) applies *every* `.sql` in that directory, and an applied migration
+// is frozen (`migrations/migrations.go`) — so the only way an eighteenth kind can arrive is in a
+// **new file**, which is exactly how the previous two arrivals came (002 added ten, 004 added one).
+// The reviewer added an eighteenth kind as `005_*.sql` and this test stayed green with an
+// unclassified kind live in the schema, while the control — the same kind added to 004 — went red.
+// Guards that are green when the defect is present are this project's dominant test-suite defect
+// class, and this was one.
+//
+// It now reads the vocabulary the way the server does: every migration, in version order, last
+// declaration wins. `TestTheLiveSchemaAgreesWithTheMigrationFiles` asks the running database the
+// same question through a different instrument, so a spelling this extractor cannot parse is caught
+// by something that never parses SQL at all.
 func TestEveryContributionKindIsClassified(t *testing.T) {
-	declared := contributionKindsFromMigration(t, "../../migrations/004_measurement_withdrawal_kind.sql")
-	if len(declared) != 17 {
-		t.Fatalf("read %d kinds from the migration, want 17 — the extractor or the CHECK moved: %v",
-			len(declared), declared)
-	}
+	declared, source := contributionKindsFromMigrations(t, "../../migrations")
 	for _, kind := range declared {
 		_, withheld := withheldKinds[kind]
 		if !publicKinds[kind] && !withheld {
-			t.Errorf("`%s` is a contribution kind and the public read has not decided about it. "+
-				"Add it to publicKinds with a ruling behind it, or to withheldKinds with the reason.", kind)
+			t.Errorf("`%s` is a contribution kind (declared in %s) and the public read has not "+
+				"decided about it. Add it to publicKinds with a ruling behind it, or to "+
+				"withheldKinds with the reason.", kind, source)
 		}
 		if publicKinds[kind] && withheld {
 			t.Errorf("`%s` is classified both ways", kind)
@@ -571,6 +587,14 @@ func TestEveryContributionKindIsClassified(t *testing.T) {
 			t.Errorf("withheldKinds names `%s`, which is not a contribution kind", kind)
 		}
 	}
+	// The count, asserted **after** the classification rather than before it, so an author who adds
+	// an eighteenth kind reads the sentence about their kind first and this one as context. Kept
+	// because it is the extractor's own calibration against the live tree: a reader that silently
+	// began matching nothing would leave the loops above with nothing to say.
+	if len(declared) != 17 {
+		t.Errorf("read %d kinds from %s, want 17 — either the vocabulary grew (classify the new "+
+			"one above) or the extractor moved: %v", len(declared), source, declared)
+	}
 	// And the decision itself, pinned: exactly two kinds are public. Widening this is a privacy
 	// decision and must arrive with the ruling that took it, not as a still-passing test.
 	if len(publicKinds) != 2 {
@@ -578,56 +602,236 @@ func TestEveryContributionKindIsClassified(t *testing.T) {
 	}
 }
 
-// TestContributionKindExtractorIsCalibrated proves the reader against an answer already known.
-// Without it the guard above passes vacuously on an extractor that matches nothing.
-func TestContributionKindExtractorIsCalibrated(t *testing.T) {
-	specimen := `
-ALTER TABLE contributions DROP CONSTRAINT contributions_kind_is_known;
+// TestSyncAcceptsEveryDeclaredContributionKind closes the third restatement of the same vocabulary.
+//
+// `syncKinds` (`sync.go`) is a hand-written copy of the CHECK, and until now nothing forced it to
+// move when the CHECK moved. The failure mode is quiet in one direction and loud in the other: a
+// kind in the CHECK but not in `syncKinds` is refused at ingest with `validation_failed` — which is
+// how every one of 002's ten behaved before that round noticed — and a kind in `syncKinds` but not
+// in the CHECK is a constraint violation at insert. Neither should be discoverable in production.
+//
+// Raised by the same review as B1, as the related finding it did not require fixing. It is three
+// assertions on an extractor this file already has to own, so it is fixed here.
+func TestSyncAcceptsEveryDeclaredContributionKind(t *testing.T) {
+	declared, source := contributionKindsFromMigrations(t, "../../migrations")
+	for _, kind := range declared {
+		if !syncKinds[kind] {
+			t.Errorf("`%s` is a contribution kind (declared in %s) and POST /sync refuses it; "+
+				"the phone cannot deliver a row the schema accepts", kind, source)
+		}
+	}
+	for kind := range syncKinds {
+		if !slices.Contains(declared, kind) {
+			t.Errorf("POST /sync accepts `%s`, which the CHECK does not; the insert would violate "+
+				"the constraint", kind)
+		}
+	}
+}
 
-ALTER TABLE contributions ADD CONSTRAINT contributions_kind_admits_a_withdrawn_reading CHECK (kind IN (
+// TestTheLiveSchemaAgreesWithTheMigrationFiles reads the vocabulary from the running database.
+//
+// The two guards above parse SQL with a regular expression, which can only ever be as good as the
+// spellings its author thought of. This one parses nothing: it asks Postgres, after every migration
+// has been applied, what the constraint on `contributions.kind` actually is. If a future migration
+// declares the vocabulary in a form the extractor cannot read, the extractor's answer and this one
+// stop agreeing and the disagreement is the failure.
+//
+// Note Postgres does not store `kind IN (…)`; it normalizes to `kind = ANY (ARRAY[…])`, so the
+// spelling read back here is genuinely not the spelling in the file.
+func TestTheLiveSchemaAgreesWithTheMigrationFiles(t *testing.T) {
+	h := newHarness(t)
+
+	var definitions []string
+	rows, err := h.store.Pool().Query(context.Background(), `
+		SELECT pg_get_constraintdef(c.oid)
+		  FROM pg_constraint c
+		  JOIN pg_class t ON t.oid = c.conrelid
+		 WHERE t.relname = 'contributions'
+		   AND c.contype = 'c'
+	`)
+	if err != nil {
+		t.Fatalf("reading pg_constraint: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var definition string
+		if err := rows.Scan(&definition); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(definition, "kind") {
+			definitions = append(definitions, definition)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(definitions) != 1 {
+		t.Fatalf("found %d CHECK constraints mentioning `kind` on contributions, want exactly 1: %v",
+			len(definitions), definitions)
+	}
+
+	var live []string
+	for _, match := range sqlQuotedValue.FindAllStringSubmatch(definitions[0], -1) {
+		live = append(live, match[1])
+	}
+	sort.Strings(live)
+
+	declared, source := contributionKindsFromMigrations(t, "../../migrations")
+	sort.Strings(declared)
+	if !slices.Equal(live, declared) {
+		t.Fatalf("the live schema's kinds are %v and %s declares %v — one of the two instruments "+
+			"is wrong, and the extractor is the one that parses SQL with a regexp", live, source, declared)
+	}
+	for _, kind := range live {
+		_, withheld := withheldKinds[kind]
+		if !publicKinds[kind] && !withheld {
+			t.Errorf("`%s` is a contribution kind in the live schema and the public read has not "+
+				"decided about it", kind)
+		}
+	}
+}
+
+// TestContributionKindExtractorIsCalibrated proves the reader against an answer already known.
+// Without it the guards above pass vacuously on an extractor that matches nothing.
+//
+// The specimen directory is the shape of the real one and each file is there for a case that has
+// bitten: 001 declares the vocabulary **inline in a CREATE TABLE** (the real 001 does), 002 replaces
+// it through `ADD CONSTRAINT` (the real 002 and 004 do), 003 touches something else entirely and
+// must not blank the answer, and 004 carries the pattern **inside a comment**, which must not be
+// mistaken for a declaration. The answer is 002's, because that is the last file that declares it —
+// and it is deliberately *not* the first file's and *not* the last file's, so a reader that took
+// either would be caught.
+func TestContributionKindExtractorIsCalibrated(t *testing.T) {
+	dir := t.TempDir()
+	specimens := map[string]string{
+		"001_initial.sql": `
+CREATE TABLE contributions (
+    client_uuid   UUID PRIMARY KEY,
+    kind          TEXT NOT NULL CHECK (kind IN (
+                      'visit', 'observation')),
+    tree_uuid     UUID NOT NULL
+);
+`,
+		"002_more_kinds.sql": `
+ALTER TABLE contributions DROP CONSTRAINT contributions_kind_check;
+
+ALTER TABLE contributions ADD CONSTRAINT contributions_kind_is_known CHECK (kind IN (
     'visit', 'observation',
     -- a comment mentioning 'not_a_kind' in prose
     'care_event'
 ));
 
 CREATE INDEX something ON contributions (upper(payload ->> 'id')) WHERE kind = 'measurement';
-`
-	path := filepath.Join(t.TempDir(), "specimen.sql")
-	if err := os.WriteFile(path, []byte(specimen), 0o644); err != nil {
-		t.Fatal(err)
+`,
+		"003_unrelated.sql": `
+ALTER TABLE photos ADD COLUMN idempotency_key TEXT;
+`,
+		"004_prose_only.sql": `
+-- This file talks about the constraint without declaring it. A reader that matched prose would
+-- take CHECK (kind IN ('never_a_kind')) from this line and answer with it.
+ALTER TABLE contributions ADD COLUMN moderation_note TEXT;
+`,
+		"README.md": "not a migration",
 	}
-	got := contributionKindsFromMigration(t, path)
+	for name, body := range specimens {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, source := contributionKindsFromMigrations(t, dir)
 	want := []string{"visit", "observation", "care_event"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("the extractor read %v from a specimen whose answer is %v — it must skip the "+
-			"commented value and stop at the CHECK's close, so the trailing index's 'measurement' "+
-			"is not a kind", got, want)
+		t.Fatalf("the extractor read %v from a directory whose answer is %v — it must take the "+
+			"*last* file that declares the vocabulary, skip a commented value, stop at the CHECK's "+
+			"close so the trailing index's 'measurement' is not a kind, and not be fooled by prose",
+			got, want)
+	}
+	if source != "002_more_kinds.sql" {
+		t.Fatalf("the extractor says the vocabulary comes from %q, want 002_more_kinds.sql — a "+
+			"guard that names the wrong file sends the next author to the wrong place", source)
 	}
 }
 
 var sqlQuotedValue = regexp.MustCompile(`'([a-z_]+)'`)
 
-// contributionKindsFromMigration reads the CHECK's vocabulary out of the migration file.
-func contributionKindsFromMigration(t *testing.T, path string) []string {
+// migrationFilename is `internal/store/migrate.go`'s own pattern. The runner refuses a file this
+// does not match, so a file this skips is a file that never runs.
+var migrationFilename = regexp.MustCompile(`^(\d{3})_[a-z0-9_]+\.sql$`)
+
+// kindCheckBlock matches both spellings this vocabulary has ever been declared in: 001's inline
+// column CHECK inside `CREATE TABLE contributions`, and 002's and 004's `ADD CONSTRAINT`. It is
+// non-greedy so it stops at the CHECK's own close rather than running on to the next statement's.
+var kindCheckBlock = regexp.MustCompile(`(?s)CHECK \(kind IN \((.*?)\)\)`)
+
+// contributionKindsFromMigrations reads the CHECK's vocabulary out of a migrations directory the
+// way `loadMigrations` reads the directory itself: every `NNN_name.sql`, in version order. The last
+// file that declares the vocabulary wins, because an applied migration is frozen and a widening can
+// therefore only arrive as a new file.
+//
+// It returns the values and the name of the file they came from, so a failure sends the next author
+// to the file that actually decides it rather than to whichever one this test was written against.
+func contributionKindsFromMigrations(t *testing.T, dir string) ([]string, string) {
 	t.Helper()
-	source, err := os.ReadFile(path)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("reading %s: %v — this guard fails rather than skipping", path, err)
+		t.Fatalf("reading %s: %v — this guard fails rather than skipping", dir, err)
 	}
-	block := regexp.MustCompile(`(?s)ADD CONSTRAINT \w+ CHECK \(kind IN \((.*?)\n\)\);`).FindSubmatch(source)
-	if block == nil {
-		t.Fatalf("did not find an `ADD CONSTRAINT … CHECK (kind IN (…))` in %s", path)
+
+	type numbered struct {
+		Version int
+		Name    string
 	}
-	var kinds []string
-	for _, line := range bytes.Split(block[1], []byte("\n")) {
-		if bytes.HasPrefix(bytes.TrimSpace(line), []byte("--")) {
+	var files []numbered
+	for _, entry := range entries {
+		match := migrationFilename.FindStringSubmatch(entry.Name())
+		if match == nil {
 			continue
 		}
-		for _, match := range sqlQuotedValue.FindAllSubmatch(line, -1) {
-			kinds = append(kinds, string(match[1]))
+		version, err := strconv.Atoi(match[1])
+		if err != nil {
+			t.Fatalf("%s: %v", entry.Name(), err)
 		}
+		files = append(files, numbered{Version: version, Name: entry.Name()})
 	}
-	return kinds
+	if len(files) == 0 {
+		t.Fatalf("no NNN_name.sql files in %s; the vocabulary would be read from nothing", dir)
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Version < files[j].Version })
+
+	var kinds []string
+	var source string
+	for _, file := range files {
+		body, err := os.ReadFile(filepath.Join(dir, file.Name))
+		if err != nil {
+			t.Fatalf("reading %s: %v", file.Name, err)
+		}
+		// Whole-line SQL comments come out first, so neither a decoy in a file's prose header nor a
+		// commented-out value inside the block can be read as a declaration. Only lines that *begin*
+		// with `--` go, which is what the previous single-file reader did inside the block.
+		var live [][]byte
+		for _, line := range bytes.Split(body, []byte("\n")) {
+			if bytes.HasPrefix(bytes.TrimSpace(line), []byte("--")) {
+				continue
+			}
+			live = append(live, line)
+		}
+		blocks := kindCheckBlock.FindAllSubmatch(bytes.Join(live, []byte("\n")), -1)
+		if len(blocks) == 0 {
+			continue
+		}
+		// The last block in the last file that has one. Within a file the later statement is the
+		// one that survives, for the same reason the later file is.
+		var declared []string
+		for _, match := range sqlQuotedValue.FindAllSubmatch(blocks[len(blocks)-1][1], -1) {
+			declared = append(declared, string(match[1]))
+		}
+		kinds, source = declared, file.Name
+	}
+	if source == "" {
+		t.Fatalf("no `CHECK (kind IN (…))` in any migration under %s", dir)
+	}
+	return kinds, source
 }
 
 // TestMeasurementMethodMatchesTheSwiftVocabulary — a reading whose method is outside the vocabulary

@@ -17,7 +17,7 @@ import (
 // here rather than remembered:
 //
 //  1. **Two kinds are read and fifteen are not.** `contributions.kind` is a closed CHECK vocabulary
-//     of seventeen values (`004_measurement_withdrawal_kind.sql`); these queries name `measurement`
+//     of seventeen values (the migrations, last declaration wins); these queries name `measurement`
 //     and `observation` explicitly and can therefore never widen by accident. The api package holds
 //     the classification of all seventeen and a test that fails when one is unclassified — an
 //     allow-list, because a deny-list on a public surface is how `testflight.yml` came to classify a
