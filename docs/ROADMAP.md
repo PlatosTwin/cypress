@@ -178,6 +178,62 @@ and the owner has accepted it for the beta.
 
 ---
 
+## W — the web version (opened 2026-09-10)
+
+The owner opened this on 2026-09-10 and ruled its four forking questions the same day. The authority
+is `docs/design-proposals/2026-09-10-web-version.md`; this section is the queue underneath it. **W1
+below is the screen number from `SCREENS.md` §W1, not a milestone number** — the milestones here are
+`W-A` through `W-E`, deliberately lettered so they cannot be read as M-numbers.
+
+**The four rulings.** v1 is the **public read surface** (no login, no writes); it lives in **this
+repository** at `web/`; the unspecified web pages are built under a **scoped constraint-21 exception**
+in the shape of the one M5 was granted, with every invention written to `docs/rulings-pending/` for
+ratification; and the runtime is **TypeScript + SSR self-hosted on Fly**. Vercel stays ruled out —
+R36 / `RULINGS.md:2275`, the Hobby tier's non-commercial term against D14's paid org tier.
+
+**Why this is ahead of the open tester items.** `SharePresentation.swift:245` ships
+`https://cypress.app/sf/tree/` as the share-card prefix, and no such page exists. Every link screen 10
+has ever produced is dead, which makes the growth loop `PRODUCT.md` names — "the share card *is* the
+growth loop" — terminate at the moment of sharing. W1 is the page those links have always meant.
+
+| | Milestone | Done when |
+|---|---|---|
+| **W-A** | Foundation | `web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` judge a log rather than an exit code. |
+| **W-B** | The three portable assets | Design tokens exported from the Swift declarations to CSS custom properties, with a test that the export still matches its source; the domain rules (vitality rubric, `Quantity`, the 25 m grid, growth-charting eligibility, ID spaces) re-derived in TypeScript against ported Swift test cases; a read layer that opens a published city pack through the same schema the phone uses. |
+| **W-C** | W1 · Public tree page | The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients. |
+| **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — designed under the W-3 exception, ruled, then built. |
+| **W-E** | It is on the internet | Deployed to Fly against a volume holding the published packs; the share link resolves. |
+
+### Decided in the proposal, not open
+
+- **The read path is the published base layer**, mounted read-only. Not Postgres, not browser-side
+  SQLite over range requests. This adds a second *consumer* of R36's base layer, not a second source
+  of truth, and it is not R36's Shape B — nothing about the phone's read path changes.
+- **No raster basemap in v1.** Explore draws pins over the neighborhood polygons already in the seed
+  (`Fixtures/seed/schema.sql:129`). `DECISIONS.md:153` puts per-seat map licensing permanently out of
+  scope; MapLibre over PMTiles on Tigris is the named path if a basemap is ever wanted.
+- **No photos on the public surface in v1.** W1's specified hero is a gradient. `cypress-photos` is
+  private by design and opening it is a D11 privacy decision with its own round.
+
+### Open, and named as open
+
+1. **Is `cypress.app` registered?** It appears in `ShareCopy.publicURLPrefix` and throughout the docs,
+   and no config file in this repository confirms ownership. W-E cannot finish without an answer.
+   Until then the site lives at its `.fly.dev` hostname and the prefix constant does not move.
+2. **What a withdrawn or moderated record does to an indexed public page.** Not v1 — v1 renders
+   city-record facts only — but it lands the moment anything contributed reaches W1.
+3. **Server CORS and Sign in with Apple JS**, both prerequisites for any web surface that *writes*.
+   v1 needs neither. `authOIDC` requires a nonce and fails closed, and the web flow's nonce is not the
+   native flow's; that is an integration change, not a client rewrite.
+4. **The Coordinator dashboard** (`PROTOTYPE-FLOW` PART 2, the paid org tier under D14). Fully drawn,
+   but workdays, routes, claim/progress and the live feed exist in neither the server nor the app.
+   A product round, not a port.
+5. **The moderation console.** `ARCHITECTURE.md` §8 and `CypressAPI.swift:22` already assign
+   `/admin/*` to web and declare it out of scope for iOS. No mock exists anywhere in the handoff.
+
+
+---
+
 ## Resolutions on the three open questions
 
 These were escalated and handed back. Each is a decision I am taking, with the reasoning, so it can
