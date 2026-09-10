@@ -273,7 +273,17 @@ bounded_run() {
   bpid=$!
   while [ ! -f "$rcfile" ]; do
     if [ "$waited" -ge "$secs" ]; then
-      kill_process_tree "$bpid"
+      # The subtree is enumerated BEFORE anything is signalled — a child reparented to launchd
+      # after its parent dies is a child this loop would no longer find.
+      local tree k
+      tree="$(process_tree_pids "$bpid")"
+      for k in $tree; do kill -TERM "$k" 2>/dev/null; done
+      # Reaped immediately, and the order matters: left unwaited, bash announces the killed job
+      # ("Terminated: 15") on its own stderr at the next external command — which lands in the
+      # middle of the refusal that is trying to explain what happened, where it reads as a crash.
+      wait "$bpid" 2>/dev/null
+      sleep 1
+      for k in $tree; do kill -KILL "$k" 2>/dev/null; done
       rm -f "$rcfile" "$rcfile.part"
       BOUNDED_RC=124
       return 124
@@ -287,11 +297,14 @@ bounded_run() {
   return "${BOUNDED_RC:-1}"
 }
 
-# TERM then KILL, the whole subtree. `xcrun` execs a `simctl` child, and killing only the pid
-# bash knows about leaves the wedged `simctl` behind — which is the exact leftover the guard
+# A pid and everything descended from it. `xcrun` execs a `simctl` child, and signalling only the
+# pid bash knows about leaves the wedged `simctl` behind — which is the exact leftover the guard
 # below refuses on, so a timeout that manufactured one would make the next run worse.
-kill_process_tree() {
-  local root="$1" snapshot frontier="$1" all="$1" next k depth=0
+#
+# Reads `ps` directly and NOT `PS_SNAPSHOT`: the snapshot is minutes old by the time a bound
+# fires, and the question here is who is alive right now.
+process_tree_pids() {
+  local snapshot frontier="$1" all="$1" next k depth=0
   snapshot="$(ps -eo pid=,ppid=)"
   while [ -n "$frontier" ] && [ "$depth" -lt 8 ]; do
     next=""
@@ -302,9 +315,7 @@ kill_process_tree() {
     all="$all $next"
     depth=$((depth + 1))
   done
-  for k in $all; do kill -TERM "$k" 2>/dev/null; done
-  sleep 1
-  for k in $all; do kill -KILL "$k" 2>/dev/null; done
+  printf '%s' "$all"
 }
 
 # ---------------------------------------------------------------------------
@@ -351,9 +362,15 @@ device_state_line() {
   local out
   out="$(mktemp -t cypress-devstate)" || { printf 'unknown'; return 0; }
   if bounded_run 15 xcrun simctl list devices >"$out" 2>/dev/null; then
-    grep -F "$UDID" "$out" | sed 's/^[[:space:]]*//' | head -1
-  else
+    local line
+    line="$(grep -F "$UDID" "$out" | sed 's/^[[:space:]]*//' | head -1)"
+    printf '%s' "${line:-no such device in \`simctl list devices\`}"
+  elif [ "${BOUNDED_RC:-}" = "124" ]; then
     printf 'unknown — `simctl list devices` did not answer within 15s either, which is itself the answer'
+  else
+    # Said separately from the timeout above, because they mean different things and a
+    # diagnostic that reports one as the other is the class of defect this round is closing.
+    printf 'unknown — `simctl list devices` exited %s' "${BOUNDED_RC:-?}"
   fi
   rm -f "$out"
 }
@@ -367,7 +384,9 @@ boot_device() {
   # not a refusal and is never skipped: an unbounded wait is the defect, not a guard.
   [ "$SKIP_PREFLIGHT" = "1" ] || watchers="$(bootstatus_watchers)"
   if [ -n "$watchers" ]; then
-    printf 'VERIFY-FAIL: a simctl bootstatus is already running against this simulator:\n%s' "$watchers" >&2
+    # `\n%s\n`, not `\n%s`: `$(…)` strips the trailing newline, so without it the last watcher
+    # line and the first line of the explanation below come out welded together.
+    printf 'VERIFY-FAIL: a simctl bootstatus is already running against this simulator:\n%s\n' "$watchers" >&2
     echo "  A bootstatus has no timeout of its own, so a wedged one never returns and every later" >&2
     echo "  run on this device waits behind it — four of them once deadlocked a preflight, and the" >&2
     echo "  device needed erasing. Adding a fifth is not the way out." >&2
