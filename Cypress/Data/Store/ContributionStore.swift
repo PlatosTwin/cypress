@@ -174,6 +174,56 @@ public struct ContributionStore {
         return try statement.fetchAll(Self.decodeMeasurement)
     }
 
+    /// Test seam (`LocalAPI.debugSeedMeasurement`): the id of the reading a `client_uuid` names on
+    /// this tree, **withdrawn or not**, with any withdrawal undone.
+    ///
+    /// **Why the seam needs its own read, rather than `measurements(treeID:)` above.** That one
+    /// filters `deleted_at IS NULL`, which is correct for every product reader and wrong for a
+    /// harness: since v21 a reading can be withdrawn, and a withdrawn one is still a `client_uuid`
+    /// the insert's `ON CONFLICT` answers `duplicate` for. The seam then read back nothing and threw
+    /// `notFound`, so a device on which anybody had exercised the withdrawal control stopped being
+    /// able to open the fully-measured deep link at all — permanently, until the app was
+    /// uninstalled. It broke two UI tests on that simulator, and the failure looked like a defect in
+    /// an unrelated test (the family E202 and E133 are about).
+    ///
+    /// **It clears the tombstone rather than merely ignoring it**, because the seam's contract is
+    /// that the tree carries this reading when it returns. Reading the row back and leaving it
+    /// withdrawn would answer the caller and still leave the tree half-measured, which is the same
+    /// broken harness one assertion later.
+    ///
+    /// Scoped to the tree, exactly as the read it replaces was: a `client_uuid` held by a *different*
+    /// tree still answers nil here, and the seam still throws on it. That is a caller reusing one key
+    /// across trees, which is a mistake to name rather than to paper over.
+    ///
+    /// Not a product path. Nothing in the app un-withdraws a reading — R3's ruling and
+    /// `withdrawMessage`'s "This cannot be undone" are the product answer — and this is reachable
+    /// only through the debug deep link, keyed on a `client_uuid` the harness itself minted.
+    public func restoreSeededMeasurement(
+        clientUUID: UUID,
+        treeID: UUID,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> UUID? {
+        let revive = try connection.cachedStatement("""
+            UPDATE measurements
+               SET deleted_at = NULL, updated_at = :now
+             WHERE client_uuid = :key COLLATE NOCASE
+               AND tree_uuid = :tree COLLATE NOCASE
+               AND deleted_at IS NOT NULL
+            """)
+        _ = try revive.bind([":key": clientUUID.uuidString, ":tree": treeID.uuidString, ":now": date])
+        try revive.run()
+        _ = try revive.reset()
+
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM measurements
+             WHERE client_uuid = :key COLLATE NOCASE AND tree_uuid = :tree COLLATE NOCASE
+            """)
+        _ = try statement.bind([":key": clientUUID.uuidString, ":tree": treeID.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.uuidIfPresent("id") } ?? nil
+    }
+
     // MARK: - Care events
 
     @discardableResult
@@ -932,6 +982,180 @@ public struct ContributionStore {
         _ = try photo.reset()
 
         return counts
+    }
+
+    // MARK: - Withdrawing one reading (AppSchema v21)
+
+    /// One measurement, as a withdrawal needs to see it: whose it is, which tree it is on, and which
+    /// of D7's two series it was in.
+    ///
+    /// Returned as a whole rather than as three reads for `PhotoForDeletion`'s reason — the caller
+    /// holds all of it at once, and two reads of a table a third statement is about to change is how
+    /// a withdrawal ends up naming one reading and tombstoning another.
+    public struct MeasurementForWithdrawal: Sendable, Equatable {
+        public let id: UUID
+        public let treeID: UUID
+        public let kind: MeasurementKind
+        /// The account the row names, or nil for a reading contributed before sign-in **and** for
+        /// one the leaving door unlinked. `isAnonymized` is what tells those two apart.
+        public let userID: UUID?
+        /// `measurements.device_id` is NOT NULL, so unlike a photograph a reading always names an
+        /// installation. That is why there is no `.nobody` owner here and why the anonymized case
+        /// has to be read off `anonymized_contributions` instead — see `isAnonymized`.
+        public let deviceID: UUID
+        /// Whether an account deletion unlinked this row through the door that leaves the work in
+        /// place (`AppSchema` v13, `AccountDeletion.anonymizeContributions`).
+        ///
+        /// **This is the whole of R3 on this table, and it cannot be read off the owner columns.**
+        /// The leaving door nulls `user_id` and deliberately leaves `device_id`, so an anonymized
+        /// reading is indistinguishable by columns alone from D9's ordinary case — an unsigned-in
+        /// contributor's own work on their own phone — which is precisely the pair
+        /// `claimDevice`'s own comment says the tombstone exists to tell apart.
+        public let isAnonymized: Bool
+    }
+
+    /// The reading a withdrawal is about, or nil when there is no live row with that id.
+    public func measurementForWithdrawal(
+        id: UUID,
+        connection: SQLiteConnection
+    ) throws -> MeasurementForWithdrawal? {
+        let statement = try connection.cachedStatement("""
+            SELECT tree_uuid, kind, user_id, device_id,
+                   NOT (\(Self.notAnonymized("measurements"))) AS anonymized
+              FROM measurements
+             WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { row in
+            MeasurementForWithdrawal(
+                id: id,
+                treeID: try row.uuid("tree_uuid"),
+                // `row.value` throws on a `kind` the enum does not know rather than defaulting to
+                // one, which is the same refusal `decodeMeasurement` makes: a withdrawal that
+                // guessed the series would queue a false statement about which chart lost a point.
+                kind: try row.value("kind", MeasurementKind.self),
+                userID: try row.uuidIfPresent("user_id"),
+                deviceID: try row.uuid("device_id"),
+                isAnonymized: try row.bool("anonymized")
+            )
+        }
+    }
+
+    /// Which of this tree's live readings this person may withdraw.
+    ///
+    /// `deletablePhotoIDs`' twin, and the differences between the two are all facts about the
+    /// tables rather than about the rule:
+    ///
+    /// - **No provenance arm.** `AppSchema` v16's `taken_on_device` is a `photos` column and there
+    ///   is no equivalent here, so the reading stranded-under-an-adopted-account case E277 records
+    ///   simply does not arise: `claimDevice` sets `measurements.user_id` and **leaves
+    ///   `device_id`**, so a reading adopted by an account is still reachable through the device arm
+    ///   afterwards. A row this installation wrote never stops naming it.
+    /// - **The anonymized refusal is a tombstone lookup, not a null check.** `measurements.device_id`
+    ///   is NOT NULL, so a reading is never ownerless by columns; R3's promise on this table lives
+    ///   in `anonymized_contributions`, which is the same clause `journal`, `groveRecords` and
+    ///   `claimDevice` already lead with. Without it, a reading somebody deliberately unlinked from
+    ///   themselves would be withdrawable by whoever holds the phone next — which is the
+    ///   re-identification `claimDevice`'s own comment refuses.
+    ///
+    /// Read with the caller's attribution and in the same transaction as the readings themselves, so
+    /// a control cannot be drawn on a row that has since gone.
+    public func withdrawableMeasurementIDs(
+        treeID: UUID,
+        attribution: Attribution,
+        connection: SQLiteConnection
+    ) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM measurements
+             WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+               AND \(Self.withdrawalPredicate())
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":user": attribution.userID?.uuidString,
+            ":device": attribution.deviceID.uuidString
+        ])
+        defer { _ = try? statement.reset() }
+        return Set(try statement.fetchAll { try $0.uuidIfPresent("id") }.compactMap { $0 })
+    }
+
+    /// Who may take a reading back, in one place because it is written in two: the set that draws
+    /// the control, and the tombstone `UPDATE` that acts on it.
+    ///
+    /// `removalPredicate`'s reasoning applies verbatim — a check made in Swift and an `UPDATE` that
+    /// would have matched anyway are one refactor apart from a withdrawal that reaches somebody
+    /// else's reading — and the two copies here are shared for the reason that one names: four
+    /// copies of a permission rule is how one of them drifts.
+    ///
+    /// The anonymized clause leads, exactly as `removalPredicate`'s does and as
+    /// `PhotoOwner.permitsRemoval` refuses `.nobody` on its first line. R3 is not a clause in an
+    /// `||`. See `withdrawableMeasurementIDs` for why it is a tombstone lookup on this table.
+    private static func withdrawalPredicate() -> String {
+        """
+        \(notAnonymized("measurements"))
+                 AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                      OR device_id = :device COLLATE NOCASE)
+        """
+    }
+
+    /// Tombstones one reading, behind the same predicate that drew the control.
+    ///
+    /// **Soft and *not* stripped**, which is where this parts company with `deletePhoto` and the
+    /// difference is the whole of it. A photograph's row loses `storage_key`, `local_path`, its
+    /// dimensions and its fuzzed coordinate, because the reason somebody withdraws a photograph is
+    /// usually what is *in* it and a tombstone that could still find the picture would be a lie. A
+    /// reading holds no picture: it is a number, its unit, its method and when it was taken. What
+    /// somebody withdrawing it is asking is that it stop counting — off the chart, off the log, out
+    /// of the stat card — and `deleted_at` is exactly that, in every reader (`isChartable`,
+    /// `measurements(treeID:)`, `journal`, `groveRecords`, `ownContributions`).
+    ///
+    /// Stripping `value` and `method` would also break the row's own CHECKs, which is D7 saying the
+    /// same thing the schema's way: there is no such thing here as a stored measurement with the
+    /// number taken out.
+    ///
+    /// - Returns: 1 when the row was tombstoned, 0 when the predicate matched nothing.
+    public func withdrawMeasurement(
+        id: UUID,
+        attribution: Attribution,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            UPDATE measurements
+               SET deleted_at = :now, updated_at = :now
+             WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+               AND \(Self.withdrawalPredicate())
+            """)
+        _ = try statement.bind([
+            ":id": id.uuidString,
+            ":user": attribution.userID?.uuidString,
+            ":device": attribution.deviceID.uuidString,
+            ":now": date
+        ])
+        try statement.run()
+        let changed = connection.changes
+        _ = try statement.reset()
+        return changed
+    }
+
+    /// Whether this tree still holds a live reading of one kind.
+    ///
+    /// Read *after* a withdrawal commits, to answer the one thing the caller cannot work out for
+    /// itself: whether screen 03's stat card for that measurement has gone back to being an empty
+    /// slot. See `WithdrawnMeasurement.leftTheKindWithNoReading`.
+    public func hasLiveMeasurement(
+        treeID: UUID,
+        kind: MeasurementKind,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            SELECT COUNT(*) AS n FROM measurements
+             WHERE tree_uuid = :tree COLLATE NOCASE AND kind = :kind AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":tree": treeID.uuidString, ":kind": kind.rawValue])
+        defer { _ = try? statement.reset() }
+        return (try statement.fetchOne { try $0.int("n") } ?? 0) > 0
     }
 
     // MARK: - Photo votes (AppSchema v8)

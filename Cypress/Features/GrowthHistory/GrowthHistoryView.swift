@@ -37,6 +37,28 @@ struct GrowthHistoryView: View {
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
             .task { if model.presentation == nil { await model.load() } }
+            // ── The question, on the screen rather than on the row ────────────────────────────
+            //
+            // `TreePhotosView`'s arrangement exactly: one dialog for the whole list, driven by the
+            // model's `pendingWithdrawal`, rather than one per row. A dialog per row is a dialog
+            // per row of state, and the log is a `ForEach`.
+            .confirmationDialog(
+                GrowthHistoryCopy.withdrawTitle,
+                isPresented: Binding(
+                    get: { model.pendingWithdrawal != nil },
+                    set: { if !$0 { model.pendingWithdrawal = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: model.pendingWithdrawal
+            ) { row in
+                Button(GrowthHistoryCopy.withdrawAction, role: .destructive) {
+                    model.pendingWithdrawal = nil
+                    Task { await model.withdraw(row.id) }
+                }
+                Button(GrowthHistoryCopy.withdrawCancel, role: .cancel) { model.pendingWithdrawal = nil }
+            } message: { row in
+                Text(GrowthHistoryPresentation.withdrawMessage(row))
+            }
     }
 
     @ViewBuilder
@@ -89,6 +111,19 @@ struct GrowthHistoryView: View {
                     // save.
                     if let reason = presentation.noChartReason {
                         emptyState(reason)
+                    }
+
+                    // A withdrawal that was refused or could not be written. Not swallowed, for
+                    // `TreePhotosView`'s reason: the person has just confirmed something
+                    // irreversible, and silence after that reads as "it worked". Above the log, so
+                    // the sentence and the rows it is about are on screen together.
+                    if let message = model.withdrawError {
+                        Text(message)
+                            .cypressBody135(color: CypressColor.textInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, CypressSpacing.gutter)
+                            .padding(.top, GrowthHistoryMetrics.logTop)
                     }
 
                     // 5 · The measurement log — the record, wider than the charts by design.
@@ -198,7 +233,14 @@ struct GrowthHistoryView: View {
         // and the date are both intrinsic-width by design — and these rows are what pushed the
         // whole of screen 11 off both edges of the glass (ERRATA E196 §3). Same shape as
         // `StatCard.cityRecordValue`, for the same reason.
-        return ViewThatFits(in: .horizontal) {
+        // ── The reading is one element; the control beside it is its own ───────────────────
+        //
+        // `.accessibilityElement(children: .combine)` is kept on the reading — value, badge and
+        // date are one sentence and always were — but it is applied to *that* subtree rather than
+        // to the whole row, because combining a subtree that contains a button swallows the
+        // button: VoiceOver would read the reading and offer no way to act on it. Same arrangement
+        // as screen 20, where the caption and the glyphs beside it are separate elements.
+        let reading = ViewThatFits(in: .horizontal) {
             HStack(spacing: GrowthHistoryMetrics.logRowSpacing) {
                 value
                 Spacer(minLength: 0)
@@ -210,6 +252,13 @@ struct GrowthHistoryView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+
+        return HStack(spacing: GrowthHistoryMetrics.logRowSpacing) {
+            reading
+            if row.isWithdrawable { withdrawControl(row) }
+        }
         .padding(.vertical, GrowthHistoryMetrics.logRowPaddingV)
         .padding(.horizontal, GrowthHistoryMetrics.logRowPaddingH)
         .background {
@@ -217,7 +266,51 @@ struct GrowthHistoryView: View {
                 .fill(CypressColor.surfaceCard)
         }
         .cypressBorder(CypressColor.borderCool, radius: CypressRadius.control)
-        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - 5a · Withdraw a reading (report F27)
+
+    /// **NOT SPECIFIED.** SCREENS.md 11 §5 draws no control on a log row, so this is taken from the
+    /// nearest specified thing (ARCHITECTURE §5 rule 8): `TreePhotosView.deleteControl`, the app's
+    /// only other row-level control that unmakes a contribution. It is that control, moved one
+    /// table over, and every choice below is that control's rather than a new one.
+    ///
+    /// **The same trash mark**, drawn by `PhotoTrashGlyph` rather than redrawn here. A second trash
+    /// can authored in this folder would be two sets of coordinates for one mark, which is how the
+    /// two marks ERRATA E163 records drifted; and the type cannot be renamed or moved into the
+    /// design system in this round, because a rename of a shared identifier breaks every other live
+    /// branch (CLAUDE.md). Its file's own note is corrected to say screen 11 draws it too.
+    ///
+    /// **In the amber register, because there is no red in this palette** — the 311 hazard ramp is
+    /// what this app means by destructive, which `AccountDeletionSheet` established and screen 20
+    /// repeats. It is the only cell in the row that is not in the log's grays.
+    ///
+    /// **Drawn only where the reading is this person's to take back**
+    /// (`TreeProfile.withdrawableMeasurementIDs`), and with no sentence where it is absent — unlike
+    /// screen 20's `nobodysToRemove`. That sentence exists because a photograph is a subject
+    /// somebody is looking at and asking about; a line of prose under each of a dozen log rows
+    /// would be a wall of text about permissions on a screen that is a record.
+    ///
+    /// **One tap opens a question and withdraws nothing.**
+    private func withdrawControl(_ row: GrowthLogRow) -> some View {
+        Button {
+            model.pendingWithdrawal = row
+        } label: {
+            PhotoTrashGlyph()
+                .stroke(
+                    CypressColor.hazardCTAFill,
+                    style: PhotoGlyphMetrics.style(for: GrowthHistoryMetrics.withdrawGlyph)
+                )
+                .frame(width: GrowthHistoryMetrics.withdrawGlyph, height: GrowthHistoryMetrics.withdrawGlyph)
+                .frame(
+                    width: GrowthHistoryMetrics.withdrawTarget,
+                    height: GrowthHistoryMetrics.withdrawTarget
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(GrowthHistoryCopy.withdrawLabel(row))
+        .accessibilityHint(GrowthHistoryCopy.withdrawHint)
     }
 
     // MARK: - 5b · Add a reading (screen 16's general entrance, RULINGS R15)

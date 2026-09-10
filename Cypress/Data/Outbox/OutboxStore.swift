@@ -863,7 +863,7 @@ public struct OutboxStore {
         // matches an account-owned mutation and cannot match a device-owned one.
         let discard = try connection.cachedStatement("""
             DELETE FROM outbox
-             WHERE kind IN ('favorite_toggle','private_reminder')
+             WHERE kind IN (\(Self.kindList(.discardedOutright)))
                AND json_extract(payload, '$.owner.user') = :user COLLATE NOCASE
             """)
         _ = try discard.bind([":user": userID.uuidString])
@@ -884,13 +884,16 @@ public struct OutboxStore {
         // service afterwards. A single `$.userID` predicate matches none of them — the key is not
         // there — so the rows would be silently untouched, which is the shape of under-deletion that
         // reads as success at every layer.
-        let contributions = """
-            (kind IN ('visit','observation','measurement','care_event')
-             OR kind IN ('add_tree','species_claim','species_correction',
-                         'wrong_species_report','never_existed_report',
-                         'species_review_dismissal','record_review_dismissal',
-                         'photo_vote','photo_withdrawal','hazard_redirect'))
-            """
+        //
+        // **The list is derived from `OutboxItem.Kind`, not typed out here**, and that is this
+        // round's repair rather than a tidy-up. Written by hand it went stale twice: once at six
+        // kinds of sixteen, and again the moment `measurement_withdrawal` was added — a queued
+        // withdrawal survived its own account's deletion still naming the account, through both
+        // doors, which is verbatim the failure the paragraph above describes. A missing kind cannot
+        // announce itself in SQL: it matches nothing, and matching nothing is what the statement
+        // looks like when it works. `accountDeletionTreatment` is a `switch` with no `default`, so
+        // the omission is now a build failure instead.
+        let contributions = "(kind IN (\(Self.kindList(.contribution))))"
         // Either shape. `json_extract` answers NULL for a path a payload does not have, so exactly
         // one half of this can match any given row and neither can match a device-owned one.
         let mine = """
@@ -947,6 +950,18 @@ public struct OutboxStore {
             _ = try erase.reset()
             return (discarded: discarded + erased, anonymized: 0)
         }
+    }
+
+    /// The `IN (…)` list of the kinds a deletion treats one way, as SQL literals.
+    ///
+    /// Interpolated into the statement rather than bound, because a bound parameter cannot be a
+    /// list. That is safe here for a reason worth stating rather than assuming: these are the
+    /// `rawValue`s of a closed `enum` compiled into the binary — `outbox.kind`'s own `CHECK`
+    /// vocabulary, `[a-z_]` throughout — and no caller supplies any part of them.
+    private static func kindList(_ treatment: OutboxItem.Kind.AccountDeletionTreatment) -> String {
+        OutboxItem.Kind.kinds(treatedAs: treatment)
+            .map { "'\($0.rawValue)'" }
+            .joined(separator: ",")
     }
 
     public func counts(connection: SQLiteConnection) throws -> [OutboxItem.State: Int] {

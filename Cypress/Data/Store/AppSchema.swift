@@ -50,7 +50,8 @@ public enum AppSchema {
         Migration(version: 17, name: "the nine mutations that never left the phone can be queued", migrate: applyV17),
         Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18),
         Migration(version: 19, name: "an index is collated the way its readers ask, and the journal has an order", sql: v19),
-        Migration(version: 20, name: "the species chain and the community rows are reachable by the identity their readers bind", sql: v20)
+        Migration(version: 20, name: "the species chain and the community rows are reachable by the identity their readers bind", sql: v20),
+        Migration(version: 21, name: "a reading can be taken back, so the outbox learns measurement_withdrawal", migrate: applyV21)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2277,6 +2278,189 @@ public enum AppSchema {
     CREATE INDEX IF NOT EXISTS idx_community_trees_id
         ON community_trees(id COLLATE NOCASE);
     """
+
+    // MARK: - v21
+
+    /// `outbox.kind` learns `measurement_withdrawal`, so a reading somebody takes back can leave the
+    /// phone the way the photograph they take back already does.
+    ///
+    /// ── What was wrong ────────────────────────────────────────────────────────────────────────
+    ///
+    /// `measurements.deleted_at` has existed since v1 and every reader honors it — the growth log,
+    /// the two charts, the journal, the grove, the profile's stat cards — and **nothing anywhere set
+    /// it**. There was no way to withdraw a reading at all, and the reason it could not simply be
+    /// added is this table: a withdrawal is a mutation, so it queues like every other one
+    /// (ARCHITECTURE §4), and a row cannot be queued under a kind the `CHECK` refuses.
+    ///
+    /// Shipping the tombstone without the kind was considered and refused. It re-creates the Class L
+    /// debt v17 was written to pay off, on the worst surface for it: a deletion the reader is shown,
+    /// believes, and which never leaves the device. A missing delete is a known gap; a delete that
+    /// lies is a defect.
+    ///
+    /// SQLite cannot widen a `CHECK` in place, so this is the table rebuild v4, v15, v17 and v18
+    /// have each performed here. The copy is column for column and carries `seq`, so FIFO order,
+    /// retry counts, error text and the 48 h window all come across untouched; v15's paragraph on
+    /// what copying `seq` does and does not buy applies verbatim and is not repeated.
+    ///
+    /// ── Nothing is enqueued by this migration ─────────────────────────────────────────────────
+    ///
+    /// v17's ruling holds and is restated because it is easy to lose: the widened vocabulary is a
+    /// permission to write *future* rows. There is no sweep and no backfill — no `INSERT … SELECT`
+    /// out of `measurements` into this table — and there must never be one. The `INSERT … SELECT`
+    /// below reads `outbox` and only `outbox`. There is in fact nothing here that a sweep could
+    /// even find: no build before this one could tombstone a measurement, so no device holds a
+    /// withdrawn reading to publish.
+    ///
+    /// ── The staged binaries are parked, and skipping that step silently empties the queue ─────
+    ///
+    /// `outbox_photos.outbox_id` is `ON DELETE CASCADE` against `outbox`, and this migration
+    /// **drops** `outbox`. v18's header records what that does and it was measured again for this
+    /// step rather than taken on trust: under `PRAGMA foreign_keys = ON` (which `SQLiteConnection`
+    /// and `DatabaseQueue` both set) the implicit `DELETE FROM` inside `DROP TABLE` performs the
+    /// cascade, so every staged binary in the queue is deleted — and because that implicit delete
+    /// fires no triggers, `outbox.photos_outstanding` is copied across *unchanged*, leaving every
+    /// item permanently owing binaries that no longer exist. Both halves were reproduced on
+    /// SQLite 3.51 before this was written.
+    ///
+    /// Two cheaper-looking escapes were measured and **both lose the binaries anyway**, which is why
+    /// neither is used: `PRAGMA defer_foreign_keys = ON` (settable inside a transaction, which is
+    /// the only reason it was a candidate — `foreign_keys` itself is a no-op inside one) defers
+    /// constraint *checking* and not the `ON DELETE` action; and `PRAGMA legacy_alter_table = ON`
+    /// only changes what `ALTER TABLE … RENAME` rewrites, while the loss happens one statement
+    /// earlier at the `DROP`.
+    ///
+    /// So the rows are parked in a table with no foreign key, the child table is emptied, the
+    /// rebuild happens against a child that has nothing left to cascade, and the binaries go back
+    /// afterwards. `photos_outstanding` is then **recomputed from the child table** rather than
+    /// trusted: the two triggers fire on the emptying and the refill, and a counter that has to be
+    /// reasoned about across a rebuild is a counter that can be wrong. Recomputing states the
+    /// invariant instead — the column is the count — and it is one `UPDATE`.
+    ///
+    /// `outbox_photos` itself is deliberately **not** rebuilt. Its DDL does not change here, and
+    /// restating fifty lines of it to re-declare a foreign key that already says what it should is
+    /// how two copies of a table definition start to differ.
+    ///
+    /// ── Idempotent by guard, for the reason v3 gives ─────────────────────────────────────────
+    ///
+    /// The guard reads the stored `CREATE TABLE` text rather than a column list, because what
+    /// changes here is a `CHECK` and `pragma_table_info` cannot see one (`outboxDefinition`). A run
+    /// interrupted between the DDL and the version bump replays and finds the vocabulary already
+    /// widened, so it parks nothing and touches nothing — which `DataGates.sqliteStore` checks by
+    /// setting `user_version` to 0 and running the whole ladder again.
+    ///
+    /// **Readable by v20 code?** No, and that is the ordinary answer rather than a hazard of this
+    /// step: a v21 file opened by a v20 build refuses on `MigrationError.databaseIsAhead`.
+    private static func applyV21(_ connection: SQLiteConnection) throws {
+        let existing = try outboxDefinition(connection: connection)
+        guard !existing.contains("'measurement_withdrawal'") else { return }
+        try connection.execute("""
+            -- ── 1. Park the staged binaries where no foreign key reaches them ────────────────
+            CREATE TABLE outbox_photos_parked_v21 (
+                id              TEXT,
+                outbox_id       TEXT,
+                path            TEXT,
+                shot_type       TEXT,
+                photo_id        TEXT,
+                container_path  TEXT,
+                state           TEXT,
+                sendable        INTEGER,
+                fail_count      INTEGER,
+                last_error      TEXT,
+                last_error_code TEXT,
+                created_at      TEXT,
+                updated_at      TEXT
+            );
+            INSERT INTO outbox_photos_parked_v21
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, last_error, last_error_code, created_at, updated_at)
+            SELECT id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                   fail_count, last_error, last_error_code, created_at, updated_at
+              FROM outbox_photos;
+
+            -- An empty child has nothing for the drop below to cascade away. The `counted_out`
+            -- trigger fires on this and drives `photos_outstanding` to zero, which is correct —
+            -- there are momentarily no binaries — and it is recomputed at step 5 regardless.
+            DELETE FROM outbox_photos;
+
+            -- ── 2. The rebuild ──────────────────────────────────────────────────────────────
+            CREATE TABLE outbox_withdrawable_readings (
+                seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                TEXT NOT NULL UNIQUE,
+                kind              TEXT NOT NULL CHECK (kind IN (
+                                      'visit','observation','measurement','care_event',
+                                      'favorite_toggle','private_reminder',
+                                      'add_tree','species_claim','species_correction',
+                                      'wrong_species_report','never_existed_report',
+                                      'species_review_dismissal','record_review_dismissal',
+                                      'photo_vote','photo_withdrawal','hazard_redirect',
+                                      -- v21. A reading taken back is its own act, not a
+                                      -- `measurement` carrying a flag: `outbox.kind` is what
+                                      -- screen 17 groups by and what a server dispatches on, and a
+                                      -- withdrawal arriving as a `measurement` would be a false
+                                      -- statement on an append-only record.
+                                      'measurement_withdrawal')),
+                client_uuid       TEXT NOT NULL UNIQUE,
+                payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                -- Dead since v18 and still undroppable: v2's body names this column and SQLite
+                -- resolves it at prepare time, so a replay of v2 against a table without it fails
+                -- outright. v18's comment argues it at length.
+                photo_paths       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(photo_paths)),
+                photos_outstanding INTEGER NOT NULL DEFAULT 0 CHECK (photos_outstanding >= 0),
+                state             TEXT NOT NULL DEFAULT 'pending'
+                                  CHECK (state IN ('pending','uploading','failed','done')),
+                fail_count        INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error        TEXT,
+                last_error_code   TEXT,
+                -- v15's two sinks. `measurement_withdrawal` is born `local_applied = 1` like every
+                -- other kind `LocalAPI` writes inside the transaction that performs the mutation,
+                -- so a drain owes it the send and nothing else
+                -- (`OutboxPayload.isAppliedBeforeItIsQueued`).
+                local_applied     INTEGER NOT NULL DEFAULT 0 CHECK (local_applied IN (0,1)),
+                remote_sent       INTEGER NOT NULL DEFAULT 0 CHECK (remote_sent IN (0,1)),
+                window_started_at TEXT NOT NULL,
+                next_attempt_at   TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                -- v1's sentence against v18's counter. Zero loss is a schema invariant.
+                CHECK (state <> 'done' OR (local_applied = 1 AND photos_outstanding = 0)),
+                -- Apply is first and unconditional (RULINGS R72 §1).
+                CHECK (remote_sent = 0 OR local_applied = 1)
+            );
+
+            INSERT INTO outbox_withdrawable_readings
+                (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding, state,
+                 fail_count, last_error, last_error_code, local_applied, remote_sent,
+                 window_started_at, next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding, state,
+                   fail_count, last_error, last_error_code, local_applied, remote_sent,
+                   window_started_at, next_attempt_at, created_at, updated_at
+              FROM outbox;
+
+            -- ── 3. Swap ─────────────────────────────────────────────────────────────────────
+            DROP TABLE outbox;
+            ALTER TABLE outbox_withdrawable_readings RENAME TO outbox;
+
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
+            CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+
+            -- ── 4. The binaries go back, now that their parent is the rebuilt table ─────────
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, last_error, last_error_code, created_at, updated_at)
+            SELECT id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                   fail_count, last_error, last_error_code, created_at, updated_at
+              FROM outbox_photos_parked_v21;
+
+            -- ── 5. The counter is the count, stated rather than reasoned about ─────────────
+            UPDATE outbox
+               SET photos_outstanding = (
+                     SELECT COUNT(*) FROM outbox_photos
+                      WHERE outbox_photos.outbox_id = outbox.id
+                   );
+
+            DROP TABLE outbox_photos_parked_v21;
+            """)
+    }
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.

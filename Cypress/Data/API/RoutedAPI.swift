@@ -418,6 +418,12 @@ public struct RoutedAPI: CypressAPI {
         try await local.deletePhoto(id: id)
     }
 
+    /// Local, like every other contribution write: the reading is on this phone, and the account's
+    /// copy is reached through the queue rather than through a second call (`AppSchema` v21).
+    public func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
+        try await local.withdrawMeasurement(id: id)
+    }
+
     public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
         try await local.logHazardRedirect(event)
     }
@@ -979,6 +985,11 @@ public struct RoutedAPI: CypressAPI {
             siteLineageTreeID: mine.siteLineageTreeID,
             ownPhotoIDs: mine.ownPhotoIDs.union(community.ownPhotoIDs),
             deletablePhotoIDs: mine.deletablePhotoIDs.union(community.deletablePhotoIDs),
+            // The local answer, like `measurements` itself two lines up: the readings on this
+            // payload are this phone's, the community half carries none, and there is nothing to
+            // union. A remote half that one day carried readings would have to carry this set
+            // beside them, for the reason the photo line above unions rather than picks.
+            withdrawableMeasurementIDs: mine.withdrawableMeasurementIDs,
             anonymizedPhotoIDs: mine.anonymizedPhotoIDs,
             photoTallies: mine.photoTallies,
             inventorySource: mine.inventorySource,

@@ -784,6 +784,9 @@ private struct ProbeAPI: CypressAPI {
     func photoData(id: UUID) async throws -> Data { throw log.reached("photoData") }
     func setPhotoVote(photoID: UUID, vote: PhotoVote?) async throws { throw log.reached("setPhotoVote") }
     func deletePhoto(id: UUID) async throws -> PhotoDeletion { throw log.reached("deletePhoto") }
+    func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
+        throw log.reached("withdrawMeasurement")
+    }
     func grove() async throws -> [GroveEntry] { throw log.reached("grove") }
     func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> { throw log.reached("grovePage") }
     func isFavorite(treeID: UUID) async throws -> Bool { throw log.reached("isFavorite") }
@@ -1112,6 +1115,7 @@ struct APIConformanceGuardTests {
         await check("photoData") { _ = try await api.photoData(id: id) }
         await check("setPhotoVote") { try await api.setPhotoVote(photoID: id, vote: .up) }
         await check("deletePhoto") { _ = try await api.deletePhoto(id: id) }
+        await check("withdrawMeasurement") { _ = try await api.withdrawMeasurement(id: id) }
         await check("grove") { _ = try await api.grove() }
         await check("grovePage") { _ = try await api.grovePage(cursor: nil, limit: 1) }
         await check("isFavorite") { _ = try await api.isFavorite(treeID: id) }

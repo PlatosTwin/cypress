@@ -654,6 +654,21 @@ into this section in the round that finds it, and nowhere else. Each item stands
    the errata shelf discusses these names as text far more often than it instructs them, so the
    gate would need a notion of "instructing" it does not have — which is gap (a), one directory
    over.
+8. **Make `DebugDeepLink.fullyMeasured` pick a tree that device state cannot move.** Raised by
+   PR #154's adversarial review; it is the half of that finding the PR did **not** close. (What it
+   did close: withdrawing the seeded reading made `debugSeedMeasurement` throw `notFound` on that
+   container for good, so `AddReadingReachabilityTests` failed on that simulator ever after.) The
+   case pins `candidates[candidates.count * 5 / 8]`, and `fullyMeasuredTree`'s comment says
+   `candidates` "keeps the seed's own length and ordering whatever this device has been through".
+   That is true of the thing it was written against — status overrides, applied with a `map` — and
+   **not true in general**: `LocalAPI.treesNear` merges locally added community trees into the seed
+   rows, re-sorts by distance and truncates to `limit`, so one community add inside the 3 km radius
+   changes `count`, shifts the 5/8 index, and silently re-points the case at a different record.
+   Nothing fails loudly when it does — the harness seeds two readings onto whichever tree it lands
+   on, so the failure surfaces somewhere else, on a tree nobody chose. Pick an identity local
+   writes cannot move (the record's own id, or an index into a set no device write can enlarge),
+   correct the comment to say what it actually survives, and red-prove it by adding a community
+   tree inside the radius before the case resolves.
 
 8. **Serialise a reading against its own withdrawal across two concurrent drains** (top server
    item). PR #156's arrival-order guard closes the withdrawal-committed-in-an-earlier-drain

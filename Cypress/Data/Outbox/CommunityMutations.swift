@@ -270,6 +270,57 @@ public struct PhotoWithdrawal: Codable, Hashable, Sendable {
     }
 }
 
+/// Withdrawing a reading — `PhotoWithdrawal`'s twin, one contribution table over.
+///
+/// **The act, and not its report.** `WithdrawnMeasurement` — the value `withdrawMeasurement`
+/// returns — says what the withdrawal did to *this device's* record, including whether the tree now
+/// holds no live reading of that kind at all. None of that describes what a server holds, so none of
+/// it is sent: what travels is which reading was withdrawn, off which tree, by whom, and when.
+///
+/// **`kind` travels and the value does not.** A withdrawal is not a correction and carries no
+/// number — the reading it names is already on the service, and restating its value here would
+/// invite a reader of the queue to treat the two as a before-and-after pair. The kind is here for
+/// one reason: it is the only fact about the withdrawn reading that screen 17's row can say out
+/// loud. `OutboxCopy.kindLabel` titles the row `Reading withdrawn` and `detail(for:)` prints this
+/// kind as the sub-line under it — on the device, over a magnolia:
+///
+///     Reading withdrawn · Southern Magnolia
+///     DBH · 1:56 am
+///
+/// Drop it and that sub-line is empty: the row can no longer say which of D7's two series was taken
+/// back, and a queue row a person can read is what screen 17 is for.
+///
+/// The ordering `PhotoWithdrawal` established is upstream of this type and is not weakened by it:
+/// the row is enqueued **inside** the transaction that tombstones the reading, after the ownership
+/// gate has matched. A queued withdrawal therefore exists only for a withdrawal that was allowed
+/// and committed.
+public struct MeasurementWithdrawal: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    public let measurementID: UUID
+    public let treeID: UUID
+    /// Which of D7's two series the withdrawn reading was in. See the header for why it travels and
+    /// the number does not.
+    public let kind: MeasurementKind
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        clientUUID: UUID,
+        measurementID: UUID,
+        treeID: UUID,
+        kind: MeasurementKind,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.clientUUID = clientUUID
+        self.measurementID = measurementID
+        self.treeID = treeID
+        self.kind = kind
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}
+
 /// The hazard-redirect log line (BUILD-PLAN §6's `POST /reports/hazard-redirect`).
 ///
 /// It wraps `HazardRedirectEvent` rather than restating it: the event is a `Core` model with a tree,

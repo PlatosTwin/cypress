@@ -673,15 +673,238 @@ struct CommunityOutboxKindTests {
         #expect(marked == 1, "the queued addition's key was not tombstoned")
     }
 
+    /// **Every kind, through both doors, iterated from `OutboxItem.Kind.allCases`.**
+    ///
+    /// The test above asserts about `addTree` alone, and that is what let one defect through twice.
+    /// `OutboxStore.forgetAccount`'s kind list was typed out in SQL: it named six kinds of sixteen
+    /// when §3.4's ten arrived, and after that repair it went stale again the day
+    /// `measurement_withdrawal` was added — a queued withdrawal survived its own account's deletion
+    /// still naming the account, through both doors. Both times the symptom was silence, because a
+    /// kind missing from an `IN (…)` list matches nothing, and matching nothing is also what a
+    /// working statement looks like.
+    ///
+    /// So this asks the question of the enum rather than of a list: one queued row of every kind
+    /// this app can build, owned by the account, and afterwards **no row may still name it** —
+    /// either the payload was stripped (`.leaveRecords`) or the row is gone (`.eraseEverything`). A
+    /// second account's rows are the control that stops a statement which deletes everything from
+    /// passing.
+    ///
+    /// The list `forgetAccount` runs on is now derived from `Kind.accountDeletionTreatment`, so a
+    /// new case cannot compile without being classified. This is the other half: that the treatment
+    /// each kind is classified as actually takes the account out of the queue.
+    @Test("an account deletion reaches a queued row of every kind, through both doors")
+    func deletionReachesEveryQueuedKind() async throws {
+        for choice in AccountDeletionChoice.allCases {
+            let store = try await CypressStore.inMemory()
+            let mine = Self.specimens(ownedBy: Self.signedIn)
+            let theirs = Self.specimens(ownedBy: Self.someoneElseSignedIn)
+
+            #expect(
+                Set(mine.keys) == Set(OutboxItem.Kind.allCases),
+                """
+                \(Set(OutboxItem.Kind.allCases).subtracting(mine.keys).map(\.rawValue).sorted()) \
+                has no specimen, so this test would say nothing about it
+                """
+            )
+
+            try await store.queue.write { connection in
+                for payload in Array(mine.values) + Array(theirs.values) {
+                    _ = try OutboxStore().enqueue(
+                        OutboxItem(
+                            kind: payload.kind,
+                            clientUUID: payload.clientUUID,
+                            payload: try payload.encoded(),
+                            createdAt: Self.specimenMoment,
+                            updatedAt: Self.specimenMoment
+                        ),
+                        connection: connection
+                    )
+                }
+            }
+            let queued = try await Self.rows(store).count
+            #expect(
+                queued == OutboxItem.Kind.allCases.count * 2,
+                "the fixture queued \(queued) rows, not two per kind, so this measures less than it says"
+            )
+
+            try await store.queue.write { connection in
+                _ = try OutboxStore().forgetAccount(
+                    userID: Self.signedInUserID, choice: choice, at: Self.specimenMoment,
+                    connection: connection
+                )
+            }
+
+            // The claim, per kind, and it is R3's: after the deletion nothing in the queue says who
+            // this was. Read off the stored payload rather than a decoded model, because
+            // `json_remove` is what ran and the payload is what drains.
+            let survivors = try await Self.rows(store)
+            let stillNaming = survivors.filter {
+                String(decoding: $0.item.payload, as: UTF8.self)
+                    .localizedCaseInsensitiveContains(Self.signedInUserID.uuidString)
+            }
+            #expect(
+                stillNaming.isEmpty,
+                """
+                \(choice.rawValue): \(stillNaming.map(\.item.kind.rawValue).sorted()) survived the \
+                deletion still naming the account, and would drain to the service afterwards
+                """
+            )
+
+            // The control, which is what stops the assertion above passing on an emptied table: the
+            // other account's rows are all still here, all still naming it.
+            let others = survivors.filter {
+                String(decoding: $0.item.payload, as: UTF8.self)
+                    .localizedCaseInsensitiveContains(Self.otherUserID.uuidString)
+            }
+            #expect(
+                Set(others.map(\.item.kind)) == Set(OutboxItem.Kind.allCases),
+                """
+                \(choice.rawValue): the deletion also reached another account's rows — \
+                \(Set(OutboxItem.Kind.allCases).subtracting(others.map(\.item.kind)).map(\.rawValue).sorted())
+                """
+            )
+
+            switch choice {
+            case .leaveRecords:
+                // The contribution stays and arrives anonymous (§3.12); the two exclusively-owned
+                // kinds have no anonymous form and go.
+                // By `clientUUID`, not by kind: both accounts queued every kind, so subtracting
+                // one set of kinds from the other answers the empty set whatever happened.
+                let keys = Set(mine.values.map(\.clientUUID))
+                let kept = Set(
+                    survivors.filter { keys.contains($0.item.clientUUID) }.map(\.item.kind)
+                )
+                #expect(
+                    kept == Set(OutboxItem.Kind.kinds(treatedAs: .contribution)),
+                    "the leaving door kept \(kept.map(\.rawValue).sorted()) of this account's rows"
+                )
+                // The other half of the anonymization: a key that drains after the deletion has to
+                // come back `duplicate` rather than resurrecting the account (ERRATA E157).
+                let expected = OutboxItem.Kind.kinds(treatedAs: .contribution).count
+                let tombstoned = try await Self.scalar(
+                    "SELECT COUNT(*) AS n FROM anonymized_contributions", in: store
+                )
+                #expect(
+                    tombstoned == expected,
+                    """
+                    \(tombstoned) keys were tombstoned where \(expected) queued contributions were \
+                    anonymized; an untombstoned one is re-adopted by the next sign-in on this phone
+                    """
+                )
+            case .eraseEverything:
+                let kept = survivors.filter { row in
+                    mine.values.contains { $0.clientUUID == row.item.clientUUID }
+                }
+                #expect(
+                    kept.isEmpty,
+                    """
+                    the erasing door left \(kept.map(\.item.kind.rawValue).sorted()) behind. A \
+                    person who chose to erase everything watches these land on trees afterwards
+                    """
+                )
+            }
+        }
+    }
+
     // MARK: - 5. The round trip
 
-    @Test("every §3.4 payload survives the round trip the queue puts it through")
+    /// **Driven from `Kind.allCases`, so a new kind cannot quietly go untested.**
+    ///
+    /// This was a hand-written list of §3.4's payloads, which is the shape of the defect the test
+    /// above exists for: the eleventh kind reached the enum and the list stayed at ten. The specimen
+    /// table is checked against `allCases` before anything is asserted, so a kind with no specimen
+    /// fails here instead of passing in silence.
+    @Test("every kind's payload survives the round trip the queue puts it through")
     func everyPayloadRoundTrips() throws {
-        let tree = UUID(), photo = UUID(), flag = UUID(), species = UUID()
-        let moment = Date(timeIntervalSince1970: 1_700_000_000)
-        let who = Self.attribution
+        let specimens = Self.specimens(ownedBy: Self.attribution)
+        let missing = Set(OutboxItem.Kind.allCases).subtracting(specimens.keys)
+        #expect(
+            missing.isEmpty,
+            "\(missing.map(\.rawValue).sorted()) has no specimen here, so nothing below tests it"
+        )
 
+        // A second specimen of a kind that already has one — the case `aWithdrawnVoteIsWrittenOut`
+        // below is about — so it rides alongside the table rather than in it.
+        let extras: [OutboxPayload] = [
+            .photoVote(PhotoVoteCast(
+                clientUUID: UUID(), photoID: Self.specimenPhoto, treeID: Self.specimenTree,
+                vote: nil, attribution: Self.attribution, occurredAt: Self.specimenMoment
+            ))
+        ]
+
+        for payload in OutboxItem.Kind.allCases.compactMap({ specimens[$0] }) + extras {
+            let restored = try OutboxPayload.decode(kind: payload.kind, from: payload.encoded())
+            #expect(restored == payload, "\(payload.kind.rawValue) did not survive the round trip")
+            // The kind is the discriminator the column stores, so a payload that comes back as some
+            // other kind is the failure this round trip is about.
+            #expect(restored.kind == payload.kind)
+            #expect(restored.treeID == Self.specimenTree)
+            #expect(restored.occurredAt == Self.specimenMoment)
+            #expect(restored.ownerDeviceID == Self.deviceID)
+            #expect(restored.ownerUserID == nil)
+        }
+    }
+
+    // MARK: - The specimens
+
+    private static let specimenTree = UUID(uuidString: "7E000000-0000-4000-8000-00000000B001")!
+    private static let specimenPhoto = UUID(uuidString: "7E000000-0000-4000-8000-00000000B002")!
+    private static let specimenFlag = UUID(uuidString: "7E000000-0000-4000-8000-00000000B003")!
+    private static let specimenSpecies = UUID(uuidString: "7E000000-0000-4000-8000-00000000B004")!
+    private static let specimenReading = UUID(uuidString: "7E000000-0000-4000-8000-00000000B005")!
+    private static let specimenMoment = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private static let signedInUserID = UUID(uuidString: "7E000000-0000-4000-8000-0000000A0001")!
+    private static let otherUserID = UUID(uuidString: "7E000000-0000-4000-8000-0000000A0002")!
+
+    private static var signedIn: Attribution {
+        Attribution(userID: signedInUserID, deviceID: deviceID)
+    }
+
+    private static var someoneElseSignedIn: Attribution {
+        Attribution(userID: otherUserID, deviceID: otherDeviceID)
+    }
+
+    /// One payload of **every** kind, owned by `who`, keyed by kind.
+    ///
+    /// One table for both tests above, because they ask the same question of the same set — and a
+    /// second hand-written list is the thing this round is repairing. Every `clientUUID` is fresh
+    /// per call, so two owners' specimens can sit in one queue.
+    private static func specimens(ownedBy who: Attribution) -> [OutboxItem.Kind: OutboxPayload] {
+        let tree = specimenTree, photo = specimenPhoto, flag = specimenFlag
+        let species = specimenSpecies, moment = specimenMoment
         let payloads: [OutboxPayload] = [
+            // `createdAt`/`updatedAt` pinned rather than defaulted, on all four: `Date()` carries
+            // sub-millisecond precision that the payload's ISO-8601 encoder truncates, so a
+            // defaulted specimen does not survive its own round trip — measured, four issues.
+            .visit(Visit(
+                treeID: tree, attribution: who, capturedAt: moment,
+                createdAt: moment, updatedAt: moment
+            )),
+            .observation(TreeObservation(
+                treeID: tree, attribution: who, capturedAt: moment,
+                createdAt: moment, updatedAt: moment
+            )),
+            .measurement(TreeMeasurement.dbh(
+                treeID: tree, attribution: who, capturedAt: moment,
+                quantity: Quantity(value: 31, unit: .centimeters, method: .tape),
+                createdAt: moment, updatedAt: moment
+            )),
+            .careEvent(CareEvent(
+                treeID: tree, attribution: who, capturedAt: moment, actions: [.watered],
+                createdAt: moment, updatedAt: moment
+            )),
+            .favoriteToggle(FavoriteToggle(
+                owner: FavoriteOwner(who), treeID: tree, isFavorite: true, occurredAt: moment
+            )),
+            .privateReminder(PrivateReminder(
+                owner: ReminderOwner(who), treeID: tree, category: .hangingOrBrokenLimb,
+                createdAt: moment, updatedAt: moment
+            )),
+            .measurementWithdrawal(MeasurementWithdrawal(
+                clientUUID: UUID(), measurementID: specimenReading, treeID: tree, kind: .dbh,
+                attribution: who, occurredAt: moment
+            )),
             .addTree(TreeAddition(
                 clientUUID: UUID(), treeID: tree, attribution: who,
                 coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
@@ -714,10 +937,6 @@ struct CommunityOutboxKindTests {
                 clientUUID: UUID(), photoID: photo, treeID: tree, vote: .down,
                 attribution: who, occurredAt: moment
             )),
-            .photoVote(PhotoVoteCast(
-                clientUUID: UUID(), photoID: photo, treeID: tree, vote: nil,
-                attribution: who, occurredAt: moment
-            )),
             .photoWithdrawal(PhotoWithdrawal(
                 clientUUID: UUID(), photoID: photo, treeID: tree, attribution: who, occurredAt: moment
             )),
@@ -727,16 +946,9 @@ struct CommunityOutboxKindTests {
                 attribution: who
             ))
         ]
-
-        for payload in payloads {
-            let restored = try OutboxPayload.decode(kind: payload.kind, from: payload.encoded())
-            #expect(restored == payload, "\(payload.kind.rawValue) did not survive the round trip")
-            #expect(restored.treeID == tree)
-            #expect(restored.occurredAt == moment)
-            #expect(restored.ownerDeviceID == Self.deviceID)
-            #expect(restored.ownerUserID == nil)
-            #expect(restored.isAppliedBeforeItIsQueued)
-        }
+        // `uniqueKeysWithValues` rather than a merge: two specimens of one kind here would make the
+        // `allCases` check above pass while leaving another kind untested.
+        return Dictionary(uniqueKeysWithValues: payloads.map { ($0.kind, $0) })
     }
 
     /// A withdrawn vote is `null` on the wire and not an absent key.

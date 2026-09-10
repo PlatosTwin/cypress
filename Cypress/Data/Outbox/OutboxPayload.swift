@@ -73,6 +73,10 @@ public enum OutboxPayload: Sendable, Hashable {
     case photoWithdrawal(PhotoWithdrawal)
     case hazardRedirect(HazardRedirectReport)
 
+    /// A reading taken back (`withdrawMeasurement`). Its own case for `OutboxItem.Kind`'s reason:
+    /// this is not a `measurement` with a flag on it.
+    case measurementWithdrawal(MeasurementWithdrawal)
+
     public var kind: OutboxItem.Kind {
         switch self {
         case .visit: return .visit
@@ -91,6 +95,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case .photoVote: return .photoVote
         case .photoWithdrawal: return .photoWithdrawal
         case .hazardRedirect: return .hazardRedirect
+        case .measurementWithdrawal: return .measurementWithdrawal
         }
     }
 
@@ -109,7 +114,7 @@ public enum OutboxPayload: Sendable, Hashable {
             return false
         case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport, .neverExistedReport,
              .speciesReviewDismissal, .recordReviewDismissal, .photoVote, .photoWithdrawal,
-             .hazardRedirect:
+             .hazardRedirect, .measurementWithdrawal:
             return true
         }
     }
@@ -135,6 +140,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.clientUUID
         case let .photoWithdrawal(value): return value.clientUUID
         case let .hazardRedirect(value): return value.clientUUID
+        case let .measurementWithdrawal(value): return value.clientUUID
         }
     }
 
@@ -161,6 +167,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.treeID
         case let .photoWithdrawal(value): return value.treeID
         case let .hazardRedirect(value): return value.event.treeID
+        case let .measurementWithdrawal(value): return value.treeID
         }
     }
 
@@ -193,6 +200,9 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoWithdrawal(value): return value.occurredAt
         // The moment the sheet was shown, which is the fact the report is about.
         case let .hazardRedirect(value): return value.event.shownAt
+        // When the reading was taken back, never when it was taken: the withdrawal is the act
+        // this row reports, and the reading it names carries its own `captured_at` already.
+        case let .measurementWithdrawal(value): return value.occurredAt
         }
     }
 
@@ -224,6 +234,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.attribution.userID
         case let .photoWithdrawal(value): return value.attribution.userID
         case let .hazardRedirect(value): return value.attribution.userID
+        case let .measurementWithdrawal(value): return value.attribution.userID
         }
     }
 
@@ -255,6 +266,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.attribution.deviceID
         case let .photoWithdrawal(value): return value.attribution.deviceID
         case let .hazardRedirect(value): return value.attribution.deviceID
+        case let .measurementWithdrawal(value): return value.attribution.deviceID
         }
     }
 
@@ -304,6 +316,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return try encoder.encode(value)
         case let .photoWithdrawal(value): return try encoder.encode(value)
         case let .hazardRedirect(value): return try encoder.encode(value)
+        case let .measurementWithdrawal(value): return try encoder.encode(value)
         }
     }
 
@@ -333,6 +346,8 @@ public enum OutboxPayload: Sendable, Hashable {
             return .photoWithdrawal(try decoder.decode(PhotoWithdrawal.self, from: data))
         case .hazardRedirect:
             return .hazardRedirect(try decoder.decode(HazardRedirectReport.self, from: data))
+        case .measurementWithdrawal:
+            return .measurementWithdrawal(try decoder.decode(MeasurementWithdrawal.self, from: data))
         }
     }
 

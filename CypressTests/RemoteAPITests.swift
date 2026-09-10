@@ -763,6 +763,11 @@ struct RemoteAPITests {
             "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
             "logHazardRedirect", "exportLatest",
+            // F27's withdrawal, and it is a missing *route* rather than a half: there is no
+            // `DELETE /measurements/{id}` in BUILD-PLAN §6 and none deployed. It reaches an account
+            // the way the nine above it now do — through the queue, on `AppSchema` v21's widened
+            // vocabulary — so nothing here is on a send sink's path.
+            "withdrawMeasurement",
             // Halves: the service answers part and the whole client type needs the city file.
             // `grovePage` sits with `grove` and for its reason: the service sends no display
             // name and no coordinate, so there is no `GroveEntry` here to cut into pages.

@@ -357,6 +357,9 @@ enum OutboxCopy {
         case .photoVote: return "Photo vote"
         case .photoWithdrawal: return "Photo removed"
         case .hazardRedirect: return "Hazard redirect"
+        // `Photo removed`'s twin, one contribution table over: the queue row says what was
+        // withdrawn, and `detail(for:)` below says which of the two series it was in.
+        case .measurementWithdrawal: return "Reading withdrawn"
         }
     }
 
@@ -411,6 +414,13 @@ enum OutboxCopy {
              .speciesReviewDismissal, .recordReviewDismissal, .photoVote, .photoWithdrawal,
              .hazardRedirect:
             return nil
+
+        // The one §3.4-shaped kind that *does* carry a sub-line, because the fact is on the payload
+        // rather than invented for the row: `MeasurementWithdrawal.kind` is one of D7's two series,
+        // and this is the identical clause the `.measurement` row above prints. Nothing else about
+        // the withdrawn reading travels — see that type's header for why the value does not.
+        case let .measurementWithdrawal(withdrawal):
+            return kindLabel(withdrawal.kind)
 
         case nil:
             return nil
