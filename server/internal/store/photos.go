@@ -135,7 +135,7 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 				// ERRATA E147's harm arriving through the one door that opens after the deletion
 				// gate, and it is worse here than anywhere else because nothing in this service
 				// deletes an object: bytes written after a withdrawal stay written (the obligation
-				// this round records as ERRATA E320).
+				// this round records in `docs/errata-pending/`).
 				//
 				// The alternative — mint a fresh row and let the upload proceed — was considered
 				// and is wrong twice. It resurrects something a person asked to be gone, and it
