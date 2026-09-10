@@ -162,35 +162,40 @@ struct SchemaV20Tests {
     /// **v20 runs, alone, on a database that already holds rows.**
     ///
     /// `applied == [20]` is the assertion and the whole of it: a v19 database must reach 20 by
-    /// running exactly one step. A migration that had been mis-numbered, or a `currentVersion` that
-    /// had drifted from the table, shows up here as a different list rather than as a silent extra
-    /// pass over data.
+    /// running exactly one step. A migration that had been mis-numbered shows up here as a
+    /// different list rather than as a silent extra pass over data.
+    ///
+    /// **The ladder is filtered to `<= 20`, and it was not until v21 landed** — the second time
+    /// this has happened to a file in this family, and the fix is the one `SchemaV19Tests
+    /// .aV18DatabaseRunsOnlyV19` already documents at length. This ran the whole of
+    /// `AppSchema.migrations` and asserted `applied == [20]` beside
+    /// `AppSchema.currentVersion == 20`, both true exactly while 20 was the newest version; v21
+    /// turned it red on `[20, 21]`, precisely as its own failure message predicted. This file is
+    /// about *the step from 19 to 20*, so it runs that step. The claim that the newest migration is
+    /// what `currentVersion` reports belongs to the newest version's own file, and
+    /// `SchemaV21Tests.aV20DatabaseRunsOnlyV21` now carries it.
     @Test("a v19 database with rows in it is carried to 20 by exactly one migration")
     func aV19DatabaseRunsOnlyV20() async throws {
         let trees = [UUID(), UUID(), UUID()]
         let store = try await Self.v19Database(trees: trees, assertionTree: UUID())
 
+        let ladder = AppSchema.migrations.filter { $0.version <= Self.version }
         let applied = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(ladder, on: connection)
         }
         #expect(
             applied == [Self.version],
             """
-            a v19 database applied \(applied) rather than [\(Self.version)]. If this is a longer \
-            list, another migration was added without this fixture being moved forward; if it is \
-            empty, v20 is not in `AppSchema.migrations`
+            a v19 database applied \(applied) rather than [\(Self.version)] over a ladder cut at \
+            \(Self.version). If this is a longer list, a migration was inserted at or below 20 \
+            after this fixture was written; if it is empty, v20 is not in `AppSchema.migrations`
             """
         )
 
         let version = try await store.queue.read { try $0.userVersion }
-        #expect(version == AppSchema.currentVersion, "user_version is \(version)")
         #expect(
-            AppSchema.currentVersion == Self.version,
-            """
-            `AppSchema.currentVersion` is \(AppSchema.currentVersion) and this file is written about \
-            \(Self.version). One of the two moved without the other — the fixture above still opens \
-            at 19 and no longer proves what it says it proves
-            """
+            version == Self.version,
+            "user_version is \(version) after a ladder cut at \(Self.version), not \(Self.version)"
         )
     }
 

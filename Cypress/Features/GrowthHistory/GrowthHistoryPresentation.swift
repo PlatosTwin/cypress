@@ -251,12 +251,16 @@ struct GrowthHistoryPresentation {
                     quantity: measurement.quantity,
                     kind: measurement.kind,
                     dateText: TreeProfilePresentation.monthYear.string(from: measurement.capturedAt),
-                    // Gated on the record accepting contributions as well as on ownership, which is
-                    // E95's rule and the same gate `offersAddReading` applies: 11 is reachable with
-                    // a removed tree — a memorial's readings are still readings — and a read-only
-                    // record must not be handed a write.
-                    isWithdrawable: profile.tree.status.acceptsNewContributions
-                        && profile.withdrawableMeasurementIDs.contains(measurement.id),
+                    // **Ownership only, and deliberately not `acceptsNewContributions`.** That
+                    // gate is E95's and `offersAddReading` applies it one block down, because
+                    // adding a reading to a record the city has closed is a new contribution to a
+                    // tree that is gone. Taking one back is not a contribution at all — it is the
+                    // person unmaking their own — and the app already settles this question the
+                    // same way one table over: screen 20 draws its delete on a photograph of a
+                    // removed tree, gated on `deletablePhotoIDs` and on nothing else. A memorial's
+                    // readings are still readings, and a mistyped one on a tree that has since been
+                    // felled is exactly the reading somebody would want to withdraw.
+                    isWithdrawable: profile.withdrawableMeasurementIDs.contains(measurement.id),
                     isLastOfItsKind: liveByKind[measurement.kind] == 1
                 )
             }
