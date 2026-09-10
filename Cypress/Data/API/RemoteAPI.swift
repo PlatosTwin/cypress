@@ -479,7 +479,16 @@ public struct RemoteAPI: CypressAPI {
     /// **No route.** F27's withdrawal is new in this round and the service has no verb for it —
     /// there is no `DELETE /measurements/{id}` in BUILD-PLAN §6 and none deployed. The way it
     /// reaches an account is the queue: `AppSchema` v21 widened `outbox.kind` so a
-    /// `measurement_withdrawal` row can be written, and `POST /sync` is what carries it.
+    /// `measurement_withdrawal` row can be written, and `POST /sync` is the route that carries it
+    /// **once the service accepts the kind**.
+    ///
+    /// It does not yet, and the failure is terminal rather than pending: `sync.go`'s `syncKinds` and
+    /// the `contributions_kind_is_known` CHECK both stop at the sixteen kinds v17 established, so a
+    /// drained withdrawal is answered `validation_failed` — which `APIError` puts in the
+    /// non-retryable arm, so `OutboxRetryPolicy.nextState` moves the item to `failed` on its first
+    /// attempt and screen 17 keeps a red row. Widening those two is a change to `server/`, which has
+    /// no CI and does not travel with an app change; until it is merged and deployed, this device's
+    /// own record is the whole of what a withdrawal does.
     ///
     /// Declared here rather than inherited from `MeasurementWithdrawalAccess.swift`'s default for
     /// the reason `APIConformanceGuardTests` enforces on every shipping conformance: an inherited

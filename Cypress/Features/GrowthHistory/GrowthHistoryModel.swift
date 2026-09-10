@@ -32,8 +32,9 @@ final class GrowthHistoryModel {
     /// about. Nil whenever no question is on screen — one tap withdraws nothing.
     var pendingWithdrawal: GrowthLogRow?
 
-    /// Set when a withdrawal was refused or failed. Cleared at the start of the next attempt, so
-    /// the sentence on screen is always about the most recent one.
+    /// Set when a withdrawal was refused or failed. Cleared at the start of the next attempt and
+    /// by any read that follows, so the sentence on screen is always about the most recent one and
+    /// never outlives the state it describes.
     private(set) var withdrawError: String?
 
     let treeID: UUID
@@ -52,6 +53,12 @@ final class GrowthHistoryModel {
     }
 
     func load() async {
+        // The failure sentence is about a withdrawal that did not happen, and a read is the screen
+        // being rebuilt from the record — so it does not survive one. Cleared here rather than only
+        // in `withdraw(_:)` because `reload()` and the first `load()` left it standing, and a
+        // refusal from five taps ago sitting over a freshly read screen is a statement about
+        // nothing on it.
+        withdrawError = nil
         do {
             phase = .loaded(try await api.treeProfile(id: treeID))
         } catch let error as APIError {
@@ -87,7 +94,9 @@ final class GrowthHistoryModel {
             _ = try await api.withdrawMeasurement(id: measurementID)
             await load()
         } catch {
-            withdrawError = GrowthHistoryCopy.withdrawFailed
+            // The error decides the sentence: `forbidden` and `notFound` cannot be cleared by
+            // tapping again, and only one of the three may say the reading is still here.
+            withdrawError = GrowthHistoryCopy.withdrawFailure(error)
         }
     }
 }

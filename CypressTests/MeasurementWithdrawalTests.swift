@@ -478,6 +478,56 @@ struct MeasurementWithdrawalTests {
         await #expect(throws: APIError.forbidden) { _ = try await api.withdrawMeasurement(id: theirs.id) }
     }
 
+    /// **A failure nobody can retry is not told to retry**, and only one of the three sentences may
+    /// say the reading is still here.
+    ///
+    /// The screen mapped every error to one sentence ending `Try again.` — including `.forbidden`,
+    /// which is reachable with a stale control (`withdrawableMeasurementIDs` is read at load, and
+    /// the leaving door can unlink a reading between that read and the tap). Retrying a `forbidden`
+    /// cannot succeed, so the screen was telling the reader to do the one thing guaranteed not to
+    /// work; `.notFound` had the opposite problem, asserting the reading was still here when it is
+    /// the case where it is not.
+    ///
+    /// Driven from `APIError.allCases` rather than a list of the two cases the withdrawal path
+    /// throws today: the mapping is over the taxonomy, and a code added to it later must land
+    /// somewhere deliberate.
+    @Test("only a failure a retry could clear is told to try again")
+    func aRefusalIsNotToldToRetry() {
+        // The premise the mapping rests on, asserted rather than assumed: exactly one of the three
+        // sentences invites a retry.
+        #expect(GrowthHistoryCopy.withdrawFailed.contains("Try again"))
+        #expect(!GrowthHistoryCopy.withdrawRefused.contains("Try again"))
+        #expect(!GrowthHistoryCopy.withdrawAlreadyGone.contains("Try again"))
+
+        for code in APIError.allCases {
+            let sentence = GrowthHistoryCopy.withdrawFailure(code)
+            if code == .notFound {
+                #expect(
+                    sentence == GrowthHistoryCopy.withdrawAlreadyGone,
+                    "`notFound` says the reading is still here, which is the one case where it is not"
+                )
+            } else if code.retryable {
+                #expect(
+                    sentence == GrowthHistoryCopy.withdrawFailed,
+                    "\(code.rawValue) is retryable and the screen did not offer the retry"
+                )
+            } else {
+                #expect(
+                    sentence == GrowthHistoryCopy.withdrawRefused,
+                    """
+                    \(code.rawValue) is not retryable and the screen told the reader to try again, \
+                    which cannot work
+                    """
+                )
+            }
+        }
+
+        // A transport throw is not an `APIError`, and nothing has been decided against the reader
+        // there — trying again is the right advice, so it gets the sentence that offers it.
+        struct Flap: Error {}
+        #expect(GrowthHistoryCopy.withdrawFailure(Flap()) == GrowthHistoryCopy.withdrawFailed)
+    }
+
     // MARK: - 5. The payload and the queue
 
     /// **The payload survives the round trip the queue puts it through**, keys, kind and attribution

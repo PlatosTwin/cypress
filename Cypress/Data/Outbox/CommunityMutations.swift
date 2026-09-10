@@ -280,8 +280,15 @@ public struct PhotoWithdrawal: Codable, Hashable, Sendable {
 /// **`kind` travels and the value does not.** A withdrawal is not a correction and carries no
 /// number — the reading it names is already on the service, and restating its value here would
 /// invite a reader of the queue to treat the two as a before-and-after pair. The kind is here for
-/// one reason: it is what screen 17's row says out loud (`Trunk · DBH withdrawn` rather than a bare
-/// `Reading withdrawn`), and a queue row a person can read is what screen 17 is for.
+/// one reason: it is the only fact about the withdrawn reading that screen 17's row can say out
+/// loud. `OutboxCopy.kindLabel` titles the row `Reading withdrawn` and `detail(for:)` prints this
+/// kind as the sub-line under it — on the device, over a magnolia:
+///
+///     Reading withdrawn · Southern Magnolia
+///     DBH · 1:56 am
+///
+/// Drop it and that sub-line is empty: the row can no longer say which of D7's two series was taken
+/// back, and a queue row a person can read is what screen 17 is for.
 ///
 /// The ordering `PhotoWithdrawal` established is upstream of this type and is not weakened by it:
 /// the row is enqueued **inside** the transaction that tombstones the reading, after the ownership

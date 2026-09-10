@@ -64,6 +64,12 @@ struct SchemaV21Tests {
     // MARK: - The fixture
 
     /// One queued item as it sits in a v20 database, and the binaries it still owes.
+    ///
+    /// **Every column the rebuild has to carry gets a distinguishable value**, which is a repair
+    /// rather than thoroughness for its own sake. Written with three of them uniformly NULL or zero
+    /// — no `uploading` row, no `next_attempt_at`, nothing `remote_sent` — the fixture could not
+    /// tell a copied column from a defaulted one, so an `INSERT … SELECT` that dropped any of the
+    /// three would have left `theQueueSurvivesTheRebuild` green.
     private struct QueuedItem {
         let id: UUID
         let clientUUID: UUID
@@ -71,6 +77,14 @@ struct SchemaV21Tests {
         let state: String
         let failCount: Int
         let lastError: String?
+        let lastErrorCode: String?
+        /// Set on the one row the drain has scheduled a retry for; NULL elsewhere, as in a real queue.
+        let nextAttemptAt: Date?
+        let remoteSent: Int
+        /// Distinct per row, so a payload swapped between two rows is visible.
+        let payload: String
+        /// v2's column, dead since v18 and still copied — so still checked.
+        let photoPaths: String
         let binaries: [UUID]
     }
 
@@ -79,24 +93,40 @@ struct SchemaV21Tests {
             // A visit with two photographs still staged: the row the cascade destroys.
             QueuedItem(
                 id: UUID(), clientUUID: UUID(), kind: "visit", state: "pending",
-                failCount: 0, lastError: nil, binaries: [UUID(), UUID()]
+                failCount: 0, lastError: nil, lastErrorCode: nil, nextAttemptAt: nil,
+                remoteSent: 0, payload: #"{"note":"the visit"}"#,
+                photoPaths: #"["/staged/a.jpg"]"#, binaries: [UUID(), UUID()]
             ),
-            // A failed species correction carrying error text and a retry count, so "the queue came
-            // across" is a claim about more than ids.
+            // A failed species correction carrying error text, an error code and a retry count, so
+            // "the queue came across" is a claim about more than ids.
             QueuedItem(
                 id: UUID(), clientUUID: UUID(), kind: "species_correction", state: "failed",
-                failCount: 3, lastError: "the service said no", binaries: []
+                failCount: 3, lastError: "the service said no", lastErrorCode: "validation_failed",
+                nextAttemptAt: nil, remoteSent: 0, payload: #"{"note":"the correction"}"#,
+                photoPaths: "[]", binaries: []
             ),
-            // A settled item. `done` is only legal with nothing outstanding, which is v1's invariant
-            // and the one a mis-copied counter breaks.
+            // A settled item, and the only row that is `remote_sent`. `done` is only legal with
+            // nothing outstanding, which is v1's invariant and the one a mis-copied counter breaks.
             QueuedItem(
                 id: UUID(), clientUUID: UUID(), kind: "photo_withdrawal", state: "done",
-                failCount: 0, lastError: nil, binaries: []
+                failCount: 0, lastError: nil, lastErrorCode: nil, nextAttemptAt: nil,
+                remoteSent: 1, payload: #"{"note":"the settled one"}"#, photoPaths: "[]",
+                binaries: []
             ),
             // One binary on its own item, so the counter is not uniformly 0 or 2.
             QueuedItem(
                 id: UUID(), clientUUID: UUID(), kind: "observation", state: "pending",
-                failCount: 1, lastError: nil, binaries: [UUID()]
+                failCount: 1, lastError: nil, lastErrorCode: nil, nextAttemptAt: nil,
+                remoteSent: 0, payload: #"{"note":"the observation"}"#, photoPaths: "[]",
+                binaries: [UUID()]
+            ),
+            // The fourth state, which the fixture had no row in, and the only one carrying a
+            // scheduled retry: a row the drain has picked up, with a `next_attempt_at` behind it.
+            QueuedItem(
+                id: UUID(), clientUUID: UUID(), kind: "measurement", state: "uploading",
+                failCount: 2, lastError: "the service was busy", lastErrorCode: "rate_limited",
+                nextAttemptAt: moment.addingTimeInterval(900), remoteSent: 0,
+                payload: #"{"note":"the one in flight"}"#, photoPaths: "[]", binaries: []
             )
         ]
     }
@@ -129,17 +159,27 @@ struct SchemaV21Tests {
             // green under that revert.
             for (index, item) in items.enumerated() {
                 let error = item.lastError.map { "'\($0)'" } ?? "NULL"
+                let code = item.lastErrorCode.map { "'\($0)'" } ?? "NULL"
+                let nextAttempt = item.nextAttemptAt
+                    .map { "'\(SQLiteTimestamp.string(from: $0))'" } ?? "NULL"
+                // The timestamps differ per row as well, and by a day rather than a second: three
+                // columns holding one identical string cannot show a copy that put `created_at`
+                // into `updated_at`, or either into `window_started_at`.
+                let created = SQLiteTimestamp.string(from: moment.addingTimeInterval(Double(index) * 86_400))
+                let updated = SQLiteTimestamp.string(from: moment.addingTimeInterval(Double(index) * 86_400 + 60))
+                let window = SQLiteTimestamp.string(from: moment.addingTimeInterval(Double(index) * 86_400 + 120))
                 // `local_applied = 1` on every row, because `done` requires it and the settled item
-                // above is one. The two sinks are v15's and v21 does not touch them.
+                // above is one — as does `remote_sent = 1`. The two sinks are v15's and v21 does not
+                // touch them.
                 try connection.execute("""
                     INSERT INTO outbox
                         (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding,
-                         state, fail_count, last_error, local_applied, remote_sent,
-                         window_started_at, created_at, updated_at)
+                         state, fail_count, last_error, last_error_code, local_applied, remote_sent,
+                         window_started_at, next_attempt_at, created_at, updated_at)
                     VALUES (\((index + 1) * 10),'\(item.id.uuidString)','\(item.kind)',
-                            '\(item.clientUUID.uuidString)','{}','[]',0,
-                            '\(item.state)',\(item.failCount),\(error),1,0,
-                            '\(stamp)','\(stamp)','\(stamp)');
+                            '\(item.clientUUID.uuidString)','\(item.payload)','\(item.photoPaths)',0,
+                            '\(item.state)',\(item.failCount),\(error),\(code),1,\(item.remoteSent),
+                            '\(window)',\(nextAttempt),'\(created)','\(updated)');
                     """)
                 for binary in item.binaries {
                     // Inserted through the table, so v18's `counted_in` trigger sets
@@ -180,22 +220,52 @@ struct SchemaV21Tests {
         }
     }
 
-    /// The queue as comparable values, in `seq` order.
-    private static func queue(
-        _ store: CypressStore
-    ) async throws -> [(Int, String, String, String, Int, String?, Int)] {
+    /// One `outbox` row, every column of it, as text.
+    ///
+    /// Text because the comparison is "is this the same value", not "is this the same type": a
+    /// `CAST(… AS TEXT)` projection reads a column whose affinity it does not need to know, which is
+    /// what lets the reader below follow `pragma_table_info` instead of a hand-written list.
+    private struct QueueRow: Equatable {
+        let values: [String: String?]
+
+        subscript(column: String) -> String? { values[column] ?? nil }
+        var seq: String { self["seq"] ?? "" }
+        var id: String { self["id"] ?? "" }
+        var kind: String { self["kind"] ?? "" }
+        var photosOutstanding: Int { Int(self["photos_outstanding"] ?? "") ?? -1 }
+    }
+
+    /// The queue in `seq` order, **every column of it**, projected from the table's own column list.
+    ///
+    /// **Not a hand-written `SELECT`.** This read named 7 of the 17 columns, while the test it feeds
+    /// says "column for column" and the failure it guards against is a column dropped from the
+    /// rebuild's `INSERT … SELECT` — so an edit that lost `next_attempt_at` or `remote_sent` would
+    /// have left it green. Reading `columnNames(ofTable:)` makes the projection follow the schema,
+    /// and it keeps following it: the day v22 adds a column and forgets to carry it, this fails
+    /// without anybody having remembered to widen a list here.
+    private static func queue(_ store: CypressStore) async throws -> [QueueRow] {
         try await store.queue.read { connection in
-            let statement = try connection.prepare("""
-                SELECT seq, id, kind, state, fail_count, last_error, photos_outstanding
-                  FROM outbox ORDER BY seq
-                """)
+            let columns = try connection.columnNames(ofTable: "outbox")
+            #expect(
+                columns.count >= 17,
+                """
+                `outbox` reports \(columns.count) columns (\(columns)); v21's table has 17, so this \
+                projection is reading a table that is not the one this suite is about
+                """
+            )
+            let projection = columns.map { "CAST(\($0) AS TEXT) AS \($0)" }.joined(separator: ", ")
+            let statement = try connection.prepare("SELECT \(projection) FROM outbox ORDER BY seq")
             defer { statement.finalize() }
-            return try statement.fetchAll {
-                (
-                    try $0.int("seq"), try $0.string("id"), try $0.string("kind"),
-                    try $0.string("state"), try $0.int("fail_count"),
-                    try $0.stringIfPresent("last_error"), try $0.int("photos_outstanding")
-                )
+            return try statement.fetchAll { row in
+                var values: [String: String?] = [:]
+                for column in columns {
+                    // `updateValue` rather than the subscript: assigning a `String?` through
+                    // `values[column]` is one implicit promotion away from removing the key
+                    // instead of storing a NULL, and a missing key would compare equal to a
+                    // missing key on the other side.
+                    values.updateValue(try row.stringIfPresent(column), forKey: column)
+                }
+                return QueueRow(values: values)
             }
         }
     }
@@ -276,7 +346,7 @@ struct SchemaV21Tests {
         // cascades the children away, so the number is the right one and the rows behind it are
         // gone. It was written that way first and stayed green while the binaries were being
         // destroyed two lines above — this project's dominant defect shape, met once more.
-        let counters = try await Self.queue(store).map { ($0.1, $0.6) }
+        let counters = try await Self.queue(store).map { ($0.id, $0.photosOutstanding) }
         let live = try await Self.binaries(store).reduce(into: [String: Int]()) { counts, binary in
             counts[binary.1, default: 0] += 1
         }
@@ -301,29 +371,67 @@ struct SchemaV21Tests {
 
     // MARK: - 3. The queue
 
-    /// **The queue came across column for column, in `seq` order.**
+    /// **The queue came across column for column, in `seq` order — all seventeen of them.**
     ///
     /// The negative control for the test above: the cascade reaches the child table and nothing
     /// else, so this stays green under the revert that turns that one red. It is here for the
     /// rebuild's *own* failure modes — a column dropped from the `INSERT … SELECT`, a `seq` not
     /// carried (which would renumber the FIFO order the drain reads), error text or a retry count
     /// left behind.
-    @Test("the queue itself is carried across unchanged, seq order included")
+    ///
+    /// **It used to compare 7 columns of 17 while saying "column for column".** `client_uuid`,
+    /// `payload`, `photo_paths`, `last_error_code`, `local_applied`, `remote_sent`,
+    /// `window_started_at`, `next_attempt_at`, `created_at` and `updated_at` went unread, and three
+    /// of those were uniformly NULL or zero in the fixture besides — so a rebuild that dropped
+    /// `next_attempt_at` or `remote_sent` would lose no row, renumber no `seq`, and leave this
+    /// green. The fixture now holds a row in every state with a distinguishable value in every
+    /// column, and the projection follows `pragma_table_info` rather than a list somebody has to
+    /// remember to widen.
+    @Test("the queue itself is carried across unchanged, every column and seq order included")
     func theQueueSurvivesTheRebuild() async throws {
         let store = try await Self.v20Database(Self.fixture())
+        let columnsBefore = try await store.queue.read { try $0.columnNames(ofTable: "outbox") }
         let before = try await Self.queue(store)
 
         _ = try await store.queue.write { connection in
             try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
         }
 
+        let columnsAfter = try await store.queue.read { try $0.columnNames(ofTable: "outbox") }
+        #expect(
+            columnsAfter == columnsBefore,
+            """
+            the rebuilt table's columns are \(columnsAfter) where v20's were \(columnsBefore). v21 \
+            widens a CHECK and must add, drop and reorder nothing
+            """
+        )
+
         let after = try await Self.queue(store)
-        #expect(after.map(\.0) == before.map(\.0), "seq changed: \(before.map(\.0)) → \(after.map(\.0))")
-        #expect(after.map(\.1) == before.map(\.1), "the rows changed identity or order")
-        #expect(after.map(\.2) == before.map(\.2), "a kind was rewritten by the rebuild")
-        #expect(after.map(\.3) == before.map(\.3), "a state was rewritten by the rebuild")
-        #expect(after.map(\.4) == before.map(\.4), "a retry count was lost")
-        #expect(after.map(\.5) == before.map(\.5), "error text was lost")
+        #expect(
+            after.map(\.seq) == before.map(\.seq),
+            "seq changed: \(before.map(\.seq)) → \(after.map(\.seq))"
+        )
+        #expect(after.map(\.id) == before.map(\.id), "the rows changed identity or order")
+
+        // Every column of every row, named individually, because "the rows differ" is not a finding
+        // somebody can act on and this is the assertion that catches a dropped column.
+        var lost: [String] = []
+        for (old, new) in zip(before, after) where old != new {
+            for column in columnsBefore where old[column] != new[column] {
+                lost.append(
+                    "seq \(old.seq) · \(column): \(old[column] ?? "NULL") → \(new[column] ?? "NULL")"
+                )
+            }
+        }
+        #expect(
+            lost.isEmpty,
+            """
+            the rebuild did not carry every column across: \(lost.joined(separator: "; ")). Each \
+            one is a fact about a contributor's queued mutation, silently defaulted by an \
+            `INSERT … SELECT` that did not name it
+            """
+        )
+        #expect(after == before, "the queue changed in a way the per-column report above did not name")
     }
 
     // MARK: - 4. The vocabulary
@@ -364,9 +472,9 @@ struct SchemaV21Tests {
 
         let queued = try await Self.queue(store)
         #expect(
-            queued.map(\.1) == items.map(\.id.uuidString),
+            queued.map(\.id) == items.map(\.id.uuidString),
             """
-            the migration left \(queued.count) rows in the queue (\(queued.map(\.2))); only the \
+            the migration left \(queued.count) rows in the queue (\(queued.map(\.kind))); only the \
             \(items.count) that were already there may be present. A withdrawn reading on somebody's \
             phone must not be published by an upgrade
             """
@@ -437,8 +545,8 @@ struct SchemaV21Tests {
         }
 
         let replayedQueue = try await Self.queue(store)
-        #expect(replayedQueue.map(\.0) == queueAfterFirst.map(\.0), "a replay renumbered `seq`")
-        #expect(replayedQueue.map(\.1) == queueAfterFirst.map(\.1), "a replay changed the queue")
+        #expect(replayedQueue.map(\.seq) == queueAfterFirst.map(\.seq), "a replay renumbered `seq`")
+        #expect(replayedQueue == queueAfterFirst, "a replay changed the queue")
         let replayedBinaries = try await Self.binaries(store)
         #expect(
             replayedBinaries.map(\.0) == binariesAfterFirst.map(\.0),

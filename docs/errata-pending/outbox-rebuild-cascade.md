@@ -59,3 +59,15 @@ This is the project's dominant test-suite defect (a guard green while its defect
 was found by running the red-proof rather than by reading the test. The general form of the question
 is: **is this assertion comparing two things the defect changes together?** A counter and the fixture
 that produced it move together under a cascade; a counter and the table it counts do not.
+
+**Both assertions are load-bearing, in opposite directions, and the paragraphs above argue only one
+of them.** PR #154's adversarial review measured the other half and reported it: with the parking
+block removed but step 5's recompute *left in place*, the recompute drives `photos_outstanding` to 0
+against a child table the cascade has already emptied — so `outstanding == live[id]` passes on
+`0 == 0`, and it is `outstanding == staged[id]`, the fixture comparison this entry warns about, that
+catches the loss: `(outstanding → 0) == (staged[id] → 2)`. Which of the two goes red depends on how
+much of the parking block a given edit takes out, so neither may be dropped in favour of the other.
+The table comparison catches a counter left too *high* by a cascade that fired no triggers; the
+fixture comparison catches one recomputed too *low* against children that are already gone. The
+lesson is not "assert against the table" — it is that a counter needs an assertion on each side of
+it, because the two failures are not the same failure.

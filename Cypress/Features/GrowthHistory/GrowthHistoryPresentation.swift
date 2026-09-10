@@ -476,7 +476,37 @@ enum GrowthHistoryCopy {
     /// **NOT SPECIFIED**, same shape as `TreePhotosCopy.deleteFailed`: it says the reading is still
     /// here, because a failure that only says "that did not work" leaves the reader unsure whether
     /// half of it did.
+    ///
+    /// It ends `Try again.`, so it is **only** for a failure a retry could clear. See
+    /// `withdrawFailure(_:)`, which is what the screen actually calls.
     static let withdrawFailed = "That reading could not be withdrawn. It is still here. Try again."
+
+    /// The same failure when trying again cannot work.
+    ///
+    /// `.forbidden` is reachable with a stale control: `withdrawableMeasurementIDs` is read when the
+    /// screen loads, and the leaving door can unlink a reading between that read and the tap (R3's
+    /// refusal, which on this table is a tombstone lookup rather than a null owner). Answering that
+    /// with `Try again.` tells the reader to do the one thing guaranteed not to work.
+    ///
+    /// The reading really is still there in this case, so that half of the sentence stays.
+    static let withdrawRefused = "That reading is not yours to withdraw. It is still here."
+
+    /// `.notFound`: there is no such reading to withdraw — already withdrawn on another surface, or
+    /// the row is gone. `It is still here` is false in exactly this direction, so it is not said.
+    static let withdrawAlreadyGone = "That reading is no longer here to withdraw."
+
+    /// Which of the three a failure gets, decided by the taxonomy rather than by a list of cases.
+    ///
+    /// `APIError.retryable` is the binding answer everywhere else in the app — `OutboxRetryPolicy`
+    /// schedules from it and screen 17 offers its retry button on it — so a sentence that invites a
+    /// retry follows that same property rather than holding a second opinion beside it. Anything
+    /// that is not an `APIError` is a transport throw, where nothing has been decided against the
+    /// reader and trying again is exactly the right advice.
+    static func withdrawFailure(_ error: (any Error)?) -> String {
+        guard let code = error as? APIError else { return withdrawFailed }
+        if code == .notFound { return withdrawAlreadyGone }
+        return code.retryable ? withdrawFailed : withdrawRefused
+    }
 }
 
 // MARK: - Screen metrics
