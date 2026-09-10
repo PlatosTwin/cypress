@@ -1,6 +1,7 @@
-# Reviewers: nothing here reaches the app, and nothing here can. The files changed are
-# Tools/run_tests.sh, Tools/verify_test_log.sh and a new Tools/test_harness_guards.sh — all three
-# exempt from minting a build (NO_ARCHIVE), because the scheme's only buildable is the app and
-# project.pbxproj has no shell-script build phase. Tools/fetch_seed.sh IS a build input and its
-# diagnostics were moved to tools/fetch-seed-diagnostics for that reason.
+# Reviewers: this branch DOES mint a build, and that is not an oversight. Tools/fetch_seed.sh
+# runs in every CI job (.github/actions/prepare, release included) and places the seed the app
+# bundles, so it is a build input by the same argument the workflow already makes about
+# Tools/build_seed.py. The pinned bytes cannot change — they are verified by sha256 — but the
+# script that chooses and places them did, so it ships. The rest of the harness round is #153,
+# where the three non-shipping scripts are exempt.
 internal: bounds the simulator boot, stops the collision guard matching its own caller, and gives an environment-refused run its own verdict; no app code changed.

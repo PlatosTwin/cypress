@@ -1,7 +1,7 @@
 # Unnumbered — the orchestrator splices this under the next E number at merge (CLAUDE.md,
 # Numbering). Written from branch `tools/harness-hardening`, 2026-09-09.
 
-### Three ways the harness lied about the harness, and the seam that now catches them
+### Four ways the harness lied about the harness, and the seam that now catches them
 
 Everything below is about `Tools/`, not about the app. It is here because CLAUDE.md's own
 sentence — "this project's tooling is gated; the commands you type to make claims about that
@@ -37,6 +37,14 @@ says the app failed a check; the other says the host never delivered a tap to th
 is a fact about the machine and about nothing else. Three of the second kind were read as reds on
 2026-09-02 and re-run into green, which is the reading CLAUDE.md warns about from the other side: a
 green re-run proves a failure was intermittent, never why.
+
+**4. `set -euo pipefail` plus `grep` is a silent exit, and it was the last check before the copy.**
+`Tools/fetch_seed.sh`'s scope check ran `… | grep -v '^$' | sort | paste`. `grep` exits 1 when it
+selects no line — not an error, just an answer — and under `pipefail`, inside a command
+substitution, under `set -e`, that ended the script. Against a seed whose `seed_meta` carries no
+`id_spaces_in_file` row, the pre-change file printed its two resolve lines, exited 1, placed
+nothing, and said **nothing at all** about why. The verified download was deleted by the EXIT trap
+on the way out.
 
 ### The seam, and the one thing it did wrong first
 

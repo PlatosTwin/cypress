@@ -741,12 +741,18 @@ PY
     CYPRESS_CITIES_BASE="http://127.0.0.1:$PORT" "$HERE/fetch_seed.sh" "$1" 2>&1
   }
 
-  # The unreadable-scope case — a seed whose `seed_meta` holds no `id_spaces_in_file` row — is
-  # ROADMAP chip 3 and is NOT in this branch. `Tools/fetch_seed.sh` runs in every CI job and
-  # places the seed the app bundles, so it is a genuine build input: changing it here would mint
-  # a TestFlight build byte-identical to the last. The fix and its two calibrations live on
-  # `tools/fetch-seed-diagnostics`, where they ship on their own. What stays below is the three
-  # controls that hold against the script as it is.
+  # THE DEFECT ITSELF. `grep -v '^$'` selects nothing from an empty scope string, exits 1, and
+  # `pipefail` + `set -e` take the script down inside a command substitution — no message, no
+  # placed seed, exit 1. Before this round the assertion below was `output is empty`.
+  if check "chip 3: an unreadable scope names itself instead of dying silently"; then
+    root="$(make_seed_and_pin noscope "" "sf,sj")"
+    out="$(run_fetch "$root")"; rc=$?
+    expect_rc "$rc" 1 \
+      && expect_contains "$out" "scope UNREADABLE" \
+      && expect_contains "$out" "seed_meta" \
+      && expect_missing "$out" "no diagnostic of its own" \
+      && ok
+  fi
 
   if check "chip 3: control — a scope that disagrees with the pin still refuses, as before"; then
     root="$(make_seed_and_pin wrongscope "nyc,sf,sj" "sf,sj")"
@@ -783,6 +789,52 @@ PY
       && expect_contains "$out" "sha256 mismatch" \
       && expect_missing "$out" "no diagnostic of its own" \
       && ok
+  fi
+
+  # And the backstop itself, calibrated: a copy of the script with one silent-failure command
+  # spliced in must produce the new "died with no diagnostic" report, naming the line. Without
+  # this the trap is a claim; with it, it is a measurement.
+  if check "chip 3: an unforeseen silent death is reported, with its line"; then
+    poisoned="$WORK/fetch_seed_poisoned.sh"
+    awk '{ print }
+         /^say "resolved from \$origin"$/ { print "  printf \x27\x27 | grep -q nothing-here" }' \
+      "$HERE/fetch_seed.sh" >"$poisoned"
+    chmod +x "$poisoned"
+    if ! grep -q 'nothing-here' "$poisoned"; then
+      bad "the poison was not spliced in — the anchor line in fetch_seed.sh moved"
+    else
+      root="$(make_seed_and_pin poison "sf,sj" "sf,sj")"
+      out="$(CYPRESS_CITIES_BASE="http://127.0.0.1:$PORT" "$poisoned" "$root" 2>&1)"; rc=$?
+      expect_rc "$rc" 1 \
+        && expect_contains "$out" "no diagnostic of its own" \
+        && expect_contains "$out" "grep -q nothing-here" \
+        && ok
+    fi
+  fi
+
+  # And the half of the backstop's promise that `set -E` is what keeps: the ERR trap is NOT
+  # inherited by functions, command substitutions or subshells without it, so a silent death
+  # inside one would report "at line unknown: unknown" — a diagnostic that promises to name the
+  # line and then does not. The splice above lands at top level and so cannot see this; this one
+  # poisons `say` itself. Red-proved by changing `set -Eeuo` back to `set -euo`: this check fails
+  # on "at line unknown", and only this one.
+  if check "chip 3: a silent death INSIDE A FUNCTION still names its line (set -E)"; then
+    poisoned="$WORK/fetch_seed_fn_poisoned.sh"
+    awk '{ print }
+         /^say\(\) \{ printf/ { print "say() { printf \x27\x27 | grep -q nothing-here; }" }' \
+      "$HERE/fetch_seed.sh" >"$poisoned"
+    chmod +x "$poisoned"
+    if ! grep -q 'nothing-here' "$poisoned"; then
+      bad "the poison was not spliced in — say()'s definition in fetch_seed.sh moved"
+    else
+      root="$(make_seed_and_pin fnpoison "sf,sj" "sf,sj")"
+      out="$(CYPRESS_CITIES_BASE="http://127.0.0.1:$PORT" "$poisoned" "$root" 2>&1)"; rc=$?
+      expect_rc "$rc" 1 \
+        && expect_contains "$out" "no diagnostic of its own" \
+        && expect_contains "$out" "grep -q nothing-here" \
+        && expect_missing "$out" "at line unknown" \
+        && ok
+    fi
   fi
 
   # The teardown, and then the assertion that the teardown worked — because "the file leaves no

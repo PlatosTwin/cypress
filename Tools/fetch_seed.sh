@@ -29,7 +29,11 @@
 # wants the artifact currently on the bucket. It must never be how a red pin is made green,
 # and CI must never set it -- a live fetch is not reproducible, and reproducibility is the
 # entire point of this file.
-set -euo pipefail
+# `-E` and not just `-euo pipefail`: without it the ERR trap installed below is NOT inherited by
+# shell functions, command substitutions or subshells, so a silent death inside one would leave
+# FAIL_LINE and FAIL_CMD unset and the backstop would report "at line unknown: unknown" — the
+# diagnostic promising to name the line, not naming it (#153 review, F9).
+set -Eeuo pipefail
 
 ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 PUBLIC="${CYPRESS_CITIES_BASE:-https://cypress-cities.t3.tigrisbucket.io}"
@@ -37,7 +41,51 @@ SOURCE="${CYPRESS_SEED_SOURCE:-pin}"
 PIN="$ROOT/Fixtures/seed/pinned-seed.json"
 
 say() { printf 'fetch_seed: %s\n' "$1"; }
-die() { printf 'fetch_seed: FAIL: %s\n' "$1" >&2; exit 1; }
+
+# ── Every exit path names itself (ROADMAP chip 3) ────────────────────────────────────
+#
+# THE DEFECT. `set -euo pipefail` plus a `grep` inside a command substitution is a silent exit.
+# The scope check below read
+#
+#     got_spaces="$(printf '%s' "$raw_spaces" | tr ',' '\n' | … | grep -v '^$' | sort | paste -sd, -)"
+#
+# and `grep` exits 1 when it selects no line. That is not an error — it is grep answering "none"
+# — but under `pipefail` the pipeline inherits the 1, under `set -e` the assignment takes the
+# script down with it, and the whole thing happens with NO OUTPUT AT ALL. A seed whose
+# `seed_meta` carries no `id_spaces_in_file` row therefore killed this script at the last check
+# before the copy: exit 1, not a byte on stderr, the verified download deleted by the EXIT trap,
+# and nothing anywhere saying which of a dozen steps had failed. A caller sees a fetch that did
+# not place the seed and gives no reason.
+#
+# THE FIX IS TWO THINGS, because either alone leaves the class open:
+#   1. the pipeline no longer has a command that reports "none" as failure (awk, below);
+#   2. an exit that carried no diagnostic is REPORTED as such, with the line and the command,
+#      whatever caused it. Every `die` sets DIED, so the backstop can tell "this script decided
+#      to stop and said why" from "this script fell over".
+#
+# The ERR trap records where. It does not fire for a command inside an `if`, a `&&`/`||` chain or
+# a `!` — bash exempts those from `set -e` — which is exactly right: those are decisions, and
+# every one of them here ends in a `die` that speaks for itself.
+DIED=0
+FAIL_LINE=""
+FAIL_CMD=""
+die() { DIED=1; printf 'fetch_seed: FAIL: %s\n' "$1" >&2; exit 1; }
+trap 'FAIL_LINE=$LINENO; FAIL_CMD=$BASH_COMMAND' ERR
+
+TMPDIR_TO_CLEAN=""
+on_exit() {
+  local rc=$?
+  [ -n "$TMPDIR_TO_CLEAN" ] && rm -rf "$TMPDIR_TO_CLEAN"
+  if [ "$rc" -ne 0 ] && [ "$DIED" != "1" ]; then
+    printf 'fetch_seed: FAIL: died with status %s and no diagnostic of its own.\n' "$rc" >&2
+    printf '  at line %s: %s\n' "${FAIL_LINE:-unknown}" "${FAIL_CMD:-unknown}" >&2
+    printf '  This script runs under `set -euo pipefail`, where a command that merely reports\n' >&2
+    printf '  "nothing matched" (grep) is fatal and silent. Nothing was placed; the download, if\n' >&2
+    printf '  one happened, was verified or not but has been discarded. Re-run with `bash -x` on\n' >&2
+    printf '  this file to see the step, and give the line above to whoever fixes it.\n' >&2
+  fi
+}
+trap on_exit EXIT
 
 # ── Where the seed's identity comes from ─────────────────────────────────────────────
 # Both branches produce the same four values -- path, sha256, bytes, and a human-readable
@@ -122,7 +170,11 @@ say "resolved from $origin"
 say "$rel ($want_bytes bytes, sha256 ${want_sha:0:16}...)"
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+# Handed to the single EXIT trap installed at the top rather than replacing it: a second
+# `trap … EXIT` here would REMOVE the no-diagnostic backstop, and it would remove it precisely
+# for the second half of the script — the download, the hash and the scope check, which is where
+# the silent death actually happened.
+TMPDIR_TO_CLEAN="$tmp"
 curl -fsS --max-time 900 -o "$tmp/seed.sqlite" "$PUBLIC/$rel" \
   || die "download failed: $PUBLIC/$rel"
 
@@ -161,6 +213,7 @@ Never make this green by widening the check or by setting CYPRESS_SEED_SOURCE=li
 pinned so that a publish cannot break a commit that already passed; a live fetch is exactly
 the retroactive breakage the pin exists to stop.
 EOF
+  DIED=1
   exit 1
 fi
 
@@ -178,7 +231,30 @@ if [ -n "$want_spaces" ]; then
   else
     raw_spaces="$(sqlite3 "$tmp/seed.sqlite" \
       "SELECT value FROM seed_meta WHERE key = 'id_spaces_in_file';" 2>/dev/null || true)"
-    got_spaces="$(printf '%s' "$raw_spaces" | tr ',' '\n' | tr -d ' ' | grep -v '^$' | sort | paste -sd, -)"
+    # awk, not `grep -v '^$'`. Both drop the blank fields; only one of them reports "I dropped
+    # them all" as a failure, and under `pipefail` that failure was the end of this script with
+    # nothing printed. awk exits 0 whether it prints one line or none, which is the right answer
+    # to a question that has an empty answer.
+    got_spaces="$(printf '%s\n' "$raw_spaces" \
+      | tr ',' '\n' \
+      | awk '{ gsub(/[[:space:]]/, ""); if ($0 != "") print }' \
+      | sort | paste -sd, -)"
+    # The empty answer, said out loud. A seed with no `id_spaces_in_file` row is not a seed whose
+    # scope matches — it is a seed whose scope could not be read, and the two must not share a
+    # message. This is the case the silent death was hiding.
+    if [ -z "$got_spaces" ]; then
+      die \
+"scope UNREADABLE for $rel: the pin declares id_spaces [$want_spaces], and the file's seed_meta
+  holds no non-empty 'id_spaces_in_file' row to check that against. The sha256 already matched,
+  so these ARE the pinned bytes — what is missing is the file's own statement of its scope, which
+  means either the pin names a seed built before that row existed, or the seed was built by
+  something that does not write it. Check with:
+
+      sqlite3 <the-seed> \"SELECT key, value FROM seed_meta;\"
+
+  Do not proceed by deleting id_spaces from the pin: the bundle-scope ruling is what that field
+  carries, and an unchecked scope is how five boroughs end up inside the app."
+    fi
     [ "$got_spaces" = "$want_spaces" ] || die \
 "scope mismatch for $rel: the pin says id_spaces [$want_spaces], the file holds [$got_spaces].
   The pin names a seed of a different scope than it claims. If this is a publish round bumping

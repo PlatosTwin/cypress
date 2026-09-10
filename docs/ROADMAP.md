@@ -489,7 +489,7 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   the concurrent xcodebuild count so the verdict is checkable against the condition that produced
   it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
   orchestrator's to set, a lock inside the script would serialize agents invisibly, and it would
-  still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 37
+  still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 39
   checks, each paired with its control, no simulator and no network.
   **Left open, deliberately: the exit-code taxonomy is half-applied.** (d) invents "the
   environment refused this run = exit 2", and this round's own most environment-shaped refusals —
@@ -560,13 +560,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
    from the suites' actual durations (shard runtimes are visibly unbalanced in recent runs);
    regenerate from measured per-class times and re-prove `UITestShardCoverageTests` still covers
    every class.
-3. **Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
+3. ~~**Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
-   with a calibrated failure case. **Written, and deliberately not merged with the rest of the
-   harness round.** `Tools/fetch_seed.sh` runs in every CI job (`.github/actions/prepare`, the
-   `release` job included) and places the seed the app bundles, so it is a genuine build input:
-   merging it mints a TestFlight build. The fix and its two calibrations sit on
-   `tools/fetch-seed-diagnostics`, to land in a round that is shipping a build anyway.
+   with a calibrated failure case.~~ **SHIPPED** (`tools/fetch-seed-diagnostics`, split out
+   of `tools/harness-hardening` because this script is a build input and merging it mints a
+   TestFlight build). The mechanism was
+   `grep -v '^$'` reporting "selected nothing" as exit 1: under `pipefail` inside a command
+   substitution, `set -e` then ended the script with **no output whatever** — reproduced against
+   the pre-change file, which printed its two resolve lines, exited 1 and placed nothing. The
+   pipeline is now `awk` (which answers an empty question with an empty answer and exit 0), an
+   unreadable scope has its own refusal separate from a mismatched one, and an ERR/EXIT backstop
+   reports any exit that carried no diagnostic of its own, with the line and the command. Both the
+   defect and the backstop are calibrated in `Tools/test_harness_guards.sh`, the second by
+   splicing a silent failure into a copy of the script.
 4. ~~**Redesign `CityDownloadsFeedbackTests`' perf-margin test.** The "transfer beats a per-byte
    walk by an order of magnitude" test (`CityDownloadsFeedbackTests.swift:920`-era) compares two
    wall-clock timings with a hard margin and flaked on CI with no concurrent load (8.5x against a
