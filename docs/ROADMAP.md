@@ -489,8 +489,16 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   the concurrent xcodebuild count so the verdict is checkable against the condition that produced
   it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
   orchestrator's to set, a lock inside the script would serialize agents invisibly, and it would
-  still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 27
+  still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 37
   checks, each paired with its control, no simulator and no network.
+  **Left open, deliberately: the exit-code taxonomy is half-applied.** (d) invents "the
+  environment refused this run = exit 2", and this round's own most environment-shaped refusals —
+  a `bootstatus` that did not return inside the bound, another run's leftover `bootstatus`, a
+  collision with somebody else's build — all still exit 1 and get filed as reds. They are facts
+  about the machine, which is the distinction exit 2 exists to draw. Not widened here on purpose:
+  expanding a brand-new taxonomy inside the review that is judging it is how it ships applied to
+  some of its cases and not others. A round that can weigh it should decide whether the three
+  refusals move to 2 — and what that does to every caller that reads a nonzero as a red.
 - ~~**The Activity list shows Photos / Check-ins / Care rows but no Visits row**~~
   **ANSWERED BY THE SPEC, 2026-09-09 — nothing to fix.** The observation was filed against "screen
   14"; the screen it describes is **13 · Tree activity** (§14 is the cold-start profile, which has
