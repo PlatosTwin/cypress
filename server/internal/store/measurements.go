@@ -104,7 +104,14 @@ func withdrawMeasurement(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Own
 
 // measurementWasWithdrawn reports whether this identity has already taken this reading back.
 //
-// ── The arrival-order hole this closes, which is measurable and not theoretical ────────────────
+// ── The arrival-order hole this closes, and the narrower one it does not ───────────────────────
+//
+// **The claim, stated exactly, because half of it is the part that is easy to overstate.** What is
+// closed is the ordering in which the withdrawal is *committed in an earlier drain* than the
+// reading it withdraws — an earlier `POST /sync`, or an earlier position in the same batch, which
+// `Apply` walks one mutation and one transaction at a time. What is **not** closed is two `Apply`
+// transactions overlapping in time. That case is written out under "What this does not close"
+// below rather than left to be inferred.
 //
 // A `photo_withdrawal` can name bytes this service has never held and never will, because no photo
 // send path exists (ERRATA E264): a withdrawal that finds nothing is the end of the story. A
@@ -125,6 +132,28 @@ func withdrawMeasurement(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Own
 // This mirrors `anonymized_contributions`, which is consulted before the insert for the same reason
 // stated in `Apply`: an item written on Wednesday and drained on Thursday cannot be stopped by a
 // column on a row that does not exist yet, so the mark has to be waiting for it.
+//
+// ── What this does not close: two drains overlapping in time ───────────────────────────────────
+//
+// The guard above is a lookup, not a lock, and it can only find a row that has **committed**.
+// `Apply` runs each mutation in its own transaction at READ COMMITTED — `Store.Tx` calls
+// `pool.Begin` with no `TxOptions`, so the isolation is the server's default — and nothing makes
+// two transactions about the same reading block each other: neither
+// `contributions_measurement_reading_id` nor `contributions_withdrawn_reading_id` is a unique
+// index, and the reading id is not a key anywhere in this schema. So a reading in one open
+// transaction and its own withdrawal in another are mutually invisible: `withdrawMeasurement`
+// counts `matched == 0` and answers success, this function returns false and the reading is born
+// live, both commit, and `GET /me/grove` counts it. That is E280's sentence again — a service
+// reporting a removal it did not perform — at millisecond scale instead of at backoff scale, and
+// it is reachable in the multi-device case `Mutation.WithdrawnMeasurementID`'s own comment
+// invokes: one device draining the reading while another drains the withdrawal.
+//
+// It is **not** a regression — before this round the kind was refused outright, so nothing about
+// it worked at all — and it is deliberately not fixed here. The direction is filed as the top
+// server item in `docs/ROADMAP.md`'s chip backlog: a transaction-scoped advisory lock on the
+// reading id taken at the top of both this function and `withdrawMeasurement`, which would
+// serialise only same-reading pairs. **That shape is unverified** — nobody has built it or
+// red-proved it — which is why it is a filed direction rather than a line of code here.
 //
 // **Scoped to the same owner**, which is the whole of the safety argument. Without it, an item
 // naming any reading id at all would arm a tombstone for a reading nobody had sent yet, and a

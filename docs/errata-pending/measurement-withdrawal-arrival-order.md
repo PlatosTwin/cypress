@@ -47,6 +47,27 @@ makes for consulting the tombstone before the insert: an item written on Wednesd
 Thursday cannot be stopped by a column on a row that does not exist yet, so the mark has to be
 waiting for it.
 
+**What that fix covers, stated exactly — and what it leaves open.** It covers the ordering above:
+the withdrawal **committed in an earlier drain** than the reading it withdraws, whether that is an
+earlier `POST /sync` or an earlier position in the same batch (the handler's loop applies one item
+per transaction, sequentially, so both orderings inside one batch are the committed-first case).
+It does **not** cover two drains overlapping in time. The guard is a lookup, not a lock, and a
+lookup can only find a row that has committed: `Apply` runs at READ COMMITTED — `Store.Tx` calls
+`pool.Begin` with no `TxOptions`, so the isolation is the server's default — and there is **no
+unique key on the reading id** anywhere in this schema (both indexes 004 adds are plain), so
+nothing makes two transactions about one reading block each other. Reading in transaction A,
+withdrawal in transaction B: B counts `matched == 0` and answers `applied`, A's arrival check finds
+no committed withdrawal and the reading is born live, both commit, and the grove counts it. That is
+this entry's own sentence at millisecond scale rather than at backoff scale, and it is reachable in
+the multi-device case — one device draining the reading while another drains the withdrawal.
+
+It is not a regression (before this round the kind was refused outright) and it is not fixed here.
+The direction on file, **unverified**, is a transaction-scoped advisory lock keyed on the reading id
+taken at the top of both `withdrawMeasurement` and `measurementWasWithdrawn`, which would serialise
+only same-reading pairs; it is the top server item in `docs/ROADMAP.md`'s chip backlog. **The
+distinction is the point of writing it down**: a mark that waits closes the clock-scale race, and a
+mark that waits is not a lock.
+
 **The lookup is scoped to the same owner, and that is the whole safety argument rather than a
 detail.** Reading ids travel in every `GET /me/journal` payload. Unscoped, a stranger could file a
 withdrawal naming somebody else's reading id and have that person's next drain arrive already
