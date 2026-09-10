@@ -485,9 +485,11 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   and says which of the two things it is looking at — the tail of a wrapper that just returned, or
   a stray. (d) the **classification** option was taken, not the concurrency one:
   `verify_test_log.sh` answers `VERIFY-ENV-REFUSED` with exit **2** when every failure in a log is
-  an event-synthesis timeout, distinct from a pass (0) and a red (1), and `run_tests.sh` stamps
-  the concurrent xcodebuild count so the verdict is checkable against the condition that produced
-  it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
+  an event-synthesis timeout **and no counter in the log reports a failure beyond them** — no
+  crash marker, no Swift Testing aggregate, no XCTest count larger than the timeouts classified —
+  distinct from a pass (0) and a red (1); `run_tests.sh` stamps the concurrent xcodebuild count,
+  counted the same way the collision guard counts, so the verdict is checkable against the
+  condition that produced it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
   orchestrator's to set, a lock inside the script would serialize agents invisibly, and it would
   still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 37
   checks, each paired with its control, no simulator and no network.
