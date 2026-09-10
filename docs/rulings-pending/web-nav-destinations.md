@@ -628,6 +628,60 @@ and `seed_meta`.
 
 ---
 
+## 7a. ANSWERS, 2026-09-10 — all five questions in §8 are now ruled
+
+Taken the same day this document was written, four by the owner and one by the orchestrator. §8 is
+left standing verbatim below rather than rewritten, because the trade-off each question stated is
+what the answer was chosen against. The record of the owner's rounds is
+`docs/rulings-pending/web-round-owner-decisions.md`.
+
+| §8 | Question | Ruling |
+|---|---|---|
+| 1 | `Sign in` on the public web | **(a) — it does not ship in v1.** *Orchestrator's call, not the owner's,* and reversible the moment the web can sign anyone in. A control that visibly does nothing is what **E100** is written against, and a page invented to justify a button is invention the constraint-21 exception does not cover — that exception covers the four nav destinations and their supporting pages, and `Sign in` is neither. The slot is empty; the rest of the bar is the transcription. **This is a visible deviation from a transcribed element and is therefore an errata entry.** |
+| 2 | What licence the site claims over city rows | **(a) — state each source's own terms, say nothing where the receipt has none.** Owner, 2026-09-10. ODbL is the licence *contributors* grant and v1 publishes no contributions, so claiming it over city rows would assert rights this project does not hold. W1's transcribed `Data · ODbL` row becomes an errata entry rather than a silent change. **San Francisco's row will say least**, which is the honest state, so the page says why. |
+| 3 | How much data the export hands over | **(a) — bounded selections only.** Owner, 2026-09-10. A named area, a species within a region, or the current viewport; bulk traffic points at `inventories.url`. A whole-pack download was refused as scope `DECISIONS` sequenced into Phase 3, and because it would publish an internal schema as a contract. **The column-contract test is required in the same round**, not deferred. |
+| 4 | Whether 24,200 planting sites get public pages | **(a) — pins and pages, per E107.** Owner, 2026-09-10. Accepted cost, stated: roughly one public page in eight says a tree is not there, and search engines will index all of them. Both alternatives were refused for named reasons — an inert pin is the control-that-does-nothing failure **E100** names and re-creates the dead end **E113** fixed, and filtering them out would make the web and the app visibly disagree about what exists in one city. |
+| 5 | Whether `Neighborhoods` keeps its drawn label | **Dissolved, not answered.** The owner ruled instead that **polygons are sourced for San Jose and New York** (`docs/investigations/neighborhood-polygons.md`), so the premise — that six of seven regions have none — is being removed rather than designed around. §4 must be re-read against that: it is written for a world where only San Francisco has named areas, and that world is ending. |
+
+### What §5's dissolution changes, and what it does not
+
+The investigation that followed found both sources and verified them serving real geometry: **NYC DCP
+2020 NTAs `9nt8-h7nd`, 262 features**, separable by borough; **San Jose's own layer 549, 297 features,
+CC-BY**, a true partition (99.91% coverage of shipped trees, zero overlaps). Corpus cost
+**+5,036,988 bytes, +0.71%**.
+
+Two things this document should not assume settled:
+
+1. **San Jose ships 295 of 297 polygons unless a migration is taken.** `neighborhoods.name` is
+   `NOT NULL UNIQUE` and San Jose has two `Commercial`s and two `Guadalupe`s — the Guadalupes 8 km
+   apart. The no-migration path leaves 155 of 52,775 San Jose trees (0.29%) with a null neighborhood.
+   Unresolved at the time of writing.
+2. **R29's two-tier model still holds and is not repealed by this.** Boroughs, council-district-derived
+   areas and Analysis Neighborhoods are still not one word, and §4's refusal to present them as one is
+   still right. What changes is that the lower tier stops being empty outside San Francisco.
+
+### Three claims in §4 are now settled against a real pack
+
+Three of this document's four `UNVERIFIED AGAINST A PACK` markers were closed by querying `us-ca-sj`,
+downloaded from the public bucket and verified before it was trusted — 29,372,416 bytes and sha256
+`2d979b9a…` both matching `manifest-v2.json`, and `select count(*) from trees` returning **52,775**
+against the manifest's 52,775 as the control that the file queried is the file described.
+
+| Marker | Query | Result |
+|---|---|---|
+| (1) | `SELECT COUNT(*) FROM neighborhoods` | **0** — confirmed, as §4 assumed |
+| (2) | `SELECT curated, COUNT(*) FROM species GROUP BY curated` | **40 curated, 1,158 uncurated**; `leaf_retention` null on **353** |
+| (3) | `SELECT status, COUNT(*) FROM trees GROUP BY status` | `alive` **40,982** · `vacant_site` **11,793** · **no `declining` rows at all** |
+
+**(3) has a consequence this document predicted and could not check.** `Needs care` is specified here
+as `trees.status = 'declining'`. San Jose has **zero** declining rows, so the chip matches nothing
+there — and 22.3% of that city is vacant sites. Whether the NYC packs differ is **unmeasured**. A chip
+that is always empty in a region is either a fact about the city record worth stating on the page, or
+a chip that should not be drawn there. **That is a design question for the round that builds Explore
+and it is deliberately not answered here.**
+
+---
+
 ## 8. Questions for the owner
 
 **1. `Sign in` on the public web.** It is drawn on W1 and its destination is unspecified; v1 has no
