@@ -95,7 +95,13 @@ struct SchemaV21Tests {
                 id: UUID(), clientUUID: UUID(), kind: "visit", state: "pending",
                 failCount: 0, lastError: nil, lastErrorCode: nil, nextAttemptAt: nil,
                 remoteSent: 0, payload: #"{"note":"the visit"}"#,
-                photoPaths: #"["/staged/a.jpg"]"#, binaries: [UUID(), UUID()]
+                // The *current* shape, `[{path, shotType}]`, not v1's bare string. A v20 database
+                // cannot hold the bare form — v2 rewrote it eight versions ago — and a fixture that
+                // carried one made `replayingTheLadderChangesNothing` red for v2's reason rather
+                // than v21's: the replay re-runs v2, which rewrites the element, so the queue
+                // genuinely changes. Measured, and it is the fixture that was wrong.
+                photoPaths: #"[{"path":"/staged/a.jpg","shotType":"other"}]"#,
+                binaries: [UUID(), UUID()]
             ),
             // A failed species correction carrying error text, an error code and a retry count, so
             // "the queue came across" is a claim about more than ids.

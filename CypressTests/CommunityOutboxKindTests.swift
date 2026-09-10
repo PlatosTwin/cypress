@@ -768,7 +768,12 @@ struct CommunityOutboxKindTests {
             case .leaveRecords:
                 // The contribution stays and arrives anonymous (§3.12); the two exclusively-owned
                 // kinds have no anonymous form and go.
-                let kept = Set(survivors.map(\.item.kind)).subtracting(others.map(\.item.kind))
+                // By `clientUUID`, not by kind: both accounts queued every kind, so subtracting
+                // one set of kinds from the other answers the empty set whatever happened.
+                let keys = Set(mine.values.map(\.clientUUID))
+                let kept = Set(
+                    survivors.filter { keys.contains($0.item.clientUUID) }.map(\.item.kind)
+                )
                 #expect(
                     kept == Set(OutboxItem.Kind.kinds(treatedAs: .contribution)),
                     "the leaving door kept \(kept.map(\.rawValue).sorted()) of this account's rows"
@@ -869,14 +874,25 @@ struct CommunityOutboxKindTests {
         let tree = specimenTree, photo = specimenPhoto, flag = specimenFlag
         let species = specimenSpecies, moment = specimenMoment
         let payloads: [OutboxPayload] = [
-            .visit(Visit(treeID: tree, attribution: who, capturedAt: moment)),
-            .observation(TreeObservation(treeID: tree, attribution: who, capturedAt: moment)),
+            // `createdAt`/`updatedAt` pinned rather than defaulted, on all four: `Date()` carries
+            // sub-millisecond precision that the payload's ISO-8601 encoder truncates, so a
+            // defaulted specimen does not survive its own round trip — measured, four issues.
+            .visit(Visit(
+                treeID: tree, attribution: who, capturedAt: moment,
+                createdAt: moment, updatedAt: moment
+            )),
+            .observation(TreeObservation(
+                treeID: tree, attribution: who, capturedAt: moment,
+                createdAt: moment, updatedAt: moment
+            )),
             .measurement(TreeMeasurement.dbh(
                 treeID: tree, attribution: who, capturedAt: moment,
-                quantity: Quantity(value: 31, unit: .centimeters, method: .tape)
+                quantity: Quantity(value: 31, unit: .centimeters, method: .tape),
+                createdAt: moment, updatedAt: moment
             )),
             .careEvent(CareEvent(
-                treeID: tree, attribution: who, capturedAt: moment, actions: [.watered]
+                treeID: tree, attribution: who, capturedAt: moment, actions: [.watered],
+                createdAt: moment, updatedAt: moment
             )),
             .favoriteToggle(FavoriteToggle(
                 owner: FavoriteOwner(who), treeID: tree, isFavorite: true, occurredAt: moment
