@@ -475,11 +475,14 @@ dialect.
 > being made against the wrong reading. Independently reproduced twice since, by the review and by
 > this correction.
 
-Measured on 2026-09-10 at this round's head, on a throwaway Postgres: **66 pass / 125 skip / 0 fail**
-with no database, **191 pass / 0 skip / 0 fail** with one — so the move the instrument is reporting
-is **125 → 0**, not 108 → 0. (Counted with `grep -c -- '--- SKIP'`, which includes subtests; the
-top-level-only count is 120, and both are given because the two greps disagreeing is itself a thing
-worth knowing before quoting either.) The skip count is the reading that matters:
+Measured on 2026-09-10 at this round's head, on a throwaway Postgres: **67 pass / 131 skip / 0 fail**
+with no database, **198 pass / 0 skip / 0 fail** with one — so the move the instrument is reporting
+is **131 → 0**, not 108 → 0. (Counted with `grep -c -- '--- SKIP'`, which includes subtests; the
+top-level-only count is 126, and both are given because the two greps disagreeing is itself a thing
+worth knowing before quoting either. The review, and this correction's first pass, measured
+**66 / 125** and **191 / 0** at the PR head before the review's own findings were fixed; the nine
+tests those fixes added and the two they removed account for the difference exactly, which is the
+only reason to trust either reading.) The skip count is the reading that matters:
 
 ```sh
 go test ./... -v 2>&1 | grep -c -- '--- SKIP'

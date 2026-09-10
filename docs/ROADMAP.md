@@ -877,8 +877,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **assert the skip count is zero**, because `go test ./...` prints `ok` per package and exits 0
     with every SQL test skipped. ~~Measured 2026-09-10: 60 pass / 108 skip with no database, 191 pass
     / 0 skip with one.~~ **Those no-database numbers were the baseline tree's, mislabelled**; at
-    W-G's head, reproduced independently twice, it is **66 pass / 125 skip / 0 fail** with no
-    database and **191 pass / 0 skip / 0 fail** with one. `testflight.yml` already excludes `server/`
+    W-G's head after its review fixes, it is **67 pass / 131 skip / 0 fail** with no database and
+    **198 pass / 0 skip / 0 fail** with one (66 / 125 and 191 / 0 at the PR head before them). `testflight.yml` already excludes `server/`
     from the archive, so a server-only workflow cannot mint a build.
 
 14. **One tree, one current height: should the method count?** Nothing in this corpus rules on
