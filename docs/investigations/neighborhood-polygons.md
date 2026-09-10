@@ -10,10 +10,14 @@ was not run. Everything below was measured against the pinned seed
 live `manifest-v2.json`, and GeoJSON downloaded from each candidate source during this
 investigation. The downloads live in the agent scratchpad, not the repository.
 
-**Headline: a seed schema migration is NOT required.** The `neighborhoods` table's existing columns
-hold both sources without a new column, and `AppSchema` never touches the table at all. There is one
-constraint that a naive ingest would violate — `name … UNIQUE` against San Jose's two repeated names
-— and §3 gives a rule that clears it without touching the DDL. The version numbers are in §3.
+**Headline: no schema migration is required to ingest either source, and one is required to ingest
+San Jose *completely*.** The `neighborhoods` table's existing columns hold both sources without a new
+column, and `AppSchema` — the writable database — never touches the table at all. New York ingests as
+the schema stands. San Jose's layer holds two repeated names against `name … UNIQUE`, and §3.4 shows
+that every way of resolving that without a DDL change silently deletes a real place; the honest
+no-decision path ships 295 of San Jose's 297 polygons and leaves 155 of 52,775 trees (0.29%) with no
+neighborhood. Closing the last two is a seed schema round with a named migration author, and this
+note does not open it. The three version numbers are in §3.1.
 
 **Second headline, and it refutes the brief that commissioned this note: San Jose is the easy one.**
 The brief expected council districts or planning areas. San Jose publishes a real, tessellating
@@ -164,6 +168,10 @@ line. They would carry `NULL`, exactly as SF's 2 do.
 
 `sum(areas)/union = 1.0000` and **zero** trees in more than one polygon: this layer is a partition,
 not a collection of overlapping catchments.
+
+Those figures are against the **whole 297-polygon layer**. §3.4 shows that two of its names repeat,
+and that the no-schema-change path drops two polygons; on that path the coverage is 52,585 of 52,788
+(**99.62%**), because one of the dropped polygons holds 155 trees.
 
 The shipped `us-ca-sj` window (a downtown box, `sj_ship_extent=downtown`) reaches **67 of the 297**
 neighborhoods. The other 230 exist in the build seed and are deleted by the publisher's prune.
@@ -328,27 +336,51 @@ city, so the qualifier would produce two chips both reading `Commercial · San J
 condition that test asserts against (`#expect(Set(labels).count == labels.count)`). Option 3 below is
 therefore not just a DDL change; it also needs a second disambiguator the app does not have.
 
-**Three ways out, and the recommendation.**
+**Four ways out.**
 
 1. **Merge same-named polygons in one source into one `MultiPolygon` row.** No DDL change. But it
    makes *Guadalupe* a single discontiguous place spanning 8 km, and screen 12 would count trees from
-   both. Semantically wrong; **not recommended**.
+   both halves under one heading. Semantically wrong; **not recommended**.
 2. **Disambiguate the name at ingest** ("Commercial (North San José)"). No DDL change, but it is
    inventing civic content, which DECISIONS constraint 15 forbids, and there is no field in the layer
    to disambiguate *from* — `SOURCE` is null on one of each pair. **Not available.**
-3. **Drop the `UNIQUE` and key uniqueness where it actually lives.** Correct, and it is a **seed
-   schema change**: `newestKnownSchemaVersion` 17 → 18, one migration author, a stop-and-report.
+3. **A D19-shaped dedupe rule: among features sharing a `NAME` in one source, keep one, record the
+   dropped ones in `seed_meta`.** No DDL change. **Measured before recommending, and the measurement
+   killed the obvious version of it.** D19's own tie-break is *smallest numeric `OBJECTID`*.
+   Transplanted here it keeps the wrong polygon of both pairs:
 
-**Recommended: none of the three in the ingest round.** Option 3 is right and it is a decision, not an
-implementation detail — so the ingest round should carry San Jose's layer with a **documented,
-ruled dedupe rule in D19's shape** ("among features sharing a `NAME` in one source, keep the one with
-the smallest numeric `OBJECTID`, and record the dropped ones in `seed_meta`"), which loses 2 of 297
-polygons and 0.09%-scale coverage, and put option 3 to the owner as a separate, later schema round.
-A rule is needed either way, because "the names happen not to collide" is not a pipeline property.
+   | name | `OBJECTID` | smallest-`OBJECTID` rule | shipped SJ trees inside |
+   |---|---:|---|---:|
+   | Commercial | 138 | **kept** | **0** |
+   | Commercial | 279 | dropped | **155** |
+   | Guadalupe | 226 | **kept** | 0 |
+   | Guadalupe | 266 | dropped | 0 |
 
-**This is the answer to the brief's critical question: no migration is required, and the round does
-not need to STOP — provided it takes the dedupe rule rather than the DDL.** If the owner prefers the
-DDL, the round stops there and hands the schema bump to a named migration author.
+   So the rule as written costs **155 trees' neighborhood assignment** — it drops the only polygon of
+   the four that any shipped tree stands in. (Control: `Commercial` 279 returning 155 is what proves
+   the point-in-polygon test was finding these four polygons at all; a "0 lost" result with every row
+   zero would have been indistinguishable from a broken query.) A rule that kept the *larger* polygon
+   would happen to pick correctly on today's data — and "happens to be right on today's data" is the
+   exact reasoning D19 exists to refuse. **Any dedupe rule here silently deletes a real place.**
+4. **Drop the `UNIQUE` and key neighborhood identity where it actually lives** (per-source, or on
+   `(source, name)`). The correct answer, and it is a **seed schema change**:
+   `SeedDatabase.newestKnownSchemaVersion` 17 → 18, `SEED_SCHEMA_VERSION` with it, one named
+   migration author. It also needs a second reader-facing disambiguator, per the paragraph above.
+
+**So: New York needs no decision, and San Jose needs one.** Correcting the sentence this note first
+drafted — a dedupe rule was recommended before its cost was measured, and the measurement refuted it.
+
+- **`9nt8-h7nd` ingests today.** 262 unique names, no collisions with SF or SJ, nothing about the
+  existing DDL in its way.
+- **San Jose is a stop-and-ask.** Option 4 is right and it is the owner's call, because it moves a
+  published-seed version number. The only no-decision interim is to ingest San Jose's 295 unambiguous
+  neighborhoods and let the four duplicate-named polygons through as `NULL`, which costs **155 of
+  52,775 shipped trees (0.29%)** their neighborhood and is honest about it.
+
+**The answer to the brief's critical question: no migration is required to ingest either source, and
+one is required to ingest San Jose *completely*.** The ingest round can run to the end for New York
+and to 295-of-297 for San Jose without touching a version number; closing the last two polygons is a
+schema round with a named author, and this note does not open it.
 
 ---
 
@@ -481,8 +513,9 @@ was the only answer outside SF.
    implementation detail:
    - the 65 non-residential NTAs (parks, cemeteries, airports, Rikers Island) — carry them, or filter
      to `ntatype = '0'` and let 6.25% of NYC trees carry `NULL`? DECISIONS constraint 21.
-   - San Jose's two repeated names — the D19-shaped dedupe rule (recommended, no schema change), or
-     drop the `UNIQUE` (schema bump, separate round, named migration author)?
+   - San Jose's two repeated names — ship 295 of 297 polygons and let 155 trees (0.29%) carry `NULL`
+     now, or drop the `UNIQUE` (schema bump, separate round, named migration author) and ship all
+     297? §3.4 shows no third option that does not silently delete a real place.
    - R29's second arm becoming unreachable in six of seven cities.
 2. **Fetch and cache**, in the shape `Tools/fetch_nyc_trees.py` established: a fetcher that records
    each source's own server-side count and its `rowsUpdatedAt`/`LASTUPDATE` into the cache manifest,
@@ -490,15 +523,19 @@ was the only answer outside SF.
    has a non-empty geometry** — E2's check, promoted from a thing an investigator did to a thing the
    tool does.
 3. **Generalise `load_neighborhoods`** (`build_seed.py:1996`) to take a list of `(source_tag, path,
-   name_field)`, add the ruled dedupe, and **make the integer id assignment per-source and stable** so
-   San Francisco's 41 do not renumber (§4). Prune unreferenced polygons at the end of the build.
+   name_field)`, apply whatever §3.4 decision the owner took, and **make the integer id assignment
+   per-source and stable** so San Francisco's 41 do not renumber (§4). Prune unreferenced polygons at
+   the end of the build. Whichever way the duplicate-name decision goes, the count of features the
+   loader *refused* must land in `seed_meta` — a polygon silently absent from a seed is the shape of
+   defect this project keeps paying for.
 4. **Per-source `seed_meta` keys** in the `inventory_<tag>_*` shape, and extend
    `publish_cities.py:842` `attribution_for` to carry polygon sources — CC-BY makes San Jose's a
    licence obligation, and DataSF's has been missing all along (§2.4).
 5. **Rebuild the seed and verify before touching the publisher.** The numbers to check, each against
-   a control: 41 + 262 + 295 = 598 rows in `neighborhoods` (or 597, per the dedupe rule); SF's
-   `neighborhood_id IS NULL` still **2**; San Jose's **48**; NYC's near **0**. **A rebuild that leaves
-   SF's 2 unchanged is the control that the SF path did not move.** Beware
+   a control: **598** rows in `neighborhoods` on the 295-polygon path (41 + 262 + 295) or **600** if
+   the owner takes the DDL; SF's `neighborhood_id IS NULL` still **2**; San Jose's **48**, or **203**
+   on the 295-polygon path (48 + 155); NYC's near **0**. **A rebuild that leaves SF's 2 unchanged is
+   the control that the SF path did not move.** Beware
    `build_seed --limit` — it leaves a 147-species stub.
 6. **Update the five test files in §5.2 in the same PR**, and red-proof each one: break the new
    polygon path, watch the test go red *for the reason expected*, restore. A test that goes red on
@@ -520,6 +557,14 @@ was the only answer outside SF.
   Associations`, 20.3% double-covered, 11.8% uncovered, carrying volunteers' phone numbers — which is
   what a portal search returns first (§2.3).
 - **"This is the critical question … if your task turns out to need a migration, STOP and report."**
-  It does not need one. The blocker is a `UNIQUE` constraint on two San Jose rows, which a ruling
-  clears without touching the DDL (§3.4).
+  Half. New York needs no migration and no decision. San Jose needs no migration to ship 295 of its
+  297 polygons, and needs one to ship all 297; the difference is 155 trees (§3.4). The brief was right
+  that this was the question to ask first.
 - The brief's line numbers (`build_seed.py:2105`, `1996`, `2148`; 400 m; 1,200 m) all checked out.
+
+**And one thing this note had wrong about itself.** Its first draft recommended a D19-shaped dedupe
+rule for San Jose's duplicate names, in the same paragraph that said a rule was needed because "the
+names happen not to collide" is not a pipeline property — and then did not measure what the rule
+cost. Measured, D19's own tie-break drops the only one of the four polygons that any shipped tree
+stands in: 155 trees. The recommendation was written before the reading that refutes it, which is the
+failure CLAUDE.md's "never write a conclusion before reading the output that supports it" names.
