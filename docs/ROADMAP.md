@@ -478,14 +478,38 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   tallies literal was **not** collapsed in #147: that PR's review identified the duplicate and the
   test header it wrote says in as many words that it does not fix it. The second, byte-identical
   copy was still inside `heroPhotoIDs(treeIDs:connection:)` at `b5a929c`; it is removed here.
-- **`Tools/run_tests.sh` hardening, one sitting:** (a) a wedged `simctl bootstatus -b` is
+- ~~**`Tools/run_tests.sh` hardening, one sitting:** (a) a wedged `simctl bootstatus -b` is
   indistinguishable from a slow preflight and silently blocks every later run on that device;
   (b) the collision guard can self-match the *caller's own command line* when the wrapper
   invocation embeds both `xcodebuild` and the UDID (three refusals against a dead pid, 2026-09-02);
   (c) the guard's leftover-build refusal fires for ~1–2 minutes after a `-only-testing` run's
   wrapper exits, which the merge train should expect; (d) at the sanctioned three-concurrent-build
   cap the UI phase flakes with "Timed out while synthesizing event" — either lower the effective
-  cap during UI phases or teach the harness to tell an event-synthesis timeout from an assertion.
+  cap during UI phases or teach the harness to tell an event-synthesis timeout from an
+  assertion.~~ **SHIPPED** (`tools/harness-hardening`). (a) `bootstatus` runs under a bound
+  (`CYPRESS_BOOTSTATUS_TIMEOUT_S`, default 180 s) whose refusal names what it was waiting for, and
+  another run's leftover `bootstatus` against the same device is refused rather than joined.
+  (b) the collision guard skips this process's whole ancestor chain, which is the fix **E283**
+  itself proposed, and re-checks liveness before refusing. (c) the refusal prints each pid's age
+  and says which of the two things it is looking at — the tail of a wrapper that just returned, or
+  a stray. (d) the **classification** option was taken, not the concurrency one:
+  `verify_test_log.sh` answers `VERIFY-ENV-REFUSED` with exit **2** when every failure in a log is
+  an event-synthesis timeout **and no counter in the log reports a failure beyond them** — no
+  crash marker, no Swift Testing aggregate, no XCTest count larger than the timeouts classified —
+  distinct from a pass (0) and a red (1); `run_tests.sh` stamps the concurrent xcodebuild count,
+  counted the same way the collision guard counts, so the verdict is checkable against the
+  condition that produced it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
+  orchestrator's to set, a lock inside the script would serialize agents invisibly, and it would
+  still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 37
+  checks, each paired with its control, no simulator and no network.
+  **Left open, deliberately: the exit-code taxonomy is half-applied.** (d) invents "the
+  environment refused this run = exit 2", and this round's own most environment-shaped refusals —
+  a `bootstatus` that did not return inside the bound, another run's leftover `bootstatus`, a
+  collision with somebody else's build — all still exit 1 and get filed as reds. They are facts
+  about the machine, which is the distinction exit 2 exists to draw. Not widened here on purpose:
+  expanding a brand-new taxonomy inside the review that is judging it is how it ships applied to
+  some of its cases and not others. A round that can weigh it should decide whether the three
+  refusals move to 2 — and what that does to every caller that reads a nonzero as a red.
 - ~~**The Activity list shows Photos / Check-ins / Care rows but no Visits row**~~
   **ANSWERED BY THE SPEC, 2026-09-09 — nothing to fix.** The observation was filed against "screen
   14"; the screen it describes is **13 · Tree activity** (§14 is the cold-start profile, which has
@@ -549,7 +573,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
    every class.
 3. **Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
-   with a calibrated failure case.
+   with a calibrated failure case. **Written, and deliberately not merged with the rest of the
+   harness round.** `Tools/fetch_seed.sh` runs in every CI job (`.github/actions/prepare`, the
+   `release` job included) and places the seed the app bundles, so it is a genuine build input:
+   merging it mints a TestFlight build. The fix and its two calibrations sit on
+   `tools/fetch-seed-diagnostics`, to land in a round that is shipping a build anyway.
 4. ~~**Redesign `CityDownloadsFeedbackTests`' perf-margin test.** The "transfer beats a per-byte
    walk by an order of magnitude" test (`CityDownloadsFeedbackTests.swift:920`-era) compares two
    wall-clock timings with a hard margin and flaked on CI with no concurrent load (8.5x against a
