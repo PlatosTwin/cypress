@@ -80,7 +80,34 @@ So the mark is reused, the file's own locality sentence is corrected to say scre
 and **the rename is left for a quiet round** — it is on the chip backlog rather than in this diff.
 A reviewer who thinks the name should have moved now is disagreeing with the timing, not the fact.
 
-#### 4. What is deliberately absent
+#### 4. The failure sentence is three sentences, chosen by `APIError.retryable` — **NOT SPECIFIED**
+
+Added in the review round, because the first version had one sentence for every failure: *"That
+reading could not be withdrawn. It is still here. Try again."* It asserts two facts and ends with an
+instruction, and each of the three is false for some reachable failure:
+
+- **`.forbidden`** — reachable with a stale control, because `withdrawableMeasurementIDs` is read
+  when the screen loads and the leaving door can unlink a reading between that read and the tap.
+  Retrying cannot succeed, so the screen was telling the reader to do the one thing guaranteed not
+  to work. It now reads *"That reading is not yours to withdraw. It is still here."* — the reading
+  really is still there, so that half stays.
+- **`.notFound`** — already withdrawn on another surface, or the row is gone. *"It is still here"*
+  is false in exactly this direction, so it is not said: *"That reading is no longer here to
+  withdraw."*
+- **Everything else**, including a transport throw that is not an `APIError` at all, keeps the
+  original sentence and its `Try again.`
+
+**Chosen by `APIError.retryable`, not by a list of cases.** That property is already the binding
+answer everywhere else — `OutboxRetryPolicy` schedules from it, screen 17 offers its retry button on
+it — so a sentence that invites a retry follows the same property rather than holding a second
+opinion beside it. `MeasurementWithdrawalTests.aRefusalIsNotToldToRetry` iterates
+`APIError.allCases`, so a code added to the taxonomy later has to land somewhere deliberate.
+
+The same round also stopped a failure sentence outliving the read that follows it: `withdrawError`
+was cleared only at the start of the next withdrawal, so a refusal survived `reload()` and stood
+over a screen freshly read from the record.
+
+#### 5. What is deliberately absent
 
 - **No sentence where the control is not drawn.** Screen 20 has `nobodysToRemove` because a
   photograph is a subject somebody is looking at and asking about. A line of prose under each of a
@@ -90,7 +117,8 @@ A reviewer who thinks the name should have moved now is disagreeing with the tim
 
 #### What holds it
 
-`MeasurementWithdrawalTests` — eleven tests: the act, the six readers that stop counting a withdrawn
-reading, both refusals, the control/permission agreement, the payload round trip, screen 17's row,
-and the last-of-its-kind pair. Every one red-proved by breaking the code and reading the failure.
+`MeasurementWithdrawalTests` — fourteen tests: the act, the six readers that stop counting a
+withdrawn reading, both refusals, the control/permission agreement, the payload round trip, screen
+17's row, the last-of-its-kind pair, the failure copy above, and the debug seam a withdrawal used to
+break for good on a device. Every one red-proved by breaking the code and reading the failure.
 `SchemaV21Tests` holds the migration.
