@@ -731,6 +731,74 @@ func TestThePublicReadIsStillLimited(t *testing.T) {
 	}
 }
 
+// TestAForgedClientKeyMustAtLeastBeAnAddress is N3 of the adversarial review, narrowed.
+//
+// The reviewer exhausted a bucket and then had 25 of 25 requests served by supplying its own
+// `Fly-Client-IP`, each allocating a bucket. **That is still true of a forged header that is a valid
+// address, and this test does not pretend otherwise** — the protection is Fly's proxy overwriting
+// the header, `clientKey` says so at length, and the real fix is a trust-boundary change tied to the
+// owner's open question about whether this endpoint faces the internet at all.
+//
+// What is closed is the *unbounded* form: the header could previously be any string, so the key
+// space an attacker could allocate buckets in was arbitrary rather than the address space. Paired
+// with `ratelimit.maxBuckets`, the memory this can be made to hold is now bounded.
+func TestAForgedClientKeyMustAtLeastBeAnAddress(t *testing.T) {
+	h := newHarness(t)
+	h.server.readLimiter = ratelimit.NewWithBudget(2, time.Hour)
+	h.handler = h.server.Handler()
+	tree := uuid.New()
+
+	spend := func(header string) {
+		t.Helper()
+		for i := 0; i < 2; i++ {
+			request := httptest.NewRequest(http.MethodGet, Prefix+"/public/trees/"+tree.String(), nil)
+			if header != "" {
+				request.Header.Set("Fly-Client-IP", header)
+			}
+			recorder := httptest.NewRecorder()
+			h.handler.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("request %d of the burst was refused with %d", i+1, recorder.Code)
+			}
+		}
+	}
+	refusedWith := func(header string) bool {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, Prefix+"/public/trees/"+tree.String(), nil)
+		if header != "" {
+			request.Header.Set("Fly-Client-IP", header)
+		}
+		recorder := httptest.NewRecorder()
+		h.handler.ServeHTTP(recorder, request)
+		return recorder.Code == http.StatusTooManyRequests
+	}
+
+	// The bucket the connection itself falls in, exhausted.
+	spend("")
+	if !refusedWith("") {
+		t.Fatal("the control: the connection's own bucket was not exhausted, so nothing below is " +
+			"asking anything")
+	}
+
+	// A garbage header does not buy a bucket: it is not an address, so the connection's own key
+	// answers and that key is spent.
+	for _, garbage := range []string{"not-an-address", "🌲", "1.2.3.4, 5.6.7.8", ""} {
+		if !refusedWith(garbage) {
+			t.Errorf("a Fly-Client-IP of %q bought a fresh bucket; a value that is not an address "+
+				"must not be used as a limiter key at all", garbage)
+		}
+	}
+
+	// And the honest case still works, which is the whole reason the header is read: a real address
+	// from the proxy is a different caller and gets its own budget. Without this the test above
+	// would also pass on a `clientKey` that ignored the header entirely and rate-limited the whole
+	// world as one phone — the denial of service `clientKey`'s header warns about.
+	if refusedWith("203.0.113.7") {
+		t.Error("a valid Fly-Client-IP did not get its own bucket; every caller behind the proxy " +
+			"would then share one budget")
+	}
+}
+
 // ── The guards that read a declaration rather than restating it ────────────────────────────────
 
 // TestEveryContributionKindIsClassified is the allow-list's mechanism.

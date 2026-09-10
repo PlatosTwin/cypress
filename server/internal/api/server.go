@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -307,8 +308,35 @@ func bearer(r *http.Request) string {
 // Fly puts the caller's address in `Fly-Client-IP`; `RemoteAddr` behind the proxy is the proxy.
 // Getting this wrong would put every request in one bucket and rate-limit the whole app as if it
 // were one phone, which is a denial of service written by hand.
+//
+// ── What actually protects this, stated because the public read makes it load-bearing ─────────
+//
+// **This header is supplied by the request, and the only thing that makes it trustworthy is that
+// Fly's proxy overwrites it before the app ever sees it.** The adversarial review of the public
+// read round measured the consequence: after exhausting a bucket, 25 of 25 requests carrying a
+// self-chosen `Fly-Client-IP` were served, each allocating its own bucket. That is not a live
+// exploit — nothing reaches this process except through the proxy — but until this round every
+// route behind it also required a credential, and the public tree read requires none. The
+// protection is now entirely "the proxy rewrote it", and that is worth writing down rather than
+// being true by luck.
+//
+// Two things narrow it here rather than one comment pretending to:
+//
+//   - **A value that is not an IP address is not used.** A forged header could otherwise be any
+//     string, so an attacker had an unbounded key space to allocate buckets in. `net.ParseIP`
+//     costs nothing and takes that from 2^128 arbitrary strings to addresses.
+//   - **The bucket map is bounded** — `ratelimit.maxBuckets`. Even with valid forged addresses the
+//     memory this can be made to hold is capped, which is what matters on a 256 MB machine.
+//
+// Neither makes the header trustworthy, and neither is claimed to. **The fix is to stop trusting
+// it unless the connection came from the proxy**, which is a trust-boundary change to a deployed
+// service that nothing here can verify against a real Fly request — the review could not confirm
+// the proxy's rewrite from a request it watched arrive either, only from documentation. It also
+// bears directly on the owner's open question about whether this endpoint should be reachable
+// from the open internet at all or only from the SSR machine, and answering it the other way
+// makes this moot. `docs/ROADMAP.md` carries it, tied to that question.
 func clientKey(r *http.Request) string {
-	if ip := r.Header.Get("Fly-Client-IP"); ip != "" {
+	if ip := r.Header.Get("Fly-Client-IP"); net.ParseIP(ip) != nil {
 		return ip
 	}
 	host, _, found := strings.Cut(r.RemoteAddr, ":")
