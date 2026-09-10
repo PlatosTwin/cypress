@@ -99,6 +99,38 @@ type photoWithdrawalPayload struct {
 	TreeID  uuid.UUID `json:"treeID"`
 }
 
+// measurementWithdrawalPayload is `MeasurementWithdrawal` as the client encodes it
+// (`Cypress/Data/Outbox/CommunityMutations.swift`, report F27: keys stay the Swift property names).
+//
+// `clientUUID`, `attribution` and `occurredAt` are on the wire and deliberately not read, for the
+// reason `photoWithdrawalPayload` gives about its own: the envelope is the authority on the item's
+// key, on who sent it and on when it happened, and a second copy of any of them is a second place
+// for one fact to be wrong.
+//
+// **`kind` is on the wire and deliberately not read either, for a different reason.** It is `dbh`
+// or `height`, and the payload's own header says what it travels for: screen 17's row reads
+// `Trunk · DBH withdrawn` rather than a bare `Reading withdrawn`. That is a fact about how the
+// phone draws its own queue. This service already knows which series the reading was in — it is in
+// the `measurement` payload being tombstoned — so reading the claim here would add nothing but the
+// chance of disagreeing with the record.
+type measurementWithdrawalPayload struct {
+	MeasurementID uuid.UUID `json:"measurementID"`
+	TreeID        uuid.UUID `json:"treeID"`
+}
+
+// measurementPayload is the one field of `TreeMeasurement` this service reads.
+//
+// The payload is stored whole and served back whole by `GET /me/journal`, so nothing here needs to
+// understand a reading. `id` is read only so a reading can be matched against a withdrawal that
+// arrived before it — `store.measurementWasWithdrawn` says why that order happens.
+//
+// Decoded leniently, and a missing or unreadable `id` is not a refusal: `measurement` has been
+// accepted since 001 with no requirement on the shape of its body, and a new "that item named no
+// reading" here would fail queues, non-retryably, over items this service accepts today.
+type measurementPayload struct {
+	ID uuid.UUID `json:"id"`
+}
+
 // syncKinds is every kind this service accepts on `POST /sync`.
 //
 // The first six are BUILD-PLAN §4's. The ten after them are spec §3.4's nine mutations — the
@@ -139,6 +171,24 @@ type photoWithdrawalPayload struct {
 //     `OutboxSendSink` still carries no photo method). That is a success that changes nothing, and
 //     it is the case `withdrawPhoto` handles first. Wiring it before the upload is deliberate: the
 //     harmless direction to be early in is the one where the deletion works and the upload does not.
+//
+//   - **`measurement_withdrawal` is the seventeenth kind and the third that materializes** (report
+//     F27, `004_measurement_withdrawal_kind.sql`). It is not one of spec §3.4's nine; it is the
+//     other half of the client's `AppSchema` v21, whose author found this map and 002's `CHECK`
+//     both stopping at sixteen and left the service side alone on purpose — `server/` has no CI and
+//     should not travel in an app change.
+//
+//     It materializes through `store.Mutation.WithdrawnMeasurementID`, in the same transaction as
+//     the contribution, and it answers in `withdrawPhoto`'s three ways. There is no equivalent of
+//     E264's reprieve here, and that is the difference worth carrying: a photograph withdrawal
+//     names bytes this service has never held, while a **reading** drains through this very handler
+//     as kind `measurement`. Answering `applied` and leaving the number in `GET /me/grove` is not a
+//     success that changes nothing — it is E280's sentence about a tally instead of a file.
+//
+//     Two consequences follow and both are in `internal/store/measurements.go`: the reading is
+//     tombstoned through `contributions.deleted_at`, the column every read here already filters on
+//     and nothing had ever written; and a reading that arrives *after* its own withdrawal is born
+//     tombstoned, because the client's queue makes that order reachable.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,
@@ -146,6 +196,7 @@ var syncKinds = map[string]bool{
 	"wrong_species_report": true, "never_existed_report": true,
 	"species_review_dismissal": true, "record_review_dismissal": true,
 	"photo_vote": true, "photo_withdrawal": true, "hazard_redirect": true,
+	"measurement_withdrawal": true,
 }
 
 // maxSyncBatch caps one request. A drain sends what is due, and a phone that has been in a drawer
@@ -380,6 +431,44 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		withdrawnPhotoID = &payload.PhotoID
 	}
 
+	// ── `measurement_withdrawal` — the third kind that materializes ────────────────────────────
+	//
+	// The gates are `photo_withdrawal`'s, one table over, and the reasons are the same ones: an id
+	// that names nothing would reach the store, match no row, and come back `applied` — a success
+	// reported for an item that identified nothing; and a payload disagreeing with its envelope
+	// about the tree would file the withdrawal against a tree the reading is not on.
+	//
+	// **Ownership is deliberately not checked here.** The envelope gate above has already refused an
+	// item that is not this identity's to *send*; whether the **reading** is this identity's is a
+	// question about a row, and it is asked where the row is — `store.withdrawMeasurement`. Checking
+	// it against anything the payload claims about itself would be trusting the claim.
+	var withdrawnMeasurementID *uuid.UUID
+	if item.Kind == "measurement_withdrawal" {
+		var payload measurementWithdrawalPayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.MeasurementID.IsNil() {
+			return failed(apierr.ValidationFailed, "That item named no reading.")
+		}
+		if payload.TreeID != item.TreeUUID {
+			return failed(apierr.ValidationFailed,
+				"That item disagrees with itself about which tree it belongs to.")
+		}
+		withdrawnMeasurementID = &payload.MeasurementID
+	}
+
+	// The reading's own id, for the arrival-order guard and nothing else. A body that cannot be read
+	// is passed through unchanged rather than refused — see `measurementPayload` for why this one
+	// kind's body is not validated.
+	var recordedMeasurementID *uuid.UUID
+	if item.Kind == "measurement" {
+		var payload measurementPayload
+		if err := json.Unmarshal(item.Payload, &payload); err == nil && !payload.ID.IsNil() {
+			recordedMeasurementID = &payload.ID
+		}
+	}
+
 	occurredAt := item.OccurredAt
 	if occurredAt.IsZero() {
 		occurredAt = s.Store.Now()
@@ -394,6 +483,9 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		IsFavorite:       isFavorite,
 		CommunityTree:    addition,
 		WithdrawnPhotoID: withdrawnPhotoID,
+
+		WithdrawnMeasurementID: withdrawnMeasurementID,
+		RecordedMeasurementID:  recordedMeasurementID,
 	}, owner)
 
 	switch {
@@ -404,6 +496,12 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		// removal that did not happen is what E280 is about. See `store.ErrNotOwned` for why this is
 		// reachable rather than theoretical (RULINGS R82's provenance arm has no column here).
 		return failed(apierr.Forbidden, "That photo belongs to a different contributor.")
+	case errors.Is(err, store.ErrMeasurementNotOwned):
+		// The reading is here and it is somebody else's — the same refusal one table over, and a
+		// separate sentence because the two are refusals about different things. Screen 17 prints
+		// this, and "That photo belongs to a different contributor" on an item about a number would
+		// be a message that cannot be acted on. See `store.ErrMeasurementNotOwned`.
+		return failed(apierr.Forbidden, "That reading belongs to a different contributor.")
 	case errors.Is(err, store.ErrTombstoned):
 		// The tombstone, answering exactly as the dedupe does. An item accepted after its account
 		// was deleted must not resurrect it, and it must not be an *error* either: a retryable code
