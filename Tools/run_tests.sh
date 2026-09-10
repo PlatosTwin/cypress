@@ -6,6 +6,10 @@
 # Usage: Tools/run_tests.sh <udid> <log-path> [extra xcodebuild args…]
 #   e.g. Tools/run_tests.sh EA0AD796-… /path/dd-me/unit.log -only-testing:CypressTests
 #
+# A Swift Testing FUNCTION needs its trailing () inside an -only-testing: filter —
+# -only-testing:CypressTests/SomeSuite/someTest matches nothing at all and the run reports
+# "Swift Testing ran 0 tests", not an error. Write …/someTest(). A suite takes no parentheses.
+#
 # Escape hatch: CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1 skips the collision and device-state
 # refusals below. It does NOT skip the log header, which records that it was used — a log
 # produced with the guards off says so, on its own face.

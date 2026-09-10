@@ -151,8 +151,10 @@ struct ShotDirectoryConventionTests {
 
     /// This project's signature failure is a green result from a check that ran on nothing, and
     /// both gates above are "no counterexample found" — the shape that passes hardest on an empty
-    /// sweep. So: the sweep has to have seen the tree, and every file that is supposed to carry the
-    /// convention has to be carrying it.
+    /// sweep. So, in order: the sweep has to have seen a plausible amount of the tree, it has to
+    /// have seen **by name** every file this test then reads directly, and each of those files has
+    /// to be carrying the convention. The middle step is the one that makes the third mean
+    /// anything — without it the reads below go around the sweep and certify only themselves.
     @Test("the guard read the files it claims to have checked")
     func theGuardCanSeeTheSource() throws {
         let swept = Self.filesThatCanStateTheConvention()
@@ -162,6 +164,22 @@ struct ShotDirectoryConventionTests {
             the sweep found \(swept.count) files across three targets and the harness, which is \
             below the app target's own floor of \(AppSourceLiterals.swiftFileCountFloor) — it is \
             reading the wrong root, so both gates above proved nothing
+            """
+        )
+
+        // A count cannot stand in for membership. The real sweep is ~507 files against a floor of
+        // 220, so losing an entire target to one character of path drift (`CypressUiTests`) still
+        // clears the floor by more than twice over, and the loop below reads each file through
+        // `source(_:)` — a direct path read that never consults `swept` at all. So the loop below
+        // proved nothing about the sweep, and the sweep is what gate 2 runs on. Assert membership.
+        let missing = Set(Self.writers + [Self.harness]).subtracting(swept)
+        #expect(
+            missing.isEmpty,
+            """
+            the sweep reached \(swept.count) files but not \
+            \(missing.sorted().joined(separator: ", ")) — gate 2 therefore proved nothing about \
+            \(missing.count) of the files that most need it, whatever the checks below say about \
+            the same paths read directly
             """
         )
 
