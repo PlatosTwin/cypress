@@ -107,9 +107,52 @@ func (s *Store) PublicTreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID)
 		return PublicTreeCommunity{}, err
 	}
 
-	// The latest live reading per series. **Per series, never blended** — D7 keeps estimated and
-	// measured apart, and `DISTINCT ON (payload ->> 'kind')` is what makes "the height" and "the
-	// diameter" two answers rather than one most-recent-number.
+	// The latest live reading **per measurement kind**: one answer for the height and one for the
+	// diameter, each the most recent by `occurred_at`, whatever method took it.
+	//
+	// ── What this does not do, stated because a comment here claimed the opposite ──────────────
+	//
+	// This comment used to read *"Per series, never blended — D7 keeps estimated and measured
+	// apart"*. **That was false about this query and it is corrected rather than deleted.**
+	// `DISTINCT ON (payload ->> 'kind')` groups on `MeasurementKind` — `dbh | height` — and
+	// `MeasurementSeries` is a different axis entirely, `measured | estimated`, reached through
+	// `MeasurementMethod.series`. Nothing here separates them, so a newer `estimate` **does**
+	// supersede an older `tape` in this response. The adversarial review of this round's PR proved
+	// it: a 90 cm estimate replaced a 64 cm taped reading on the public page.
+	//
+	// ── Why that is the behavior kept, rather than the defect fixed ────────────────────────────
+	//
+	// Because it is the behavior the app already has, and a second answer would be worse than this
+	// one. `TreeProfilePresentation.latestMeasurement` is the client's whole rule —
+	// `filter { kind, not deleted }.max { capturedAt }` — with no method or series term;
+	// `MeasureModel.previousMeasurement` is a verbatim second copy of it, and
+	// `GrowthHistoryPresentation.chart(for:)` re-merges both series to label its newest and oldest
+	// points. **No ruling, decision or erratum in this repository states a precedence between an
+	// estimate and a measurement.** D7 and PRODUCT's non-goal are rules about a *chart line* — the
+	// non-goal's rationale cell is five words, "Never share a chart line" — and E103 extends them to
+	// a spoken summary; none of the three is about which single number is current.
+	//
+	// So ranking methods here would be this service authoring a product rule the app does not have,
+	// and the page would then print `64 cm taped` where the phone prints `90 cm est.` for the same
+	// tree on the same day. That is the two-copies failure this file already refuses for unit
+	// conversion, arriving through a different door.
+	//
+	// **What makes it honest is that the method travels.** D7's actual obligation is that no number
+	// is published without how it was obtained, and `publicReadingFrom` refuses a reading whose
+	// method it does not recognize. A superseding estimate reaches the page carrying `est.`, which
+	// is what `MeasuredValue` enforces on the client at the type level: there is no view in the
+	// design system that renders a `Quantity`'s number alone, and there is no shape in this response
+	// that can carry one either.
+	//
+	// The open product question — *one tree, one current height: should the method count?* — is
+	// `docs/ROADMAP.md`'s, because it is four call sites' question and not this endpoint's.
+	// `TestANewerEstimateSupersedesAnOlderTapedReading` pins the answer this round shipped, so
+	// changing it is a decision somebody takes rather than a diff nobody notices.
+	//
+	// The tiebreak is `client_uuid DESC` rather than nothing, so two readings sharing an
+	// `occurred_at` resolve the same way on every request. The client's `max` returns whichever came
+	// first out of an `ORDER BY captured_at` with no secondary key, which is arbitrary; a public page
+	// that changed its answer between two refreshes would be its own defect.
 	//
 	// The `IN` is a second allow-list, over `MeasurementKind`'s two raw values, so a payload
 	// claiming some third kind cannot introduce a third row into a response whose shape is fixed.

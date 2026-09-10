@@ -160,12 +160,17 @@ func TestTheBodyCarriesTheseFiveKeysAndNoOthers(t *testing.T) {
 	}
 }
 
-// TestOnlyTheLatestReadingPerSeriesIsPublished pins the "a state, not a series" rule.
+// TestOnlyTheLatestReadingPerMeasurementKindIsPublished pins the "a state, not a series" rule.
 //
 // A list of dated readings is the visits panel wearing a number: it is where a person was, three
-// times over. One value per series is a fact about the tree. D7's other half is here too — the two
-// series are answered separately, so a fresh height cannot displace an older taped diameter.
-func TestOnlyTheLatestReadingPerSeriesIsPublished(t *testing.T) {
+// times over. One value per measurement kind is a fact about the tree. The two kinds are answered
+// separately, so a fresh height cannot displace an older diameter.
+//
+// **This test was named `…PerSeriesIsPublished` and did not test series.** `MeasurementSeries` is
+// `measured | estimated`; `MeasurementKind` is `dbh | height`, and the latter is what both this test
+// and the query group on. The name is corrected rather than the assertion, because the assertion was
+// the right one — and the axis the old name promised is tested for real, one test below.
+func TestOnlyTheLatestReadingPerMeasurementKindIsPublished(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
 	tree := uuid.New()
@@ -180,8 +185,8 @@ func TestOnlyTheLatestReadingPerSeriesIsPublished(t *testing.T) {
 		t.Fatalf("trunk_dbh = %+v, want the 2026 reading of 64", body.TrunkDBH)
 	}
 	if body.Height == nil || body.Height.Value != 18 {
-		t.Fatalf("height = %+v, want the estimate of 18 — the two series are answered separately "+
-			"(D7), so a later diameter must not displace a height", body.Height)
+		t.Fatalf("height = %+v, want the estimate of 18 — the two measurement kinds are answered "+
+			"separately, so a later diameter must not displace a height", body.Height)
 	}
 	// `"value":60` rather than `60`, for the reason `TestWithheldKindsProduceTheEmptyAnswer` gives:
 	// a bare two-digit string matches a random UUID often enough to be a coin flip.
@@ -189,6 +194,61 @@ func TestOnlyTheLatestReadingPerSeriesIsPublished(t *testing.T) {
 		strings.Contains(recorder.Body.String(), `"value":60`) {
 		t.Fatalf("a superseded reading is in the body; the public read publishes a state, not a "+
 			"dated series of somebody's visits:\n%s", recorder.Body.String())
+	}
+}
+
+// TestANewerEstimateSupersedesAnOlderTapedReading is the series axis, tested rather than asserted.
+//
+// **This is the case the adversarial review found, and the behavior is deliberate.** A 90 cm
+// `estimate` taken after a 64 cm `tape` is what the page shows. `DISTINCT ON (payload ->> 'kind')`
+// groups on `MeasurementKind` and not on `MeasurementSeries`, so nothing here ranks an instrument
+// above a guess — and nothing on the phone does either:
+// `TreeProfilePresentation.latestMeasurement` is `filter { kind }.max { capturedAt }` with no method
+// term, `MeasureModel.previousMeasurement` is a second copy of it, and no ruling, decision or
+// erratum in this repository states a precedence. D7 and PRODUCT's non-goal are rules about a chart
+// line, and this response draws no chart.
+//
+// A server-side precedence rule would therefore be this service inventing a product rule, and the
+// page would print `64 cm taped` where the phone prints `90 cm est.` for the same tree — the
+// two-copies failure, not a fix for it.
+//
+// **What is asserted is the honesty the behavior rests on:** the superseding value arrives carrying
+// its own method, so the reader is told it is an estimate. A published number without its method
+// would be this service laundering a guess into a measurement, and that is what D7 actually forbids.
+//
+// If the answer to *one tree, one current height: should the method count?* ever changes, it changes
+// here first, visibly, rather than in a `DISTINCT ON` nobody re-reads.
+func TestANewerEstimateSupersedesAnOlderTapedReading(t *testing.T) {
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+	tree := uuid.New()
+
+	h.applyItem(t, session.AccessToken,
+		measurementItemWithQuantity(tree, "dbh", 64, "cm", "tape", "2024-05-01T10:00:00Z"))
+	h.applyItem(t, session.AccessToken,
+		measurementItemWithQuantity(tree, "dbh", 90, "cm", "estimate", "2026-08-14T17:04:11Z"))
+
+	body := decodePublic(t, h.readPublicly(t, tree))
+	if body.TrunkDBH == nil {
+		t.Fatal("trunk_dbh is absent; neither reading was published and this test has nothing to say")
+	}
+	if body.TrunkDBH.Value != 90 {
+		t.Errorf("trunk_dbh = %+v, want the 2026 estimate of 90 — this endpoint takes the latest "+
+			"reading per measurement kind and does not rank methods, because the client's own "+
+			"`latestMeasurement` does not either. Ranking them here forks the answer between the "+
+			"page and the phone; if that is now the intended behavior, it is a ruling first",
+			body.TrunkDBH)
+	}
+	if body.TrunkDBH.Method != "estimate" {
+		t.Errorf("trunk_dbh.method = %q, want \"estimate\" — a value that supersedes a taped reading "+
+			"and does not say it is an estimate is the laundering D7 forbids", body.TrunkDBH.Method)
+	}
+	// And on the bytes, because the badge is what makes the above defensible rather than merely
+	// consistent: a projection that dropped `method` would leave both assertions above intact if
+	// they only read the decoded struct's other fields.
+	if !strings.Contains(h.readPublicly(t, tree).Body.String(), `"method":"estimate"`) {
+		t.Errorf("the body does not carry `\"method\":\"estimate\"`:\n%s",
+			h.readPublicly(t, tree).Body.String())
 	}
 }
 
