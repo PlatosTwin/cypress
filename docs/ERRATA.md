@@ -16495,6 +16495,67 @@ Two full `CypressUITests` suite runs, iPhone 16e `3A1F212D-8F3A-41F1-AF72-EC95E1
   (`testADeliberatePanSurvivesLeavingForJournalAndBack` 19.344s,
   `testAnUntouchedCameraStillCentersOnTheReaderAfterTheRoundTrip` 8.944s).
 
+
+#### Amendment — the probe's next two occurrences, recorded verbatim (spliced 2026-09-09)
+
+E250 instrumented `MapPanTabSwitchUITests.testADeliberatePanSurvivesLeavingForJournalAndBack` so
+that the next occurrence would carry its trace in the `XCTFail` text "instead of needing another
+investigation from zero". Two more occurrences have since happened, and this amendment records
+them — because the console log truncates the very line the probe exists to preserve. In both
+runs below, `xcodebuild`'s captured output ends the message at `lastEnded …` (literal ellipsis);
+the full text survives only in the run's `ui-log-4` artifact, which GitHub deletes on its
+retention schedule. Both artifacts were pulled and read on 2026-09-01; the lines below are
+byte-exact from those artifacts.
+
+**Fifth sighting** — run 33352801695 attempt 1, shard `ui (4)`, PR #132 (`feat/stats-picker`,
+head `43fc737`, merge ref `b7f4657`), 2026-08-31 03:23 UTC; attempt 2 green on identical code.
+The diff at that head touched neither the test nor the map. Artifact `ui-log-4` id 9744426503:
+
+```
+CypressUITests/MapPanTabSwitchUITests.swift:163: … failed - panning the map did not move the
+camera off the reader (the control reads "Centered on you"), so there is no deliberate camera to
+preserve — probe: panBegan=3 panEnded=3 panCancelled=0 panFailed=0 lastEndedTranslation=-110,120
+settles=3 lastSettleCenter=37.7599,-122.41480000000001 lastSettleSpan=0.001633684502579058
+```
+
+**Sixth sighting** — run 33469599808 attempt 1, shard `ui (4)`, the post-build-68 main run
+(`3f02a5d`), 2026-09-01 ~04:39 UTC; attempt 2 green on identical code. Artifact `ui-log-4`
+id 9786404346:
+
+```
+CypressUITests/MapPanTabSwitchUITests.swift:163: … failed - panning the map did not move the
+camera off the reader (the control reads "Centered on you"), so there is no deliberate camera to
+preserve — probe: panBegan=3 panEnded=3 panCancelled=0 panFailed=0 lastEndedTranslation=-111,120
+settles=3 lastSettleCenter=37.7599,-122.41480000000001 lastSettleSpan=0.001633684502579058
+```
+
+#### What the numbers say, and what they do not
+
+Read against E250's own reference points, without adjudicating the mechanism (that is the
+hardening round's job, roadmap chip item 5):
+
+- The two readings are near-identical to each other — the only difference across both full lines
+  is one point of x-translation (−110 vs −111) — and close to the first instrumented occurrence
+  (run 31783549334, 2026-08-14: `panBegan=3 panEnded=3 … lastEndedTranslation=-111,120 settles=3
+  lastSettleCenter=37.7599,-122.4148 lastSettleSpan=0.00208`). Three occurrences, one shape.
+- `panBegan=3 panEnded=3` with `panFailed=0`: all three synthesized drags were read as pans by
+  the reader's own recognizer, with a healthy ~165 pt translation measured by UIKit at `.ended`.
+  This is not E250's "never landed" arm as originally imagined — the touch stream arrives.
+- `settles=3`, against the red-proof's no-pan baseline of `settles=2` (the launch fly-to):
+  exactly one settle beyond baseline, for three delivered pans, with the settle center back on
+  the reader. It is also not the residual-ambiguity third shape E250 pre-registered
+  (`panBegan > 0` with settles *unchanged*) — one settle did happen.
+- The final spans differ between the no-pan baseline (`0.00211`) and these occurrences
+  (`0.00163`), so the camera did not simply sit still; something changed the region once and
+  left it centered on the reader. Note the first instrumented occurrence's span (`0.00208`) sat
+  essentially at the baseline while these two sit together at `0.00163` — the one axis on which
+  the three occurrences are not identical.
+
+The constancy is the finding: whatever produces this failure produces the same trace to the
+point, twice, eighteen hours apart, on different heads whose diffs touched neither the test nor
+the map. The hardening round should start from these three lines rather than from the sentence
+in the failure text.
+
 ### E251 — The settle-under-load family gets two more members: an undersized budget (#244) and a cover with no departing predecessor to watch (#245)
 
 #### #244 — the premise, checked against CI, not assumed from the ticket
@@ -22499,3 +22560,1265 @@ One of three, and it is the owner's to pick:
    contributed to as well as every tree you have hearted. This changes screen 08 for existing
    installs — trees appear in a list that did not have them — and it is a change to a screen the
    copy audit has already been over.
+
+### E288 — The publisher and the app read coverage from different keys, and only an unwritten key kept them agreeing
+
+`SeedCities.coverage` (Swift) reads `seed_meta` for the standardised `coverage_<id_space>` first
+and falls back to a hand-mirrored legacy per-city name (`sj_ship_extent`). `Tools/publish_cities.py`
+read the legacy name and **only** the legacy name — its `COVERAGE_KEYS` shim — with no path to the
+standardised key at all.
+
+The two agreed about San Jose for exactly one reason: nothing had ever written
+`coverage_us-ca-sj`. The day anything did, the app's own bundled row and the published manifest
+would have stated different coverage for the same city — one saying `downtown`, the other whatever
+the new key held — with no error anywhere and nothing comparing them. R37's trailing clause had
+already asked for the fix ("when a third city lands, `build_seed.py` should write
+`coverage_<id_space>` keys and the publisher's `COVERAGE_KEYS` shim retires"), and the divergence
+is what made the ask urgent rather than tidy: the shim was not merely redundant, it was the half of
+a disagreement that had not happened yet.
+
+Closed three ways in the s17 round: `Tools/build_seed.py` writes `coverage_<id_space>` for every
+contributing space; `publish_cities.coverage_for` reads the two keys **in the same order the app
+does**; and `Tools/test_publish_cities.py` pins that order with a fixture where the two keys carry
+*different* values, which is what makes the preference observable rather than assumed.
+
+**Coverage stays keyed on the id space while pack identity moved to the region** — a deliberate
+divergence taken in the same round, with the one state a per-city key cannot describe (several
+regions in one space shipping less than all of the city) refused by the publisher rather than
+guessed. The reasoning is in `coverage_for`'s own docstring and in **R95**.
+
+Red-proved: reversing the two keys' order in `coverage_for` fails
+`Tools/test_publish_cities.py` with "coverage_for did not prefer the standardised
+coverage_<id_space> key over the legacy one".
+
+---
+
+### E289 — `site_lineage`'s split guard asked about id spaces, and every NYC borough is one id space
+
+`Tools/publish_cities.build_city_file` refused to sever a `site_lineage` link that crossed an **id
+space** before deleting the other city out. The comment beside it said none exist today "(a site's
+replacement stands in the same city)", which was true and is the wrong granularity for what the cut
+became.
+
+RULING D1 makes the published unit the borough. All five New York boroughs are in one id space
+(`us-ny-nyc`), so a Queens tree whose predecessor stood in Brooklyn **passed** the id-space check
+and the per-region delete then severed the link.
+
+**The severity, corrected.** An earlier draft of this entry said the severing was *silent*. It is
+not, and the correction is owed to adversarial review (finding F3), which measured it rather than
+reasoning about it. A severed link leaves `site_lineage` pointing at a deleted row, and
+`build_city_file`'s own `PRAGMA foreign_key_check` catches exactly that and refuses the publish:
+
+    FAIL: us-ny-nyc-queens: foreign_key_check reported 1 violations,
+          first: ('trees', 4, 'trees', 0)
+
+exit 1, nothing published. **So no corrupt pack could ever have shipped, and no provenance was
+ever at risk.** What the wrong granularity cost is a *diagnosis*: the operator gets a rowid pair to
+resolve by hand instead of a sentence naming the cause. Post-fix, the same seed fails before any
+delete runs, with `1 site_lineage links cross regions; splitting would sever provenance -- stop and
+report`.
+
+Recorded as a real defect at its real severity: a guard checking the wrong granularity, caught
+downstream by a coarser net. The repair is worth making — a check that fires before the delete, and
+that would still be needed if the FK ever stopped covering this — but it is not the data-loss
+finding the first draft described.
+
+Red-proved: `Tools/test_publish_cities.py` builds a fixture with a Queens tree whose `site_lineage`
+points into the Bronx and asserts the publisher exits non-zero **with the "cross regions" message**,
+which is the part that distinguishes the fix from the pre-existing net.
+
+---
+
+### E290 — `Fixtures/seed/schema.sql` had drifted from the generator that writes it
+
+The tracked schema contract is written by `Tools/build_seed.py` from its own `SCHEMA_SQL`. The
+copy on disk did not match: `species_map.is_non_taxon`'s comment on disk still read *"A tree stands
+at the site, so it is NOT a placeholder and its status is `alive`"*, a claim `SCHEMA_SQL` had
+already corrected to say the opposite — that the column is a claim about the **string** and says
+nothing about any row's status, San Jose's `Stump` being the counterexample.
+
+Comment-only, so no DDL diverged and nothing shipped wrong. It is recorded because of what the
+drift means rather than what it cost: the contract file is tracked precisely so a reader can trust
+it without running the generator, and a file that can silently fall behind its generator does not
+support that. It is also, by coincidence, drift in the one comment about status-versus-string
+independence that this round's standing-dead work turns on.
+
+Corrected as a side effect of regenerating the file for `dim_region`. A reviewer seeing that hunk
+in the diff should know it was not hand-edited.
+
+---
+
+### E291 — `STATUS_FOR_KIND` made a whole column of the seed schema unreachable
+
+`trees.status` has permitted `alive | declining | dead_reported | removed | vacant_site` since
+before the ingest contract existed, and RULINGS R19 defines `dead_reported` as a tree still
+standing over a pavement. `build_seed.STATUS_FOR_KIND` was a dict keyed on `kind` **alone**, with
+three entries mapping to two values — so **no adapter, from any source, could cause a row to ship
+as anything but `alive` or `vacant_site`.** Three of the five permitted statuses were
+unreachable by construction.
+
+`docs/investigations/nyc-street-trees.md` §6 originally recorded this as a missing *seed* value and
+was wrong about it; `feat/nyc-ingest` found the real location and left a correction block saying so
+(*"the CONTRACT lacks the slot, but the SEED SCHEMA does not"*). That correction is what let RULING
+D17 rest the s17 generation's identity on the region column instead of on this, since closing it
+needs no migration.
+
+The cost was measurable and being paid: NYC Parks publishes `TPCondition`, 10,635 of its rows are
+a `Full` structure in `Dead` condition, and the ingest had nowhere to put that but a free-text
+`permit_notes` string.
+
+Closed by `InventoryRecord.condition` / `condition_text` plus `build_seed.status_for_record`, which
+reads both. `condition=None` — "the source made no claim" — maps exactly where the old dict mapped,
+so San Francisco and San Jose, whose sources publish no condition field, move **not one row**.
+That is asserted rather than assumed: `Tools/test_build_seed_status.py` pins the None case against
+a literal copy of the pre-s17 dict, and the rebuild receipt in the PR body shows the counts
+unchanged.
+
+---
+
+### E292 — Per-inventory completeness was recorded under two ad-hoc names and did not extend
+
+`seed_meta.rows_from_<inventory>` has always said what **shipped**. What each source says it
+**publishes** was recorded twice, differently: `trees_source_feature_count`, which is global and so
+could only ever describe one of the file's inventories, and `sj_source_feature_count`, prefixed by
+hand for the second. So "did we ship all of it" was answerable for one inventory at a time, never
+uniformly, and `sf_datasf` had no such number at all.
+
+With New York adding two more inventories in a third id space, the ad-hoc shape does not extend —
+each new inventory would need its own invented key name, and the verifier would need to know all of
+them.
+
+Standardised as `inventory_<id>_source_feature_count`, the same `inventory_<id>_*` shape as the
+name/url/date triple beside it and keyed by the same identifier `trees.inventory_source` stores.
+`Tools/verify_seed.py` gains check 1d, which **reports** the shortfall rather than failing it — a
+file shipping a downtown window out of 344,879 records is a decision, and the defect is a *silent*
+gap, not a stated one. Both legacy keys are kept: `Cypress/Data/Tests/DataGates.swift` reads
+`trees_source_feature_count` today.
+
+An absent key means the source publishes no count, which is deliberately distinguished from a count
+of zero — reporting the first as the second would show a reassuring 100%-complete inventory with
+nothing behind it.
+
+---
+
+### E293 — `build_seed.py` wrote inventory identity as literals beside a comment asserting they agree
+
+`seed_meta.trees_source`, `trees_source_name` and `trees_source_url` were written as literal
+strings (`"sf_city"`, the name spelled out a second time, a module-level URL constant) while
+`INVENTORIES["sf_city"]` in `Tools/inventory_contract.py` already held all three. The comment
+directly above them stated that this id, `trees.inventory_source`'s stored value and the
+`inventory_<id>_*` key prefix "agreeing is what lets `InventorySource(id:seedMeta:)` resolve a row's
+provenance without knowing any city's name in advance" — an invariant nothing enforced, on a value
+the app's provenance resolution depends on. Renaming an inventory in the registry would have left
+this key holding the old string, silently, in every published file. The same pattern held for
+`attributes_source`, `sites_source`, and the `inventory_sf_*_name` / `_url` pairs.
+
+All now read from the registry, so the comment's claim is true by construction. Verified against
+the shipped values before and after: the six affected keys are byte-identical in a rebuild, which
+is what makes this a de-duplication rather than a change.
+
+---
+
+### E294 — "F9 containment" does not exist
+
+The s17 brief named "Stage 0's F9 containment" as a known defect to fix in this round. **There is
+no finding labelled F9 anywhere in the repository** — not in the working tree and not in any of the
+1,318 commits across all branches. The complete set of F-labels ever used in `docs/ERRATA.md` and
+`docs/RULINGS.md` is F1–F5; they are per-PR review-finding labels, not a global register, and the
+numbering has never reached 9.
+
+The nearest real thing is Stage 0's **review finding 9**, which is a *ruling* rather than a defect
+(`docs/ERRATA.md` E275 §5 records it among "judgment calls rather than defects"): the offline
+Cities screen shows the same cities as the online one. It is implemented
+(`CityDownloadsModel.swift`, cited in a comment there) and pinned by
+`BundledCityTests.aCityCanNeverOccupyTwoRows`.
+
+Recorded so the next round does not re-derive the same negative. Nothing was changed for it.
+
+---
+
+### E295 — `deadNotice` told a reader a community reviewer confirmed a city's own record
+
+**Found by adversarial review of the s17 PR (finding F7), recorded there as debt, and REPAIRED as a
+fast-follow (build 50) once NYC s17 published and the 10,635 rows became real.** The entry below is
+the debt as it was written; the resolution is at the foot of it.
+
+`TreeProfilePresentation.deadNotice` fires on the status alone:
+
+```swift
+guard tree.status == .deadReported else { return nil }
+return Self.deadNoticeText   // "Reported dead, and a community reviewer confirmed it. …"
+```
+
+It asks *what* the status is and never *who said so*. Every `dead_reported` row that has ever
+existed came from the community path, so the sentence has been true for every row ever shipped.
+
+**s17 makes it false.** `build_seed.status_for_record` now maps a source-stated
+`CONDITION_DEAD` onto `dead_reported`, and NYC Parks publishes `TPCondition = Dead` on 10,635
+rows. The moment those ship, a reader opening one of them is told that *a community reviewer
+confirmed it* about a record no community member has ever seen. Nobody reported it and no reviewer
+agreed; the City wrote it down.
+
+That is precisely the test RULING D17 applies to *Cared for by Queens* — a sentence the app would
+be stating as fact on the strength of a column that does not mean what the sentence says — and it
+fails it the same way.
+
+**Why this round records it instead of fixing it.**
+
+- **Nothing is wrong on `main` today, and nothing s17 publishes changes that.** No shipped source
+  produces `dead_reported`: San Francisco and San Jose publish no condition field, so every row
+  stays `condition = None` and the copy stays true. Verified by rebuild — 198,625 uuids joined
+  against the shipped seed, **0 status changes**. The defect is armed by s17 and fired by the NYC
+  ingest, which is a later round.
+- **The repair needs copy, and copy is not this author's to invent.** `deadNoticeText`'s own
+  doc-comment says **NOT SPECIFIED — SCREENS.md draws no confirmed-dead profile**. A
+  provenance-aware variant needs a second sentence for the city-record case, and DECISIONS
+  constraint 21 makes an unmocked state a stop-and-ask. Writing it here would be inventing civic
+  copy to close a ticket.
+
+**What the repair looks like, so the next round does not re-derive it.** The row already knows its
+own provenance — `trees.inventory_source` and `verification_state` (`city_record` vs the community
+values) are both present and both already read by this layer. The notice needs to branch on that
+rather than on the status alone, and the city-record branch needs its own approved sentence. The
+existing sentence stays correct for the community path and should not be touched.
+
+**Owed before the first NYC publish**, alongside RULING D12's notify-the-City obligation and D20's
+species gate — it is in the same family: a claim the app makes on a reader's behalf that the data
+does not support.
+
+---
+
+#### RESOLVED — build 50, branch `fix/f7-dead-caption`
+
+The owner ruled the repair a fast-follow once the five borough packs went live carrying the 10,635
+`dead_reported` rows. Three things in the debt entry above are worth correcting against the code, and
+they are corrected here rather than silently: the repair is not the one the entry predicted.
+
+**1. `verification_state` is the wrong discriminator, and so is `source`.** The entry named
+`trees.inventory_source` and `verification_state` (`city_record` vs the community values) as the seam.
+Neither answers the question. `dead_reported` reaches a **`city_import`** row by *both* paths — the
+inventory can publish the status, and a reviewer on this device can confirm a reported death on a row
+that shipped `alive`, which is the arm E170 built and `ModerationTests` has exercised since. Both rows
+are `source == .cityImport`, and both are `verification_state == .cityRecord` — every one of the
+198,625 rows in the shipped seed carries that pair, measured off the file, and confirming a death
+writes `tree_status_overrides` and touches neither column. A repair keyed
+on either would have produced the *mirror* falsehood — the city credited with a death the community
+found — on a surface that had been correct since E170.
+
+The actual seam is one line up from all of that. `LocalAPI.treeProfile` reads the record's status and
+then overwrites it from `tree_status_overrides`, and after that overwrite the two origins are
+indistinguishable: one `TreeStatus` field, and the row it came from gone. So the answer is carried
+rather than re-derived — `TreeStatusProvenance` (`.record` / `.communityReview`) on `TreeProfile`, set
+beside the overwrite it describes, defaulting to `.record` everywhere because that arm credits nobody
+and a payload that does not know must not read as evidence that a reviewer confirmed something.
+
+**2. The city sentence names the inventory, not the city, and reads it off the row.** It goes through
+`InventorySource.name` — the value R28 already made the subtitle and the provenance line share — so
+`NYC Parks Forestry Tree Points` appears in no source file, and a second publisher shipping a `Dead`
+condition needs no code here. A seed whose receipt cannot name an inventory falls back to
+`CityRecordCopy.unnamedCityInventory`, the same fallback and the same argument as the subtitle's.
+
+**3. There are three arms, not two.** The third is for a record whose status came neither from a
+review here nor from an inventory: it states the death and attributes it to nobody. Unreachable in
+shipping code today — `addTree` writes `alive`, and only an override moves a status afterwards — and
+written anyway, because an arm that would have to *invent* an attributor is exactly what F7 was.
+
+**The copy, before and after.** All of it is still `NOT SPECIFIED`; SCREENS.md draws no dead profile
+in any of the three states, and the wording went to the owner with the PR.
+
+| | lead-in | sentence |
+|---|---|---|
+| **before**, every dead row | `Confirmed dead:` | Reported dead, and a community reviewer confirmed it. It is still standing, so anything you see here is still worth reporting. |
+| **after** · a reviewer here confirmed it | `Confirmed dead:` | *unchanged — it was never wrong about the rows it was written for* |
+| **after** · the row's own inventory says so | `Listed dead:` | Recorded dead in the {inventory}. It is still standing, so anything you see here is still worth reporting. |
+| **after** · nobody can be credited | `Reported dead:` | Reported dead. It is still standing, so anything you see here is still worth reporting. |
+
+*"Recorded", not "confirmed", in the city arm.* The city wrote it down in a file, on a day. Nobody
+went and looked on the reader's behalf, and DECISIONS §3.3 still holds in both directions: the
+sentence says a file already records the death and says nothing about anybody acting on it.
+
+**The lead-in travels with the sentence.** `deadNotice` returns a `DeadNotice` value carrying both,
+and the view draws both off it. `Confirmed dead:` over a sentence about a city's file is the same
+falsehood F7 was, reassembled one layer up, and the pair is now the thing that cannot come apart.
+
+Guarded by `CypressTests/DeadNoticeProvenanceTests` (nine tests, provenance selection rather than
+phrasing, since the phrasing may still move) and by `ModerationTests.confirmedDeadIsNotAMemorial`,
+which is the end-to-end half: a real `confirmReview` — the only path in shipping code that writes
+`tree_status_overrides` — has to arrive at the presentation as `.communityReview`. Three red-proofs,
+each watched failing for its own reason and restored by file copy: the pre-fix single sentence, the
+plumbing dropped in `LocalAPI`, and the city arm hardcoding `NYC Parks Forestry Tree Points`.
+
+`StatusBadge.Kind.deadReported`'s doc-comment went false on the same day and is corrected with it: it
+read *"a tree a lead has confirmed dead"*. The badge word is `Dead` either way, so the badge needed no
+arm — only the sentence under it did.
+
+**A second, older defect surfaced by the same sentence: `InventorySource.name` could be empty.**
+Adversarial review of the repair (finding F2) found that `init?(seedMeta:)` guarded the *id* for
+emptiness and not the *name*, where its per-inventory sibling `init?(id:seedMeta:)` has always guarded
+both. A receipt carrying `trees_source_name` present-and-empty therefore produced a value that was not
+nil and could not be said, so every `?? unnamedCityInventory` fallback in the app was bypassed by a
+value that needed it most.
+
+This predates the repair by a long way — it is the shape of the four-surfaces-say-SF defect (E181),
+one level down — but the repair is what made it a broken *sentence* rather than a missing subtitle
+element: `Recorded dead in the .` The city-record provenance line had the same hole in the same
+receipt, rendering `From the , 26 July 2026.`
+
+**One guard in the initializer closes every surface**, and the sibling the reviewer named
+(`CityRecordCopy.recordSource`) is covered by it rather than needing its own fix: both shipping
+construction paths run through this initializer — `init?(id:seedMeta:)` falls through to it whenever
+the per-inventory name is absent or empty, and `CypressStore` builds inventories through no other
+route. The memberwise `init(id:name:url:snapshotDate:)` is deliberately left unguarded and has no
+shipping caller; it is not a decoding boundary, and a caller passing `""` there is stating one.
+
+Nil rather than a fallback to `id`, because `InventorySource.id` is documented *"Not shown to
+anyone"*, and every caller already has a correct path for an inventory it cannot name — the same
+discipline `snapshotDate` keeps for an absent date. An *absent* name key still yields `id` and is
+unaffected, so this can only fire on a receipt that wrote the key empty.
+
+### E296 — The case-normalisation pass went one column out of step when `region_id` landed
+
+**Status: settled. The first s17 artifact (`4f6ebaaa`) shipped with the defect; the corrective
+rebuild (`ac7b1ccc`) replaced it on the bucket on 2026-08-22 and CI is green against it. Both files
+remain reachable at their own immutable `seed/<build_id>/` paths, so the comparison below can still
+be re-run by anyone who wants to check it.**
+
+`Tools/build_seed.py`'s #95 pass folds case-variant spellings in the five columns the app compares
+against a string literal (`NORMALISED_SEED_COLUMNS`). It rewrites those values in place inside the
+already-built `tree_rows`, so it needs each column's index in a row.
+
+It computed those indices from **its own hand-written copy of the row layout** rather than from
+`TREE_COLUMNS`. When the s17 pass inserted `region_id` at index 6, that copy was not updated, so
+every index from 6 onward was one too small:
+
+| column           | pass used | actual | what it actually read |
+|------------------|----------:|-------:|-----------------------|
+| `site_type`      |         9 |     10 | `address`             |
+| `legal_status`   |        19 |     20 | `verification_state`  |
+| `caretaker`      |        20 |     21 | `legal_status`        |
+| `care_assistant` |        21 |     22 | `caretaker`           |
+| `plant_type`     |        22 |     23 | `care_assistant`      |
+
+The fold therefore looked its replacement map up against the wrong column, matched almost nothing,
+and rewrote nothing. It did not crash and it did not warn: it wrote
+`seed_meta.case_normalised_values = 0`, which reads exactly like "there was nothing to fold".
+
+**The bitter part is that the same commit's own comment says this cannot happen.** `TREE_COLUMNS`
+was introduced precisely to stop a hand-written index drifting — "there is ONE list and the index
+is DERIVED from it, so they cannot disagree… `emit` cannot put the placeholder somewhere the
+INSERT does not expect it, because there is no second place to put it." There was a second place.
+It was thirty lines further down, in a pass whose job is also to index into a row, and bringing
+`flush` onto the derived list did not bring it along.
+
+## What was in the defective file
+
+Seed `4f6ebaaa` (2026-08-22) — which `Tools/fetch_seed.sh` resolved, and CI's `unit` job built
+against, for about nine hours — held three unfolded case-variant pairs:
+
+- `plant_type`: `Tree` ×145,797 and `tree` ×1, both in `sf`
+- `plant_type`: `Park Strip` ×15,894 and `Park strip` ×1, both in `us-ca-sj`
+- `site_type`: `Park Strip` ×15,894 and `Park strip` ×1, both in `us-ca-sj`
+
+**None of them is New York's.** They are San Francisco's and San Jose's, which is worth saying
+because the same publish added a third city and it is the obvious thing to blame. The s17 publish
+re-read both California layers on 2026-08-22, and those refreshed extracts reintroduced exactly the
+kind of variant the #95 pass exists to remove.
+
+The product consequence is #95's original one: `WHERE plant_type = 'Tree'` drops the one row spelled
+`tree`, and a reader has to remember to case-fold. One row per pair, so it is small — but it is the
+defect the gate was written for, and the gate caught it.
+
+## What was done, and what was not
+
+`Tools/build_seed.py` now derives `column_index` from `TREE_COLUMNS`.
+
+**The gate was not touched.** `DataGates.seedContract`'s #95 assertion was correct about the
+published file and stayed red until the corrected artifact replaced it. Silencing it — an allowlist,
+a widened predicate, a skip keyed on the id space — would have removed the only thing that noticed,
+and the finding here is that a fold reporting `0` looked identical to a fold with nothing to do.
+
+## The corrective rebuild, and what it proves
+
+Rebuilt from the **same cached extracts** the s17 publish used, so the index fix is the only
+difference. New build id **`ac7b1ccc`**, sha256 `ac7b1cccd7de413c…`, 706,535,424 bytes.
+
+The builder's own log is the clearest statement of both the defect and the repair:
+
+    s17 (4f6ebaaa):  #95 plant_type: folded 2 case-variant spelling(s) over 0 rows
+                     #95 site_type:  folded 1 case-variant spelling(s) over 0 rows
+    corrected:       #95 plant_type: folded 2 case-variant spelling(s) over 2 rows
+                     #95 site_type:  folded 1 case-variant spelling(s) over 1 rows
+
+It had always *found* the variants — `case_counts` was right all along — and rewrote none of them.
+
+**No row count moves.** All 30 counts compared (per id space, per status, every city column, the
+R*Tree, `species_assertions`, the D18 invariants) are identical between the two files, and
+`case_normalised_values` 0 → 3 is the *only* differing `seed_meta` key. The only counts that shift
+are `COUNT(DISTINCT plant_type)` 18 → 16 and `COUNT(DISTINCT site_type)` 44 → 43 — the folded
+variants merging into their canonical spellings, which is the repair itself. Nothing in the app or
+the suite reads either.
+
+`Tools/verify_seed.py` returns byte-identical results on the corrected artifact and the published
+one (fused 42/44; `sf` pack 44/44; the six non-SF packs 41/44). **Those shortfalls are pre-existing
+and were confirmed against the published file as a control** — three checks in that script still
+assume San Francisco is the only id space (`zero trees outside the SF bbox`, `every tree uuid ==
+uuidv5(NS_TREE, TreeID)`, and the R*Tree superset probe that uses the SF window). That is the same
+family as the two gates this round extended in `DataGates`, and it is the third instance: a
+San-Francisco-shaped assumption left behind by a multi-city seed. Worth its own round.
+
+## What stops it recurring
+
+Two mechanisms, deliberately different, because the first one alone already failed once: the index
+is derived from `TREE_COLUMNS`, so there is no second copy to drift — and `TREE_COLUMNS` was
+introduced by the very pass that broke this, with a comment saying the index "cannot disagree", so
+derivation is necessary and not sufficient. The fold is therefore also extracted as
+`build_seed.normalise_case` and pinned by `Tools/test_build_seed_status.py`, which drives it over a
+specimen whose `address` column holds the exact string a one-column slip would rewrite. Re-inserting
+the old hand-written list turns that harness red on five checks, including the log line reading
+`over 0 rows` — the defect's own signature.
+
+One thing worth knowing about that guard: **no workflow runs `Tools/test_*.py`.** The only Python CI
+invokes are `whats_new.py` and `appstore_connect.py`, so this is a local convention guard rather
+than a gate. Wiring the twelve sibling harnesses into CI is its own round.
+
+## What still needs deciding
+
+Whether the seed contract should also assert that `seed_meta.case_normalised_values` is *plausible*
+rather than merely present — a fold reporting zero over a corpus of a million rows drawn from three
+publishers is itself suspicious, and that assertion would have caught this at build time rather than
+one publish later. The harness above catches the index drift specifically; it would not catch a
+different mechanism producing the same silent zero.
+
+### E297 — the seed's species corpus is 731, not 738
+
+`docs/investigations/nyc-street-trees.md` §4 states "the seed's existing 738-species corpus" and
+repeats 738 in the next paragraph. Every measurement of `Fixtures/seed/cypress-seed.sqlite` on
+2026-08-14 says **731**:
+
+    SELECT count(*) FROM species                          -> 731
+    SELECT count(*) FROM species WHERE deleted_at IS NULL -> 731
+    SELECT count(DISTINCT scientific_name) FROM species   -> 731
+    SELECT value FROM seed_meta WHERE key='species_count' -> 731
+
+`Tools/validate_species.py` also prints `731 species rows` on its first line, so the figure was
+available from three independent places at the time the survey was written.
+
+The number matters because the survey used it as the denominator for its "42% new-species rate".
+Against 731 the rate is unchanged to the significant figure, so no downstream conclusion moves —
+but the corpus size is quoted in briefs, and a brief that says 738 sends the next agent looking for
+seven species that do not exist.
+
+---
+
+### E298 — the merged undated share for a whole-city NYC ingest is 85.24%, not ≈86.6%
+
+The same survey's boxed note in §3 predicts that folding NYC into the seed moves the seed-wide
+undated share "from **80.78%** to **≈86.6%**". 80.78% is right. 86.6% is not, and it is not a drift
+artifact: **the survey's own inputs give 85.24%**.
+
+    (160,440 + 899,094 - 123,798) / (198,625 + 899,094) = 85.24%
+
+Measured against the 2026-08-14 extract and the shipped seed, the answer is the same to two
+decimals:
+
+    (160,441 + 774,920) / (198,625 + 898,643) = 85.24%
+
+Per-borough, for the round that re-measures `MapFilter.undatedShareOfSeed`:
+
+| NYC added | merged undated share |
+|---|---:|
+| nothing (today) | 80.78% |
+| Manhattan | 83.28% |
+| Bronx | 82.10% |
+| Brooklyn | 82.92% |
+| Queens | 85.02% |
+| Staten Island | 85.28% |
+| whole city | 85.24% |
+
+Also: the shipped seed has **160,441** undated rows, not 160,440.
+
+Nothing in `Cypress/Features/Map/MapFilter.swift` was edited by this round.
+
+---
+
+### E299 — `trees.status` already has a value for a standing dead tree; the gap is in the contract, not the schema
+
+The NYC survey §6 lists "whether `trees.status` needs a value between 'alive' and 'vacant_site' for
+'dead, not yet removed'" as an open schema question, and a migration round has been scheduled on
+that basis.
+
+**`dead_reported` is already that value.** `Cypress/DesignSystem/Components/StatusBadge.swift`
+documents it as a tree that "is still standing over a pavement" and explicitly "**not** a second way
+of saying `removed`". It has a `TreeStatus` case, a badge, a pin, an entry in the schema's `CHECK`
+constraint, and RULINGS **R19** settling how it renders. It reached the app through task #58 / E170.
+
+What actually prevents an NYC standing dead tree from shipping as `dead_reported` is two things,
+both in Python and neither a database change:
+
+  * `InventoryRecord` (`Tools/inventory_contract.py`) has no field in which a source can report a
+    condition, so no adapter can express one;
+  * `build_seed.STATUS_FOR_KIND` is a dict keyed on `kind` **alone** —
+    `status = STATUS_FOR_KIND[record.kind]` — so every `KIND_TREE` becomes `alive`.
+
+Consequence for the scheduled round: it is a **contract** change, not a migration. It moves San
+Francisco's and San Jose's rows as well as NYC's, which is why the NYC round did not make it.
+
+Meanwhile 10,635 NYC standing dead trees would ship as `alive`. Nothing is lost — `TPStructure` and
+`TPCondition` are carried verbatim into `city_record` and the count is in
+`seed_meta.nyc_standing_dead_mapped_to_alive` — but the claim is live and named.
+
+---
+
+### E300 — `Forestry Planting Spaces` publishes 6,864 whole-row duplicates
+
+`count(*)` on Socrata `82zj-84is` is 1,091,709; `count(distinct globalid)` is 1,084,845. The 6,864
+extra rows are duplicated in **every** column, `OBJECTID` included, so they are one planting space
+published twice rather than two spaces sharing an id. Verified across the full extract on
+2026-08-14 by comparing every duplicate pair field by field: **zero pairs disagree**.
+
+`GlobalID` is the join key from `Forestry Tree Points`, so this is load-bearing.
+`Tools/fetch_nyc_trees.py` drops the duplicates and reports `disagreeing_duplicates`; a nonzero
+value there means the key is not a key and is a stop, not a dedup.
+
+Calibration note worth keeping: `count(distinct objectid)` returns **the same** 1,084,845, which
+reads like the signature of an approximate `count(distinct)`. It is not — both columns genuinely
+repeat, together. The distinction was settled by pulling the actual rows, not by reasoning about it.
+
+---
+
+### E301 — `validate_species.py` is red on `main` because its default seed is built from the other `--source`
+
+**Superseded diagnosis (2026-08-14, curation round).** An earlier version of this entry recorded
+that `Tools/validate_species.py` exits 1 with 84 failures on an untouched `origin/main`, which is
+true, and left the cause open. The cause is now measured, and the gate is not broken.
+
+`Fixtures/species/{leaf_retention,curated}.yaml` were generated against a **`--source datasf`**
+corpus — `leaf_retention.yaml`'s own header says so: "one row per distinct DataSF qSpecies string
+that the seed database maps to a species (577 of them)". The seed the validator points at by
+default, `Fixtures/seed/cypress-seed.sqlite`, is the shipped **`--source city`** build. The two
+corpora are different: 731 species against 569, drawn from two different inventories with two
+different species vocabularies.
+
+A four-cell grid, all measured 2026-08-14:
+
+| fixtures | seed | failures |
+|---|---|---:|
+| the two California files | shipped seed (`--source city`, 731 species) | **84** |
+| the two California files | a `--source datasf` SF-only seed (569 species) | **0** |
+| the two California files | a `--source datasf` + NYC seed (1,072 species) | **0** |
+| all three files, including `nyc_species.yaml` | a `--source datasf` + NYC seed | **0** |
+| all three files | shipped seed *(mismatched on purpose, as a control)* | 586 |
+
+The last row is the control: 586 = 84 + 503, one extra failure per NYC entry, which is what
+"the fixture describes species this seed does not contain" looks like. Without it the grid
+would not distinguish a real gate from one that passes everything.
+
+So the 84 failures are an **artifact of pointing the validator at a seed built from a different
+`--source`**, not evidence of drift in the fixtures. The fix is a one-line default or a documented
+invocation, and it belongs to whoever owns the fixtures; it is recorded here because a permanently
+red gate teaches everyone to ignore it, and because the next agent to run it deserves to know it
+goes green when aimed correctly.
+
+**The curation round's own delta is 0**: cell four against cell three.
+
+### E302 — `Tools/verify_seed.py` checks 1, 2, 13 and 16b are San Francisco-only
+
+A whole-city NYC seed fails four checks. A **San Jose** control build — the shipped, blessed
+configuration, no NYC in it at all — fails three of the same four:
+
+| check | NYC | San Jose control | cause |
+|---|---|---|---|
+| 1. row count in 150,000..260,000 | FAIL | pass | a hardcoded SF-era range |
+| 2. zero trees outside the SF bbox | FAIL | **FAIL** | reads `seed_meta.sf_bbox`; every non-SF row is outside it |
+| 13. neighborhood stamping ≥ 99% | FAIL | **FAIL** | `neighborhoods` holds SF's 41 analysis neighborhoods only |
+| 16b. uuid == uuid5(NS_TREE, TreeID) | FAIL | **FAIL** | recomputes without the id-space prefix |
+| 12. external_ref is unique | pass | **FAIL** | checks `external_ref` globally, ignoring `id_space` — see below |
+
+So checks 2, 13 and 16b have been failing for the second city since #129 and are a pre-existing gap.
+NYC's only *new* failure is check 1's row-count range.
+
+**Check 12 is the sharpest of the five and is worth stating exactly.** On the San Jose control it
+reports 27,714 duplicated refs. Those are not San Jose ids colliding with each other — every one is
+a San Francisco `TreeID` colliding with a San Jose `FACILITYID`, both being small integers:
+
+    SELECT external_ref, count(*) c, group_concat(DISTINCT id_space)
+    FROM trees GROUP BY 1 HAVING c > 1     ->  ('99987', 2, 'sf,us-ca-sj'), ...
+
+    SELECT count(*) FROM (
+      SELECT id_space, external_ref FROM trees GROUP BY 1,2 HAVING count(*) > 1
+    )                                      ->  0
+
+**Zero duplicate `(id_space, external_ref)` pairs.** That is the seed's own `UNIQUE` constraint and
+it holds. Check 12 asserts something stricter that the schema never promised, and that
+`inventory_contract.py`'s whole id-space design exists to make unnecessary — two cities' numbering
+*may* collide, which is why the uuid seed string carries a prefix.
+
+NYC happens to pass check 12 only because its `GlobalID`s are UUIDs and cannot collide with a small
+integer. A fourth city numbering on integers would fail it on day one while being perfectly correct.
+
+The verifier is therefore not currently a gate for any city but San Francisco, and its exit code
+cannot be used to accept or reject a multi-city seed until it learns about id spaces.
+
+---
+
+### E303 — three NYC `PlantedDate` values are in the future, and one trips `verify_seed.py`
+
+Across all 1,121,106 tree points, `PlantedDate` is non-null on 136,730 and exactly three are in the
+future; none is before 1800.
+
+| PlantedDate | TPStructure | CreatedDate | reading |
+|---|---|---|---|
+| 2030-11-02 | Full | 2020-11-04 | 2020 typed as 2030 |
+| 2108-11-23 | Full | 2018-11-27 | 2018 typed as 2108 |
+| 2108-11-23 | Stump | 2018-11-27 | the same error, twice |
+
+`verify_seed.py` check 14 bounds `planted_year` at 2100, so only the 2108 rows trip it; the 2030 row
+would have shipped silently. `NYCTreePointAdapter.parse_planted_date` now clamps to
+`1800..horizon_year` and counts rejections in `nyc_planted_date_beyond_horizon`.
+
+They are **not** corrected to the year their `CreatedDate` implies, obvious though it is: an adapter
+may resolve a source's sentinels and may not invent its facts.
+
+---
+
+### E304 — `build_seed.py` rewrites the checked-in species maps as a side effect
+
+Any run of `Tools/build_seed.py` regenerates `Fixtures/<space>_species_map.csv` for every id space
+that contributed rows. So a build made purely to *measure* something leaves the working tree dirty
+in files nobody meant to change, and the content depends on flags that have nothing to do with the
+map's purpose.
+
+Concretely, on this round: seven trial builds run with `--source datasf` rewrote
+`Fixtures/sf_species_map.csv` with 375 insertions and 419 deletions, because the shipped seed is
+built with `--source city` and the two inventories spell their species differently. The same runs
+rewrote `Fixtures/nyc_species_map.csv` against the trial build's own 569-species corpus rather than
+the shipped 731, silently replacing an artifact that had been generated deliberately and reviewed.
+
+Both were restored from `HEAD` and neither change was committed. Recorded because the trap is quiet:
+`git status` after a measurement build shows plausible-looking churn in a checked-in data file, and
+committing it would corrupt San Francisco's map with a build flag's side effect.
+
+Worth considering for the round that owns `build_seed.py`: write the map only under an explicit
+flag, or write it beside the seed rather than into `Fixtures/`.
+
+---
+
+### E305 — an ITIS client that decodes as UTF-8 reports valid names as network errors
+
+The species work for RULING D20 checked 268 names against ITIS
+(`https://www.itis.gov/ITISWebService/jsonservice/`). Ten came back as errors that looked exactly
+like transient network failures and survived a retry:
+
+    Crataegus            'utf-8' codec can't decode byte 0xfc in position 20781
+    Amelanchier          'utf-8' codec can't decode byte 0xe9 in position 18583
+    Tsuga canadensis     'utf-8' codec can't decode byte 0xe8 in position 105
+
+They are not network errors and they are not bad names. **ITIS serves ISO-8859-1**, and its taxonomic
+author strings are full of accented characters (`Michx.`, `Muhl. ex Willd.`, `Dum.Cours.`). A client
+doing `json.load(response)` — which assumes UTF-8 — raises on exactly those records and on no others.
+
+The tell was that a retry did not clear them and that they clustered on genera with long author
+lists. Decoding UTF-8 first and falling back to ISO-8859-1 resolved all ten, and the answers changed
+the round's numbers: the residual went from "141 accepted / 10 error" to **150 accepted**.
+
+Recorded because the failure mode is generic to this project's habit of querying public taxonomic
+APIs, and because it is indistinguishable from a flaky network at the call site. It is also a clean
+instance of the calibration rule: the instrument was wrong, and the wrongness was reported as data.
+
+---
+
+### E306 — RULING D20's 90% species gate is not reachable for NYC by mapping
+
+Recorded as a standing fact rather than a defect, because the next round will meet it again.
+
+D20 requires mapped-species coverage ≥ 90% of rows before a first NYC publish. The measured ceiling
+is **85.99%** (772,785 of 898,643), reached with a five-rule cited cascade. The remaining 35,993 rows
+cannot be mapped without asserting a synonymy no authority supports:
+
+  * 150 values / 106,956 rows are **accepted** names in ITIS that the corpus does not carry;
+  * 11 values / 470 rows are synonyms — of taxa the corpus **also** lacks;
+  * 107 values / 14,888 rows are cultivars, which the ICNCP governs and ITIS does not index.
+
+The cause is structural, not sloppy: the corpus was built from San Francisco and San Jose, and NYC's
+street trees are an Eastern-seaboard flora. Green ash is not white ash.
+
+The gap closes by ADDING species to the corpus, not by mapping — which is what the build already does
+for an unmapped string. So the gate as written measures "how much of NYC overlaps California", and a
+number that can only be moved by curating ~270 new species is a curation-round dependency, not an
+ingest-round one.
+
+---
+
+### E307 — a fixture generator that reads its own output is not idempotent, and silently shrinks
+
+`Tools/build_nyc_species_content.py` chose which species to source by asking a **built seed** which
+ones had a NULL `family` or `leaf_retention`. That works exactly once. Fold its output into a seed,
+re-run it, and the species it already covered are no longer NULL — so they are no longer targets,
+and the file is rewritten with only the leftovers.
+
+Measured here: a re-run took `Fixtures/species/nyc_species.yaml` from **506 entries to 143**, and
+reported `family sourced: 0` while doing it. Nothing errored. The only tell was the entry count in
+its own summary line.
+
+The fix is to decide the target set from the **other fixtures** — the stable, checked-in inputs —
+and never from the artifact downstream of them. The script now does that and is asserted idempotent:
+a second run against a seed built with its own output produces a byte-identical file.
+
+Recorded because the shape is general and this repo is full of generated fixtures: **if a generator's
+input includes anything derived from its own output, its second run is not its first run.**
+
+---
+
+### E308 — SelecTree writes the hybrid sign as the HTML entity `&times`
+
+63 of Cal Poly SelecTree's 2,087 catalogue names spell the multiplication sign as a literal
+`&times` — `Platanus &times hispanica`, `Aesculus &times carnea`, `Amelanchier &times grandiflora
+'Autumn Brilliance'`. It is not `×` (U+00D7) and not `x`.
+
+A matcher that normalises only `x` and `×` therefore fails to match every hybrid in the catalogue.
+For the NYC curation that was worth **97,449 rows** on its own: `Platanus x acerifolia` is NYC's
+commonest tree by a factor of 1.4, and it reaches SelecTree only through record 1099
+(`Platanus &times hispanica`), whose `other_taxa` explicitly lists `Platanus &times acerifolia`.
+
+Two things follow for anyone matching against this source: decode the entity, and use the
+`other_taxa` synonym list, which `leaf_retention.yaml` already relies on 50 times under the
+`selectree_synonym_other_taxa` match method.
+
+---
+
+### E309 — rule 0 compares a fixture against `trees_source`, which does not name the cities in a seed
+
+PR #85 makes each species fixture declare the corpus it describes and compares that against
+`seed_meta.trees_source`. For San Francisco that is exactly right. For a multi-city seed it cannot
+work, and NYC is the first case.
+
+**`trees_source` names which of SAN FRANCISCO's two inventories a build used, and nothing else.**
+`build_seed.py` hardcodes it in two branches — `"trees_source": "sf_city"` and
+`"trees_source": "sf_datasf"` — selected by `--source`, whose domain is `SOURCES = ("city",
+"datasf")`. A whole-city NYC build writes **`sf_datasf`**, identical to an SF-only build. Measured
+2026-08-14 on both seeds.
+
+So `Fixtures/species/nyc_species.yaml` declares `inventory: nyc_tree_points`, which is truthful and
+which rule 0 refuses. Run against PR #85's branch (`origin/fix/seed-tooling`, 5ccf2eb) with a
+whole-city NYC seed:
+
+    seed inventory: 'sf_datasf'
+    nyc_species.yaml: 503 entries, describes 'nyc_tree_points'  <-- NOT this seed's inventory
+    FATAL: this seed was built from 'sf_datasf', but nyc_species.yaml describes 'nyc_tree_points'.
+
+**Its remediation instruction is unreachable.** The message says "build a seed whose
+seed_meta.trees_source is 'nyc_tree_points'"; no such seed can exist, because `trees_source` only
+ever takes the two SF values. `--allow-flavor-mismatch` runs and passes 26,321 checks, but reports
+`IDENTITY NOT CHECKED for 503 entries` — the seed-reading rules, which are the ones that catch real
+drift, are skipped.
+
+The two options are a lie or a gap, so neither was taken silently:
+
+  * declaring `inventory: sf_datasf` would make rule 0 pass and would state that this file describes
+    DataSF's export. It describes NYC Parks' Forestry Tree Points. That defeats the exact
+    distinction rule 0 exists to draw — "this species is missing" versus "that city never listed it".
+  * declaring the truth leaves NYC's fixture outside the gate until the comparison is widened.
+
+**A comparison that works for both, measured on the same seed:** ask whether the declared inventory
+is among the seed's own `inventories` rows, rather than equal to `trees_source`.
+
+| fixture | declares | `== trees_source` | `in inventories` |
+|---|---|---|---|
+| `curated.yaml` | `sf_datasf` | PASS | PASS |
+| `leaf_retention.yaml` | `sf_datasf` | PASS | PASS |
+| `nyc_species.yaml` | `nyc_tree_points` | **FAIL** | **PASS** |
+
+`inventories` is populated from the inventories that actually contributed rows, `trees.inventory_source`
+carries the same strings per row, and `nyc_tree_points` is already one of them. Rule 0's intent
+survives intact; only its single-corpus assumption goes.
+
+**Also for the merge:** PR #85 and this branch both add a `--extra` option to
+`validate_species.py`, independently and with the same name and semantics. They are compatible but
+they will conflict textually.
+
+### E310 — `seed_meta.rows_from_sf_city` is a residual, and it absorbed a third city's rows
+
+**Found by `Tools/verify_seed.py` check 1b, on the first full three-city build**, at the very end of
+the pipeline this round exists to run:
+
+```
+[FAIL] 1b. per-inventory row counts match what seed_meta claims
+       sf_city: 133,706 rows, seed_meta says 1,032,349;
+       no rows_from_* claim for ['nyc_tree_points']
+```
+
+`rows_from_sf_city` was written as `kept - export_vacant_carried - sj_kept` — everything not
+attributed to the two inventories that existed when the line was written. New York's **898,643**
+rows therefore landed in San Francisco's count, and `rows_from_nyc_tree_points` was never written at
+all. Both keys are seed receipts; the app resolves a row's provenance line through the
+`inventory_<id>_*` family beside them, and `verify_seed` reads this one to certify a build.
+
+**Severity: a wrong number in a shipped receipt, caught before publish, no corrupt data.** The
+`trees.inventory_source` column — what the app actually reads per row — was correct throughout;
+what was wrong is the file's own summary of itself. Nothing would have mis-rendered. What would have
+happened is that the first published three-city seed carried a receipt claiming San Francisco holds
+1,032,349 trees, which is the kind of number a later round quotes.
+
+**The fix is the guard, not the arithmetic.** Correcting the subtraction alone leaves the same trap
+for the fourth city. `build_seed` now refuses a build whose `rows_from_*` claims do not name exactly
+the inventories `contributing` holds rows from, and do not sum to `rows_kept`. `contributing` is
+built from the records actually emitted, so a new city either brings its own key or stops the build
+naming itself.
+
+`verify_seed` 1b is deliberately kept and deliberately not made redundant: it reads the **written
+file** where the guard reads the **build's own counters**, so the two disagree if the emit dropped
+rows — a different failure, and the one 1b is really for.
+
+---
+
+### E311 — `feat/nyc-ingest`'s adapter set neither `region` nor `condition`, so s17's two seams were dead code
+
+PR #108's F6 thread named the first half of this and the review's own reply corrected the PR body's
+"the ingest needs no rework" to "the ingest needs a real code change". Both halves are recorded here
+because the second was **not** on that list and is silent where the first is loud.
+
+**`region` — loud.** `NYCTreePointAdapter` writes the borough into `raw_json["boroughcode"]` and
+never sets `InventoryRecord.region`, with a comment saying a real region column is "the honest
+destination and it is a SCHEMA question, so it is named here and not taken." RULING D17 took it. A
+bare merge dies in `resolve_region_ids` with all ~898,643 rows named, because `(us-ny-nyc, None)` is
+not registered for a space with five regions. **That refusal is the design working** — it is what
+forces D18's point-in-polygon assignment to have run on the ~22,995 orphans rather than trusting it.
+
+**`condition` — silent, and this is the one worth the entry.** The same adapter counted the standing
+dead into `stats["standing_dead_mapped_to_alive"]` and left `InventoryRecord.condition` unset. After
+a bare merge the build **succeeds** and produces:
+
+```
+status=alive          41,256
+status=vacant_site    12,758
+                                <- no dead_reported row at all
+```
+
+on a slice of the extract that holds them. s17's entire second half — `InventoryRecord.condition`,
+`status_for_record`, `STATUS_FOR_CONDITION`, the `dead_reported` mapping D17 was written for — is
+unreachable, and 10,635 standing dead New York trees ship saying the City called them living. The
+ingest round's own erratum **E299** named this and it stayed open across the merge,
+because nothing fails when a field is left at its default.
+
+**Both are the same shape**: an adapter written before a seam existed, merged after it was built,
+with no check anywhere that the seam is used. A test asserting a record's `region`/`condition` is
+what closes it, and this round added both.
+
+---
+
+### E312 — an XCUITest element subscript RAISES on a string that long, and the raise reads as a failed assertion
+
+`app.staticTexts[<the NYC disclaimer>]` — a 341-character sentence — does not answer:
+
+```
+NSInternalInconsistencyException: Invalid query - string identifier 'The City of New York
+can not vouch for the accuracy or completeness of data provided by this w …'
+```
+
+XCTest reports the raise through the enclosing `XCTAssertTrue`, so the failure reads as
+`XCTAssertTrue failed: throwing "NSInternalInconsistencyException…"` — i.e. **as the disclaimer
+being absent**, on a screen that carries it. A test written this way and never seen red would have
+been believed.
+
+`app.staticTexts.matching(NSPredicate(format: "label == %@", …)).firstMatch` asks the same question
+and answers it. Same family as `isHittableWithoutRaising` (`CypressUITests/UIWait.swift`): an
+XCUITest query that raises is not a query that returned false.
+
+Recorded with it, from the same file's first run: **`IconTextRow` merges its title and subtitle into
+one `Button` accessibility label**, so `app.buttons["Cities"]` finds nothing on the You tab and
+`app.buttons` matched on a label PREFIX does. Neither fact is written down anywhere else in this
+repository.
+
+---
+
+### E313 — a "prefix property" test over a hardcoded chain of id-space sets is vacuous
+
+Recorded because it was written, red-proved, found green, and replaced **inside this round** — the
+guard-green-when-the-defect-is-present family, caught by the red-proof discipline rather than by
+review.
+
+The first version of `Tools/test_build_seed_status.py`'s new check asserted that a smaller id-space
+set's flattening of `REGIONS` is a PREFIX of a larger one's, over the chain
+`{sf} → {sf,sj} → {sf,sj,nyc}`. Red-proof: move `us-ny-nyc` to the front of `REGIONS`, which is the
+edit a future author most plausibly makes while tidying. **It stayed green** — both the helper and
+`build_seed` read `sorted(spaces)` and index `REGIONS` by key, so the dict's own key order reaches
+neither. Two other checks in the file went red on that edit and the new line contributed nothing.
+
+The replacement pins what is actually load-bearing: `sf` is `dim_region` rowid **1** and `us-ca-sj`
+is rowid **2** *in a full build*, because packs already on readers' devices carry those numbers in
+every `trees.region_id`. Red-proved on the two edits that really move them — a new id space sorting
+before `sf`, and a second region inserted into `sf` — and both messages name the moved pack.
+
+The general lesson, which is not new here but is newly cheap to state: **a property that holds by
+construction of the thing under test is not a test of it.** The question that finds it is "what edit
+makes this line, specifically, go red?" — and if the answer is "the same edits another line already
+catches", the line is decoration.
+
+---
+
+### E314 — `[_row(...)] * 7` builds one row seven times, and the all-failing case hides it
+
+Found in the review-response round, by insisting on understanding a red-proof that came back
+**green** instead of moving on.
+
+A new test for the `sole` region rule (review N2) built its fixture as `[_row("us-ny-nyc", None)] * 7`
+— seven references to **one** list. `resolve_region_ids` rewrites the region placeholder **in
+place**, so the first row it resolves changes all seven, and the next iteration tries to unpack an
+`int` as a `(space, region)` key.
+
+**The all-unresolvable case never reaches that**: every row fails to resolve, the function collects
+them and dies before any assignment, and the test passed — including its assertion that the refusal
+carries the count `7`, which was a real count of seven aliases of one row. The aliasing only surfaced
+under the red-proof that registered the bare `(space, None)` key: instead of failing, the test
+**crashed** with `TypeError: cannot unpack non-iterable int object`.
+
+Two lessons, and the second is the one worth keeping:
+
+1. A list-of-mutable-rows fixture is `[f() for _ in range(n)]`, never `[f()] * n`, whenever the code
+   under test writes into the rows. `emit`/`resolve_region_ids` is exactly that shape.
+2. **A red-proof that produces a crash rather than a failure has not passed.** A crash and a failure
+   both look like "the test noticed", and only one of them means the assertion works. The rule this
+   repository already has — *read the failure message, not the colour* — extends to reading whether
+   there IS a failure message.
+
+Fixed, re-red-proved, and the reason is written into the test beside the fixture so the next author
+does not tidy it back.
+
+---
+
+### E315 — a guard with two arms can fire from the wrong one, and a refusal-only assertion cannot tell
+
+Also from the review-response round, and it is the reason `check_rows_from`'s new tests assert on the
+**message** rather than on the exit.
+
+`check_rows_from` refuses on two independent facts: every contributor has a `rows_from_*` claim, and
+the claims sum to the file's own rows. Red-proving the first arm — deleting the missing-claim
+detection — did **not** make the build succeed. The *sum* arm caught the same specimen and refused
+it, with a completely different sentence:
+
+```
+FATAL: seed_meta's rows_from_* claims sum to 145,964 but the file holds 1,044,607 rows.
+One of the per-inventory counters is wrong; the residual (rows_from_sf_city) is the one
+that hides such an error.
+```
+
+A test asserting only "the build refused" would have been **green against a guard with one arm
+deleted**, and the operator would have been sent to look for a wrong counter when the real fault was
+a missing key. The tests assert the refusal *names the inventory that has no claim* and *says what to
+add*, which is what actually went red.
+
+This is the same family as the vacuous prefix check below and as the four cases CLAUDE.md records:
+the guard was green while the defect was present. The distinguishing question is not "did it fail?"
+but **"did it fail for the reason this line exists?"**
+
+---
+
+### E316 — a rebuild today moves San Francisco and San Jose, and the 2026-07-31 extract is not reproducible
+
+Not a defect. A fact about this round's numbers that a reader comparing them to the shipped seed
+will otherwise call one.
+
+The shipped s16 seed was built from extracts dated **2026-07-31** and holds 145,837 San Francisco
+rows and 52,788 San Jose rows. The raw caches those came from are git-ignored and live outside the
+repository, so **that build cannot be reproduced here**. Fetching today gives extracts dated
+2026-08-22 and:
+
+| | shipped s16 (2026-07-31) | this round (2026-08-22) | delta |
+|---|---:|---:|---:|
+| San Francisco | 145,837 | 145,964 | +127 |
+| San Jose | 52,788 | 52,775 | −13 |
+
+That is ordinary upstream churn over three weeks, in both directions, and it is why the round's SF
+and San Jose objects are **updated** rather than re-published unchanged. It also means R37.2's
+byte-identity promise is being kept at the level it actually makes — a new `s17-r2026-08-22-…` path
+holding new content, with the old objects untouched — and not at the level of "the same city
+republishes the same bytes", which no fetch-based pipeline can promise across three weeks.
+
+---
+
+### E317 — the Staten Island pack id was renamed before it froze, and six of seven packs proved byte-identical
+
+Not a defect. A measurement worth keeping, because it is the evidence that the rename was scoped.
+
+The owner ruled on 2026-08-22 that `us-ny-nyc-si` becomes `us-ny-nyc-staten-island` (the lone
+abbreviation among five spelled-out siblings). Rebuilt and republished afterwards:
+
+- `dim_region` rowids are unchanged — Staten Island is still 7 — because registration order is
+  `sorted(spaces)` then `REGIONS`' declared order, and neither moved.
+- Every row count is unchanged, and the five boroughs still sum to **898,643**.
+- **Six of the seven pack files are byte-identical to the pre-rename publish**; only
+  `us-ny-nyc-staten-island` differs (`10d3fbaab0e78c2e…` → `05fd46bc5ab48efa…`), which is exactly the
+  one pack whose `dim_region.pack_id` string is in its bytes.
+- Every pack's *path* moved, because the fused seed's `build_id` is a hash of the fused seed and one
+  of its strings changed. That is R37.2 working, not churn.
+
+The general point for the next identity question: a `pack_id` costs four string replacements and one
+rebuild before the first publish, and cannot be changed at all after it (review N8 — the freeze is
+the publish, not the merge).
+
+### E318 — Nothing in `server/` ever deletes an object from the bucket, and a tombstone is not a deletion
+
+Found wiring `photo_withdrawal` during the E264 photo-upload round. Neither this entry nor E319 is the upload itself, which is stopped on an owner decision — both are things that are true about the code as it stands and would have been inherited silently.
+
+`DeletePhotoByContributor`, the operator takedown `RejectPhoto`, and the sync-path
+`withdrawPhoto` this round added all do the same thing to the bytes: **nothing**. They write
+`photos.deleted_at` or move `moderation_state`, and `storage_key` keeps naming an object that is
+still in the bucket. Grepped for and absent across the whole service: any `DeleteObject`, any
+presigned DELETE, any sweeper. The client's own `deletePhoto` nulls `storage_key`; the server's
+does not.
+
+Through the API this is currently harmless and deliberate-looking — `photoData` evaluates
+visibility before it presigns, so a tombstoned photograph gets no URL minted for it — and a
+soft delete that keeps the row is the house verb. **The harm is entirely a property of which
+bucket the object is in**, which is the decision this round stopped on:
+
+- On a **private** bucket, "no URL is minted" is the whole story and the orphaned object is a
+  storage-cost and retention question, not a privacy one.
+- On **`cypress-cities`, which is public-read**, it is not. That bucket serves anonymous reads
+  for every key on its dedicated domain (`server/README.md` records this, measured 2026-08-01).
+  The key is `photos/<photo-uuid>.jpg` and the uuid travels to every device that reads the tree
+  profile. So a photograph put there would be **anonymously fetchable by uuid, bypassing
+  `photoData`'s visibility check entirely — before deletion, after deletion, and after an
+  operator takedown**. R72 ruling 5's "the way down ships with the way up" would be false: the
+  way down would remove the photograph from the app and from nothing else.
+
+This is why the bucket is not a deployment detail that can be settled later by setting
+`BUCKET_NAME`. `presign.go` says whether photographs share the cities bucket "is a deployment
+decision, taken with the owner"; the point recorded here is that one of the two answers also
+requires code that does not exist — object deletion, and a sweeper for the 72 h grace window
+that `bytes_received_at` already tracks and nothing collects.
+
+**The account purge is already correct at the row level and cannot be correct at the byte level.**
+Checked rather than assumed: `Store.Anonymize`'s two doors both handle photographs, and both write
+`UPDATE photos SET deleted_at = …, user_id = NULL, anonymized_at = …` — including
+`EraseEverything`, which `DELETE`s contributions outright. So the deletion round's obligation on
+`photos` rows is discharged and does not need re-building.
+
+What no door does — because no code anywhere does it — is remove the object. **"Erase everything"
+does not erase the photograph's bytes**, and on a public-read bucket those bytes stay anonymously
+fetchable by uuid after the account is gone. That is the sharpest form of the decision in this
+section, and it is the only part of the purge that is still owed. The enumeration a byte-purge
+needs is already there — every `storage_key` for a user is one indexed query on `photos.user_id` —
+so what is missing is the delete, not the query, and not the schema.
+
+### E319 — The client can delete a photograph the server will refuse to withdraw, and the two rules cannot currently agree
+
+RULINGS **R82** gave the client's removal predicate a third arm, `taken_on_device`: a photograph
+this installation took stays this installation's to unmake whatever account holds it. That arm is
+the repair for E277 and it is correct.
+
+The server's `photos` table has `user_id` and `device_id` and **no provenance column**
+(`001_initial.sql`). So the two predicates are not the same rule and cannot be made the same rule
+without a migration nobody has ruled on:
+
+| | client (R82) | server |
+|---|---|---|
+| owned by the signed-in account | deletable | withdrawable |
+| owned by this device | deletable | withdrawable |
+| taken on this installation, owned by an account not signed in | **deletable** | **refused** |
+
+The third row is exactly E277's stranded photograph — reachable, not theoretical, and the case
+R82 exists to fix. Locally it is deleted; the withdrawal reaches `POST /sync` and comes back
+`forbidden`, which screen 17 draws as a terminal failure.
+
+**That refusal is the deliberate answer of the two available, not the right answer.** The
+alternative — treating "not this identity's" as a quiet success, the way `DeletePhotoByContributor`
+collapses it into `ErrNotFound` so a refusal cannot confirm a row exists — would tell the
+contributor "Photo removed" while the service kept serving the bytes to everybody else, which is
+ERRATA **E280** precisely. Given a choice between a visible wrong answer and an invisible one,
+this round took the visible one and recorded it here.
+
+Closing it properly is a decision with two candidates, and neither is this round's to take:
+give the server a provenance column so it can evaluate R82's third arm, or rule that the account
+arm is the only one that crosses the network and give screen 17 a sentence for a local-only
+deletion. The second needs new copy on a shipped screen, which is DECISIONS constraint 21.
+
+#### The order of the two checks inside `withdrawPhoto`, and why it stays
+
+`withdrawPhoto` tests `deleted_at` **before** it tests ownership, so once a photograph is tombstoned
+the ownership gate is never consulted. #113's review measured the consequence: a stranger's
+withdrawal of somebody else's already-tombstoned photograph answers `applied`, and a `contributions`
+row is recorded saying that device withdrew it. In a codebase where "the contribution row *is* the
+record" is load-bearing, that deserves to be written down rather than left as an accident of
+statement order.
+
+**Ruled: the order stays** (orchestrator, under overnight authority, on the review's N1).
+
+Swapping the two checks is not a free win, and the case it breaks is legitimate — but it is a
+**narrower** case than the first draft of this clause claimed, and the difference is worth stating
+because the wrong version reads as a stronger argument than the evidence supports.
+
+**What the order does *not* protect.** A withdrawal the account queued before deleting, and which
+the device *declared*, never reaches `withdrawPhoto` at all: `LocalAPI` hands its `client_uuid` to
+`DELETE /me` through `pendingOutboxKeys`, `DeleteAccount` writes it into `anonymized_contributions`,
+and `Store.Apply` consults that table **first** — before the contribution insert, and long before
+any ownership question. It answers `duplicate`. Measured by #113's review; the mechanism is visible
+in `internal/store/sync.go`, where the tombstone `SELECT EXISTS` is the opening statement of the
+transaction. So for a declared item the order inside `withdrawPhoto` is irrelevant, and citing it
+was an unverified "why".
+
+**What the order does protect** is the item the tombstone set does not name — measured `applied`,
+and it would be `forbidden` under ownership-first. `unsentClientUUIDs` is a snapshot of *this
+device's* queue at the moment of the call (`remote_sent = 0 AND state <> 'done'`), so two ordinary
+things fall outside it: a withdrawal queued after that snapshot was taken, and a withdrawal sitting
+in a **second device's** outbox, which the deleting device never had visibility of. After
+`Anonymize` those photographs have `user_id = NULL` — the leaving door's whole promise — so
+ownership-first would meet a row the contributor no longer owns and refuse it: a permanent red row
+on screen 17, shown to the one person unambiguously entitled to that deletion, for having two
+phones.
+
+What the current order costs is bounded and quiet by comparison. The stranger's `applied` is true in
+every respect a client can observe — the photograph is genuinely not served, to them or to anyone —
+and what it leaves behind is a no-op contribution row about an act that changed nothing. One side of
+the trade is a real person losing a real deletion; the other is a spurious row in a table nothing
+consults for authorization. The order is chosen for the first.
+
+Latent today: no photograph reaches the service, so no withdrawal can be refused for this reason
+yet. It becomes reachable on the first day uploads work, which is why it is written down now.
+
+---
+
+### E320 — The byte-deletion obligation the send round creates, and does not discharge
+
+Recorded as an obligation of the **photo-send round**, per the owner's approval of a private photo
+bucket on 2026-08-22. Tombstone-only deletion was accepted *because* the bucket is private; this
+entry is the record of what that acceptance defers rather than settles.
+
+Once a photograph uploads, deleting it does three things and not a fourth:
+
+1. the local row is tombstoned and its `local_path` stripped (`ContributionStore.deletePhoto`);
+2. a `photo_withdrawal` reaches the service and tombstones the server row, so `GET /photos/{id}`
+   stops minting a presign and the photograph stops being served (this round's `withdrawPhoto`);
+3. the queued binary is dropped from `outbox_photos`, so a deletion between the shutter and the
+   drain cannot publish afterwards.
+
+**The bytes stay in the bucket.** Nothing in `server/` deletes an object — no `DeleteObject`, no
+presigned DELETE, no sweeper — so `photos/<uuid>.jpg` outlives every deletion path there is:
+contributor withdrawal, operator takedown, and both account-deletion doors, `EraseEverything`
+included.
+
+**Why that is tolerable now and not indefinitely.** On a private bucket the only way to read an
+object is a presigned URL, and the one place that mints them (`photoData`) evaluates visibility
+first — so a withdrawn photograph is unreachable through the API, and "deleted" is true from every
+angle a person or a client can observe. What remains is bytes at rest that nobody asked to keep:
+an operator with bucket credentials can still see them, they accrue storage cost forever, and
+"erase everything" does not literally erase. None of those is an exposure; all of them are a
+promise not yet fully kept.
+
+**What closing it needs**, so the next round does not re-derive it:
+
+- an object-delete on the `storage` package (the presigner signs `PUT` and `GET` only today);
+- a call to it from the three tombstone sites, ordered *after* the row is tombstoned — the row is
+  what makes the photograph unreachable, and a delete that ran first would leave a live row
+  pointing at nothing if the object-delete failed;
+- a sweeper for the 72 h grace window, which is already unclaimed: `bytes_received_at` is the
+  cursor and nothing reads it, so a begin whose binary never arrives leaves a permanent phantom;
+- a per-account byte purge for `DELETE /me`, which needs no new query — every `storage_key` for a
+  user is one indexed read on `photos.user_id` — only the delete.
+
+### E321 — The journal's pages, concatenated, were not the journal
+
+**Status: fixed in the v19 index round (`perf/v19-index-round`). The failing test was written
+first, on the round's branch point, and is `CypressTests/JournalPaginationTieTests.swift`.**
+
+`ContributionStore.journal` ordered a page by `captured_at DESC` and paged on a cursor that was the
+last row's `captured_at`, asking the next page for `captured_at < :cursor`. `captured_at` is not
+unique. Two contributions in the same millisecond are ordinary — a walk through several trees, a
+check-in and a measurement saved together, anything imported — and `SQLiteTimestamp` says so in its
+own doc comment about the outbox's FIFO tie-break.
+
+When a run of rows sharing one `captured_at` **straddled a page boundary**, the strict `<` stepped
+over every remaining row of that run. They were not shown later. They were not shown at all, and
+nothing on screen said so: a dropped row is indistinguishable from a row that was never written,
+and the list it happens to is the contributor's own record of what they did.
+
+`LocalAPI.wholeJournal` follows the same cursor, so `exportLatest(.csv)` — D12's subject-access
+route — came back short for the same reason. That is E39's shape reached from a different cause: an
+export that stops early is worse than one that fails, because the person holding it has no way to
+tell it is short.
+
+## Repro, measured on the round's branch point (`ecf8879`)
+
+Forty visits on one tree, twelve of them sharing one `captured_at` at rows 6…17, paged at ten:
+
+| read                                        | rows |
+|---------------------------------------------|-----:|
+| one unpaginated read (`limit` 100)          |   40 |
+| the same rows across four pages of ten      |   32 |
+
+Page one ends four rows into the tie; the cursor carries that timestamp; page two asks for rows
+strictly older and the remaining **eight** are skipped. The same fixture at 240 rows with the tie
+straddling `Page.maximumLimit` puts 232 rows in the CSV export instead of 240.
+
+### And it shows up without a fixture built for it
+
+Paging a scratch database of 16,000 randomly-timed contributions through to the end, at
+`Page.maximumLimit`, the old form returned **14,324** rows and the new one **14,326**; at 32,000
+rows, 28,648 against 28,652. Nothing in that generator was trying to produce a tie — two rows
+landing on the same second out of sixteen thousand is just what happens — and two of them fell on
+a page boundary. The defect does not need a pathological history to fire; it needs a long one.
+
+## The second half, which is why an index round is where this surfaced
+
+Within a tie the ordering had nothing to break on, so SQLite was free to return the tied rows in
+whatever order the plan produced them — and **which rows a page shows was therefore a property of
+the query plan, not of the data**. Reproduced with identical SQL differing only in which indexes
+existed. Any index round could have changed what a person reads, silently, as a side effect of
+being faster. That is not a trade this project gets to make without saying so, which is why the fix
+landed in the same PR as the indexes rather than after them.
+
+## The fix
+
+A total order. `ORDER BY captured_at DESC, id DESC`, and the cursor becomes the pair — a
+`ContributionStore.JournalCursor` carrying `(capturedAt, id)`, encoded into the opaque `String?`
+that `Page.nextCursor` already was, so nothing above `LocalAPI` changed. The predicate is a
+row-value comparison, `(captured_at, id) < (COALESCE(:cursorAt, char(0x10FFFF)),
+COALESCE(:cursorID, char(0x10FFFF)))`, which `AppSchema` v19's `idx_<table>_captured(captured_at
+DESC, id DESC)` answers as a seek.
+
+`id` is a UUID and is unique across all four contribution tables, so the pair is a total order over
+the union and not merely within an arm.
+
+## The same defect a second time, one layer down — found in review
+
+The tie-break fixed the drop only for databases whose `id` case matches the cursor's. It does not
+for any other, and **PR #146's review found that before it shipped**:
+
+- `UUID.uuidString` is always upper case, so the cursor `LocalAPI` re-emits is upper case;
+- nothing in `AppSchema` constrains the case of a stored `id`, and this round's own
+  `SchemaV19Tests` fixture writes lower-case ones deliberately;
+- under BINARY, every upper-case hex letter (0x41–0x46) sorts *below* its lower-case twin
+  (0x61–0x66).
+
+So a lower-case row is "greater than" an upper-case cursor made from a row above it, `id < :cursorID`
+excludes it, and it is dropped exactly as the timestamp-only cursor dropped ties. Measured: three
+tied rows with ids `f1111111-…`, `e2222222-…`, `d3333333-…`, paged at `LIMIT 1`, returned **one**.
+
+**The fix is `COLLATE NOCASE` in the three places that have to agree** — `idx_<table>_captured`, the
+`ORDER BY`, and the row-value comparison's left operand. Since v19 had shipped nowhere, the
+migration's DDL was amended in place rather than superseded by a v20.
+
+The seek narrows for it, and that was measured rather than assumed, because a row-value comparison
+whose collation differs from its index's can silently stop seeking:
+`((captured_at,id)<(?,?))` becomes `SEARCH e USING INDEX idx_visits_captured (captured_at<?)` — the
+`id` half is a filter instead of part of the range constraint. Still a seek, still early-terminating,
+still exactly one temp b-tree in the plan and no per-arm sort. Page one at 16,000 rows with
+mixed-case ids: **0.162 ms against BINARY's 0.161**. The `lower(id)` alternative with a matching
+expression index measured the same and needs an expression index plus a normalization at the Swift
+boundary, so it was not taken.
+
+`JournalPaginationTieTests.theCursorIsCaseSafe` is the red-proof, and it is the only test in that
+file that can see this precondition: the other four build their fixtures through
+`ContributionStore.insert`, which takes a `UUID` and therefore always writes upper case.
+
+## What the test asserts, and why it is a comparison
+
+`JournalPaginationTieTests` compares **paginating** against **one unpaginated read of the same
+statement** — not against a written-down expected ordering. It therefore stays true if the ordering
+rule is ever changed deliberately, and it cannot pass by agreeing with itself. The property it pins
+is the only one paging owes the reader: the pages, concatenated, are the list.
+
+The suite also carries the two tests that pass on a build with the defect and say so in their own
+comments — one asserts the fixture really contains a straddling tie (so the pair above cannot go
+vacuously green), one is the negative control for an over-correction that would make the cursor
+inclusive and return the tie twice.

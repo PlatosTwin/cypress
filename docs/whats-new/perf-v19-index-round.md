@@ -31,7 +31,7 @@
 # page boundary, everything after the boundary in that run was never shown — not on the next
 # page, not on any page. Measured on this round's branch point: 40 entries written, 40 returned
 # by one unpaginated read, 32 across four pages. The CSV export follows the same cursor and came
-# back 232 of 240. Repro and fix in `docs/errata-pending/journal-tie-pagination.md`.
+# back 232 of 240. Repro and fix in `ERRATA E321`.
 #
 # A tester with a handful of entries recorded a few seconds apart will not have hit it. A tester
 # who has ever saved a check-in and a measurement together, or tapped through several trees on
