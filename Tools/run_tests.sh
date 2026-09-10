@@ -273,7 +273,7 @@ bounded_run() {
   bpid=$!
   while [ ! -f "$rcfile" ]; do
     if [ "$waited" -ge "$secs" ]; then
-      # The subtree is enumerated BEFORE anything is signalled — a child reparented to launchd
+      # The subtree is enumerated BEFORE anything is signaled — a child reparented to launchd
       # after its parent dies is a child this loop would no longer find.
       local tree k
       tree="$(process_tree_pids "$bpid")"

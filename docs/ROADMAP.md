@@ -434,14 +434,28 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   `CommunityTreeStore.trees(ids:)`) so `GroveStatementCensusTests` can pin by property the way the
   almanac census does, instead of deriving five of seven expected texts by probe. The tallies
   literal was already collapsed onto `scopedHeroPhotoTalliesSQL` in #147.
-- **`Tools/run_tests.sh` hardening, one sitting:** (a) a wedged `simctl bootstatus -b` is
+- ~~**`Tools/run_tests.sh` hardening, one sitting:** (a) a wedged `simctl bootstatus -b` is
   indistinguishable from a slow preflight and silently blocks every later run on that device;
   (b) the collision guard can self-match the *caller's own command line* when the wrapper
   invocation embeds both `xcodebuild` and the UDID (three refusals against a dead pid, 2026-09-02);
   (c) the guard's leftover-build refusal fires for ~1–2 minutes after a `-only-testing` run's
   wrapper exits, which the merge train should expect; (d) at the sanctioned three-concurrent-build
   cap the UI phase flakes with "Timed out while synthesizing event" — either lower the effective
-  cap during UI phases or teach the harness to tell an event-synthesis timeout from an assertion.
+  cap during UI phases or teach the harness to tell an event-synthesis timeout from an
+  assertion.~~ **SHIPPED** (`tools/harness-hardening`). (a) `bootstatus` runs under a bound
+  (`CYPRESS_BOOTSTATUS_TIMEOUT_S`, default 180 s) whose refusal names what it was waiting for, and
+  another run's leftover `bootstatus` against the same device is refused rather than joined.
+  (b) the collision guard skips this process's whole ancestor chain, which is the fix **E283**
+  itself proposed, and re-checks liveness before refusing. (c) the refusal prints each pid's age
+  and says which of the two things it is looking at — the tail of a wrapper that just returned, or
+  a stray. (d) the **classification** option was taken, not the concurrency one:
+  `verify_test_log.sh` answers `VERIFY-ENV-REFUSED` with exit **2** when every failure in a log is
+  an event-synthesis timeout, distinct from a pass (0) and a red (1), and `run_tests.sh` stamps
+  the concurrent xcodebuild count so the verdict is checkable against the condition that produced
+  it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
+  orchestrator's to set, a lock inside the script would serialize agents invisibly, and it would
+  still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 27
+  checks, each paired with its control, no simulator and no network.
 - **Screen 14's Activity list shows Photos / Check-ins / Care rows but no Visits row** (feel-check
   observation, 2026-09-02, at merged `e574a0a`). Whether that is intended is a mocks question —
   DECISIONS constraint 21 says ask, not infer; **owner to rule** before anyone "fixes" it.
@@ -488,9 +502,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
    from the suites' actual durations (shard runtimes are visibly unbalanced in recent runs);
    regenerate from measured per-class times and re-prove `UITestShardCoverageTests` still covers
    every class.
-3. **Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
+3. ~~**Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
-   with a calibrated failure case.
+   with a calibrated failure case.~~ **SHIPPED** (`tools/harness-hardening`). The mechanism was
+   `grep -v '^$'` reporting "selected nothing" as exit 1: under `pipefail` inside a command
+   substitution, `set -e` then ended the script with **no output whatever** — reproduced against
+   the pre-change file, which printed its two resolve lines, exited 1 and placed nothing. The
+   pipeline is now `awk` (which answers an empty question with an empty answer and exit 0), an
+   unreadable scope has its own refusal separate from a mismatched one, and an ERR/EXIT backstop
+   reports any exit that carried no diagnostic of its own, with the line and the command. Both the
+   defect and the backstop are calibrated in `Tools/test_harness_guards.sh`, the second by
+   splicing a silent failure into a copy of the script.
 4. ~~**Redesign `CityDownloadsFeedbackTests`' perf-margin test.** The "transfer beats a per-byte
    walk by an order of magnitude" test (`CityDownloadsFeedbackTests.swift:920`-era) compares two
    wall-clock timings with a hard margin and flaked on CI with no concurrent load (8.5x against a
