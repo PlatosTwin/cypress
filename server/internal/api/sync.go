@@ -557,10 +557,13 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 	// for the reason `add_tree` gives about its own: picking one of two disagreeing ids would file
 	// the dispute against a tree it is not about.
 	//
-	// **Ownership is deliberately not checked here** — the envelope gate above has already refused an
-	// item that is not this identity's to *send*. Whether the withdrawal's `disputeID` names a
-	// dispute this identity raised is a question about a row, and there is no row: see `syncKinds`
-	// for why that answer is the honest one today and what the badge round owes when it changes.
+	// **Ownership is checked, and it is checked where the rows are**, exactly as it is for a reading:
+	// the envelope gate above has already refused an item that is not this identity's to *send*, and
+	// whether the withdrawal's `disputeID` names a dispute **this identity raised** is a question
+	// about rows in `contributions`, asked in `store.disputeIsThisIdentitys` and answered
+	// `forbidden`. Checking it against anything the payload claims about itself would be trusting
+	// the claim. A withdrawal naming a dispute this service has never held still applies — see that
+	// function for why that is a success rather than a refusal.
 	if item.Kind == "data_dispute" {
 		var payload dataDisputePayload
 		if err := json.Unmarshal(item.Payload, &payload); err != nil {
@@ -590,6 +593,7 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		}
 	}
 
+	var withdrawnDisputeID *uuid.UUID
 	if item.Kind == "data_dispute_withdrawal" {
 		var payload dataDisputeWithdrawalPayload
 		if err := json.Unmarshal(item.Payload, &payload); err != nil {
@@ -602,6 +606,7 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 			return failed(apierr.ValidationFailed,
 				"That item disagrees with itself about which tree it belongs to.")
 		}
+		withdrawnDisputeID = &payload.DisputeID
 	}
 
 	// The reading's own id, for the arrival-order guard and nothing else. A body that cannot be read
@@ -631,6 +636,7 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		WithdrawnPhotoID: withdrawnPhotoID,
 
 		WithdrawnMeasurementID: withdrawnMeasurementID,
+		WithdrawnDisputeID:     withdrawnDisputeID,
 		RecordedMeasurementID:  recordedMeasurementID,
 	}, owner)
 
@@ -648,6 +654,14 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		// this, and "That photo belongs to a different contributor" on an item about a number would
 		// be a message that cannot be acted on. See `store.ErrMeasurementNotOwned`.
 		return failed(apierr.Forbidden, "That reading belongs to a different contributor.")
+	case errors.Is(err, store.ErrDisputeNotOwned):
+		// The dispute is here and somebody else raised it. Nothing is being protected from a reader
+		// — `GET /me/journal` is owner-scoped — but answering `applied` would write "this identity
+		// withdrew it" into the record the moderation round reads, which is a false statement
+		// stored. `forbidden` for the same reason the two above use it: non-retryable, so the item
+		// fails now rather than spending 48 h on an answer that will not change. See
+		// `store.ErrDisputeNotOwned`.
+		return failed(apierr.Forbidden, "That dispute belongs to a different contributor.")
 	case errors.Is(err, store.ErrTombstoned):
 		// The tombstone, answering exactly as the dedupe does. An item accepted after its account
 		// was deleted must not resurrect it, and it must not be an *error* either: a retryable code

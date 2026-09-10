@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,6 +178,101 @@ func TestAWithdrawalOfADisputeThisServiceNeverHeldIsApplied(t *testing.T) {
 	}
 	if kind, _ := storedPayload(t, h, item["client_uuid"].(uuid.UUID)); kind != "data_dispute_withdrawal" {
 		t.Fatalf("stored kind = %q, want data_dispute_withdrawal", kind)
+	}
+}
+
+// ── Whose dispute it is ────────────────────────────────────────────────────────────────────────
+
+// rowsForKey counts the contributions stored under one item key.
+func rowsForKey(t *testing.T, h *harness, key uuid.UUID) int {
+	t.Helper()
+	var rows int
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM contributions WHERE client_uuid = $1`, key).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	return rows
+}
+
+// TestAWithdrawalOfSomebodyElsesDisputeIsRefused is the ownership gate.
+//
+// Nothing is being kept from a reader here — `GET /me/journal` is owner-scoped, so Bob's withdrawal
+// would only ever appear in Bob's own journal. What it prevents is a **false statement stored**: the
+// `contributions` row is the record R79's moderation round reads, and "Bob withdrew this" about a
+// dispute Alice raised is not true. `forbidden`, non-retryable, for the reason
+// `measurement_withdrawal` refuses a reading that is somebody else's.
+//
+// The control is the same withdrawal from Alice, and it is not decoration: without it this case
+// passes just as happily if the handler has been made to refuse every withdrawal, or if the kind has
+// fallen out of `syncKinds` — two states in which the ownership rule is not being exercised at all.
+func TestAWithdrawalOfSomebodyElsesDisputeIsRefused(t *testing.T) {
+	h := newHarness(t)
+	alice := h.signIn(t, nil)
+	bob := h.registerDeviceToken(t, uuid.New())
+	dispute, tree := uuid.New(), uuid.New()
+
+	if raise := h.syncOne(t, alice.AccessToken, disputeItem(dispute, tree, []string{"wrong_species"})); raise.Status != "applied" {
+		t.Fatalf("alice raising the dispute: status = %q (%s), want applied", raise.Status, codeOf(raise.Error))
+	}
+
+	stolen := disputeWithdrawalItem(dispute, tree)
+	result := h.syncOne(t, bob, stolen)
+	if result.Status != "failed" || codeOf(result.Error) != "forbidden" {
+		t.Fatalf("bob withdrawing alice's dispute: status = %q, error = %s; want failed/forbidden",
+			result.Status, codeOf(result.Error))
+	}
+	// The refusal has to leave nothing behind, because the row *is* the record: a stored
+	// `data_dispute_withdrawal` owned by Bob is the false statement this gate exists to prevent, and
+	// it would be just as false for having been reported as a failure to the phone.
+	if rows := rowsForKey(t, h, stolen["client_uuid"].(uuid.UUID)); rows != 0 {
+		t.Fatalf("the refused withdrawal left %d rows in contributions; the refusal must roll back", rows)
+	}
+
+	// The control: one identity over, the same withdrawal applies.
+	own := disputeWithdrawalItem(dispute, tree)
+	if result := h.syncOne(t, alice.AccessToken, own); result.Status != "applied" {
+		t.Fatalf("alice withdrawing her own dispute came back %q (%s), want applied — this case "+
+			"refused bob's item for some reason other than ownership, so it is measuring nothing",
+			result.Status, codeOf(result.Error))
+	}
+}
+
+// TestTheOwnershipLookupMatchesADisputeInEitherSpelling pins the `upper()` in the lookup.
+//
+// The payload is stored verbatim, and the client mints the same id in two spellings depending on
+// which side of the outbox it came from — `SQLiteValue`'s uppercase and `JSONEncoder`'s lowercase,
+// which is the case split `internal/uuid`'s own header records. A lookup comparing the extracted
+// text with a plain `=` would find no match for a dispute raised in the other spelling, and "no
+// match" is a **success** here: the gate would silently stop refusing.
+func TestTheOwnershipLookupMatchesADisputeInEitherSpelling(t *testing.T) {
+	h := newHarness(t)
+	alice := h.signIn(t, nil)
+	bob := h.registerDeviceToken(t, uuid.New())
+	dispute, tree := uuid.New(), uuid.New()
+
+	// Alice's raise carries the id in uppercase, as a row that came out of SQLite would.
+	upperCased := strings.ToUpper(dispute.String())
+	raise := map[string]any{
+		"client_uuid": uuid.New(), "kind": "data_dispute", "tree_uuid": tree,
+		"occurred_at": time.Now().UTC(),
+		"payload": json.RawMessage(`{"id":"` + upperCased + `","treeID":"` + tree.String() + `",` +
+			`"treeSource":"city","issues":["wrong_location"]}`),
+	}
+	if result := h.syncOne(t, alice.AccessToken, raise); result.Status != "applied" {
+		t.Fatalf("raising with an uppercase id: status = %q (%s), want applied",
+			result.Status, codeOf(result.Error))
+	}
+
+	// The withdrawal names it in the lowercase `String()` spelling.
+	if result := h.syncOne(t, bob, disputeWithdrawalItem(dispute, tree)); result.Status != "failed" ||
+		codeOf(result.Error) != "forbidden" {
+		t.Fatalf("bob withdrawing an uppercase-spelled dispute: status = %q, error = %s; "+
+			"want failed/forbidden — the lookup missed the row across the two spellings",
+			result.Status, codeOf(result.Error))
+	}
+	if result := h.syncOne(t, alice.AccessToken, disputeWithdrawalItem(dispute, tree)); result.Status != "applied" {
+		t.Fatalf("alice withdrawing her own uppercase-spelled dispute came back %q (%s), want applied",
+			result.Status, codeOf(result.Error))
 	}
 }
 
