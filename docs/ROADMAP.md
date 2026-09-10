@@ -430,10 +430,19 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   pre-tap value. Pre-existing (remote-first `isFavorite` had the same exposure); documented in
   `ProfileFavoriteWriter.reconciledState`, not closed. Needs a server-side read-your-writes answer
   or a version/timestamp on the favorite row.
-- **Hoist the remaining grove SQL literals to named properties** (`groveTreeIDs`, `groveRecords`,
+- ~~**Hoist the remaining grove SQL literals to named properties** (`groveTreeIDs`, `groveRecords`,
   `CommunityTreeStore.trees(ids:)`) so `GroveStatementCensusTests` can pin by property the way the
   almanac census does, instead of deriving five of seven expected texts by probe. The tallies
-  literal was already collapsed onto `scopedHeroPhotoTalliesSQL` in #147.
+  literal was already collapsed onto `scopedHeroPhotoTalliesSQL` in #147.~~
+  **SHIPPED** (`tools/shot-dir-and-sql-properties`). `ContributionStore.groveRecordsSQL`,
+  `ContributionStore.ownHeroPhotoCandidatesSQL` and `CommunityTreeStore.treesSQL` are the hoists;
+  the census pins all seven statements by property, per text, and the probe is gone.
+  **Two claims in this entry were wrong, corrected here rather than left to mislead.**
+  `groveTreeIDs` already had a property — `ContributionStore.groveTreeIDsSQL`, which
+  `GrovePagedStatementCensusTests` reads — so the probe covered four of seven, not five. And the
+  tallies literal was **not** collapsed in #147: that PR's review identified the duplicate and the
+  test header it wrote says in as many words that it does not fix it. The second, byte-identical
+  copy was still inside `heroPhotoIDs(treeIDs:connection:)` at `b5a929c`; it is removed here.
 - **`Tools/run_tests.sh` hardening, one sitting:** (a) a wedged `simctl bootstatus -b` is
   indistinguishable from a slow preflight and silently blocks every later run on that device;
   (b) the collision guard can self-match the *caller's own command line* when the wrapper
@@ -522,7 +531,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
    transfer, or refused install leave orphans in the staging directory, and does anything clean
    them? Happy path verified empty on device; the sweep is every unhappy path, pinned with
    red-proved tests.
-7. **Make `CYPRESS_SHOT_DIR` reachable for UI tests, or correct the instructions.** The unit-side
+7. ~~**Make `CYPRESS_SHOT_DIR` reachable for UI tests, or correct the instructions.** The unit-side
    shot suites (`ScreenSweepShots`, `DynamicTypeScreenshotTests`) provably honor the variable
    when `TEST_RUNNER_CYPRESS_SHOT_DIR` is **exported** before `Tools/run_tests.sh` — several
    errata carry the receipts. The UI-test files (`AreaPickerUITests.swift:13`,
@@ -535,7 +544,20 @@ into this section in the round that finds it, and nowhere else. Each item stands
    the doc comments in all the files that state the convention (the two UI-test files, plus the
    cross-references in `ScreenSweepShots.swift`, `DynamicTypeScreenshotTests.swift`,
    `DebugDeepLink.swift`). A confident doc comment asserting an unverified invariant is this
-   repo's signature bug shape.
+   repo's signature bug shape.~~
+   **SHIPPED, and the answer is that the variable was always reachable** — the exported spelling
+   the unit side uses reaches a UI-test runner too, because `xcodebuild` forwards a
+   `TEST_RUNNER_`-prefixed **environment** variable to whichever process hosts the test bundle,
+   which is the app under test for `CypressTests` and the XCTRunner app for `CypressUITests`. What
+   never worked is the *argument* spelling those two files prescribed: written after the script's
+   own arguments it is a build-setting override and reaches no process at all. Three runs on
+   iPhone 16e (`3A1F212D`) on 2026-09-09, one `-only-testing` UI test each, each against a
+   directory listed empty first: exported → the PNG in the chosen directory; unset → the runner's
+   own container tmp; argument → the same container tmp and the chosen directory still empty.
+   Receipts in `docs/errata-pending/shot-dir-runner-forwarding.md`. The convention is now argued
+   once, in `Tools/run_tests.sh`'s header, and the five files that stated it point there;
+   `CypressTests/ShotDirectoryConventionTests` keeps the key the writers read and the name the
+   prose tells an operator to export from drifting apart.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
