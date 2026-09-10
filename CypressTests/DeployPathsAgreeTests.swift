@@ -164,10 +164,13 @@ struct DeployPathsAgreeTests {
         // the one that could change without anyone thinking about this file. **`Tools/` is
         // deliberately NOT exempted broadly: `Tools/fetch_seed.sh` runs in every CI job and places
         // the seed the app bundles, so it is a genuine build input and must keep shipping.**
+        // `server/` is #156: the Go sync service is not a target, a dependency, a resource, or
+        // referenced anywhere in the project file, so a Go-only change cannot alter the app.
         for (token, ticket, change) in [
             (".github/", "#212", "a pipeline-only change"),
             ("CypressTests/", "#215", "a unit-test-only change"),
             ("CypressUITests/", "#215", "a UI-test-only change"),
+            ("server/", "#156", "a Go-service-only change"),
             ("Tools/ui-test-shards\\.txt$", "#31", "a shard-list-only change"),
             ("Tools/run_tests\\.sh$", "#153", "a test-runner-only change"),
             ("Tools/verify_test_log\\.sh$", "#153", "a log-judge-only change"),

@@ -256,13 +256,21 @@ jobs:
           #     in `CypressTests/DeployPathsAgreeTests`, so the day someone adds a build phase
           #     this stops being a true comment and becomes a red test.
           #   * the `Archive` step below invokes none of them.
+          #
+          # `server/` is the Go sync service, and it is the plainest case on this list: the iOS
+          # archive has no path to it at all. It is not a target, not a dependency, not a
+          # resource, and not referenced by the scheme or by `project.pbxproj` — the same three
+          # facts above cover it, and the third is asserted from Swift. It has no CI here, so it
+          # must still RUN the suite when it changes (a shared docs edit can travel with it), but
+          # a Go-only change leaves the app byte-identical and minting a build for one is exactly
+          # the #1 / #215 / #31 harm. Found while holding PR #156, which would have minted one.
           # They must not be doc-only either: they are how the suite is run and judged, so a
           # change to them proves itself by running the suite THROUGH them.
           #
           # One assignment on one line, however long: `DeployPathsAgreeTests` reads the first line
           # that starts with `NO_ARCHIVE=`, and a continuation would leave the tokens below the
           # first line unchecked — a gate passing on half the list.
-          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$DOC_ONLY"
+          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$DOC_ONLY"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # The escape hatch: a manual run tests everything and ships. This is what makes the
