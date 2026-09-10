@@ -156,14 +156,43 @@ struct DeployPathsAgreeTests {
         // by a plain substring check even after silently widening to match a lookalike path or a
         // directory of the same name — the exact regex text is the thing #31 depends on, so this
         // assertion checks for exactly that text.
+        //
+        // The three harness scripts are #153. Their exemption rests on the same fact as the test
+        // directories' — the scheme's only buildable is the app — plus one more: `project.pbxproj`
+        // has no `PBXShellScriptBuildPhase`, so nothing under `Tools/` runs during a build. That
+        // second half is asserted in its own test below rather than described here, because it is
+        // the one that could change without anyone thinking about this file. **`Tools/` is
+        // deliberately NOT exempted broadly: `Tools/fetch_seed.sh` runs in every CI job and places
+        // the seed the app bundles, so it is a genuine build input and must keep shipping.**
+        // `server/` is #156. The fact that carries it is **membership**: the project uses
+        // `PBXFileSystemSynchronizedRootGroup`, and the three groups are `Cypress`,
+        // `CypressTests` and `CypressUITests` — `server/` is in none of them, so nothing under it
+        // is an archive input. Note what does NOT carry it: "not referenced by project.pbxproj"
+        // is equally true of every file that DOES ship, because that file names no sources at all
+        // (#157's reviewer calibrated this: `APIError.swift` → 0 hits). Nothing yet asserts the
+        // synchronized-group list; until something does, this bullet is the weakest of the four.
         for (token, ticket, change) in [
-            (".github/", "#212", "a pipeline-only change"),
+            ("\\.github/", "#212", "a pipeline-only change"),
             ("CypressTests/", "#215", "a unit-test-only change"),
             ("CypressUITests/", "#215", "a UI-test-only change"),
+            ("server/", "#156", "a Go-service-only change"),
             ("Tools/ui-test-shards\\.txt$", "#31", "a shard-list-only change"),
+            ("Tools/run_tests\\.sh$", "#153", "a test-runner-only change"),
+            ("Tools/verify_test_log\\.sh$", "#153", "a log-judge-only change"),
+            ("Tools/test_harness_guards\\.sh$", "#153", "a harness-seam-only change"),
         ] {
+            // Compared as a WHOLE ALTERNATIVE, not as a substring. A bare `contains` is a
+            // substring test, and `"Tools/observer/".contains("server/")` is true — a lookalike
+            // token satisfies the loop while the predicate ships every Go-only push, which is
+            // what #157's reviewer demonstrated end to end.
+            //
+            // Two details, both of which bit the first attempt at this fix and were caught by
+            // this very assertion. The alternation's FIRST alternative has no `|` in front of it,
+            // so the haystack is prefixed with one before the search. And the tokens must be
+            // spelled the way the assignment spells them — `\.github/` escaped, not `.github/` —
+            // because that is what an alternative-for-alternative comparison means.
             #expect(
-                noArchive.contains(token),
+                ("|" + noArchive).contains("|" + token),
                 """
                 NO_ARCHIVE no longer mentions `\(token)`. That restores \(ticket) exactly: \
                 \(change) would mint a build whose app is byte-identical to the last one, expiring \
@@ -182,5 +211,57 @@ struct DeployPathsAgreeTests {
                 """
             )
         }
+    }
+
+    /// **The premise under two separate exemptions, pinned instead of asserted in prose (#153).**
+    ///
+    /// Two things in this repository are true because no target shells out during a build:
+    ///
+    /// 1. `NO_ARCHIVE` exempts `Tools/run_tests.sh`, `Tools/verify_test_log.sh` and
+    ///    `Tools/test_harness_guards.sh` — they cannot reach the archive, so a change to them
+    ///    must not mint a TestFlight build byte-identical to the last (#1, #215, #31);
+    /// 2. `Tools/run_tests.sh`'s collision guard skips its own ancestor chain on the ground that
+    ///    "no real xcodebuild can be an ancestor of this script" (E283). Adversarial review built
+    ///    a process whose `ps` line was a real build's and which WAS an ancestor, and the guard
+    ///    passed it silently — correctly, and only because that premise holds.
+    ///
+    /// A `PBXShellScriptBuildPhase` breaks both at once, quietly: a script phase can run anything
+    /// in `Tools/` as part of the build, which makes those files archive inputs and makes an
+    /// `xcodebuild` a legitimate ancestor of whatever it launches. Nothing else in the repository
+    /// notices. This test is the notice.
+    ///
+    /// It says nothing about whether a script phase would be a good idea. It says that adding one
+    /// is a decision that has to visit two other places, and names them.
+    @Test("no build phase shells out, which is what two exemptions rest on")
+    func theProjectRunsNoShellScriptBuildPhase() throws {
+        let root = AppSourceLiterals.repositoryRoot()
+        let pbxproj = root.appendingPathComponent("Cypress.xcodeproj/project.pbxproj")
+        let text = try String(contentsOf: pbxproj, encoding: .utf8)
+
+        // The control first: a read that came back empty, or a file that is no longer a project
+        // file, would make the assertion below pass while checking nothing — the vacuous-guard
+        // shape this repository has shipped before.
+        #expect(
+            text.contains("PBXNativeTarget"),
+            """
+            \(pbxproj.path) does not read as an Xcode project file (no `PBXNativeTarget`), so the \
+            assertion below is passing without checking anything. Fix the path, not the assertion.
+            """
+        )
+
+        #expect(
+            !text.contains("PBXShellScriptBuildPhase"),
+            """
+            `Cypress.xcodeproj/project.pbxproj` now has a `PBXShellScriptBuildPhase`, and two \
+            things elsewhere assume it does not. (1) `.github/workflows/testflight.yml` exempts \
+            Tools/run_tests.sh, Tools/verify_test_log.sh and Tools/test_harness_guards.sh from \
+            minting a build because nothing in Tools/ can reach the archive — if the new phase \
+            runs any of them, that exemption is now wrong and a change to them ships untested \
+            code as an unchanged app. (2) Tools/run_tests.sh's collision guard skips its whole \
+            ancestor chain because no real xcodebuild can be an ancestor of it (E283) — if the \
+            new phase invokes run_tests.sh, one now can, and a genuine second build on the same \
+            simulator would go undetected. Decide both before deleting this test.
+            """
+        )
     }
 }

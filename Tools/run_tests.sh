@@ -84,8 +84,16 @@
 #   will be `yes` on most real runs: the app leaves the hostile camera behind on every granted
 #   launch. See the long comment on that branch in `device_state_check`.
 # - bootstatus -b before anything: simctl against a Shutdown device fails quietly in && chains.
+#   BOUNDED since the harness-hardening round, and refusing on somebody else's leftover: an
+#   unbounded `bootstatus` is indistinguishable from a slow preflight while you are inside it,
+#   and four wedged ones once deadlocked a device into needing an erase. See `boot_device`.
 # - camera grant: the unit suite hangs forever on a simulator that never granted camera.
 # - verify_test_log.sh at the end: the only judgment that counts.
+#
+# Exit status: 0 the suite passed, 1 it failed (or a guard refused), 2 the ENVIRONMENT refused
+# the run — an XCUITest event-synthesis timeout, which is a fact about the loaded host rather
+# than about the app. 2 is not a pass and CI still fails on it; it exists so that a re-run is a
+# decision somebody makes with the reason in front of them. See verify_test_log.sh.
 
 set -u
 UDID="${1:?usage: run_tests.sh <udid> <log-path> [xcodebuild args…]}"
@@ -100,6 +108,86 @@ SKIP_PREFLIGHT="${CYPRESS_RUN_TESTS_SKIP_PREFLIGHT:-0}"
 refuse() { echo "VERIFY-FAIL: $1" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
+# The process table, read ONCE per question and shared by every guard below.
+#
+# One snapshot rather than four `ps` calls, because the guards disagree otherwise: the
+# collision guard, the bootstatus guard and the concurrency count all ask about the same
+# instant, and a pid that appears in one scan and not the next produced a refusal naming a
+# process the operator could not find (E283's visible symptom).
+#
+# `pid ppid etime command` — `etime` is here because a refusal that does not say HOW OLD the
+# process is cannot be acted on. See `collision_check` for what the age decides.
+#
+# `ps`, `pid_is_live` and `etime_seconds` are called through these names and never inlined, so
+# `Tools/test_harness_guards.sh` can substitute a fixed process table and a fixed liveness
+# answer for them (bash resolves a shell function before an external command). That is the whole
+# test seam: no branch inside the guards knows whether it is being tested.
+# ---------------------------------------------------------------------------
+PS_SNAPSHOT=""
+take_ps_snapshot() { PS_SNAPSHOT="$(ps -eo pid=,ppid=,etime=,command=)"; }
+
+pid_is_live() { kill -0 "$1" 2>/dev/null; }
+
+# `[[dd-]hh:]mm:ss` → seconds. Calibrated in `Tools/test_harness_guards.sh` against four values
+# whose answers are known (05→5, 01:30→90, 02:00:00→7200, 1-00:00:01→86401) rather than trusted:
+# every one of the messages below is a claim about elapsed time, and an elapsed time parsed wrong
+# is worse than none at all — it reads as a measurement.
+etime_seconds() {
+  awk -v e="$1" 'BEGIN{
+    d = 0; rest = e;
+    n = index(rest, "-"); if (n > 0) { d = substr(rest, 1, n-1) + 0; rest = substr(rest, n+1) }
+    m = split(rest, p, ":");
+    if (m == 3)      s = p[1]*3600 + p[2]*60 + p[3];
+    else if (m == 2) s = p[1]*60 + p[2];
+    else             s = p[1] + 0;
+    printf "%d", d*86400 + s }'
+}
+
+# ---------------------------------------------------------------------------
+# This process's ancestor chain, and why the guards below must skip it (E283).
+#
+# `collision_check` used to skip exactly one pid: its own, `$$`. It did not skip its ANCESTORS,
+# and an agent's shell command routinely contains both halves of a match — the literal string
+# `xcodebuild` (a `ps … | grep -F xcodebuild` appended to the same line that launches the run)
+# and the UDID, which is this script's first argument. The launching `zsh -c` is then a perfect
+# match for a collision with itself. It refused three consecutive times on 2026-09-02, each time
+# naming a pid that `ps` showed nothing for a second later, because by then the shell had moved
+# on: the "dead pid" in the errata is the wrapper, already gone.
+#
+# E283 names both candidate fixes — skip the ancestors, or require the command to START with an
+# xcodebuild binary path. The second one is NOT taken here and the reason is a refusal that must
+# keep refusing: `nohup xcodebuild test …&` has argv[0] `nohup`, and CLAUDE.md carries `nohup … &`
+# as a shape this project has actually used. Narrowing the match to argv[0] would stop detecting
+# it. Ancestry removes exactly the false positive and no true one — no real xcodebuild can be an
+# ancestor of this script.
+#
+# Bounded at 64 hops: a cycle in ppid is impossible, but a parser that could spin forever inside a
+# preflight is the same failure mode as the wedged bootstatus this round is fixing.
+# ---------------------------------------------------------------------------
+ANCESTOR_PIDS=""
+read_ancestors() {
+  local cur="$$" parent hops=0
+  ANCESTOR_PIDS=" $$ "
+  while [ -n "$cur" ] && [ "$cur" != "0" ] && [ "$cur" != "1" ] && [ "$hops" -lt 64 ]; do
+    parent="$(printf '%s\n' "$PS_SNAPSHOT" | awk -v p="$cur" '$1 == p { print $2; exit }')"
+    [ -n "$parent" ] || break
+    ANCESTOR_PIDS="${ANCESTOR_PIDS}${parent} "
+    cur="$parent"
+    hops=$((hops + 1))
+  done
+}
+is_ancestor() { case "$ANCESTOR_PIDS" in *" $1 "*) return 0 ;; esac; return 1; }
+
+# An `xcodebuild` that OUTLIVES its wrapper is the ordinary case, not a stray (roadmap item (c)).
+# `Tools/run_tests.sh` returns when `xcodebuild test` returns, but on a `-only-testing` run the
+# process lingers for roughly a minute or two afterwards finishing its own teardown, so the next
+# run in a merge train sees a live pid against the same worktree and refuses. That refusal is
+# correct — two builds on one device is exactly E202 — but it must say which of the two things it
+# is looking at, because "wait ninety seconds" and "find whoever owns this" are different actions
+# and the message used to support only the second one.
+COLLISION_TAIL_S=180
+
+# ---------------------------------------------------------------------------
 # Collision guard — before booting anything.
 #
 # Deliberately no `grep` and no `[x]codebuild`: under zsh an unquoted bracket pattern
@@ -108,27 +196,292 @@ refuse() { echo "VERIFY-FAIL: $1" >&2; exit 1; }
 # no pattern, no subshell, and nothing to self-match — `ps`'s own argv is `ps -eo …`.
 # ---------------------------------------------------------------------------
 collision_check() {
-  local pid cmd hits=""
-  while read -r pid cmd; do
+  take_ps_snapshot
+  read_ancestors
+  local pid ppid etime cmd why hits="" dropped="" age ages="" first_pid=""
+  while read -r pid ppid etime cmd; do
     [ -n "${pid:-}" ] || continue
     [ "$pid" = "$$" ] && continue
-    case "$cmd" in *xcodebuild*) ;; *) continue ;; esac
+    # E283. Not `[ "$pid" = "$PPID" ]` — the wrapper that mentions `xcodebuild` may be two or
+    # three shells up (an agent's `bash -c` inside a login shell inside a tool runner), and only
+    # the whole chain excludes it.
+    is_ancestor "$pid" && continue
+    xcodebuild_line "$cmd" || continue
     # The worktree test matches the *project path*, not the repo root. `$REPO` alone is a
     # prefix of every sibling worktree — main is `…/cypress` and the agents' are
     # `…/cypress-w8b`, `…/cypress-w8c` — so `*"$REPO"*` made a run from main refuse
     # whenever any agent was building. Verified live against two running agents before the
     # fix; the guard was blocking the orchestrator, not a collision.
+    why=""
     case "$cmd" in
-      *"$UDID"*)                   hits+="  pid $pid — same simulator ($UDID)"$'\n' ;;
-      *"$REPO/Cypress.xcodeproj"*) hits+="  pid $pid — same worktree ($REPO)"$'\n' ;;
+      *"$UDID"*)                   why="same simulator ($UDID)" ;;
+      *"$REPO/Cypress.xcodeproj"*) why="same worktree ($REPO)" ;;
     esac
-  done < <(ps -eo pid=,command=)
+    [ -n "$why" ] || continue
+    # Ask again whether it is still there. Three of E283's refusals named a pid that had already
+    # exited; ancestry above removes the shape that caused those, and this removes the general
+    # one — a build that finished between the snapshot and the verdict is not a collision, and a
+    # guard that refuses on it teaches its readers to disbelieve it.
+    if ! pid_is_live "$pid"; then
+      dropped="${dropped}  pid $pid — $why — had already exited by the time the guard looked again"$'\n'
+      continue
+    fi
+    age="$(etime_seconds "$etime")"
+    ages="${ages}${age}"$'\n'
+    [ -n "$first_pid" ] || first_pid="$pid"
+    hits="${hits}  pid $pid — $why — running ${etime} (${age}s)"$'\n'
+    hits="${hits}      $cmd"$'\n'
+  done <<EOF
+$PS_SNAPSHOT
+EOF
+  if [ -n "$dropped" ]; then
+    printf 'CYPRESS-RUN: the collision guard matched process(es) that were gone a moment later, and did NOT refuse on them:\n%s' "$dropped" >&2
+  fi
   if [ -n "$hits" ]; then
     printf 'VERIFY-FAIL: an xcodebuild is already live against this simulator or worktree:\n%s' "$hits" >&2
     echo "  Two runs on one device fake 'is not running' / 'never appeared' / 'Test run with 0 tests'." >&2
+    # Which of the two things is this? The age decides, and the message says so rather than
+    # leaving the reader to guess (roadmap item (c)).
+    local youngest
+    youngest="$(printf '%s' "$ages" | sort -n | head -1)"
+    if [ -n "$youngest" ] && [ "$youngest" -lt "$COLLISION_TAIL_S" ] 2>/dev/null; then
+      echo "  The youngest of these is ${youngest}s old, which is inside the ${COLLISION_TAIL_S}s window in which an" >&2
+      echo "  xcodebuild routinely OUTLIVES the run_tests.sh that started it — a -only-testing run's" >&2
+      echo "  wrapper returns first and its build finishes teardown for another minute or two. If that" >&2
+      echo "  is the previous step of your own merge train, WAIT for it and re-run; there is nobody to" >&2
+      echo "  hunt for. Watch it go: ps -o pid,etime,command -p ${first_pid}" >&2
+    else
+      echo "  All of these are older than ${COLLISION_TAIL_S}s, so none is the tail of a wrapper that just" >&2
+      echo "  returned: this is a live build, or a dead agent's orphan. Find its owner before killing it." >&2
+    fi
     echo "  Inspect with: ps -eo pid,lstart,command | grep -F xcodebuild" >&2
     exit 1
   fi
+}
+
+# How many real xcodebuild invocations are live besides this one, for the header (roadmap item
+# (d)). The cap is three machine-wide (CLAUDE.md), and the UI phase's event-synthesis timeouts
+# were all observed at it, so the number belongs in the log that gets judged.
+#
+# ONE DEFINITION OF "AN XCODEBUILD", SHARED WITH THE COLLISION GUARD ABOVE (review of #153, F3).
+# This function used to count argv[0] only — the narrowing E283 offers and this file rejects a
+# hundred lines above, because `nohup xcodebuild test …&` has argv[0] `nohup`. Measured live on
+# one process table during review: a `nohup /…/xcodebuild test -destination …id=<UDID>` was
+# refused by `collision_check` and counted **0** here, with an argv[0]-shaped build alongside it
+# counting 1, so the zero was not vacuously zero. Two spellings of one question, disagreeing.
+#
+# That undercount stopped being cosmetic when `verify_test_log.sh` began reprinting the number as
+# "Concurrent xcodebuilds when this run started: N" — the corroboration offered for the
+# VERIFY-ENV-REFUSED verdict. A reader checking a verdict against an undercount is checking it
+# against nothing. The old comment's defence ("being one short of the truth costs nothing, where
+# a false refusal costs a round") was written when this was a header line and expired the day the
+# number became evidence.
+#
+# So both callers now ask `xcodebuild_line`, which matches the binary as a COMMAND rather than as
+# a substring:
+#   * a token ending in `/xcodebuild`, anywhere in the line — that is the binary by path, however
+#     many wrappers precede it;
+#   * the bare name `xcodebuild` as argv[0] or as the word right after argv[0] — `nohup
+#     xcodebuild …`, `caffeinate xcodebuild …`.
+# and matches neither of the two shapes the argv[0] test was protecting against: a shell that
+# merely says the word (`bash -c echo xcodebuild …`) and a compiler child whose DerivedData path
+# contains it (`…/dd/xcodebuild-ish/File.swift`). Both are pinned in Tools/test_harness_guards.sh,
+# on both callers.
+xcodebuild_line() {
+  local after_first
+  case "$1" in
+    xcodebuild|xcodebuild\ *) return 0 ;;
+    */xcodebuild|*/xcodebuild\ *) return 0 ;;
+  esac
+  after_first="${1#* }"
+  case "$after_first" in
+    xcodebuild|xcodebuild\ *) return 0 ;;
+  esac
+  return 1
+}
+
+count_live_xcodebuilds() {
+  local pid ppid etime cmd n=0
+  while read -r pid ppid etime cmd; do
+    [ -n "${pid:-}" ] || continue
+    [ "$pid" = "$$" ] && continue
+    is_ancestor "$pid" && continue
+    xcodebuild_line "$cmd" || continue
+    n=$((n + 1))
+  done <<EOF
+$PS_SNAPSHOT
+EOF
+  printf '%s' "$n"
+}
+
+# ---------------------------------------------------------------------------
+# A bounded wait for a command that has no timeout of its own (roadmap item (a)).
+#
+# macOS ships no `timeout(1)` — `gtimeout` is coreutils and this repo takes no dependencies —
+# so the bound is built here, once, and both callers below use it.
+#
+# The completion signal is a FILE, not `kill -0` on the background pid. `kill -0` succeeds on a
+# zombie, so a loop polling it can spin until the timeout against a child that finished in a
+# second; whether bash has reaped the child by then is a scheduling question, and this shell is
+# not allowed to have a different answer on a loaded machine than on an idle one. The rc is
+# written to `<f>.part` and renamed, so the file cannot be seen half-written.
+#
+# Returns the command's own status, or 124 on timeout (the `timeout(1)` convention), and leaves
+# it in BOUNDED_RC for a caller that wants it without `$?` juggling.
+# ---------------------------------------------------------------------------
+BOUNDED_RC=""
+bounded_run() {
+  local secs="$1"; shift
+  local rcfile waited=0 bpid
+  rcfile="$(mktemp -t cypress-bounded)" || return 125
+  rm -f "$rcfile"
+  ( "$@"; printf '%s' "$?" >"$rcfile.part"; mv -f "$rcfile.part" "$rcfile" ) &
+  bpid=$!
+  while [ ! -f "$rcfile" ]; do
+    if [ "$waited" -ge "$secs" ]; then
+      # The subtree is enumerated BEFORE anything is signaled — a child reparented to launchd
+      # after its parent dies is a child this loop would no longer find.
+      local tree k
+      tree="$(process_tree_pids "$bpid")"
+      for k in $tree; do kill -TERM "$k" 2>/dev/null; done
+      # Reaped immediately, and the order matters: left unwaited, bash announces the killed job
+      # ("Terminated: 15") on its own stderr at the next external command — which lands in the
+      # middle of the refusal that is trying to explain what happened, where it reads as a crash.
+      wait "$bpid" 2>/dev/null
+      sleep 1
+      for k in $tree; do kill -KILL "$k" 2>/dev/null; done
+      rm -f "$rcfile" "$rcfile.part"
+      BOUNDED_RC=124
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  BOUNDED_RC="$(cat "$rcfile")"
+  rm -f "$rcfile"
+  wait "$bpid" 2>/dev/null
+  return "${BOUNDED_RC:-1}"
+}
+
+# A pid and everything descended from it. `xcrun` execs a `simctl` child, and signaling only the
+# pid bash knows about leaves the wedged `simctl` behind — which is the exact leftover the guard
+# below refuses on, so a timeout that manufactured one would make the next run worse.
+#
+# Reads `ps` directly and NOT `PS_SNAPSHOT`: the snapshot is minutes old by the time a bound
+# fires, and the question here is who is alive right now.
+process_tree_pids() {
+  local snapshot frontier="$1" all="$1" next k depth=0
+  snapshot="$(ps -eo pid=,ppid=)"
+  while [ -n "$frontier" ] && [ "$depth" -lt 8 ]; do
+    next=""
+    for k in $frontier; do
+      next="$next $(printf '%s\n' "$snapshot" | awk -v p="$k" '$2 == p { print $1 }')"
+    done
+    frontier="$next"
+    all="$all $next"
+    depth=$((depth + 1))
+  done
+  printf '%s' "$all"
+}
+
+# ---------------------------------------------------------------------------
+# Booting, with a bound and a diagnostic (roadmap item (a)).
+#
+# `xcrun simctl bootstatus <udid> -b` waits for the device to reach Booted AND for its system
+# apps to finish launching. It has NO timeout of its own, and a wedged CoreSimulator leaves it
+# waiting forever. That state is indistinguishable from a slow preflight while you are in it —
+# the script prints nothing, the agent waits, and every later run on that device blocks behind
+# it in exactly the same silence. One agent found four stuck `bootstatus` processes deadlocking
+# each other's preflight; another recovered only by erasing the device.
+#
+# Two changes, and they are two different failures:
+#   - a LEFTOVER bootstatus against this device is refused before we start our own, because
+#     adding a fifth to four is how that pile-up happened;
+#   - our own wait is bounded, and the refusal names what it was waiting for and what to do.
+#
+# The bound is deliberately generous (three minutes; a cold boot of these devices takes well
+# under one) and it is overridable — a bound nobody can raise is a bound somebody deletes.
+# ---------------------------------------------------------------------------
+BOOTSTATUS_TIMEOUT_S="${CYPRESS_BOOTSTATUS_TIMEOUT_S:-180}"
+
+# Anyone else's `simctl bootstatus` against THIS device. Ancestor-excluded for E283's reason:
+# the agent's own launching shell may name the UDID, and could name `bootstatus` too.
+bootstatus_watchers() {
+  local pid ppid etime cmd
+  while read -r pid ppid etime cmd; do
+    [ -n "${pid:-}" ] || continue
+    [ "$pid" = "$$" ] && continue
+    is_ancestor "$pid" && continue
+    case "$cmd" in *bootstatus*) ;; *) continue ;; esac
+    case "$cmd" in *simctl*) ;; *) continue ;; esac
+    case "$cmd" in *"$UDID"*) ;; *) continue ;; esac
+    pid_is_live "$pid" || continue
+    printf '  pid %s — running %s (%ss) — %s\n' "$pid" "$etime" "$(etime_seconds "$etime")" "$cmd"
+  done <<EOF
+$PS_SNAPSHOT
+EOF
+}
+
+# What the device says it is, asked under its own bound — because on a wedged CoreSimulator
+# `simctl list` hangs too, and a diagnostic that hangs is not a diagnostic.
+device_state_line() {
+  local out
+  out="$(mktemp -t cypress-devstate)" || { printf 'unknown'; return 0; }
+  if bounded_run 15 xcrun simctl list devices >"$out" 2>/dev/null; then
+    local line
+    line="$(grep -F "$UDID" "$out" | sed 's/^[[:space:]]*//' | head -1)"
+    printf '%s' "${line:-no such device in \`simctl list devices\`}"
+  elif [ "${BOUNDED_RC:-}" = "124" ]; then
+    printf 'unknown — `simctl list devices` did not answer within 15s either, which is itself the answer'
+  else
+    # Said separately from the timeout above, because they mean different things and a
+    # diagnostic that reports one as the other is the class of defect this round is closing.
+    printf 'unknown — `simctl list devices` exited %s' "${BOUNDED_RC:-?}"
+  fi
+  rm -f "$out"
+}
+
+boot_device() {
+  take_ps_snapshot
+  read_ancestors
+  local watchers=""
+  # The leftover refusal is a COLLISION refusal — same family as `collision_check` — so it obeys
+  # the same escape hatch, and the header records that the guards did not run. The BOUND below is
+  # not a refusal and is never skipped: an unbounded wait is the defect, not a guard.
+  [ "$SKIP_PREFLIGHT" = "1" ] || watchers="$(bootstatus_watchers)"
+  if [ -n "$watchers" ]; then
+    # `\n%s\n`, not `\n%s`: `$(…)` strips the trailing newline, so without it the last watcher
+    # line and the first line of the explanation below come out welded together.
+    printf 'VERIFY-FAIL: a simctl bootstatus is already running against this simulator:\n%s\n' "$watchers" >&2
+    echo "  A bootstatus has no timeout of its own, so a wedged one never returns and every later" >&2
+    echo "  run on this device waits behind it — four of them once deadlocked a preflight, and the" >&2
+    echo "  device needed erasing. Adding a fifth is not the way out." >&2
+    echo "  Seconds old, and still going: it is another run's preflight — wait for it." >&2
+    echo "  Minutes old: it is wedged. Kill it, then re-run:" >&2
+    echo "    ps -eo pid,etime,command | grep -F 'simctl bootstatus'" >&2
+    echo "    xcrun simctl shutdown $UDID   # and if it is still unusable: xcrun simctl erase $UDID" >&2
+    exit 1
+  fi
+
+  if bounded_run "$BOOTSTATUS_TIMEOUT_S" xcrun simctl bootstatus "$UDID" -b; then
+    return 0
+  fi
+  if [ "${BOUNDED_RC:-}" = "124" ]; then
+    echo "VERIFY-FAIL: simctl bootstatus did not return within ${BOOTSTATUS_TIMEOUT_S}s for $UDID." >&2
+    echo "  What it was waiting for: this device to report Booted and its system apps to finish" >&2
+    echo "  launching (that is what -b adds). It has no timeout of its own, so the wait you were" >&2
+    echo "  watching would not have ended; it has been killed, along with the simctl under it, so" >&2
+    echo "  that it does not become the leftover that blocks the next run." >&2
+    echo "  The device now reads: $(device_state_line)" >&2
+    echo "  What to do, in order:" >&2
+    echo "    xcrun simctl shutdown $UDID          # then re-run this script" >&2
+    echo "    ps -eo pid,etime,command | grep -F 'simctl bootstatus'   # kill any leftovers" >&2
+    echo "    xcrun simctl erase $UDID             # last resort: wipes the app, and the camera grant" >&2
+    echo "  If this device is genuinely this slow to boot, raise the bound rather than removing it:" >&2
+    echo "    CYPRESS_BOOTSTATUS_TIMEOUT_S=<seconds> Tools/run_tests.sh …" >&2
+    exit 1
+  fi
+  refuse "simulator $UDID did not boot (simctl bootstatus exited ${BOUNDED_RC:-unknown}). The device now reads: $(device_state_line)"
 }
 
 # ---------------------------------------------------------------------------
@@ -700,12 +1053,26 @@ device_state_check() {
 }
 
 # ---------------------------------------------------------------------------
+# Test seam. `CYPRESS_RUN_TESTS_LIB_ONLY=1 . Tools/run_tests.sh <udid> <log>` defines every
+# function above and stops here, so `Tools/test_harness_guards.sh` can call the guards directly
+# with a fixed process table in place of `ps`. Shell scripts have no test target in this repo;
+# this is the nearest thing to one, and it is one line rather than a fixture path threaded
+# through every guard.
+#
+# When the variable is set but the file is EXECUTED rather than sourced, `return` fails and
+# execution falls through to a refusal. It must never be a quiet `exit 0`: a run that did
+# nothing and exited zero is the false green this whole script exists to make impossible.
+# ---------------------------------------------------------------------------
+if [ "${CYPRESS_RUN_TESTS_LIB_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null
+  refuse "CYPRESS_RUN_TESTS_LIB_ONLY=1 only means anything when this file is SOURCED (\`. Tools/run_tests.sh <udid> <log>\`). It was executed, so nothing ran — refusing rather than exiting 0 over a suite that never started."
+fi
 
 rm -f "$LOG"
 
 [ "$SKIP_PREFLIGHT" = "1" ] || collision_check
 
-xcrun simctl bootstatus "$UDID" -b || refuse "simulator $UDID did not boot"
+boot_device
 # Grant is idempotent when already granted and the app is not yet running for this test pass.
 xcrun simctl privacy "$UDID" grant camera "$APP_ID" 2>/dev/null || true
 
@@ -714,6 +1081,13 @@ read_device_state
 
 # Refuse before the log exists, so a refused run leaves no half-log to mistake for a run.
 [ "$SKIP_PREFLIGHT" = "1" ] || device_state_check
+
+# Re-asked here rather than reused from the preflight: the camera heal and the boot can take
+# minutes, and the number that belongs in the header is the load this run's xcodebuild is about
+# to meet, not the load its preflight met.
+take_ps_snapshot
+read_ancestors
+OTHER_XCODEBUILDS="$(count_live_xcodebuilds)"
 
 {
   echo "CYPRESS-RUN: started $(date '+%Y-%m-%d %H:%M:%S %Z')"
@@ -739,6 +1113,13 @@ read_device_state
   else
     echo "CYPRESS-RUN: camera-normalized no"
   fi
+  # How loaded the machine was when this run started (roadmap item (d)). Three concurrent
+  # xcodebuilds is the sanctioned cap and it is also where the UI phase has produced
+  # "Timed out while synthesizing event" — an event the host never delivered to the simulator,
+  # which reads in the log exactly like an assertion the app failed. `verify_test_log.sh` tells
+  # the two apart and quotes this number when it does, so the classification is checkable against
+  # the condition that produced it rather than asserted.
+  echo "CYPRESS-RUN: concurrent-xcodebuilds ${OTHER_XCODEBUILDS} (besides this run; the cap is 3 machine-wide)"
   echo "CYPRESS-RUN: args $*"
   [ "$SKIP_PREFLIGHT" = "1" ] && echo "CYPRESS-RUN: PREFLIGHT SKIPPED (CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1) — guards did not run"
   echo "CYPRESS-RUN: ---"
@@ -751,5 +1132,15 @@ xcodebuild test \
   "$@" >>"$LOG" 2>&1
 XCODE_EXIT=$?
 
-"$HERE/verify_test_log.sh" "$LOG" 5 || exit 1
+# The judgment, and its status carried through rather than flattened.
+#
+# This used to be `|| exit 1`, which collapsed every verdict that is not a pass into one number.
+# `verify_test_log.sh` now has three: 0 a real pass, 1 a red, 2 a run the ENVIRONMENT refused
+# (roadmap item (d)). Flattening 2 onto 1 would have hidden exactly the distinction the change
+# exists to make. Nothing that treats "nonzero" as failure sees any difference — CI's
+# `set -euo pipefail` still fails the step, which is the point: an environment refusal is not a
+# pass, it is a run that did not happen.
+"$HERE/verify_test_log.sh" "$LOG" 5
+VERIFY_RC=$?
+[ "$VERIFY_RC" -eq 0 ] || exit "$VERIFY_RC"
 exit $XCODE_EXIT

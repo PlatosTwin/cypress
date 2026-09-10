@@ -237,13 +237,46 @@ jobs:
           # nothing a test could exercise. `*` does not cross a `/` in those glob patterns, so
           # `*.md` is the repository root only and is anchored the same way here.
           DOC_ONLY='docs/|graphify-out/|[^/]*\.md$'
-          # Plus the four that must RUN and must not SHIP. `.github/` because a pipeline change
+          # Plus the eight that must RUN and must not SHIP. `.github/` because a pipeline change
           # proves itself by running (#212); the two test directories because they ARE the suite,
           # and cannot reach the archive — Cypress.xcscheme has one BuildActionEntry, the app
           # target (#215); `Tools/ui-test-shards.txt` (exact file, not `Tools/` broadly — see
           # above) because it only reshapes how the suite runs and build 16 shipped
           # byte-identical to build 15 when it slipped through (#31).
-          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|Tools/ui-test-shards\.txt$|$DOC_ONLY"
+          #
+          # The three harness scripts are #153, and they are named ONE BY ONE for the reason the
+          # shard list is: a blanket `Tools/` would be WRONG, because `Tools/fetch_seed.sh` is a
+          # genuine build input — `.github/actions/prepare` runs it in every job including
+          # `release`, and it places the seed the app bundles. These three cannot reach the
+          # archive, and that is a fact about the project rather than a judgement:
+          #   * `Cypress.xcscheme` has exactly one `BuildActionEntry` (`Cypress.app`,
+          #     `buildForArchiving="YES"`); the two test targets appear only under `TestAction`;
+          #   * `Cypress.xcodeproj/project.pbxproj` contains zero `PBXShellScriptBuildPhase`, so
+          #     no target shells out to `Tools/` while building. That one is asserted from Swift
+          #     in `CypressTests/DeployPathsAgreeTests`, so the day someone adds a build phase
+          #     this stops being a true comment and becomes a red test.
+          #   * the `Archive` step below invokes none of them.
+          # They must not be doc-only either: they are how the suite is run and judged, so a
+          # change to them proves itself by running the suite THROUGH them.
+          #
+          # `server/` is the Go sync service (#156/#157). It is the plainest case on this list:
+          # nothing under it is an archive input, because the project's three
+          # `PBXFileSystemSynchronizedRootGroup`s are `Cypress`, `CypressTests` and
+          # `CypressUITests` and `server/` is in none of them. (Do NOT reach for "it is not
+          # referenced by project.pbxproj" — that file names no source at all, so the same is
+          # true of every file that does ship.) A Go-only change therefore leaves the app
+          # byte-identical, and minting a build for one is the #1 / #215 / #31 harm exactly;
+          # found while holding PR #156, which would have minted one.
+          #
+          # It must not be doc-only either, and the reason is concrete rather than general:
+          # `CypressTests/GoldenWireFixtureTests` reads `server/testdata/grove.json` and
+          # `proximity_conflict.json` off disk, so regenerating a Go-side fixture can turn the
+          # iOS unit suite red. A `server/` change has to RUN.
+          #
+          # One assignment on one line, however long: `DeployPathsAgreeTests` reads the first line
+          # that starts with `NO_ARCHIVE=`, and a continuation would leave the tokens below the
+          # first line unchecked — a gate passing on half the list.
+          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$DOC_ONLY"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # The escape hatch: a manual run tests everything and ships. This is what makes the
@@ -298,7 +331,7 @@ jobs:
 
           if [ -z "$buildable" ]; then
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests/, Tools/ui-test-shards.txt, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
+            echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests, server//, Tools/ui-test-shards.txt, Tools/run_tests.sh, Tools/verify_test_log.sh, Tools/test_harness_guards.sh, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
             echo "shipping — these can affect the app:"; echo "$buildable" | sed 's/^/  /'

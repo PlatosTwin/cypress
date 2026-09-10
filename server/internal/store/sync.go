@@ -69,6 +69,25 @@ type Mutation struct {
 	// It is a pointer rather than a bare id so that "this kind carries no photograph" stays
 	// unrepresentable-by-accident, the same way `CommunityTree` does it.
 	WithdrawnPhotoID *uuid.UUID
+	// WithdrawnMeasurementID is set only for kind `measurement_withdrawal`: the reading the
+	// contributor took back on their phone, which this service tombstones so it stops being counted
+	// for everybody — including that person's *other* devices, which is the reason the grove and the
+	// journal are Class R reads rather than local ones.
+	//
+	// It travels inside the mutation for the reason `WithdrawnPhotoID` does, and the window it
+	// closes is the same one: a call beside `Apply` could record the withdrawal, fail, and leave the
+	// client's retry to be deduped away against a reading that is still being counted.
+	WithdrawnMeasurementID *uuid.UUID
+	// RecordedMeasurementID is `TreeMeasurement.id` for kind `measurement`, read for exactly one
+	// purpose: so a reading that arrives **after** its own withdrawal is born tombstoned.
+	// `measurementWasWithdrawn` states why that order is reachable rather than theoretical.
+	//
+	// Nil when the payload carries no `id`, and that is deliberately not a refusal. `measurement`
+	// has been accepted since 001 with no requirement on the shape of its body, and turning a
+	// missing field into a non-retryable `validation_failed` would fail queues over items this
+	// service accepts today. A reading with no id cannot be matched to a withdrawal — which is the
+	// state every reading was in before this round.
+	RecordedMeasurementID *uuid.UUID
 }
 
 // ApplyOutcome is what happened to one mutation.
@@ -147,6 +166,27 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		// each other.
 		if mutation.WithdrawnPhotoID != nil {
 			return withdrawPhoto(ctx, tx, *mutation.WithdrawnPhotoID, owner, now)
+		}
+		// The same argument one table over, and the same placement after the dedupe:
+		// `withdrawMeasurement` treats an already-tombstoned reading as a success, so the two guards
+		// agree rather than depend on each other.
+		if mutation.WithdrawnMeasurementID != nil {
+			return withdrawMeasurement(ctx, tx, *mutation.WithdrawnMeasurementID, owner, now)
+		}
+		// ── The reading that arrives after its own withdrawal ───────────────────────────────────
+		//
+		// The row has just been inserted, live. If this identity already withdrew this reading, the
+		// insert has resurrected it, and the same transaction takes it back out — so nothing ever
+		// reads it. The withdrawal that arms this is an ordinary `contributions` row, which is why
+		// no new table is involved; see `measurementWasWithdrawn`.
+		if mutation.RecordedMeasurementID != nil {
+			withdrawn, err := measurementWasWithdrawn(ctx, tx, *mutation.RecordedMeasurementID, owner)
+			if err != nil {
+				return err
+			}
+			if withdrawn {
+				return tombstoneOnArrival(ctx, tx, mutation.ClientUUID, now)
+			}
 		}
 		return nil
 	})
