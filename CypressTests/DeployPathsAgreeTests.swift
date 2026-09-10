@@ -164,10 +164,15 @@ struct DeployPathsAgreeTests {
         // the one that could change without anyone thinking about this file. **`Tools/` is
         // deliberately NOT exempted broadly: `Tools/fetch_seed.sh` runs in every CI job and places
         // the seed the app bundles, so it is a genuine build input and must keep shipping.**
-        // `server/` is #156: the Go sync service is not a target, a dependency, a resource, or
-        // referenced anywhere in the project file, so a Go-only change cannot alter the app.
+        // `server/` is #156. The fact that carries it is **membership**: the project uses
+        // `PBXFileSystemSynchronizedRootGroup`, and the three groups are `Cypress`,
+        // `CypressTests` and `CypressUITests` — `server/` is in none of them, so nothing under it
+        // is an archive input. Note what does NOT carry it: "not referenced by project.pbxproj"
+        // is equally true of every file that DOES ship, because that file names no sources at all
+        // (#157's reviewer calibrated this: `APIError.swift` → 0 hits). Nothing yet asserts the
+        // synchronized-group list; until something does, this bullet is the weakest of the four.
         for (token, ticket, change) in [
-            (".github/", "#212", "a pipeline-only change"),
+            ("\\.github/", "#212", "a pipeline-only change"),
             ("CypressTests/", "#215", "a unit-test-only change"),
             ("CypressUITests/", "#215", "a UI-test-only change"),
             ("server/", "#156", "a Go-service-only change"),
@@ -176,8 +181,18 @@ struct DeployPathsAgreeTests {
             ("Tools/verify_test_log\\.sh$", "#153", "a log-judge-only change"),
             ("Tools/test_harness_guards\\.sh$", "#153", "a harness-seam-only change"),
         ] {
+            // Compared as a WHOLE ALTERNATIVE, not as a substring. A bare `contains` is a
+            // substring test, and `"Tools/observer/".contains("server/")` is true — a lookalike
+            // token satisfies the loop while the predicate ships every Go-only push, which is
+            // what #157's reviewer demonstrated end to end.
+            //
+            // Two details, both of which bit the first attempt at this fix and were caught by
+            // this very assertion. The alternation's FIRST alternative has no `|` in front of it,
+            // so the haystack is prefixed with one before the search. And the tokens must be
+            // spelled the way the assignment spells them — `\.github/` escaped, not `.github/` —
+            // because that is what an alternative-for-alternative comparison means.
             #expect(
-                noArchive.contains(token),
+                ("|" + noArchive).contains("|" + token),
                 """
                 NO_ARCHIVE no longer mentions `\(token)`. That restores \(ticket) exactly: \
                 \(change) would mint a build whose app is byte-identical to the last one, expiring \
