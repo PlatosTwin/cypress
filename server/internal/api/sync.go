@@ -168,9 +168,10 @@ type measurementPayload struct {
 // ── The one prohibition on this payload: **no top-level `speciesID`** ──────────────────────────
 //
 // A disputed species travels as `suggestions["species_id"]`, where nothing interprets it. A
-// top-level `speciesID` is forbidden, and the reason is not tidiness: **payload reads in this
-// service are not kind-scoped.** `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid`
-// over `contributions` filtered by owner and `deleted_at` and by nothing else, so
+// top-level `speciesID` is forbidden, and the reason is not tidiness: **nothing obliges a payload
+// read in this service to narrow on `kind` first, and one of them does not.**
+// `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid` over `contributions` filtered by
+// owner and `deleted_at` and by nothing else, so
 //
 //   - a *valid* top-level `speciesID` on a dispute silently enrols that species in the person's
 //     "species you have met" list — recorded because they complained about it;
