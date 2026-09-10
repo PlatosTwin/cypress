@@ -113,8 +113,13 @@ out at the assignment.
 **Not yet.** `fly.toml` describes the deployment and no `cypress-web` app exists. W-E creates the
 app and the volume the published city packs are mounted from.
 
-**The site is `cypressgrove.app`**, ruled by the owner on 2026-09-10 (`docs/rulings-pending/
-web-round-owner-decisions.md`, decision 2). Not `cypress.app`: that domain is **registered to a
+**The site is `cypressgrove.app`**, ruled by the owner on 2026-09-10, decision 2 of the web
+round's owner decisions. That ruling is unnumbered while this branch is open and lives under
+`docs/rulings-pending/`; the orchestrator splices it into **`docs/RULINGS.md`** under its real
+number at merge, so look for it there by date — this paragraph deliberately does not name the
+pending file, because a citation by pending filename dangles the moment the splice happens and
+`PendingCitationGuard` scans Swift only, so nothing here would have caught it.
+Not `cypress.app`: that domain is **registered to a
 third party**, expiring 2026-11-03, parked with no A record — which means every share card the iOS
 app has ever produced points at a hostname somebody else controls. It is dead today and is not
 guaranteed to stay dead. Moving `ShareCopy.publicURLPrefix` is shipped iOS copy and therefore a

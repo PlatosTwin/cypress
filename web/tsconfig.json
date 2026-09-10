@@ -14,7 +14,7 @@
     // 3am in a container, and `verbatimModuleSyntax` keeps import elision out of it too.
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
-    // The test files import their neighbours by the specifier Node will actually resolve, which
+    // The test files import their neighbors by the specifier Node will actually resolve, which
     // for an ESM `.ts` file includes the extension. Without this tsc rejects the only spelling
     // that runs.
     "allowImportingTsExtensions": true

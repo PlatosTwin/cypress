@@ -69,8 +69,16 @@ note()    { echo "VERIFY-WEB-NOTE: $1"; }
 LOG="${1:?usage: verify_web_test_log.sh <log> [max-age-minutes]}"
 shift
 MAX_AGE_MIN=60
+# **A non-numeric max-age is an error, not a default.** It used to fall through to 60 with no word
+# said, so `… log 5m` and `… log abc` both certified a thirty-minute-old log that `… log 5` had
+# correctly refused. A caller who names a stricter age and silently gets the loose one is being
+# told the opposite of what happened.
 case "${1:-}" in
-  ''|*[!0-9]*) ;;
+  '') ;;
+  *[!0-9]*)
+    echo "VERIFY-WEB-FAIL: max-age must be a whole number of minutes; got '$1'. Not defaulting to ${MAX_AGE_MIN} — a freshness bound you asked for and did not get is worse than none." >&2
+    exit 1
+    ;;
   *) MAX_AGE_MIN="$1"; shift ;;
 esac
 
@@ -87,6 +95,22 @@ fi
 if [ -n "$stale" ]; then
   mtime="$(stat -f '%Sm' "$LOG" 2>/dev/null || stat -c '%y' "$LOG" 2>/dev/null || echo unknown)"
   fail "log is older than ${MAX_AGE_MIN}m (mtime ${mtime}) — stale artifact, not evidence"
+fi
+# **And the other end of it.** `find -mmin +N` only catches old files, so a log with a 2027 mtime
+# sailed through the check above: `touch -t` in either direction is the same edit, and the
+# freshness gate only looked one way. A future mtime means a clock that is wrong or a file that
+# was touched, and neither is a thing to certify silently.
+if ! future="$(find "$LOG" -newermt '+1 minute' 2>/dev/null)"; then
+  # BSD find before macOS 12 has no `-newermt`; fall back to comparing epochs by hand rather than
+  # treating an unrun check as a pass, which is the reading that lets the artifact through.
+  log_epoch="$(stat -f '%m' "$LOG" 2>/dev/null || stat -c '%Y' "$LOG" 2>/dev/null || echo '')"
+  now_epoch="$(date +%s)"
+  future=""
+  if [ -n "$log_epoch" ] && [ "$log_epoch" -gt "$((now_epoch + 60))" ]; then future="$LOG"; fi
+fi
+if [ -n "$future" ]; then
+  mtime="$(stat -f '%Sm' "$LOG" 2>/dev/null || stat -c '%y' "$LOG" 2>/dev/null || echo unknown)"
+  fail "log is dated in the future (mtime ${mtime}) — the clock is wrong or the file was touched. A freshness check that only looks backwards is not a freshness check."
 fi
 
 # ── Provenance ──────────────────────────────────────────────────────────────────────────────

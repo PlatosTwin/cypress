@@ -58,7 +58,17 @@ this repository builds against:
 rather than wrong-by-convention: San Jose landed after it was written, and New York after that.
 
 **Corrected in the same pull request** (W-A edits `.gitignore` to add `web/`'s build products),
-because the alternative is a second document that has to be read alongside the first. The line
-now states the measured size and says where the measurement lives, so the next reader re-reads
-`pinned-seed.json` instead of trusting a comment — which is the only version of this that does
-not go stale again at the next publish.
+because the alternative is a second document that has to be read alongside the first.
+
+**The correction states no size at all**, and that is the whole of it. A comment that names a
+number is a copy of a fact that already has an owner, and this one had been wrong for two
+publishes before anyone looked. The line now says the size is deliberately not written there and
+points at `Fixtures/seed/pinned-seed.json`, which is the file that decides which bytes this
+repository builds against — so the next reader re-measures instead of trusting a comment, and
+there is nothing left in `.gitignore` for the publish after next to falsify.
+
+*(This paragraph previously read "the line now states the measured size and says where the
+measurement lives", and the line it described said the opposite in bold. Adversarial review on
+#162 caught the contradiction before the splice: the entry and the file disagreed, and the file
+disagreed with itself — declaring the size deliberately unwritten and then writing it, dated. The
+dated number is gone from `.gitignore` too, so both halves now say one thing.)*
