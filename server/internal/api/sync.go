@@ -319,16 +319,27 @@ var disputeTreeSources = map[string]bool{"city": true, "community": true}
 //     own row joins it there. Reproduced against a throwaway Postgres by PR #159's reviewer and
 //     again by its author; it is not an inference from the SQL.
 //
-//     **The position, rather than a claim that the question does not arise.** That behaviour is
-//     `photo_withdrawal`'s and `measurement_withdrawal`'s today, from the same root cause — no
-//     reader here filters on kind — and it is already open as `docs/ROADMAP.md`'s chip backlog
-//     item "Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
-//     remote", which measures exactly this for a withdrawn reading. **This round joins that item
-//     rather than answering it one kind at a time**, and the reason is not that it does not matter:
-//     answering it here would settle for disputes what that item has to settle for three kinds at
-//     once, which is how three answers drift apart. There is also a real argument to be had, and
-//     it belongs to that item — a personal journal is a history, and "I disputed this, then
-//     withdrew it" may be honest history in a way a photograph still served to everybody is not.
+//     **The position, rather than a claim that the question does not arise.** Two facts here, and
+//     they are different sizes; conflating them is how this comment went wrong before.
+//
+//     The **residue** — the withdrawal's own row surfacing in the journal, and the tree kept in
+//     `GET /me/grove` with zero tallies and in `GET /me/map-membership?kind=yours` — is
+//     `photo_withdrawal`'s and `measurement_withdrawal`'s today, from one root cause: no reader
+//     here filters on kind (`Grove`'s `mine` CTE and `MapMembership` exclude only
+//     `private_reminder`). It is already open and already measured, as `docs/ROADMAP.md`'s chip
+//     backlog item "Answer what a withdrawn-to-empty tree should look like, before
+//     `GET /me/journal` goes remote". A dispute lands in that item unchanged.
+//
+//     What is **larger** for a dispute is that the withdrawn thing itself goes on being served:
+//     those two kinds tombstone what they take back — `photos.deleted_at` and
+//     `contributions.deleted_at` — and nothing tombstones a dispute, so the raise stays in the
+//     journal beside its own retraction. **This round joins that item rather than answering it
+//     one kind at a time**, and the reason is not that it does not matter: a tombstone written
+//     here would settle for disputes, against the one read that exists, the question that item has
+//     to settle for three kinds and for the reads the badge round adds — which is how three
+//     answers drift apart. There is a real argument to be had on the other side, too, and it
+//     belongs with that item: a personal journal is a history, and "I disputed this, then withdrew
+//     it" may be honest history in a way a photograph still served to everybody is not.
 //
 //     **ERRATA E280 bites in the badge round, and what it owes there is a read gate and a
 //     tombstone.** A withdrawn dispute becomes a claim somebody *else* is shown the moment a read

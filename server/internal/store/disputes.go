@@ -34,7 +34,11 @@ var ErrDisputeNotOwned = errors.New("dispute belongs to another contributor")
 // statement stored, and it is cheaper to refuse now than to unpick from rows a later round has
 // already believed.
 //
-// ── The three answers, which are `withdrawMeasurement`'s three minus the tombstone ─────────────
+// ── The three answers ──────────────────────────────────────────────────────────────────────────
+//
+// They are `withdrawMeasurement`'s, with the `UPDATE` at the end of it removed and its
+// "already tombstoned" arm gone with it — nothing writes `contributions.deleted_at` for a dispute,
+// so there is no such state to answer for.
 //
 //   - **no matching dispute** — nothing to own, and a success. Reachable and not exotic: the raise
 //     may still be in the phone's outbox, or that phone may never have drained at all
@@ -64,7 +68,8 @@ var ErrDisputeNotOwned = errors.New("dispute belongs to another contributor")
 //
 // Ownership is this table's two columns, exactly as it is for a photograph and for a reading: a
 // `user_id` match or a `device_id` match, and an anonymized row — `AccountDeletionChoice
-// .leaveRecords` clears both — is owned by nobody and therefore refused. The consequence is
+// .leaveRecords` clears both — is owned by nobody and therefore refused (measured by
+// `TestAnAnonymizedDisputeIsWithdrawableByNobody`). The consequence is
 // `withdrawMeasurement`'s documented divergence reached through a third kind: signed out on the
 // phone that raised the dispute *while signed in*, `ClaimDevice` has already moved the row's
 // `device_id` to a `user_id` and this service cannot tell that installation apart, so the
@@ -73,19 +78,20 @@ var ErrDisputeNotOwned = errors.New("dispute belongs to another contributor")
 func disputeIsThisIdentitys(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner) error {
 	var matched, mine int
 	err := tx.QueryRow(ctx, `
-		SELECT count(*), count(*) FILTER (WHERE mine)
-		  FROM (
-		      SELECT
-		             -- The coalesce is load-bearing, for withdrawMeasurement's reason: with a user
-		             -- id supplied and the row's own column NULL the comparison is NULL rather than
-		             -- false, a NULL is counted by no FILTER, and an anonymized row would then read
-		             -- as "not here" instead of "not yours" -- so the withdrawal would answer
-		             -- applied on somebody's cleared record.
-		             coalesce(($2::uuid IS NOT NULL AND user_id = $2)
-		                   OR ($3::uuid IS NOT NULL AND device_id = $3), false) AS mine
-		        FROM contributions
-		       WHERE kind = 'data_dispute' AND upper(payload ->> 'id') = upper($1)
-		  ) matched
+		SELECT count(*),
+		       -- No coalesce around this, unlike withdrawMeasurement's, and the difference is worth
+		       -- a line because the two queries are otherwise the same shape. That one has to tell
+		       -- "live and mine" from "live and not mine" with two FILTERs, so an ownership
+		       -- comparison that evaluates to NULL -- an anonymized row, both columns cleared --
+		       -- would fall out of both counts and read as "not here". This one asks a single
+		       -- question, and FILTER excludes a NULL exactly as it excludes false: an anonymized
+		       -- row counts in matched, not in mine, and is refused. That is the answer wanted, and
+		       -- it is the one AccountDeletionChoice.leaveRecords implies -- a record owned by
+		       -- nobody is not withdrawable by anybody.
+		       count(*) FILTER (WHERE ($2::uuid IS NOT NULL AND user_id = $2)
+		                           OR ($3::uuid IS NOT NULL AND device_id = $3))
+		  FROM contributions
+		 WHERE kind = 'data_dispute' AND upper(payload ->> 'id') = upper($1)
 	`, id.String(), owner.UserID, owner.DeviceID).Scan(&matched, &mine)
 	if err != nil {
 		return err
