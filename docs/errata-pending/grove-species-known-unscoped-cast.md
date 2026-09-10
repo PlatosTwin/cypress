@@ -50,9 +50,18 @@ met", recorded because the person said the city had it wrong.
 `(payload->>'id')::uuid` for its two indexes and its two lookups, and said why in as many words: a
 cast "can *error* here rather than merely miss … nothing in the standard promises Postgres evaluates
 the `kind` qual before the cast. A payload of some other kind carrying a non-UUID `id` would then
-fail the whole request." That is this entry, arrived at from the safe side. The unsafe instance it
-cites by name — `GroveSpeciesKnown` — was left as it was, and 004's own note is the reason nobody
-should call this one unforeseeable.
+fail the whole request."
+
+**That is a related worry and not this defect, and the two are worth keeping apart.** 004 was
+guarding against a planner evaluating a cast *ahead of* a `kind` qual that would have excluded the
+row — an ordering that neither this PR's author nor its second reviewer could reproduce on
+Postgres 16, in three shapes each, and which PR #159's prose now marks unverified where it is
+cited. This entry needs no such ordering: `GroveSpeciesKnown` has **no `kind` qual at
+all**, so its cast reaches every kind's payload by construction. What the two share is the remedy,
+which is why 004 is worth citing here at all — comparing extracted text never errors on a value it
+was not meant to read, whatever the planner does. The unsafe instance 004 cites by name —
+`GroveSpeciesKnown` — was left as it was, and 004's own note is the reason nobody should call this
+one unforeseeable.
 
 **Two things are worth separating in whatever round fixes it.**
 
@@ -66,7 +75,8 @@ should call this one unforeseeable.
 **What PR #159 does instead, since neither belongs in a payload-validation round:** its wire contract
 forbids a top-level `speciesID` on a dispute payload — a suggested species travels as
 `suggestions["species_id"]`, where nothing casts it — and says so beside `dataDisputePayload` in
-`server/internal/api/sync.go`, together with the general rule that payload reads in this service are
-not kind-scoped and a new top-level key must be checked against them before it is minted. That is a
-contract the client keeps, not a gate: the payload decode is lenient by design, so nothing in the
-handler could refuse the key even if it wanted to.
+`server/internal/api/sync.go`, together with the general rule that not every payload read in this
+service is kind-scoped — three of the four are, and this one is not — so a new top-level key must be
+checked against all of them before it is minted. That is a contract the client keeps, not a gate:
+the payload decode is lenient by design, so nothing in the handler could refuse the key even if it
+wanted to.

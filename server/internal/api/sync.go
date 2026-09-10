@@ -168,8 +168,8 @@ type measurementPayload struct {
 // ── The one prohibition on this payload: **no top-level `speciesID`** ──────────────────────────
 //
 // A disputed species travels as `suggestions["species_id"]`, where nothing interprets it. A
-// top-level `speciesID` is forbidden, and the reason is not tidiness: **nothing obliges a payload
-// read in this service to narrow on `kind` first, and one of them does not.**
+// top-level `speciesID` is forbidden, and the reason is not tidiness: **nothing in this service
+// obliges a payload read to narrow on `kind` at all, and one of them does not.**
 // `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid` over `contributions` filtered by
 // owner and `deleted_at` and by nothing else, so
 //
@@ -187,9 +187,15 @@ type measurementPayload struct {
 //
 // The general rule, for whoever adds the next key: before putting a name at the top level of a
 // payload, grep `internal/store` for `payload ->>` and check whether an existing read already
-// interprets that name. Most of them narrow on `kind` first and are therefore safe —
-// `withdrawMeasurement`, `measurementWasWithdrawn`, `disputeIsThisIdentitys`. `GroveSpeciesKnown`
-// is the one that does not, and one is enough.
+// interprets that name. Four functions in `internal/store` do: `withdrawMeasurement` and
+// `disputeIsThisIdentitys` read `payload ->> 'id'`, `measurementWasWithdrawn` reads
+// `payload ->> 'measurementID'`, and `GroveSpeciesKnown` reads `payload ->> 'speciesID'`. The first
+// three cannot fail on a value they were not meant to read, and the reason is not that they narrow
+// on `kind`, though all three do: it is that they **compare the extracted text** under `upper()`
+// and never cast it, so a payload of any kind carrying a non-UUID value simply misses. Do not lean
+// on the `kind` qual as the safe-making part — `store.disputeIsThisIdentitys` records exactly what
+// is and is not known about that. `GroveSpeciesKnown` both casts *and* reads every kind, and one
+// is enough.
 type dataDisputePayload struct {
 	ID         uuid.UUID `json:"id"`
 	TreeID     uuid.UUID `json:"treeID"`
@@ -314,8 +320,9 @@ var disputeTreeSources = map[string]bool{"city": true, "community": true}
 //     where both were written, so this is stated as measured rather than reasoned.
 //
 //     `GET /me/journal` **does** serve a dispute back, payload and all, and goes on serving it
-//     after the withdrawal has applied. `store.Journal` selects `contributions` narrowed by owner
-//     and `deleted_at` and **by nothing else** — there is no filter on `kind` — and nothing here
+//     after the withdrawal has applied. `store.Journal` selects `contributions` narrowed by owner,
+//     by `deleted_at`, and by its keyset-pagination cursor, and by nothing else — in particular
+//     there is **no filter on `kind`**, which is the part that matters here — and nothing here
 //     writes `deleted_at` for a dispute, so the raise stays in the journal and the withdrawal's
 //     own row joins it there. Reproduced against a throwaway Postgres by PR #159's reviewer and
 //     again by its author; it is not an inference from the SQL.
@@ -352,6 +359,16 @@ var disputeTreeSources = map[string]bool{"city": true, "community": true}
 //     and a stranger's withdrawal never reaches the raiser, but because the `contributions` row is
 //     the record: answering `applied` to "Bob withdrew Alice's dispute" stores a false statement,
 //     and it is false whether or not anything serves it back.
+//
+//     **That gate closes the ordinary case and not every case, and the two it does not close are
+//     written out under `store.disputeIsThisIdentitys` rather than left to be discovered.** A
+//     withdrawal that reaches this service before the raise it names still applies, and so does one
+//     from an identity that has first raised a twin dispute reusing the same id. Both are
+//     reproduced; neither is reachable as this service stands, because a dispute id is minted on
+//     the client and the only read that serves it back is owner-scoped. The arrival-order one is
+//     the hole `measurementWasWithdrawn` closes one kind over, and this round joins the badge
+//     round's item rather than solving it here — for the same reason the tombstone above is not
+//     written here, and it leaves that round the same kind of residue to reconcile.
 //
 //     What *is* checked is the payload — see `dataDisputePayload` for which fields and, more
 //     usefully, for why the suggested-value vocabulary is recorded rather than checked.

@@ -47,6 +47,44 @@ var ErrDisputeNotOwned = errors.New("dispute belongs to another contributor")
 //   - **at least one match is this identity's** — the withdrawal is theirs to make.
 //   - **matches exist and none of them are this identity's** — `ErrDisputeNotOwned`.
 //
+// ── Two routes past this gate, and the list above is the ordinary case, not every case ─────────
+//
+// Neither route below is a defect in the three answers — they are what those three answers *are*,
+// followed to their edges — and neither is written down because it needs fixing here. They are
+// written down because a reader takes the list above to mean "a withdrawal of somebody else's
+// dispute is refused", and the unqualified form of that sentence is false. Both were reproduced
+// against a throwaway Postgres by PR #159's second reviewer and again before this paragraph was
+// written, each with the control that shows the gate firing in the ordinary case — the controls
+// are the half that says the probe is measuring the gate and not a broken harness.
+//
+//   - **Mint yourself into the match set.** `matched == 0 || mine > 0` is a property of the whole
+//     match set, which is the point of counting — and nothing makes `payload ->> 'id'` unique. An
+//     identity that first raises its *own* `data_dispute` carrying somebody else's dispute id, on
+//     any tree, is thereafter in that set, and its withdrawal of the original answers `applied`.
+//     Without the twin raise the same withdrawal is `forbidden`, which is the control.
+//   - **Arrive before the raise.** This gate can only refuse a withdrawal that reaches this service
+//     *after* the raise it names. Before it, the first bullet is the answer: success, the
+//     withdrawal's row is stored, and nothing revisits it when the raise lands afterwards. The same
+//     withdrawal sent once the raise is present is `forbidden`, which is the control.
+//
+// Neither is exploitable as this service stands, and that is a fact about the surface rather than
+// about this function: a dispute id is minted on the client and never generated here, and the only
+// read that serves it back — `GET /me/journal` — is owner-scoped, so nothing in this service hands
+// one identity another's dispute id to name.
+//
+// **The second is the sibling kind's arrival-order problem, and this round deliberately does not
+// import the half that closes it.** `measurementWasWithdrawn` exists for exactly this ordering and
+// its header argues the order is "reachable rather than merely possible" — `OutboxStore.dueItems`
+// orders by what is *due*, so an item in backoff drains after one enqueued later — by having the
+// *reading* look for its own withdrawal on the way in and be born tombstoned. That half is not
+// written here because there is nothing for it to write on: a reading is born tombstoned into
+// `contributions.deleted_at`, the column every read already filters on, whereas a dispute
+// materializes nothing and nothing tombstones one (see `syncKinds` in `internal/api/sync.go`). So
+// what an early withdrawal leaves is a stored row with no raise beside it, and reconciling that
+// residue belongs to the round that first serves these rows back — the badge round, which is where
+// E280's read gate and the tombstone are already owed. Adding the lookup here would answer for one
+// kind, against no read, a question that round has to answer for all of them.
+//
 // ── Why it counts rather than reading one row ──────────────────────────────────────────────────
 //
 // The reason is `withdrawMeasurement`'s, one kind over. This lookup is not on a key: it matches a
@@ -55,11 +93,37 @@ var ErrDisputeNotOwned = errors.New("dispute belongs to another contributor")
 // silently decide ownership from whichever row the planner returned first. Counting makes the
 // answer a property of the whole match set.
 //
-// Compared as **text under `upper()`** rather than cast to `uuid`, which is 004's argument and its
-// second half is the one that decides it: `(payload ->> 'id')::uuid` can *error* rather than merely
-// miss, because nothing promises Postgres evaluates the `kind` qual first, and a payload of some
-// other kind carrying a non-UUID `id` would fail the whole request. That is not hypothetical —
-// `docs/errata-pending/grove-species-known-unscoped-cast.md` is the instance already in the tree.
+// Compared as **text under `upper()`** rather than cast to `uuid`, and the reason that decides it
+// is the one this round measured: **the same id reaches this service in two spellings.** The
+// payload is stored verbatim, and the client mints a UUID as `SQLiteValue`'s uppercase `uuidString`
+// coming out of a stored row and as `JSONEncoder`'s lowercase coming out of a queued one. That is
+// the case split `AppSchema` v13 declares `COLLATE NOCASE` for on `anonymized_contributions`'
+// `client_uuid`, and the one `internal/uuid.Parse` is deliberately case-insensitive for. The
+// withdrawal's own id arrives through `Parse` and is re-spelled lowercase by `String()`, so it is
+// the **stored** side that can differ. Under a plain `=` a dispute raised in the other spelling
+// would simply not be found — and "not found" is the *first* answer above, a success. The gate
+// would stop refusing and would look exactly like a gate that works.
+// `TestTheOwnershipLookupMatchesADisputeInEitherSpelling` is that difference, and it is the only
+// case that goes red when the `upper()` is dropped from both query and index.
+//
+// 004's other argument for text is kept here as a **caution, and it is explicitly unverified**:
+// that `(payload ->> 'id')::uuid` could *error* rather than merely miss, if Postgres evaluated the
+// cast on a row of some other kind before the `kind` qual excluded it. Nothing in this tree
+// exhibits that, and an attempt to reproduce it on Postgres 16.15 failed in three shapes — a
+// kind-qualled cast over a two-row table, over a 5 001-row table of which 5 000 are poison after
+// `ANALYZE`, and through a flattenable subquery — all three returning the matching row with no
+// error. The probe does detect the failure when it happens: the same cast with the `kind` qual
+// removed errors `invalid input syntax for type uuid` (`22P02`) on cue, which is the calibration
+// that makes the three passes worth reporting. So this is *not measured*, not *measured absent*:
+// the standard promises no qual ordering in either direction, and three passes are not a guarantee
+// to lean on. What is not in doubt is that comparing text cannot error at all, which is why the design
+// stands on the spelling argument above and takes this one as a bonus.
+//
+// `docs/errata-pending/grove-species-known-unscoped-cast.md` is **not** an instance of this hazard,
+// and calling it one is a category slip worth not repeating: `GroveSpeciesKnown` carries no `kind`
+// qual at all, so its cast reaches every kind's payload by construction rather than by any choice a
+// planner makes.
+//
 // The expression is written identically to `contributions_disputed_record_id` in
 // `005_data_dispute_kinds.sql`; an index whose expression differs from the query's is dead weight
 // that looks like a plan.

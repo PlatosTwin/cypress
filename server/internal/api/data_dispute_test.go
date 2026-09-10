@@ -328,9 +328,11 @@ func TestADisputeIsDedupedOnItsOwnKey(t *testing.T) {
 //
 // **The name is narrow on purpose, and the earlier one was not.** This case was called
 // `TestADisputeMaterializesNothing`, which reads as "nothing this service serves changes" and is
-// broader than anything it measures: it looks at `pg_tables` and at four row counts, and never
-// issues a single read. Two reads *do* change — a dispute puts the tree into `GET /me/grove` with an
-// all-zero tally and into `GET /me/map-membership?kind=yours`, because `Grove`'s `mine` CTE and
+// broader than anything it measures: it lists `pg_tables`, counts `pg_tables` a second time to
+// calibrate that listing, and takes five row counts — four tables that must be empty and
+// `contributions`, which must hold two — and never issues a single read. Two reads *do* change — a
+// dispute puts the tree into `GET /me/grove` with an all-zero tally and into
+// `GET /me/map-membership?kind=yours`, because `Grove`'s `mine` CTE and
 // `MapMembership` filter only `kind <> 'private_reminder'`. That is inherited rather than introduced
 // here (a `species_claim` does the same), it is the same root cause as the journal serving a
 // withdrawn dispute, and it belongs to `docs/ROADMAP.md`'s chip "Answer what a withdrawn-to-empty
