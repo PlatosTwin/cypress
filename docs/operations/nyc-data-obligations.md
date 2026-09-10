@@ -289,7 +289,7 @@ stays attached to its answer rather than disappearing once the question closes.
    third is what the phase-1 round built. The notify obligation was **discharged** on
    2026-08-21 (see the header). **D20's gate has been WAIVED by the owner for New York**, at
    the honest 85.99% mapping ceiling — 35,993 rows short of the threshold, recorded rather
-   than dissolved; the ruling is in `docs/rulings-pending/` pending its number. The
+   than dissolved; the ruling is **RULINGS R100**. The
    disclaimer copy is built and on the city-downloads screen in the s17/NYC phase-1 round,
    which leaves the **listing text** (item 2 of §4) as the piece still owed before the first
    pack is published.
