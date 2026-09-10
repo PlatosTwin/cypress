@@ -255,17 +255,32 @@ struct SchemaV21Tests {
         // The counter, which is the second half of the same defect and the quieter one: a cascade
         // fires no triggers, so an unparked rebuild leaves every item claiming binaries that are
         // gone and unable ever to reach `done`.
+        //
+        // **Asked against the child table, not against the fixture**, and the difference is the
+        // whole assertion. Comparing the counter to what the fixture staged passes under exactly
+        // the defect this is for: the rebuild copies `photos_outstanding` *before* the drop
+        // cascades the children away, so the number is the right one and the rows behind it are
+        // gone. It was written that way first and stayed green while the binaries were being
+        // destroyed two lines above — this project's dominant defect shape, met once more.
         let counters = try await Self.queue(store).map { ($0.1, $0.6) }
-        let expected = Dictionary(
+        let live = try await Self.binaries(store).reduce(into: [String: Int]()) { counts, binary in
+            counts[binary.1, default: 0] += 1
+        }
+        let staged = Dictionary(
             uniqueKeysWithValues: items.map { ($0.id.uuidString, $0.binaries.count) }
         )
         for (id, outstanding) in counters {
             #expect(
-                outstanding == expected[id],
+                outstanding == live[id] ?? 0,
                 """
-                item \(id) came out of the rebuild owing \(outstanding) binaries, not \
-                \(expected[id] ?? -1)
+                item \(id) came out of the rebuild owing \(outstanding) binaries with \
+                \(live[id] ?? 0) actually in `outbox_photos`. An item can never reach `done` \
+                while it owes a binary that does not exist
                 """
+            )
+            #expect(
+                outstanding == staged[id],
+                "item \(id) owes \(outstanding) binaries, and the fixture staged \(staged[id] ?? -1)"
             )
         }
     }
