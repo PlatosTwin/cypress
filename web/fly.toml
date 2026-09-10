@@ -1,0 +1,49 @@
+# The public web surface (W-A). NOT YET DEPLOYED — the app `cypress-web` does not exist on Fly
+# as of this file's commit, and creating it is W-E. This file is the deployment written down so
+# that W-E is a `flyctl deploy` and a volume, not a design session.
+#
+# Shaped after `server/fly.toml`, which runs `cypress-sync`: one small machine in `sjc`, scaling
+# to zero when idle. The differences from that file are all downstream of one fact — this process
+# answers anonymous public reads, where the sync service answers authenticated ones.
+app = 'cypress-web'
+primary_region = 'sjc'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  # Both are also set in the Dockerfile, deliberately, because they govern different things:
+  # there they make the image correct when run by hand or by any other host, here they make the
+  # deployment self-describing next to `internal_port`. They must agree; the port appears three
+  # times in this repository and `web/test/toolchain.test.ts` is the shape of guard to extend if
+  # a fourth appears.
+  HOST = '0.0.0.0'
+  PORT = '8080'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  # Zero, the same as the sync service. A cold start on a scaled-to-zero machine costs a second
+  # or so, and v1 has no traffic to keep a machine warm for. W-E re-decides this against a real
+  # share link, not against this comment.
+  min_machines_running = 0
+
+# 512 MB rather than the sync service's 256 MB, and the reason is the read path rather than
+# caution: W-B/W-C open published city packs with `node:sqlite`, and SQLite's page cache plus a
+# Node heap does not fit comfortably in 256. It is a number to re-measure under W-E with a pack
+# actually mounted, not a number to trust from here.
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpus = 1
+  cpu_kind = 'shared'
+
+# **No `[mounts]` yet, and its absence is deliberate.** The design has this machine reading the
+# published city packs from a read-only Fly volume (W-5 in the proposal, measured at 713.6 MB
+# across seven packs on 2026-09-10, with 2 GB named as the size that holds one refresh's
+# overlap). Writing a mount here now would declare a volume that does not exist, and a
+# `flyctl deploy` against a declared-but-absent volume fails at the point where the app is
+# already half-created. W-E creates the volume and adds the four lines, having re-measured the
+# corpus rather than trusting that paragraph.

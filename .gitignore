@@ -60,3 +60,19 @@ shots/
 # record; these are what the current build derived, written here so a build never
 # modifies a tracked input. Update the tracked copy with --write-species-map.
 Fixtures/build/
+
+# The web app (W-A, docs/design-proposals/2026-09-10-web-version.md). Three build products and
+# nothing else — the two manifests, package.json and package-lock.json, ARE source and are
+# tracked. `npm ci` reads the lockfile and refuses when it disagrees with package.json, which is
+# what makes the Docker image reproducible; an ignored lockfile would make every image a fresh
+# resolution of a version range.
+#
+# `.astro/` is the types directory Astro regenerates on every build and dev start — the same
+# category as graphify-out/, output ABOUT the source, read by the editor and by `astro check`.
+web/node_modules/
+web/dist/
+web/.astro/
+# Local environment for `astro dev`. Nothing in v1 needs one; it is here because the day
+# something does is not the day to be discovering that this line is missing.
+web/.env
+web/.env.*

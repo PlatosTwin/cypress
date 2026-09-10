@@ -1,0 +1,58 @@
+---
+/**
+ * The one page shell, until W-B lands real tokens.
+ *
+ * Deliberately unstyled beyond a reading measure and a colour pair. The design system is 213
+ * colours, 224 spacing values and 105 font declarations of Swift `static let`s, and W-B exports
+ * them mechanically with a test that the export still matches its source. Hand-typing a hex here
+ * would be the first copy of a fact that already has an owner — the same mistake in a new
+ * language.
+ */
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <!-- No page is a real page yet, so nothing here should be indexed or previewed. W-C removes
+         this line in the same change that adds the OpenGraph tags SCREENS.md section W1
+         specifies. -->
+    <meta name="robots" content="noindex" />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      /* One reading measure, set once, on the container. */
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 3rem 1.25rem;
+      }
+      h1 {
+        font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+        line-height: 1.2;
+        margin: 0 0 1rem;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.9em;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
