@@ -28,6 +28,14 @@ final class GrowthHistoryModel {
 
     private(set) var phase: Phase = .loading
 
+    /// The row whose withdraw control has been tapped, and therefore the row the confirmation is
+    /// about. Nil whenever no question is on screen — one tap withdraws nothing.
+    var pendingWithdrawal: GrowthLogRow?
+
+    /// Set when a withdrawal was refused or failed. Cleared at the start of the next attempt, so
+    /// the sentence on screen is always about the most recent one.
+    private(set) var withdrawError: String?
+
     let treeID: UUID
     private let api: any CypressAPI
     private let calendar: Calendar
@@ -57,5 +65,29 @@ final class GrowthHistoryModel {
     func reload() async {
         phase = .loading
         await load()
+    }
+
+    /// Withdraws one reading, having been asked twice (report F27).
+    ///
+    /// **The re-read afterwards is not a refresh, it is the screen** — and it is `TreePhotosModel
+    /// .delete`'s pattern for the same reason plus one. Everything on 11 is derived from the
+    /// series: which chart cards exist, where the axis starts, what the baseline label says, which
+    /// legend pills are drawn, and whether `noChartReason` has anything to say. Patching the row
+    /// out of a local array would leave every one of those computed from a set that no longer
+    /// matches the record. The extra reason is `withdrawableMeasurementIDs`, which is a fact only
+    /// the store holds.
+    ///
+    /// **`phase` is not reset to `.loading` first**, unlike `reload()`. A withdrawal is a change to
+    /// a screen the reader is standing on, and blanking the whole of it to a spinner for the length
+    /// of one read makes a small edit look like a navigation. `load()` overwrites `phase` when the
+    /// read returns.
+    func withdraw(_ measurementID: UUID) async {
+        withdrawError = nil
+        do {
+            _ = try await api.withdrawMeasurement(id: measurementID)
+            await load()
+        } catch {
+            withdrawError = GrowthHistoryCopy.withdrawFailed
+        }
     }
 }

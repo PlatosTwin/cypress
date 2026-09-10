@@ -96,8 +96,30 @@ struct GrowthChart: Identifiable {
 struct GrowthLogRow: Identifiable {
     let id: UUID
     let quantity: Quantity
+    /// Which of D7's two series this reading is in. Carried for the withdraw confirmation, which
+    /// names the chart the reading would take with it when it is the last of its kind.
+    let kind: MeasurementKind
     /// `Oct 2025`.
     let dateText: String
+
+    /// Whether this reader may take the reading back (report F27, `TreeProfile
+    /// .withdrawableMeasurementIDs`).
+    ///
+    /// **Read off the payload, never derived here.** The question needs the viewer's `Attribution`,
+    /// and a presentation that held one would be holding identity it has no business with
+    /// (ARCHITECTURE §4). It is also not "is this reading on this device": a reading whose
+    /// contributor left through the door that keeps their work in place is still drawn in this log
+    /// and is nobody's to unmake.
+    let isWithdrawable: Bool
+
+    /// Whether withdrawing this reading would leave the tree with no chart of its kind — the one
+    /// case where the confirmation says something extra.
+    ///
+    /// Derived from the loaded profile rather than asked of the API, because the profile already
+    /// carries the whole series (`GrowthHistoryModel`'s header) and this is a count over it. The
+    /// API answers the same question *after* the fact, in `WithdrawnMeasurement
+    /// .leftTheKindWithNoReading`; the two are the same sentence read before and after the tap.
+    let isLastOfItsKind: Bool
 }
 
 // MARK: - Presentation
@@ -217,14 +239,25 @@ struct GrowthHistoryPresentation {
     /// Every non-deleted measurement, newest first. See `GrowthLogRow` for why the set is wider than
     /// the charts'.
     var logRows: [GrowthLogRow] {
-        profile.measurements
-            .filter { $0.deletedAt == nil }
+        let live = profile.measurements.filter { $0.deletedAt == nil }
+        // One pass for the whole log rather than a count per row: a tree with twenty readings would
+        // otherwise walk the series twenty times to answer the same question.
+        let liveByKind = Dictionary(grouping: live, by: \.kind).mapValues(\.count)
+        return live
             .sorted { $0.capturedAt > $1.capturedAt }
             .map { measurement in
                 GrowthLogRow(
                     id: measurement.id,
                     quantity: measurement.quantity,
-                    dateText: TreeProfilePresentation.monthYear.string(from: measurement.capturedAt)
+                    kind: measurement.kind,
+                    dateText: TreeProfilePresentation.monthYear.string(from: measurement.capturedAt),
+                    // Gated on the record accepting contributions as well as on ownership, which is
+                    // E95's rule and the same gate `offersAddReading` applies: 11 is reachable with
+                    // a removed tree — a memorial's readings are still readings — and a read-only
+                    // record must not be handed a write.
+                    isWithdrawable: profile.tree.status.acceptsNewContributions
+                        && profile.withdrawableMeasurementIDs.contains(measurement.id),
+                    isLastOfItsKind: liveByKind[measurement.kind] == 1
                 )
             }
     }
@@ -299,6 +332,18 @@ struct GrowthHistoryPresentation {
     /// a removed tree (a memorial's readings are still readings), and a read-only record must not be
     /// handed a write.
     var offersAddReading: Bool { profile.tree.status.acceptsNewContributions }
+
+    /// The sentence the withdraw confirmation shows for one row.
+    ///
+    /// Composed here rather than in the dialog's `message:` closure so it can be read without a
+    /// renderer, which is this file's whole arrangement (`GrowthHistoryPresentation`'s header: "no
+    /// SwiftUI in this file"). The second sentence appears only for the last reading of its kind —
+    /// see `GrowthHistoryCopy.withdrawLastOfItsKind`.
+    static func withdrawMessage(_ row: GrowthLogRow) -> String {
+        guard row.isLastOfItsKind else { return GrowthHistoryCopy.withdrawMessage }
+        return GrowthHistoryCopy.withdrawMessage + " "
+            + GrowthHistoryCopy.withdrawLastOfItsKind(row.kind)
+    }
 
     /// Which of 16 §2's two segments the general link opens on.
     ///
@@ -375,6 +420,59 @@ enum GrowthHistoryCopy {
     /// controls that write a reading call the thing by the same name, as
     /// `TreeProfilePresentation.growthLinkTitle` already does for the control that reads them back.
     static let addReadingTitle = "Add a reading"
+
+    // MARK: Withdrawing a reading (report F27)
+    //
+    // **NOT SPECIFIED.** SCREENS.md 11 §5 draws a log row as value · method · role · date and no
+    // control on it, so every string below is this branch's, written under DECISIONS constraint 21
+    // and ARCHITECTURE §5 rule 8's practice of going to the nearest specified thing. The nearest
+    // specified thing is `TreePhotosView`'s deletion — the app's only other row-level control that
+    // unmakes a contribution — and this copy is that copy's shape, clause for clause, with the
+    // consequence swapped for the one a reading has.
+
+    /// A question, because the tap that opens the dialog withdraws nothing — `TreePhotosCopy
+    /// .deleteTitle`'s reason, in the same words.
+    static let withdrawTitle = "Withdraw this reading?"
+
+    /// The two facts an irreversible tap is owed, and the first of them is the one the ruling asked
+    /// for: what withdrawal does to a chart.
+    ///
+    /// **"on this phone", exactly as the photo copy says it**, and for the harder of that clause's
+    /// two reasons. `AppSchema` v21 does give the withdrawal a queue row, so this act *can* leave
+    /// the device in a way a photo deletion cannot — but only once a drain reaches a service, and
+    /// ERRATA **E212** is about two shipped sentences that promised a reader somebody was at the
+    /// other end. The screen claims what it has done, and screen 17 is where the queue speaks for
+    /// itself.
+    static let withdrawMessage =
+        "The reading comes off the growth chart and out of the record on this phone. This cannot be undone."
+
+    /// The extra sentence when this is the only reading of its kind: the card for it disappears
+    /// (`chart(for:)` draws none for a kind with no point), and that is a visible change to the
+    /// screen the reader is standing on.
+    static func withdrawLastOfItsKind(_ kind: MeasurementKind) -> String {
+        "It is the only \(title(for: kind)) reading on this tree, so that chart goes with it."
+    }
+
+    /// The verb is on the button, so the destructive path cannot be taken without the word
+    /// *withdraw* under your thumb — E136's rule for the account sheet, applied to a smaller thing.
+    static let withdrawAction = "Withdraw reading"
+
+    /// Not "Cancel": the button that does nothing should say what nothing means here.
+    static let withdrawCancel = "Keep it"
+
+    /// The VoiceOver hint on the control. Says what it does, in the copy's own terms.
+    static let withdrawHint = "Removes this reading from this phone"
+
+    /// The label, which names the reading rather than saying "withdraw" twice: a rotor listing four
+    /// identical `Withdraw` actions is a list nobody can act on.
+    static func withdrawLabel(_ row: GrowthLogRow) -> String {
+        "Withdraw \(MeasuredValue.formatted(row.quantity)), \(row.dateText)"
+    }
+
+    /// **NOT SPECIFIED**, same shape as `TreePhotosCopy.deleteFailed`: it says the reading is still
+    /// here, because a failure that only says "that did not work" leaves the reader unsure whether
+    /// half of it did.
+    static let withdrawFailed = "That reading could not be withdrawn. It is still here. Try again."
 }
 
 // MARK: - Screen metrics
@@ -403,4 +501,12 @@ enum GrowthHistoryMetrics {
     static let logRowSpacing: CGFloat = 10
     /// C23: `margin:10px 16px 0`.
     static let chartTop: CGFloat = 10
+
+    /// The withdraw control (report F27). **NOT SPECIFIED** — 11 §5 draws no control on a log row —
+    /// so these are screen 20's numbers verbatim (`TreePhotosMetrics.thumbGlyph` / `.thumbTarget`),
+    /// which is where the control comes from. 44 pt is the hit area this app gives every control,
+    /// and a mark smaller than its target is how screen 20 keeps a row of glyphs from reading as a
+    /// row of buttons.
+    static let withdrawGlyph: CGFloat = 17
+    static let withdrawTarget: CGFloat = 44
 }
