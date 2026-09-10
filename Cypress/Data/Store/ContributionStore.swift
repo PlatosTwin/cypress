@@ -174,6 +174,56 @@ public struct ContributionStore {
         return try statement.fetchAll(Self.decodeMeasurement)
     }
 
+    /// Test seam (`LocalAPI.debugSeedMeasurement`): the id of the reading a `client_uuid` names on
+    /// this tree, **withdrawn or not**, with any withdrawal undone.
+    ///
+    /// **Why the seam needs its own read, rather than `measurements(treeID:)` above.** That one
+    /// filters `deleted_at IS NULL`, which is correct for every product reader and wrong for a
+    /// harness: since v21 a reading can be withdrawn, and a withdrawn one is still a `client_uuid`
+    /// the insert's `ON CONFLICT` answers `duplicate` for. The seam then read back nothing and threw
+    /// `notFound`, so a device on which anybody had exercised the withdrawal control stopped being
+    /// able to open the fully-measured deep link at all — permanently, until the app was
+    /// uninstalled. It broke two UI tests on that simulator, and the failure looked like a defect in
+    /// an unrelated test (the family E202 and E133 are about).
+    ///
+    /// **It clears the tombstone rather than merely ignoring it**, because the seam's contract is
+    /// that the tree carries this reading when it returns. Reading the row back and leaving it
+    /// withdrawn would answer the caller and still leave the tree half-measured, which is the same
+    /// broken harness one assertion later.
+    ///
+    /// Scoped to the tree, exactly as the read it replaces was: a `client_uuid` held by a *different*
+    /// tree still answers nil here, and the seam still throws on it. That is a caller reusing one key
+    /// across trees, which is a mistake to name rather than to paper over.
+    ///
+    /// Not a product path. Nothing in the app un-withdraws a reading — R3's ruling and
+    /// `withdrawMessage`'s "This cannot be undone" are the product answer — and this is reachable
+    /// only through the debug deep link, keyed on a `client_uuid` the harness itself minted.
+    public func restoreSeededMeasurement(
+        clientUUID: UUID,
+        treeID: UUID,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> UUID? {
+        let revive = try connection.cachedStatement("""
+            UPDATE measurements
+               SET deleted_at = NULL, updated_at = :now
+             WHERE client_uuid = :key COLLATE NOCASE
+               AND tree_uuid = :tree COLLATE NOCASE
+               AND deleted_at IS NOT NULL
+            """)
+        _ = try revive.bind([":key": clientUUID.uuidString, ":tree": treeID.uuidString, ":now": date])
+        try revive.run()
+        _ = try revive.reset()
+
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM measurements
+             WHERE client_uuid = :key COLLATE NOCASE AND tree_uuid = :tree COLLATE NOCASE
+            """)
+        _ = try statement.bind([":key": clientUUID.uuidString, ":tree": treeID.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.uuidIfPresent("id") } ?? nil
+    }
+
     // MARK: - Care events
 
     @discardableResult

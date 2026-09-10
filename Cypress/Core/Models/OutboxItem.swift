@@ -135,6 +135,55 @@ public struct OutboxItem: CoreEntity {
         ///
         /// Like the ten above it this carries no photo binary — a withdrawal is a deletion.
         case measurementWithdrawal = "measurement_withdrawal"
+
+        /// What a deletion of the account that queued a row of this kind has to do to it (R3).
+        ///
+        /// **This exists because the enumeration below used to be typed out in SQL, and went stale
+        /// twice.** `OutboxStore.forgetAccount` named six kinds when there were sixteen — a
+        /// signed-in contributor's queued species correction survived their own account deletion
+        /// still naming the account — and after that was repaired by hand it went stale again the
+        /// moment `measurementWithdrawal` was added, in the same shape: the row was matched by
+        /// neither statement, so `.leaveRecords` left the account id in the payload and
+        /// `.eraseEverything` left the row standing. Both were measured, not read.
+        ///
+        /// A hand-written list cannot fail loudly, because a kind that is missing from it simply
+        /// matches nothing. A `switch` with no `default` can: adding a case to this enum without
+        /// answering this question stops the app compiling, which is the only guard that runs
+        /// before the omission is shipped.
+        public var accountDeletionTreatment: AccountDeletionTreatment {
+            switch self {
+            // The two exclusively-owned kinds. There is no anonymized form of "this account's
+            // favorite" or "this account's reminder" — the record *is* the ownership — so both
+            // doors discard them.
+            case .favoriteToggle, .privateReminder:
+                return .discardedOutright
+            // Everything else is an append-only contribution: anonymized by the leaving door,
+            // discarded by the erasing one. See `OutboxStore.forgetAccount` for the two payload
+            // shapes the account id can sit in.
+            case .visit, .observation, .measurement, .careEvent,
+                 .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
+                 .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
+                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal:
+                return .contribution
+            }
+        }
+
+        /// The two answers `accountDeletionTreatment` gives. See it for why this is a type rather
+        /// than two lists.
+        public enum AccountDeletionTreatment: Sendable, Hashable, CaseIterable {
+            /// Deleted by either door: the mutation has no meaning without the account.
+            case discardedOutright
+            /// Anonymized on `.leaveRecords`, discarded on `.eraseEverything`.
+            case contribution
+        }
+
+        /// The kinds a deletion treats one way, for the two statements that need them as a list.
+        ///
+        /// Derived rather than written down, so the list a query runs against and the `switch`
+        /// above cannot disagree.
+        public static func kinds(treatedAs treatment: AccountDeletionTreatment) -> [Kind] {
+            allCases.filter { $0.accountDeletionTreatment == treatment }
+        }
     }
 
     /// `outbox.state` (BUILD-PLAN §4), verbatim. Screen 17 shows per-item state and retry.

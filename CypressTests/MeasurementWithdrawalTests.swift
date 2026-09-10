@@ -577,4 +577,59 @@ struct MeasurementWithdrawalTests {
             """
         )
     }
+
+    // MARK: - 7. What the withdrawal must not break on a device
+
+    /// **The harness seam survives a withdrawal, so exercising this feature does not poison the
+    /// device for every later run.**
+    ///
+    /// `LocalAPI.debugSeedMeasurement` is idempotent through `client_uuid`, and its read-back used
+    /// `measurements(treeID:)`, which filters `deleted_at IS NULL`. Once a reading could be
+    /// withdrawn, a seeded one that had been meant `duplicate` from the insert and nothing from the
+    /// read — so the seam threw `notFound` from then on, on that container, for good. Measured on a
+    /// wiped simulator: withdraw the DBH reading behind `CYPRESS_SCREEN=fullyMeasured` once and
+    /// `AddReadingReachabilityTests` fails on every later run with `DEEP LINK FAILED ·
+    /// fullyMeasured · notFound` — which reads as a defect in tests that have nothing to do with
+    /// this branch (the family ERRATA E202 and E133 are about).
+    ///
+    /// Two claims, and the second is the one that matters: the seam answers, **and** the reading it
+    /// answers about is live again. A read-back that merely ignored the tombstone would satisfy the
+    /// first and leave the tree half-measured, which is the same broken harness one assertion later.
+    @Test("the debug seam re-seeds a reading that was withdrawn, rather than failing forever after")
+    func theSeamSurvivesAWithdrawal() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, userID: nil)
+        let tree = try await Self.makeTree(
+            api: api, path: NSTemporaryDirectory() + "cypress-f27-seam.jpg"
+        )
+        let key = UUID()
+
+        let first = try await api.debugSeedMeasurement(
+            treeID: tree.id, kind: .dbh, value: 64, unit: .centimeters, clientUUID: key
+        )
+        // The second call is the ordinary idempotent one, before any withdrawal — the control that
+        // says the assertion below is about the tombstone rather than about the seam generally.
+        let again = try await api.debugSeedMeasurement(
+            treeID: tree.id, kind: .dbh, value: 64, unit: .centimeters, clientUUID: key
+        )
+        #expect(again == first, "the seam's second call named a different row than its first")
+
+        _ = try await api.withdrawMeasurement(id: first)
+        #expect(
+            try await api.treeProfile(id: tree.id).measurements.isEmpty,
+            "the fixture did not actually withdraw the seeded reading"
+        )
+
+        let reseeded = try await api.debugSeedMeasurement(
+            treeID: tree.id, kind: .dbh, value: 64, unit: .centimeters, clientUUID: key
+        )
+        #expect(reseeded == first, "the re-seed named a different row than the one it revived")
+        #expect(
+            try await api.treeProfile(id: tree.id).measurements.map(\.id) == [first],
+            """
+            the seam answered and the tree is still without its reading, so a harness that seeds a \
+            fully measured tree still has one that is not
+            """
+        )
+    }
 }

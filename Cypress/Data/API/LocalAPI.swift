@@ -3154,9 +3154,17 @@ public actor LocalAPI: CypressAPI {
             case .duplicate:
                 // A previous run wrote it. Read back the row this `client_uuid` names and return
                 // *its* id — the one a caller could actually look up.
-                let existing = try contributions
-                    .measurements(treeID: treeID, connection: connection)
-                    .first { $0.clientUUID == clientUUID }
+                //
+                // **Through `restoreSeededMeasurement`, which sees a withdrawn row and un-withdraws
+                // it.** `measurements(treeID:)` — what this read was — filters `deleted_at IS NULL`,
+                // so from v21 onwards a seeded reading somebody had taken back on that device gave
+                // `duplicate` from the insert and nothing from the read-back: this seam threw
+                // `notFound` on every later launch, permanently, until the app was uninstalled. That
+                // is what the withdrawal control armed here, and see that method for why the fix
+                // clears the tombstone rather than only ignoring it.
+                let existing = try contributions.restoreSeededMeasurement(
+                    clientUUID: clientUUID, treeID: treeID, at: moment, connection: connection
+                )
                 guard let existing else {
                     // **`duplicate` alone does not mean this tree already has the reading.** The
                     // conflict clause keys on `client_uuid`, which is `UNIQUE` across the whole
@@ -3167,14 +3175,16 @@ public actor LocalAPI: CypressAPI {
                     // false invariant turned a caller's key collision into a thrown deep link
                     // (PR #139 delta review).
                     //
-                    // It is reachable only by a caller that reuses one `clientUUID` across trees.
-                    // The one caller derives its keys per tree (`DebugDeepLink.seededClientUUID`)
+                    // What reaches this line is a caller reusing one `clientUUID` across trees. The
+                    // one caller derives its keys per tree (`DebugDeepLink.seededClientUUID`)
                     // precisely so it cannot, which is what makes throwing the right answer *now*:
                     // it names a key collision the caller has to fix, rather than silently
-                    // returning an id for a row on some other tree.
+                    // returning an id for a row on some other tree. **A withdrawn reading used to
+                    // reach here too** — that was a second, unintended way in, and it is the read
+                    // above rather than this branch that no longer admits it.
                     throw APIError.notFound
                 }
-                return existing.id
+                return existing
             }
         }
     }
