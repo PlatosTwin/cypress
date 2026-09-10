@@ -320,11 +320,46 @@ jobs:
           # rather than as `Tools/web_*`: a blanket prefix is how `Tools/fetch_seed.sh`, a
           # genuine build input, would eventually be swept up by a sibling named to match.
           WEB_ONLY='web/|Tools/run_web_tests\.sh$|Tools/verify_web_test_log\.sh$'
+          # The two root git-metadata files, added to the run-but-do-not-ship set by the round
+          # that created `web/` — because that round is the one that walked into the gap.
+          #
+          # **How it was found, which is the part worth keeping.** W-A built a calibration table
+          # for its own predicate and ran the real `scope` step against it. The table covered
+          # `web/`, the harness scripts, `.github/`, `server/`, `docs/` and three adversarial
+          # lookalikes. It did **not** cover `.gitignore`, which that same pull request had to
+          # edit — a table of the paths the change was designed for rather than the paths the
+          # change actually touched. CI answered `shipping — these can affect the app:
+          # .gitattributes .gitignore`, and merging it would have minted a TestFlight build
+          # byte-identical to the last one, expired the build the testers were on and notified
+          # all of them: #212 / #215 / #31 exactly, arriving inside the pull request written to
+          # prevent it.
+          #
+          # **Why they cannot reach the archive.** Neither is compiled, bundled or read during a
+          # build: the three `PBXFileSystemSynchronizedRootGroup`s are `Cypress`, `CypressTests`
+          # and `CypressUITests`, and both files sit at the repository root outside all three.
+          # `.gitignore` decides what git TRACKS, not what Xcode builds — and a file that starts
+          # being tracked because this file changed appears in the diff under its own name, where
+          # this predicate judges it on its own merits. `.gitattributes` here sets a merge driver
+          # and a linguist hint; it carries no `export-ignore` and no filter, so it changes no
+          # bytes in a checkout.
+          #
+          # **They must RUN, and that is not caution.** `CypressTests/DocumentCitationGuardTests`
+          # reasons about which files are absent from a fresh clone and records that deriving that
+          # set from `.gitignore` was tried and is wrong in principle — the comment survives at
+          # `DocumentCitationGuardTests.swift:95`. Nothing reads either file at test time today
+          # (checked: every mention in the three targets is a comment, with the grep calibrated
+          # against `pinned-seed.json`, which it does find). But a change to what this repository
+          # tracks is exactly the change that guard exists near, so it proves itself by running.
+          #
+          # Anchored with `$` and matched against `^(…)`, so these are the ROOT files only. A
+          # `Cypress/.gitignore` would not match and would ship, which is the safe default this
+          # whole list is built on.
+          GIT_METADATA='\.gitignore$|\.gitattributes$'
           # One assignment on one line, however long: `DeployPathsAgreeTests` reads the first line
           # that starts with `NO_ARCHIVE=`, and a continuation would leave the tokens below the
           # first line unchecked — a gate passing on half the list. `$DOC_ONLY` is interpolated
           # by name and not re-typed, which that same test asserts.
-          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$WEB_ONLY|$DOC_ONLY"
+          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$GIT_METADATA|$WEB_ONLY|$DOC_ONLY"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # The escape hatch: a manual run tests everything and ships. This is what makes the
@@ -402,7 +437,7 @@ jobs:
 
           if [ -z "$buildable" ]; then
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests/, server/, web/, Tools/ui-test-shards.txt, Tools/run_tests.sh, Tools/verify_test_log.sh, Tools/test_harness_guards.sh, Tools/run_web_tests.sh, Tools/verify_web_test_log.sh, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
+            echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests/, server/, web/, a root .gitignore or .gitattributes, Tools/ui-test-shards.txt, Tools/run_tests.sh, Tools/verify_test_log.sh, Tools/test_harness_guards.sh, Tools/run_web_tests.sh, Tools/verify_web_test_log.sh, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
             echo "shipping — these can affect the app:"; echo "$buildable" | sed 's/^/  /'
