@@ -50,7 +50,12 @@ describe('the version parsers', () => {
   });
 
   it('finds nothing in a Dockerfile that is not on Node', () => {
-    assert.deepEqual(dockerfileNodeVersions('FROM golang:1.25-alpine AS build'), []);
+    // `1.25.0`, not `1.25`, and the three digits are the whole point of the specimen. With
+    // `1.25` this test passed against a deliberately broken matcher that accepted ANY image
+    // name — it was rejecting the line for having a two-part version, not for being golang, so
+    // it was green while the defect it names was present. Caught by red-proving it; the
+    // specimen now differs from a Node line in exactly one thing, the image name.
+    assert.deepEqual(dockerfileNodeVersions('FROM golang:1.25.0-alpine AS build'), []);
   });
 
   it('compares versions by number, not by string', () => {

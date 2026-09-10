@@ -142,7 +142,8 @@ $(printf '%s\n' "$PS_SNAPSHOT" | grep -F "run_web_tests.sh" || true)
 EOF
 if [ -n "$OTHERS" ]; then
   echo "REFUSING: another run_web_tests.sh is live and would share $WEB/node_modules:" >&2
-  printf '%s' "$OTHERS" | sed 's/^/  /' >&2
+  # pid and command; the ppid column exists only so the ancestry walk above can use it.
+  printf '%s' "$OTHERS" | awk '{ pid = $1; $1 = ""; $2 = ""; sub(/^ +/, ""); print "  " pid "  " $0 }' >&2
   echo "  Wait for it, or run the phases you need in a separate checkout." >&2
   exit 1
 fi
