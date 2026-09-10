@@ -308,11 +308,18 @@ func TestNoHazardRedirectReachesThePublicRead(t *testing.T) {
 	tree := uuid.New()
 	const hazardText = "large limb hanging over the sidewalk"
 
+	// **The payload carries a `vitality` as well as the hazard**, and that is not padding. The first
+	// version of this test seeded a hazard with only a category and a note, so the red-proof — the
+	// store's `kind` filter widened to admit `hazard_redirect` — left it **green**: the widened query
+	// still found nothing to publish, because a hazard payload had nothing the projection reads. A
+	// guard that goes green while the defect it names is present is this project's dominant
+	// test-suite defect, and it was present here until the red-proof said so.
 	h.applyItem(t, session.AccessToken, map[string]any{
 		"client_uuid": uuid.New(), "kind": "hazard_redirect", "tree_uuid": tree,
 		"occurred_at": "2026-09-05T08:00:00Z",
 		"payload": json.RawMessage(fmt.Sprintf(
-			`{"clientUUID":%q,"treeID":%q,"category":"limb_failure","note":%q}`,
+			`{"clientUUID":%q,"treeID":%q,"category":"limb_failure","note":%q,"vitality":2,`+
+				`"kind":"dbh","quantity":{"value":31,"unitEntered":"cm","method":"tape"}}`,
 			uuid.New(), tree, hazardText)),
 	})
 
@@ -476,9 +483,15 @@ func TestAMalformedIDIsAValidationFailure(t *testing.T) {
 // and hold a taken-back value for a day.
 func TestThePublicReadBoundsDownstreamStaleness(t *testing.T) {
 	h := newHarness(t)
+	// The literal is spelled out on both sides. Printing `publicCacheControl` in the failure message
+	// made the red-proof read `Cache-Control = "public, max-age=86400", want "public,
+	// max-age=86400"` — a tautology, because the message quoted the very constant that had been
+	// changed. A failure message that cannot name the answer is not evidence of anything.
+	const want = "public, max-age=60"
 	got := h.readPublicly(t, uuid.New()).Header().Get("Cache-Control")
-	if got != "public, max-age=60" {
-		t.Fatalf("Cache-Control = %q, want %q", got, publicCacheControl)
+	if got != want {
+		t.Fatalf("Cache-Control = %q, want %q — sixty seconds is the ceiling on how long a "+
+			"withdrawn value may survive downstream", got, want)
 	}
 }
 

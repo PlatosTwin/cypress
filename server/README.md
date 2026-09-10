@@ -133,7 +133,50 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /me/map-membership?kind=yours\|favorites` | Class R. |
 | `GET /trees/{id}` | The **community half** of `treeProfile`. R-required: this is the acceptance criterion's last mile. |
 | `GET /photos/{id}` | The photograph a device never wrote. |
+| `GET /public/trees/{id}` | **The only unauthenticated read.** The publicly visible community half of one tree — see below. |
 | `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
+
+### `GET /public/trees/{id}` is the one route with no credential, and what it may say is a ruling
+
+Everything else here is Class R — the contributor's own data. This route answers a stranger, on a
+page a search engine will index, and it is the first surface anywhere in this system that shows one
+person's contribution to another person. What it returns was decided field by field in
+`docs/rulings-pending/public-tree-read.md` **before the handler was written**, against `SCREENS.md`
+§W1's fact column. The sentence the rest of it follows from:
+
+> The page publishes the state of the tree. It never publishes anybody's activity.
+
+So it returns the latest vitality rating and the latest reading per measurement series, each with its
+method and the **month** it was taken, and nothing else. No count of anything (D1, R27.1 §5, and the
+owner's refusal of tester report F16), no photograph or photo id (W-7, and `approval_reason =
+'auto_approved_launch'` means "an account uploaded it", not "somebody looked at it"), no coordinate,
+no free text, no day-precision date, and no identifier of any contributor — `User.publicAttribution`
+is false by default, cannot be turned on anywhere in the app (E100), and `users` here has no column
+for it at all.
+
+Three mechanisms rather than three intentions, each with a test that goes red without it:
+
+- **An allow-list over `contributions.kind`.** Two of the seventeen values are public;
+  `withheldKinds` states the reason for the other fifteen, and `TestEveryContributionKindIsClassified`
+  reads the vocabulary out of `004_measurement_withdrawal_kind.sql` and fails when a kind is in
+  neither map. A deny-list here is how `testflight.yml`'s path classifier came to treat a new
+  top-level directory as "run everything and ship a build".
+- **Absent, empty and fully withdrawn are one answer** — 200 with a body byte-identical in all
+  three — rather than the `not_found` the photo read gives. A photo id is a private handle; a tree
+  UUID is public by design (it is the last path segment of every share link screen 10 produces), so
+  a 404 would answer the question that actually matters — does this tree have contributions? —
+  instead of avoiding it.
+- **Its own rate-limit budget** (`ratelimit.NewPublicRead`). The web is server-side rendered, so
+  every reader in the world arrives from one address; the phone's burst of 60 would throttle the
+  whole site to a page a second, which is `clientKey`'s own warning arriving from the other
+  direction.
+
+`Cache-Control: public, max-age=60` is the ceiling on how long a withdrawn value may survive
+downstream, chosen against the takedown route rather than against traffic.
+
+**No CORS, deliberately.** The web app renders on the server and calls this server-to-server. A
+later surface that calls it from browser JavaScript needs CORS *and* a fresh look at the budget
+above.
 
 ### `device_uuid` is a credential
 
@@ -375,6 +418,26 @@ would pass by being skipped on a machine with no network.
 
 ```sh
 CYPRESS_TEST_DATABASE_URL='postgres://…/postgres' go test ./...
+```
+
+**Count the skips before believing the green.** `go test ./...` prints `ok` for every package and
+exits 0 whether or not the SQL half ran, which is this project's signature failure mode in its Go
+dialect. Measured on 2026-09-10 at commit `5b52b4e` + this round: **60 pass / 108 skip** with no
+database, **191 pass / 0 skip** with one. The skip count is the reading that matters:
+
+```sh
+go test ./... -v 2>&1 | grep -c -- '--- SKIP'
+```
+
+A throwaway Postgres is one command, and it is what the numbers above were measured against:
+
+```sh
+docker run -d --name cypress-test-pg -e POSTGRES_PASSWORD=cypress -e POSTGRES_USER=cypress \
+    -e POSTGRES_DB=cypress -p 55433:5432 postgres:16-alpine
+# then wait for it, because `simctl`'s lesson applies to Postgres too:
+docker exec cypress-test-pg pg_isready -U cypress -d cypress
+CYPRESS_TEST_DATABASE_URL='postgres://cypress:cypress@127.0.0.1:55433/cypress?sslmode=disable' \
+    go test ./... -count=1
 ```
 
 There is deliberately no in-memory double behind the store. Claim idempotency, the #174 guard, the
