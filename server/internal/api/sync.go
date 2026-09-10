@@ -282,7 +282,7 @@ var syncKinds = map[string]bool{
 	"species_review_dismissal": true, "record_review_dismissal": true,
 	"photo_vote": true, "photo_withdrawal": true, "hazard_redirect": true,
 	"measurement_withdrawal": true,
-	"data_dispute": true, "data_dispute_withdrawal": true,
+	"data_dispute":           true, "data_dispute_withdrawal": true,
 }
 
 // maxSyncBatch caps one request. A drain sends what is due, and a phone that has been in a drawer
