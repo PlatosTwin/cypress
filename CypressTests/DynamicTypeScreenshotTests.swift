@@ -25,7 +25,9 @@ import UIKit
 /// opening anything.
 ///
 /// Output goes to `CYPRESS_SHOT_DIR` if set, otherwise the temporary directory; the path of each
-/// file is printed so a reviewer can open them.
+/// file is printed so a reviewer can open them. Set it with
+/// `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell before `Tools/run_tests.sh` —
+/// `ScreenSweepShots` says the same thing and `Tools/run_tests.sh`'s header argues it.
 @MainActor
 @Suite("Dynamic Type · both extremes")
 struct DynamicTypeScreenshotTests {
