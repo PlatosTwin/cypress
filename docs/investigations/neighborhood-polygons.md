@@ -230,7 +230,7 @@ question is already answered in this repository and the answer transfers.
 
 ---
 
-## 3. Does this change the schema? **No.**
+## 3. Does this change the schema? **Not to ingest. Yes to ingest San Jose completely.**
 
 ### 3.1 The three version spaces, read from the code
 
@@ -411,6 +411,9 @@ brief's 713.6 MB, confirmed.
 | `us-ca-sj` | 67 | 401,558 | 412,420 | 29,372,416 | 1.40% |
 | `sf` | 41 | *(unchanged)* | 0 | 82,796,544 | 0.00% |
 | **corpus** | | | **+5,036,988** | **713,605,120 → 718,642,108** | **+0.71%** |
+
+(On the 295-polygon path of §3.4 San Jose's row is 66 polygons, not 67 — the dropped `Commercial`
+is one of the ones the shipped window reaches — which moves the estimate by about 6 KB.)
 
 The NYC rows are an **upper bound**: they assume every NTA in the borough contains at least one tree
 and therefore survives `publish_cities.py:669`'s prune. The San Jose row is exact — 67 is the measured
