@@ -17,11 +17,19 @@ import (
 // `community_kinds_test.go` states: a test that invents its own wire format proves only that the
 // handler agrees with the test.
 //
-// **What these assert, and what they deliberately do not.** Nothing materializes on this side, so
-// there is no tally to read back the way `measurement_withdrawal_test.go` reads `GET /me/grove` —
-// the record *is* the row. That makes one guard load-bearing rather than decorative:
-// `TestADisputeMaterializesNothing` below is the ruling written as a test, and it is what a later
-// round has to go red against before it can quietly start moving city data from here.
+// **What these assert, and what they deliberately do not.** No dispute table exists on this side and
+// no row outside `contributions` is written, so there is no tally to read back the way
+// `measurement_withdrawal_test.go` reads `GET /me/grove` — the record *is* the row. That makes one
+// guard load-bearing rather than decorative: `TestADisputeWritesNoTableAndNoRowOutsideContributions`
+// below is the ruling written as a test, and it is what a later round has to go red against before it
+// can quietly start moving city data from here.
+//
+// What no test in this file asserts is that the **reads** are unchanged, and that is a limit worth
+// stating where somebody will look for it. A dispute enrols its tree in `GET /me/grove` and in
+// `GET /me/map-membership?kind=yours`, and `GET /me/journal` serves a dispute back and goes on
+// serving it after the withdrawal applies. All three are inherited — no reader here filters on kind
+// — and all three belong to `docs/ROADMAP.md`'s chip "Answer what a withdrawn-to-empty tree should
+// look like", not to this round. See the `data_dispute` paragraph beside `syncKinds`.
 
 // disputePayload builds `DataDispute`'s body. Written as a struct and marshalled, rather than as a
 // string, only because the suggestions map has to be a real JSON object in every case.
@@ -305,7 +313,8 @@ func TestADisputeIsDedupedOnItsOwnKey(t *testing.T) {
 
 // ── The ruling, written as a test ──────────────────────────────────────────────────────────────
 
-// TestADisputeMaterializesNothing is R-c: the server records a dispute and does not act on it.
+// TestADisputeWritesNoTableAndNoRowOutsideContributions is R-c measured at the tables: the server
+// records a dispute and writes nothing else.
 //
 // It is here because the tempting shortcut is small and one-way. Adjudicating "the species is
 // wrong" means moving a species on somebody's unadjudicated say-so, and the surface that adjudicates
@@ -316,7 +325,18 @@ func TestADisputeIsDedupedOnItsOwnKey(t *testing.T) {
 // Two assertions, and the second is the one that would catch the shortcut being taken by accident:
 // no table server-side is named for a dispute, and one applied dispute writes one row in
 // `contributions` and nothing anywhere else.
-func TestADisputeMaterializesNothing(t *testing.T) {
+//
+// **The name is narrow on purpose, and the earlier one was not.** This case was called
+// `TestADisputeMaterializesNothing`, which reads as "nothing this service serves changes" and is
+// broader than anything it measures: it looks at `pg_tables` and at four row counts, and never
+// issues a single read. Two reads *do* change — a dispute puts the tree into `GET /me/grove` with an
+// all-zero tally and into `GET /me/map-membership?kind=yours`, because `Grove`'s `mine` CTE and
+// `MapMembership` filter only `kind <> 'private_reminder'`. That is inherited rather than introduced
+// here (a `species_claim` does the same), it is the same root cause as the journal serving a
+// withdrawn dispute, and it belongs to `docs/ROADMAP.md`'s chip "Answer what a withdrawn-to-empty
+// tree should look like". A test that asserts more than it measures is this repo's most expensive
+// defect shape, so the name says tables, because tables are what it reads.
+func TestADisputeWritesNoTableAndNoRowOutsideContributions(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
 	dispute, tree := uuid.New(), uuid.New()

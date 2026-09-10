@@ -139,21 +139,56 @@ type measurementPayload struct {
 //	 "suggestions":{"lat":"37.3382","lon":"-121.8863"},
 //	 "notes":"the trunk is across the path","occurredAt":"…"}
 //
+// **This is a proposal to the client half, not a shape matched to one.** v22 is not on any branch
+// this file can be built against, so every key below is this round's offer and PR-A is entitled to
+// push back on it — the server is the cheaper side to change, having no CI and no App Store queue.
+// What PR-A must not do is differ *silently*: `issues` is decoded into `[]string`, and a v22 that
+// encodes it as objects fails `json.Unmarshal`, which is `validation_failed`, which is **not
+// retried** — the row goes `.failed` on its first attempt and sits red on screen 17 forever. Same
+// for any UUID spelled outside the canonical 36-character hyphenated form (`internal/uuid`).
+//
 // **`id` is the dispute's own id and `clientUUID` is the item's**, different values by construction
 // exactly as they are for a reading (see `measurementPayload`), and the reason to require `id` is
 // the withdrawal below: a dispute recorded without one can never be named again by the person who
-// raised it. `clientUUID` and `occurredAt` are on the wire and deliberately not read, for the reason
-// `photoWithdrawalPayload` gives about its own — the envelope is the authority on the item's key and
-// on when it happened, and a second copy of either is a second place for one fact to be wrong.
+// raised it, and `store.disputeIsThisIdentitys` is the lookup that needs it. `clientUUID` and
+// `occurredAt` are on the wire and not read *by this handler*, for the reason `photoWithdrawalPayload`
+// gives about its own — the envelope is the authority on the item's key and on when it happened, and
+// a second copy of either is a second place for one fact to be wrong.
 //
-// **`suggestions` and `notes` are on the wire and deliberately not read, and that is a decision.**
-// A suggestion is a `field`/`value` pair whose `field` is CHECKed on the client against a vocabulary
-// v22 names and this file does not; enforcing that vocabulary from here would put one list in a
-// Swift migration and another in a Go map, across two files no build compiles together — which is
-// the drift `TestTheHandlersVocabularyAndTheColumnsAgree` exists because of, and here it would fail
-// queues *non-retryably* on the first attempt. Nothing on this side adjudicates a dispute, so
-// nothing on this side needs to understand a suggested value: the payload is stored whole, and the
-// round that serves it back is the round that has to read it.
+// **`suggestions` and `notes` are on the wire and not read by this handler, and that is a decision.**
+// `suggestions` is a JSON **object keyed by field name** — `{"lat":"37.3382","species_id":"…"}`, one
+// value per field, exactly as in the example above and nowhere in this round an array of pairs. Each
+// key is CHECKed on the client against a vocabulary v22 names and this file does not; enforcing that
+// vocabulary from here would put one list in a Swift migration and another in a Go map, across two
+// files no build compiles together — which is the drift `TestTheHandlersVocabularyAndTheColumnsAgree`
+// exists because of, and here it would fail queues *non-retryably* on the first attempt. Nothing on
+// this side adjudicates a dispute, so nothing on this side needs to understand a suggested value: the
+// payload is stored whole, and the round that serves it back is the round that has to read it.
+//
+// ── The one prohibition on this payload: **no top-level `speciesID`** ──────────────────────────
+//
+// A disputed species travels as `suggestions["species_id"]`, where nothing interprets it. A
+// top-level `speciesID` is forbidden, and the reason is not tidiness: **payload reads in this
+// service are not kind-scoped.** `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid`
+// over `contributions` filtered by owner and `deleted_at` and by nothing else, so
+//
+//   - a *valid* top-level `speciesID` on a dispute silently enrols that species in the person's
+//     "species you have met" list — recorded because they complained about it;
+//   - an *invalid* one makes their Species tab a permanent 500. The cast errors, the whole query
+//     fails, and the row cannot be un-sent.
+//
+// Both arms were reproduced against a throwaway Postgres for this round. The defect is **not this
+// round's** — a `species_claim` carrying a non-UUID `speciesID` does the same thing today, and it
+// is written up in `docs/errata-pending/grove-species-known-unscoped-cast.md` — but `wrong_species`
+// is one of three issue kinds here, which makes a suggested species the most natural thing for v22
+// to send, and `speciesID` the obvious key to send it under. Nothing in this file could refuse it
+// either: the payload decode is lenient by design, so this is a contract the client keeps.
+//
+// The general rule, for whoever adds the next key: before putting a name at the top level of a
+// payload, grep `internal/store` for `payload ->>` and check whether an existing read already
+// interprets that name. Most of them narrow on `kind` first and are therefore safe —
+// `withdrawMeasurement`, `measurementWasWithdrawn`, `disputeIsThisIdentitys`. `GroveSpeciesKnown`
+// is the one that does not, and one is enough.
 type dataDisputePayload struct {
 	ID         uuid.UUID `json:"id"`
 	TreeID     uuid.UUID `json:"treeID"`
@@ -185,11 +220,21 @@ var disputeIssueKinds = map[string]bool{
 
 // disputeTreeSources is `tree_data_disputes.tree_source`'s CHECK.
 //
-// Both values are accepted here even though R79 raises disputes on **city** rows only. The
-// restriction is the client's this round — a community row is `.forbidden` in `raiseDataDispute`,
-// because a community tree's wrong species is still today's `flagWrongSpecies` — and writing that
-// one-round restriction into this service would mean a deploy to lift it, for a value this service
-// records and does not act on. A source outside the pair is a different thing: a malformed item.
+// Both values are accepted here even though this round's client raises disputes on **city** rows
+// only — a community row is `.forbidden` in `raiseDataDispute`, because a community tree's wrong
+// species is still today's `flagWrongSpecies`. Writing that restriction into this service would
+// mean a deploy to lift it, for a value this service records and does not act on. A source outside
+// the pair is a different thing: a malformed item.
+//
+// **What is deferred is not the whole of what R79 says about community rows, and the difference is
+// worth stating rather than glossed.** R79 gives community trees "location and species only", and
+// that the "city-tree metadata/suggested-values machinery does not apply" — permanently, not for a
+// round. So `{"treeSource":"community","issues":["wrong_metadata"],"suggestions":{…}}` is not a
+// restriction awaiting a client that lifts it; it is contrary to the standing spec, and this
+// service accepts and stores it. That is deliberate — a cross-field rule enforced from here is a
+// second copy of R79 in a file no build compiles with the first, refusing well-formed items
+// **non-retryably** when the two drift. The round that adjudicates is the round that must know
+// these rows can exist.
 var disputeTreeSources = map[string]bool{"city": true, "community": true}
 
 // syncKinds is every kind this service accepts on `POST /sync`.
@@ -262,15 +307,39 @@ var disputeTreeSources = map[string]bool{"city": true, "community": true}
 //     wrote about a species claim, and the surface that adjudicates is a web deliverable
 //     (ARCHITECTURE §8). So the `contributions` row is the record, exactly as it is for a visit.
 //
-//     **Which makes the withdrawal a success that changes nothing today, and that is the part to
-//     read carefully rather than copy.** Two earlier versions of the `photo_withdrawal` paragraph
-//     above were wrong in opposite directions, and this comment is where both were written; the
-//     lesson is that "nothing to withdraw" is a fact about *this* deployment and expires. Nothing
-//     here serves a dispute back yet — no read endpoint exists, so a withdrawal cannot be a claim
-//     anybody is shown. The badge round builds that endpoint. On the day it does, an ownership gate
-//     and a tombstone become owed in the same change, for ERRATA **E280**'s reason: a service that
-//     reports a retraction and goes on serving the thing. Neither is written here on speculation,
-//     because a gate against a table that does not exist is a gate nothing can prove.
+//     **Which makes the withdrawal a row that tombstones nothing — and what that leaves standing
+//     is the part to read carefully rather than copy.** Two earlier versions of the
+//     `photo_withdrawal` paragraph above were wrong in opposite directions and this comment is
+//     where both were written, so this is stated as measured rather than reasoned.
+//
+//     `GET /me/journal` **does** serve a dispute back, payload and all, and goes on serving it
+//     after the withdrawal has applied. `store.Journal` selects `contributions` narrowed by owner
+//     and `deleted_at` and **by nothing else** — there is no filter on `kind` — and nothing here
+//     writes `deleted_at` for a dispute, so the raise stays in the journal and the withdrawal's
+//     own row joins it there. Reproduced against a throwaway Postgres by PR #159's reviewer and
+//     again by its author; it is not an inference from the SQL.
+//
+//     **The position, rather than a claim that the question does not arise.** That behaviour is
+//     `photo_withdrawal`'s and `measurement_withdrawal`'s today, from the same root cause — no
+//     reader here filters on kind — and it is already open as `docs/ROADMAP.md`'s chip backlog
+//     item "Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
+//     remote", which measures exactly this for a withdrawn reading. **This round joins that item
+//     rather than answering it one kind at a time**, and the reason is not that it does not matter:
+//     answering it here would settle for disputes what that item has to settle for three kinds at
+//     once, which is how three answers drift apart. There is also a real argument to be had, and
+//     it belongs to that item — a personal journal is a history, and "I disputed this, then
+//     withdrew it" may be honest history in a way a photograph still served to everybody is not.
+//
+//     **ERRATA E280 bites in the badge round, and what it owes there is a read gate and a
+//     tombstone.** A withdrawn dispute becomes a claim somebody *else* is shown the moment a read
+//     serves these rows to anyone but their raiser. Neither is written here on speculation: a read
+//     gate against a read that does not exist is a gate nothing can prove.
+//
+//     **The withdrawal's own ownership is a different question and this round does answer it** —
+//     see `store.disputeIsThisIdentitys`. Not for E280's reason, since the journal is owner-scoped
+//     and a stranger's withdrawal never reaches the raiser, but because the `contributions` row is
+//     the record: answering `applied` to "Bob withdrew Alice's dispute" stores a false statement,
+//     and it is false whether or not anything serves it back.
 //
 //     What *is* checked is the payload — see `dataDisputePayload` for which fields and, more
 //     usefully, for why the suggested-value vocabulary is recorded rather than checked.
