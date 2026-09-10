@@ -6,9 +6,41 @@
 # Usage: Tools/run_tests.sh <udid> <log-path> [extra xcodebuild args…]
 #   e.g. Tools/run_tests.sh EA0AD796-… /path/dd-me/unit.log -only-testing:CypressTests
 #
+# A Swift Testing FUNCTION needs its trailing () inside an -only-testing: filter —
+# -only-testing:CypressTests/SomeSuite/someTest matches nothing at all and the run reports
+# "Swift Testing ran 0 tests", not an error. Write …/someTest(). A suite takes no parentheses.
+#
 # Escape hatch: CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1 skips the collision and device-state
 # refusals below. It does NOT skip the log header, which records that it was used — a log
 # produced with the guards off says so, on its own face.
+#
+# ── Where the screenshot suites write, and the one spelling that works ──────────────────────
+# Four suites write PNGs to a directory of your choosing — ScreenSweepShots and
+# DynamicTypeScreenshotTests in CypressTests, AreaPickerUITests and AlmanacGroupTapTests in
+# CypressUITests. All four read ONE key, CYPRESS_SHOT_DIR, out of the environment of the
+# process they run in, and there is exactly one spelling that puts it there:
+#
+#   export TEST_RUNNER_CYPRESS_SHOT_DIR=/some/dir
+#   Tools/run_tests.sh <udid> <log> …
+#
+# EXPORTED IN THE SHELL, BEFORE this script. xcodebuild forwards a TEST_RUNNER_-prefixed
+# variable from its own environment into the test runner's, with the prefix stripped — and
+# the runner is the process that writes the file for BOTH targets: the app under test for
+# CypressTests, the XCTRunner app for CypressUITests.
+#
+# Written instead as an xcodebuild ARGUMENT — `Tools/run_tests.sh <udid> <log>
+# TEST_RUNNER_CYPRESS_SHOT_DIR=/some/dir` — it is a build-setting override, it reaches no
+# process, and NOTHING SAYS SO: the tests pass, print a path, and write into the runner's
+# NSTemporaryDirectory() inside the simulator container. Both spellings were run on iPhone 16e
+# on 2026-09-09, one -only-testing UI test each, against a directory proven empty first; the
+# exported one put the PNG in it and the argument one left it empty. The UI-test files used to
+# instruct the argument spelling, which is what that round was correcting.
+#
+# XCUIApplication.launchEnvironment is a DIFFERENT channel and does not reach these writers.
+# It sets the environment of the app under test — CYPRESS_SCREEN, CYPRESS_LOCATION — and the
+# UI tests' `record(_:named:)` runs in the runner, not in the app.
+#
+# Unset, every suite falls back to a temporary directory and prints the path it used.
 #
 # What it mechanizes (docs/investigations/repeat-failures-postmortem.md):
 # - rm -f of the log first: a stale log at a reused path once nearly reported a clean

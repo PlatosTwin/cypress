@@ -28,6 +28,9 @@
 //     image and the comparison is a glance rather than four file-opens.
 //
 //  Output goes to `CYPRESS_SHOT_DIR` if set, otherwise a temporary directory. Paths are printed.
+//  The one spelling that sets it is `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell,
+//  before `Tools/run_tests.sh` — the same spelling for this target and for CypressUITests, argued
+//  once in that script's header. Written as an `xcodebuild` argument it silently does nothing.
 //
 
 #if DEBUG

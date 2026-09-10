@@ -181,10 +181,7 @@ public struct CommunityTreeStore {
     /// needs to see a withdrawal is the reason that method does not either.
     public func trees(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: Tree] {
         guard !ids.isEmpty else { return [:] }
-        let statement = try connection.cachedStatement("""
-            SELECT * FROM community_trees
-             WHERE id COLLATE NOCASE IN (SELECT value FROM json_each(:ids))
-            """)
+        let statement = try connection.cachedStatement(Self.treesSQL)
         _ = try statement.bind(
             "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
         )
@@ -192,6 +189,18 @@ public struct CommunityTreeStore {
         for tree in try statement.fetchAll(Self.decode) { trees[tree.id] = tree }
         return trees
     }
+
+    /// The text `trees(ids:)` runs, as a property, for `ContributionStore.groveTreeIDsSQL`'s
+    /// reason: `GroveStatementCensusTests` names the statements one grove read is allowed to make,
+    /// and a gate that names a property is a drift gate, while a gate holding its own copy of the
+    /// text is a test agreeing with itself (PR #143's review).
+    ///
+    /// The collation and the missing `deleted_at` filter are both deliberate and both argued in
+    /// `trees(ids:)`' own doc above; this property is the same statement, not a second one.
+    static let treesSQL = """
+        SELECT * FROM community_trees
+         WHERE id COLLATE NOCASE IN (SELECT value FROM json_each(:ids))
+        """
 
     public func exists(id: UUID, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""

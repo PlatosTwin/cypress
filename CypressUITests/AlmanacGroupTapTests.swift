@@ -10,8 +10,10 @@ import XCTest
 ///
 /// So this drives the shipped binary. It taps `Walk the …`, reads what arrives, taps
 /// `… empty planting sites`, and reads what arrives. It also writes a PNG per stop, so the result of a
-/// tap is something a person can look at rather than a string a test agreed with — set
-/// `CYPRESS_SHOT_DIR` in the runner's environment to choose where; otherwise the paths are printed.
+/// tap is something a person can look at rather than a string a test agreed with. To choose where,
+/// **`export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell before `Tools/run_tests.sh`**; that
+/// script's header carries the proof that this spelling is the only one that reaches the runner.
+/// Otherwise the paths are printed, which is what `CYPRESS-SHOT`/`E129 SHOT` lines are for.
 ///
 /// **What it deliberately does not do is tap a pin.** `DeepLinkVoiceOverTests` states the reason:
 /// a MapKit annotation "is not a thing a test can do reliably, because the basemap renders
@@ -340,7 +342,13 @@ final class AlmanacGroupTapTests: XCTestCase {
     ///
     /// Written to a real path as well as attached, because an attachment inside an `.xcresult` is not
     /// something anybody opens. `TEST_RUNNER_CYPRESS_SHOT_DIR` chooses the directory — the
-    /// `TEST_RUNNER_` prefix is what forwards an `xcodebuild` variable into the runner's environment.
+    /// `TEST_RUNNER_` prefix is what forwards an **environment** variable of `xcodebuild`'s into the
+    /// runner's environment, with the prefix stripped, which is why it has to be exported by the
+    /// shell rather than written as an `xcodebuild` argument (an argument of that shape is a
+    /// build-setting override and reaches no process).
+    ///
+    /// **This method runs in the runner, not in the app**, so `app.launchEnvironment` — the channel
+    /// `CYPRESS_SCREEN` and `CYPRESS_LOCATION` travel on — cannot deliver it.
     private func record(_ app: XCUIApplication, named name: String, note: String) {
         let shot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: shot)

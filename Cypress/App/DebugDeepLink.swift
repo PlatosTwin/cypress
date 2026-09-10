@@ -44,6 +44,14 @@ enum DebugDeepLink {
     /// form `-name value` is also consumed by `NSUserDefaults` as a registered default, which means a
     /// test seam would be writing to the user's preferences; and `CYPRESS_SEED_PATH` and
     /// `CYPRESS_SHOT_DIR` already establish the convention in this codebase.
+    ///
+    /// **The convention is the key's spelling, not the channel it arrives on**, and the two are
+    /// worth separating because conflating them cost a screenshot round. This key is read by the
+    /// **app**, so a UI test delivers it through `XCUIApplication.launchEnvironment`.
+    /// `CYPRESS_SHOT_DIR` is read by whichever process writes the PNG — the app under test for
+    /// `ScreenSweepShots`, the XCTRunner app for the UI-test shot helpers — so it arrives instead
+    /// through xcodebuild's `TEST_RUNNER_` forwarding, from an exported shell variable. See
+    /// `Tools/run_tests.sh`'s header.
     static let environmentKey = "CYPRESS_SCREEN"
 
     /// Set (to anything non-empty) to have this launch clear `tree_status_overrides` and stop —
