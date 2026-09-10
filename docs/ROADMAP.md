@@ -841,8 +841,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     Do both together, after `web` has reported on `main` at least once.
 
 15. **`git diff --name-only` hides a rename's source, so a move out of the app classifies as
-    web-only.** `git mv Cypress/App/Big.swift web/Big.swift` reports `web/Big.swift` alone;
-    `--name-status` shows `R100` and `--no-renames` reports both paths. `plan` then says
+    web-only.** `git mv` a Swift file from the app's source tree into `web/` and
+    `--name-only` reports only the destination; `--name-status` shows it as `R100` with both
+    paths, and `--no-renames` reports both. (Reproduced in a throwaway repository — the example is
+    written without literal paths on purpose, since a doc citing a file that does not exist is
+    what `DocumentCitationGuardTests` refuses, and it refused the first draft of this bullet.)
+    `plan` then says
     `tests=false ships=false` and prints "Nothing here is an input to the iOS app or its tests"
     about a commit that deleted a Swift file from the app target. **Pre-existing** — the same move
     into `docs/` does it on `main` today — but `web/` is a far likelier rename destination from
