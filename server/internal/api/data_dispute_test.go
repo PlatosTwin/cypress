@@ -329,79 +329,104 @@ func TestSuggestedValuesAreRecordedVerbatimAndNotChecked(t *testing.T) {
 	}
 }
 
-// ── The refusals ───────────────────────────────────────────────────────────────────────────────
+// ── The refusals, each with the twin that proves what refused it ───────────────────────────────
 
-// TestADisputeWithNoIdIsRefused closes the arm where the payload decodes and names no dispute.
+// jsonBody encodes a payload written as a map, so a case can take the valid body and break exactly
+// one field of it.
+func jsonBody(fields map[string]any) json.RawMessage {
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		panic(err)
+	}
+	return encoded
+}
+
+// TestTheDisputeRefusals is table-driven, and every case posts **two** items: the malformed one,
+// which must be refused, and its twin with the one offending field put back, which must apply.
 //
-// Without it the row would be recorded, answer `applied`, and arrive on the moderation surface as a
-// dispute nothing can name — and no withdrawal could ever match it, because `disputeID` is the only
-// handle its author has.
-func TestADisputeWithNoIdIsRefused(t *testing.T) {
+// The twin is not symmetry for its own sake. A refusal test that asserts only
+// `failed`/`validation_failed` passes just as happily when the *kind* is unknown to `syncKinds`,
+// when the envelope is malformed, or when the handler has been made to refuse everything — three
+// states in which the rule the case names is not being exercised at all, and each of which looks
+// exactly like a passing test. That is this repo's most expensive test defect: a guard that stays
+// green while the thing it guards is absent. The twin is the control that says the refused item was
+// one field away from applying.
+func TestTheDisputeRefusals(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
-	tree := uuid.New()
+	tree, other := uuid.New(), uuid.New()
 
-	result := h.syncOne(t, session.AccessToken, map[string]any{
-		"client_uuid": uuid.New(), "kind": "data_dispute", "tree_uuid": tree,
-		"occurred_at": time.Now().UTC(),
-		"payload": json.RawMessage(`{"treeID":"` + tree.String() + `","treeSource":"city",` +
-			`"issues":["wrong_location"]}`),
-	})
-	if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
-		t.Fatalf("status = %q, error = %s; want failed/validation_failed", result.Status, codeOf(result.Error))
+	// Both bases are valid items in the client's own shape. Each case breaks a copy.
+	raise := func() map[string]any {
+		return map[string]any{
+			"id": uuid.New(), "clientUUID": uuid.New(), "treeID": tree,
+			"treeSource": "city", "issues": []string{"wrong_location"},
+			"suggestions": map[string]string{"lat": "37.3382"},
+			"notes":       "the trunk is across the path",
+			"occurredAt":  "2026-09-10T10:00:00Z",
+		}
+	}
+	withdrawal := func() map[string]any {
+		return map[string]any{
+			"clientUUID": uuid.New(), "disputeID": uuid.New(), "treeID": tree,
+			"occurredAt": "2026-09-10T11:00:00Z",
+		}
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		kind   string
+		valid  func() map[string]any
+		break_ func(map[string]any)
+	}{
+		{"a dispute that names no dispute", "data_dispute", raise,
+			func(payload map[string]any) { delete(payload, "id") }},
+		{"a dispute whose body names another tree", "data_dispute", raise,
+			func(payload map[string]any) { payload["treeID"] = other }},
+		{"a dispute that says nothing is wrong", "data_dispute", raise,
+			func(payload map[string]any) { payload["issues"] = []string{} }},
+		{"a dispute naming an issue nothing defines", "data_dispute", raise,
+			func(payload map[string]any) { payload["issues"] = []string{"wrong_location", "wrong_everything"} }},
+		{"a dispute whose tree source is neither of the two", "data_dispute", raise,
+			func(payload map[string]any) { payload["treeSource"] = "municipal" }},
+		{"a withdrawal that names no dispute", "data_dispute_withdrawal", withdrawal,
+			func(payload map[string]any) { delete(payload, "disputeID") }},
+		{"a withdrawal whose body names another tree", "data_dispute_withdrawal", withdrawal,
+			func(payload map[string]any) { payload["treeID"] = other }},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			broken := testCase.valid()
+			testCase.break_(broken)
+
+			result := h.syncOne(t, session.AccessToken, map[string]any{
+				"client_uuid": uuid.New(), "kind": testCase.kind, "tree_uuid": tree,
+				"occurred_at": time.Now().UTC(), "payload": jsonBody(broken),
+			})
+			if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
+				t.Fatalf("status = %q, error = %s; want failed/validation_failed",
+					result.Status, codeOf(result.Error))
+			}
+
+			twin := h.syncOne(t, session.AccessToken, map[string]any{
+				"client_uuid": uuid.New(), "kind": testCase.kind, "tree_uuid": tree,
+				"occurred_at": time.Now().UTC(), "payload": jsonBody(testCase.valid()),
+			})
+			if twin.Status != "applied" {
+				t.Fatalf("the corrected twin came back %q (%s), want applied — this case refused "+
+					"the item for some reason other than the field it names, so it is measuring "+
+					"nothing", twin.Status, codeOf(twin.Error))
+			}
+		})
 	}
 }
 
-// TestADisputeWithNoIssuesIsRefused mirrors the client's own `.validationFailed` for an empty issue
-// set. A dispute that says nothing is wrong is not a dispute, and recording one would put a row on
-// the moderation surface with nothing to act on.
-func TestADisputeWithNoIssuesIsRefused(t *testing.T) {
-	h := newHarness(t)
-	session := h.signIn(t, nil)
-	tree := uuid.New()
-
-	result := h.syncOne(t, session.AccessToken,
-		disputeItemWithPayload(tree, disputePayload(uuid.New(), tree, []string{}, nil, "")))
-	if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
-		t.Fatalf("status = %q, error = %s; want failed/validation_failed", result.Status, codeOf(result.Error))
-	}
-}
-
-// TestADisputeWithAnUnknownIssueIsRefused is the gate on the vocabulary R79 fixes in both halves.
-// It is the `treePlacements` refusal one field over, and the control that keeps
-// `TestEveryIssueKindIsAcceptedOnItsOwn` from being consistent with a handler that accepts anything.
-func TestADisputeWithAnUnknownIssueIsRefused(t *testing.T) {
-	h := newHarness(t)
-	session := h.signIn(t, nil)
-	tree := uuid.New()
-
-	result := h.syncOne(t, session.AccessToken, disputeItemWithPayload(tree,
-		disputePayload(uuid.New(), tree, []string{"wrong_location", "wrong_everything"}, nil, "")))
-	if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
-		t.Fatalf("status = %q, error = %s; want failed/validation_failed — one unknown issue beside "+
-			"a known one must still refuse the item", result.Status, codeOf(result.Error))
-	}
-}
-
-// TestADisputeWithAnUnknownTreeSourceIsRefused, and its sibling below, are the two halves of one
-// rule: the pair is CHECKed, absence is not a refusal.
-func TestADisputeWithAnUnknownTreeSourceIsRefused(t *testing.T) {
-	h := newHarness(t)
-	session := h.signIn(t, nil)
-	tree, dispute := uuid.New(), uuid.New()
-
-	result := h.syncOne(t, session.AccessToken, disputeItemWithPayload(tree,
-		json.RawMessage(`{"id":"`+dispute.String()+`","treeID":"`+tree.String()+`",`+
-			`"treeSource":"municipal","issues":["wrong_location"]}`)))
-	if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
-		t.Fatalf("status = %q, error = %s; want failed/validation_failed", result.Status, codeOf(result.Error))
-	}
-}
-
-// TestADisputeThatDoesNotSayTheTreeSourceIsApplied is `landContext`'s rule one field over: absent
-// means they did not say, and nothing here substitutes an answer. It matters more than it looks —
-// a refusal on absence turns a client that spells one key differently into a queue of terminal
-// failures, over a value this service records and never acts on.
+// TestADisputeThatDoesNotSayTheTreeSourceIsApplied is the other half of the tree-source rule, and
+// it is `landContext`'s rule one field over: absent means they did not say, and nothing here
+// substitutes an answer.
+//
+// It matters more than it looks. A refusal on absence turns a client that spells one key
+// differently into a queue of terminal failures — `validation_failed` is not retryable — over a
+// value this service records and never acts on.
 func TestADisputeThatDoesNotSayTheTreeSourceIsApplied(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
@@ -415,56 +440,7 @@ func TestADisputeThatDoesNotSayTheTreeSourceIsApplied(t *testing.T) {
 	}
 }
 
-// TestADisputeNamingTheWrongTreeIsRefused mirrors the check `add_tree`, `photo_withdrawal` and
-// `measurement_withdrawal` all make: picking one of two disagreeing ids would file the dispute
-// against a tree it is not about.
-func TestADisputeNamingTheWrongTreeIsRefused(t *testing.T) {
-	h := newHarness(t)
-	session := h.signIn(t, nil)
-	tree, other := uuid.New(), uuid.New()
-
-	result := h.syncOne(t, session.AccessToken, disputeItemWithPayload(tree,
-		disputePayload(uuid.New(), other, []string{"wrong_location"}, nil, "")))
-	if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
-		t.Fatalf("status = %q, error = %s; want failed/validation_failed", result.Status, codeOf(result.Error))
-	}
-}
-
-// TestAWithdrawalNamingNoDisputeIsRefused: without it a nil id would be recorded as a retraction of
-// nothing, and answer `applied` for an item that identified nothing.
-func TestAWithdrawalNamingNoDisputeIsRefused(t *testing.T) {
-	h := newHarness(t)
-	session := h.signIn(t, nil)
-	tree := uuid.New()
-
-	result := h.syncOne(t, session.AccessToken, map[string]any{
-		"client_uuid": uuid.New(), "kind": "data_dispute_withdrawal", "tree_uuid": tree,
-		"occurred_at": time.Now().UTC(),
-		"payload":     json.RawMessage(`{"treeID":"` + tree.String() + `"}`),
-	})
-	if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
-		t.Fatalf("status = %q, error = %s; want failed/validation_failed", result.Status, codeOf(result.Error))
-	}
-}
-
-// TestAWithdrawalNamingTheWrongTreeIsRefused is the disagreement check on the second kind.
-func TestAWithdrawalNamingTheWrongTreeIsRefused(t *testing.T) {
-	h := newHarness(t)
-	session := h.signIn(t, nil)
-	tree, other := uuid.New(), uuid.New()
-
-	result := h.syncOne(t, session.AccessToken, map[string]any{
-		"client_uuid": uuid.New(), "kind": "data_dispute_withdrawal", "tree_uuid": tree,
-		"occurred_at": time.Now().UTC(),
-		"payload": json.RawMessage(`{"disputeID":"` + uuid.New().String() + `",` +
-			`"treeID":"` + other.String() + `"}`),
-	})
-	if result.Status != "failed" || codeOf(result.Error) != "validation_failed" {
-		t.Fatalf("status = %q, error = %s; want failed/validation_failed", result.Status, codeOf(result.Error))
-	}
-}
-
-// disputeItemWithPayload posts a raise whose body the caller wrote, for the refusal cases.
+// disputeItemWithPayload posts a raise whose body the caller wrote.
 func disputeItemWithPayload(tree uuid.UUID, payload json.RawMessage) map[string]any {
 	return map[string]any{
 		"client_uuid": uuid.New(), "kind": "data_dispute", "tree_uuid": tree,
