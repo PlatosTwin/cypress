@@ -229,12 +229,18 @@ against the manifest, `count(*)` matching the manifest's tree count as the contr
   owner decision, not an implementation detail. The pack *does* answer the page's spine: address,
   city, species (though `common_name` is null on real rows), `planted_year`, `external_ref`,
   `inventory_source`, status, and the city's published DBH bucket.
-  **Answered by W-G, in part.** The owner ordered the public community read built first, and it now
-  exists: vitality, height and trunk DBH each reach W1 as a value, its method and the month it was
-  taken. Three of §8a's seven contributed elements do **not**, and two of those are refusals rather
-  than gaps — the recent-visits panel and the `214 PHOTOS SINCE 2019` count are things a public page
-  may not carry (see `docs/errata-pending/w1-contributed-half.md`). The third, the H1, has no source
-  anywhere in the system and is Q3 of the ruling's questions for the owner.
+  **Answered by W-G, in part, and the part moved after its adversarial review.** The owner ordered
+  the public community read built first, and it exists: **height and trunk DBH** each reach W1 as a
+  value, its method and the month it was taken, and a **beloved** boolean reaches it too — a state
+  and not a rank, per the owner's ruling of 2026-09-10, true only above R27.1 §2's ≥3 floor. §W1
+  does not draw that one; it is the fact column being *longer* than its transcription in one place
+  while being shorter in three.
+  **Vitality does not reach it**, though an earlier version of this bullet said it did: a published
+  rating has no takedown route in this system, so it is deferred rather than refused (item 2 above).
+  The recent-visits panel and the `214 PHOTOS SINCE 2019` count are refusals on the merits — things
+  a public page may not carry (see `docs/errata-pending/w1-contributed-half.md`, whose photo-count
+  argument was rebuilt after the review found its cited authority did not carry it). The H1 has no
+  source anywhere in the system and is Q3 of the ruling's questions for the owner.
 - **W-6 is withdrawn as a general answer.** "Explore draws pins over the neighborhood polygons already
   in the seed" holds for San Francisco and nowhere else: `Tools/build_seed.py:2105` loads exactly one
   polygon file, DataSF's SF-only `j2bu-swwd`, and `neighborhoods` is **0 rows** in the San Jose pack.
@@ -250,16 +256,45 @@ against the manifest, `count(*)` matching the manifest's tree count as the contr
    whether it is the owner's is not answerable from outside. W-E cannot finish without knowing, and
    the expiry is eight weeks out. Until then the site lives at its `.fly.dev` hostname and
    `ShareCopy.publicURLPrefix` does not move.
-2. ~~**What a withdrawn or moderated record does to an indexed public page.** Not v1 — v1 renders
-   city-record facts only — but it lands the moment anything contributed reaches W1.~~
-   **CLOSED by W-G**, in `docs/rulings-pending/public-tree-read.md` §8. The answer in one line: **a
-   withdrawal removes a fact from a page, it does not remove a page.** Every answer is computed from
-   live rows at request time, so a withdrawal, an operator takedown and an anonymization each take
-   effect on the next request with nothing to purge; `Cache-Control: public, max-age=60` is the
-   ceiling on downstream staleness, and the round that renders the page may not cache beyond it.
-   There is no dead URL to file a removal request for, because the page's spine is the *city record*
-   — public data under ODbL that no contributor can withdraw — so nothing contributed is load-bearing
-   for the URL's existence, and tree UUIDs stay "stable and citable from day one".
+2. **What a withdrawn or moderated record does to an indexed public page. STILL OPEN — answered for
+   what ships, not as a general rule.**
+
+   ~~Not v1 — v1 renders city-record facts only — but it lands the moment anything contributed
+   reaches W1.~~ **That scoping is dead**: W-G's endpoint ships contributed readings and a
+   contributed state, so anything contributed *has* reached W1 and this is a live question rather
+   than a future one.
+
+   ~~**CLOSED by W-G**, in `docs/rulings-pending/public-tree-read.md` §8. The answer in one line: **a
+   withdrawal removes a fact from a page, it does not remove a page.**~~ **Struck: W-G closed this
+   and its adversarial review reopened it.** The claim was true of two of the three values that
+   endpoint then published and false of the third. There is **no observation withdrawal anywhere in
+   this system** — `contributions.kind` carries `measurement_withdrawal` and `photo_withdrawal` and
+   no counterpart for the `observation` that holds a vitality rating — `contributions` has no
+   `moderation_state` and no operator takedown, and a withdrawal aimed at a rating answers `applied`
+   and changes nothing. The §8 bullet had listed an operator takedown among its three levers; that
+   column is on `photos`, not on `contributions`.
+
+   **What is settled, and it is most of it.** For the two readings and the beloved state: every
+   answer is computed from live rows at request time, so a contributor's withdrawal, an
+   un-favoriting and an anonymization each take effect on the next request with nothing to purge;
+   `Cache-Control: public, max-age=60` is the ceiling on downstream staleness, and the round that
+   renders the page may not cache beyond it. There is no dead URL to file a removal request for,
+   because the page's spine is the *city record* — public data under ODbL that no contributor can
+   withdraw — so nothing contributed is load-bearing for the URL's existence, and tree UUIDs stay
+   "stable and citable from day one".
+
+   **What is not settled, and closes this question when it is:** (a) an observation-withdrawal kind,
+   which is a **migration** and therefore a round with a migration author — W-G had none and
+   correctly did not take a seat, narrowing the endpoint instead so that the rating is not published
+   at all; (b) an **operator** route on `contributions`, which does not exist in any form, so a
+   reading that is wrong or malicious has no removal path but its own author's; and (c) the standing
+   rule this produced, which should be written down when it is true: **this endpoint publishes
+   nothing it cannot also un-publish.** Today it is true by subtraction.
+
+   Restoring the `Status` row on W1 depends on (a). Bring back with it the three guards W-G removed
+   with the field — `TestVitalityRatingsMatchTheSwiftRubric`,
+   `TestSwiftIntEnumExtractorIsCalibrated` and their `swiftIntEnumRawValues` reader — **before** the
+   projection, not after.
 3. **Server CORS and Sign in with Apple JS**, both prerequisites for any web surface that *writes*.
    **W-G confirmed the read half needs neither** and deliberately built no CORS: the web renders
    server-side and calls `GET /api/v1/public/trees/{id}` server-to-server. A later surface that calls
@@ -840,9 +875,38 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `ubuntu-latest` with a `postgres:16` service container and `CYPRESS_TEST_DATABASE_URL` set would
     run the whole suite in about a minute, and — this is the part that matters here — it must
     **assert the skip count is zero**, because `go test ./...` prints `ok` per package and exits 0
-    with all 108 SQL tests skipped. Measured 2026-09-10: 60 pass / 108 skip with no database, 191
-    pass / 0 skip with one. `testflight.yml` already excludes `server/` from the archive, so a
-    server-only workflow cannot mint a build.
+    with every SQL test skipped. ~~Measured 2026-09-10: 60 pass / 108 skip with no database, 191 pass
+    / 0 skip with one.~~ **Those no-database numbers were the baseline tree's, mislabelled**; at
+    W-G's head, reproduced independently twice, it is **66 pass / 125 skip / 0 fail** with no
+    database and **191 pass / 0 skip / 0 fail** with one. `testflight.yml` already excludes `server/`
+    from the archive, so a server-only workflow cannot mint a build.
+
+14. **One tree, one current height: should the method count?** Nothing in this corpus rules on
+    whether an estimate may supersede a measurement when a single number has to be chosen. D7,
+    DECISIONS constraint 2, ARCHITECTURE §5 rule 3 and PRODUCT's non-goal (*"Never share a chart
+    line"*) are all rules about a **chart line**, and E103 extends them to a spoken summary; none is
+    about which number is current. The client picks the most recent regardless of method in three
+    places — `TreeProfilePresentation.latestMeasurement` (`Cypress/Features/TreeProfile/
+    TreeProfilePresentation.swift:1189`), `MeasureModel.previousMeasurement` (a verbatim second copy
+    of it) and `GrowthHistoryPresentation.chart(for:)`, which re-merges both series for its newest
+    and oldest labels — so a 90 cm estimate displaces a 64 cm taped reading on screen 03 today.
+    W-G's public read matches that deliberately rather than authoring a fourth answer, and pins it
+    in `TestANewerEstimateSupersedesAnOlderTapedReading`. **Answer it once, for all four sites**, and
+    note the two duplicated copies of the selection rule are their own small cleanup. Found by the
+    adversarial review of #163, which found the code claiming the opposite in a comment.
+
+15. **`clientKey` trusts a request-supplied header, on a route that now has no credential.**
+    `internal/api/server.go` returns `Fly-Client-IP` when the request supplies one, and the only
+    thing making that trustworthy is Fly's proxy overwriting it. The review measured it: after
+    exhausting a bucket, 25 of 25 requests carrying a self-chosen `Fly-Client-IP` were served, each
+    allocating its own bucket. Pre-existing and not a live exploit — but until W-G every route behind
+    it also required a credential, and `GET /public/trees/{id}` requires none. W-G narrowed it (a
+    value that is not an IP is not used as a key; `ratelimit.maxBuckets` bounds the map) and
+    deliberately did **not** fix it: the fix is to stop honoring the header unless the connection
+    came from the proxy, which is a trust-boundary change nothing in that round could verify against
+    a request it watched arrive. **It is moot if the answer to the ruling's Q4 is "SSR-only"**, so
+    do them together: decide Q4 first, and if the endpoint stays internet-facing, make the trust
+    explicit and prove it against a real Fly request rather than from documentation.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

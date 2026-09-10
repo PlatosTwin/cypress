@@ -138,29 +138,71 @@ decodes to `server_error` rather than throwing and would look like an outage.
 
 ### `GET /public/trees/{id}` is the one route with no credential, and what it may say is a ruling
 
-Everything else here is Class R — the contributor's own data. This route answers a stranger, on a
-page a search engine will index, and it is the first surface anywhere in this system that shows one
-person's contribution to another person. What it returns was decided field by field in
-`docs/rulings-pending/public-tree-read.md` **before the handler was written**, against `SCREENS.md`
-§W1's fact column. The sentence the rest of it follows from:
+> **Corrected after this round's adversarial review; the wrong sentence is quoted rather than
+> deleted.** This section began *"Everything else here is Class R — the contributor's own data."*
+> **That is not true of `GET /trees/{id}` two rows up in the table.** `treeProfile`
+> (`internal/api/reads.go`) returns other contributors' publicly-visible photographs to **any**
+> authenticated caller for **any** tree, plus `photo_count` and `visit_count`. The next author to
+> rely on the sentence above would have concluded this service had never published one person's
+> record to another, and it has.
+
+Everything else here is either Class R — the contributor's own data — or, in the one case of
+`GET /trees/{id}`, cross-contributor behind a credential. **This route is different in the way that
+actually matters here: it answers somebody with no account at all**, on a page a search engine will
+index. What it returns was decided field by field in `docs/rulings-pending/public-tree-read.md`
+**before the handler was written**, against `SCREENS.md` §W1's fact column. The sentence the rest of
+it follows from:
 
 > The page publishes the state of the tree. It never publishes anybody's activity.
 
-So it returns the latest vitality rating and the latest reading per measurement series, each with its
-method and the **month** it was taken, and nothing else. No count of anything (D1, R27.1 §5, and the
+…and a second one the review forced, which is a constraint rather than a principle:
+
+> This endpoint publishes nothing it cannot also un-publish.
+
+So it returns the latest reading per **measurement kind** — height and trunk DBH — each with its
+method and the **month** it was taken, plus a **beloved** boolean, and nothing else. No count of
+anything (ARCHITECTURE §5 rule 1 / DECISIONS §3 constraint 1, the constraint form of D1, and the
 owner's refusal of tester report F16), no photograph or photo id (W-7, and `approval_reason =
 'auto_approved_launch'` means "an account uploaded it", not "somebody looked at it"), no coordinate,
 no free text, no day-precision date, and no identifier of any contributor — `User.publicAttribution`
 is false by default, cannot be turned on anywhere in the app (E100), and `users` here has no column
 for it at all.
 
+**Two things are not what an earlier version of this file said, and both came out of the review:**
+
+- **No vitality rating.** It is a property of the tree and it passes every other test — and there is
+  no observation withdrawal anywhere in this system, no `moderation_state` on `contributions` and no
+  operator takedown, so a withdrawal aimed at a rating answers `applied` and the rating stays on an
+  indexed page. Adding the kind is a **migration**; the round that writes it restores the field, the
+  three guards that range-checked it against `Vitality.swift`, and the `Status` row on W1.
+- **"Latest per measurement series" was the wrong phrase**, in this file and in the code it
+  described. `DISTINCT ON (payload ->> 'kind')` groups on `MeasurementKind` (`dbh | height`), not on
+  `MeasurementSeries` (`measured | estimated`), so **a newer estimate does supersede an older taped
+  reading**. That is kept, because it is what the client does in all three places it picks a current
+  reading and no rule in the corpus states a precedence; what makes it honest is that the method
+  travels with the number. See `internal/store/public.go`.
+- **The `beloved` boolean** is R27.1's state, ruled onto this page by the owner on 2026-09-10 as a
+  state and not a rank. True only at three or more distinct favorite owners, and the count itself
+  never travels. The floor is R27.1's provisional ≥3 and is **not** measured — the round that
+  measures the real distribution may raise it.
+
 Three mechanisms rather than three intentions, each with a test that goes red without it:
 
-- **An allow-list over `contributions.kind`.** Two of the seventeen values are public;
-  `withheldKinds` states the reason for the other fifteen, and `TestEveryContributionKindIsClassified`
-  reads the vocabulary out of `004_measurement_withdrawal_kind.sql` and fails when a kind is in
-  neither map. A deny-list here is how `testflight.yml`'s path classifier came to treat a new
-  top-level directory as "run everything and ship a build".
+- **An allow-list over `contributions.kind`.** Two of the seventeen values are readable by the
+  public path; `withheldKinds` states the reason for the other fifteen, and
+  `TestEveryContributionKindIsClassified` fails when a kind is in neither map. A deny-list here is
+  how `testflight.yml`'s path classifier came to treat a new top-level directory as "run everything
+  and ship a build".
+
+  **The guard reads the whole migrations directory, and it did not always.** It read
+  `004_measurement_withdrawal_kind.sql` by hardcoded path while `loadMigrations` applies every `.sql`
+  in that directory, so the review added an eighteenth kind as `005_*.sql` and the guard stayed green
+  with an unclassified kind live in the schema. It now walks the directory in version order and takes
+  the last file that declares the vocabulary — which is the only way one can arrive, since an applied
+  migration is frozen. Two guards stand beside it:
+  `TestTheLiveSchemaAgreesWithTheMigrationFiles` asks the running database through `pg_constraint`,
+  parsing no SQL at all, and `TestSyncAcceptsEveryDeclaredContributionKind` holds `syncKinds` — a
+  third hand-written copy of the same seventeen values — against the same source.
 - **Absent, empty and fully withdrawn are one answer** — 200 with a body byte-identical in all
   three — rather than the `not_found` the photo read gives. A photo id is a private handle; a tree
   UUID is public by design (it is the last path segment of every share link screen 10 produces), so
@@ -422,8 +464,22 @@ CYPRESS_TEST_DATABASE_URL='postgres://…/postgres' go test ./...
 
 **Count the skips before believing the green.** `go test ./...` prints `ok` for every package and
 exits 0 whether or not the SQL half ran, which is this project's signature failure mode in its Go
-dialect. Measured on 2026-09-10 at commit `5b52b4e` + this round: **60 pass / 108 skip** with no
-database, **191 pass / 0 skip** with one. The skip count is the reading that matters:
+dialect.
+
+> **The no-database figure here was wrong and it is corrected in place.** This paragraph read:
+> *"Measured on 2026-09-10 at commit `5b52b4e` + this round: **60 pass / 108 skip** with no database,
+> **191 pass / 0 skip** with one."* The second half reproduces exactly. **The first half is the
+> baseline tree's, labelled as this round's** — 60 + 108 = 168, which is the stated pre-round total,
+> and the review reproduced it by extracting `5b52b4e`'s `server/` and running it. It matters more
+> than a typo because the sentence after it is the calibration argument, and the calibration was
+> being made against the wrong reading. Independently reproduced twice since, by the review and by
+> this correction.
+
+Measured on 2026-09-10 at this round's head, on a throwaway Postgres: **66 pass / 125 skip / 0 fail**
+with no database, **191 pass / 0 skip / 0 fail** with one — so the move the instrument is reporting
+is **125 → 0**, not 108 → 0. (Counted with `grep -c -- '--- SKIP'`, which includes subtests; the
+top-level-only count is 120, and both are given because the two greps disagreeing is itself a thing
+worth knowing before quoting either.) The skip count is the reading that matters:
 
 ```sh
 go test ./... -v 2>&1 | grep -c -- '--- SKIP'
