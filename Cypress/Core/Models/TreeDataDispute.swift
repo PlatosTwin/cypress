@@ -233,6 +233,26 @@ public struct TreeDataDispute: CoreEntity {
 
     public var isOpen: Bool { withdrawnAt == nil }
 
+    /// Whether this dispute is the given account's to take back.
+    ///
+    /// **Two arms, and the second is not a hole.** `raisedBy == userID` is the account arm.
+    /// `raisedBy == nil` is a dispute raised by this *installation* before it had an account (D9,
+    /// which keeps a device anonymous until the third save) — it stays its own to withdraw after
+    /// signing in, because nothing ever syncs another person's disputes into this database and a
+    /// `NULL` here is therefore nobody else's.
+    ///
+    /// Signed out, `userID` is nil and only the anonymous arm can match, so a signed-out reader is
+    /// **not** handed an account's dispute. That asymmetry is the point: it is the same shape
+    /// `LocalAPI.withdrawMeasurement` keeps, where "the account arm requires an account —
+    /// `nil == nil` would make a signed-out reader the owner of every reading whose `user_id` is
+    /// null".
+    ///
+    /// The `WHERE` clauses in `DataDisputeStore` are this rule in SQL, written the same way round so
+    /// the Swift gate and the SQL gate cannot say different things.
+    public func isAuthored(by userID: UUID?) -> Bool {
+        raisedBy == nil || raisedBy == userID
+    }
+
     public init(
         id: UUID = UUID(),
         clientUUID: UUID = UUID(),

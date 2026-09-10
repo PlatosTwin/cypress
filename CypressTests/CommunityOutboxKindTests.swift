@@ -852,6 +852,7 @@ struct CommunityOutboxKindTests {
     private static let specimenFlag = UUID(uuidString: "7E000000-0000-4000-8000-00000000B003")!
     private static let specimenSpecies = UUID(uuidString: "7E000000-0000-4000-8000-00000000B004")!
     private static let specimenReading = UUID(uuidString: "7E000000-0000-4000-8000-00000000B005")!
+    private static let specimenDispute = UUID(uuidString: "7E000000-0000-4000-8000-00000000B006")!
     private static let specimenMoment = Date(timeIntervalSince1970: 1_700_000_000)
 
     private static let signedInUserID = UUID(uuidString: "7E000000-0000-4000-8000-0000000A0001")!
@@ -944,6 +945,30 @@ struct CommunityOutboxKindTests {
                 clientUUID: UUID(),
                 event: HazardRedirectEvent(treeID: tree, category: .hangingOrBrokenLimb, shownAt: moment),
                 attribution: who
+            )),
+            // R79's two. The report specimen carries **every** field that can be set — three checked
+            // issues, all four suggestion slots, notes — so `everyPayloadRoundTrips` is asking about
+            // the whole payload rather than about an empty one. A suggestion set left empty would
+            // round-trip through any encoder at all.
+            .dataDispute(DataDisputeReport(
+                clientUUID: UUID(), disputeID: specimenDispute, treeID: tree,
+                treeSource: .cityImport,
+                issues: [.wrongLocation, .wrongSpecies, .wrongMetadata],
+                suggestions: TreeDataDispute.Suggestions(
+                    location: TreeDataDispute.SuggestedLocation(
+                        coordinate: Coordinate(latitude: 37.7749295, longitude: -122.4194155),
+                        accuracyM: 4.5
+                    ),
+                    speciesID: species,
+                    plantedYear: 1998,
+                    status: .vacantSite
+                ),
+                notes: "The plot has been paved over.",
+                attribution: who, occurredAt: moment
+            )),
+            .dataDisputeWithdrawal(DataDisputeWithdrawal(
+                clientUUID: UUID(), disputeID: specimenDispute, treeID: tree,
+                attribution: who, occurredAt: moment
             ))
         ]
         // `uniqueKeysWithValues` rather than a merge: two specimens of one kind here would make the

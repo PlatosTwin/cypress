@@ -115,9 +115,13 @@ public struct DataDisputeStore {
     /// rather than a silent re-stamp with a later timestamp — the moment a dispute was taken back is
     /// a fact, not a value to overwrite.
     ///
-    /// The anonymous arm — `raised_by IS NULL` — is this device's own contributor and nobody else's:
-    /// this database belongs to one installation, and nothing syncs another person's disputes down.
-    /// `review_flags.raised_by` carries the same nullable account id for the same D9 reason.
+    /// **The predicate is `TreeDataDispute.isAuthored(by:)` in SQL**, and it is one clause doing the
+    /// work of `withdrawMeasurement`'s two arms. `raised_by IS NULL` is a dispute this *installation*
+    /// raised before it had an account (D9), which stays its own to take back after signing in —
+    /// nothing syncs another person's disputes into this database, so a NULL here is nobody else's.
+    /// `raised_by = :by` is the account arm. Signed out, `:by` binds NULL, `raised_by = NULL` is
+    /// never true, and the clause correctly narrows to the anonymous rows alone rather than
+    /// admitting an account's.
     public func withdraw(
         id: UUID,
         raisedBy: UUID?,
@@ -129,7 +133,7 @@ public struct DataDisputeStore {
                SET withdrawn_at = :now, updated_at = :now
              WHERE id = :id COLLATE NOCASE
                AND withdrawn_at IS NULL
-               AND (raised_by = :by COLLATE NOCASE OR (:by IS NULL AND raised_by IS NULL))
+               AND (raised_by IS NULL OR raised_by = :by COLLATE NOCASE)
             """)
         _ = try statement.bind([":id": id, ":now": date, ":by": raisedBy])
         try statement.run()
@@ -174,6 +178,9 @@ public struct DataDisputeStore {
     /// `flagWrongSpecies`' reasoning — the person can see their own objection on the screen they are
     /// tapping from.
     ///
+    /// "Theirs" is `TreeDataDispute.isAuthored(by:)` — see `withdraw` for why the anonymous arm is
+    /// this installation's own and not a hole.
+    ///
     /// Children are **not** read: every caller of this wants the id and whether there is one, and
     /// the profile's offer carries nothing else. `dispute(id:)` is the whole-record read.
     public func openDispute(
@@ -185,7 +192,7 @@ public struct DataDisputeStore {
             SELECT * FROM tree_data_disputes
              WHERE tree_id = :tree COLLATE NOCASE
                AND withdrawn_at IS NULL
-               AND (raised_by = :by COLLATE NOCASE OR (:by IS NULL AND raised_by IS NULL))
+               AND (raised_by IS NULL OR raised_by = :by COLLATE NOCASE)
              ORDER BY created_at DESC, id
              LIMIT 1
             """)
