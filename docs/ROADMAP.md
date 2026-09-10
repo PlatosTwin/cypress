@@ -247,7 +247,8 @@ PR #102's beta-polish, which merged the day build 49 was cut, so the tester repo
 that had not yet reached a build). What remains OPEN:
 
 - **F4 — a time filter** (today / this week / this month / last 30 days / past year). No period
-  selector exists on any screen; which screen the tester meant is itself unconfirmed.
+  selector exists on any screen; which screen the tester meant is itself unconfirmed. **See the
+  determination below** — the spec's only time vocabulary is binary and lives on another screen.
 - **F15 — enrich the tree profile**: ID help, history/etymology, usage/edibility. Content work;
   pairs with the parked seed-prose pass, and invented botanical content is forbidden (DECISIONS
   constraint 15) — sourcing is the work.
@@ -259,7 +260,8 @@ that had not yet reached a build). What remains OPEN:
   rule being set aside. Recorded rather than deleted, because a refused report is a decision and
   the next person to have the idea should find the answer instead of the idea.
 - **F22 — species distribution as a static city map** (one point per tree) on the field guide's
-  §5; today it is two stat cards.
+  §5; today it is two stat cards. **See the determination below** — unspecified, but the reduced
+  map component it would use is not.
 - ~~**F23 — "See them all on the map"** link from Grove/Journal into the map filtered to yours; the
   target filter exists (`MapFilter.membership`, chip "Yours"), nothing routes into it.~~
   **DONE — the link ships on the Journal tab's `Yours` segment.** `AppRouter.goToMap(showing:)` arms
@@ -271,7 +273,8 @@ that had not yet reached a build). What remains OPEN:
   deliberately does not (R23), so the same link there would silently drop rows the reader can still
   see. See **ERRATA E287**, and
   `CypressTests/SeeAllOnMapTests`, which pins both halves.
-- **F25 — Account/You page UI/UX pass.**
+- **F25 — Account/You page UI/UX pass.** **See the determination below** — there is no You screen
+  in the spec at all, only its tab-bar icon.
 - ~~**F26 — Measure: unit switch clears the entered value.**~~ **RULED keep-the-digits-and-annotate
   by the owner, 2026-08-31, and shipped here.** The flip keeps the typed digits untouched (5 stays
   5, never converted) and the screen says what changed under them: `Typed in centimeters, now read
@@ -327,6 +330,32 @@ that had not yet reached a build). What remains OPEN:
   `resolveIDSpace` at 1,200 m, so a distant reader already got the out-of-range screen. An
   approximate-location fix is what put a confidently named neighborhood in front of a reader who
   was nowhere near it.
+
+### The three open tester items share one root cause, determined 2026-09-09
+
+F4, F22 and F25 were each carrying a different-sounding blocker ("which screen", "content work",
+"UI/UX pass"). Read against `docs/distilled/SCREENS.md` they are the same blocker: **the mocks never
+drew the thing**. None is a fix; each is a design round under DECISIONS constraint 21, and each is
+one owner sentence away from being schedulable. The evidence, so that round starts from facts:
+
+- **F4 — a time filter.** No period selector is specified on any screen. The only time vocabulary in
+  the entire spec is screen 17's Outbox line — `this week · 14 synced · 0 lost` with a trailing
+  `full history` link — which is **binary**, not the five-way selector (today / this week / this
+  month / last 30 days / past year) the report asked for. So the request has no spec support
+  anywhere, and the nearest specified thing is a two-state toggle on a different screen.
+  **The owner's sentence:** which screen, and is the vocabulary the Outbox's two states or a new one?
+- **F22 — species distribution as a static city map.** The word "distribution" does not appear in
+  `SCREENS.md`. Screen 07 §5 is the two count cards, exactly as shipped. A reduced map component
+  does exist and is reused — `C18 · MapCanvas`, "the reduced version on 15/18" — so the raw material
+  is specified even though the section is not.
+  **The owner's sentence:** does screen 07 gain a C18-reduced band, and where relative to §5/§6?
+- **F25 — Account/You pass.** There is no You screen in the spec at all. `C16 · BottomTabBar` names
+  the tab and draws its icon (a 20x20 circle, letter `N`), and that is the whole of it: screens
+  15-19 are the account ask, Measure, Outbox, Next tree and Memorial. Every surface the You tab has
+  today was assembled from the nearest specified thing — the practice is visible in the tab's own
+  empty state, which borrows screen 17's phrasing for the same fact.
+  **The owner's sentence:** is F25 a mock round (draw the screen) or a consistency pass against the
+  screens it borrows from?
 
 ### Follow-up tickets from the 2026-08-30 rounds
 
