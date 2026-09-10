@@ -179,6 +179,14 @@ the same contribution twice".
 **Date:** 2026-08-31. **Proposed by:** this round, from tester report F27. **Status:** blocked on a
 writable-schema migration this round was not authorized to write. Nothing here is implemented.
 
+> **Amended 2026-09-09 — no longer blocked, and built as written.** The migration seat was granted
+> for the round of 2026-09-09; `AppSchema` v21 widens `outbox.kind` exactly as step 1 below
+> describes, and steps 2–5 shipped with it. The entry is left standing rather than rewritten,
+> because the argument in it — particularly the two shortcuts and why both are wrong — is the
+> reasoning the implementation rests on. The decisions this entry deliberately left open (the
+> confirmation copy, whether the control is gated on `acceptsNewContributions`, and which trash mark
+> it draws) are in `measurement-withdrawal-affordance.md` in this directory.
+
 #### The half of F27 that needs nothing built
 
 F27 reads "measurements can be neither edited nor deleted". **"Edited" is not a gap in the measure
