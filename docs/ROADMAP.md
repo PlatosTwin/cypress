@@ -655,6 +655,59 @@ into this section in the round that finds it, and nowhere else. Each item stands
    gate would need a notion of "instructing" it does not have — which is gap (a), one directory
    over.
 
+8. **Serialise a reading against its own withdrawal across two concurrent drains** (top server
+   item). PR #156's arrival-order guard closes the withdrawal-committed-in-an-earlier-drain
+   ordering and **only** that one; two `Apply` transactions overlapping in time are still mutually
+   blind. Mechanism: `Apply` runs at READ COMMITTED (`Store.Tx` calls `pool.Begin` with no
+   `TxOptions`, so the isolation is the server's default) and there is no unique key on the reading
+   id — the two indexes `004_measurement_withdrawal_kind.sql` adds are plain — so nothing makes two
+   transactions about one reading block each other. #156's reviewer built the interleaving against
+   the branch's own store functions and it reproduced: `withdrawMeasurement` sees `matched == 0`
+   and answers `applied`, `measurementWasWithdrawn` sees no committed withdrawal and the reading is
+   born live, both commit, `live=1` — ERRATA E280's sentence ("a service reporting a removal it did
+   not perform") at millisecond scale, reachable in the multi-device case
+   `Mutation.WithdrawnMeasurementID`'s comment invokes. Not a regression: before #156 the kind was
+   refused outright. **Suggested direction, explicitly unverified** — a transaction-scoped advisory
+   lock keyed on the reading id (`pg_advisory_xact_lock(hashtextextended(upper($1), 0))`) taken at
+   the top of **both** `withdrawMeasurement` and `measurementWasWithdrawn`, which serialises only
+   same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
+   recipe, and red-prove the race itself first so the fix has a witness. `server/` has no CI, so
+   whatever lands here needs its own throwaway-Postgres run with stated pass/skip/fail counts.
+9. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
+   readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
+   to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
+   no way to clear the red row. This is not a `measurement_withdrawal` defect: #156's reviewer
+   compared the ownership rules to `photo_withdrawal`'s line by line and they are **identical**
+   (`user_id` match OR `device_id` match; anonymised rows owned by nobody and therefore refused),
+   because `ClaimDevice` moves a contribution's `device_id` to a `user_id` and nothing server-side
+   remembers which installation recorded it — the client's own gate has an installation arm and
+   this one cannot. So the divergence is `withdrawMeasurement`'s documented one, hit through a
+   second kind. Readings are recorded far more often than photographs, which is why the shared
+   rule's user-visible cost lands here first. Two halves to answer: whether the service should gain
+   an installation arm at all, and — independently — what screen 17 offers for a permanent
+   non-retryable failure on a mutation the phone has already applied locally.
+10. **Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
+    remote.** Withdrawing the only reading on a tree leaves that tree in `GET /me/grove` with all
+    four tallies zero and in `GET /me/map-membership?kind=yours`, and the `measurement_withdrawal`
+    contribution row itself surfaces as a journal entry. Measured by #156's reviewer
+    (`treeInGrove=true counted=0`, the tree id still in `yours`, a `measurement_withdrawal` item in
+    the journal response). The cause is that the withdrawal's own row is live and no reader filters
+    on kind, so it keeps the tree in `Grove`'s `mine` CTE and in `MapMembership`. Identical to
+    `photo_withdrawal` today and **nothing is tester-visible**, because `RoutedAPI` routes the
+    journal local — which is exactly why it needs answering on a schedule rather than on a bug
+    report. Check against PR #154 what a `measurement_withdrawal` journal row renders as when the
+    journal goes remote, and decide whether an emptied tree should leave the grove and the `yours`
+    filter or stay with zeroes.
+11. **Prose pass over `server/README.md`'s Deploy section — it is stale in a way that reads as a
+    blocker.** It still says the `cypress-sync` machine "needs secrets and a Postgres that do not
+    exist yet". Both #156's author and its reviewer checked: `fly secrets list --app cypress-sync`
+    returns sixteen secrets, all `Deployed`, including `DATABASE_URL`, `SESSION_SIGNING_KEY`,
+    `OPERATOR_TOKEN`, the three `APPLE_*` and the five `PHOTOS_*`. While that section is open, the
+    neighbouring facts worth stating correctly: the app is at release v7 with its machine
+    auto-stopped (`min_machines_running = 0`), nothing in `.github/workflows/` touches `server/` or
+    Fly, and so a migration only runs at the next boot of a **redeployed** image — merging server
+    work changes nothing in production. Prose only; no code.
+
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full
