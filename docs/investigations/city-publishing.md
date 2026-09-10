@@ -10,7 +10,7 @@ ticket are recorded as RULINGS R37.*
 > `manifest-v2.json` (format 2, one entry per published *region* rather than per city), and on
 > 2026-08-23 format 1 retired: the publisher writes only `manifest-v2.json`, and the format-1
 > object is frozen in the bucket rather than deleted. See
-> `docs/rulings-pending/format1-retirement.md`. Everything below about narrowing, determinism,
+> **RULINGS R99**. Everything below about narrowing, determinism,
 > immutable paths and upload ordering still holds; substitute `manifest-v2.json` for
 > `manifest.json` and "region" for "city" when reading it.
 
