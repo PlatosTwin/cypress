@@ -216,6 +216,30 @@ public protocol CypressAPI: Sendable {
     /// `LocalAPI` (ERRATA E125).
     func deletePhoto(id: UUID) async throws -> PhotoDeletion
 
+    /// Withdraws one reading this person contributed — off the charts, off the log, out of the stat
+    /// card (report F27, `AppSchema` v21).
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint**, and its absence there is the same absence `deletePhoto`
+    /// answers one table over: §6 has no verb that unmakes a contribution. The nearest sentence in
+    /// the corpus is SPEC-PHASE1 §"Sync never deletes community photos or visits", which is about
+    /// what *sync* may do to somebody else's record, not about what a contributor may do to their
+    /// own. When the service lands this becomes `DELETE /measurements/{id}` and this signature does
+    /// not move.
+    ///
+    /// **`withdraw` and not `delete`, because the row survives.** See
+    /// `MeasurementWithdrawalAccess.swift` for the argument, and `ContributionStore
+    /// .withdrawMeasurement` for why this tombstone strips nothing where a photograph's strips five
+    /// columns.
+    ///
+    /// - Throws: `.notFound` when there is no such live reading, `.forbidden` when it is not this
+    ///   person's — including when it is nobody's, which is what an account deletion through the
+    ///   leaving door makes of it (`AppSchema` v13, R3).
+    ///
+    /// **Declared here and not only in an extension**, for the reason `photoData` gives above at
+    /// length: an extension member has no witness-table entry, and every screen holds
+    /// `any CypressAPI` (ERRATA E125).
+    func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement
+
     // MARK: - Personal surfaces (private by default, D11)
 
     /// `GET /me/grove`.
@@ -929,6 +953,23 @@ public struct TreeProfile: Hashable, Sendable {
     /// answer hides a control rather than offering one that would fail.
     public let deletablePhotoIDs: Set<UUID>
 
+    /// Which of `measurements` this viewer may **withdraw** (report F27, `AppSchema` v21).
+    ///
+    /// On the payload for `deletablePhotoIDs`' reason and answered the same way: the question needs
+    /// the viewer's `Attribution`, and a presentation that held one would be holding identity it has
+    /// no business with (ARCHITECTURE §4).
+    ///
+    /// **Narrower than "every reading on this tree", and narrower than "every reading this device
+    /// holds".** `main.measurements` is this installation's own work — nothing syncs anybody else's
+    /// down — but a reading whose contributor left through the door that keeps their work in place
+    /// is still drawn in the log and is nobody's to take back (`AppSchema` v13, R3). That is the one
+    /// row the two sets differ on today, and it is the row that matters.
+    ///
+    /// Empty on any implementation that cannot answer, which is the safe direction everywhere on
+    /// this payload: a missing answer hides a control rather than offering one that would be
+    /// refused.
+    public let withdrawableMeasurementIDs: Set<UUID>
+
     /// Which of `photos` have **no owner at all** — the rows the leaving door left behind
     /// (`AccountDeletion.anonymizeContributions`, task #131).
     ///
@@ -1018,6 +1059,7 @@ public struct TreeProfile: Hashable, Sendable {
         siteLineageTreeID: UUID? = nil,
         ownPhotoIDs: Set<UUID> = [],
         deletablePhotoIDs: Set<UUID> = [],
+        withdrawableMeasurementIDs: Set<UUID> = [],
         anonymizedPhotoIDs: Set<UUID> = [],
         photoTallies: [UUID: PhotoTally] = [:],
         inventorySource: InventorySource? = nil,
@@ -1040,6 +1082,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.siteLineageTreeID = siteLineageTreeID
         self.ownPhotoIDs = ownPhotoIDs
         self.deletablePhotoIDs = deletablePhotoIDs
+        self.withdrawableMeasurementIDs = withdrawableMeasurementIDs
         self.anonymizedPhotoIDs = anonymizedPhotoIDs
         self.photoTallies = photoTallies
         self.inventorySource = inventorySource
@@ -1055,6 +1098,12 @@ public struct TreeProfile: Hashable, Sendable {
     /// Whether this person may delete the photo — see `deletablePhotoIDs` for why this is not the
     /// same question as `isOwnPhoto`.
     public func isDeletablePhoto(_ photo: Photo) -> Bool { deletablePhotoIDs.contains(photo.id) }
+
+    /// Whether this person may take the reading back — see `withdrawableMeasurementIDs` for why
+    /// this is not "is it on this device".
+    public func isWithdrawableMeasurement(_ measurement: TreeMeasurement) -> Bool {
+        withdrawableMeasurementIDs.contains(measurement.id)
+    }
 
     /// Whether the photo has no owner left — see `anonymizedPhotoIDs`.
     public func isAnonymizedPhoto(_ photo: Photo) -> Bool { anonymizedPhotoIDs.contains(photo.id) }

@@ -476,6 +476,20 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.communityHalfOnly
     }
 
+    /// **No route.** F27's withdrawal is new in this round and the service has no verb for it —
+    /// there is no `DELETE /measurements/{id}` in BUILD-PLAN §6 and none deployed. The way it
+    /// reaches an account is the queue: `AppSchema` v21 widened `outbox.kind` so a
+    /// `measurement_withdrawal` row can be written, and `POST /sync` is what carries it.
+    ///
+    /// Declared here rather than inherited from `MeasurementWithdrawalAccess.swift`'s default for
+    /// the reason `APIConformanceGuardTests` enforces on every shipping conformance: an inherited
+    /// answer is a static-dispatch trap beside a requirement, and `noRouteOnThisService` says which
+    /// of the two "no" answers this is, where the default's `notFound` would claim the reading is
+    /// not there.
+    public func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
     // MARK: - Personal surfaces
 
     /// **Community half only.** `GET /me/grove` sends `tree_uuid`, the favorite bit, the last visit,

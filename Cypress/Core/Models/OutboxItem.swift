@@ -120,6 +120,21 @@ public struct OutboxItem: CoreEntity {
         case photoWithdrawal = "photo_withdrawal"
         /// The hazard sheet that sent somebody to 311 (`logHazardRedirect`, BUILD-PLAN §6).
         case hazardRedirect = "hazard_redirect"
+
+        // ── The eleventh, and the reason it is not a payload flag ──────────────────────────────
+
+        /// A reading withdrawn (`withdrawMeasurement`). See `MeasurementWithdrawal`.
+        ///
+        /// **Its own kind, not a `measurement` carrying a discriminator.** The payload column is
+        /// `json_valid` only, so a flag inside it would have needed no migration — and it would put
+        /// the distinction inside a payload field where `outbox.kind` cannot see it, which is the
+        /// reason the review-dismissal pair above is two cases and not one with a boolean.
+        /// `outbox.kind` is what screen 17 groups by and what a server dispatches on. A withdrawal
+        /// arriving as a `measurement` would also be a false statement on an append-only record: it
+        /// would read as a reading somebody took. `AppSchema` v21 widens the stored vocabulary.
+        ///
+        /// Like the ten above it this carries no photo binary — a withdrawal is a deletion.
+        case measurementWithdrawal = "measurement_withdrawal"
     }
 
     /// `outbox.state` (BUILD-PLAN §4), verbatim. Screen 17 shows per-item state and retry.

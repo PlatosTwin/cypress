@@ -375,6 +375,13 @@ public actor LocalAPI: CypressAPI {
                 deletablePhotoIDs: try contributions.deletablePhotoIDs(
                     treeID: id, attribution: attribution, connection: connection
                 ),
+                // The same narrowing on the measurement side (report F27): every reading in
+                // `main.measurements` is drawn, and the ones an account deletion unlinked are
+                // nobody's to take back. Read in the same transaction as the readings themselves,
+                // so a withdraw control cannot be drawn beside a row that has since gone.
+                withdrawableMeasurementIDs: try contributions.withdrawableMeasurementIDs(
+                    treeID: id, attribution: attribution, connection: connection
+                ),
                 // *Why* a row is in the first set and not the second, read off the row itself
                 // rather than worked out from the difference between the two (task #131). Same
                 // transaction again, so the sentence a screen draws about a photograph and the
@@ -1735,10 +1742,12 @@ public actor LocalAPI: CypressAPI {
 
             // Refused above, before the transaction is opened. The arm is written closed rather
             // than as a `default:` so that the eleventh kind cannot inherit a silent answer here —
-            // ERRATA E125 is what an inherited silent answer costs.
+            // ERRATA E125 is what an inherited silent answer costs. `measurementWithdrawal` is that
+            // eleventh kind, and it is here because the compiler made it be: re-applying it would
+            // tombstone a reading that is already withdrawn and queue a second withdrawal for it.
             case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
                  .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
-                 .photoVote, .photoWithdrawal, .hazardRedirect:
+                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal:
                 throw APIError.validationFailed
             }
         }
@@ -2048,6 +2057,101 @@ public actor LocalAPI: CypressAPI {
             dequeuedBinaries: counts.stagedBinaries,
             leftACommunityTreeWithoutAPhotograph: lastOnACommunityAdd
         )
+    }
+
+    /// Withdraws one reading this person contributed (report F27, `AppSchema` v21).
+    ///
+    /// ── One transaction, and the order inside it is the design ────────────────────────────────
+    ///
+    /// `deletePhoto`'s ordering, kept beat for beat because it was paid for: the ownership gate is
+    /// checked in Swift, then the tombstone `UPDATE` **carries the same predicate** and has to match
+    /// before this method has any claim on the reading, and only then is the withdrawal queued —
+    /// from inside the same transaction, so a queued row exists only for a withdrawal that was
+    /// allowed and committed. A refusal by the SQL gate that the Swift rule permitted costs the
+    /// caller a `notFound` and costs the record nothing.
+    ///
+    /// There is no file phase here, which is the one beat of `deletePhoto` this does not have. That
+    /// is also why this is the simpler method: E136's whole argument is about `FileManager` not being
+    /// able to join a SQLite transaction, and a reading has no bytes.
+    ///
+    /// ── What is refused, and why the refusals are two ─────────────────────────────────────────
+    ///
+    /// `notFound` for a reading that is not there or is already withdrawn — the second is not an
+    /// error worth its own case, because "there is no live reading with that id" is exactly true of
+    /// it. `forbidden` for one that is somebody else's, **and for one that is nobody's**: a reading
+    /// whose contributor left through the door that keeps their work in place stays in the log
+    /// because that is what the leaving door promised, and it is no longer anybody's to unmake (R3,
+    /// `AppSchema` v13). `ContributionStore.withdrawableMeasurementIDs` says why that case is a
+    /// tombstone lookup on this table rather than a null owner.
+    ///
+    /// ── Nothing else moves ────────────────────────────────────────────────────────────────────
+    ///
+    /// No cascade, and the absence is deliberate rather than unexamined. A photograph's deletion
+    /// takes its votes with it, because they were judgments about a thing that no longer exists.
+    /// Nothing anywhere judges a reading: `measurements` has no children, no `review_flags` arm, no
+    /// hero election, and the `visits` row beside it is a separate contribution about a separate
+    /// act. The chart, the log, the journal, the grove and the stat cards all narrow on
+    /// `deleted_at IS NULL` already, so the tombstone is the whole of the change.
+    public func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
+        let moment = now()
+        let who = attribution
+
+        // 1. Establish what this is and whose it is, before anything is written.
+        let subject = try await store.queue.read { connection in
+            try contributions.measurementForWithdrawal(id: id, connection: connection)
+        }
+        guard let subject else { throw APIError.notFound }
+        // R3 first, exactly as `PhotoOwner.permitsRemoval` refuses `.nobody` on its first line:
+        // a reading its author unlinked from themselves is not made theirs again by the device
+        // column it still carries.
+        guard !subject.isAnonymized else { throw APIError.forbidden }
+        // The two arms of `ContributionStore.withdrawalPredicate`, written the same way round so
+        // the Swift gate and the SQL gate cannot say different things. The account arm requires an
+        // account — `nil == nil` would make a signed-out reader the owner of every reading whose
+        // `user_id` is null, which the device arm below decides properly instead.
+        let ownedByThisAccount = who.userID != nil && subject.userID == who.userID
+        let ownedByThisInstallation = subject.deviceID == who.deviceID
+        guard ownedByThisAccount || ownedByThisInstallation else { throw APIError.forbidden }
+
+        return try await store.queue.write { connection -> WithdrawnMeasurement in
+            let tombstoned = try contributions.withdrawMeasurement(
+                id: id, attribution: who, at: moment, connection: connection
+            )
+            // The predicate in the UPDATE matched nothing although the read said it would: either
+            // another withdrawal won the race, or the SQL gate refused what the Swift rule
+            // permitted. `notFound` rather than a success, because a success would be this call
+            // claiming to have done something it did not do.
+            guard tombstoned == 1 else { throw APIError.notFound }
+
+            // Spec §3.4's shape, and **after** the tombstone has matched: until then this method
+            // has no claim on the reading, and queueing a withdrawal that might still be refused
+            // would be the row asserting something the gates had not yet allowed.
+            try Self.queueAppliedMutation(
+                .measurementWithdrawal(
+                    MeasurementWithdrawal(
+                        clientUUID: UUID(),
+                        measurementID: id,
+                        treeID: subject.treeID,
+                        kind: subject.kind,
+                        attribution: who,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+
+            return WithdrawnMeasurement(
+                measurementID: id,
+                treeID: subject.treeID,
+                kind: subject.kind,
+                // Asked after the tombstone and inside the same transaction, so it describes the
+                // record this withdrawal left rather than the one it found.
+                leftTheKindWithNoReading: try !contributions.hasLiveMeasurement(
+                    treeID: subject.treeID, kind: subject.kind, connection: connection
+                )
+            )
+        }
     }
 
     /// A thumb up or down on a photograph, or `nil` to take it back (ERRATA E125, `AppSchema` v8).
