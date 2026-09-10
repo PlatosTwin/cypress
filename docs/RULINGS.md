@@ -8924,13 +8924,11 @@ needs per-region coverage meets the decision with the seed in front of them.
 Both directions red-proved: removing the guard lets the ambiguous seed publish; broadening it to
 any partial coverage refuses San Jose's live shape.
 
+### R96 — The seed version this repository builds against is checked in, and a publish bumps it deliberately
+
 Three entries. Two are owner rulings the s17/NYC publish forced, and this round implements both.
 The third is a clarification the same decision round settled about RULING D8's dual-format window;
 it is **recorded and not implemented**, deliberately.
-
----
-
-### R96 — The seed version this repository builds against is checked in, and a publish bumps it deliberately
 
 **Date:** 2026-08-22. **Decided by:** owner. **Implemented by:** this round.
 
@@ -9090,24 +9088,22 @@ distribution event anyone could have adopted in between.
 **Format-1 retirement fires at the next real publish.** This entry exists so that the next publish
 round does not have to reconstruct whether the corrective one already counted; it did not.
 
+### R99 — Format 1 retires now, and the object already in the bucket is frozen rather than deleted
+
 One entry. It **supersedes** a scheduling decision recorded twice in this directory, and the only
 mechanism that may do that is the one operating here: the owner's own later decision.
-
----
-
-### R99 — Format 1 retires now, and the object already in the bucket is frozen rather than deleted
 
 **Date:** 2026-08-23. **Decided by:** owner. **Implemented by:** this round.
 
 #### What this supersedes, and why that is legitimate
 
-Two pending entries scheduled this retirement, and both are now overridden:
+Two entries scheduled this retirement — **R92** and **R98** — and both are now overridden:
 
-- **`s17-region-generation.md`** set a three-tick clock — build 48, then the NYC publish (writing
+- **R92** set a three-tick clock — build 48, then the NYC publish (writing
   both objects), then *the publish after NYC*, which would write format 2 only. It argued
   explicitly against retiring at the NYC publish, on the grounds that doing so "would strand an
   unupdated install on the exact publish that first has something new to offer it."
-- **`seed-pin-and-bundle-scope.md`** clarified that the corrective republish of 2026-08-22 did not
+- **R98** clarified that the corrective republish of 2026-08-22 did not
   start that clock, and that retirement fires "at the next real publish."
 
 Neither reasoning was wrong when written, and neither is the reason this changed. **A ruling is
@@ -9147,7 +9143,7 @@ removes its own subject can never fail again.
 #### The reader keeps format 1; only the writer retires
 
 `CityManifest.knownFormats` stays `{1, 2}`, and `CityDownloader`'s fallback to `manifest.json`
-stays. This is a deliberate divergence from `s17-region-generation.md`'s enumeration of the work,
+stays. This is a deliberate divergence from **R92**'s enumeration of the work,
 which listed removing the fallback alongside deleting `write_manifest_v1`, and it follows from the
 distinction that entry itself drew about `knownFormats`: what retires is *writing* a format-1
 manifest, never *reading* one.
@@ -9177,20 +9173,18 @@ but a verified wrong answer.
 
 #### A prior claim this round refutes
 
-`s17-region-generation.md` states, of the NYC round, that the publisher "already writes both, and
+**R92** states, of the NYC round, that the publisher "already writes both, and
 `verify_seed` checks both on every run." **`Tools/verify_seed.py` contains no reference to either
 manifest** — it is the seed database's acceptance checker and has nothing to do with the catalog.
 What actually verified both was `publish_cities.py`'s own readback loop over the files it had just
 written, plus `Tools/test_publish_cities.py`. Nothing was under-checked; the sentence named the
 wrong instrument.
 
+### R100 — RULING D20's species-coverage gate is WAIVED for New York, at the honest 85.99%
+
 Three owner decisions collected during phase 1, plus one clarification the adversarial review
 established. All three were **questions this round raised and deliberately refused to answer for
 itself**; they are recorded here so the refusals are on the record beside the answers.
-
----
-
-### R100 — RULING D20's species-coverage gate is WAIVED for New York, at the honest 85.99%
 
 **Date:** 2026-08-22. **Decided by:** owner.
 
@@ -9303,6 +9297,8 @@ distribution identity; the bucket does.
   answered before the publish that freezes it. This round asked early and got a rename for the cost
   of four string replacements; the same question asked after phase 2 has no cheap answer at all.
 
+### R104 — `Use` belongs to every state that holds an attachable copy, including `update available`
+
 All three amend **RULINGS R43 §3**, which is the mock for a surface that has none. R43 was written
 under delegated design authority against a catalog of **two** cities; the catalog now holds seven,
 five of them New York boroughs, and a tester filed eight reports against the screen on the evening
@@ -9313,10 +9309,6 @@ need no entry here.
 **None of these is an owner ruling yet.** They are this round's proposals, implemented so they can
 be looked at rather than imagined, and the PR puts the alternatives beside each one. A reviewer
 who disagrees is disagreeing with a branch, not with a decision.
-
----
-
-### R104 — `Use` belongs to every state that holds an attachable copy, including `update available`
 
 **Date:** 2026-08-23. **Proposed by:** this round, from a tester report. **Status:** awaiting the
 owner.
@@ -9504,12 +9496,10 @@ it is made when the catalog makes it necessary — and so that the filter's voca
 which is a fact the manifest does not currently carry for any pack) is designed once, deliberately,
 rather than inferred from an id prefix.
 
-One entry. It **supersedes** the affordance shipped in PR #132, on the owner's own later decision —
-which per `format1-retirement.md` is the only mechanism that may do that.
-
----
-
 ### R107 — The Journal stats header pill is the area picker
+
+One entry. It **supersedes** the affordance shipped in PR #132, on the owner's own later decision —
+which per **R99** is the only mechanism that may do that.
 
 **Date:** 2026-08-31. **Decided by:** owner. **Implemented by:** this round.
 
@@ -9675,6 +9665,8 @@ segment it was written for and wrong on the other, with nothing on screen to con
 ships under DECISIONS constraint 21's delegated-authority pattern, with the owner's ruling above as
 the mandate rather than as a proposal awaiting one.
 
+### R108 — A tab paints from the phone and merges the service's half behind it
+
 Two entries. They were decided together, from one report, and they are separable: either without the
 other leaves half of the reported problem standing.
 
@@ -9701,10 +9693,6 @@ neither of which any query-plan test could see:
    `GroveModel` inside it were destroyed on every switch away and rebuilt on every switch back.
    Every visit to My Grove was therefore a cold load, network await included, and `GroveModel.load()`
    had no idempotence guard to make a repeat call cheap even in principle.
-
----
-
-### R108 — A tab paints from the phone and merges the service's half behind it
 
 **Date:** 2026-09-01. **Decided by:** owner, in an `AskUserQuestion` round. **Implemented by:** this
 round, for screen 08's two reads.
@@ -9900,6 +9888,8 @@ answers.
 E184's tap counter is unchanged and still applies to the reconcile, which is now the slowest read on
 the screen and therefore the one most likely to be holding a stale answer when a finger arrives.
 
+### R111 — Grove > Trees pages, the way Journal > Yours pages
+
 Two entries, decided together from one report. They are separable, and either without the other
 leaves half of the reported problem standing: paging alone still shows a blank column while the
 first page is read, and a loading state alone still builds a thousand rows before it can stop.
@@ -9921,10 +9911,6 @@ glass until all of it was built.
 The second fact is that `GroveModel.TreesPhase` had no case for "the read is in flight". `.idle`
 covered both "nobody has opened this pill" and "the read is running", and `GroveView` matched none
 of its arms in either — so the column drew nothing at all.
-
----
-
-### R111 — Grove > Trees pages, the way Journal > Yours pages
 
 **Date:** 2026-09-02. **Decided by:** owner. **Implemented by:** this round (PR #149).
 

@@ -22581,7 +22581,7 @@ does**; and `Tools/test_publish_cities.py` pins that order with a fixture where 
 **Coverage stays keyed on the id space while pack identity moved to the region** — a deliberate
 divergence taken in the same round, with the one state a per-city key cannot describe (several
 regions in one space shipping less than all of the city) refused by the publisher rather than
-guessed. The reasoning is in `coverage_for`'s own docstring and in this round's pending rulings.
+guessed. The reasoning is in `coverage_for`'s own docstring and in **R95**.
 
 Red-proved: reversing the two keys' order in `coverage_for` fails
 `Tools/test_publish_cities.py` with "coverage_for did not prefer the standardised
@@ -23332,11 +23332,6 @@ survives intact; only its single-corpus assumption goes.
 `validate_species.py`, independently and with the same name and semantics. They are compatible but
 they will conflict textually.
 
-Everything here was found by **running the pipeline**, not by reading the diff. Three of the five
-are things a bare merge of `feat/nyc-ingest` into `main` produces, and two of those are silent.
-
----
-
 ### E310 — `seed_meta.rows_from_sf_city` is a residual, and it absorbed a third city's rows
 
 **Found by `Tools/verify_seed.py` check 1b, on the first full three-city build**, at the very end of
@@ -23398,7 +23393,7 @@ status=vacant_site    12,758
 on a slice of the extract that holds them. s17's entire second half — `InventoryRecord.condition`,
 `status_for_record`, `STATUS_FOR_CONDITION`, the `dead_reported` mapping D17 was written for — is
 unreachable, and 10,635 standing dead New York trees ship saying the City called them living. The
-ingest round's own pending erratum (its item 3) named this and it stayed open across the merge,
+ingest round's own erratum **E299** named this and it stayed open across the merge,
 because nothing fails when a field is left at its default.
 
 **Both are the same shape**: an adapter written before a seam existed, merged after it was built,
@@ -23559,6 +23554,8 @@ the publish, not the merge).
 
 ### E318 — Nothing in `server/` ever deletes an object from the bucket, and a tombstone is not a deletion
 
+Found wiring `photo_withdrawal` during the E264 photo-upload round. Neither this entry nor E319 is the upload itself, which is stopped on an owner decision — both are things that are true about the code as it stands and would have been inherited silently.
+
 `DeletePhotoByContributor`, the operator takedown `RejectPhoto`, and the sync-path
 `withdrawPhoto` this round added all do the same thing to the bytes: **nothing**. They write
 `photos.deleted_at` or move `moderation_state`, and `storage_key` keeps naming an object that is
@@ -23632,7 +23629,7 @@ give the server a provenance column so it can evaluate R82's third arm, or rule 
 arm is the only one that crosses the network and give screen 17 a sentence for a local-only
 deletion. The second needs new copy on a shipped screen, which is DECISIONS constraint 21.
 
-### 2a · The order of the two checks inside `withdrawPhoto`, and why it stays
+#### The order of the two checks inside `withdrawPhoto`, and why it stays
 
 `withdrawPhoto` tests `deleted_at` **before** it tests ownership, so once a photograph is tombstoned
 the ownership gate is never consulted. #113's review measured the consequence: a stranger's

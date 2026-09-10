@@ -448,13 +448,15 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   wrapper exits, which the merge train should expect; (d) at the sanctioned three-concurrent-build
   cap the UI phase flakes with "Timed out while synthesizing event" — either lower the effective
   cap during UI phases or teach the harness to tell an event-synthesis timeout from an assertion.
-- ~~**Screen 14's Activity list shows Photos / Check-ins / Care rows but no Visits row**~~
-  **ANSWERED BY THE SPEC, 2026-09-09 — nothing to fix.** `docs/distilled/SCREENS.md` §"13 · Tree
-  activity" specifies that ChartCard's series exhaustively: Photos, Check-ins and Care, each with
-  its swatch, its total and its twelve bar heights. Visits are a distinct record kind and the mock
-  deliberately does not chart them, so the screen is conformant and constraint 21 never engaged —
-  the feel check read a correct screen as a gap. Recorded rather than deleted so the next person to
-  notice the absence finds the answer instead of the observation.
+- ~~**The Activity list shows Photos / Check-ins / Care rows but no Visits row**~~
+  **ANSWERED BY THE SPEC, 2026-09-09 — nothing to fix.** The observation was filed against "screen
+  14"; the screen it describes is **13 · Tree activity** (§14 is the cold-start profile, which has
+  no activity feed at all). `docs/distilled/SCREENS.md` §"13 · Tree activity" says "Three series"
+  and tables them exhaustively — Photos, Check-ins and Care, each with its swatch, its total and
+  its twelve bar heights. Visits are a distinct record kind and no Visits row is specified, so the
+  screen is conformant and constraint 21 never engaged: the feel check read a correct screen as a
+  gap. The spec does not say *why* visits are absent, and this entry does not guess. Recorded
+  rather than deleted so the next person to notice the absence finds the answer.
 - **Flake-watch sightings from the campaign** (all cleared by evidence, kept for the aggregate):
   `CityDownloadTests.swift:504` time-limit (60 s trait, 109 s under load; run 33586187828 — fourth
   in the family chip 4 tracks); `DeepLinkSweepTests` a11y check stalled 1,043 s under three
@@ -491,9 +493,18 @@ pending list without being run, and the work was lost until re-logged here. The 
 2026-09-01: no session chips in this project — a follow-up that deserves its own task is written
 into this section in the round that finds it, and nowhere else. Each item stands alone.
 
-1. **Close `PendingCitationGuardTests`' blind spots.** The guard that keeps code comments from
+1. **Close the citation guards' blind spots.** The guard that keeps code comments from
    citing pending errata/rulings filenames has known gaps in what it scans; enumerate the blind
-   spots and cover them, with a planted-citation calibration per shape.
+   spots and cover them, with a planted-citation calibration per shape. **Two were exercised for
+   real by the 2026-09-09 splice and are the starting set**: `DocumentCitationGuardTests` only
+   checks a citation that carries at least one `/`, so five **bare-filename** citations
+   (`` `s17-region-generation.md` ``) survived into `RULINGS.md` as danglers and no guard saw them;
+   and `PendingCitationGuardTests`' roots are the three Swift targets, so `server/*.go` and
+   `Tools/*.py` are unscanned — a `server/internal/store/photos.go` comment deferring to
+   `docs/errata-pending/` sat there through the whole photo round. Both were found by an adversarial
+   reviewer sweeping basenames, which is the cheap check: **a splice-time sweep for the deleted
+   files' basenames across the whole tree would have caught all five for free**, and is worth
+   building into the splice protocol rather than only into the guards.
 2. **Rebuild `Tools/ui-test-shards.txt` from live CI data.** The shard assignments have drifted
    from the suites' actual durations (shard runtimes are visibly unbalanced in recent runs);
    regenerate from measured per-class times and re-prove `UITestShardCoverageTests` still covers
