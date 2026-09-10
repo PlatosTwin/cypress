@@ -1,0 +1,20 @@
+{
+  "tree_uuid": "9f3a1c07-4d55-4a7e-9f10-2b6f0c1d5e42",
+  "verification_state": "unverified",
+  "vitality": {
+    "rating": 4,
+    "observed_month": "2026-09"
+  },
+  "height": {
+    "value": 18,
+    "unit_entered": "m",
+    "method": "estimate",
+    "measured_month": "2026-08"
+  },
+  "trunk_dbh": {
+    "value": 64,
+    "unit_entered": "cm",
+    "method": "tape",
+    "measured_month": "2026-07"
+  }
+}

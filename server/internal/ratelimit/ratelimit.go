@@ -28,6 +28,28 @@ const (
 	idleEviction = 30 * time.Minute
 )
 
+// The budget above is one caller's, and it is sized for **a phone**. A second limiter exists for the
+// public read, and it needs a different one for a reason that is a property of the deployment rather
+// than of the endpoint: the public web is server-side rendered, so every reader in the world arrives
+// from one address — the rendering machine's. Reusing this budget there would throttle the whole
+// site to one page per second, which is `clientKey`'s own warning arriving from the other direction.
+//
+// So the budget became a field. `New` keeps the constants above and every existing caller is
+// unchanged; `NewWithBudget` is what the public read uses.
+const (
+	// publicReadBurst and publicReadRefill size the public tree read: 120 back to back, then one
+	// token per 50 ms — 20 per second sustained, per address.
+	//
+	// Sized against what the endpoint costs rather than against what a phone does. It is one
+	// indexed read per field group on `idx_contributions_tree`, it writes nothing, it returns a
+	// bounded body, and it holds no secret. Twenty per second is roughly a hundred times a reading
+	// human and comfortably above a search engine crawling this site's own pages; it is far below
+	// what would trouble Postgres, and it still holds the line that matters — one address cannot
+	// monopolize the single machine R72 sizes this service to.
+	publicReadBurst  = 120
+	publicReadRefill = 50 * time.Millisecond
+)
+
 type bucket struct {
 	tokens   float64
 	lastSeen time.Time
@@ -38,19 +60,42 @@ type Limiter struct {
 	mu      sync.Mutex
 	buckets map[string]*bucket
 	now     func() time.Time
+	// burst and refill are this limiter's budget. Fields rather than the package constants,
+	// because two limiters with two callers need two sizings — see the constants above.
+	burst  float64
+	refill time.Duration
 	// sweptAt is when eviction last ran, so it is amortized rather than scheduled.
 	sweptAt time.Time
 }
 
-// New builds a limiter on the wall clock.
+// New builds a limiter on the wall clock, at the device budget.
 func New() *Limiter {
-	return &Limiter{buckets: map[string]*bucket{}, now: time.Now}
+	return NewWithBudget(burst, refill)
+}
+
+// NewPublicRead builds the public read's limiter, at its own budget.
+//
+// A separate instance rather than a shared one so the two cannot spend each other's tokens: a flood
+// of anonymous page reads must not exhaust the bucket a contributor's outbox drains through, and a
+// busy drain must not throttle the website.
+func NewPublicRead() *Limiter {
+	return NewWithBudget(publicReadBurst, publicReadRefill)
+}
+
+// NewWithBudget builds a limiter with an explicit budget.
+func NewWithBudget(burst float64, refill time.Duration) *Limiter {
+	return &Limiter{buckets: map[string]*bucket{}, now: time.Now, burst: burst, refill: refill}
 }
 
 // WithClock replaces the clock. Test seam: a rate limiter tested on the wall clock either sleeps
 // or asserts nothing.
+//
+// **The budget travels with it**, which is not decoration: this returns a *new* limiter, so a
+// version that forgot to copy the two fields would hand back a limiter whose burst is zero and
+// whose refill is never — refusing everything, in a test seam, which is the shape of harness bug
+// that costs a day.
 func (l *Limiter) WithClock(now func() time.Time) *Limiter {
-	return &Limiter{buckets: map[string]*bucket{}, now: now}
+	return &Limiter{buckets: map[string]*bucket{}, now: now, burst: l.burst, refill: l.refill}
 }
 
 // Allow reports whether the key may proceed, and spends a token if so.
@@ -63,14 +108,14 @@ func (l *Limiter) Allow(key string) bool {
 
 	existing, found := l.buckets[key]
 	if !found {
-		l.buckets[key] = &bucket{tokens: burst - 1, lastSeen: now}
+		l.buckets[key] = &bucket{tokens: l.burst - 1, lastSeen: now}
 		return true
 	}
 
 	elapsed := now.Sub(existing.lastSeen)
-	existing.tokens += elapsed.Seconds() / refill.Seconds()
-	if existing.tokens > burst {
-		existing.tokens = burst
+	existing.tokens += elapsed.Seconds() / l.refill.Seconds()
+	if existing.tokens > l.burst {
+		existing.tokens = l.burst
 	}
 	existing.lastSeen = now
 

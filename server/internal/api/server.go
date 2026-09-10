@@ -44,12 +44,24 @@ type Server struct {
 	OperatorToken string
 
 	limiter *ratelimit.Limiter
+	// readLimiter is the public read's own bucket, at its own budget.
+	//
+	// **Separate from `limiter`, because the two callers are not alike.** `limiter` is sized for a
+	// phone draining an outbox — burst 60, one token a second — and the public web is server-side
+	// rendered, so every reader in the world arrives from one address: the rendering machine's.
+	// Putting that on the phone budget would throttle the whole site to one page per second, which
+	// is `clientKey`'s own warning arriving from the other direction. Two instances rather than one
+	// so neither can spend the other's tokens.
+	readLimiter *ratelimit.Limiter
 }
 
 // Handler builds the router.
 func (s *Server) Handler() http.Handler {
 	if s.limiter == nil {
 		s.limiter = ratelimit.New()
+	}
+	if s.readLimiter == nil {
+		s.readLimiter = ratelimit.NewPublicRead()
 	}
 	mux := http.NewServeMux()
 
@@ -78,6 +90,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET "+Prefix+"/me/map-membership", s.authenticated(s.mapMembership))
 	mux.Handle("GET "+Prefix+"/trees/{id}", s.authenticated(s.treeProfile))
 	mux.Handle("GET "+Prefix+"/photos/{id}", s.authenticated(s.photoData))
+
+	// ── The public read ────────────────────────────────────────────────────────────────────────
+	// No credential, and the only route here that answers one contributor's record to another
+	// person. What it may say is `docs/rulings-pending/public-tree-read.md`; the mechanism is
+	// `public.go`'s allow-list over `contributions.kind`.
+	mux.Handle("GET "+Prefix+"/public/trees/{id}", s.publicRead(s.publicTree))
 
 	// ── Operator ───────────────────────────────────────────────────────────────────────────────
 	// R72 ruling 5's non-negotiable half: "Auto-approve without a takedown is the version of this
@@ -131,6 +149,23 @@ type publicFunc func(http.ResponseWriter, *http.Request) error
 func (s *Server) public(next publicFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.limiter.Allow(clientKey(r)) {
+			apierr.Write(w, s.Log, apierr.New(apierr.RateLimited, "Too many requests. Try again shortly."))
+			return
+		}
+		if err := next(w, r); err != nil {
+			apierr.Write(w, s.Log, err)
+		}
+	})
+}
+
+// publicRead is `public` on the read budget.
+//
+// A separate wrapper rather than a parameter on `public`, so which bucket a route spends is visible
+// at the route table instead of at the call site. Everything else is identical: no credential is
+// resolved, and a refusal is `rate_limited`, which is retryable.
+func (s *Server) publicRead(next publicFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.readLimiter.Allow(clientKey(r)) {
 			apierr.Write(w, s.Log, apierr.New(apierr.RateLimited, "Too many requests. Try again shortly."))
 			return
 		}
