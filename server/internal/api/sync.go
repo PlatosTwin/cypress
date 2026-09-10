@@ -131,6 +131,67 @@ type measurementPayload struct {
 	ID uuid.UUID `json:"id"`
 }
 
+// dataDisputePayload is `DataDispute` as the client encodes it (R79, `AppSchema` v22: keys stay the
+// Swift property names). The item this service is handed looks like
+//
+//	{"id":"…","clientUUID":"…","treeID":"…","treeSource":"city",
+//	 "issues":["wrong_location","wrong_species"],
+//	 "suggestions":{"lat":"37.3382","lon":"-121.8863"},
+//	 "notes":"the trunk is across the path","occurredAt":"…"}
+//
+// **`id` is the dispute's own id and `clientUUID` is the item's**, different values by construction
+// exactly as they are for a reading (see `measurementPayload`), and the reason to require `id` is
+// the withdrawal below: a dispute recorded without one can never be named again by the person who
+// raised it. `clientUUID` and `occurredAt` are on the wire and deliberately not read, for the reason
+// `photoWithdrawalPayload` gives about its own — the envelope is the authority on the item's key and
+// on when it happened, and a second copy of either is a second place for one fact to be wrong.
+//
+// **`suggestions` and `notes` are on the wire and deliberately not read, and that is a decision.**
+// A suggestion is a `field`/`value` pair whose `field` is CHECKed on the client against a vocabulary
+// v22 names and this file does not; enforcing that vocabulary from here would put one list in a
+// Swift migration and another in a Go map, across two files no build compiles together — which is
+// the drift `TestTheHandlersVocabularyAndTheColumnsAgree` exists because of, and here it would fail
+// queues *non-retryably* on the first attempt. Nothing on this side adjudicates a dispute, so
+// nothing on this side needs to understand a suggested value: the payload is stored whole, and the
+// round that serves it back is the round that has to read it.
+type dataDisputePayload struct {
+	ID         uuid.UUID `json:"id"`
+	TreeID     uuid.UUID `json:"treeID"`
+	TreeSource *string   `json:"treeSource"`
+	Issues     []string  `json:"issues"`
+}
+
+// dataDisputeWithdrawalPayload is `DataDisputeWithdrawal` as the client encodes it:
+//
+//	{"clientUUID":"…","disputeID":"…","treeID":"…","occurredAt":"…"}
+//
+// `disputeID` names the `data_dispute` this takes back — the raise's `id`, never the item key the
+// raise travelled under, for the reason a measurement withdrawal names the reading rather than the
+// queue row.
+type dataDisputeWithdrawalPayload struct {
+	DisputeID uuid.UUID `json:"disputeID"`
+	TreeID    uuid.UUID `json:"treeID"`
+}
+
+// disputeIssueKinds is what a dispute can be about: `tree_dispute_issues.kind`'s CHECK in the
+// client's v22, stated here because R79 fixes these three and this service refuses a fourth.
+//
+// It is the `treePlacements` pattern and not the `suggestions` one, and the difference is who chose
+// the list. These three are the round's own contract, fixed in both halves at once; the suggestion
+// `field` vocabulary is v22's to name and grow, which is why it is recorded rather than checked.
+var disputeIssueKinds = map[string]bool{
+	"wrong_location": true, "wrong_species": true, "wrong_metadata": true,
+}
+
+// disputeTreeSources is `tree_data_disputes.tree_source`'s CHECK.
+//
+// Both values are accepted here even though R79 raises disputes on **city** rows only. The
+// restriction is the client's this round — a community row is `.forbidden` in `raiseDataDispute`,
+// because a community tree's wrong species is still today's `flagWrongSpecies` — and writing that
+// one-round restriction into this service would mean a deploy to lift it, for a value this service
+// records and does not act on. A source outside the pair is a different thing: a malformed item.
+var disputeTreeSources = map[string]bool{"city": true, "community": true}
+
 // syncKinds is every kind this service accepts on `POST /sync`.
 //
 // The first six are BUILD-PLAN §4's. The ten after them are spec §3.4's nine mutations — the
@@ -189,6 +250,30 @@ type measurementPayload struct {
 //     tombstoned through `contributions.deleted_at`, the column every read here already filters on
 //     and nothing had ever written; and a reading that arrives *after* its own withdrawal is born
 //     tombstoned, because the client's queue makes that order reachable.
+//
+//   - **`data_dispute` and `data_dispute_withdrawal` are the eighteenth and nineteenth, and
+//     neither materializes** (R79, `005_data_dispute_kinds.sql`, client `AppSchema` v22). They are
+//     a reader saying the *city's* record of a tree is wrong — the wrong place, the wrong species,
+//     wrong metadata — with optional suggested values, and taking that back.
+//
+//     This is the paragraph above's list of eight rather than its list of three, and the reason is
+//     the sharper one: this service **could** write a dispute table, and must not. Adjudicating a
+//     dispute moves city inventory data on an unadjudicated say-so, which is the same sentence 002
+//     wrote about a species claim, and the surface that adjudicates is a web deliverable
+//     (ARCHITECTURE §8). So the `contributions` row is the record, exactly as it is for a visit.
+//
+//     **Which makes the withdrawal a success that changes nothing today, and that is the part to
+//     read carefully rather than copy.** Two earlier versions of the `photo_withdrawal` paragraph
+//     above were wrong in opposite directions, and this comment is where both were written; the
+//     lesson is that "nothing to withdraw" is a fact about *this* deployment and expires. Nothing
+//     here serves a dispute back yet — no read endpoint exists, so a withdrawal cannot be a claim
+//     anybody is shown. The badge round builds that endpoint. On the day it does, an ownership gate
+//     and a tombstone become owed in the same change, for ERRATA **E280**'s reason: a service that
+//     reports a retraction and goes on serving the thing. Neither is written here on speculation,
+//     because a gate against a table that does not exist is a gate nothing can prove.
+//
+//     What *is* checked is the payload — see `dataDisputePayload` for which fields and, more
+//     usefully, for why the suggested-value vocabulary is recorded rather than checked.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,
@@ -197,6 +282,7 @@ var syncKinds = map[string]bool{
 	"species_review_dismissal": true, "record_review_dismissal": true,
 	"photo_vote": true, "photo_withdrawal": true, "hazard_redirect": true,
 	"measurement_withdrawal": true,
+	"data_dispute": true, "data_dispute_withdrawal": true,
 }
 
 // maxSyncBatch caps one request. A drain sends what is due, and a phone that has been in a drawer
@@ -456,6 +542,66 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 				"That item disagrees with itself about which tree it belongs to.")
 		}
 		withdrawnMeasurementID = &payload.MeasurementID
+	}
+
+	// ── `data_dispute` and `data_dispute_withdrawal` — validated, recorded, materializing nothing ──
+	//
+	// The gates are the ones the three kinds above already apply, and they are worth having on a kind
+	// that materializes nothing for a reason that is easy to miss: the `contributions` row is not a
+	// receipt, it is the **record**, and the round that builds the moderation surface reads exactly
+	// these rows. An item admitted here without an id or without an issue is a dispute that arrives
+	// on that screen naming nothing and cannot be acted on — a defect this service would have written
+	// months earlier and nothing would have refused.
+	//
+	// A disagreement between `treeID` and the envelope's `tree_uuid` is refused rather than resolved,
+	// for the reason `add_tree` gives about its own: picking one of two disagreeing ids would file
+	// the dispute against a tree it is not about.
+	//
+	// **Ownership is deliberately not checked here** — the envelope gate above has already refused an
+	// item that is not this identity's to *send*. Whether the withdrawal's `disputeID` names a
+	// dispute this identity raised is a question about a row, and there is no row: see `syncKinds`
+	// for why that answer is the honest one today and what the badge round owes when it changes.
+	if item.Kind == "data_dispute" {
+		var payload dataDisputePayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.ID.IsNil() {
+			return failed(apierr.ValidationFailed, "That item named no dispute.")
+		}
+		if payload.TreeID != item.TreeUUID {
+			return failed(apierr.ValidationFailed,
+				"That item disagrees with itself about which tree it belongs to.")
+		}
+		// Absent means "they did not say", which is `landContext`'s rule one field over and not a
+		// refusal; a value outside the pair is malformed. Both halves matter: `tree_source` is NOT
+		// NULL in v22, so absence should not happen — and refusing on it would turn a client that
+		// renamed one key into a queue of terminal failures over items nothing here acts on.
+		if payload.TreeSource != nil && !disputeTreeSources[*payload.TreeSource] {
+			return failed(apierr.ValidationFailed, "That tree source is not one this service accepts.")
+		}
+		if len(payload.Issues) == 0 {
+			return failed(apierr.ValidationFailed, "That item said nothing was wrong.")
+		}
+		for _, issue := range payload.Issues {
+			if !disputeIssueKinds[issue] {
+				return failed(apierr.ValidationFailed, "That item names an issue this service does not know.")
+			}
+		}
+	}
+
+	if item.Kind == "data_dispute_withdrawal" {
+		var payload dataDisputeWithdrawalPayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.DisputeID.IsNil() {
+			return failed(apierr.ValidationFailed, "That item named no dispute.")
+		}
+		if payload.TreeID != item.TreeUUID {
+			return failed(apierr.ValidationFailed,
+				"That item disagrees with itself about which tree it belongs to.")
+		}
 	}
 
 	// The reading's own id, for the arrival-order guard and nothing else. A body that cannot be read
