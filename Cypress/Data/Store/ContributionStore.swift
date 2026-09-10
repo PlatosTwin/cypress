@@ -506,22 +506,14 @@ public struct ContributionStore {
     /// rows are not.
     public func heroPhotoIDs(treeIDs: Set<UUID>, connection: SQLiteConnection) throws -> [UUID: UUID] {
         guard !treeIDs.isEmpty else { return [:] }
-        let photoStatement = try connection.cachedStatement("""
-            SELECT * FROM photos
-             WHERE deleted_at IS NULL
-               AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
-            """)
+        let photoStatement = try connection.cachedStatement(Self.ownHeroPhotoCandidatesSQL)
         _ = try photoStatement.bind(
             "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":trees"
         )
         let photos = try photoStatement.fetchAll(Self.decodePhoto)
         guard !photos.isEmpty else { return [:] }
 
-        let talliesStatement = try connection.cachedStatement("""
-            SELECT photo_id, SUM(vote) AS score FROM photo_votes
-             WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
-             GROUP BY photo_id
-            """)
+        let talliesStatement = try connection.cachedStatement(Self.scopedHeroPhotoTalliesSQL)
         _ = try talliesStatement.bind(
             "[\(photos.map { "\"\($0.id.uuidString)\"" }.joined(separator: ","))]", forName: ":photos"
         )
@@ -532,11 +524,34 @@ public struct ContributionStore {
         return Self.chooseHeroes(from: photos, tallies: tallyPairs)
     }
 
+    /// The candidate half of the read above, as a property, for `journalSQL`'s reason: a gate can
+    /// then name the text the app runs instead of holding a copy of it.
+    ///
+    /// **What separates this from `scopedHeroPhotoCandidatesSQL` is the `is_own` column.** Both
+    /// narrow `photos` to a caller-supplied set of trees. The `attribution:` form additionally
+    /// selects `removalPredicate()`, because its rows may be a stranger's and it has to judge each
+    /// one through `TreeProfile.isPhotoVisible`. This caller's rows are already its own — the
+    /// method's doc above argues that at length — so there is nothing to judge and no column to
+    /// select. Two texts rather than one text with a branch, because the two reads answer different
+    /// questions and PR #144's review records what conflating them does.
+    ///
+    /// **The tallies half is now shared rather than copied** (PR #147's review, F4). It was written
+    /// out a second time inside this method, byte for byte, and nothing compared the two strings —
+    /// so the pair could drift apart in silence. `scopedHeroPhotoTalliesSQL` is the one copy.
+    static let ownHeroPhotoCandidatesSQL = """
+        SELECT * FROM photos
+         WHERE deleted_at IS NULL
+           AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+        """
+
     /// The pure half every hero read ends with: tally, then `PhotoHero.choose` per tree.
     ///
     /// Shared because it is the *choice*, and two copies of a choice rule is how one of them drifts
-    /// (`removalPredicate()`'s argument). The SQL is deliberately **not** shared: each of the three
-    /// reads has its own predicate, and those predicates are the whole of what distinguishes them.
+    /// (`removalPredicate()`'s argument). The candidate SQL is deliberately **not** shared: each of
+    /// the three reads has its own predicate, and those predicates are the whole of what
+    /// distinguishes them. Their *tallies* statements are a different matter — the two scoped reads
+    /// ask `photo_votes` the identical question and now read it off one property
+    /// (`scopedHeroPhotoTalliesSQL`), which is a copy removed, not a distinction erased.
     private static func chooseHeroes(from photos: [Photo], tallies: [(UUID, Int)?]) -> [UUID: UUID] {
         let scores = Dictionary(uniqueKeysWithValues: tallies.compactMap { $0 })
             .mapValues { PhotoTally(score: $0) }
@@ -687,7 +702,10 @@ public struct ContributionStore {
            AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
         """
 
-    /// See `scopedHeroPhotoCandidatesSQL`.
+    /// See `scopedHeroPhotoCandidatesSQL` — and note that this one is read by **both** scoped hero
+    /// reads: `heroPhotoIDs(treeIDs:attribution:connection:)` above and
+    /// `heroPhotoIDs(treeIDs:connection:)`, which used to carry a byte-identical second copy.
+    /// The candidates differ between those two reads; the tallies question does not.
     static let scopedHeroPhotoTalliesSQL = """
         SELECT photo_id, SUM(vote) AS score FROM photo_votes
          WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
@@ -1963,23 +1981,7 @@ public struct ContributionStore {
         deviceID: UUID,
         connection: SQLiteConnection
     ) throws -> [UUID: GroveRecord] {
-        let statement = try connection.cachedStatement("""
-            SELECT tree_uuid, kind, COUNT(*) AS n FROM (
-                SELECT tree_uuid, 'visit' AS kind, user_id, device_id, client_uuid, deleted_at FROM visits
-                UNION ALL
-                SELECT tree_uuid, 'observation', user_id, device_id, client_uuid, deleted_at FROM observations
-                UNION ALL
-                SELECT tree_uuid, 'measurement', user_id, device_id, client_uuid, deleted_at FROM measurements
-                UNION ALL
-                SELECT tree_uuid, 'care_event', user_id, device_id, client_uuid, deleted_at FROM care_events
-            ) record
-             WHERE deleted_at IS NULL
-               AND (device_id = :device COLLATE NOCASE
-                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-               -- `journal`'s clause, for the same reason (`AppSchema` v13).
-               AND \(Self.notAnonymized("record"))
-             GROUP BY tree_uuid, kind
-            """)
+        let statement = try connection.cachedStatement(Self.groveRecordsSQL)
         _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
 
         var visits: [UUID: Int] = [:]
@@ -2013,6 +2015,30 @@ public struct ContributionStore {
             )
         })
     }
+
+    /// The text `groveRecords` runs, as a property, for `groveTreeIDsSQL`'s reason: the gate
+    /// explains the text the app runs rather than holding a copy of it.
+    ///
+    /// The four arms are the four contribution tables, unioned so one statement answers "what did
+    /// this person do, by tree" for the whole grove — the method's own doc argues why that is a
+    /// count and why the count is allowed here.
+    static let groveRecordsSQL = """
+        SELECT tree_uuid, kind, COUNT(*) AS n FROM (
+            SELECT tree_uuid, 'visit' AS kind, user_id, device_id, client_uuid, deleted_at FROM visits
+            UNION ALL
+            SELECT tree_uuid, 'observation', user_id, device_id, client_uuid, deleted_at FROM observations
+            UNION ALL
+            SELECT tree_uuid, 'measurement', user_id, device_id, client_uuid, deleted_at FROM measurements
+            UNION ALL
+            SELECT tree_uuid, 'care_event', user_id, device_id, client_uuid, deleted_at FROM care_events
+        ) record
+         WHERE deleted_at IS NULL
+           AND (device_id = :device COLLATE NOCASE
+                OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+           -- `journal`'s clause, for the same reason (`AppSchema` v13).
+           AND \(Self.notAnonymized("record"))
+         GROUP BY tree_uuid, kind
+        """
 
     /// Where a journal page left off: the last row's capture time **and its id**.
     ///

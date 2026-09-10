@@ -7,7 +7,7 @@
 //  contains the other:
 //
 //  - `GroveStatementCensusTests` asks what the **unbounded** `grove()` runs — two queue hops and
-//    seven statements, each exactly once, three of them pinned to the properties that name them.
+//    seven statements, each exactly once, every one of them pinned to the property that names it.
 //    It is the gate that would catch an N+1 coming back, and no answer-comparing test can.
 //  - `GrovePagedStatementCensusTests` asks whether the **first page** avoids building the whole
 //    projection. That is invisible to the suite above by construction: a `grove()` cut to fifty
@@ -61,32 +61,35 @@ import Testing
 /// runs once per row, whatever its text says. The set catches drift — a statement whose text changed
 /// without this file changing.
 ///
-/// ── How the expected texts are obtained, and the one thing that is honestly weaker here ────────
-/// `JournalStatementCensusTests` reads all five of its texts off `static let …SQL` properties, so
-/// its set assertion is a genuine drift gate on every one of them. The grove's read is not built
-/// that way: **three** of its seven statements have a named property today
-/// (`TreeQueries.treesSQL()`, `ContributionStore.activeNamesSQL`, and
-/// `ContributionStore.scopedHeroPhotoTalliesSQL`, which is byte-identical to the literal
-/// `heroPhotoIDs` prepares). The other four are string literals inside their store methods.
+/// ── How the expected texts are obtained: off the properties, all seven ─────────────────────────
+/// **This file used to derive four of the seven by probe, and no longer does.** The probe ran the
+/// store's own methods under a second census and took whatever they prepared, because four of the
+/// texts lived as string literals inside those methods and there was no property to hold them to.
+/// It certified that `grove()` ran the store's statements and no others; what it could not certify,
+/// and its header said so, was that a store method's own text had not changed — a rewrite moved
+/// probe and app together.
 ///
-/// **There are three ways to write this test, not two, and an earlier draft of this header claimed
-/// two** (PR #147's review, F4). They are: copy the literals into the test — which is exactly the
-/// gate PR #143's review disproved, a test explaining its own copy; **hoist the literals to named
-/// properties on the store and pin the test to those**, which is what
-/// `AlmanacStatementCensusTests` does for all nine of its statements and what `journalSQL` and
-/// `activeNamesSQL` already are; or probe. The third horn is the better one and it is available —
-/// it is a production change, and this round is not the round for it (see the PR's out-of-scope
-/// notes), but nothing about the grove's read prevents it.
+/// The three ways to write this test are still three (PR #147's review, F4): copy the literals into
+/// the test, which is the gate PR #143's review disproved — a test explaining its own copy; probe,
+/// which is what this file did; or **hoist the literals to named properties on the store and pin
+/// the test to those**, which is what `AlmanacStatementCensusTests` does for all nine of its
+/// statements. That third horn was called the better one and left unbuilt because it is a
+/// production change. It is now built: `ContributionStore.groveRecordsSQL`,
+/// `ContributionStore.ownHeroPhotoCandidatesSQL` and `CommunityTreeStore.treesSQL` are the hoists,
+/// `ContributionStore.groveTreeIDsSQL` already existed for `GrovePagedStatementCensusTests`, and
+/// the second copy of the tallies text inside `heroPhotoIDs(treeIDs:connection:)` — the production
+/// defect the earlier header reported rather than fixed — is gone, so both scoped hero reads now
+/// prepare `scopedHeroPhotoTalliesSQL` itself.
 ///
-/// So the four literal-only texts are obtained by the remaining route that binds them to
-/// production: by **running the store methods themselves** under a second census, on the same store,
-/// in the order `grove()` calls them, and taking the texts they prepare. `Self.expected(…)` is that
-/// probe. What it certifies is that `grove()` runs the store's statements and no others — the shape
-/// of drift that matters, since a hand-rolled statement inlined into `grove()` would diverge from
-/// the store method the rest of the app reads through. What it cannot certify, and nothing in this
-/// file claims it does, is that `groveTreeIDs`' own text has not changed; a rewrite of that method
-/// moves probe and app together. The three property-backed texts are asserted against their
-/// properties directly, below, where the stronger statement is available.
+/// So `Self.expected(_:)` is a list of seven properties, read off the same types the app reads them
+/// off. Every one of the seven is now a genuine drift gate: appending a comment to a store method's
+/// prepared text without changing the property leaves this red, which is the specimen PR #143's
+/// review used and the calibration this file is re-proved with.
+///
+/// **What that does not cover, stated rather than implied.** Changing a property changes the app
+/// and this gate together, and is invisible here — deliberately. That is what the property *is*:
+/// one text, one place. The drift this catches is the divergence between what a method prepares and
+/// what the repository says it prepares, which is the only kind a census can see.
 @Suite("My Grove · what the list actually runs")
 struct GroveStatementCensusTests {
 
@@ -139,56 +142,31 @@ struct GroveStatementCensusTests {
         return (api, store, trees)
     }
 
-    /// The seven statements a grove read runs, taken off the production store methods by running
-    /// them — see the suite header for why five of them cannot be read off a property.
+    /// The seven statements a grove read runs, each read off the property that names it on its own
+    /// store — see the suite header for what replacing the probe with this list buys and what it
+    /// does not.
     ///
-    /// Run in the order `grove()` runs them, and scoped the way `grove()` scopes them: the photo
-    /// reads take the tree ids the *first* statement returned, not the fixture's list, because that
-    /// is what `grove()` passes and a differently-scoped probe would prepare the same text anyway
-    /// but would stop being a description of the same call.
-    private static func expected(api: LocalAPI, store: CypressStore) async throws -> [String] {
-        let schema = try #require(store.seed, "the store opened without a seed attached")
-        let softDeletes = store.seedHasSoftDeletedTrees
-        let userID = await api.userID
-
-        let probe = StatementCensus()
-        await store.queue.installCensus(probe)
-        try await store.queue.read { connection -> Void in
-            // Built inside the closure, out of two `Sendable` values: `TreeQueries` is a plain
-            // struct with no `Sendable` conformance, so capturing a ready-made one would be sending
-            // a non-`Sendable` value into an actor.
-            let treeQueries = TreeQueries(schema: schema, seedHasSoftDeletedTrees: softDeletes)
-            let contributions = ContributionStore()
-            let rows = try contributions.groveTreeIDs(
-                userID: userID, deviceID: deviceID, connection: connection
-            )
-            _ = try contributions.groveRecords(userID: userID, deviceID: deviceID, connection: connection)
-            _ = try contributions.heroPhotoIDs(treeIDs: Set(rows.map(\.treeID)), connection: connection)
-
-            let treeIDs = rows.map(\.treeID)
-            _ = try treeQueries.trees(ids: treeIDs, connection: connection)
-            _ = try CommunityTreeStore().trees(ids: treeIDs, connection: connection)
-            _ = try contributions.activeNames(treeIDs: treeIDs, connection: connection)
-        }
-        await store.queue.installCensus(nil)
-        return probe.statements
-    }
-
-    /// The statements that have a named property on their store, and can therefore be pinned to it
-    /// rather than to the probe.
+    /// Listed in the order `grove()` runs them, which is documentation rather than assertion: the
+    /// gates below compare sets and per-text counts, because a census records prepares and SQLite
+    /// is free to prepare a cached statement once and run it later.
     ///
-    /// `scopedHeroPhotoTalliesSQL` is in here on PR #147's review (F4): `heroPhotoIDs` prepares a
-    /// literal that is byte-identical to that property after Swift's multiline indent-stripping, so
-    /// pinning it costs nothing and is strictly stronger than the probe. That `ContributionStore`
-    /// holds two copies of one statement is a production defect this test does not fix and the PR
-    /// reports.
-    private static func propertyBacked(_ store: CypressStore) throws -> [String] {
+    /// `TreeQueries.treesSQL()` is a function of the seed's schema, so it is built from the store's
+    /// own seed rather than named — the same construction `LocalAPI` makes.
+    private static func expected(_ store: CypressStore) throws -> [String] {
         let schema = try #require(store.seed, "the store opened without a seed attached")
-        let trees = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
+        let treeQueries = TreeQueries(
+            schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees
+        )
         return [
-            trees.treesSQL(),
-            ContributionStore.activeNamesSQL,
-            ContributionStore.scopedHeroPhotoTalliesSQL
+            // hop 1
+            ContributionStore.groveTreeIDsSQL,
+            ContributionStore.groveRecordsSQL,
+            ContributionStore.ownHeroPhotoCandidatesSQL,
+            ContributionStore.scopedHeroPhotoTalliesSQL,
+            // hop 2
+            treeQueries.treesSQL(),
+            CommunityTreeStore.treesSQL,
+            ContributionStore.activeNamesSQL
         ]
     }
 
@@ -197,15 +175,14 @@ struct GroveStatementCensusTests {
     @Test("one grove read is two queue hops and seven statements, each run exactly once")
     func theGroveRunsTwoHopsAndSevenStatementsOnce() async throws {
         let (api, store, trees) = try await Self.seeded()
-        let expected = try await Self.expected(api: api, store: store)
+        let expected = try Self.expected(store)
 
-        // The probe itself has to have found seven distinct statements, or the comparison below is
-        // being made against a shorter list and would accept a `grove()` that had stopped running
-        // one of them.
+        // The list has to still name seven statements, or the comparison below is being made
+        // against a shorter list and would accept a `grove()` that had stopped running one of them.
         try #require(
             expected.count == Self.statementCount,
             """
-            the probe over the store's own methods prepared \(expected.count) statements, not \
+            the properties this file names are \(expected.count) statements, not \
             \(Self.statementCount): \(Self.histogram(expected))
             """
         )
@@ -223,18 +200,6 @@ struct GroveStatementCensusTests {
             follows from the count and the set together: \(Self.histogram(expected))
             """
         )
-
-        // The three that have a property are pinned to it rather than to the probe — a genuine
-        // text-drift gate on those, which the probe cannot be.
-        for sql in try Self.propertyBacked(store) {
-            try #require(
-                expected.contains(sql),
-                """
-                a statement this repository names in a property is not among the ones the store's \
-                own methods prepare: \(Self.firstLine(of: sql))
-                """
-            )
-        }
 
         let census = StatementCensus()
         await store.queue.installCensus(census)
@@ -282,20 +247,23 @@ struct GroveStatementCensusTests {
         )
     }
 
-    /// **The two texts that do have a property are pinned to that property**, which is the drift
-    /// gate the probe in `expected(…)` cannot be.
+    /// **Every one of the seven is pinned to the property that names it**, per text rather than as
+    /// a set — which is what makes "each run exactly once" an assertion rather than an inference.
     ///
-    /// `TreeQueries.treesSQL()` and `ContributionStore.activeNamesSQL` are read here off the same
-    /// types the app reads them off, and asserted to be among the statements `grove()` actually ran
-    /// — so appending a comment to either one, the specimen PR #143's review used, moves the app and
-    /// leaves this red. The remaining five are literals inside their store methods and there is no
-    /// property to hold them to; the suite header says so rather than implying otherwise.
-    @Test("the grove runs the two statements this repository names, off the properties that name them")
+    /// The gate above compares `Set(ran)` against `Set(expected)` and `ran.count` against
+    /// `expected.count`, and those two together imply one-execution-each only while the seven texts
+    /// stay distinct (which it requires, separately). This says it directly, and says *which*
+    /// statement broke when it breaks: zero means the property no longer describes what the grove
+    /// runs — the drift PR #143's review demonstrated by appending a comment to a shipping
+    /// statement — and more than one is a per-statement N+1.
+    ///
+    /// It used to cover two of the seven, because five were string literals with no property to
+    /// hold them to. `ContributionStore.groveRecordsSQL`, `ownHeroPhotoCandidatesSQL` and
+    /// `CommunityTreeStore.treesSQL` are this round's hoists and close that gap.
+    @Test("each of the seven statements the repository names runs exactly once, off its property")
     func thePropertyBackedTextsAreTheOnesThatRun() async throws {
         let (api, store, _) = try await Self.seeded()
-        let schema = try #require(store.seed, "the store opened without a seed attached")
-        let treesSQL = TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees)
-            .treesSQL()
+        let expected = try Self.expected(store)
 
         let census = StatementCensus()
         await store.queue.installCensus(census)
@@ -303,22 +271,16 @@ struct GroveStatementCensusTests {
         await store.queue.installCensus(nil)
 
         let ran = census.statements
-        #expect(
-            ran.filter { $0 == treesSQL }.count == 1,
-            """
-            the batched seed projection ran \(ran.filter { $0 == treesSQL }.count) times, not once. \
-            Zero means `TreeQueries.treesSQL()` no longer describes what the grove runs; more than \
-            one is the per-tree form returning. Ran: \(Self.histogram(ran))
-            """
-        )
-        #expect(
-            ran.filter { $0 == ContributionStore.activeNamesSQL }.count == 1,
-            """
-            the batched nickname lookup ran \
-            \(ran.filter { $0 == ContributionStore.activeNamesSQL }.count) times, not once: \
-            \(Self.histogram(ran))
-            """
-        )
+        for sql in expected {
+            #expect(
+                ran.filter { $0 == sql }.count == 1,
+                """
+                \(Self.firstLine(of: sql)) ran \(ran.filter { $0 == sql }.count) times for one \
+                grove, not once. Zero means the property naming it no longer describes what the \
+                grove runs; more than one is a statement per row. Ran: \(Self.histogram(ran))
+                """
+            )
+        }
     }
 
     /// **The calibration: the census can see an N+1 on this path, and reports the shape of one.**
