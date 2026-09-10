@@ -39,11 +39,20 @@ import Testing
 /// ── Calibration ────────────────────────────────────────────────────────────────────────────────
 ///
 /// Measured, by deleting the parking block from `applyV21` and running this suite:
-/// `theStagedBinariesSurviveTheRebuild` fails with **2 issues** — the binaries are gone, and the
-/// counter still claims them. The other three tests stay green under that revert, and correctly so:
-/// they are about the version ladder, the queue rows and the vocabulary, none of which the cascade
-/// touches. `theQueueSurvivesTheRebuild` is the negative control that the cascade *only* reaches
-/// the child table.
+/// `theStagedBinariesSurviveTheRebuild` fails with **3 issues** — the binaries are gone
+/// (`after.map(\\.0) == before.map(\\.0) → false`), and both items that were carrying one come out
+/// of the rebuild still owing it (`(outstanding → 2) == (live[id] ?? 0 → 0)`, and the same at 1).
+/// The other four tests stay green under that revert, and correctly so: they are about the version
+/// ladder, the queue rows, the vocabulary and the scaffolding, none of which the cascade touches.
+/// `theQueueSurvivesTheRebuild` is the negative control that the cascade *only* reaches the child
+/// table.
+///
+/// **The counter half of that measurement is why it is asked against `outbox_photos` rather than
+/// against the fixture.** Written the obvious way — comparing the counter to how many binaries the
+/// fixture staged — it stayed green under this exact revert and reported two issues where there
+/// were three: the rebuild copies `photos_outstanding` *before* the drop cascades the children
+/// away, so the number is correct and the rows behind it are gone. A guard green while its defect
+/// is present, found by running the red-proof rather than by reading the test.
 @Suite("AppSchema · v21")
 struct SchemaV21Tests {
 
@@ -113,6 +122,11 @@ struct SchemaV21Tests {
                 "a v20 database already admitted the kind this migration adds"
             )
 
+            // **`seq` is sparse — 10, 20, 30, 40 — and that is what makes it testable.** A real
+            // queue's sequence has gaps in it (settled rows are removed) and, more to the point,
+            // `1, 2, 3, 4` is exactly what an `INSERT … SELECT` that *forgot* to carry `seq` would
+            // produce from AUTOINCREMENT. Written contiguously, `theQueueSurvivesTheRebuild` was
+            // green under that revert.
             for (index, item) in items.enumerated() {
                 let error = item.lastError.map { "'\($0)'" } ?? "NULL"
                 // `local_applied = 1` on every row, because `done` requires it and the settled item
@@ -122,7 +136,7 @@ struct SchemaV21Tests {
                         (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding,
                          state, fail_count, last_error, local_applied, remote_sent,
                          window_started_at, created_at, updated_at)
-                    VALUES (\(index + 1),'\(item.id.uuidString)','\(item.kind)',
+                    VALUES (\((index + 1) * 10),'\(item.id.uuidString)','\(item.kind)',
                             '\(item.clientUUID.uuidString)','{}','[]',0,
                             '\(item.state)',\(item.failCount),\(error),1,0,
                             '\(stamp)','\(stamp)','\(stamp)');
