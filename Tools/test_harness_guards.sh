@@ -239,7 +239,7 @@ fi
 
 # Restore the real process table BEFORE the bound is exercised, and this ordering is itself a
 # receipt. Run with the fixture still installed, `bounded_run` reported 124 and left the `sleep`
-# behind: `kill_process_tree` asks `ps` who the child processes are, and the fixture answered
+# behind: the kill walks the process tree by asking `ps` for children, and the fixture answered
 # "nobody". That is a guard reading a substituted instrument and certifying a repair it did not
 # make — the same shape as everything else in this file, arrived at from the wrong side. The
 # fixture belongs to the guards that reason about OTHER processes; the bound kills a real one.
