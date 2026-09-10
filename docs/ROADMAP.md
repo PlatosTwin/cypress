@@ -346,13 +346,19 @@ that had not yet reached a build). What remains OPEN:
   structural — a `cypressHitArea` variant that enters layout — which touches every call site in the
   app and deserves its own measurement round.
 
-- **The splice backlog (orchestrator-only).** Nine pending files under `docs/{rulings,errata}-pending/`
-  predate the 2026-08-30 splice and were never spliced at their rounds' merges: nyc-ingest,
-  nyc-publish, photo-upload-storage-and-provenance, s17-region-generation (both files),
-  seed-case-normalisation-off-by-one, seed-pin-and-bundle-scope, format1-retirement,
-  nyc-publish-rulings, cities-screen-feedback-amendments. Numbering is the orchestrator's alone
-  (CLAUDE.md); several are cited by filename from ROADMAP itself and cross-reference each other, so
-  this is one careful sitting, not a sweep.
+- ~~**The splice backlog (orchestrator-only).**~~ **DONE, 2026-09-09** — sixteen files spliced in
+  one sitting: **E288-E321** (s17 region generation, the seed case-normalisation off-by-one, the
+  NYC ingest and publish rounds, the photo storage/provenance facts, the journal tie-pagination
+  defect) and **R89-R112** (s17 shape decisions, the seed pin and bundle scope, format-1
+  retirement, the NYC publish owner decisions, the Cities-screen amendments, the picker header,
+  the two perf-tab-load rulings, the favorites amendment to R2, and the two Grove-paging rulings).
+  The E250 pan-probe amendment was folded into E250 itself rather than numbered separately.
+  Citations were rewritten with it, including two that had moved *into* `RULINGS.md` as danglers —
+  the failure that made splice #134 go red — and one stale pointer in `Tools/publish_cities.py`
+  that had been deferring to `docs/rulings-pending/` for a rule numbered **R83** weeks ago.
+  **One file is deliberately held**: `docs/rulings-pending/measurements-round.md`, whose third
+  entry is the withdrawal design the live F27 round is building; it splices when that round lands,
+  so the numbered entry records the outcome instead of "proposed, blocked".
 
 
 - ~~**Map camera fits the filtered set.**~~ **SHIPPED** (`feat/see-all-camera`). The owner ruled
@@ -442,9 +448,13 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   wrapper exits, which the merge train should expect; (d) at the sanctioned three-concurrent-build
   cap the UI phase flakes with "Timed out while synthesizing event" — either lower the effective
   cap during UI phases or teach the harness to tell an event-synthesis timeout from an assertion.
-- **Screen 14's Activity list shows Photos / Check-ins / Care rows but no Visits row** (feel-check
-  observation, 2026-09-02, at merged `e574a0a`). Whether that is intended is a mocks question —
-  DECISIONS constraint 21 says ask, not infer; **owner to rule** before anyone "fixes" it.
+- ~~**Screen 14's Activity list shows Photos / Check-ins / Care rows but no Visits row**~~
+  **ANSWERED BY THE SPEC, 2026-09-09 — nothing to fix.** `docs/distilled/SCREENS.md` §"13 · Tree
+  activity" specifies that ChartCard's series exhaustively: Photos, Check-ins and Care, each with
+  its swatch, its total and its twelve bar heights. Visits are a distinct record kind and the mock
+  deliberately does not chart them, so the screen is conformant and constraint 21 never engaged —
+  the feel check read a correct screen as a gap. Recorded rather than deleted so the next person to
+  notice the absence finds the answer instead of the observation.
 - **Flake-watch sightings from the campaign** (all cleared by evidence, kept for the aggregate):
   `CityDownloadTests.swift:504` time-limit (60 s trait, 109 s under load; run 33586187828 — fourth
   in the family chip 4 tracks); `DeepLinkSweepTests` a11y check stalled 1,043 s under three
@@ -511,7 +521,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
    post-build-68 main run — each on code a rerun then passed byte-identical), always the same
    shape: the probe records `panBegan=3 panEnded=3` yet the test ends on "Centered on you". The
    fifth and sixth probe lines are recorded verbatim in E250's pending amendment
-   (`docs/errata-pending/e250-pan-probe-occurrences.md` until the splice) — near-identical to
+   (the amendment inside **ERRATA E250**) — near-identical to
    each other and to the first instrumented occurrence, with `settles=3` against the red-proof's
    no-pan baseline of 2; the rework starts from those three lines, not from the failure
    sentence. Rework the test's gesture (or its precondition) so a delivered-but-unregistered pan
@@ -540,7 +550,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full
-reasoning, and what it supersedes, in `docs/rulings-pending/format1-retirement.md`.
+reasoning, and what it supersedes, in **RULINGS R99**.
 
 `Tools/publish_cities.py` no longer writes `manifest.json` and `dist/upload.sh` no longer uploads
 or verifies it, so the NYC publish of 2026-08-23 is the last format-1 object there will ever be.

@@ -8689,3 +8689,1299 @@ Francisco, sixty-eight kilometers away:
 
 The adversarial reviewer of PR #135 reproduced both independently on a second device (iPhone 16 Pro
 Max, 440 pt) and reports the same two screens.
+
+### R89 — The region's identity is three separate strings, and only one of them is frozen
+
+`dim_region` carries `pack_id`, `display_name` and `level`, plus `city_id`. Three decisions inside
+that, each taken because collapsing it into an existing column was the tempting and wrong move.
+
+**1. `pack_id` is distribution identity and is frozen; it is not `dim_city.slug` and not
+`id_spaces.id`.** It is simultaneously the manifest entry's `id`, the `<id>` in R37.2's immutable
+object path `cities/<id>/<version>/<id>.sqlite`, and the install key on a reader's device. `sf` and
+`us-ca-sj` are frozen at the values the format-1 manifest has already published — changing either
+orphans every installed copy and breaks paths R37.2 promises never move.
+
+It is a separate column from `dim_city.slug` because for San Francisco the two are *already*
+different strings: the pack is `sf`, the slug is `us-ca-sf`. A design that reused the slug would
+have had to either rewrite San Francisco's published path or special-case it forever.
+
+**2. `level` is not `coverage`, and San Jose is the case that proves it.** `level` describes the
+KIND of unit (`city` | `borough` | `extent`); `coverage` describes how much of that unit shipped.
+San Jose ships only its downtown window and is nonetheless level `city` with coverage `downtown` —
+a whole city of which part shipped. Folding the extent into the level would have made "San Jose" a
+different kind of thing from "San Francisco" on the basis of a shipping decision, and the day San
+Jose ships completely its level would change, which is a fact about identity changing on the basis
+of a fact about volume.
+
+**3. A one-region city is `level: "city"`, not a special case.** RULING D2's "one shape everywhere"
+taken literally: San Francisco is a city-level region of itself. There is no NYC-only concept, no
+nullable region, and no `if` in the publisher or the screen.
+
+---
+
+### R90 — An adapter names a region in its source's own words; the pack id is entered elsewhere
+
+`InventoryRecord.region` carries what the **source** calls the region — NYC Parks writes
+`"Queens"`, so an adapter passes `"Queens"`. `Tools/build_seed.REGIONS` is the hand-entered table
+that maps `(id_space, that string)` onto a `dim_region` row, and the frozen `pack_id` lives there.
+
+The seam is where it is for two reasons. Civic naming is entered, never derived (DECISIONS
+constraint 15). And an adapter reading a data file is the wrong layer to be minting an identity
+that R37.2 then freezes into an immutable object path forever — an adapter that emitted
+`"us-ny-nyc-queens"` would be deriving distribution identity from upstream's spelling habits, which
+is the same class of mistake as `trees.inventory_source`'s old closed CHECK (ERRATA E169).
+
+The practical consequence: `feat/nyc-ingest`'s **adapter** already emits the five bare borough
+names, so the values it produces satisfy this contract as they stand.
+
+**But "the ingest needs no rework" was too strong, and adversarial review (finding F6) measured
+two things the NYC round must still do.** Both fail loudly at merge — neither can ship quietly —
+and the NYC round's brief inherits this list:
+
+1. **Register New York in `Tools/build_seed.REGIONS`.** It holds `['sf', 'us-ca-sj']` today. An
+   ingest contributing rows in `us-ny-nyc` hits, before any tree is written:
+
+       no dim_region row registered for id space(s) ['us-ny-nyc'] in REGIONS
+       -- a published unit's identity is entered, never derived
+
+   That is the constraint-15 gate doing its job: the five `pack_id`s and the five display names
+   are civic/distribution identity and must be entered by a human, once, and then frozen.
+
+2. **Every NYC record must name its region.** The `(space, None)` key — "this id space's sole
+   region" — is registered only when a space has exactly one, so with five boroughs `sole` is
+   `False` and `None` resolves to nothing. Any record arriving with `region=None` hits:
+
+       no dim_region row for N row(s) in id space 'us-ny-nyc' naming region None
+
+   This is deliberate rather than incidental: a space with several regions and a record naming
+   none has no defensible default, and guessing would put trees in an arbitrary pack. It is also
+   exactly what RULING D18's point-in-polygon orphan assignment exists to satisfy — the ~22,995
+   trees with no planting space must arrive carrying a borough, and this is the check that
+   enforces it rather than trusting the ingest to have done it.
+
+`region=None` therefore means "the id space's sole region", and a space with more than one region
+and a record naming none is a **stop**, not a guess.
+
+---
+
+### R91 — `trees.region_id` is NOT NULL, and that constraint is the pack arithmetic
+
+A nullable region would mean a row that is present in the fused seed and absent from every pack a
+reader can download — visible to nobody, reported by nothing. The publisher narrows on this column,
+so NULL is not "unassigned", it is "deleted from every output".
+
+NOT NULL is what makes the per-region counts sum to the fused total, which is the check that closes
+the arithmetic. RULING D18's point-in-polygon orphan assignment exists for exactly this reason on
+the NYC side; this is the same requirement expressed as a constraint the database enforces rather
+than a property the ingest is trusted to maintain.
+
+It is an INTEGER join key rather than the region's name for the reason the identity model already
+gives: New York is ~898,000 rows, and a TEXT borough on each is tens of megabytes of repeated
+string in the payload and in every index that copies it.
+
+---
+
+### R92 — The format-1 manifest keeps the old *path*, and format 2 takes a new one
+
+> **The SCHEDULE below is SUPERSEDED 2026-08-23 by the owner** — see
+> **R99**. The naming decision this entry makes (old name
+> keeps the old format, format 2 takes a new one) stands and is why the frozen object still works.
+> What no longer holds is the three-tick clock at the end: format 1 was retired on 2026-08-23,
+> ahead of "the publish after NYC". Two further corrections are recorded in that entry — the
+> fallback to `manifest.json` is **kept**, not deleted with the rest; and the claim below that
+> `verify_seed` checks both manifests is wrong, `Tools/verify_seed.py` never mentions either.
+
+RULING D8 requires dual-publishing for one release cycle. It does not say which object gets which
+name, and the choice is load-bearing.
+
+`CityManifest.decode` refuses an unknown format outright, before reading anything else — correctly.
+So publishing format 2 at `manifest.json`, the path every shipped build hard-codes, would take the
+entire Cities screen offline for every unupdated install at once. Format 2 therefore publishes at
+`manifest-v2.json` and the old name keeps its old format, listing **city-level packs only**.
+
+Filtering the format-1 list is the whole of what keeps the old format TRUE rather than merely
+parseable: a format-1 reader has no concept of a region, so listing a borough to it would hand it
+something it would confidently mis-describe as a city with its own civic identity.
+
+**And the reverse direction, which D8 does not cover.** D8 protects an old install against a new
+bucket; nothing protects a new *build* against an old bucket, which is the ordinary state of the
+world between shipping this round and running the next publish. `CityDownloader.fetchManifest`
+therefore falls back to `manifest.json` — **on absence and on nothing else.** Absence means a `404`
+**or a `403`** (see below); a 500, a timeout or a manifest that does not decode are facts about that
+fetch, and retrying them elsewhere would turn one honest error into a confusing second one and
+silently downgrade a reader to the whole-cities-only catalog on a transient blip.
+
+**`403` counts as absence, and that is a judgement call rather than a reading of HTTP.** It is
+recorded here because it is the kind of decision that looks like a bug to the next person who finds
+it, and a source comment is not where a reader looks for the reasoning.
+
+- **The measurement that forces it.** `CityDownloader`'s own header records it: *Tigris has served
+  `HEAD 200` beside `GET 403` on the same key.* An S3-compatible store answers `403` rather than
+  `404` for a key the caller may not enumerate, so on the public domain — the only host the app
+  talks to — a manifest that has simply never been published can arrive as `403`. A fallback
+  watching `404` alone was therefore dead code exactly where it was needed, which is what
+  adversarial review found.
+- **Why it cannot mask an authorization failure.** *There is nothing to authorize.* Every request
+  from this type is anonymous: the app holds no bucket credential, sends none, and R37.4 forbids
+  reading a host out of the manifest. For an unauthenticated reader `403` and `404` carry the same
+  information — you cannot have this object. There is no credential that could be wrong, so there
+  is no auth failure to be masked.
+- **A real lockout still surfaces, because the fallback retries once and never swallows.** If the
+  bucket were misconfigured to private, *every* object answers `403`, including the legacy manifest
+  this falls back to — so the second fetch fails too and **its** error propagates. The reader sees
+  the legacy path's failure, which is the more informative one, because that is the object every
+  shipped build depends on.
+- **Scope.** Only the manifest consults this. `downloadCity` does not: a `403` on a city file stays
+  a hard failure, because that object's absence is not a recoverable transitional state — it is a
+  manifest that lied.
+
+`CityManifest.knownFormats` becomes `{1, 2}`. The rule that did not soften: an unknown format is
+still refused at the door.
+
+**SCHEDULED by the owner, 2026-08-22.** This paragraph previously read "deliberately UNSCHEDULED
+… no date and no ticket", because D8 sets the window at "one release cycle" without fixing when it
+starts and the s17 round had no standing to fix it. The owner took that decision when authorizing
+the NYC publish round, and it is a clock with three ticks rather than a date:
+
+| tick | what happens | who |
+|---|---|---|
+| **Build 48** | the first TestFlight build that reads `manifest-v2.json` — the first carrying `CityManifest.knownFormats == {1, 2}` | already on `main`; minted by the release job |
+| **The NYC publish** | writes **both** objects: `manifest.json` (format 1, city-level packs only) and `manifest-v2.json` (format 2, every pack). The last publish that writes format 1 | the NYC publish round, phase 2 |
+| **The publish AFTER NYC** | writes **format 2 only**. `manifest.json` stops being republished, and `write_manifest_v1` and the `level == "city"` filter come out with it | whichever round publishes next |
+
+**The one release cycle D8 asks for is the interval between the NYC publish and the next one**, and
+that is what makes the trigger honest: an install that has not updated past build 48 keeps a working
+Cities screen across the whole of the NYC publish, and loses it only at the publish after — by which
+time build 48 is not "the newest build" but "a build one full publish cycle old". The other reading,
+retiring format 1 *at* the NYC publish, is the one this paragraph could not take on its own, and it
+is the wrong one: it would strand an unupdated install on the exact publish that first has something
+new to offer it.
+
+**What this means for the NYC round itself: nothing changes in the publisher.** It already writes
+both, and `verify_seed` checks both on every run. The format-1 catalogue omitting the five boroughs
+— listing `sf` and `us-ca-sj`, silent about New York — is the *intended* behaviour for this one
+publish rather than a defect, and it is what `legacy_entries`' `level == "city"` filter is for.
+
+**What it means for the round after.** Deleting `write_manifest_v1`, `MANIFEST_V1_NAME`,
+`legacy_entries` and `CityDownloader.fetchManifest`'s fallback to the legacy path is that round's
+work, and it is now scheduled rather than waiting to be rediscovered. `CityManifest.knownFormats`
+does **not** drop `1` at the same time: a reader that still meets a format-1 manifest — a stale CDN
+copy, a cached object — should read it, and the rule that an unknown format is refused at the door
+is unchanged.
+
+---
+
+### R93 — `region.level` decodes as a string, not a Swift enum
+
+The level is the publisher's vocabulary and may gain a member without a format bump — R37.4's
+additive-change rule covers a new *value* the same way it covers a new *key*. A non-exhaustive
+Swift enum would turn that addition into a decode failure across the **whole manifest**: every city
+gone from the screen over one string in one entry.
+
+A reader that does not recognize a level shows the pack by the names it carries, which is what it
+does today. Pinned by `RegionGenerationTests.anUnknownLevelStillDecodes`.
+
+---
+
+### R94 — Condition is a field on the record, not a fourth `kind`
+
+A standing dead tree is a `KIND_TREE` — something woody stands there, it occupies the site, it is
+drawn on the map — whose `condition` is `dead`. Modelling it as a fourth kind was considered and
+rejected: every `kind` consumer would then have to remember that one of the four is really a tree,
+and `kind` answers "what does this record describe" while condition answers "how is it doing".
+They are independent, and the contract now forbids the one pair that cannot mean anything — a
+planting site in a condition — in both `InventoryRecord.validate` and `status_for_record`.
+
+`None` is "the source made no claim" and is **not** `alive`. It maps to `alive` only because that
+is what the seed has always shipped for a listed tree, and stating the two separately is what lets
+a future source distinguish "we asked and it is alive" from "nobody asked".
+
+---
+
+### R95 — Coverage stays keyed on the id space, and the state that would force the move is refused
+
+Raised by adversarial review of the s17 PR (finding F9): pack identity moved to the region, and
+`coverage` did not. Decided rather than left to be noticed.
+
+**Coverage describes how much of a CITY's inventory a publish shipped.** San Jose's `downtown` says
+the seed holds the central window and not the rest of San Jose — a fact about the city's corpus,
+not about any one pack. Every pack cut from that corpus inherits it, which is why the key is the
+city's and each of its packs reports the same value.
+
+**Kept on the id space, not moved to the region.** For New York a per-region key would state the
+same fact five times: every borough pack ships all of its borough, so each is `full` and the fact
+they share is that `us-ny-nyc` is fully covered. Five copies of one fact is five chances to
+disagree, plus a second hand-maintained table for `SeedCities` to mirror — which is the exact shape
+of the divergence this round just closed (see the coverage-key erratum). R37's own trailing clause
+names `coverage_<id_space>`, and this keeps it.
+
+**The state one key cannot describe, refused rather than guessed.** Several regions in one id space
+*and* a coverage that is not `full`. Then "how much of this pack shipped" has no single answer and
+every entry would repeat a value true of none of them. `Tools/publish_cities.py` fails on exactly
+that pair, naming the move as the fix — so the divergence cannot ship quietly, and whoever first
+needs per-region coverage meets the decision with the seed in front of them.
+
+Both directions red-proved: removing the guard lets the ambiguous seed publish; broadening it to
+any partial coverage refuses San Jose's live shape.
+
+Three entries. Two are owner rulings the s17/NYC publish forced, and this round implements both.
+The third is a clarification the same decision round settled about RULING D8's dual-format window;
+it is **recorded and not implemented**, deliberately.
+
+---
+
+### R96 — The seed version this repository builds against is checked in, and a publish bumps it deliberately
+
+**Date:** 2026-08-22. **Decided by:** owner. **Implemented by:** this round.
+
+#### What went wrong
+
+`Tools/fetch_seed.sh` resolved the seed from the **live** bucket manifest. Every job in
+`.github/workflows/testflight.yml` ran it through `.github/actions/prepare`, so the bytes CI
+compiled and tested against were whatever `manifest.json` advertised at that minute.
+
+On 2026-08-22 the s17 publish moved `manifest.json` from a 198,625-tree two-city seed to a
+1,097,382-tree three-city one. Nothing in the repository changed. Every commit on main — including
+commits that had already been green — began failing, because `SeedCorpus` had no entry pinned for
+the new corpus. PR #112 was the fix-forward.
+
+The failure mode is worth naming precisely, because it is not "CI broke": **a build product outside
+version control silently became an input to every commit's verdict, retroactively.** A green check
+on a merged commit stopped being a fact about that commit.
+
+#### Ruling
+
+**Pin, and bump the pin deliberately.** The repository records the seed version it builds against.
+A publish round bumps that record in a pull request, and that pull request also carries whatever
+constants move with the new artifact.
+
+#### How it is built
+
+- **`Fixtures/seed/pinned-seed.json`** is the record: `path`, `sha256`, `bytes`, plus the scope and
+  provenance a reader needs (`schema_version`, `tree_count`, `id_spaces`) and the file's own
+  instructions for bumping it. It is checked in and hand-written.
+- **`Tools/fetch_seed.sh`** resolves from that file. It downloads the named object, refuses on a
+  size or `sha256` mismatch, and the refusal names the three possible causes and the different
+  answer each one has — because only one of them is "run it again".
+- **The escape hatch is `CYPRESS_SEED_SOURCE=live`**, which restores the old manifest resolution for
+  a publish round that wants whatever is currently on the bucket. It announces that its result is
+  not reproducible and must not be used to certify a run. CI states `CYPRESS_SEED_SOURCE: pin`
+  explicitly in `.github/actions/prepare`, so determinism is a property of that file rather than of
+  a default somebody could later change.
+- **`Tools/setup_worktree.sh`** refuses to hand an agent a seed that is not the pinned one
+  (`CYPRESS_SEED_UNPINNED=1` overrides, for an offline machine or a publish round). An agent
+  testing a different artifact from the one CI judges is exactly the state that produced this
+  round, and its symptom is a suite going red on counts nobody touched.
+
+#### Consequences
+
+- **A publish can no longer break a commit that already passed.** It also cannot fix one: a seed
+  defect found after a publish reaches main through a pull request, like everything else.
+- **The pin is a signature.** Bumping it says "I have measured the new artifact and re-pinned the
+  constants that move with it", and the `SeedCorpus` entry in the same diff is the evidence.
+- **`SeedCorpus.cityWithSanJoseAndNewYork` is now exercised by a publish round rather than by CI.**
+  It is the measured record of the published fused seed and stays; the corpus CI runs is
+  `cityWithSanJose`, which is also what `Tools/setup_worktree.sh` gives every agent. Local and CI
+  read the same bytes again, which they had stopped doing.
+- **Pinning is not a substitute for publishing.** The bucket is still the distribution channel; the
+  pin only decides which already-published, write-once object this tree builds against.
+
+---
+
+### R97 — The app bundles pre-New-York scope; every other city arrives as a downloaded pack
+
+**Date:** 2026-08-22. **Decided by:** owner. **Implemented by:** this round.
+
+#### What went wrong
+
+`Tools/fetch_seed.sh` wrote **one** download into **both** `Cypress/Resources/` (what the app
+bundles) and `Fixtures/seed/` (what the fixtures read). So the app bundled the published *fused*
+seed — the publisher's input, which by construction holds every city the pipeline has ingested.
+
+That was survivable while every ingested city was one worth carrying. After the s17 publish it was
+not: the next build would have shipped a **706 MB** app carrying all five New York boroughs, up
+from 103 MB — and the Cities screen would have offered those same boroughs as downloads it then
+refuses, because `CityInstallState` never offers a bundled city. Testers would have waited for
+600 MB of data the download flow existed to spare them.
+
+#### Ruling
+
+**The app bundles an SF + San Jose-scope seed (~103 MB). New York comes via the existing city-pack
+download flow.**
+
+#### How it is built
+
+The pin from the entry above names **`seed/c9a440b2/cypress-seed.sqlite`** — the last fused seed
+built before New York: San Francisco plus central San Jose, 198,625 trees, 108,249,088 bytes, still
+at its write-once path (R37.2). No new artifact was produced and nothing was written to the bucket.
+
+Three guards, at three different layers, because each catches something the others cannot:
+
+1. **`Tools/fetch_seed.sh` checks the file's `seed_meta.id_spaces_in_file` against the pin's
+   declared `id_spaces`.** With a matching `sha256` this can never disagree about the *download*;
+   what it catches is a **pin** whose declared scope does not describe the file it names — a publish
+   round bumping `path` and `sha256` to the newest fused seed by reflex and putting every published
+   city inside the app. Red-proved against the live `ac7b1ccc` object.
+
+   **It is a readability aid, not the load-bearing guard**, and the difference is worth stating so
+   a later round does not lean on the wrong one. `sha256` is what decides which bytes may exist
+   here at all, so a scope change is unreachable without editing the pin. The `id_spaces` check is
+   also the one check that can be *absent*: with no `sqlite3` on `PATH` the script says it did not
+   run and continues — a fail-open, announced rather than silent, because the hash has already
+   settled the question it would have been answering.
+2. **`BundleContractTests.bundledSeedHoldsOnlyTheRuledScope`** asserts the *built app's* bundle
+   holds exactly `sf` and `us-ca-sj`, whichever way the file arrived. **This is the last line**,
+   and it is why widening the app's scope takes two deliberate edits in two files.
+3. **`BundleContractTests.bundledSeedStaysWithinTheAppSizeRuling`** asserts it stays under 200 MB —
+   a ceiling, not a pin, since a legitimate refresh of the same two cities moves the count by
+   megabytes and nothing legitimate multiplies it sevenfold.
+
+Neither test is written in terms of `SeedCorpus`. The corpus **adapts** to whichever seed is
+attached: against a 706 MB three-city bundle it selects the three-city entry and the whole suite
+passes. A guard that goes green in the presence of the defect it names is this project's dominant
+test failure, and that is the specific shape it would have taken here.
+
+#### Why the pre-New-York artifact rather than an s17 rebuild of the same two cities
+
+Considered, and rejected on three grounds, in order:
+
+1. **It exists, and pinning it writes nothing.** An s17 SF+SJ file does not exist; producing one
+   means a build, a relay publish, and a new `SeedCorpus` entry of some forty measured literals.
+2. **Nothing in the app reads what s17 added.** `dim_region` and `trees.region_id` are the unit
+   `Tools/publish_cities.py` *narrows a pack on*. `SeedSchema.hasRegions` is introspected and read
+   by no query in `Cypress/`. An s16 bundle beside s17 packs is exactly the configuration R37.3
+   describes, and `RegionGenerationTests` is written against it — its own header says the canonical
+   seed "is **s16** as this is written and carries no `dim_region` at all".
+3. **An s17 rebuild would also carry the 2026-08-22 re-read of both California layers**, which is
+   fresher city data inside the app — a change to what testers receive, and not what was ruled.
+   Anyone who wants it can have it: both cities publish packs at `content_rev` 2026-08-22, so the
+   Cities screen renders them as `bundledOutdated` and offers the refresh.
+
+#### Consequences
+
+- **The bundle and the published fused seed are now different files by design.** The pin may grow a
+  second entry the day CI needs a seed the app does not ship; today one file serves both, because
+  nearly every test that reads a seed reads it out of the app bundle, and two files would mean the
+  suite certifying one artifact while the build shipped another.
+- **The published fused seed stays full-scope.** It is the publisher's input, not a shipping
+  artifact.
+- **A city's arrival no longer changes the app's size.** That is the property worth keeping: the
+  bundle is a decision, and the next city is a pack.
+
+---
+
+### R98 — The corrective republish of 2026-08-22 does not start the format-1 retirement clock
+
+> **SUPERSEDED 2026-08-23 by the owner** — see **R99**.
+> Format 1 was retired outright on 2026-08-23, so which publish would have started the clock no
+> longer arises. Kept as the record of what stood until then; do not act on the last paragraph.
+
+**Date:** 2026-08-22. **Decided by:** owner. **Implemented by:** nothing — recorded only.
+
+RULING D8 dual-publishes `manifest.json` (format 1) beside `manifest-v2.json` (format 2) so an
+install that predates format 2 keeps a working Cities screen, and retires format 1 at a later
+publish.
+
+The republish of 2026-08-22 — which replaced seed `4f6ebaaa` with `ac7b1ccc` to repair the #95
+case-normalisation defect — **kept both manifest formats and does not count as the
+retirement-triggering publish.** It was a correction to an artifact published hours earlier, not a
+distribution event anyone could have adopted in between.
+
+**Format-1 retirement fires at the next real publish.** This entry exists so that the next publish
+round does not have to reconstruct whether the corrective one already counted; it did not.
+
+One entry. It **supersedes** a scheduling decision recorded twice in this directory, and the only
+mechanism that may do that is the one operating here: the owner's own later decision.
+
+---
+
+### R99 — Format 1 retires now, and the object already in the bucket is frozen rather than deleted
+
+**Date:** 2026-08-23. **Decided by:** owner. **Implemented by:** this round.
+
+#### What this supersedes, and why that is legitimate
+
+Two pending entries scheduled this retirement, and both are now overridden:
+
+- **`s17-region-generation.md`** set a three-tick clock — build 48, then the NYC publish (writing
+  both objects), then *the publish after NYC*, which would write format 2 only. It argued
+  explicitly against retiring at the NYC publish, on the grounds that doing so "would strand an
+  unupdated install on the exact publish that first has something new to offer it."
+- **`seed-pin-and-bundle-scope.md`** clarified that the corrective republish of 2026-08-22 did not
+  start that clock, and that retirement fires "at the next real publish."
+
+Neither reasoning was wrong when written, and neither is the reason this changed. **A ruling is
+changed by the owner deciding differently, not by an agent finding a better argument** — that is
+the one mechanism, and it is what happened on 2026-08-23. The prior entries are superseded, not
+corrected; they should be read as the record of a decision that stood until this one replaced it.
+
+#### The decision
+
+Format 1 is retired **now**, ahead of the publish that the earlier clock named. `Tools/publish_cities.py`
+no longer writes `manifest.json`. The NYC publish of 2026-08-23 — which wrote both objects, as D8
+required of it — is therefore the last format-1 object that will ever be produced.
+
+#### Retirement means the end of WRITING, never deletion
+
+This is the load-bearing half, and the half most likely to be lost when this entry is
+summarized. The published `manifest.json` **stays in the bucket exactly as the 2026-08-23 publish
+left it**, and nothing may overwrite or remove it.
+
+Its content is stale but **true**: it names the two city-level packs at their immutable
+`cities/<id>/<version>/` paths, and those objects are write-once under R37.2 and remain served.
+Verified anonymously from the public domain in this round, with a known-404 control to calibrate
+the check — both packs and the fused seed answer `206` at the byte sizes the manifest states.
+
+So a build that never updated past 47 keeps a working Cities screen indefinitely. What it stops
+receiving is anything published after 2026-08-23. Deleting the object would convert a stale screen
+into a dead one — "Couldn't check what's available" — which is precisely the self-inflicted outage
+D8 was written to prevent, arriving by a different route.
+
+**The old name is therefore reserved, not free.** The single remaining way to break this property
+is for someone to upload a *newer* file over the frozen one: a `dist/` left over from a
+dual-publish round still carries that round's `manifest.json`, and the publisher's `--out` only
+clears `cities/`. `assert_no_legacy_manifest` refuses to finish a run whose output directory holds
+one, and names the fix. It refuses rather than deleting the file, deliberately — a guard that
+removes its own subject can never fail again.
+
+#### The reader keeps format 1; only the writer retires
+
+`CityManifest.knownFormats` stays `{1, 2}`, and `CityDownloader`'s fallback to `manifest.json`
+stays. This is a deliberate divergence from `s17-region-generation.md`'s enumeration of the work,
+which listed removing the fallback alongside deleting `write_manifest_v1`, and it follows from the
+distinction that entry itself drew about `knownFormats`: what retires is *writing* a format-1
+manifest, never *reading* one.
+
+The fallback's original job — protecting a new build against a bucket with no format-2 object — is
+discharged on the live bucket, where `manifest-v2.json` has been present since 2026-08-23. What it
+still covers is every base URL that is *not* the live bucket: an archived mirror, a fixture
+directory, a future bucket populated in some other order. It costs one request on a path that has
+already failed. Removing it would buy nothing and would risk a dead Cities screen in exactly the
+cases nobody watches.
+
+**This divergence is flagged rather than assumed.** If the owner wants the fallback gone too, that
+is a separate app-side change requiring a new build to have any effect — every shipped build from
+48 to 55 has the fallback compiled in regardless of what the source says today.
+
+#### A defect this round found, which retirement would otherwise have introduced
+
+`Tools/fetch_seed.sh`'s `CYPRESS_SEED_SOURCE=live` branch resolved the seed from `manifest.json`.
+Retiring format 1 without touching it would have left the escape hatch pointing at a frozen object:
+"give me the artifact currently on the bucket" would have silently meant "give me the artifact from
+before the retirement," permanently, **and the script's sha256 check would have confirmed the stale
+answer**. It reads `manifest-v2.json` now. The `source_seed` envelope was never inside the
+format-specific part of either document, so only the name changed.
+
+Worth recording because it is the shape of failure this repository keeps paying for: not an error,
+but a verified wrong answer.
+
+#### A prior claim this round refutes
+
+`s17-region-generation.md` states, of the NYC round, that the publisher "already writes both, and
+`verify_seed` checks both on every run." **`Tools/verify_seed.py` contains no reference to either
+manifest** — it is the seed database's acceptance checker and has nothing to do with the catalog.
+What actually verified both was `publish_cities.py`'s own readback loop over the files it had just
+written, plus `Tools/test_publish_cities.py`. Nothing was under-checked; the sentence named the
+wrong instrument.
+
+Three owner decisions collected during phase 1, plus one clarification the adversarial review
+established. All three were **questions this round raised and deliberately refused to answer for
+itself**; they are recorded here so the refusals are on the record beside the answers.
+
+---
+
+### R100 — RULING D20's species-coverage gate is WAIVED for New York, at the honest 85.99%
+
+**Date:** 2026-08-22. **Decided by:** owner.
+
+#### Question put to the owner
+
+D20 blocks the first NYC publish — trial and beta included — on species coverage reaching **90% of
+rows**. The NYC ingest round measured the exact-match mapping ceiling at **85.99%** (772,785 of
+898,643 rows) and recorded that the remaining **35,993** rows cannot be mapped further without
+asserting a synonymy no botanical authority supports. A later curation round reported higher
+figures — row-weighted `family` at 99.01% and `leaf_retention` at 92.50%, with every borough pack
+clearing 90% on both — and those numbers are **not** the number D20 names. The round asked which
+number the gate reads, and refused to pick.
+
+#### Ruling
+
+**The gate reads the honest mapping number, not the curation round's figures. At that number the
+gate is not met, and it is WAIVED for New York.**
+
+The waiver **records the shortfall rather than dissolving it**: New York publishes at 85.99%
+species coverage, 35,993 rows short of D20's threshold, and that is the number to quote. It is not
+90%, it is not 92.50%, and it is not 99.01%.
+
+#### Consequences
+
+- The phase-2 publish is no longer blocked on D20. It remains blocked on everything else D12 and
+  R78 require.
+- **The waiver is New York's, not a change to D20.** A later city meets D20 as written, or comes
+  back for its own waiver with its own measured number.
+- Anyone quoting NYC's species coverage quotes 85.99% and the 35,993-row shortfall. Citing the
+  family or leaf-retention percentages as if they answered D20 is the confusion this ruling exists
+  to end.
+
+---
+
+### R101 — `Poor`/`Critical` map to `alive`, not `declining`: the refusal is RATIFIED
+
+**Date:** 2026-08-22. **Decided by:** owner.
+
+#### Question put to the owner
+
+s17 made `trees.status = 'declining'` reachable for the first time. NYC's `TPCondition` publishes
+`Poor` and `Critical` on **22,992** standing (`Full`) rows, and mapping them to the contract's
+`declining` is the obvious reading. The round mapped them to `alive` instead and said why: a status
+no source has ever produced would be shipped to readers for the first time, on 22,992 trees, on an
+adapter author's reading of two words in someone else's rating scale — where `Dead → dead_reported`
+is a mapping the City itself makes unambiguous and R19 already draws a badge for. The two are not
+the same kind of decision, and the round made only the second.
+
+#### Ruling
+
+**Refusal ratified. The 22,992 rows ship as `alive`.** Revisitable at a later publish.
+
+#### Consequences
+
+- `Tools/inventory_adapters.NYC_CONDITIONS` keeps `poor` and `critical` at `CONDITION_ALIVE`, and
+  the test that pins those two entries as *decisions* — separately from the table-driven test that
+  would follow the table anywhere — stays.
+- The City's own word is not lost by this: `TPCondition` rides into `city_record['permit_notes']`
+  verbatim on every row, so a later round that wants `declining` can have it without re-ingesting.
+- Revisiting it is a rebuild and a republish, not a migration. It is a **publish-time** decision, so
+  the natural moment to revisit is a round that is republishing New York anyway.
+
+---
+
+### R102 — the Staten Island pack id is `us-ny-nyc-staten-island`, spelled out
+
+**Date:** 2026-08-22. **Decided by:** owner.
+
+#### Question put to the owner
+
+A `pack_id` is simultaneously the manifest entry's `id`, the `<id>` in R37.2's immutable object path
+`cities/<id>/<version>/<id>.sqlite`, and the install key on a reader's device. It is chosen once and
+never again. The round entered `us-ny-nyc-si` for Staten Island, following the only precedent the
+repository had — `Tools/test_publish_cities.py`'s fixture, written by the s17 round — and flagged it
+rather than freezing it, because `-si` was **the lone abbreviation among five** otherwise spelled-out
+siblings (`-manhattan`, `-brooklyn`, `-queens`, `-bronx`).
+
+#### Ruling
+
+**Rename to `us-ny-nyc-staten-island`.** The odd one out is a worse thing to freeze forever than a
+longer string.
+
+#### Consequences
+
+- Renamed in `build_seed.REGIONS`, `publish_cities.DISPLAY_NAMES`, and the two test files that
+  carried the fixture spelling. Nothing derives a pack id from anything else, and no Swift source or
+  published object referenced it.
+- **It was free, and it was only free because it was asked before the publish.** See the
+  clarification below.
+
+---
+
+### R103 — a pack id freezes at the first PUBLISH, not at the merge (review N8)
+
+**Date:** 2026-08-22. Established by the adversarial review of the phase-1 PR and adopted as the
+standing reading.
+
+The phase-1 round treated the merge as the freezing event and asked for the Staten Island decision
+before it. The review established the sharper rule: **`pack_id` becomes immutable when the first
+object is written to the bucket — phase 2 — not when the code merges.** Nothing on `main` binds a
+distribution identity; the bucket does.
+
+#### Consequences
+
+- An identity question of this kind is needed **before phase 2**, and blocking a merge on one is
+  stricter than necessary.
+- It does not soften the underlying rule. After the first publish the id is frozen permanently:
+  changing it orphans every installed copy and breaks paths R37.2 promises never move.
+- The practical form: a phase-1 PR may merge with an identity flagged, provided the flag is
+  answered before the publish that freezes it. This round asked early and got a rename for the cost
+  of four string replacements; the same question asked after phase 2 has no cheap answer at all.
+
+All three amend **RULINGS R43 §3**, which is the mock for a surface that has none. R43 was written
+under delegated design authority against a catalog of **two** cities; the catalog now holds seven,
+five of them New York boroughs, and a tester filed eight reports against the screen on the evening
+of 2026-08-23 (build 49, App Store Connect run 32649153871). These are the three places the ruling
+itself had to move. The other five reports were defects against the ruling rather than in it, and
+need no entry here.
+
+**None of these is an owner ruling yet.** They are this round's proposals, implemented so they can
+be looked at rather than imagined, and the PR puts the alternatives beside each one. A reviewer
+who disagrees is disagreeing with a branch, not with a decision.
+
+---
+
+### R104 — `Use` belongs to every state that holds an attachable copy, including `update available`
+
+**Date:** 2026-08-23. **Proposed by:** this round, from a tester report. **Status:** awaiting the
+owner.
+
+#### What went wrong
+
+R43 §3's affordance table reads, in full, for one state:
+
+> update available → `Update` and `Remove`
+
+That is a complete description of what the reader can do, and it omits the thing they most need to
+do. A city in this state is **installed, verified, attachable and not attached**. The moment the
+catalog moves ahead of the copy on disk, the only button that would attach it disappears.
+
+Reached by an ordinary path, and a tester walked it: download Manhattan, use it, switch back to the
+built-in inventory to compare, then find no way back —
+
+> *"This is a bug: I have manhattan downloaded already and used it once but then I clicked use on
+> the default inventory and now I can't seem to use manhattan even though it's on my phone"*
+
+The copy was fine. The screen had simply stopped offering it.
+
+R43 §1 already assumes the opposite of the table, in the sentence describing what happens when a
+downloaded file fails to validate: the row *"shows the city as installed but not in use"* — a state
+whose entire content is that `Use` is available. §3's table and §1's prose disagreed, and the table
+is what was built.
+
+#### Ruling
+
+`Use` is drawn for **every** state in which the device holds a copy this build can attach, and is
+withheld only where it cannot keep its promise. `update available` is such a state.
+
+#### The cost, which is real and is the thing to rule on
+
+R43 §3 says affordances are *"compact buttons, never more than two visible"*. This state now draws
+**three** — `Use`, `Update`, `Remove`. That is the one place this round exceeds the ruling's own
+guidance, and it is deliberate:
+
+- dropping `Remove` strands the opposite direction: a city that cannot be deleted until it has
+  first been updated, which is worse than the defect being fixed;
+- demoting `Update` hides the newer record the state line directly above is announcing;
+- so the count is what gives, for exactly one state.
+
+**Measured rather than assumed:** the three buttons were rendered on a 402 pt iPhone 16 Pro and
+photographed; none truncates, and the row reads as a row. A narrower device is the open question a
+reviewer should press on.
+
+**Alternatives, for the owner:** (a) three buttons, as built; (b) `Use` and `Update` only, with
+`Remove` reachable after the update — rejected above; (c) a second button row for this state, which
+invents a card layout R43 does not have.
+
+---
+
+### R105 — A bundled city states possession before it states an offer, and the built-in card names what is in it
+
+**Date:** 2026-08-23. **Proposed by:** this round, from two tester reports. **Status:** awaiting
+the owner.
+
+#### What went wrong
+
+Two reports, one cause: the screen was accurate about what a reader could *fetch* and silent about
+what they already *held*.
+
+> *"Why am I seeing option to download sf and San Jose when those cities SHIP WITH THE APP?? Bad
+> design"*
+
+San Francisco and San Jose are inside the app bundle. Their record date (2026-07-31) is older than
+the published one (2026-08-22), so the state is `.bundledOutdated` and the `Download` button is
+honest — it buys a newer record. But the row's only line was
+`Newer record available · included copy is 2026-07-31`, which never says the city is in the app.
+Read cold, beside a `Download` button, it reads as an offer to sell the reader something they are
+looking at on the map.
+
+> *"On this view we should say WHAT CITIES ship in the pre-built seed. Right now all it says is
+> THAT there's an inventory not WHAT ITS OF"*
+
+Same shape, on the built-in card: R43 §3 gives it the title `Built-in inventory` and the subtitle
+`Ships with the app and cannot be removed`, and between them they never name a city.
+
+#### Ruling
+
+- A `.bundledOutdated` row states `Included in the app · record as of <date>` as its **state line**
+  — D5's own sentence, already in the vocabulary — and moves the offer to the quieter detail line
+  as `A newer record is available to download.` No new fact; the order changed, and the date is
+  now printed once rather than twice.
+- The built-in card carries a third line naming the cities the seed holds:
+  `Includes San Francisco and San Jose`.
+
+**Every name is read out of the shipped file** (`dim_city.display_name`, via `SeedCities`), never
+written into a Swift constant — DECISIONS constraint 15, and the only version that cannot go stale
+the day the bundle changes. A seed that names nothing contributes no line rather than an empty one.
+
+**Alternative:** name the cities in the *subtitle* instead of a third line, which keeps the card at
+two lines but edits a string R43 §3 fixes verbatim. Rejected as the more invasive of the two.
+
+---
+
+### R106 — The Cities screen is sectioned: what you have, then what you can get, with a city's packs under its name
+
+**Date:** 2026-08-23. **Proposed by:** this round, from two tester reports. **Status:** awaiting
+the owner.
+
+#### What went wrong
+
+R43 §2 rules the screen as a flat list, in one sentence:
+
+> The pushed screen is **Cities**: `ScreenHeader` back-circle screen, one card for the built-in
+> inventory, then one card per city the manifest lists, in manifest order. That is the whole screen.
+
+That was written for two cities. At seven cards — five of them boroughs of one city — the same
+tester filed the complaint twice in three minutes:
+
+> *"The NYC ones should be visually grouped somehow under NYC"*
+
+> *"…there needs to be visual grouping and section separation. If a city is downloaded and usable it
+> should be at top, separated from others."*
+
+#### Ruling
+
+Two top-level headings in the You tab's existing micro-label idiom — no new component, no new
+chrome:
+
+- **`On this phone`** — the built-in card, the cities inside it, and anything downloaded.
+  Membership is `CityInstallState.isOnDevice`, decided beside `allowsDownload` so the sectioning
+  and the buttons cannot disagree about what the phone holds.
+- **`Available to download`** — everything else, with the packs of any city that has **more than
+  one** of them gathered under a third-level heading carrying that city's own name (`New York
+  City`), taken from the manifest's `parent_city_display_name`. A city with a single pack gets no
+  heading: a `San Francisco` heading over San Francisco is furniture.
+
+Order inside a section is the order it arrived in — the publisher's order, which R43 §2 makes the
+display order, is preserved within each section rather than across the screen.
+
+A download in flight keeps whatever section its state already earned: a first download stays under
+`Available to download` until its bytes are verified and installed, and an update to a city already
+held does not jump out of the top section while it runs.
+
+#### Two shape decisions the adversarial review forced, added 2026-08-23
+
+**Grouping applies inside `On this phone` too, and the first draft applied it only to
+`Available to download`.** The review caught what that meant in practice: the grouping the tester
+asked for survived right up until the moment they acted on it. Download all five boroughs and they
+moved into the top section, where nothing grouped them — five flat cards and no `New York City`
+heading anywhere on the screen. Pack counting is therefore per section, so three boroughs downloaded
+and two not yields a group in each.
+
+**A section heading is drawn even when every one of its rows grouped**, and this is the item to
+rule on, because it is the one place this round leaves something on screen that says nothing.
+
+In today's live catalog *every* downloadable pack is a New York borough, so they all group and
+`Available to download` renders with zero cards beneath it, immediately above `New York City` with
+five. Both are drawn in the same micro-label idiom, so the pair reads as two stacked labels rather
+than as a heading and its child. The review flagged it, and the obvious tidy — suppress a heading
+with nothing directly under it — **was built, put on the device, and reversed there.** With one
+borough downloaded, the city has a group in *both* sections, and with the umbrella suppressed the
+screen draws `New York City` twice in a row with nothing between them saying that the first is
+installed and the second is not. Photographed at 402 pt with Manhattan and Staten Island installed.
+
+An empty heading says nothing. Two identical adjacent headings say something false. So the heading
+stays, and the empty `Available to download` is the price.
+
+**Alternatives, for the owner:** (a) as built — every section keeps its heading, and a fully-grouped
+section shows an empty one; (b) suppress the empty heading, accepting the doubled `New York City`
+in the mixed state — rejected on the evidence above; (c) suppress it *only* when doing so would not
+put two identical headings together, which is correct in both states and is a conditional nobody
+reading the screen could predict; (d) distinguish the two levels visually — an indent, or a quieter
+style for a city group — which makes (a) read as the nesting it is, and is the only option that
+removes the oddity rather than choosing which oddity to keep. (d) is not built because it invents
+card-adjacent geometry R43 does not have, and that is a look-at-it decision rather than a branch's.
+
+**Alternatives for the sectioning as a whole, for the owner:** (a) as built; (b) group by city
+always, so single-pack cities get headings too — rejected as furniture; (c) sort within
+`On this phone` by what is in use first, which adds a third ordering rule to a screen that now has
+two.
+
+#### What this does *not* do, and the report it leaves open
+
+> *"Eventually we will have 20+ entries here. We need a way to allow search/filtering. Filtering
+> should be by state. Search just normal search"*
+
+Not built. The report is explicitly about a future catalog ("eventually", "20+"); the catalog holds
+seven. Sectioning addresses the pain that exists now, and a search field over seven rows is chrome
+with nothing to do. Recorded as a proposed ticket rather than implemented, so the decision to add
+it is made when the catalog makes it necessary — and so that the filter's vocabulary (**by state**,
+which is a fact the manifest does not currently carry for any pack) is designed once, deliberately,
+rather than inferred from an id prefix.
+
+One entry. It **supersedes** the affordance shipped in PR #132, on the owner's own later decision —
+which per `format1-retirement.md` is the only mechanism that may do that.
+
+---
+
+### R107 — The Journal stats header pill is the area picker
+
+**Date:** 2026-08-31. **Decided by:** owner. **Implemented by:** this round.
+
+**Supersedes:** the affordance shipped in PR #132 (`AreaPickerCopy.change`, a boxed
+`SecondaryOutlineButton` under the provenance sentence on both Journal stats segments).
+
+#### What was wrong
+
+The owner's report, verbatim: *"the UI for changing where you are in a city or neighborhood is
+trash. the 'Change' button is ugly and the spacing is horrible."*
+
+Three separate faults, and the spacing one is the one a screenshot shows fastest:
+
+1. **It crowded a section it was not part of.** The provenance block was
+   `VStack { sentence; Change }` at the gutter, and directly beneath it — with no separation but
+   `labelSectionTop` — sat §2's `THIS SEASON` micro-label. Three unrelated things in a vertical
+   stack, reading as one, and the control belonged to none of the two around it. On a 402 pt screen
+   it also pushed §4's `Walk to it` off the first screenful.
+2. **It outranked the screen's real primary action.** A 44 pt outlined box in the CTA green is the
+   app's C7, the shape of a secondary *action*. §4's `Walk to it` is the almanac's one directed ask,
+   and the picker — a preference, used rarely — was drawn at comparable weight two thirds of the
+   screen above it.
+3. **It named an operation without its subject.** "Change" alone does not say change *what*; a
+   reader had to look up to the header to find out, and VoiceOver users got `Change, button` with
+   the answer nowhere in the utterance.
+
+#### The ruling
+
+The owner's words: **"Tappable header name — the place name in the header becomes the control — a
+pill/chip with a small drawn chevron. The separate button and its stacked spacing disappear
+entirely; the provenance sentence stays as one quiet line."**
+
+#### What was built
+
+`HeaderPillButton` (DesignSystem/Components/ScreenHeader.swift), used by `AlmanacScreen.header` and
+`CityScreen.header` whenever there is something to pick.
+
+- **The same capsule `HeaderPill` already draws**, unchanged: `surfaceCard` fill, `borderCool`
+  hairline, `body12` in `textMuted`, `headerPillPaddingV/H`. It is the element it always was —
+  still the screen naming its own subject — and re-styling it as a "button" would have re-imported
+  the visual weight fault 2 is about.
+- **Plus a drawn chevron**, `CypressChevron(direction: .down)`, 9×5 at the default type setting and
+  scaling from there. That mark is the entire visual difference between the label and the control,
+  which is the point: it is the smallest thing that says *pressable*. Its color is ruled on
+  separately below, and the reason it needed a ruling is that same sentence.
+- **The mark scales with the label**, `@ScaledMetric(relativeTo: .caption)`. The precedent is
+  `AccountAskView.AccountProviderButton`, whose comment says to pick the curve the paired font
+  actually scales on; there that is `.body` for `body15Bold`, here it is `.caption` for `body12`.
+  Following the precedent literally rather than by its reasoning would have been wrong.
+- **Aligned to the first text baseline**, not centered. Centered is indistinguishable while the
+  label is one line and wrong the moment it is two — see the wrapped-pill note below.
+- **`direction: .down` is new and is drawn, not rotated.** A `RotatedShape` keeps its unrotated
+  frame as its layout box, so a quarter-turned 10×16 chevron lays out 10 wide and reads 16 wide, and
+  the pill would be spaced against a box the mark does not occupy. There are no SF Symbols here
+  (R57, `DrawnGlyphGuardTests`).
+- **`cypressHitArea()`**: the pill draws ~24 pt tall and gets the 44 pt target without the drawn
+  size moving (ARCHITECTURE §6).
+
+The provenance sentence is now a bare `Text` on both segments. `AreaPickerCopy.change` is deleted.
+
+#### Amendment (orchestrator, 2026-08-31) — the mark's color is a contrast requirement
+
+**Ruled after the PR review.** The chevron shipped in `chevronDisclosure`, the token every other
+disclosure chevron in the app uses. Measured off rendered pixels, that is **1.96:1** against the
+capsule in light and **2.16:1** in dark. WCAG 2.1 SC 1.4.11 asks **3:1** of a graphical object that
+alone identifies a control, and this component's own docstring says the mark is exactly that.
+
+**The ruling: the pill's chevron takes an existing token measuring ≥3:1 against the pill fill in
+both schemes.** No new token is minted, and `chevronDisclosure` is not changed at its other sites —
+there the mark sits on a full-width row with a trailing edge, so the layout is also saying "this
+opens something" and the chevron is not carrying the claim alone. Here it is.
+
+**Chosen: `textMuted`** — the pill's own label color.
+
+| | chevron | capsule (`surfaceCard`) | ratio |
+| --- | --- | --- | --- |
+| light, was | `#B4BCA9` | `#FFFFFF` | **1.96:1** ✗ |
+| dark, was | `#4A5A4C` | `#18251D` | **2.16:1** ✗ |
+| light, now | `#535F4C` | `#FFFFFF` | **6.75:1** ✓ |
+| dark, now | `#94A496` | `#18251D` | **6.06:1** ✓ |
+
+Method: sampled from rendered device screenshots at the chevron's stroke core, not read off the
+token table. The calculator was calibrated first by reproducing the reviewer's two published
+numbers (1.96 and 2.16) from their sampled RGB before it was trusted on the new ones.
+
+Choosing the label's own token, rather than any other passing token, has a second virtue: the name
+and the mark become one object instead of a name with a decoration attached, which is what the
+ruling above wanted the pill to read as in the first place.
+
+#### What was weighed and rejected
+
+- **Keep the button, fix its spacing.** Cheapest, and it addresses only fault 1. The owner named the
+  button itself as the problem ("ugly"), not its margins.
+- **Move the button into the header, beside the pill.** Two controls in C1 competing for a row that
+  already has a title and, on screen 12, a back circle — and the Dynamic Type note in `ScreenHeader`
+  records what that row does at AX5 when it is over-subscribed.
+- **Make the whole provenance sentence tappable.** A sentence is not a control; it has no affordance
+  of its own, and a 2-line tap target that looks like body copy is worse for everyone than a pill.
+- **A filled or accent-colored pill.** Re-introduces fault 2 in a smaller box.
+
+#### Scope — the two picker entry points deliberately left alone
+
+The coarse-fix and out-of-range states keep their `Pick an area` / `Pick a city`
+`SecondaryOutlineButton`s. Those screens name no area, so there is **no pill to make tappable**, and
+the button there is the only thing on an otherwise empty screen rather than a second control beside
+a first. The owner's complaint was about the `Change` button specifically. The rule that falls out
+is one sentence: **the control is the name, so where there is no name there is no control.**
+
+#### Accessibility
+
+The pill carries the button trait and the **place name** as its label, with a hint naming the list
+that opens — `AreaPickerCopy.changeAreaHint` / `.changeCityHint`. VoiceOver reads
+`Sunset/Parkside, button, Opens the list of neighborhoods on this phone.`
+
+This is strictly more than the retired control offered (`Change, button`), which is fault 3 fixed.
+
+**Dynamic Type, and the wrapped pill.** The mark scales on the label's own curve (above). Alignment
+is the other half: the radius fallback's pill (`Within a 15-minute walk`) wraps to two lines at
+large type, and a centered mark then floats against the full height of the wrapped label, beside the
+line break, touching neither line. `.firstTextBaseline` puts it on the first line at every size.
+
+A `Shape` has no baseline, so SwiftUI would align its bottom edge. The `alignmentGuide` reports a
+point half an x-height **below** the mark's center, so that lining that point up with the text's
+baseline leaves the mark's center half an x-height **above** the baseline — the label's optical
+midline. The half x-height is `CypressFont.body12HalfXHeight`, read from `UIFont.xHeight` of the
+face that actually draws, and scaled on `.caption` like the mark itself.
+
+**This was wrong in the first fix round and the correction is worth recording.** That version
+returned the mark's plain center, which put the center *on the baseline* — a half x-height low —
+while this paragraph and the code comment both claimed it was on the midline. Measured on a 402 pt
+device at default type: chevron center `414.5` against a label baseline of `414`, i.e. **+2.33 pt
+below the midline** and +3.00 pt below the capsule's own center. It traded a correct single-line
+pill — every reader at default type, on both segments — for the correct wrapped one. Both cases are
+required.
+
+**Measured from rendered pixels, iPhone 16 Pro (402 pt), light.** Chevron isolated as the rightmost
+ink cluster inside the capsule; baseline as the label's lowest ink row (neither `Western Addition`
+nor `San Francisco` carries a descender); x-height top as the modal per-column ink top.
+
+| case | chevron centre vs label midline |
+| --- | --- |
+| default type, Almanac — before | **+2.33 pt** (centre 414.5 on baseline 414) |
+| default type, Almanac — after | **+0.00 pt** (centre 407.5, midline 407.5) |
+| default type, City segment — after | **+0.00 pt** (centre 407.5, midline 407.5) |
+| AX5, single line — after | **−0.17 pt** |
+| AX5, radius fallback (wrapped) — after | **−1.83 pt** vs the *first* line's midline |
+
+Against the capsule's own centre the mark went from +3.00 pt low to +0.67 pt.
+
+**The wrapped case still rides the first line**, which is the property the baseline alignment exists
+for: chevron ink spans y 1190–1233, inside line one's band (1158–1248) and outside line two's
+(1295–1375).
+
+**One honest limit:** XCUITest exposes an element's label, traits and value, and **not its hint**,
+so `AreaPickerUITests` witnesses the trait and the label and cannot witness the hint. What is
+checkable about the hint is checked in `AreaPickerTests` — that the two segments' hints differ and
+each names its own list, which is the plausible failure (one pasted from the other, correct on the
+segment it was written for and wrong on the other, with nothing on screen to contradict it).
+
+#### Standing
+
+**NOT SPECIFIED.** SCREENS.md §2 draws C1's trailing pill as a label and never as a control, so this
+ships under DECISIONS constraint 21's delegated-authority pattern, with the owner's ruling above as
+the mandate rather than as a proposal awaiting one.
+
+Two entries. They were decided together, from one report, and they are separable: either without the
+other leaves half of the reported problem standing.
+
+---
+
+## What was reported
+
+The owner, on the app as it shipped: **My Grove is very slow to load, and the Species sub-tab is the
+worst of it.**
+
+The local SQL underneath it was not the cause and had already been fixed — PR #131 batched
+`LocalAPI.grove()`'s per-tree reads from a linear 13–22 seconds down to about 26 ms, and
+`GroveQueryPlanTests` holds it there. What remained was two facts about the layers above that query,
+neither of which any query-plan test could see:
+
+1. **The composition wires `RoutedAPI`, and both of screen 08's reads awaited the service before
+   returning anything.** `groveSpecies()` read the phone in about 6 ms and then awaited
+   `GET /me/grove/species` against `cypress-sync.fly.dev`; `grove()` did the same with
+   `GET /me/grove`. On a first request the session may also mint a device credential over the network
+   before either. Nothing in the app configured `timeoutIntervalForRequest`, so an unreachable host
+   cost `URLSession`'s 60-second default — a minute of blank tab — and a release build cannot opt out
+   of the remote half.
+2. **`RootView.tabRoot` is a `switch` on the selected tab**, so `GroveView` and the `@State`
+   `GroveModel` inside it were destroyed on every switch away and rebuilt on every switch back.
+   Every visit to My Grove was therefore a cold load, network await included, and `GroveModel.load()`
+   had no idempotence guard to make a repeat call cheap even in principle.
+
+---
+
+### R108 — A tab paints from the phone and merges the service's half behind it
+
+**Date:** 2026-09-01. **Decided by:** owner, in an `AskUserQuestion` round. **Implemented by:** this
+round, for screen 08's two reads.
+
+**The ruling, as decided:** paint the local read immediately; fetch the server delta in the
+background and merge it into the presented data when it arrives. A species discovered on another
+device may appear a beat later. Applies to `groveSpecies()` **and** `grove()`.
+
+#### What was built
+
+`RoutedAPI.grove()` and `RoutedAPI.groveSpecies()` are now the **paint**: they return the phone's
+answer and touch no wire. The join each of them used to perform — unchanged, semantics for semantics
+— moved to `refreshedGrove()` and `refreshedGroveSpecies()`, which `DataLayer.boot` hands to the
+composition root as two closures. `GroveModel` runs the matching closure in a background task once
+its local answer is on the glass and re-publishes when the merge lands.
+
+Three consequences are worth stating out loud, because each is a place a later reader could conclude
+something had been lost.
+
+- **`RemoteReadLog` now describes the refresh, not the paint.** `.grove` and `.groveSpecies` are
+  written by the refresh, so between the paint and the merge `outcome(of:)` answers **nil** — which
+  that method already defines as "the service was not consulted", and which is exactly true of a
+  paint that did not ask. It is the same fact the log always carried; it now arrives second. `.live`
+  should be read as *refreshed after paint*. Nothing in `Features` reads the log yet (§4.3 rules
+  that the sentence a screen draws about a degraded read is a copy question that is not in the
+  mocks), so no surface changes meaning today — this is written down for the round that draws it.
+- **A cancelled refresh records nothing at all** (PR #144 review, F4). The model cancels an
+  in-flight refresh whenever the tab is re-entered, and `try?` cannot tell a cancellation from an
+  unreachable host — so without a check, flipping tabs twice left `.fellBackToLocal` in the log
+  against a service that was perfectly reachable. Nil is the log's spelling of "we did not ask", and
+  a read this app called off is exactly that.
+- **`.live` now means "nothing the service said was lost", not "every row it named is on screen"**
+  (PR #144 review, F1). A tree the inventories carry and D15 declines to name is dropped by a rule
+  applied to a complete answer, not by anything going missing; calling that degraded would offer a
+  §4.3 surface the sentence "showing what's on this phone" about a read where nothing was.
+- **The row D15 refuses is the one the two resolver arms used to disagree about, and the batch's
+  rule is the ruled one.** `entryFromCityFile` named a nickname-less *community* record after a
+  species somebody had claimed for it, because `treeProfile` fills that field from
+  `tree.speciesCurrentID`. `LocalAPI.grove()` has always refused to — "a self-asserted species is not
+  a name the app puts on a tree" (D15) — and the loop has been corrected to agree rather than the
+  batch loosened to match it. The reviewer proved the divergence with a probe rather than arguing it;
+  the fixture now carries the row.
+- **A refresh that fails leaves the painted answer standing.** The closures swallow the throw to nil
+  and the model treats nil as "nothing to merge". Replacing a whole grove with a failure state
+  because a second read did not land would be drawing an empty claim over data this phone holds
+  (R72 ruling 1).
+- **The refresh is nil when the remote gate is shut**, so a `.disabled` build — which is every
+  DEBUG build without `CYPRESS_REMOTE=live`, and therefore the whole UI suite — starts no background
+  task at all. **What is nil there is the merge, not the read.** The first cut of this round left the
+  local re-read to the refresh, so a gate-shut build stopped re-reading altogether and the Grove tab
+  froze at its first read for the life of the process; the review of PR #144 found it, and the
+  `.loaded` arm below now does the local read itself in every build.
+
+Alongside it, and required by it rather than merely adjacent: **the service's JSON routes got a
+session of the app's own with `timeoutIntervalForRequest = 15 s`.** `URLSession.shared` cannot be
+configured — its `configuration` is a copy — so as long as the wire was the shared session there was
+no value to set. Fifteen seconds is well clear of a Fly autostart and well inside the minute a reader
+spends deciding an app is broken. The photo binary's session and the city-pack background session are
+deliberately **not** this one: both are large transfers and neither would survive a timeout written
+for a JSON route. The outbox does share it, and that is intended — a timeout is a `URLError`, outside
+the taxonomy, so the item stays alive on the backoff (ERRATA E261 §3).
+
+#### What was weighed and rejected
+
+- **Keep the blocking read and only add the timeout.** It shortens the worst case and does not
+  change the shape: the first frame still waits for a network round trip, and in a park it waits for
+  the full failure path every time.
+- **Widen `CypressAPI` with a local-first pair.** It would oblige fourteen preview doubles and every
+  test double to answer a second read of a question they answer once — the tax `CypressAPI`'s own
+  header records paying before. The refresh is a property of *this router*, not of the protocol, so
+  it is handed over by the composition root as a closure, which is the shape
+  `makeOutboxViewState`'s `treeNameResolver` and `RoutedAPI.signedInUserID` already have.
+- **Merge into the model from an `AsyncStream` the router publishes.** More machinery for one
+  delivery, and it puts a lifetime question (who cancels the stream) into a layer that has no view
+  of when a screen goes away.
+
+---
+
+### R109 — A tab's model outlives the tab switch
+
+**Date:** 2026-09-01. **Decided by:** owner, same round. **Implemented by:** this round, for
+screen 08.
+
+**The ruling, as decided:** keep state alive across tab switches — hoist the Grove model above the
+tab `switch` (or otherwise give it a lifetime beyond the tab's view identity) so revisiting My Grove
+paints the last data instantly and refreshes in the background.
+
+#### What was built
+
+`GroveModel` is owned by `RootView` as `@State`, the way `OutboxViewState`, `ModerationModel`,
+`AccountModel` and `PhotoImageStore` already are (ARCHITECTURE §3: one instance, from the composition
+root). `GroveView` gained an initializer that adopts a model rather than building one; the
+api-building initializer stays for previews, screenshot fixtures and unit tests, which have no
+composition root to be handed one by.
+
+`GroveModel.load()` gained the idempotence guard `loadTreesIfNeeded()` has always had, with a third
+arm the ruling requires:
+
+- `.loading` — read the phone, paint, refresh behind it;
+- `.loaded` — **re-read the phone, repaint, and refresh behind it**. Nothing passes back through
+  `.loading`, so there is no blank and no spinner: the reader sees what they saw, updated. The local
+  read is about 6 ms and it is what makes a *local* write — a visit logged from a tree profile, a
+  favorite — show up on the next visit in every build rather than only in one that can reach the
+  service. `JournalModel.load()` takes the same arm for the same ruling;
+- `.failed` — leave it. The retry button is the way back from a failure (ERRATA E126), and a `.task`
+  firing again is not somebody asking for one.
+
+#### Scope, stated so the next round does not have to guess
+
+**This ruling is about tab models in general and only screen 08 was changed.** The Journal tab was
+concurrently authored in the same round and is deliberately untouched here; the map's model was
+already outside the switch. Applying the same hoist to the remaining tabs is a follow-up, and the
+argument for it is this entry rather than a new one.
+
+#### What was weighed and rejected
+
+- **Render every tab and hide the inactive ones.** Keeps state, and mounts four screens' worth of
+  reads at launch — including the map's camera work — to fix one tab's.
+- **Cache the answer in the API layer instead of the model.** Puts a lifetime and an invalidation
+  rule into `Data`, where nothing knows when a screen appeared, to avoid holding an object the
+  composition root already holds four of.
+
+---
+
+## Standing
+
+Both are performance and lifetime decisions about behavior SCREENS.md does not draw, taken by the
+owner directly. Nothing here changes what screen 08 renders: the same grid, the same rows, the same
+copy. What changes is when they arrive and how often they are re-read.
+
+### R110 — The heart answers from the phone (amends R2)
+
+**Ruled by the owner, 2026-09-02. Settled — this is recorded, not reopened.**
+
+## The finding
+
+R2 gave C8's first cell an on-state and made it a toggle, and in doing so made the control's state a
+fact **read** from the store rather than one remembered from the last tap. The code's paraphrase of
+that is "the heart re-reads after every write" (`ProfileFavoriteWriter.storedState`), and the re-read
+went to `RoutedAPI.isFavorite`, which was remote-first: it asked the service and fell back to the
+phone.
+
+So a round trip sat between a finger and the control settling. `TreeProfileModel.write()` paints the
+tap optimistically, calls the writer, and then re-reads — and on an unreachable host that re-read
+spent the whole of `URLSession`'s failure path before the heart came to rest, with nothing
+configuring a timeout. The one screen where R2's whole point is that the control ends up agreeing
+with what is stored was the screen that waited longest to find out.
+
+This is the same defect the owner ruled on for My Grove on 2026-09-01, on a control rather than a
+tab: a screen paints from the phone and merges the account's half when it arrives.
+
+## The ruling
+
+**Favorites go local-first. The tap and the read answer from the phone instantly. The R2 server
+re-read still happens, and reconciles in the background instead of blocking the UI.**
+
+`RoutedAPI.isFavorite(treeID:)` is now the phone's answer and records nothing in the read log — nil
+is "the service was not consulted", which is what happened. `RoutedAPI.reconciledIsFavorite(treeID:)`
+is the read that reaches the service, delivered behind the painted control, and it keeps the
+old method's ordering exactly: the service wins when it answers, the phone answers otherwise, and
+the outcome is recorded.
+
+## What this amends, and what it leaves alone
+
+It amends R2 in **where the answer comes from first**, and in nothing else. R2's substance is that
+the heart is read rather than remembered, and that a write which did not land puts the control back.
+Both still hold:
+
+- The phone **is** the store R2 means. `LocalAPI.isFavorite` reads both ownership arms — this
+  device's rows and the account's (E89) — which is the question the heart asks.
+- `OutboxQueue.pendingFavoriteState` still answers ahead of it (#167). A toggle that is enqueued and
+  not yet drained is the contributor's last word, and it still wins.
+- A terminally failed toggle still falls through to the table, so the heart still goes back where the
+  write did not land — R2's one required revert.
+
+**The cross-device fact is not given up, only deferred.** A favorite set on another phone still
+reaches this one; it arrives a beat after the paint rather than in front of it.
+
+## The one thing that had to be added rather than moved
+
+A reconcile that skipped the outbox would answer with the state *before* the tap — the service has
+not heard the enqueued toggle yet — and would take the heart back off over a favorite the reader had
+just set. That is the "it makes the user think their favoriting action got undone" report of #139,
+#153 and #167, arriving from the one direction those three tickets did not close.
+
+So `ProfileFavoriteWriter.reconciledState` asks the queue first and **declines to answer at all**
+while the queue holds a toggle. Nil there means "nothing for the heart to learn", which is also what
+a gate-shut build answers, and `TreeProfileModel` reads both as leave-the-control-alone.
+`ClassRLocalFirstTests.theReconcileDefersToAPendingToggle` is that rule with its calibration: the
+same writer with an empty queue must answer, or the deferral would be true because nothing ever
+answers.
+
+E184's tap counter is unchanged and still applies to the reconcile, which is now the slowest read on
+the screen and therefore the one most likely to be holding a stale answer when a finger arrives.
+
+Two entries, decided together from one report. They are separable, and either without the other
+leaves half of the reported problem standing: paging alone still shows a blank column while the
+first page is read, and a loading state alone still builds a thousand rows before it can stop.
+
+---
+
+## What was reported
+
+**My Grove's Trees tab is blank for seconds before anything appears**, on a grove of about a
+thousand trees. Measured on an iPhone 16 Pro at 1,027 trees: **3.3–3.7 s** of a screen with a
+selected pill above it and nothing under it, photographed as a run of empty frames.
+
+The database was not the cause and had already been fixed twice — `treeSQL()` per tree (#250) and
+the unscoped `heroPhotoIDs()` sweep (#176). At 1,027 trees the five statements still total about
+38 ms. What remained was above the query: `LocalAPI.grove()` returned the whole grove, a thousand
+`GroveEntry`s became a thousand `IconTextRow`s in a non-lazy `VStack`, and none of it reached the
+glass until all of it was built.
+
+The second fact is that `GroveModel.TreesPhase` had no case for "the read is in flight". `.idle`
+covered both "nobody has opened this pill" and "the read is running", and `GroveView` matched none
+of its arms in either — so the column drew nothing at all.
+
+---
+
+### R111 — Grove > Trees pages, the way Journal > Yours pages
+
+**Date:** 2026-09-02. **Decided by:** owner. **Implemented by:** this round (PR #149).
+
+The Trees list is paged so the first page paints immediately, and the rest is revealed by the
+affordance `Journal > Yours` already has — the same components and the same tokens, inventing no
+new UI vocabulary. This is the constraint-21 half of the ruling: the mocks show no paging control
+on screen 08, and the decision is to **reuse an existing one rather than draw a new one**.
+
+**Page size 50.** Not specified by the owner and chosen the way `JournalLimits.pageSize` was: by
+what the phone draws rather than what the store can answer. A grove row is about 100 pt, so an
+iPhone 16 Pro shows seven to eight of them and fifty is six or seven screenfuls — enough that the
+first `Show more` is a deliberate act. Twenty-five was tried and rejected for the opposite failure:
+on a grove of a thousand it puts the control in front of somebody twenty times.
+
+**One word departs from the journal's copy, and it is the ruling's own logic applied to this
+list.** `JournalCopy.olderNote` says "earlier" and explains why: the journal is ordered by time, so
+what is behind the cursor is a *direction*. A grove is a set of nouns, not a chronology, and its
+tail is the trees nobody has visited — which are not earlier than anything. So the note says
+"more". Copying the journal's sentence verbatim would have reused its words while contradicting its
+reason, on the one screen the owner has already had to say reads too much like the journal.
+
+Neither the note nor anything else states how many trees there are (D1, ERRATA E38).
+
+---
+
+### R112 — Every phase of the Trees column draws something
+
+**Date:** 2026-09-02. **Decided by:** owner. **Implemented by:** this round (PR #149).
+
+A blank column is a defect **at any duration**. The phases are now exhaustive over things that can
+be drawn, and the exhaustiveness is a fact about the type rather than about a comment:
+`GroveModel.TreesDrawing` has no case meaning "nothing", so a phase that draws nothing cannot be
+reintroduced by leaving a `switch` arm out — which is exactly how the blank existed for two rounds.
+
+The treatment for a read in flight is a bare `ProgressView()`, which is what screens 03, 07, 11, 13,
+15 and the launch gate already use. A skeleton or a message would be a drawing and a sentence that
+appear in no mock (DECISIONS constraint 21).
+
+**This supersedes a measured, documented decision, and that is the point worth recording.**
+`docs/whats-new/fix-grove-tab-performance.md` explicitly considered a loading state and declined it,
+on a measurement: at 26 ms on a forty-tree grove, "a spinner visible for two frames reads as a
+flicker rather than as progress", and the note says the measurement came first and the decision
+second. That reasoning was correct and is not being overturned as reasoning. What broke was its
+**premise** — that the read is fast because the grove is small. At 1,027 trees the same column was
+blank for 3.3–3.7 s, and a rule of the form "no loading state below N milliseconds" cannot hold on a
+list whose length is the reader's own history.
+
+So the ruling is the stronger form: **draw something in every phase, and do not condition that on a
+duration**, because the duration is a function of data the app does not control.
+
+---
+
+## What these rulings do not decide
+
+- They do not say the account's half must arrive before the first paint. It does not; the merged
+  answer is folded in behind the painted page, which is the 2026-09-01 ruling one round earlier and
+  is unchanged here.
+- They do not set a page size for any other list. `JournalLimits.pageSize` is the journal's and is
+  untouched.
+- They say nothing about the Species pill, which was not reported and is not changed.

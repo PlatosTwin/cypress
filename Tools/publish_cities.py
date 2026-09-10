@@ -414,7 +414,7 @@ def content_rev_for(space: str, fused_meta: dict[str, str]) -> str:
 # `s17-r2026-08-22-ac7b1ccc` -- no Update button, no way to reach the corrected
 # data. Observed on the owner's phone: Manhattan, `Installed`, no affordance.
 #
-# THE RULE (owner's decision, 2026-08-24, recorded in docs/rulings-pending/):
+# THE RULE (owner's decision, 2026-08-24, recorded as RULINGS R83):
 # a republish must advance `content_rev`. Where the derived date cannot advance
 # -- because it is a fact about the upstream snapshot, not about the publish --
 # a counter is appended.
