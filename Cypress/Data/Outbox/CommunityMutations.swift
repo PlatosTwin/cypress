@@ -338,3 +338,100 @@ public struct HazardRedirectReport: Codable, Hashable, Sendable {
         self.attribution = attribution
     }
 }
+
+// MARK: - R79's disputes, which are not §3.4's and travel the same way
+//
+// The two payloads below are not part of spec §3.4's nine. They arrived with `RULINGS R79` and
+// `AppSchema` v22, and they are in this file because everything above it is true of them too: each
+// carries the act rather than a domain object, each says which act it is by being its own type, each
+// carries an `Attribution` for D9's reason, and neither carries a photo binary.
+
+/// A dispute against a record's own data, as it travels through the outbox (`RULINGS R79`).
+///
+/// **The whole dispute, not a pointer to it.** Every other report in this file names a row the
+/// service can look up — a flag id, a photograph, a reading — because the thing being reported
+/// already exists on both sides. A dispute does not: it is created by this act, it has no analogue
+/// in any table the service holds, and R-c of this round's contract is that the service **records**
+/// it without materializing anything. So the queue carries the record, and a server that one day
+/// adjudicates has the checked issues, the suggested values and the notes in front of it rather than
+/// an id pointing at a row nobody sent.
+///
+/// **`treeSource` travels even though this round only raises against city rows.** It is a fact about
+/// the record disputed, not about the round that wrote it, and the community round is already ruled
+/// to widen this surface. A payload that omitted it would be one whose meaning changes when the next
+/// round lands — the shape of stored data that quietly stops being true.
+///
+/// The photograph is deliberately absent, and there is none to be absent: a dispute is text and
+/// numbers. See `OutboxSendSink` for why the queue's photo phase is not something these types may
+/// grow into.
+public struct DataDisputeReport: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    /// The dispute's own id on this device, which is what a withdrawal will name.
+    public let disputeID: UUID
+    public let treeID: UUID
+    public let treeSource: TreeSource
+    public let issues: Set<TreeDataDispute.IssueKind>
+    public let suggestions: TreeDataDispute.Suggestions
+    public let notes: String?
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        clientUUID: UUID,
+        disputeID: UUID,
+        treeID: UUID,
+        treeSource: TreeSource,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.clientUUID = clientUUID
+        self.disputeID = disputeID
+        self.treeID = treeID
+        self.treeSource = treeSource
+        self.issues = issues
+        self.suggestions = suggestions
+        self.notes = notes
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}
+
+/// A dispute its author took back — `MeasurementWithdrawal`'s shape, one seam over.
+///
+/// **The act, and not the record it acted on.** The dispute is already on the service under
+/// `disputeID`, sent by the `data_dispute` row that preceded this one; restating its issues and
+/// suggestions here would invite a reader of the queue to treat the two as a before-and-after pair,
+/// which they are not. What travels is which dispute was withdrawn, off which tree, by whom, and
+/// when.
+///
+/// **Its own kind rather than a flag on `data_dispute`**, for the reason `measurement_withdrawal` is
+/// its own kind: `outbox.kind` is what screen 17 groups by and what a server dispatches on, and a
+/// retraction arriving as a `data_dispute` would read as a second objection to the same record.
+///
+/// The ordering the rest of this file establishes holds here: the row is enqueued **inside** the
+/// transaction that stamps `withdrawn_at`, after the authorship gate has matched. A queued
+/// withdrawal therefore exists only for a withdrawal that was allowed and committed.
+public struct DataDisputeWithdrawal: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    public let disputeID: UUID
+    public let treeID: UUID
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        clientUUID: UUID,
+        disputeID: UUID,
+        treeID: UUID,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.clientUUID = clientUUID
+        self.disputeID = disputeID
+        self.treeID = treeID
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}

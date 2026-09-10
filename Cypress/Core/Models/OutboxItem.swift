@@ -136,6 +136,33 @@ public struct OutboxItem: CoreEntity {
         /// Like the ten above it this carries no photo binary — a withdrawal is a deletion.
         case measurementWithdrawal = "measurement_withdrawal"
 
+        // ── R79's two, and why they are two ────────────────────────────────────────────────────
+
+        /// A dispute against a record's own data (`raiseDataDispute`). See `DataDisputeReport`.
+        ///
+        /// **The whole record travels, not a pointer to one.** Every other report here names a row
+        /// the service already holds; a dispute is created by the act, and this round's ruling is
+        /// that the service records it without materializing anything. `AppSchema` v22 widens the
+        /// stored vocabulary.
+        ///
+        /// Carries no photo binary. A dispute is text and numbers.
+        case dataDispute = "data_dispute"
+
+        /// A dispute its author took back (`withdrawDataDispute`). See `DataDisputeWithdrawal`.
+        ///
+        /// **Its own kind and not a flag inside `data_dispute`'s payload**, for the reason
+        /// `measurementWithdrawal` above gives at length: the payload column is `json_valid` only, so
+        /// a discriminator inside it would have needed no migration — and it would put the
+        /// distinction somewhere `outbox.kind` cannot see it, which is what screen 17 groups by and
+        /// what a server dispatches on. A retraction arriving as a `data_dispute` would read as a
+        /// second objection to the same record.
+        ///
+        /// It ships in the same round as the raise deliberately. The owner's standing complaint
+        /// about the community flagging flow is that a flag cannot be retracted by the person who
+        /// raised it; a new dispute surface with the same gap would repeat that defect on new ground,
+        /// and the `CHECK` above is one statement whether it admits one value or two.
+        case dataDisputeWithdrawal = "data_dispute_withdrawal"
+
         /// What a deletion of the account that queued a row of this kind has to do to it (R3).
         ///
         /// **This exists because the enumeration below used to be typed out in SQL, and went stale
@@ -160,10 +187,19 @@ public struct OutboxItem: CoreEntity {
             // Everything else is an append-only contribution: anonymized by the leaving door,
             // discarded by the erasing one. See `OutboxStore.forgetAccount` for the two payload
             // shapes the account id can sit in.
+            //
+            // **The two dispute kinds are contributions and not exclusively-owned rows**, which is
+            // the arm worth arguing rather than pattern-matching. A dispute looks personal — it is
+            // one person's objection — but so is a species report, and the record it produces is
+            // append-only and about the *tree*: it stands after its author is gone, exactly as a
+            // `wrong_species_report` does, and the leaving door's promise is that the work stays and
+            // the name goes. `discardedOutright` is for mutations that have no meaning without the
+            // account, and "this record's data is wrong" keeps every bit of its meaning.
             case .visit, .observation, .measurement, .careEvent,
                  .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
                  .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
-                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal:
+                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal,
+                 .dataDispute, .dataDisputeWithdrawal:
                 return .contribution
             }
         }
