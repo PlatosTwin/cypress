@@ -439,7 +439,7 @@ on a device, and the ingest round should run the almanac query-plan suites on th
 
 ### 5.2 Tests that pin the current behaviour and go red — by name
 
-These were written to fail. `SecondCityGeographyTests.swift:74-76` says so out loud: *"If a San Jose
+These were written to fail. `SecondCityGeographyTests.swift:75-76` says so out loud: *"If a San Jose
 polygon layer ever lands, every fallback assertion below would silently start measuring the polygon
 path; this makes them fail loudly instead."* That is the project's own guards-green-when-the-defect-is-
 present rule, applied in advance. They should be **updated, not deleted**, and each needs a new home
@@ -451,7 +451,7 @@ for the claim it was making.
 | `CypressTests/SecondCityGeographyTests.swift` | `requireSanJoseCarriesNoPolygons` (line 77), called by `sanJoseGetsANearYouCard` (line 164) and `sanJoseContributorGetsARing` (line 344) | same precondition; plus `#expect(… == .radius(meters: AlmanacLimits.fallbackRadiusM))` at lines 170 and 357 |
 | `CypressTests/AreaPickerTests.swift` | `sanJoseIsAlwaysTheFallback` (~line 599) | `#expect(counted.null == counted.total)` over all `us-ca-sj` rows, then asserts the radius area and `AreaPickerCopy.resolvedFromFixRadius` |
 | `CypressTests/AlmanacVacantSiteTests.swift` | the vacant-site scope assertions (lines 96–145) | `vacantSitesWithNoNeighborhood` is pinned at **11,787** / **11,793** in two corpus variants and drops toward 0; `neighborhoodsWithNoVacantSite` (pinned 0) moves as new neighborhoods arrive with no vacant sites |
-| `CypressTests/SeedCorpus.swift` | `cityWithSanJose` (line 352) and the other variants at lines 389–390, 494–495, 566–567 | the constants above, plus the doc comments at lines 347–350 and 503–505 that state the SF-only fact as a finding |
+| `CypressTests/SeedCorpus.swift` | `cityWithSanJose` (line 351) and the other variants at lines 389–390, 494–495, 566–567 | the constants above, plus the doc comments at lines 347–350 and 503–505 that state the SF-only fact as a finding |
 
 Prose that becomes wrong and must move in the same PR:
 
