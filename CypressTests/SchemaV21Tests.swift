@@ -360,15 +360,24 @@ struct SchemaV21Tests {
 
     // MARK: - 5. Replay
 
-    /// **A replay of the whole ladder against a migrated database changes nothing.**
+    /// **The migration leaves nothing of its own behind, and a replay of the whole ladder against a
+    /// migrated database changes nothing.**
     ///
-    /// `DataGates.sqliteStore` performs this replay on an empty database, which is where a
-    /// rebuild's replay is harmless by construction. Here it runs over a queue with binaries in it,
-    /// which is the state in which a guard that failed to fire would park, empty and refill the
-    /// child table a second time — and the binaries would survive that too, so the assertion is the
-    /// `seq` sequence rather than the row count: a second rebuild copies `seq` explicitly and would
-    /// be invisible in a count, while a *broken* second rebuild is exactly what renumbers it.
-    @Test("replaying the ladder from zero leaves the queue and its binaries where they are")
+    /// Two claims, and they are not equally strong — said plainly, because a red-proof that cannot
+    /// be produced is a test that proves nothing:
+    ///
+    /// · **The parking table must not survive.** `outbox_photos_parked_v21` is scaffolding, and a
+    ///   `CREATE TABLE` with no `IF NOT EXISTS` behind it: left in place, the next replay that
+    ///   reaches this step dies on "table already exists", on somebody's phone, unattended.
+    ///   Deleting the final `DROP TABLE` from `applyV21` turns this assertion red.
+    ///
+    /// · **The replay is a no-change assertion, and the guard is not what makes it true.** Measured:
+    ///   with `applyV21`'s idempotence guard removed, a replay parks, empties, rebuilds and refills
+    ///   a second time and every value below is identical afterwards, because `seq` is copied
+    ///   explicitly. So this half cannot go red on a missing guard and does not claim to. What it
+    ///   does catch is a replay that *errors* — the case above — or one that renumbers the FIFO
+    ///   order the drain reads. The guard's own case is `DataGates.sqliteStore`'s replay from zero.
+    @Test("the migration leaves no scaffolding, and a replay changes nothing")
     func replayingTheLadderChangesNothing() async throws {
         let store = try await Self.v20Database(Self.fixture())
         _ = try await store.queue.write { connection in
@@ -376,6 +385,22 @@ struct SchemaV21Tests {
         }
         let queueAfterFirst = try await Self.queue(store)
         let binariesAfterFirst = try await Self.binaries(store)
+
+        let leftovers = try await store.queue.read { connection -> [String] in
+            let statement = try connection.prepare("""
+                SELECT name FROM sqlite_master
+                 WHERE type = 'table' AND name LIKE '%parked%'
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchAll { try $0.string("name") }
+        }
+        #expect(
+            leftovers.isEmpty,
+            """
+            the migration left \(leftovers) behind. The parking table has no `IF NOT EXISTS`, so a \
+            replay that reaches this step dies on "table already exists"
+            """
+        )
 
         try await store.queue.write { connection in
             try connection.setUserVersion(0)

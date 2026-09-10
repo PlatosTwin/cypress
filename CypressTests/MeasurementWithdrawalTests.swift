@@ -25,7 +25,7 @@ struct MeasurementWithdrawalTests {
 
     private static let deviceID = UUID(uuidString: "F2700000-0000-4000-8000-00000000D001")!
     private static let otherDeviceID = UUID(uuidString: "F2700000-0000-4000-8000-00000000D002")!
-    private static let userID = UUID(uuidString: "F2700000-0000-4000-8000-00000000U001")!
+    private static let userID = UUID(uuidString: "F2700000-0000-4000-8000-0000000A0001")!
 
     private static var attribution: Attribution { .anonymous(deviceID: deviceID) }
 
@@ -178,7 +178,28 @@ struct MeasurementWithdrawalTests {
         #expect(payload.isAppliedBeforeItIsQueued)
 
         // Offered to the apply sink it refuses, non-retryably, rather than performing the act twice.
-        await #expect(throws: APIError.validationFailed) { _ = try await api.sync([record.item]) }
+        //
+        // A **fresh** item rather than the queued one, which is `CommunityOutboxKindTests
+        // .theApplySinkRefusesTheseKinds`' shape and its reason: `LocalAPI.sync` dedupes on
+        // `client_uuid`, so re-offering the row that is already on the queue comes back
+        // `.duplicate` and never reaches the sink this test is about. The refusal arrives as a
+        // per-item verdict rather than as a throw — `sync` answers one result per item.
+        let fresh = try OutboxPayload.measurementWithdrawal(
+            MeasurementWithdrawal(
+                clientUUID: UUID(),
+                measurementID: reading.id,
+                treeID: tree.id,
+                kind: .dbh,
+                attribution: Self.attribution,
+                occurredAt: Self.moment
+            )
+        ).makeItem()
+        let verdict = try #require(try await api.sync([fresh]).first)
+        #expect(verdict.status == .failed, "the apply sink performed the withdrawal a second time")
+        #expect(
+            verdict.error == .validationFailed,
+            "a retryable code would burn 48 h on an answer that will not change; got \(String(describing: verdict.error))"
+        )
     }
 
     // MARK: - 2. Every reader
