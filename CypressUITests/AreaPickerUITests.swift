@@ -10,8 +10,10 @@ import XCTest
 /// a payload. So this file asserts the sentences and taps the buttons.
 ///
 /// It also writes a PNG per state, for `AlmanacGroupTapTests`' reason: the result of a tap should be
-/// something a person can look at rather than a string a test agreed with. Set `CYPRESS_SHOT_DIR`
-/// (as `TEST_RUNNER_CYPRESS_SHOT_DIR` on the `xcodebuild` command line) to choose where.
+/// something a person can look at rather than a string a test agreed with. To choose where,
+/// **`export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell before `Tools/run_tests.sh`** — see
+/// that script's header for why the exported spelling is the one that works, and what the
+/// command-line spelling this comment used to prescribe does instead (nothing, silently).
 ///
 /// **The coarse-fix case is launched, not simulated.** `CYPRESS_LOCATION=lat,lon,accuracy` is R58's
 /// own hook and it takes a stated accuracy, so the state F17 comes from — a fix in hand that is too
@@ -464,6 +466,11 @@ final class AreaPickerUITests: XCTestCase {
 
     /// A PNG per state, plus the same image on the result bundle —
     /// `AlmanacGroupTapTests.record(_:named:note:)`, verbatim in intent.
+    ///
+    /// **This runs in the runner, not in the app**, which is why the directory arrives through
+    /// xcodebuild's `TEST_RUNNER_` forwarding and not through `app.launchEnvironment`. The printed
+    /// path is the fallback's only receipt: unset, it names a directory inside the runner's own
+    /// container on the simulator.
     private func record(_ app: XCUIApplication, named name: String) {
         let shot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: shot)
