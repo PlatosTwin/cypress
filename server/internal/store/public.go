@@ -2,11 +2,9 @@ package store
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 // The public read. Everything in this file is answered to somebody with no account, on a page a
@@ -16,9 +14,9 @@ import (
 // The contract is `docs/rulings-pending/public-tree-read.md`. Three of its clauses are structural
 // here rather than remembered:
 //
-//  1. **Two kinds are read and fifteen are not.** `contributions.kind` is a closed CHECK vocabulary
-//     of seventeen values (the migrations, last declaration wins); these queries name `measurement`
-//     and `observation` explicitly and can therefore never widen by accident. The api package holds
+//  1. **One kind is read and sixteen are not.** `contributions.kind` is a closed CHECK vocabulary
+//     of seventeen values (the migrations, last declaration wins); this query names `measurement`
+//     explicitly and can therefore never widen by accident. The api package holds
 //     the classification of all seventeen and a test that fails when one is unclassified — an
 //     allow-list, because a deny-list on a public surface is how `testflight.yml` came to classify a
 //     new top-level directory as "run everything and ship a build".
@@ -28,19 +26,6 @@ import (
 //  3. **Nothing is cast and nothing is echoed.** Every value extracted from a payload comes back as
 //     text and is validated in Go by the caller, and the columns that would identify a contributor
 //     are not selected at all. See `PublicReading` for both reasons.
-
-// PublicVitalityRow is the latest live vitality rating for a tree, unparsed.
-//
-// `Rating` is text because `(payload->>'vitality')::int` can **error** rather than merely miss:
-// this query is filtered by `kind` and casts in the projection, and nothing in the standard promises
-// Postgres evaluates the qual before the cast — the hazard `004_measurement_withdrawal_kind.sql`
-// records for `::uuid` and avoids the same way. A payload of the right kind carrying a non-numeric
-// `vitality` would otherwise fail the whole request. Parsed and range-checked by the caller, which
-// publishes nothing when it does not parse.
-type PublicVitalityRow struct {
-	Rating     string
-	OccurredAt time.Time
-}
 
 // PublicReading is one live measurement, unparsed, as the public read needs it.
 //
@@ -71,8 +56,11 @@ type PublicReading struct {
 // the api package asserts that they produce the same *bytes* — see the ruling's §9 for why the
 // answer here is a uniform 200 rather than the `not_found` the photo read gives.
 type PublicTreeCommunity struct {
-	Vitality *PublicVitalityRow
 	Readings []PublicReading
+	// Favorites is how many distinct owners currently hold this tree as a favorite. It is a count
+	// on the way out of the database and a **boolean** by the time it reaches the wire — see
+	// `belovedFloor` in the api package. Nothing publishes this number.
+	Favorites int
 }
 
 // PublicTreeCommunityHalf reads it.
@@ -83,27 +71,47 @@ type PublicTreeCommunity struct {
 func (s *Store) PublicTreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (PublicTreeCommunity, error) {
 	var half PublicTreeCommunity
 
-	// The latest live rating. `deleted_at IS NULL` is the withdrawal filter every read in this
-	// service already applies; an **anonymized** row is deliberately still read, because
-	// `AccountDeletionChoice.leaveRecords` unlinks a contribution from its author and keeps the
-	// record — that is what the leaving door promises, and the record is what this page is made of.
-	var vitality PublicVitalityRow
+	// ── The vitality rating is not read here, and the reason is a missing route ────────────────
+	//
+	// **This function used to read the latest `observation`'s rating and it no longer does.** The
+	// round's ruling closed ROADMAP open question 2 — *what a withdrawn or moderated record does to
+	// an indexed public page* — with "a withdrawal removes a fact from a page, it does not remove a
+	// page", and the adversarial review proved that sentence false for exactly one of the three
+	// values published: a withdrawal against an `observation` answers `applied` and the rating stays
+	// on the page.
+	//
+	// It is not a bug in `withdrawMeasurement`. **There is no observation withdrawal at all.**
+	// `contributions.kind`'s vocabulary carries `measurement_withdrawal` and `photo_withdrawal` and
+	// no counterpart for the `observation` that holds the rating; `contributions` has no
+	// `moderation_state` and no operator takedown, so nobody — the contributor, the operator —
+	// can take a published rating back. Adding the kind is a migration, this round has no migration
+	// author, and CLAUDE.md gives one author per round: so the endpoint publishes less rather than
+	// the ruling claiming more.
+	//
+	// The rating comes back in the round that adds the withdrawal kind. Until then the page draws
+	// nothing where a rating would be, which is the house style rather than a degradation.
+
+	// How many distinct owners currently hold this tree as a favorite.
+	//
+	// **This is the one publishable fact in this system whose takedown route is complete**, which is
+	// why it is here while the rating is not. Un-favoriting is an ordinary toggle that writes
+	// `is_favorite = false` through the same upsert (R2 gave the heart a real off state), and
+	// account deletion runs `DELETE FROM favorites WHERE user_id = $1` under **both** doors — the
+	// leaving door included, because `favorites_owner` makes an ownerless favorite unstorable and
+	// 001's own comment says that is why they are deleted unconditionally rather than kept.
+	//
+	// `is_favorite` rather than row existence: the table holds tombstones, and an un-favorited tree
+	// is not one anybody would say they have (`MapMembership`'s own rule, verbatim).
+	//
+	// **A count of rows is a count of owners, not of people**, and the difference is stated rather
+	// than glossed: the two unique indexes give one row per user per tree and one per device per
+	// tree, so one person holding a tree on a signed-out phone and a signed-in one counts twice.
+	// That makes the floor slightly weaker than it reads, never stronger, and the api package's
+	// comment on `belovedFloor` carries it too.
 	err := s.pool.QueryRow(ctx, `
-		SELECT payload ->> 'vitality', occurred_at
-		  FROM contributions
-		 WHERE tree_uuid = $1
-		   AND kind = 'observation'
-		   AND deleted_at IS NULL
-		   AND payload ->> 'vitality' IS NOT NULL
-		 ORDER BY occurred_at DESC, client_uuid DESC
-		 LIMIT 1
-	`, treeUUID).Scan(&vitality.Rating, &vitality.OccurredAt)
-	switch {
-	case err == nil:
-		half.Vitality = &vitality
-	case errors.Is(err, pgx.ErrNoRows):
-		// Nothing to say. Not an error, and not a zero: a zero rating is a claim about a tree.
-	default:
+		SELECT count(*) FROM favorites WHERE tree_uuid = $1 AND is_favorite
+	`, treeUUID).Scan(&half.Favorites)
+	if err != nil {
 		return PublicTreeCommunity{}, err
 	}
 

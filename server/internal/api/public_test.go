@@ -90,13 +90,22 @@ func (h *harness) applyItem(t *testing.T, bearer string, item map[string]any) {
 	}
 }
 
-// seedOneTreeWithEverything records the three things the public read publishes, plus the things
-// carried alongside them that it must not.
+// seedOneTreeWithEverything records the things the public read publishes, plus the things carried
+// alongside them that it must not — the observation among them, which is seeded precisely *because*
+// its rating is refused: a fixture that stopped recording one could not tell a withheld rating from
+// an absent one.
+//
+// The three favorites are the beloved floor exactly met, from three distinct owners, so the golden
+// file's `"beloved": true` is a boundary rather than a comfortable margin.
 func seedOneTreeWithEverything(t *testing.T, h *harness, bearer string, tree uuid.UUID) {
 	t.Helper()
 	h.applyItem(t, bearer, measurementItemWithQuantity(tree, "height", 18, "m", "estimate", "2026-08-14T17:04:11Z"))
 	h.applyItem(t, bearer, measurementItemWithQuantity(tree, "dbh", 64, "cm", "tape", "2026-07-02T09:12:00Z"))
 	h.applyItem(t, bearer, observationItem(tree, 4, "2026-09-03T18:30:00Z"))
+	h.applyItem(t, bearer, favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+	for owner := 0; owner < 2; owner++ {
+		h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+	}
 }
 
 // ── What the page gets ─────────────────────────────────────────────────────────────────────────
@@ -153,7 +162,7 @@ func TestTheBodyCarriesTheseFiveKeysAndNoOthers(t *testing.T) {
 		got = append(got, key)
 	}
 	sort.Strings(got)
-	want := []string{"height", "tree_uuid", "trunk_dbh", "verification_state", "vitality"}
+	want := []string{"beloved", "height", "tree_uuid", "trunk_dbh", "verification_state"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the public body's keys are %v, want exactly %v — a new key on a public page is a "+
 			"disclosure decision and belongs in the ruling before it belongs here", got, want)
@@ -252,26 +261,145 @@ func TestANewerEstimateSupersedesAnOlderTapedReading(t *testing.T) {
 	}
 }
 
-// TestAVitalityOutsideTheRubricIsPublishedAsNothing.
+// TestNoVitalityRatingReachesThePublicRead is the round's narrowing, on the bytes.
 //
-// `Vitality` is the anchored 1–5 class of the PRODUCT §3 rubric. A `vitality 7` rendered on a public
-// page would be a claim about a tree that the rubric cannot make, so the honest answer is silence.
-func TestAVitalityOutsideTheRubricIsPublishedAsNothing(t *testing.T) {
+// **This test replaces `TestAVitalityOutsideTheRubricIsPublishedAsNothing`, which range-checked a
+// rating this endpoint no longer publishes at all.** The adversarial review found that §W1's
+// `Status` row had no takedown route: there is no observation withdrawal in `contributions.kind`,
+// `contributions` has no `moderation_state` and no operator route, so a withdrawal aimed at a rating
+// answers `applied` and the rating stays on an indexed page. Adding the kind is a migration and this
+// round has no migration author, so the endpoint publishes less rather than the ruling claiming
+// more.
+//
+// The control matters as much as the refusal: a well-formed observation of 4 is recorded and reaches
+// the service — `applyItem` fails the test if it does not — and *still* produces the empty answer.
+// Without it this would pass on a harness that never seeded anything.
+func TestNoVitalityRatingReachesThePublicRead(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
 
-	good := uuid.New()
-	h.applyItem(t, session.AccessToken, observationItem(good, 4, "2026-09-03T18:30:00Z"))
-	if body := decodePublic(t, h.readPublicly(t, good)); body.Vitality == nil || body.Vitality.Rating != 4 {
-		t.Fatalf("the control: vitality = %+v, want 4 — without it this test cannot tell a working "+
-			"range check from a read that never publishes a rating", body.Vitality)
+	tree := uuid.New()
+	h.applyItem(t, session.AccessToken, observationItem(tree, 4, "2026-09-03T18:30:00Z"))
+	// The control: a measurement on the same tree does reach the page, so this test can tell a
+	// withheld rating from a read that publishes nothing at all.
+	h.applyItem(t, session.AccessToken,
+		measurementItemWithQuantity(tree, "dbh", 64, "cm", "tape", "2026-07-02T09:12:00Z"))
+
+	recorder := h.readPublicly(t, tree)
+	if body := decodePublic(t, recorder); body.TrunkDBH == nil {
+		t.Fatal("the control: a taped reading on the seeded tree was not published, so a missing " +
+			"rating below would prove nothing about the rating")
+	}
+	for _, canary := range []string{"vitality", "rating", "observed_month", `"4"`} {
+		if strings.Contains(recorder.Body.String(), canary) {
+			t.Errorf("the body carries %q; a published rating has no route back off this page and "+
+				"is not published until one exists:\n%s", canary, recorder.Body.String())
+		}
+	}
+}
+
+// ── The beloved state ──────────────────────────────────────────────────────────────────────────
+
+// favoriteOwner mints a bearer for a **distinct** favorite owner.
+//
+// `signIn` cannot do this: the harness's Apple identity is fixed, so every `signIn` is the same
+// person and the `idx_favorites_user_tree` unique index collapses their favorites to one row. That
+// is correct behavior, and it made the first version of these tests report `beloved = false` at
+// four "owners" — a harness defect that looks exactly like a broken floor. A device registration
+// mints a new `devices` row per UUID, which is the other owner arm of `favorites_owner`, and D9
+// makes device-scoped ownership the house rule anyway.
+func favoriteOwner(t *testing.T, h *harness) string {
+	t.Helper()
+	return h.registerDeviceToken(t, uuid.New())
+}
+
+// favoriteItem is a `favorite_toggle` in the client's own payload shape.
+func favoriteItem(tree uuid.UUID, on bool, occurredAt string) map[string]any {
+	return map[string]any{
+		"client_uuid": uuid.New(), "kind": "favorite_toggle", "tree_uuid": tree,
+		"occurred_at": occurredAt, "is_favorite": on,
+		"payload": json.RawMessage(fmt.Sprintf(
+			`{"treeID":%q,"isFavorite":%v}`, tree, on)),
+	}
+}
+
+// TestTheBelovedStateNeedsThreeDistinctOwners is R27.1 §2's floor, measured rather than asserted.
+//
+// The floor is a k-anonymity threshold and not modesty: at one favorite the surface would publish
+// somebody's *private bookmark* (R27.1 §2's own noun), and at two it is inferable to whoever knows
+// they are the other. Three is R27.1's provisional figure — its "count it, do not guess it" is
+// still open — so this test pins the boundary rather than the number's justification.
+func TestTheBelovedStateNeedsThreeDistinctOwners(t *testing.T) {
+	h := newHarness(t)
+	tree := uuid.New()
+
+	for owner := 1; owner <= 4; owner++ {
+		h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-0"+strconv.Itoa(owner)+"T12:00:00Z"))
+
+		beloved := decodePublic(t, h.readPublicly(t, tree)).Beloved
+		if want := owner >= 3; beloved != want {
+			t.Errorf("with %d favorite owners beloved = %v, want %v — the floor is %d and it is a "+
+				"privacy mechanism, so below it the answer must be indistinguishable from none",
+				owner, beloved, want, belovedFloor)
+		}
+	}
+}
+
+// TestTheBelovedStateFallsWhenAFavoriteIsRemoved is the whole reason this field is publishable.
+//
+// **The beloved state is the one thing on this page whose takedown route is complete**, and that is
+// why it ships while §W1's rating does not. Un-favoriting is an ordinary toggle — R2 gave the heart
+// a real off state — and it is the fact's way back off the page. A published value with no way down
+// is what this round removed; a test that only proved the way up would leave the argument
+// unsupported.
+func TestTheBelovedStateFallsWhenAFavoriteIsRemoved(t *testing.T) {
+	h := newHarness(t)
+	tree := uuid.New()
+
+	var owners []string
+	for owner := 0; owner < 3; owner++ {
+		bearer := favoriteOwner(t, h)
+		owners = append(owners, bearer)
+		h.applyItem(t, bearer, favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+	}
+	if !decodePublic(t, h.readPublicly(t, tree)).Beloved {
+		t.Fatal("the control: three owners favorited and the tree is not beloved, so the removal " +
+			"below would prove nothing")
 	}
 
-	for _, bad := range []any{7, 0, -1, `"thriving"`} {
-		tree := uuid.New()
-		h.applyItem(t, session.AccessToken, observationItem(tree, bad, "2026-09-03T18:30:00Z"))
-		if body := decodePublic(t, h.readPublicly(t, tree)); body.Vitality != nil {
-			t.Errorf("a vitality of %v was published as %+v", bad, body.Vitality)
+	// One of them takes it back. `occurred_at` is later, because the upsert resolves by time.
+	h.applyItem(t, owners[0], favoriteItem(tree, false, "2026-09-02T12:00:00Z"))
+
+	if decodePublic(t, h.readPublicly(t, tree)).Beloved {
+		t.Error("a tree stayed beloved after a contributor un-favorited it, taking the count below " +
+			"the floor; the state must come off the page the way it went on")
+	}
+}
+
+// TestNoFavoriteCountReachesThePublicRead. The state travels and the number does not.
+//
+// `belovedFloor` explains why this endpoint publishes less than R27.1 §1 permits. This asserts it on
+// the bytes, because "we do not send the count" is a property of the projection and a stranger only
+// ever sees the body.
+func TestNoFavoriteCountReachesThePublicRead(t *testing.T) {
+	h := newHarness(t)
+	tree := uuid.New()
+	for owner := 0; owner < 7; owner++ {
+		h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+	}
+
+	recorder := h.readPublicly(t, tree)
+	if !decodePublic(t, recorder).Beloved {
+		t.Fatal("the control: seven owners favorited and the tree is not beloved")
+	}
+	// `7` spelled bare would match a hex digit of the echoed UUID roughly always, which is the
+	// coincidence `TestWithheldKindsProduceTheEmptyAnswer` was caught by. Spelled as a JSON number
+	// after a colon, it cannot.
+	for _, canary := range []string{":7", "favorite", "count"} {
+		if strings.Contains(recorder.Body.String(), canary) {
+			t.Errorf("the body carries %q — the beloved state is a bool and a count of user actions "+
+				"is not published on this page whatever it is called:\n%s",
+				canary, recorder.Body.String())
 		}
 	}
 }
@@ -319,8 +447,10 @@ func TestNoContributorIdentifierReachesThePublicRead(t *testing.T) {
 	seedOneTreeWithEverything(t, h, session.AccessToken, publicTreeID)
 
 	body := h.readPublicly(t, publicTreeID).Body.String()
-	// The control: the guard must be looking at a body that has something in it.
-	if !strings.Contains(body, `"rating": 4`) && !strings.Contains(body, `"rating":4`) {
+	// The control: the guard must be looking at a body that has something in it. It hung on the
+	// vitality rating, which this endpoint no longer publishes; the taped reading is the
+	// replacement, and it comes from the same contributor whose identifiers are searched for below.
+	if !strings.Contains(body, `"value": 64`) && !strings.Contains(body, `"value":64`) {
 		t.Fatalf("nothing was published, so every assertion below would pass vacuously:\n%s", body)
 	}
 	for name, forbidden := range map[string]string{
@@ -426,6 +556,10 @@ func TestWithheldKindsProduceTheEmptyAnswer(t *testing.T) {
 		// version of this looked for the bare string `99`, which matched the random tree UUID of
 		// two of the eleven kinds and reported a leak on a body that was empty. A canary loose
 		// enough to match a coincidence is a false red today and a false green tomorrow.
+		// `"rating":5` can no longer match anything, because the rating left this response with its
+		// takedown route. It is **kept** rather than pruned: it is the canary for the round that
+		// brings the rating back, and a withheld kind's payload reaching the page through a restored
+		// projection is exactly what it would catch. A dead canary costs one string comparison.
 		for _, canary := range []string{"a leak canary", `"value":99`, `"rating":5`} {
 			if strings.Contains(recorder.Body.String(), canary) {
 				t.Errorf("%s reached the public read (%q):\n%s", kind, canary, recorder.Body.String())
@@ -928,82 +1062,20 @@ func assertVocabularyMatches(t *testing.T, path, name string, want int, accepted
 	}
 }
 
-// TestVitalityRatingsMatchTheSwiftRubric reads the *Int*-backed enum, which the existing extractor
-// cannot: `Vitality` is `public enum Vitality: Int`, the anchored 1–5 class of the PRODUCT §3 rubric.
-func TestVitalityRatingsMatchTheSwiftRubric(t *testing.T) {
-	declared := swiftIntEnumRawValues(t, "../../../Cypress/Core/Rubric/Vitality.swift", "Vitality")
-	if len(declared) != 5 {
-		t.Fatalf("read %d raw values from Vitality, want 5: %v", len(declared), declared)
-	}
-	for _, rating := range declared {
-		if !vitalityRatings[rating] {
-			t.Errorf("Vitality declares %d and the public read will not publish it", rating)
-		}
-	}
-	for rating := range vitalityRatings {
-		if !slices.Contains(declared, rating) {
-			t.Errorf("the public read accepts %d, which is not a Vitality raw value", rating)
-		}
-	}
-}
-
-// TestSwiftIntEnumExtractorIsCalibrated proves the new reader against a known answer, including the
-// two ways it could be wrong: bleeding into a neighbouring enum, and matching a `switch`'s cases.
-func TestSwiftIntEnumExtractorIsCalibrated(t *testing.T) {
-	specimen := `
-public enum Other: Int, Codable {
-    case one = 1
-}
-
-public enum Vitality: Int, Codable, Sendable, Hashable, CaseIterable, Comparable {
-    /// A doc comment mentioning case zero = 0 in prose.
-    case severeDecline = 1
-    case poor = 2
-
-    public var label: String {
-        switch self {
-        case .severeDecline: return "Severe decline"
-        case .poor: return "Poor"
-        }
-    }
-}
-`
-	path := filepath.Join(t.TempDir(), "specimen.swift")
-	if err := os.WriteFile(path, []byte(specimen), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got := swiftIntEnumRawValues(t, path, "Vitality")
-	if !slices.Equal(got, []int{1, 2}) {
-		t.Fatalf("the extractor read %v from a specimen whose answer is [1 2]", got)
-	}
-	if other := swiftIntEnumRawValues(t, path, "Other"); !slices.Equal(other, []int{1}) {
-		t.Fatalf("the extractor read %v for Other", other)
-	}
-}
-
-var swiftIntCaseLine = regexp.MustCompile(`(?m)^\s*case\s+\w+\s*=\s*(\d+)`)
-
-func swiftIntEnumRawValues(t *testing.T, path, name string) []int {
-	t.Helper()
-	source, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v — this guard fails rather than skipping", path, err)
-	}
-	pattern := fmt.Sprintf(`(?s)public enum %s: Int[^{]*\{(.*?)\n\}`, name)
-	block := regexp.MustCompile(pattern).FindSubmatch(source)
-	if block == nil {
-		t.Fatalf("did not find `public enum %s: Int` in %s", name, path)
-	}
-	var values []int
-	for _, match := range swiftIntCaseLine.FindAllSubmatch(block[1], -1) {
-		var parsed int
-		if _, err := fmt.Sscanf(string(match[1]), "%d", &parsed); err != nil {
-			t.Fatal(err)
-		}
-		values = append(values, parsed)
-	}
-	return values
-}
+// ── The Int-enum guard that left with the rating it guarded ────────────────────────────────────
+//
+// `TestVitalityRatingsMatchTheSwiftRubric`, `TestSwiftIntEnumExtractorIsCalibrated` and their
+// `swiftIntEnumRawValues` reader stood here. They held `vitalityRatings` against
+// `Cypress/Core/Rubric/Vitality.swift`'s five raw values so an out-of-range rating could not be
+// published as `vitality 7`.
+//
+// **They are removed, not disabled, because this endpoint no longer publishes a rating** — see
+// `TestNoVitalityRatingReachesThePublicRead`. A guard over a map nothing reads is green about
+// nothing, which is the failure this whole file is arranged against; keeping one parked would have
+// been a third copy of the vocabulary with no subject.
+//
+// `docs/ROADMAP.md` carries the item that restores the rating, and it names these three by name:
+// the round that brings the field back brings the guard back with it, before the projection.
 
 // TestPublicBodyIsSnakeCaseThroughout holds this response on the documented side of `wire.go`'s
 // split.
@@ -1062,14 +1134,15 @@ func allJSONKeys(t *testing.T, body []byte) []string {
 // ── Small helpers ──────────────────────────────────────────────────────────────────────────────
 
 type publicBody struct {
-	TreeUUID          uuid.UUID `json:"tree_uuid"`
-	VerificationState string    `json:"verification_state"`
-	Vitality          *struct {
-		Rating        int    `json:"rating"`
-		ObservedMonth string `json:"observed_month"`
-	} `json:"vitality"`
-	Height   *publicReading `json:"height"`
-	TrunkDBH *publicReading `json:"trunk_dbh"`
+	TreeUUID          uuid.UUID      `json:"tree_uuid"`
+	VerificationState string         `json:"verification_state"`
+	Beloved           bool           `json:"beloved"`
+	Height            *publicReading `json:"height"`
+	TrunkDBH          *publicReading `json:"trunk_dbh"`
+	// Vitality is decoded so the guards can assert it is **absent**. The field left this response
+	// when the round found it had no takedown route; a struct that simply stopped mentioning it
+	// could not tell "not published" from "not looked for".
+	Vitality json.RawMessage `json:"vitality"`
 }
 
 func decodePublic(t *testing.T, recorder *httptest.ResponseRecorder) publicBody {
@@ -1093,7 +1166,7 @@ func assertEmptyPublicBody(t *testing.T, raw []byte, tree uuid.UUID) {
 	if body.TreeUUID != tree {
 		t.Errorf("tree_uuid = %s, want the id that was asked for", body.TreeUUID)
 	}
-	if body.Vitality != nil || body.Height != nil || body.TrunkDBH != nil {
+	if body.Beloved || body.Height != nil || body.TrunkDBH != nil || body.Vitality != nil {
 		t.Errorf("the body is not the empty answer: %s", raw)
 	}
 }

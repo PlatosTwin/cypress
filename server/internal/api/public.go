@@ -17,11 +17,17 @@ import (
 //
 //	The page publishes the state of the tree. It never publishes anybody's activity.
 //
-// A vitality rating and a taped diameter are properties of a tree that happen to have been
+// A taped diameter and an estimated height are properties of a tree that happen to have been
 // established by a person; they survive having their author erased. A visit, a photograph, a care
 // event, a count of any of them, a dated feed of any of them — these *are* their author, wearing a
-// tree's name. That is why this file returns three values and no list, no count, no photograph, no
-// coordinate, no timestamp finer than a month, and no identifier of any contributor.
+// tree's name. That is why this file returns two readings and one boolean, and no list, no count, no
+// photograph, no coordinate, no timestamp finer than a month, and no identifier of any contributor.
+//
+// **A second sentence had to be added after the round's adversarial review, and it is a constraint
+// rather than a principle:** this endpoint publishes nothing it cannot also un-publish. §W1's
+// vitality rating passes the sentence above and is still not here, because no route exists to take a
+// published rating back — see the note on `publicTreeRead`. What a page may say and what a page can
+// stop saying turned out to be two questions, and the ruling had answered only the first.
 //
 // ── The keys are snake_case, and that is the documented rule rather than an exception ──────────
 //
@@ -54,22 +60,63 @@ type publicTreeRead struct {
 	// per-value field read off the record, because verification is per-record (D12).
 	VerificationState string `json:"verification_state"`
 
-	Vitality *publicVitality `json:"vitality"`
-	Height   *publicReading  `json:"height"`
-	TrunkDBH *publicReading  `json:"trunk_dbh"`
+	// Beloved is R27.1's state, and it is a **bool** rather than a number. See `belovedFloor`.
+	Beloved  bool           `json:"beloved"`
+	Height   *publicReading `json:"height"`
+	TrunkDBH *publicReading `json:"trunk_dbh"`
 }
 
-// publicVitality is §W1's `Status` row — `Thriving · vitality 4`.
+// ── What §W1's `Status` row does not get, and why the field is gone rather than nulled ─────────
 //
-// The **rating** travels and the label does not. `Vitality` is an `Int`-backed enum whose `label` and
-// anchor sentences are Core's, transcribed verbatim from the PRODUCT §3 rubric table; the web
-// re-derives them from the ported rubric (W-B). A label rendered here would be a second copy of a
-// table this project has already had to repair once for saying two things at once.
-type publicVitality struct {
-	Rating int `json:"rating"`
-	// ObservedMonth is `2006-01`. See `publicMonth`.
-	ObservedMonth string `json:"observed_month"`
-}
+// This struct carried `Vitality *publicVitality` — §W1's `Status · Thriving · vitality 4` — and the
+// field is removed, not left as a permanent `null`. The adversarial review of this round's PR found
+// that the ruling's §8 closed ROADMAP open question 2 on a mechanism covering two of the three
+// values published: **a published rating has no takedown route at all.** There is no observation
+// withdrawal in `contributions.kind`'s seventeen values, `contributions` has no `moderation_state`
+// and no operator route, so neither the contributor nor an operator can take a rating off an indexed
+// page. A withdrawal aimed at one answers `applied` and changes nothing, which is E280's sentence
+// arriving on this table.
+//
+// Adding the kind is a **migration**, and CLAUDE.md gives one migration author per round; this round
+// has none. So the endpoint narrows to what its own claim is true of, rather than the claim widening
+// to what the endpoint does. The field is removed rather than nulled because a permanent `null` is a
+// shape the web would build a slot for, and the honest statement is that this service has no
+// publishable rating today — not that it has none for this tree.
+//
+// `docs/ROADMAP.md` carries the item that brings it back.
+
+// belovedFloor is R27.1 §2's k-anonymity threshold, and the number is provisional.
+//
+// **The state, not the rank, and not the number.** The owner ruled on 2026-09-10 that the beloved
+// state ships on the public tree page as a state. R27.1 §1 permits the count as well — *"Showing the
+// number too is permitted and preferred"* — and this endpoint does not publish it, for two reasons
+// worth writing down rather than inferring: §1's permission is about a *ranking*, where hiding the
+// number while showing the order is the worst of both, and there is no ranking here; and the round's
+// own ruling refuses every count on this page. Shipping the boolean is therefore less than R27.1
+// permits, deliberately, and whether the number rides along is a question for the owner in the
+// ruling rather than a decision taken here.
+//
+// **Why a boolean is safe here when the ruling refused one for photographs.** The ruling's §1 argues
+// that a boolean is a count at one bit of resolution and that one bit is enough when a tree has one
+// contributor. That is true of a photo count, which has no floor available to it — the number *is*
+// §W1's headline fact, so suppressing it below a floor publishes "fewer than three people
+// photographed this tree", the same disclosure with a step. It is not true here: the boolean is only
+// ever `true` at three or more distinct owners, so it cannot publish one person's private bookmark,
+// and `false` covers everything from nought to two indistinguishably. R27.1 §2 is exactly that
+// argument and it is why the floor is a privacy mechanism rather than modesty.
+//
+// **Three is R27.1's provisional figure and this round did not improve on it.** R27.1 leaves the
+// number open — *"the numeric floor, which wants the real distribution of favorites per tree before
+// it is chosen — count it, do not guess it"* — and this round **did not measure the distribution**:
+// the attempt to read it off the production database was refused before any query ran, and the
+// number below is therefore R27.1's own ≥3 (DECISIONS' caretakers precedent) unchanged, not a
+// measured one. That is stated plainly here and in the ruling rather than left to be assumed,
+// because a guessed threshold presented as a measured one is the failure R27.1's own sentence is
+// written against. It is not negotiable downward, and the round that measures it may raise it.
+//
+// The count behind it is a count of favorite *owners*, and one person on two devices is two of them
+// — see `PublicTreeCommunityHalf`. The floor is therefore slightly weaker than it reads.
+const belovedFloor = 3
 
 // publicReading is §W1's `Height` and `Trunk · DBH` rows — `18 m` `est.`, `64 cm` `taped`.
 //
@@ -109,10 +156,6 @@ var measurementMethods = map[string]bool{
 var lengthUnits = map[string]bool{
 	"mm": true, "cm": true, "m": true, "in": true, "ft": true,
 }
-
-// vitalityRatings is `Vitality`'s five raw values (`Cypress/Core/Rubric/Vitality.swift`), which are
-// `Int` rather than `String` — the anchored 1–5 class of the PRODUCT §3 rubric.
-var vitalityRatings = map[int]bool{1: true, 2: true, 3: true, 4: true, 5: true}
 
 // ── The allow-list over `contributions.kind` ───────────────────────────────────────────────────
 
@@ -208,8 +251,13 @@ func (s *Server) publicTree(w http.ResponseWriter, r *http.Request) error {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", storeErr)
 	}
 
-	body := publicTreeRead{TreeUUID: id, VerificationState: "unverified"}
-	body.Vitality = publicVitalityFrom(half.Vitality)
+	body := publicTreeRead{
+		TreeUUID:          id,
+		VerificationState: "unverified",
+		// The comparison is `>=` and the count never leaves this line. A body that carried the
+		// number would be a count of user actions on a public page whatever it was called.
+		Beloved: half.Favorites >= belovedFloor,
+	}
 	for _, reading := range half.Readings {
 		projected := publicReadingFrom(reading)
 		if projected == nil {
@@ -240,23 +288,6 @@ func (s *Server) publicTree(w http.ResponseWriter, r *http.Request) error {
 // UTC, for `Timestamp`'s reason — the service has one timezone on the wire and a month that shifted
 // with the reader's would be two answers to one question.
 func publicMonth(row store.PublicReading) string { return row.OccurredAt.UTC().Format("2006-01") }
-
-func publicVitalityFrom(row *store.PublicVitalityRow) *publicVitality {
-	if row == nil {
-		return nil
-	}
-	// Parsed here rather than cast in SQL — see `PublicVitalityRow`. A rating that does not parse,
-	// or that names a class the rubric does not have, is published as nothing: an out-of-range
-	// number rendered as `vitality 7` would be a claim about a tree that the rubric cannot make.
-	rating, err := strconv.Atoi(row.Rating)
-	if err != nil || !vitalityRatings[rating] {
-		return nil
-	}
-	return &publicVitality{
-		Rating:        rating,
-		ObservedMonth: row.OccurredAt.UTC().Format("2006-01"),
-	}
-}
 
 func publicReadingFrom(row store.PublicReading) *publicReading {
 	value, err := strconv.ParseFloat(row.Value, 64)
