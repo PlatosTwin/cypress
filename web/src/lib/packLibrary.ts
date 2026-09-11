@@ -38,8 +38,15 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { requireIdSpace } from './idSpaces.ts';
 import { openPack, type Pack } from './pack/pack.ts';
-import { idSpacesInPack, treeFactsByUUID, type TreeFactsRow } from './pack/queries.ts';
+import {
+  idSpacesInPack,
+  inventoryByID,
+  treeFactsByUUID,
+  type TreeFactsRow,
+} from './pack/queries.ts';
+import { treePageModel, type TreePageModel } from './treePage.ts';
 
 /** The environment variable naming the directory the packs are mounted at. */
 export const PACK_DIRECTORY_VARIABLE = 'CYPRESS_PACK_DIR';
@@ -181,4 +188,128 @@ export function resetPackLibraryCache(): void {
   if (cached === null) return;
   for (const pack of cached.packs) pack.close();
   cached = null;
+}
+
+// ── From a URL to a page ────────────────────────────────────────────────────────────────────
+
+/**
+ * Why a `/‹id-space›/tree/‹uuid›` request did not produce a page.
+ *
+ * Four distinguishable reasons rather than one `null`, because they are four different things and
+ * two of them are operator errors rather than reader errors. A server that answered 404 to all
+ * four would report "the volume is not mounted" as "that tree does not exist", which is the same
+ * class of mistake `localSeed.ts` refuses when it makes a mismatched seed its own state.
+ */
+export type TreePageRefusal =
+  /** `CYPRESS_PACK_DIR` is unset, or the library holds no pack for this id space. */
+  | { readonly kind: 'noPacks'; readonly detail: string }
+  /** The first path segment is not a registered id space (`src/lib/idSpaces.ts`). */
+  | { readonly kind: 'unknownIdSpace'; readonly idSpace: string; readonly detail: string }
+  /** The second segment is not a uuid, so no pack could hold it. Refused before any query. */
+  | { readonly kind: 'malformedUUID'; readonly uuid: string }
+  /** Everything was well-formed and no pack has the row. The ordinary 404. */
+  | { readonly kind: 'notFound'; readonly idSpace: string; readonly uuid: string };
+
+export type TreePageResolution =
+  | { readonly ok: true; readonly model: TreePageModel; readonly pack: Pack }
+  | { readonly ok: false; readonly refusal: TreePageRefusal };
+
+/**
+ * The canonical spelling of a uuid in a public URL: 8-4-4-4-12 hex, any case.
+ *
+ * Version and variant nibbles are deliberately NOT checked. Every tree uuid is a v5 today, but the
+ * route's job is to reject a segment no pack could possibly hold — a search-engine crawl of a
+ * mangled link, a path traversal attempt — and refusing a well-formed uuid because of its version
+ * would be this layer asserting something about identity that `DECISIONS` constraint 13 does not.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUUID(value: string): boolean {
+  return UUID.test(value);
+}
+
+/**
+ * One request, end to end: validate the segments, find the row, build the page.
+ *
+ * **The id space is checked against the ingest contract BEFORE the library**, and the order
+ * matters for what a reader is told: an unregistered id space is a URL that was never valid, while
+ * a registered one with no pack mounted is a deployment that is missing a file. Checking the
+ * library first would report the second as the first for every city the operator has not mounted.
+ */
+export function resolveTreePage(
+  idSpace: string,
+  uuid: string,
+  library: PackLibrary | null,
+): TreePageResolution {
+  try {
+    requireIdSpace(idSpace);
+  } catch (error) {
+    return {
+      ok: false,
+      refusal: {
+        kind: 'unknownIdSpace',
+        idSpace,
+        detail: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+  if (!isUUID(uuid)) return { ok: false, refusal: { kind: 'malformedUUID', uuid } };
+  if (library === null) {
+    return {
+      ok: false,
+      refusal: {
+        kind: 'noPacks',
+        detail: `${PACK_DIRECTORY_VARIABLE} is not set, so this server is holding no packs`,
+      },
+    };
+  }
+  const packsForSpace = library.byIdSpace.get(idSpace) ?? [];
+  if (packsForSpace.length === 0) {
+    return {
+      ok: false,
+      refusal: {
+        kind: 'noPacks',
+        detail: `no pack in ${library.directory} carries rows keyed in '${idSpace}'`,
+      },
+    };
+  }
+  const found = findTree(library, idSpace, uuid);
+  if (found === null) return { ok: false, refusal: { kind: 'notFound', idSpace, uuid } };
+
+  const { pack, tree } = found;
+  const inventory = tree.inventorySource === null
+    ? null
+    : inventoryByID(pack, tree.inventorySource);
+  // The receipt keys are `inventory_<inventories.id>_*` — `publish_cities.py`'s own tagging, which
+  // is why the tag is the inventory's id and not the id space. `licence` and `license` are both
+  // read for the same reason the publisher reads both.
+  const tag = tree.inventorySource;
+  const meta = (suffix: string): string | null =>
+    tag === null ? null : pack.meta.get(`inventory_${tag}_${suffix}`) ?? null;
+
+  return {
+    ok: true,
+    pack,
+    model: treePageModel({
+      idSpace,
+      // The pack's own spelling, not the URL's: a uuid typed in capitals resolves, and the page
+      // then states the identity the file holds rather than the one the reader typed.
+      uuid: tree.uuid,
+      status: tree.status,
+      address: tree.address,
+      neighborhoodName: tree.neighborhoodName,
+      cityName: tree.cityName,
+      speciesCommonName: tree.speciesCommonName,
+      speciesScientificName: tree.speciesScientificName,
+      plantedYear: tree.plantedYear,
+      dbhCityCmMin: tree.dbhCityCmMin,
+      dbhCityCmMax: tree.dbhCityCmMax,
+      siteType: tree.siteType,
+      externalRef: tree.externalRef,
+      inventoryName: inventory?.name ?? null,
+      inventoryURL: inventory?.url ?? null,
+      inventorySnapshotOn: meta('snapshot_on'),
+      inventoryLicence: meta('licence') ?? meta('license'),
+    }),
+  };
 }

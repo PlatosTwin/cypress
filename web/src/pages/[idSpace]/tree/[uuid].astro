@@ -1,0 +1,187 @@
+---
+/**
+ * W1 · the public tree page. `/‹id-space›/tree/‹uuid›`.
+ *
+ * **This is the page every share card the iOS app has ever produced points at.**
+ * `ShareCopy.publicURLPrefix` is `https://cypress.app/sf/tree/` and has been since the share sheet
+ * shipped; `PRODUCT.md` calls the share card the growth loop, and until now that loop terminated
+ * at the moment of sharing. The hostname still has to move — `cypress.app` is registered to a
+ * third party and `cypressgrove.app` is the owner's ruling — but the path is this one and always
+ * was, which is why the route is spelled `‹id-space›` rather than `‹city›`.
+ *
+ * ── Nothing is decided in this file ──────────────────────────────────────────────────────────
+ *
+ * `resolveTreePage` turns two URL segments into a `TreePageModel` or into a named refusal, and
+ * every label, format, precedence and absence on the page is in `src/lib/treePage.ts` and
+ * `src/lib/cityRecord.ts` where a test can read them without rendering anything. What is left here
+ * is markup.
+ *
+ * ── What is NOT on this page, and why ────────────────────────────────────────────────────────
+ *
+ * §W1 draws a `Sign in` button, an `Open in the app` button, a foliage strip, a photo caption, a
+ * `Height` row, a taped DBH reading and a recent-visits panel. None of them is here, each for a
+ * stated reason, and none of them is stubbed. The pull request that added this file lists all
+ * seven; the short version is that three are contributed data with no public read and the other
+ * two would be controls that visibly do nothing, which is the failure E100 is written against.
+ */
+import Base from '../../../layouts/Base.astro';
+import '../../../styles/w1.css';
+import { cssBackgroundImage, cssScrim, W1_HERO, W1_SCRIM } from '../../../lib/gradients.ts';
+import { packLibrary, resolveTreePage } from '../../../lib/packLibrary.ts';
+import { CARD_CONTENT_TYPE } from '../../../lib/ogCard.ts';
+
+const idSpace = Astro.params.idSpace ?? '';
+const uuid = Astro.params.uuid ?? '';
+const resolution = resolveTreePage(idSpace, uuid, packLibrary());
+
+if (!resolution.ok) {
+  const refusal = resolution.refusal;
+  /**
+   * Three of the four refusals are a 404 and one is **not**.
+   *
+   * `noPacks` means this server is holding no pack that could answer for this id space — an unset
+   * `CYPRESS_PACK_DIR`, or a volume that did not mount. That is a deployment that did not finish,
+   * and answering 404 would tell a reader, a crawler and an uptime check alike that the tree does
+   * not exist. It is a 503, which says "ask again" and is the only one of the four that should
+   * ever page somebody.
+   *
+   * **The reason is logged rather than returned as a header, and that is measured rather than
+   * assumed.** A `.astro` page returning a 404 has its `Response` replaced by Astro's own 404
+   * rendering and its headers dropped — verified against this dev server, where
+   * `x-cypress-refusal` survives on `og.svg.ts` (an endpoint, whose `Response` is returned
+   * verbatim) and does not survive here. So the operator's channel for a page is the process log.
+   */
+  console.warn(`w1: ${refusal.kind} for /${idSpace}/tree/${uuid}`, refusal);
+  if (refusal.kind === 'noPacks') {
+    return new Response(`No city packs are mounted: ${refusal.detail}\n`, {
+      status: 503,
+      headers: { 'content-type': 'text/plain; charset=utf-8', 'x-cypress-refusal': refusal.kind },
+    });
+  }
+  return new Response(null, { status: 404 });
+}
+
+const model = resolution.model;
+const cardPath = `${model.path}/og.svg`;
+
+// The hero's two layers, handed to the CSS as custom properties. They are here rather than in
+// `w1.css` because they are the design system's own recipe (`src/lib/gradients.ts`) and a
+// stylesheet holding a color literal is exactly what ARCHITECTURE §6 forbids.
+const heroStyle = [
+  `--w1-hero-gradient: ${cssBackgroundImage(W1_HERO)}`,
+  `--w1-hero-scrim: ${cssScrim(W1_SCRIM)}`,
+].join('; ');
+
+/**
+ * The four nav destinations `SCREENS.md` §W1 draws.
+ *
+ * **Drawn, and not linked.** §W1 says in as many words that the four are "drawn but NOT SPECIFIED
+ * as to destination", and W-D is the milestone that builds them. A link to a page that does not
+ * exist is a control that visibly does nothing, which is the ground the web round's seventh
+ * decision omitted `Sign in` on; the difference is that these four are specified to be on the bar,
+ * so they stay on it and become links in the round that gives them somewhere to go.
+ */
+const nav = ['Explore', 'Species', 'Neighborhoods', 'Data & export'];
+---
+
+<Base
+  title={model.documentTitle}
+  description={model.description}
+  canonical={model.path}
+  indexable={true}
+  layout="bare"
+  openGraph={{
+    type: 'article',
+    siteName: 'Cypress',
+    image: { path: cardPath, type: CARD_CONTENT_TYPE.split(';')[0] ?? 'image/svg+xml' },
+  }}
+>
+  <div class="w1">
+    <header class="w1-bar">
+      <a class="w1-wordmark" href="/">Cypress</a>
+      <nav class="w1-nav" aria-label="Sections">
+        {nav.map((item) => <span>{item}</span>)}
+      </nav>
+    </header>
+
+    <div class="w1-body">
+      <section class="w1-hero" style={heroStyle}>
+        {model.eyebrow && <p class="w1-eyebrow">{model.eyebrow}</p>}
+        <h1 class="w1-title">{model.title}</h1>
+        {
+          model.subtitle.length > 0 && (
+            <p class="w1-subtitle">
+              {model.subtitle.map((part, index) => (
+                <>
+                  {index > 0 && ' · '}
+                  {part.italic ? <i>{part.text}</i> : part.text}
+                </>
+              ))}
+            </p>
+          )
+        }
+      </section>
+
+      <aside class="w1-facts">
+        <dl class="w1-fact-list">
+          {
+            model.facts.map((row) => (
+              <div class="w1-fact" data-emphasized={String(row.emphasized)} data-fact={row.id}>
+                <dt>{row.label}</dt>
+                <dd>
+                  {row.value}
+                  {row.badge && <span class="w1-badge">{row.badge}</span>}
+                </dd>
+              </div>
+            ))
+          }
+          <div class="w1-fact" data-emphasized="false" data-fact="terms">
+            <dt>{model.terms.label}</dt>
+            <dd>{model.terms.value}</dd>
+          </div>
+        </dl>
+        {model.terms.note && <p class="w1-terms-note">{model.terms.note}</p>}
+
+        <div class="w1-actions">
+          {/*
+            C7 · `Share this tree`. Hidden until the inline script below has wired it, so a reader
+            with no JavaScript gets no button rather than a dead one — the page's URL is still the
+            shareable thing and their browser already knows how to share it. `Open in the app`,
+            C6's half of the pair, is absent: the app registers no URL scheme and its universal
+            links point at `cypress.app`, a hostname a third party controls, so there is no
+            destination that resolves.
+          */}
+          <button class="w1-secondary" type="button" data-share hidden>Share this tree</button>
+        </div>
+
+        {model.provenance && <p class="w1-provenance">{model.provenance}</p>}
+      </aside>
+    </div>
+  </div>
+</Base>
+
+<script>
+  // Progressive enhancement, and the whole of this page's JavaScript. `navigator.share` where the
+  // browser has it, the clipboard where it does not; a browser with neither keeps the button
+  // hidden, because a share control that cannot share is the control E100 is about.
+  const button = document.querySelector<HTMLButtonElement>('[data-share]');
+  const canShare = typeof navigator.share === 'function';
+  const canCopy = typeof navigator.clipboard?.writeText === 'function';
+  if (button !== null && (canShare || canCopy)) {
+    button.hidden = false;
+    const original = button.textContent;
+    button.addEventListener('click', async () => {
+      const url = window.location.href;
+      try {
+        if (canShare) await navigator.share({ title: document.title, url });
+        else {
+          await navigator.clipboard.writeText(url);
+          button.textContent = 'Link copied';
+          window.setTimeout(() => { button.textContent = original; }, 2000);
+        }
+      } catch {
+        // A cancelled share sheet rejects, and a cancelled share is not an error to report.
+      }
+    });
+  }
+</script>

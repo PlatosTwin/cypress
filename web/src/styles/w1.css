@@ -1,0 +1,322 @@
+/*
+ * W1 · the public tree page. `docs/distilled/SCREENS.md` §W1 is the specification.
+ *
+ * ── Where every value here comes from ────────────────────────────────────────────────────────
+ *
+ * Colors, radii, font families, font sizes and weights are `tokens.css` custom properties, which
+ * are generated from `Cypress/DesignSystem/Tokens/*.swift` and re-rendered by `tokens.test.ts`.
+ * There is no hex, no bare font size and no bare radius below — ARCHITECTURE §6.
+ *
+ * The exception is the `--w1-*` block, and it is one block rather than values scattered through
+ * the file so it can be read and checked as a set. Those are the numbers §W1 states that the token
+ * export does not carry, and it does not carry them for a stated reason: `CypressColor.lightOnly`
+ * describes a token that "belongs to the spec document or to W1", and `surfaceWeb` adds "W1 is out
+ * of scope for iOS". Three W1 colors made it into the export because the iOS design system found
+ * them worth naming; W1's own type scale and its 32-px page padding never did, because no iOS
+ * screen uses them. `web/test/w1Layout.test.ts` parses §W1 at run time and fails when any of these
+ * stops matching what the specification says.
+ *
+ * ── The one place this page deviates from the mock, structurally ─────────────────────────────
+ *
+ * §W1 draws a fixed 1180×780 window. A real page is not a window: the body grid collapses to one
+ * column below the width at which 1.45fr would squeeze the fact column past readability, and the
+ * hero's height becomes a range rather than half of 780. Everything else — the grid ratio, the
+ * paddings, the type, the borders — is the transcription.
+ *
+ * ── Dark mode, which this page does NOT opt into and cannot fully avoid ──────────────────────
+ *
+ * `tokens.css` carries a `prefers-color-scheme: dark` block, because the design system pairs most
+ * of its role tokens with a dark value for screens D1–D3. **W1 has no dark mock.** The three
+ * tokens the export carries specifically for W1 are all `lightOnly`, which is the design system
+ * saying so; but the page also needs a page background, a hairline and a body ink, and the only
+ * tokens for those roles are paired. So a reader whose system is set to dark gets this page's
+ * chrome in the design system's own dark values with a hero that stays light — which is what a
+ * photo-led page looks like in dark mode, and is also a screen state no mock draws.
+ *
+ * Rendering it any other way would mean re-typing five light hexes into this file, which §6
+ * forbids for exactly the reason it is tempting here. The gap is an errata entry and the fix is a
+ * DesignSystem change — W1's light-only palette declared where the other three already are —
+ * which is an iOS round and not this one.
+ */
+
+.w1 {
+  /* ── §W1's own numbers, and nothing that has a token ───────────────────────────────────── */
+
+  /* `H1 Serif 42px/600, line-height:1.05`. The clamp is this file's: a 42px serif headline wraps
+     into two half-empty lines on a phone, and §W1 was drawn at one width. 42px is the ceiling. */
+  --w1-hero-title-size: clamp(28px, 3.2vw + 16px, 42px);
+  --w1-hero-title-line-height: 1.05;
+  /* `Latin Serif italic 18px`. */
+  --w1-latin-size: 18px;
+  /* `padding:14px 32px` on the top bar, `padding:32px` on the hero, `32px 34px` on the column. */
+  --w1-bar-padding-block: 14px;
+  --w1-page-padding: 32px;
+  --w1-column-padding-inline: 34px;
+  /* `HStack(spacing:26)` in the bar, `gap:10px` on the logo, `spacing:10` on the button pair. */
+  --w1-bar-gap: 26px;
+  --w1-logo-gap: 10px;
+  --w1-button-gap: 10px;
+  /* `display:grid; grid-template-columns:1.45fr 1fr`. */
+  --w1-hero-fraction: 1.45fr;
+
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-screen);
+  color: var(--color-text-body);
+  font-family: var(--font-body-15-family);
+  font-size: var(--font-body-15-size);
+}
+
+/* ── 1 · Top bar ─────────────────────────────────────────────────────────────────────────── */
+
+.w1-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--w1-bar-gap);
+  padding: var(--w1-bar-padding-block) var(--w1-page-padding);
+  border-bottom: 1px solid var(--color-border-cool);
+  background: var(--color-surface-web);
+  flex-wrap: wrap;
+}
+
+.w1-wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--w1-logo-gap);
+  font-family: var(--font-card-title-serif-family);
+  font-size: var(--font-card-title-serif-size);
+  font-weight: var(--font-card-title-serif-weight);
+  color: var(--color-text-ink);
+  text-decoration: none;
+}
+
+.w1-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--w1-bar-gap);
+  flex-wrap: wrap;
+}
+
+.w1-nav a {
+  font-family: var(--font-body-14-regular-family);
+  font-size: var(--font-body-14-regular-size);
+  font-weight: var(--font-body-14-regular-weight);
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+/* §W1: `Explore` is 14px/700 `#2F6B4F` — the nav item for the surface a reader is nearest. */
+.w1-nav a[aria-current='true'],
+.w1-nav a.is-current {
+  color: var(--color-canopy);
+  font-weight: var(--font-body-14-weight);
+}
+
+.w1-nav a:hover,
+.w1-nav a:focus-visible {
+  color: var(--color-cypress-deep);
+}
+
+/* ── 2 · Body grid ───────────────────────────────────────────────────────────────────────── */
+
+.w1-body {
+  display: grid;
+  grid-template-columns: var(--w1-hero-fraction) 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left · hero. `position:relative`, `align-items:flex-end`, `padding:32px`. */
+.w1-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: var(--w1-page-padding);
+  color: var(--color-text-on-photo-web);
+  /* §W1 draws the hero as half of a 780px window. A page has no fixed height, so the hero keeps a
+     photographic proportion instead and stops growing on a tall desktop. */
+  min-height: clamp(260px, 42vh, 420px);
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* The gradient stack and the scrim are two layers, as C2 draws them: the scrim is
+   `position:absolute; inset:0` over the image and under the text. Both values are set inline by
+   the page from `src/lib/gradients.ts`, because they are the design system's own recipe and this
+   file may not hold a color. */
+.w1-hero::before,
+.w1-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.w1-hero::before {
+  background-image: var(--w1-hero-gradient);
+}
+
+.w1-hero::after {
+  background-image: var(--w1-hero-scrim);
+}
+
+.w1-eyebrow {
+  font-family: var(--font-body-12-semi-bold-family);
+  font-size: var(--font-body-12-semi-bold-size);
+  font-weight: var(--font-body-12-semi-bold-weight);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin: 0;
+}
+
+.w1-title {
+  font-family: var(--font-tree-name-hero-family);
+  font-size: var(--w1-hero-title-size);
+  font-weight: var(--font-tree-name-hero-weight);
+  line-height: var(--w1-hero-title-line-height);
+  margin: 4px 0 0;
+}
+
+.w1-subtitle {
+  font-family: var(--font-latin-name-family);
+  font-size: var(--w1-latin-size);
+  font-weight: var(--font-latin-name-weight);
+  opacity: 0.9;
+  margin: 6px 0 0;
+}
+
+.w1-subtitle i {
+  font-style: var(--font-latin-name-style);
+}
+
+/* Right · fact column. `padding:32px 34px`, `background:#FBFBF5`, `border-left:1px solid`. */
+.w1-facts {
+  display: flex;
+  flex-direction: column;
+  padding: var(--w1-page-padding) var(--w1-column-padding-inline);
+  background: var(--color-surface-web);
+  border-left: 1px solid var(--color-border-cool);
+  min-width: 0;
+}
+
+/* C30 · `WebFactRow`. */
+.w1-fact {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--w1-logo-gap);
+  font-size: var(--font-body-15-size);
+  border-bottom: 1px solid var(--color-border-web-row);
+  padding: 12px 0;
+  margin: 0;
+}
+
+.w1-fact dt {
+  color: var(--color-text-muted);
+}
+
+.w1-fact dd {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-mono-13-family);
+  font-weight: var(--font-mono-stat-weight);
+  color: var(--color-text-ink);
+  /* A site type is the publisher's own free text and can be long. It wraps inside the column
+     rather than widening the page — nothing here may cause a horizontal scrollbar. */
+  overflow-wrap: anywhere;
+}
+
+.w1-fact[data-emphasized='true'] dd {
+  color: var(--color-canopy);
+  font-weight: var(--font-body-14-weight);
+}
+
+.w1-badge {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 6px;
+  border-radius: var(--radius-method-badge);
+  font-family: var(--font-badge-family);
+  font-size: var(--font-badge-size);
+  font-weight: var(--font-badge-weight);
+  letter-spacing: var(--font-tracking-badge);
+  background: var(--color-city-record-badge-fill);
+  color: var(--color-city-record-badge-text);
+  vertical-align: 1px;
+}
+
+.w1-terms-note {
+  font-family: var(--font-body-125-family);
+  font-size: var(--font-body-125-size);
+  color: var(--color-text-faint);
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+
+/* `HStack(spacing:10)`, `margin-top:22px`, both `flex:1`, radius 12px. */
+.w1-actions {
+  display: flex;
+  gap: var(--w1-button-gap);
+  margin-top: 22px;
+}
+
+.w1-actions > * {
+  flex: 1;
+  text-align: center;
+  border-radius: var(--radius-web-button);
+  font-family: var(--font-body-145-bold-family);
+  font-size: var(--font-body-145-bold-size);
+  font-weight: var(--font-body-145-bold-weight);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* C6 · `PrimaryButton`, W1's variant: `padding:13px`, 14.5px, radius 12px, no shadow. */
+.w1-primary {
+  padding: 13px;
+  background: var(--color-cta-fill);
+  color: var(--color-cta-label);
+  border: 0;
+}
+
+/* C7 · `SecondaryOutlineButton`, W1's variant: `padding:11px`, 14.5px, radius 12px. */
+.w1-secondary {
+  padding: 11px;
+  background: transparent;
+  color: var(--color-cta-fill);
+  border: 2px solid var(--color-cta-fill);
+}
+
+/* The provenance sentence closes the column, where §W1 puts the recent-visits panel. It is the
+   line that makes every row above it checkable, and it is the app's own — `CityRecordCopy`. */
+.w1-provenance {
+  margin: auto 0 0;
+  padding-top: 22px;
+  font-family: var(--font-body-125-family);
+  font-size: var(--font-body-125-size);
+  color: var(--color-text-faint);
+  line-height: 1.5;
+}
+
+/* ── Narrow ──────────────────────────────────────────────────────────────────────────────── */
+
+/* §W1's own responsive rule makes the framed mock scroll sideways below 700px. A real page does
+   not scroll sideways, so the grid becomes one column first: at 1.45fr/1fr the fact column is
+   under 300px by about 860px wide, which is where a `Trunk · DBH` row starts wrapping its label. */
+@media (max-width: 860px) {
+  .w1-body {
+    grid-template-columns: 1fr;
+  }
+
+  .w1-facts {
+    border-left: 0;
+    border-top: 1px solid var(--color-border-cool);
+  }
+
+  .w1-provenance {
+    margin-top: 22px;
+  }
+}

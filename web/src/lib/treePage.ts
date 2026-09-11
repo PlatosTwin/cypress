@@ -220,23 +220,34 @@ export function eyebrow(input: TreePageInput): string | null {
  * `Site` is added, and it is not an invention: it is screen 14's own card, which
  * `TreeProfilePresentation` draws "only where the city record is all there is to show" — the exact
  * condition this page is in.
+ *
+ * ── A vacant planting site draws fewer of them, and that is a ruling ─────────────────────────
+ *
+ * `SitePresentation.stats` is explicit: a site gets `Site`, `City record` and `Neighborhood`, with
+ * **no `Planted` card and no measurement**, because "the second is a claim about a tree". The seed
+ * carries both on real vacant rows — `124 COLUMBUS AVE` in the shipped San Francisco pack is a
+ * `vacant_site` with `planted_year` 2016 and a 5–10 cm city bucket — so this is not hypothetical
+ * tidying: rendering them would put a trunk diameter and a planting year on a page whose subject is
+ * a basin with nothing in it. E107 is the whole argument, and `Neighborhood` is the card that takes
+ * their place there.
  */
 export function facts(input: TreePageInput): readonly FactRow[] {
   const rows: FactRow[] = [];
+  const isSite = input.status === 'vacant_site';
 
   const status = statusLabel(input.status);
   if (status !== null) {
     rows.push({ id: 'status', label: 'Status', value: status, badge: null, emphasized: true });
   }
 
-  const dbh = cityDBHRangeText(input.dbhCityCmMin, input.dbhCityCmMax);
+  const dbh = isSite ? null : cityDBHRangeText(input.dbhCityCmMin, input.dbhCityCmMax);
   if (dbh !== null) {
     rows.push({
       id: 'dbh', label: 'Trunk · DBH', value: dbh, badge: cityRecordBadge, emphasized: false,
     });
   }
 
-  if (input.plantedYear !== null && Number.isInteger(input.plantedYear)) {
+  if (!isSite && input.plantedYear !== null && Number.isInteger(input.plantedYear)) {
     // `Planted`, not §W1's `In the city record since`. The column is `planted_year` — DataSF's
     // `PlantDate` — so it states when the tree went in, not when the city began keeping a record
     // of it, and the mock's label makes a claim the data does not. `Planted` is the label the app
@@ -261,6 +272,19 @@ export function facts(input: TreePageInput): readonly FactRow[] {
       id: 'cityRecord',
       label: 'City record',
       value: recordNumber(ref),
+      badge: null,
+      emphasized: false,
+    });
+  }
+
+  // `SiteCopy.neighborhoodLabel`. Only on a site, exactly where `SitePresentation` draws it: on a
+  // tree, 03 and 14 have no such card and adding one here would be a fourth surface's invention.
+  const neighborhood = isSite ? statedValue(input.neighborhoodName) : null;
+  if (neighborhood !== null) {
+    rows.push({
+      id: 'neighborhood',
+      label: 'Neighborhood',
+      value: neighborhood,
       badge: null,
       emphasized: false,
     });
