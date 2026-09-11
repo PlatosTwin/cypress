@@ -139,13 +139,31 @@ tombstone, before the `UPDATE` that stops the predicate matching.
 which is `PhotoOwner.permitsRemoval`'s ordering — and `DataDisputeStore`'s `WHERE` clauses carry the
 same refusal so the Swift gate and the SQL gate cannot say different things.
 
-**Disputes raised while signed out are untouched.** The deletion predicate is `raised_by = :user`,
-which a NULL never matches, so nothing about such a row changes and no tombstone is written for it.
-It stays this installation's to take back, before and after signing in, which is what R-a above
-describes. `AccountDeletionTests.theLeavingDoorAnonymizesADispute` asserts the whole chain — the
-un-naming, the surviving children, the refusal of the withdrawal to the next account **and** to the
-signed-out phone, and the untouched signed-out dispute beside it — with a `review_flags` row raised
-by the same account as calibration, so a green cannot mean the harness looked at nothing.
+**Disputes raised while signed out are untouched, and this ruling does not reach them.** The
+deletion predicate is `raised_by = :user`, which a NULL never matches, so nothing about such a row
+changes and no tombstone is ever written for it. On the client it stays this installation's to take
+back, before and after signing in, which is what R-a above describes;
+`ContributionStore.claimDevice` does not touch `tree_data_disputes` either — there is no device
+column on it to re-home — so the row is still `raised_by IS NULL` and still un-tombstoned after a
+claim and a deletion both. `AccountDeletionTests.theLeavingDoorAnonymizesADispute` asserts the whole
+chain — the un-naming, the surviving children, the refusal of the withdrawal to the next account
+**and** to the signed-out phone, and the untouched signed-out dispute beside it — with a
+`review_flags` row raised by the same account as calibration, so a green cannot mean the harness
+looked at nothing.
+
+**Where that leaves the two halves disagreeing, said plainly rather than left to be discovered.**
+The ruling above holds only for the dispute raised *while signed in* and then anonymized, because
+that is the only row a `raised_by = :user` tombstone can ever mark. For a dispute raised before
+sign-in the client and the service part company after a `claimDevice` and a `.leaveRecords`
+deletion: the client's profile still offers the withdrawal and the next account on the phone can
+take it back, while the service — whose `ClaimDevice` folded that row's `device_id` into a `user_id`
+before the deletion cleared both — answers `forbidden`. That is the same E280-shaped dead end this
+ruling avoids for the signed-in row, reached from the other direction, and **it is parked rather
+than solved.** It belongs to `docs/ROADMAP.md`'s chip "Decide what a signed-out phone can take back"
+— the same chip `store.disputeIsThisIdentitys` defers its own copy of this divergence to. Closing it
+here would mean narrowing the `raised_by IS NULL` arm, which is D9's arm: a signed-out contributor
+would lose the ability to retract their own standing objections, which is a decision neither half of
+this round was given.
 
 **Owed to the badge round, not to this one:** no guard enumerates the tables carrying a user column.
 `forgetAccount` has gone stale three times in this repo — twice on the outbox kind list, once here on

@@ -442,10 +442,14 @@ public struct AccountDeletion {
         //
         // That is not this half's ruling to make. `server/internal/store/disputes.go`'s
         // `disputeIsThisIdentitys` counts a dispute as the caller's on a `user_id` or a `device_id`
-        // match, this door clears both, and a comparison against two NULLs falls out of its
-        // `FILTER` — "a record owned by nobody is not withdrawable by anybody", measured there by
-        // `TestAnAnonymizedDisputeIsWithdrawableByNobody`. The service cannot adopt the other answer
-        // even in principle, because `ClaimDevice` has already folded the row's `device_id` into its
+        // match against its own `contributions` row, and `AccountDeletionChoice.leaveRecords` clears
+        // both of those there; a comparison against two NULLs then falls out of its `FILTER` — "a
+        // record owned by nobody is not withdrawable by anybody", measured there by
+        // `TestAnAnonymizedDisputeIsWithdrawableByNobody`. **This door clears one**, because this
+        // table has one: `tree_data_disputes` carries `raised_by` and no device column at all
+        // (`AppSchema` v22), which is why the fact that the row is nobody's has to be read off the
+        // tombstone rather than off a second NULL. The service cannot adopt the other answer even in
+        // principle, because `ClaimDevice` has already folded the row's `device_id` into its
         // `user_id` and there is no installation identity left to match. A phone that offered the
         // withdrawal anyway would apply it locally, queue a `data_dispute_withdrawal` and be
         // answered `forbidden` — a dispute shown as withdrawn while the service goes on holding it,

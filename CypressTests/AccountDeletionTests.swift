@@ -227,8 +227,10 @@ struct AccountDeletionTests {
     ///
     /// **What `raised_by IS NULL` means afterwards is not this half's to decide.**
     /// `server/internal/store/disputes.go` counts a dispute as the caller's on a `user_id` or a
-    /// `device_id` match, this door clears both, and `TestAnAnonymizedDisputeIsWithdrawableByNobody`
-    /// measures the result — a record owned by nobody is not withdrawable by anybody. A phone that
+    /// `device_id` match against its own `contributions` row, and `leaveRecords` clears both of
+    /// those there; this door clears the one owner column `tree_data_disputes` has, and the
+    /// tombstone is what carries the rest. `TestAnAnonymizedDisputeIsWithdrawableByNobody` measures
+    /// the service's result — a record owned by nobody is not withdrawable by anybody. A phone that
     /// answered otherwise would apply a withdrawal locally, queue it, and be told `forbidden`. So
     /// the two refusals below are asserted through both identities that could plausibly claim the
     /// row: the phone signed out, and the next account to sign in on it.

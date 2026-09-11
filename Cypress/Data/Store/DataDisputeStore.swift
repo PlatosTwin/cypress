@@ -131,6 +131,11 @@ public struct DataDisputeStore {
     /// `raised_by = :by` is the account arm. Signed out, `:by` binds NULL, `raised_by = NULL` is
     /// never true, and the clause correctly narrows to the anonymous rows alone rather than
     /// admitting an account's.
+    ///
+    /// That anonymous arm is where this half and the service part company once a phone has claimed
+    /// its device and the account has then been deleted — `openDispute` states the divergence and
+    /// names the `ROADMAP` chip it is parked under. The authorship half of the two `WHERE` clauses is
+    /// the same text, so what is said there applies here word for word.
     public func withdraw(
         id: UUID,
         raisedBy: UUID?,
@@ -190,10 +195,30 @@ public struct DataDisputeStore {
     ///
     /// "Theirs" is `TreeDataDispute.isAuthored(by:)` — see `withdraw` for why the refusal leads, and
     /// for why the anonymous arm after it is this installation's own and not a hole. The refusal is
-    /// the reason this read is also **what stops the profile offering a withdrawal it cannot
-    /// perform**: `LocalAPI.dataDisputeOffer` returns `.raisedByYou` from exactly this row, so an
-    /// anonymized dispute that matched here would draw a control whose action the service answers
-    /// `forbidden` — ERRATA E280's shape, reached through a third verb.
+    /// what stops the profile offering a withdrawal it cannot perform **for the one row it covers**:
+    /// `LocalAPI.dataDisputeOffer` returns `.raisedByYou` from exactly this row, so an anonymized
+    /// dispute that matched here would draw a control whose action the service answers `forbidden` —
+    /// ERRATA E280's shape, reached through a third verb.
+    ///
+    /// **That row is the one raised while signed in and then anonymized, and the scope stops there.**
+    /// The tombstone is written by `AccountDeletion.anonymizeContributions` under `raised_by = :user`,
+    /// so it can only ever mark a row that had an account on it. A dispute raised on this phone
+    /// *before* sign-in is born with `raised_by` NULL; `ContributionStore.claimDevice` does not touch
+    /// this table — there is no device column here for it to re-home — so the leaving door's
+    /// predicate never matches such a row and no tombstone is ever written for it. It goes on
+    /// matching the `raised_by IS NULL` arm after a claim and a deletion both, the profile goes on
+    /// offering the withdrawal, and the next account signed in on the phone can take it back.
+    ///
+    /// **The service disagrees about that row, and this round does not close the gap.** Its copy
+    /// arrived owned by the installation; `ClaimDevice` folded that `device_id` into a `user_id`,
+    /// the account deletion then cleared both, and `store.disputeIsThisIdentitys` answers
+    /// `forbidden` for the same withdrawal this read still offers. The question of what a phone may
+    /// take back once the service has stopped being able to see the installation is parked, not
+    /// overlooked: `docs/ROADMAP.md`'s chip "Decide what a signed-out phone can take back" is where
+    /// it lives, and `disputeIsThisIdentitys`' own closing paragraph defers to the same chip.
+    /// Closing it from here would mean **narrowing** the `raised_by IS NULL` arm, and that arm is
+    /// D9's: narrowed, a contributor who never signed in would lose the ability to retract their own
+    /// standing objections. Do not touch it without that decision.
     ///
     /// Children are **not** read: every caller of this wants the id and whether there is one, and
     /// the profile's offer carries nothing else. `dispute(id:)` is the whole-record read.
