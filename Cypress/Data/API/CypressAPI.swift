@@ -240,6 +240,57 @@ public protocol CypressAPI: Sendable {
     /// `any CypressAPI` (ERRATA E125).
     func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement
 
+    // MARK: - Disputing a record's own data (RULINGS R79, `AppSchema` v22)
+
+    /// Raises a dispute against a **city** record's data — R79's checkbox set, its suggested values
+    /// and its notes.
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint.** §6 predates the ruling; the dispute reaches an account
+    /// through the queue (`OutboxItem.Kind.dataDispute`) rather than through a call of its own, and
+    /// this round's ruling is that the service **records** it without materializing anything — no
+    /// dispute tables server-side, because adjudication is a web deliverable (ARCHITECTURE §8) and
+    /// guessing at the effect would move city data on a say-so nobody weighed.
+    ///
+    /// **This does not write the inventory and must never learn to.** The city's rows sit in an
+    /// ATTACHed read-only database; the dispute is a row in `main` referencing one. `claimSpecies`
+    /// and `correctSpecies` keep their `.forbidden` for city rows exactly as written — R79 changed
+    /// *disputing*, not writing.
+    ///
+    /// - Parameters:
+    ///   - issues: R79's checkboxes; more than one may apply. Empty is `.validationFailed`.
+    ///   - suggestions: what the reporter says the record should say instead. May be empty — "this
+    ///     is not a London Plane, I do not know what it is" is a real report.
+    ///   - notes: R79's free-text "notes / additional information".
+    /// - Throws: `.notFound` when there is no such record; `.forbidden` for a community row, whose
+    ///   own dispute surface is the community round's and which keeps `flagWrongSpecies` /
+    ///   `flagNeverExisted` until then; `.validationFailed` for the rules in `DataDisputeLimits`;
+    ///   `.conflict` when this raiser already has an open dispute on this record.
+    ///
+    /// **Declared here and not only in an extension**, for the reason `photoData` gives above at
+    /// length: an extension member has no witness-table entry, and every screen holds
+    /// `any CypressAPI` (ERRATA E125).
+    func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute
+
+    /// Takes back a dispute this person raised.
+    ///
+    /// **The author's and nobody else's.** It ships in the same round as the raise deliberately: the
+    /// owner's standing complaint about the community flagging flow is that a flag cannot be
+    /// retracted by the person who raised it, and a new dispute surface with the same gap would
+    /// repeat that defect on new ground.
+    ///
+    /// Stamps `withdrawn_at` and queues `data_dispute_withdrawal`. Nothing is deleted — the moment a
+    /// dispute was taken back is a fact, and a service that received the raise has to be able to
+    /// match the retraction to it.
+    ///
+    /// - Throws: `.notFound` when there is no such open dispute; `.forbidden` when it is somebody
+    ///   else's.
+    func withdrawDataDispute(disputeID: UUID) async throws
+
     // MARK: - Personal surfaces (private by default, D11)
 
     /// `GET /me/grove`.
@@ -1107,6 +1158,26 @@ public struct TreeProfile: Hashable, Sendable {
 
     /// Whether the photo has no owner left — see `anonymizedPhotoIDs`.
     public func isAnonymizedPhoto(_ photo: Photo) -> Bool { anonymizedPhotoIDs.contains(photo.id) }
+
+    /// R79's dispute state for this record, or nil when there is none to offer.
+    ///
+    /// **The one accessor a view should use, and the reason it exists.** Both `speciesCorrection`
+    /// and `recordDefect` answer `.dataDispute` for a city row, because R79's single sheet covers
+    /// both of those seams — its three checkboxes are the species one and the record one and the
+    /// location one. Two offers carrying one state is exactly the shape those two enums' own headers
+    /// warn about ("a view that assembled them from separate flags could draw two controls"), so the
+    /// pair is read here rather than at a call site: **one control, from one value.**
+    ///
+    /// `LocalAPI` writes the identical value into both — it calls `dataDisputeOffer` twice, from the
+    /// same `tree` and the same connection inside one read, so there is no state in which the two
+    /// can disagree — and `DataDisputeTests` pins that. This reads
+    /// `recordDefect` first and falls back to `speciesCorrection` so that a stub or a preview which
+    /// set only one of them still answers, rather than silently offering nothing.
+    public var cityDataDispute: DataDisputeOffer? {
+        if case let .dataDispute(offer) = recordDefect { return offer }
+        if case let .dataDispute(offer) = speciesCorrection { return offer }
+        return nil
+    }
 
     /// The one visibility rule for a person's own screens — ERRATA E215.
     ///

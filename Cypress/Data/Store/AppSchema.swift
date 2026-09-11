@@ -51,7 +51,8 @@ public enum AppSchema {
         Migration(version: 18, name: "a staged binary is a row, so applying it and sending it are two facts", migrate: applyV18),
         Migration(version: 19, name: "an index is collated the way its readers ask, and the journal has an order", sql: v19),
         Migration(version: 20, name: "the species chain and the community rows are reachable by the identity their readers bind", sql: v20),
-        Migration(version: 21, name: "a reading can be taken back, so the outbox learns measurement_withdrawal", migrate: applyV21)
+        Migration(version: 21, name: "a reading can be taken back, so the outbox learns measurement_withdrawal", migrate: applyV21),
+        Migration(version: 22, name: "a city record's data can be disputed, and the outbox learns both dispute kinds", migrate: applyV22)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2459,6 +2460,263 @@ public enum AppSchema {
                    );
 
             DROP TABLE outbox_photos_parked_v21;
+            """)
+    }
+
+    // MARK: - v22
+
+    /// A city record's own data becomes disputable (`RULINGS R79`), and `outbox.kind` learns the two
+    /// kinds that carry a dispute and its retraction off the phone.
+    ///
+    /// ── What was wrong ────────────────────────────────────────────────────────────────────────
+    ///
+    /// The tree profile's flag controls render for community records only. A city row answers
+    /// `.unavailable` on both of them, and `SpeciesClaim.swift` recorded why: the city's data sits in
+    /// an ATTACHed read-only database, and letting a contributor dispute it "would need an override
+    /// table and a policy about what the export then says, which is a larger decision than this."
+    /// R79 took that decision, and took it in the direction that needs no override table at all: a
+    /// dispute is a row in `main` **referencing** the city tree, never a write to the attached file.
+    /// Whether a dispute ever reaches a city's own dataset is explicitly deferred.
+    ///
+    /// ── Three tables, because a dispute is not boolean-shaped ─────────────────────────────────
+    ///
+    /// The ruling is explicit that this record is "richer than the existing boolean-shaped
+    /// species/never-existed flags": one dispute may check several issue kinds, and it carries
+    /// per-field suggested values beside them. Both of those are one-to-many, so both are child
+    /// tables with composite primary keys rather than columns holding JSON — the same argument
+    /// `outbox.kind` makes for being a column: a set a reader has to parse out of a text blob cannot
+    /// be indexed, cannot be CHECKed, and cannot be counted by the adjudication surface that will
+    /// one day read these.
+    ///
+    /// `tree_id` carries no `REFERENCES`, for this schema's oldest stated reason: SQLite cannot
+    /// declare a foreign key across an attached database, and a city tree lives in `seed`. The
+    /// index below is collated `NOCASE` because that is how every reader in this codebase compares a
+    /// tree id (v20's finding, measured there).
+    ///
+    /// ── The two `ON DELETE CASCADE` children are a hazard for whoever rebuilds this table ─────
+    ///
+    /// `tree_dispute_issues` and `tree_dispute_suggestions` both cascade from
+    /// `tree_data_disputes(id)`. Under `PRAGMA foreign_keys = ON` — which `SQLiteConnection` and
+    /// `DatabaseQueue` both set on every connection — the implicit `DELETE FROM` inside a
+    /// `DROP TABLE` of the **parent** performs that cascade, so a future migration that rebuilds
+    /// `tree_data_disputes` the obvious way silently deletes every checked issue and every suggested
+    /// value in the app. `PRAGMA defer_foreign_keys = ON` does **not** save it: it defers constraint
+    /// *checking*, and a cascade is an *action*. Both halves were measured on this project's own
+    /// SQLite while v21 was written, and `SchemaV22Tests.theCascadeIsRealOnThisSQLite` measures the
+    /// first half again here rather than leaving this paragraph as a belief.
+    ///
+    /// **The recipe a rebuild of `tree_data_disputes` must follow is v21's**, five steps below this
+    /// comment: park the child rows in a table with no foreign key, empty the child, rebuild the
+    /// parent, put the rows back, then restate any derived counter from the child table rather than
+    /// copying it. There is no counter here today; there are two children instead of one.
+    ///
+    /// Rebuilding a **child** is not the same hazard and is cheap: a cascade runs parent to child,
+    /// so dropping `tree_dispute_suggestions` cascades nothing. That is the answer to the question
+    /// the round's contract asks about the `field` vocabulary — widening it is **not free**, because
+    /// SQLite cannot widen a `CHECK` in place, but it costs a child-table rebuild rather than a
+    /// parent one. The same is true of `tree_dispute_issues.kind`.
+    ///
+    /// ── The `kind` widening, which is v21's rebuild for the sixth time ────────────────────────
+    ///
+    /// `outbox.kind` gains `data_dispute` and `data_dispute_withdrawal`. Both, in one statement, on
+    /// the orchestrator's ruling for this round: the `CHECK` is one statement whether it admits one
+    /// value or two, and shipping a dispute that its own author cannot retract would repeat on a new
+    /// surface exactly the defect the owner has already reported against the community flagging flow.
+    ///
+    /// SQLite cannot widen a `CHECK` in place, so this is the table rebuild v4, v15, v17, v18 and
+    /// v21 have each performed here, and the parking of `outbox_photos` around it is v21's
+    /// verbatim — including the recompute of `photos_outstanding` at the end, because the implicit
+    /// delete inside `DROP TABLE` fires no triggers and a counter reasoned about across a rebuild is
+    /// a counter that can be wrong. v21's own header argues every step at length and is not repeated.
+    ///
+    /// ── Nothing is enqueued by this migration ─────────────────────────────────────────────────
+    ///
+    /// v17's ruling, restated because it is easy to lose: a widened vocabulary is permission to write
+    /// *future* rows. There is no sweep and no backfill, and there is nothing a sweep could find —
+    /// no build before this one could record a dispute, so the three tables below are empty on every
+    /// device that runs this. The `INSERT … SELECT` reads `outbox` and only `outbox`.
+    ///
+    /// ── Idempotent by guard, for the reason v3 and v21 give ──────────────────────────────────
+    ///
+    /// The three `CREATE TABLE`s are `IF NOT EXISTS`, so they replay cleanly on their own. The
+    /// rebuild is guarded on the stored `CREATE TABLE` text, because what changes there is a `CHECK`
+    /// and `pragma_table_info` cannot see one. The guard reads `'data_dispute'` **with both quotes**:
+    /// `'data_dispute_withdrawal'` does not contain that substring — the character after `dispute` is
+    /// an underscore, not a closing quote — so the two values cannot be confused for one another, and
+    /// a run interrupted between the DDL and the version bump finds the vocabulary already widened
+    /// and touches nothing. `DataGates.sqliteStore` checks that by setting `user_version` to 0 and
+    /// running the whole ladder again.
+    ///
+    /// **Readable by v21 code?** No, and that is the ordinary answer rather than a hazard of this
+    /// step: a v22 file opened by a v21 build refuses on `MigrationError.databaseIsAhead`.
+    private static func applyV22(_ connection: SQLiteConnection) throws {
+        try connection.execute("""
+            -- ─── The dispute itself ──────────────────────────────────────────────────────────
+            -- `tree_source` holds `TreeSource.rawValue`, which is `city_import` or `community` —
+            -- the same two strings `seed.trees.source` and `community_trees.source` hold. A third
+            -- spelling of a two-valued fact is how two copies of a vocabulary start to differ.
+            --
+            -- `withdrawn_at` is the record's only transition, and it is the **author's**. There is
+            -- no `confirmed` and no `dismissed`: a city row cannot be written from this device, and
+            -- adjudication is a web deliverable (ARCHITECTURE §8).
+            CREATE TABLE IF NOT EXISTS tree_data_disputes (
+                id           TEXT PRIMARY KEY,
+                client_uuid  TEXT NOT NULL UNIQUE,
+                tree_id      TEXT NOT NULL,
+                tree_source  TEXT NOT NULL CHECK (tree_source IN ('city_import','community')),
+                raised_by    TEXT,
+                notes        TEXT,
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL,
+                withdrawn_at TEXT
+            );
+
+            -- Every read of this table is "the disputes on this tree", from the profile. NOCASE
+            -- because that is the collation every tree-id comparison in this codebase uses; v20
+            -- measured what a BINARY index costs those readers.
+            CREATE INDEX IF NOT EXISTS idx_tree_data_disputes_tree
+                ON tree_data_disputes(tree_id COLLATE NOCASE, withdrawn_at);
+
+            -- ─── R79's three checkboxes ──────────────────────────────────────────────────────
+            -- Composite primary key, so "wrong species" cannot be checked twice on one dispute.
+            CREATE TABLE IF NOT EXISTS tree_dispute_issues (
+                dispute_id TEXT NOT NULL REFERENCES tree_data_disputes(id) ON DELETE CASCADE,
+                kind       TEXT NOT NULL CHECK (kind IN ('wrong_location','wrong_species','wrong_metadata')),
+                PRIMARY KEY (dispute_id, kind)
+            );
+
+            -- ─── The suggested values ────────────────────────────────────────────────────────
+            -- Keyed per **field**, not per issue kind: a suggestion is a statement about a column,
+            -- and `TreeDataDispute.SuggestedField.issue` is the mapping from a column back to the
+            -- checkbox it belongs under.
+            --
+            -- `location_accuracy_m` sits beside the coordinates it justifies because a suggested
+            -- position without it cannot be weighed later — tester report F17 is what a location
+            -- used without reading its accuracy costs. `status` is constrained by the reader and
+            -- not by this CHECK: part 1 writes only `vacant_site`, and
+            -- `DataDisputeLimits.statusSuggestion` is the code that says so.
+            CREATE TABLE IF NOT EXISTS tree_dispute_suggestions (
+                dispute_id TEXT NOT NULL REFERENCES tree_data_disputes(id) ON DELETE CASCADE,
+                field      TEXT NOT NULL CHECK (field IN (
+                               'lat','lon','location_accuracy_m',
+                               'species_id','planted_year','status')),
+                value      TEXT NOT NULL,
+                PRIMARY KEY (dispute_id, field)
+            );
+            """)
+
+        let existing = try outboxDefinition(connection: connection)
+        guard !existing.contains("'data_dispute'") else { return }
+        try connection.execute("""
+            -- ── 1. Park the staged binaries where no foreign key reaches them ────────────────
+            -- v21's block, verbatim and for its reasons: `outbox_photos.outbox_id` cascades from
+            -- `outbox`, this migration drops `outbox`, and `defer_foreign_keys` defers the check
+            -- rather than the action.
+            CREATE TABLE outbox_photos_parked_v22 (
+                id              TEXT,
+                outbox_id       TEXT,
+                path            TEXT,
+                shot_type       TEXT,
+                photo_id        TEXT,
+                container_path  TEXT,
+                state           TEXT,
+                sendable        INTEGER,
+                fail_count      INTEGER,
+                last_error      TEXT,
+                last_error_code TEXT,
+                created_at      TEXT,
+                updated_at      TEXT
+            );
+            INSERT INTO outbox_photos_parked_v22
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, last_error, last_error_code, created_at, updated_at)
+            SELECT id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                   fail_count, last_error, last_error_code, created_at, updated_at
+              FROM outbox_photos;
+
+            -- An empty child has nothing for the drop below to cascade away.
+            DELETE FROM outbox_photos;
+
+            -- ── 2. The rebuild ──────────────────────────────────────────────────────────────
+            CREATE TABLE outbox_disputable_records (
+                seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                TEXT NOT NULL UNIQUE,
+                kind              TEXT NOT NULL CHECK (kind IN (
+                                      'visit','observation','measurement','care_event',
+                                      'favorite_toggle','private_reminder',
+                                      'add_tree','species_claim','species_correction',
+                                      'wrong_species_report','never_existed_report',
+                                      'species_review_dismissal','record_review_dismissal',
+                                      'photo_vote','photo_withdrawal','hazard_redirect',
+                                      'measurement_withdrawal',
+                                      -- v22. A dispute against a city record, and its author
+                                      -- taking it back. Two kinds rather than one carrying a
+                                      -- verb, for the reason `measurement_withdrawal` above is
+                                      -- its own kind: `outbox.kind` is what screen 17 groups by
+                                      -- and what a server dispatches on, and a retraction
+                                      -- arriving as a `data_dispute` would read as a second
+                                      -- objection to the same record.
+                                      'data_dispute','data_dispute_withdrawal')),
+                client_uuid       TEXT NOT NULL UNIQUE,
+                payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                -- Dead since v18 and still undroppable: v2's body names this column and SQLite
+                -- resolves it at prepare time, so a replay of v2 against a table without it fails
+                -- outright. v18's comment argues it at length.
+                photo_paths       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(photo_paths)),
+                photos_outstanding INTEGER NOT NULL DEFAULT 0 CHECK (photos_outstanding >= 0),
+                state             TEXT NOT NULL DEFAULT 'pending'
+                                  CHECK (state IN ('pending','uploading','failed','done')),
+                fail_count        INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error        TEXT,
+                last_error_code   TEXT,
+                -- v15's two sinks. Both new kinds are born `local_applied = 1` like every other
+                -- kind `LocalAPI` writes inside the transaction that performs the mutation, so a
+                -- drain owes them the send and nothing else
+                -- (`OutboxPayload.isAppliedBeforeItIsQueued`).
+                local_applied     INTEGER NOT NULL DEFAULT 0 CHECK (local_applied IN (0,1)),
+                remote_sent       INTEGER NOT NULL DEFAULT 0 CHECK (remote_sent IN (0,1)),
+                window_started_at TEXT NOT NULL,
+                next_attempt_at   TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                -- v1's sentence against v18's counter. Zero loss is a schema invariant.
+                CHECK (state <> 'done' OR (local_applied = 1 AND photos_outstanding = 0)),
+                -- Apply is first and unconditional (RULINGS R72 §1).
+                CHECK (remote_sent = 0 OR local_applied = 1)
+            );
+
+            INSERT INTO outbox_disputable_records
+                (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding, state,
+                 fail_count, last_error, last_error_code, local_applied, remote_sent,
+                 window_started_at, next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding, state,
+                   fail_count, last_error, last_error_code, local_applied, remote_sent,
+                   window_started_at, next_attempt_at, created_at, updated_at
+              FROM outbox;
+
+            -- ── 3. Swap ─────────────────────────────────────────────────────────────────────
+            DROP TABLE outbox;
+            ALTER TABLE outbox_disputable_records RENAME TO outbox;
+
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
+            CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+
+            -- ── 4. The binaries go back, now that their parent is the rebuilt table ─────────
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, last_error, last_error_code, created_at, updated_at)
+            SELECT id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                   fail_count, last_error, last_error_code, created_at, updated_at
+              FROM outbox_photos_parked_v22;
+
+            -- ── 5. The counter is the count, stated rather than reasoned about ─────────────
+            UPDATE outbox
+               SET photos_outstanding = (
+                     SELECT COUNT(*) FROM outbox_photos
+                      WHERE outbox_photos.outbox_id = outbox.id
+                   );
+
+            DROP TABLE outbox_photos_parked_v22;
             """)
     }
 
