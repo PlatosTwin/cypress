@@ -358,11 +358,15 @@ describe('the export against Cypress/DesignSystem/Tokens', () => {
     for (const [file, source] of Object.entries(sources)) {
       assert.equal(source.includes('/*'), false, `${file} now carries a /* … */ block comment`);
       for (const [index, line] of source.split('\n').entries()) {
+        // A whole-line comment is removed before its quotes are ever reached, so a `///` line
+        // linking to a URL is not what this is about. Code lines are.
+        if (line.trim().startsWith('//')) continue;
         for (const literal of literals(line)) {
           assert.equal(
             literal.includes('//'),
             false,
-            `${file}:${index + 1} hides // inside a string literal: ${literal}`,
+            `${file}:${index + 1} hides // inside a string literal: ${literal}. stripComments `
+              + 'would stop stripping at the quote and leave comment text in the walk.',
           );
         }
       }
@@ -651,10 +655,14 @@ describe('web/src/styles/tokens.css', () => {
       assert.ok(documented !== null, `${t.name}'s clamp comment states no line-height`);
       clamped.set(t.cssName, documented[1] ?? '');
     }
-    // A scrape that matched nothing would satisfy every loop below it.
+    // A scrape that matched nothing would satisfy every loop below it, so the pair is named here
+    // rather than counted. If a clamp is genuinely lifted in the Swift, this is the first thing
+    // that goes red and the header below is the second — update both, in that order.
     assert.deepEqual(
       [...clamped.keys()].sort(),
       ['font-line-spacing-species-hero', 'font-line-spacing-tree-name-hero'],
+      'the set of line-spacings the Swift documents as "clamp at 0" has changed. Update this '
+        + "pair AND the matching lines in tokens.ts's HEADER, then run `npm run tokens`.",
     );
 
     const header = checkedIn.split('*/')[0] ?? '';
