@@ -234,6 +234,15 @@
   font-weight: var(--font-body-14-weight);
 }
 
+/*
+ * C12 · `MethodBadge`, W1's variant: `11px, padding:1.5px 6px` (§2's web variant line).
+ *
+ * **Three treatments, because the badge has three and D7 is why.** `taped` and `est.` are not
+ * decoration on a number — they are the difference between a reading and a guess, and R1 spent a
+ * token retint making the two distinguishable at 4.5:1. The `city record` pair is a third case
+ * beside them rather than a third method (E63), and the default below is the city's because that
+ * is the badge a page with no community half draws.
+ */
 .w1-badge {
   display: inline-block;
   margin-left: 7px;
@@ -246,6 +255,37 @@
   background: var(--color-city-record-badge-fill);
   color: var(--color-city-record-badge-text);
   vertical-align: 1px;
+}
+
+/* `MethodBadge`'s measured series — `tape`, `caliper`, `laser`. */
+.w1-badge[data-tone='measured'] {
+  background: var(--color-taped-badge-fill);
+  color: var(--color-taped-badge-text);
+}
+
+/* And the estimated series, which is the pair the retint separated. */
+.w1-badge[data-tone='estimated'] {
+  background: var(--color-estimated-badge-fill);
+  color: var(--color-estimated-badge-text);
+}
+
+/*
+ * `MethodBadge.accessibilityLabel`, carried for a screen reader and clipped for everyone else.
+ *
+ * `display:none` and `visibility:hidden` both remove it from the accessibility tree, which would
+ * make this a no-op that looks like it works — the shape of failure this repository has a rule
+ * about. The clip-rect idiom keeps the text in the tree and out of the layout.
+ */
+.w1-spoken {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .w1-terms-note {

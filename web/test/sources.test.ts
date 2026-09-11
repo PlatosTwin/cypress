@@ -595,8 +595,8 @@ describe('the sources the web suite reads', () => {
     assert.ok(root.length > 0);
     assert.equal(
       sourcesTheWebSuiteReads.length,
-      22,
-      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 22. If a check was `
+      23,
+      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 23. If a check was `
         + `added, add its source here and to web.yml; if one was removed, this count moves with it.`,
     );
     for (const relative of sourcesTheWebSuiteReads) {
@@ -670,10 +670,12 @@ describe('the sources the web suite reads', () => {
         'gradients.ts',
         'growthCharting.ts',
         'idSpaces.ts',
+        'measuredValue.ts',
         'obligations.ts',
         'ogCard.ts',
         'ogRaster.ts',
         'packLibrary.ts',
+        'publicTreeRead.ts',
         'quantity.ts',
         'spelling.ts',
         'tokens.ts',

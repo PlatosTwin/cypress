@@ -250,12 +250,35 @@ const READ_FROM_OUTSIDE_WEB: readonly string[] = [
   PUBLISH_CITIES_PY,
   'Fixtures/seed/schema.sql',
   'Fixtures/seed/pinned-seed.json',
+  // The community half. `web/test/publicTreeRead.test.ts` reads the handler for its key set and
+  // both golden bodies for its stub server — the same three files `web.yml` now triggers on.
+  'server/internal/api/public.go',
+  'server/testdata/public_tree.json',
+  'server/testdata/public_tree_empty.json',
 ];
 
 describe('the workflow triggers on every file this suite reads', () => {
   const workflow = read('.github/workflows/web.yml');
 
-  /** The quoted entries under a `paths:` key, per block. One list per trigger. */
+  /**
+   * The quoted entries under a `paths:` key, per block. One list per trigger.
+   *
+   * ── A trailing comment on an entry used to end the block, and it was doing so ─────────────
+   *
+   * The entry pattern anchored at `'\s*$`, so `- 'Cypress/DesignSystem/Tokens/**'   # …` matched
+   * neither the entry rule nor the comment rule and fell through to "anything else ends the
+   * list". **Both of `web.yml`'s filters carry exactly that line as their second entry**, so this
+   * parser read one path out of each block and reported every other file as missing.
+   *
+   * The test below then failed — truthfully, since the assertion is "this file is not in the
+   * block I parsed" — while naming a file the workflow has listed since W-B. A guard going red
+   * for a reason that is not the defect it guards is the same failure as one going green over a
+   * defect: what it reports is not what it measured. `web.yml` is correct YAML and GitHub reads
+   * the whole list; the parser was the thing that was wrong.
+   *
+   * The specimen below now carries the trailing-comment line as a third trap, so the fix is
+   * calibrated against a case whose answer was known before the parser saw it.
+   */
   function pathBlocks(yaml: string): readonly (readonly string[])[] {
     const blocks: string[][] = [];
     let current: string[] | null = null;
@@ -266,40 +289,52 @@ describe('the workflow triggers on every file this suite reads', () => {
         continue;
       }
       if (current === null) continue;
-      // The trailing `#…` is not decoration in this regex. `web.yml` writes at least one entry as
+      // The trailing `#…` is not decoration in this regex, and neither is the group being OUTSIDE
+      // the quotes. `web.yml` writes at least one entry as
       // `- 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS`,
       // and without the comment group that line matches no entry, is not a comment line either,
       // and so ENDS the block — silently dropping every path after it. The suite went red on
       // `SeedDatabase.swift`, the first entry below that line, and the report read as a missing
-      // trigger rather than as a parser that had stopped reading. The specimen below carries the
-      // same shape, so a future narrowing of this regex fails against a known answer first.
+      // trigger rather than as a parser that had stopped reading. Matching the `#` only outside
+      // the quotes is what keeps a path that CONTAINS one a path. The specimen below carries both
+      // shapes, so a future narrowing of this regex fails against a known answer first.
       const entry = /^\s*-\s*'([^']+)'\s*(?:#.*)?$/.exec(line);
       if (entry?.[1] !== undefined) {
         current.push(entry[1]);
         continue;
       }
-      // A comment inside the list is still inside the list; anything else ends it.
+      // A comment on its own line is still inside the list; anything else ends it.
       if (!/^\s*#/.test(line) && line.trim().length > 0) current = null;
     }
     return blocks;
   }
 
   it('the paths: parser reads a block and stops at the end of it', () => {
-    // Specimen first, answer known before the parser saw it — including the three traps: a comment
-    // between entries, an entry with a comment AFTER it on the same line, and a following key
-    // whose value is also a quoted string.
+    // Specimen first, answer known before the parser saw it — including the four traps: a comment
+    // between entries, an entry with a comment AFTER it on the same line, an entry whose quoted
+    // path CONTAINS a `#`, and a following key whose value is also a quoted string.
     //
-    // The middle one is in `web.yml` today and was not in this specimen when the parser was
-    // written; the parser ended the block on it and reported the six entries below it as absent
-    // from a filter that lists all six. A specimen that does not carry the shapes the real file
-    // carries is a calibration of the wrong instrument.
+    // The trailing-comment shape is in `web.yml` today and was not in this specimen when the
+    // parser was written; the parser ended the block on it and reported the six entries below it
+    // as absent from a filter that lists all six. A specimen that does not carry the shapes the
+    // real file carries is a calibration of the wrong instrument. Two annotated entries are here,
+    // each followed by more entries, because the failure being guarded is not the one dropped
+    // line — it is that a line matching neither branch ends the block and takes everything after
+    // it with it. `docs/a#b.md` is the trap in the other direction: it refuses the tempting fix
+    // of cutting each line at its first `#`.
+    //
+    // Three branches found this defect independently (og-raster, live-facts, pack-read) and landed
+    // the same regex; this specimen is the union of all three calibrations, kept whole on purpose.
     const specimen = [
       '  push:',
       '    paths:',
       "      - 'web/**'",
+      "      - 'Cypress/DesignSystem/Tokens/**'   # named with the test that reads it",
       '      # a comment inside the list',
+      "      - 'docs/a#b.md'",
       "      - 'Tools/x.sh'   # and a comment after an entry, on the entry's own line",
       "      - 'Fixtures/y.sql'",
+      "      - 'Tools/y.sh'",
       '  pull_request:',
       "    branches: ['main']",
       '    paths:',
@@ -307,8 +342,21 @@ describe('the workflow triggers on every file this suite reads', () => {
     ].join('\n');
     assert.deepEqual(
       pathBlocks(specimen).map((block) => [...block]),
-      [['web/**', 'Tools/x.sh', 'Fixtures/y.sql'], ['web/**']],
+      [
+        [
+          'web/**',
+          'Cypress/DesignSystem/Tokens/**',
+          'docs/a#b.md',
+          'Tools/x.sh',
+          'Fixtures/y.sql',
+          'Tools/y.sh',
+        ],
+        ['web/**'],
+      ],
     );
+    // And the block still ends where it should: the `branches:` line above did not become an
+    // entry, and neither does a key whose value is a quoted string on the same line.
+    assert.equal(pathBlocks(specimen).length, 2);
   });
 
   it('every out-of-web file the suite reads is on both trigger lists', () => {

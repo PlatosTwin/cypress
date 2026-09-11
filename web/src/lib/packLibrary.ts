@@ -47,7 +47,7 @@ import {
   treeFactsByUUID,
   type TreeFactsRow,
 } from './pack/queries.ts';
-import { treePageModel, type TreePageModel } from './treePage.ts';
+import { treePageModel, type TreePageInput, type TreePageModel } from './treePage.ts';
 
 /** The environment variable naming the directory the packs are mounted at. */
 export const PACK_DIRECTORY_VARIABLE = 'CYPRESS_PACK_DIR';
@@ -216,6 +216,21 @@ export type TreePageResolution =
   | { readonly ok: false; readonly refusal: TreePageRefusal };
 
 /**
+ * The same lookup, stopping one step short: the pack's half of the page, before a model is built.
+ *
+ * **It exists because of an ordering problem and not for tidiness.** The community read is keyed
+ * by tree uuid, and the uuid a page must ask about is the **pack's** spelling and not the URL's —
+ * a uuid typed in capitals resolves, and the request has to carry the identity the file holds. So
+ * the pack lookup has to finish before the request can start, and a caller that wants both does
+ * this, awaits, and calls `treePageModel` itself.
+ *
+ * `resolveTreePage` stays as it was for every caller that wants the city record alone.
+ */
+export type TreePageInputResolution =
+  | { readonly ok: true; readonly input: TreePageInput; readonly pack: Pack }
+  | { readonly ok: false; readonly refusal: TreePageRefusal };
+
+/**
  * The canonical spelling of a uuid in a public URL: 8-4-4-4-12 hex, any case.
  *
  * Version and variant nibbles are deliberately NOT checked. Every tree uuid is a v5 today, but the
@@ -242,6 +257,19 @@ export function resolveTreePage(
   uuid: string,
   library: PackLibrary | null,
 ): TreePageResolution {
+  const found = resolveTreePageInput(idSpace, uuid, library);
+  if (!found.ok) return found;
+  // No `community` field, so the model's state is `notRequested` and the page is exactly the one
+  // W-C shipped. A caller that wants the community half awaits it and builds the model itself.
+  return { ok: true, pack: found.pack, model: treePageModel(found.input) };
+}
+
+/** The pack's half of the page. See `TreePageInputResolution` for why this is a separate step. */
+export function resolveTreePageInput(
+  idSpace: string,
+  uuid: string,
+  library: PackLibrary | null,
+): TreePageInputResolution {
   try {
     requireIdSpace(idSpace);
   } catch (error) {
@@ -311,7 +339,7 @@ export function resolveTreePage(
   return {
     ok: true,
     pack,
-    model: treePageModel({
+    input: {
       idSpace,
       // The pack's own spelling, not the URL's: a uuid typed in capitals resolves, and the page
       // then states the identity the file holds rather than the one the reader typed.
@@ -331,6 +359,6 @@ export function resolveTreePage(
       inventoryURL: inventory?.url ?? null,
       inventorySnapshotOn: meta('snapshot_on'),
       inventoryLicense: license,
-    }),
+    },
   };
 }

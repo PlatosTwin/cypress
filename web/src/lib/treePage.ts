@@ -13,17 +13,35 @@
  * about half contributed data.** The tree's name, its vitality, its measured height, the taped DBH
  * reading, the photo count and the recent-visits panel all live in the *writable* database and
  * reach the server as contributions, whose public read surface is Class R — the contributor's own
- * data. There is no public read for any of it, so v1 renders the city record and nothing else.
+ * data.
  *
- * **Nothing contributed is stubbed, faked or approximated.** Where §W1 specifies a fact the pack
- * cannot answer, the element is absent. It is not drawn empty, not drawn with a placeholder, and
+ * **Two of those now have a public read and this file uses it.** PR #163 (milestone W-G) shipped
+ * `GET /api/v1/public/trees/{id}`: the latest live height, the latest live trunk DBH — each with
+ * its entered unit, its method and its month — and R27.1's beloved state with its count above the
+ * floor. `src/lib/publicTreeRead.ts` is the client; this file decides what the page does with the
+ * answer, and with the three different ways there can fail to be one.
+ *
+ * **The rest is still absent and the endpoint agrees.** There is no tree name anywhere in this
+ * system, no vitality rating in the response (it was removed before #163 merged, because a
+ * published rating has no takedown route), no photo count, no visits panel and no photographs.
+ *
+ * **Nothing contributed is stubbed, faked or approximated.** Where §W1 specifies a fact neither
+ * half can answer, the element is absent. It is not drawn empty, not drawn with a placeholder, and
  * not drawn with the nearest city-record fact wearing the contributed fact's label. The one row
  * where a city-record fact takes a contributed row's *place* is the DBH bucket, and it carries the
  * `city record` badge precisely so it cannot be read as the taped reading it is standing in for
- * (D7, E63).
+ * (D7, E63) — and it now yields that place to the taped reading itself whenever there is one.
  *
  * The full list of §W1 elements this does not render, and why each one is absent, is in the pull
  * request that added this file.
+ *
+ * ── The community half may be missing, and that is the ordinary case ─────────────────────────
+ *
+ * Nothing about this page depends on the service answering. The page's spine is the city record —
+ * public data under ODbL that no contributor can withdraw — so a refused connection, a timeout, an
+ * unset variable or a body this build cannot read all leave a page that resolves, states what the
+ * city knows, and says it could not ask for the rest. That is the ruling's §8c property, and it is
+ * why there is no `throw` on the request path.
  *
  * ── Where the copy comes from ────────────────────────────────────────────────────────────────
  *
@@ -34,14 +52,20 @@
  */
 import {
   cityDBHRangeText,
-  cityRecordBadge,
   provenanceNote,
   recordNumber,
   snapshotDay,
   statedValue,
   statusLabel,
 } from './cityRecord.ts';
+import {
+  CITY_RECORD_BADGE,
+  measuredValueText,
+  methodBadge,
+  type Badge,
+} from './measuredValue.ts';
 import { sourceObligation, type SourceObligation } from './obligations.ts';
+import { COMMUNITY_NOT_REQUESTED, type CommunityHalf, type PublicReading } from './publicTreeRead.ts';
 
 /** What one row of the fact column says. `SCREENS.md` C30 · `WebFactRow`. */
 export interface FactRow {
@@ -50,7 +74,7 @@ export interface FactRow {
   readonly label: string;
   readonly value: string;
   /** The C30 method badge beside the value, when the fact carries one. */
-  readonly badge: string | null;
+  readonly badge: Badge | null;
   /**
    * C30 draws one row at weight 700 in `--color-canopy`. §W1 gives that treatment to `Status`,
    * and the status is what this page's first row still carries.
@@ -81,6 +105,16 @@ export interface TreePageInput {
   readonly inventorySnapshotOn: string | null;
   /** `seed_meta.inventory_<id>_license` — absent for San Francisco, and that is the honest state. */
   readonly inventoryLicense: string | null;
+  /**
+   * What this render learned from `GET /api/v1/public/trees/{id}`, or that it did not ask.
+   *
+   * **Optional, and the default is `notRequested` rather than "nothing".** A caller that renders
+   * the city record alone — the OpenGraph card does — gets exactly the page W-C shipped, and the
+   * five states are `publicTreeRead.ts`'s. The two that matter here are `empty` and `unavailable`:
+   * one is a fact about the tree and the other is a fact about this server, and they render
+   * differently for that reason.
+   */
+  readonly community?: CommunityHalf;
 }
 
 /** The italic-or-not runs of the serif line under the H1. */
@@ -120,6 +154,26 @@ export interface TreePageModel {
    * can ask of a value.
    */
   readonly obligation: SourceObligation | null;
+  /**
+   * Which of the five community states this render is in — `publicTreeRead.ts`'s own tag.
+   *
+   * On the model rather than left in the route, so "do these three states render differently" is a
+   * question a test can ask of a value. The page also writes it into the markup, which is the only
+   * channel an operator has for the difference between `empty` and `unavailable` once the page has
+   * been served: a `.astro` page's 200 keeps its headers, but the reasons are long and belong in
+   * the process log beside the refusals W-C already logs there.
+   */
+  readonly communityState: CommunityHalf['state'];
+  /**
+   * One sentence when this page **cannot speak** for the community half, null otherwise.
+   *
+   * It is not an error banner and it is not on every page: it appears exactly when a silence would
+   * otherwise be read as an answer. `empty` means the service answered and this tree has nothing —
+   * rendering nothing there is the house style and the reader is not misled. `unavailable` and
+   * `unconfigured` mean this page does not know, and a page that drew those the same way as
+   * `empty` would assert "nobody has measured this tree" every time it was merely unable to ask.
+   */
+  readonly communityNote: string | null;
   readonly documentTitle: string;
   readonly description: string;
 }
@@ -127,13 +181,18 @@ export interface TreePageModel {
 // ── Copy this file authors, which is as little as it could be ───────────────────────────────
 
 /**
- * The four strings below are **not** ported from anywhere, because nothing in the app or the mocks
+ * The six strings below are **not** ported from anywhere, because nothing in the app or the mocks
  * says them. They are collected here rather than spread through the functions so that a reader —
  * or the owner ratifying them — can see the whole of this page's invented language at once, which
  * is the practice `SiteCopy` established for the screen SCREENS.md does not draw.
  *
  * They are written to `docs/rulings-pending/` for ratification under the W-3 exception, and the
  * entry states what each one is allowed to claim.
+ *
+ * **Two of them arrived with the community half and neither has a mock behind it**, which makes
+ * both a DECISIONS constraint 21 stop-and-ask. The conservative option is taken and named: one
+ * sentence covering every way this page can fail to ask, and one label for a state §W1 does not
+ * draw but an owner ruling requires (2026-09-10, `docs/rulings-pending/public-tree-read.md` §1a).
  */
 export const W1Copy = {
   /** The `Data` row's value when the publisher's receipt records no license for the inventory. */
@@ -151,6 +210,29 @@ export const W1Copy = {
   unnamedRecord: 'Tree',
   /** `SiteCopy.fallbackTitle`, for a planting site with no address. */
   unnamedSite: 'Planting site',
+  /**
+   * The `Beloved` row's label. R27.1's own word, which is the closest thing to a source there is:
+   * nothing in `Cypress/`, in the mocks or in `SCREENS.md` says `beloved` anywhere.
+   *
+   * The row exists because the owner ruled on 2026-09-10 that the state ships on this page — §W1
+   * does not draw it, so without that ruling it would not be here. It is a **state and not a
+   * rank**, which is what the label has to carry: no position, no "most loved", no comparison to
+   * another tree, because there is no ranking on one tree's page.
+   */
+  belovedLabel: 'Beloved',
+  /**
+   * What this page says when it could not ask for the community half.
+   *
+   * It states what happened and what is still true, in that order, because the second half is the
+   * point: nothing above it is affected, and a reader who sees this has not been shown a page with
+   * a hole in it. It does **not** say why — an unset variable, a refused connection and a timeout
+   * are one fact to a reader and three to an operator, and the operator's three are in the log.
+   *
+   * The word is `contributions` rather than `measurements` because the beloved state is not a
+   * measurement and this sentence covers its absence too.
+   */
+  communityUnavailable:
+    'Community contributions could not be loaded, so this page shows the city record alone.',
 } as const;
 
 /** `SiteCopy.kind`, verbatim — what a vacant record IS, when the H1 could not say it. */
@@ -219,13 +301,66 @@ export function eyebrow(input: TreePageInput): string | null {
   return parts.length === 0 ? null : parts.join(' · ');
 }
 
+/** The community half this render is working from, or the not-asked default. */
+function communityOf(input: TreePageInput): CommunityHalf {
+  return input.community ?? COMMUNITY_NOT_REQUESTED;
+}
+
+/** The decoded body when there is one, otherwise null. Every other state answers null. */
+function answered(input: TreePageInput) {
+  const half = communityOf(input);
+  return half.state === 'answered' ? half.read : null;
+}
+
 /**
- * The C30 rows, in §W1's order, with every row the pack cannot answer simply absent.
+ * One live reading as a C30 row: the value as it was entered, its method badge beside it.
  *
- * §W1's six rows map onto four here. `Height` is gone — a measured height is contributed and there
- * is no public read for one — and `Trunk · DBH` keeps its label while its value becomes the city's
- * published bucket with the `city record` badge, which is the one substitution on the page and the
- * badge is why it is legible as one.
+ * `MeasuredValue` is the only way the design system renders a `Quantity` — *"there is no view in
+ * the design system that renders a `Quantity`'s number alone"* — and this is that rule on the web.
+ * The two are built together here so no caller can assemble half of one.
+ *
+ * **The month does not reach the row, and that is deliberate rather than an omission.** The
+ * endpoint publishes `2026-08` and §W1's fact column draws `18 m` `est.` with no date on it. The
+ * date is on the value for the ruling's §4 reason — a diameter with no date is not a reading — but
+ * C30 has one value slot and a row reading `18 m · Aug 2026 · est.` is a row nothing draws. It is
+ * carried on the model and is the obvious next thing a design round can place.
+ */
+function readingRow(id: string, label: string, reading: PublicReading): FactRow {
+  return {
+    id,
+    label,
+    value: measuredValueText(reading.quantity),
+    badge: methodBadge(reading.quantity.method),
+    emphasized: false,
+  };
+}
+
+/**
+ * The C30 rows, in §W1's order, with every row neither half can answer simply absent.
+ *
+ * ── W-C shipped four of §W1's six; the community read fills two more ─────────────────────────
+ *
+ * `Height` is §W1's second row and it was **absent** when this file was written, because a measured
+ * height is contributed and there was no public read for one. There is now, so the row is here when
+ * the service answers with a height — value, entered unit and method badge, which is all three of
+ * D7's parts and the only shape this project renders a quantity in.
+ *
+ * `Trunk · DBH` is the one row on this page with two possible sources, and the precedence is
+ * **the live reading first**. W-C's own note said the city bucket "takes a contributed row's
+ * place" and carries the `city record` badge "precisely so it cannot be read as the taped reading
+ * it is standing in for". When the reading it was standing in for arrives, the stand-in stands
+ * down: §W1 draws one `Trunk · DBH` row, it draws `64 cm` `taped`, and that is what this renders.
+ * With no live reading the bucket is back, badged as the city's, exactly as W-C shipped it.
+ *
+ * `Beloved` is **not in §W1 at all** and is here on an owner ruling of 2026-09-10 — the state
+ * ships on the public tree page, as a state and not a rank. It is appended after the rows §W1 does
+ * draw rather than inserted among them, because the specification's order is a transcription and
+ * an undrawn row has no place in it to claim.
+ *
+ * `Status` still carries the lifecycle enum and not a vitality rating. §W1 draws
+ * `Thriving · vitality 4`; the rating is **not in the response** — it was removed from the endpoint
+ * before it merged because a published rating has no takedown route (the ruling's §8), and nothing
+ * here invents one.
  *
  * `Site` is added, and it is not an invention: it is screen 14's own card, which
  * `TreeProfilePresentation` draws "only where the city record is all there is to show" — the exact
@@ -240,20 +375,35 @@ export function eyebrow(input: TreePageInput): string | null {
  * tidying: rendering them would put a trunk diameter and a planting year on a page whose subject is
  * a basin with nothing in it. E107 is the whole argument, and `Neighborhood` is the card that takes
  * their place there.
+ *
+ * **A vacant site draws no community reading either, and that is the same ruling extended.**
+ * `SitePresentation.stats` refuses a measurement on a site because "the second is a claim about a
+ * tree", and the claim is no less a claim for having been taped by a person rather than published
+ * by a city. A reading against a basin the city records as empty is a disagreement with the city
+ * record, which is `data_dispute`'s subject and is withheld from this endpoint by name. The
+ * beloved state is not a measurement and stays: a site can be somebody's favorite, and saying so
+ * asserts nothing about a tree being there.
  */
 export function facts(input: TreePageInput): readonly FactRow[] {
   const rows: FactRow[] = [];
   const isSite = input.status === 'vacant_site';
+  const community = answered(input);
 
   const status = statusLabel(input.status);
   if (status !== null) {
     rows.push({ id: 'status', label: 'Status', value: status, badge: null, emphasized: true });
   }
 
+  const height = isSite ? null : community?.height ?? null;
+  if (height !== null) rows.push(readingRow('height', 'Height', height));
+
+  const liveDBH = isSite ? null : community?.trunkDBH ?? null;
   const dbh = isSite ? null : cityDBHRangeText(input.dbhCityCmMin, input.dbhCityCmMax);
-  if (dbh !== null) {
+  if (liveDBH !== null) {
+    rows.push(readingRow('dbh', 'Trunk · DBH', liveDBH));
+  } else if (dbh !== null) {
     rows.push({
-      id: 'dbh', label: 'Trunk · DBH', value: dbh, badge: cityRecordBadge, emphasized: false,
+      id: 'dbh', label: 'Trunk · DBH', value: dbh, badge: CITY_RECORD_BADGE, emphasized: false,
     });
   }
 
@@ -300,7 +450,54 @@ export function facts(input: TreePageInput): readonly FactRow[] {
     });
   }
 
+  /**
+   * `Beloved · 11 favorites` — R27.1's state with the number the owner ruled rides along with it.
+   *
+   * **It renders only when the service said so, and only with its number.** `beloved` is true
+   * exactly at three or more distinct account-backed favorite owners, and `beloved_by` is null
+   * below that floor rather than nought — a count under a k-anonymity threshold is the disclosure
+   * the threshold exists to prevent. `decodePublicTreeRead` drops the pair when they disagree, so
+   * a row here always has both halves and this page never publishes one without the other.
+   *
+   * The value is `favorites` and not `people`: the count is of accounts, and one person with two
+   * Apple IDs is two of them. Saying `people` would be this page overstating what the number is.
+   * The plural is agreed with rather than assumed — the floor makes a `1` unreachable today, and a
+   * row reading `1 favorites` would be wrong on the day somebody changes the floor.
+   */
+  const belovedBy = community?.beloved === true ? community.belovedBy : null;
+  if (belovedBy !== null) {
+    rows.push({
+      id: 'beloved',
+      label: W1Copy.belovedLabel,
+      value: `${String(belovedBy)} ${belovedBy === 1 ? 'favorite' : 'favorites'}`,
+      badge: null,
+      emphasized: false,
+    });
+  }
+
   return rows;
+}
+
+/**
+ * The sentence for a page that could not ask, or null.
+ *
+ * Three of the five states answer null and two answer the same sentence, and the asymmetry is the
+ * decision: `notRequested` and `empty` are silences that mislead nobody, while `unconfigured` and
+ * `unavailable` are silences that would read as "this tree has nothing" if the page said nothing.
+ *
+ * **`unconfigured` and `unavailable` say the same thing to a reader and different things to an
+ * operator.** `packLibrary.ts` refuses a default pack directory so that "not mounted" cannot look
+ * like "mounted and empty", and the same discipline applies here to the two states that matter —
+ * `empty` versus the rest. It does not extend to telling a reader which kind of misconfiguration
+ * they are looking at: that difference is the operator's, it is on `communityState` and in the
+ * `detail` the route logs, and putting it on a public page would be an internal error message in a
+ * fact column.
+ */
+export function communityNote(input: TreePageInput): string | null {
+  const half = communityOf(input);
+  return half.state === 'unconfigured' || half.state === 'unavailable'
+    ? W1Copy.communityUnavailable
+    : null;
 }
 
 /**
@@ -357,6 +554,8 @@ export function treePageModel(input: TreePageInput): TreePageModel {
       ? null
       : provenanceNote(input.inventoryName, snapshotDay(input.inventorySnapshotOn)),
     obligation: sourceObligation(input.idSpace),
+    communityState: communityOf(input).state,
+    communityNote: communityNote(input),
     documentTitle: city === null ? heading : `${heading} · ${city}`,
   };
   return { ...partial, description: description(input, partial) };

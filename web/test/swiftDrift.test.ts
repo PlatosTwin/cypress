@@ -192,6 +192,16 @@ interface Region {
    * found in its first version.
    */
   readonly kind: 'arithmetic' | 'copy';
+  /**
+   * The module under `web/src/lib/` that reproduces this declaration, when it is not the one every
+   * `copy` row belonged to when the kind was introduced.
+   *
+   * The `copy` failure message names a module and tells a reader to reconcile it. Every row in the
+   * first `copy` set was `cityRecord.ts`'s, and the message said so as a literal — which stopped
+   * being true the moment a second module ported something. Naming it per row is what keeps the
+   * advice followable; the fallback is the module the original set belongs to.
+   */
+  readonly port?: string;
   /** `sha256` of the normalized declaration, recorded at PR #173 and re-recorded deliberately. */
   readonly fingerprint: string;
 }
@@ -369,6 +379,30 @@ const REGIONS: readonly Region[] = [
     kind: 'copy',
     fingerprint: '2ef73a5258ba64cf7333cb71957759a8ee42cd02c22172c94d48743ee3c62564',
   },
+  // ── The community half. `src/lib/measuredValue.ts` reproduces these two bodies ────────────
+  //
+  // `MethodBadge.label` and `.accessibilityLabel` are NOT here: `measuredValue.test.ts` reads both
+  // out of the Swift with a value parser, and the membership rule excludes a body a value parser
+  // already reaches. These two are format rules rather than values — one string interpolation and
+  // one ternary over `rounded()` — and no parser here can read either.
+  //
+  // Recorded 2026-09-11 against `web/w1-tree-page` at 295d107, from unmodified Swift.
+  {
+    name: 'MeasuredValue.formatted(_:)',
+    file: 'Cypress/DesignSystem/Components/MethodBadge.swift',
+    signature: 'static func formatted(_ quantity: Quantity) -> String',
+    kind: 'copy',
+    port: 'web/src/lib/measuredValue.ts',
+    fingerprint: '477c396904e544f274c8dac41eeb7558de14e7213467428415021175e459d3ba',
+  },
+  {
+    name: 'MeasuredValue.number(_:)',
+    file: 'Cypress/DesignSystem/Components/MethodBadge.swift',
+    signature: 'static func number(_ value: Double) -> String',
+    kind: 'copy',
+    port: 'web/src/lib/measuredValue.ts',
+    fingerprint: 'aba885894452d7d3306daf75fb9ac782f2bd52129d9ac56792762ef11b338288',
+  },
 ];
 
 describe('the Swift the ports were derived from has not moved under them', () => {
@@ -400,12 +434,13 @@ describe('the Swift the ports were derived from has not moved under them', () =>
               + `re-checked against the new Swift, fix what that turns red, and only then paste `
               + `the fingerprint above into test/swiftDrift.test.ts. If the edit is cosmetic: `
               + `paste it and say why in the commit message.`
-            : `This declaration decides what the public tree page SAYS, and web/src/lib/`
-              + `cityRecord.ts re-implements it. It is NOT in swift-reference.json — that `
-              + `recording covers Core only — so re-recording is not the repair here. Read the `
-              + `diff, reconcile cityRecord.ts with it, run test/cityRecord.test.ts (which checks `
-              + `by value everything a value parser can reach), and then paste the fingerprint `
-              + `above. If the edit is cosmetic: paste it and say why in the commit message.`),
+            : `This declaration decides what the public tree page SAYS, and `
+              + `${region.port ?? 'web/src/lib/cityRecord.ts'} re-implements it. It is NOT in `
+              + `swift-reference.json — that recording covers Core only — so re-recording is not `
+              + `the repair here. Read the diff, reconcile that module with it, run its test `
+              + `(which checks by value everything a value parser can reach), and then paste the `
+              + `fingerprint above. If the edit is cosmetic: paste it and say why in the commit `
+              + `message.`),
       );
     });
   }
@@ -420,8 +455,8 @@ describe('the Swift the ports were derived from has not moved under them', () =>
   it('the table still covers every Swift file whose arithmetic the ports reproduce', () => {
     assert.equal(
       REGIONS.length,
-      20,
-      `the tripwire lists ${REGIONS.length} declarations, not 20. A row that disappears takes its `
+      22,
+      `the tripwire lists ${REGIONS.length} declarations, not 22. A row that disappears takes its `
         + `guard with it and nothing else notices.`,
     );
     assert.deepEqual(
@@ -432,10 +467,11 @@ describe('the Swift the ports were derived from has not moved under them', () =>
         'Cypress/Core/Models/TreeMeasurement.swift',
         'Cypress/Core/Rubric/Vitality.swift',
         'Cypress/Core/Units/Quantity.swift',
+        'Cypress/DesignSystem/Components/MethodBadge.swift',
         'Cypress/Features/TreeProfile/CityRecordPresentation.swift',
         'Cypress/Features/TreeProfile/TreeProfilePresentation.swift',
       ],
-      'the tripwire no longer reaches one of the seven Swift files the ports re-implement',
+      'the tripwire no longer reaches one of the eight Swift files the ports re-implement',
     );
     // Every fingerprint distinct: a copy-paste that repeated one row's hash into another's would
     // pin two declarations to the same text and pass only by coincidence.
@@ -471,6 +507,8 @@ describe('the Swift the ports were derived from has not moved under them', () =>
         'Coordinate.distance(to:)',
         'Coordinate.snappedToPublicPhotoGrid()',
         'FieldCaptured.isEligibleForGrowthCharting',
+        'MeasuredValue.formatted(_:)',
+        'MeasuredValue.number(_:)',
         'Quantity.CodingKeys',
         'Quantity.converted(to:)',
         'Quantity.init(from:)',

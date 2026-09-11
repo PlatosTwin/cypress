@@ -196,10 +196,13 @@ describe('the fact column', () => {
     ]);
   });
 
-  it('never draws a Height row, because a measured height is contributed', () => {
-    // Asserted as a fact about the model rather than as absence of a string: there is no input
-    // this function takes that could produce one, and this is the row §W1 draws that v1 cannot.
+  it('draws no Height and no vitality when nothing asked the service', () => {
+    // The specimens carry no `community`, so the model's state is `notRequested` and the page is
+    // the one W-C shipped. `vitality` stays absent in EVERY state: it is not in the response at
+    // all — it was removed from the endpoint before #163 merged — so no input to this function can
+    // produce that row. Height is different now, and `treePage-community.test.ts` is where it is.
     for (const specimen of [lombard, columbus, dolores, sanJose]) {
+      assert.equal(specimen.community, undefined);
       assert.equal(row(specimen, 'height'), undefined);
       assert.equal(row(specimen, 'vitality'), undefined);
     }
@@ -213,7 +216,8 @@ describe('the fact column', () => {
 
   it('badges the DBH bucket so it cannot be read as a reading', () => {
     assert.equal(row(lombard, 'dbh')?.value, '65–70 cm');
-    assert.equal(row(lombard, 'dbh')?.badge, 'city record');
+    assert.equal(row(lombard, 'dbh')?.badge?.text, 'city record');
+    assert.equal(row(lombard, 'dbh')?.badge?.tone, 'cityRecord');
     // And it is the only badged row: a badge on `Planted` or `City record` would be claiming a
     // method for a fact that has none.
     assert.deepEqual(facts(lombard).filter((fact) => fact.badge !== null).map((fact) => fact.id), ['dbh']);
