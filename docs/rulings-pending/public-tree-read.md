@@ -205,9 +205,13 @@ The shape, and every clause of it is load-bearing:
   tree. Accounts do work today — `BetaCapability.accountsAvailable` is `true` and `POST /auth/oidc`
   is wired (E124, #158) — but only the Apple route of screen 15's three does, R72 ruling 2 having
   deferred the magic link; favorites are device-scoped until somebody signs in; and the beta's
-  population is small. **`beloved` may therefore be false on every tree in the inventory for a
-  while, and this field may ship dormant.** That is the trade: a state that is rarely true is worth
-  more than a state anybody with a shell script can set.
+  population is small. **And the web cannot help**: the orchestrator's decision 7 in
+  `docs/rulings-pending/web-round-owner-decisions.md` omits `Sign in` from W1 in v1 because there is
+  no web account and the server cannot mint one for a browser — so every favorite that will ever
+  count toward this floor is one somebody made in the iOS app while signed in.
+  **`beloved` may therefore be false on every tree in the inventory for a while, and this field may
+  ship dormant.** That is the trade: a state that is rarely true is worth more than a state anybody
+  with a shell script can set.
 - **It is a state, so PRODUCT's non-goal is not merely dodged but unmet.** The non-goals table
   forbids *"**Leaderboards or ranked counts** of photos/check-ins/care/favorites"* by name, and that
   row has never been struck or annotated for R27.1 — the tension between it and R27.1 §1's ordered

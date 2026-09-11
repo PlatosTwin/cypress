@@ -201,7 +201,10 @@ app (E100), and `users` here has no column for it at all.
   accounts to have favorited one tree. Accounts do work — `accountsAvailable` is true and
   `POST /auth/oidc` is wired — but only the Apple route of screen 15's three does (R72 ruling 2
   defers the magic link), favorites are device-scoped until somebody signs in, and the beta is
-  small. `beloved` may therefore be false on every tree for a while: this may ship dormant. The
+  small. The web cannot help either — v1 omits `Sign in` from W1, because there is no web account and
+  this service cannot mint one for a browser — so every favorite that counts is one somebody made in
+  the iOS app while signed in. `beloved` may therefore be false on every tree for a while: this may
+  ship dormant. The
   floor itself is R27.1's provisional ≥3 and is **not** measured — the round that measures the real
   distribution may raise it, and may not lower it.
 
