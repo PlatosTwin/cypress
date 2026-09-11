@@ -191,10 +191,26 @@ row with no tree, neighborhood ids that cross over the tree ids, and a fused two
 two-id-space file — and both mutations are red on a runner with no seed. The claim is worth stating
 only alongside how it was checked: mutate the thing, move the seed aside, require red.
 
-**The census is derived, not declared.** `SEED_DEPENDENT_TESTS` is compared against the names this
-file actually handed to `node:test`, so a deleted or renamed seed-dependent test is red in both
-tiers. It used to be a literal compared against a literal in the same file, which is green on a
-deletion — which is how a review found it. **A seed that is present and is not the pinned one is a
+**Twice more, that check found the repair itself.** The fused fixture doubled every *dimension*
+table and left every tree in the first id space, so `LEFT JOIN dim_city dc ON dc.id = isp.city_id`
+loosened to `ON dc.id = 1` stayed green in both tiers while mislabeling 52,788 San Jose trees in
+the seed; and the `lat`/`lon` re-test that removes the R\*Tree's false positives could be deleted
+in silence, because the seed test's per-row loop sits behind its own `LIMIT 200` and none of that
+box's seven escapees sort into the first 200. The fixtures now carry a fact row in the second id
+space and four trees whose float32-expanded R\*Tree box overlaps the test's box while their
+coordinates do not. **A dimension table with two rows proves nothing until a fact row resolves
+through the second one**, and **a guard downstream of a `LIMIT` proves nothing about the rows the
+limit does not reach.**
+
+**The census is derived, not declared.** `SEED_DEPENDENT_TESTS` and `ALWAYS_RUN_TESTS` are compared
+against the names this file actually handed to `node:test`, so a deleted, renamed, reordered or
+newly added test is red in both tiers. It used to be a literal compared against a literal in the
+same file, which is green on a deletion — which is how a review found it. Registration goes through
+one wrapper that `node:test` can only be reached through, rather than through a pattern matched
+against this file's source: a pattern recognizes one spelling, and a review found nine spellings
+that got past the one that was there and three innocent lines it reddened on, a doc comment among
+them. **The census sees its own file only** — a seed-gated test in another file under `test/` is
+outside it, which is why it also asserts that no sibling test file refers to `seedState`. **A seed that is present and is not the pinned one is a
 failure, not a skip** — `pinned-seed.json`'s size and sha256 are checked before a byte is believed,
 and they are checked again at the end of the seed tier, because a read-only regression once rewrote
 the pinned seed in place at an unchanged size.

@@ -116,13 +116,32 @@ human may read and not an assertion. Three places — the PR body, `web/README.m
 header — named this mechanism as the protection against exactly that deletion.
 
 The general form, which is not about this file: **a self-check is only a check if one of its two
-sides comes from outside the author's hand.** The fix routes every seed-gated registration through
-one helper that records the name in the same expression that calls `node:test`'s `it` and keeps the
-handle `it` returns, so the list is compared against what was registered; registration happens
-whether the test then runs or skips, so the census means the same thing in the tier where the
-deletion would hide. The helper's exclusivity is then the only remaining hole, and the census closes
-it by matching this file's own bytes for a direct skip-gated registration and requiring none —
-calibrated by planting one and watching it name the offending text.
+sides comes from outside the author's hand.** The fix routes every registration through one wrapper
+that records the name in the same expression that calls `node:test`'s `it` and keeps the handle `it`
+returns, so the lists are compared against what was registered; registration happens whether the
+test then runs or skips, so the census means the same thing in the tier where the deletion would
+hide.
+
+**The first attempt at the remaining hole is the part worth keeping.** A helper only helps if
+nothing bypasses it, and the bypass — a test registered with `it` directly — was closed by matching
+the file's own bytes for that shape, calibrated by planting one and watching it name the offending
+text. That calibration proved the pattern recognized the shape that was planted, and nothing more.
+A review then tried twelve variants: **nine got past it** — the same call broken across lines, which
+is the shape the file already used for its longest name; double quotes; `it.skip`; `{ skip: skip }`;
+a second one-line wrapper; gating inside the body — and **three tripped it falsely**, including a
+doc comment that merely described the rule. A guard that reddens on its own documentation is a guard
+someone deletes. And `web/` carries no linter and no formatter, so nothing keeps a future author on
+the one spelling a pattern can see.
+
+**A source-text pattern cannot make an exclusivity claim, and the prose beside it said it had.**
+The replacement does not read bytes at all: `node:test`'s `it` is imported under another name and
+called in exactly one place, so a registration reaches the runner only through code that records it,
+however it is spelled. The census then compares BOTH lists — the gated tests and the ungated ones —
+against what was registered, which is what catches a test that gates itself inside its own body
+rather than at registration. All nine evasions are now red; all three false trips are gone. What it
+still cannot see is stated rather than implied: a call to the aliased import, or a second import of
+`node:test`. That is a visible edit to the top of the file, with the same standing as editing the
+list to cover a deletion.
 
 ### A fixture that re-derives the right answer cannot falsify the query that produced it
 
@@ -151,6 +170,44 @@ A third mutation found while checking the second was green in **both** tiers: lo
 `cityNameSource`'s `LEFT JOIN id_spaces isp ON isp.id = t.id_space` to `ON 1 = 1` changed no
 assertion anywhere, because the single-id-space fixtures had nothing to duplicate against and the
 seed's own bounding-box test is limit-bound at 200 rows either way. The fused fixture closes it.
+
+**Two of those repairs were themselves the same defect, which is the reason this entry is long.**
+
+*A limit clips the loop that was written to catch the thing.* `treesInBounds` re-tests `lat`/`lon`
+on `trees` after the R\*Tree pre-filter, because the R\*Tree answers in 32-bit-float boxes rounded
+outward and therefore over-returns. The seed-gated test loops over every returned row asserting it
+is inside the box — the assertion written for exactly that — and **deleting the re-test was green in
+both tiers**. Measured with the `sqlite3` CLI, for that test's own box: 8,990 live R\*Tree
+candidates, **7** whose real coordinates are outside it, and **0 of those 7** in the first 200 by
+uuid — while the line above the loop asserts `LIMIT 200`. The loop was vacuous by construction, not
+by luck, and it was guarded by a limit the same test asserts. The fixture tier could not see it
+either: every fixture R\*Tree box was a float32-expanded point at the tree's own coordinates, so
+pre-filter and re-test agreed by construction. The general form: **a guard downstream of a `LIMIT`
+proves nothing about rows the limit does not reach, and a fixture whose two filters cannot disagree
+cannot falsify either of them.** The fixtures now carry four trees whose stored box overlaps the
+test's box while their coordinates do not — one per re-tested bound, built on the real float32
+rounding rather than on a hand-widened box — and the seed tier now compares the whole box against a
+count it computes in SQL instead of looping over a clipped page.
+
+*Two of everything at the dimensions and nothing at the facts.* The fused fixture built to make
+`packIdentity`'s first-row rule falsifiable gave the file two cities, two regions and two id spaces
+— and left **every fixture tree in the first id space**. So a join over those dimensions could be
+wrong in a *single-valued* way and no row could tell: `LEFT JOIN dim_city dc ON dc.id = isp.city_id`
+loosened to `ON dc.id = 1` was green in both tiers while labeling all **52,788** San Jose trees in
+the pinned seed "San Francisco" — an invented civic fact (DECISIONS constraint 15) on the one read
+surface `cityName` exists for. The duplicating mutation (`ON 1 = 1`) was caught and the constant one
+was not, because the answer the constant returns was the only answer any fixture row had. **A
+dimension table with two rows in it proves nothing until a fact row resolves through the second
+one.** The fused fixture now carries a tree in the second id space.
+
+The re-audit that followed — mutate each join and predicate, move the seed aside, require red —
+turned up three more of the same shape, all now closed: `cityNameSource` gates `dc.display_name` on
+`hasDimCity && hasIdSpace` and no fixture had those flags disagree; `softDeletePredicate` applies
+`deleted_at IS NULL` only where the column exists and no fixture lacked the column; and
+`treesInBounds`'s `ORDER BY t.<identity column>` — which is what makes a `LIMIT`ed read repeatable —
+was unfalsifiable because every fixture uuid happened to sort in rowid order. One mutation is
+knowingly left green: loosening the R\*Tree pre-filter itself changes no result, only the plan,
+and asserting a plan needs a seam the read layer does not have.
 
 ### A destructive probe against the pinned seed rewrote the pinned seed, at an unchanged size
 

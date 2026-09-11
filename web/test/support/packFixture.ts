@@ -202,7 +202,7 @@ export const FIXTURE = {
    * through `id_spaces` row 2 or `dim_city` row 2. A join predicate over those dimensions could
    * therefore be wrong in a single-valued way and no fixture could tell —
    * `LEFT JOIN dim_city dc ON dc.id = isp.city_id` loosened to `ON dc.id = 1` was green in BOTH
-   * tiers, while mislabelling all 52,788 San Jose trees in the pinned seed as San Francisco. A
+   * tiers, while mislabeling all 52,788 San Jose trees in the pinned seed as San Francisco. A
    * duplicating mutation (`ON 1 = 1`) was caught and a constant one was not, because the answer the
    * constant returns was the only answer any fixture row had.
    *

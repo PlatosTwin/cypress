@@ -459,7 +459,7 @@ describe('counting and identity', () => {
     // **And a FACT row in the second id space**, which is the half that was missing. Two of
     // everything at the dimension tables and nothing at `trees` is why a join predicate over those
     // dimensions could be broken in a single-valued way — `dc.id = isp.city_id` → `dc.id = 1` —
-    // and pass here as well as against the seed, while mislabelling 52,788 real San Jose trees.
+    // and pass here as well as against the seed, while mislabeling 52,788 real San Jose trees.
     const sanJoseSpace = pack.db
       .prepare('SELECT id_space FROM trees WHERE uuid = ?')
       .get(FIXTURE.sanJoseTreeUUID) as Record<string, unknown> | undefined;
