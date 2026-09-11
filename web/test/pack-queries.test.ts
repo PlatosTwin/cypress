@@ -289,6 +289,45 @@ describe('counting and identity', () => {
     });
   });
 
+  it('a fused multi-city file resolves its FIRST region and city, not an arbitrary one', () => {
+    // **The source seed's shape, which no published pack has**, and the case `packIdentity`'s
+    // `ORDER BY id LIMIT 1` is written for. It was covered only by the 103 MB tier until this
+    // fixture: reversing that ordering to `ORDER BY id DESC` reddened one seed-gated test and
+    // nothing whatsoever on a runner without the seed — the same defect shape as the R*Tree join,
+    // found by re-auditing the claim rather than by being told about it.
+    const fixture = buildPack(17, { fused: true });
+    open.push(fixture);
+    const pack = openPack(fixture.path, { immutable: false });
+    packs.push(pack);
+    const rows = (table: string): number =>
+      Number((pack.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as
+        Record<string, unknown>)['n']);
+    // The arrangement, asserted before it is relied on: one row of each would make every
+    // assertion below true of any ordering at all.
+    assert.equal(rows('dim_city'), 2, 'the fused fixture carries one city, so ordering is moot');
+    assert.equal(rows('dim_region'), 2);
+    assert.equal(rows('id_spaces'), 2);
+    assert.notEqual(FIXTURE.cityDisplayName, FIXTURE.secondCityDisplayName);
+    assert.notEqual(FIXTURE.packId, FIXTURE.secondPackId);
+
+    const identity = packIdentity(pack);
+    assert.equal(identity.cityDisplayName, FIXTURE.cityDisplayName);
+    assert.equal(identity.packId, FIXTURE.packId);
+    assert.equal(identity.regionDisplayName, FIXTURE.regionDisplayName);
+    // And the trees still resolve their own city through their own id space, not through whichever
+    // dim_city row came first.
+    assert.equal(treeByUUID(pack, FIXTURE.aliveTreeUUID)?.cityName, FIXTURE.cityDisplayName);
+    // Each tree once, not once per id space. `cityNameSource` joins `id_spaces` on
+    // `isp.id = t.id_space`; loosen that predicate and a one-id-space fixture cannot tell, because
+    // there is nothing to duplicate against and `treeByUUID`'s LIMIT 1 hides the rest. Found by
+    // mutating that predicate to `ON 1 = 1` and watching BOTH tiers stay green — the seed has two
+    // id spaces and missed it too, because its box is limit-bound at 200 either way.
+    assert.deepEqual(
+      treesInBounds(pack, missionBounds, 50).map((row) => row.uuid),
+      [FIXTURE.aliveTreeUUID, FIXTURE.vacantTreeUUID],
+    );
+  });
+
   it('a generation-16 pack has a city and no region, and says so with nulls', () => {
     const identity = packIdentity(generation(16));
     assert.equal(identity.packId, null);

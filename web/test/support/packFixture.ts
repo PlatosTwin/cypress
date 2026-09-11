@@ -120,6 +120,21 @@ export const FIXTURE = {
   packId: 'sf',
   regionDisplayName: 'San Francisco',
   regionLevel: 'city',
+  /**
+   * The second city, region and id space a `fused: true` fixture carries.
+   *
+   * **The shape the SOURCE seed has and no published pack does.** `publish_cities.py` narrows
+   * `dim_region` and `dim_city` to the one unit a pack is for, so a pack holds exactly one row in
+   * each; the fused seed every pack is cut from holds all of them — two here, as the pinned seed
+   * does (`sf` and `us-ca-sj`). `packIdentity` reads the FIRST row by `id` for exactly that case,
+   * and until this fixture existed that choice was observable only against the 103 MB seed:
+   * reversing the ordering to `ORDER BY id DESC` reddened one seed-gated test and nothing at all
+   * on a runner without the seed. Measured, not supposed.
+   */
+  secondCitySlug: 'us-ca-sj',
+  secondCityDisplayName: 'San Jose',
+  secondIdSpace: 'us-ca-sj',
+  secondPackId: 'us-ca-sj',
   /** Trees that are not soft-deleted. The soft-deleted one is excluded from every read. */
   liveTreeCount: 4,
 } as const;
@@ -289,7 +304,12 @@ function degrade(db: DatabaseSync, generation: Generation): void {
  */
 export function buildPack(
   generation: Generation,
-  options: { publishSchemaVersion?: number | null; withShortNameToo?: boolean } = {},
+  options: {
+    publishSchemaVersion?: number | null;
+    withShortNameToo?: boolean;
+    /** Two cities, two regions, two id spaces — the fused source shape. See `FIXTURE`. */
+    fused?: boolean;
+  } = {},
 ): Fixture {
   const directory = mkdtempSync(join(tmpdir(), `cypress-pack-s${generation}-`));
   const path = join(directory, `s${generation}.sqlite`);
@@ -308,6 +328,21 @@ export function buildPack(
       INSERT INTO id_spaces (id, identity_prefix, note, city_id)
       VALUES ('${FIXTURE.idSpace}', '', 'fixture', 1);
     `);
+    if (options.fused === true) {
+      // Higher ids than the rows above, so "the first row by id" and "the row this fixture's
+      // other assertions are about" are the same row — and a reversed ordering picks these.
+      db.exec(`
+        INSERT INTO dim_city (id, slug, display_name, state, county, urban_forestry_url)
+        VALUES (2, '${FIXTURE.secondCitySlug}', '${FIXTURE.secondCityDisplayName}', 'CA',
+                'Santa Clara', 'https://example.invalid/urban-forestry-2');
+
+        INSERT INTO dim_region (id, pack_id, display_name, level, city_id)
+        VALUES (2, '${FIXTURE.secondPackId}', '${FIXTURE.secondCityDisplayName}', 'city', 2);
+
+        INSERT INTO id_spaces (id, identity_prefix, note, city_id)
+        VALUES ('${FIXTURE.secondIdSpace}', 'sj', 'fixture', 2);
+      `);
+    }
     insertCommonRows(db);
     insertTrees(db);
     db.exec(
