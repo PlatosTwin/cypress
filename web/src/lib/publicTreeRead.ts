@@ -251,6 +251,14 @@ export type DecodeOutcome =
  * seventh, so one arriving means this build is older than the service, and the five keys it does
  * understand are still true.
  *
+ * **Two of the six entries below are the only thing catching their own absence, and the other four
+ * are belt to a brace.** Measured by removing each in turn: without `height` or `trunk_dbh` on the
+ * list a body missing that key decodes as a body with no reading — the silent shape, where "the
+ * service did not send it" becomes "nobody has measured this tree". The other four fall to a type
+ * check a line or two below whatever this list does. The list stays whole because the rule it
+ * states is "all six or this is not the contract", and a list that named only the two load-bearing
+ * ones would read as though the other four were optional.
+ *
  * ── The beloved pair is checked against each other, and that IS the k-anonymity property ─────
  *
  * `beloved` is true exactly when `beloved_by` carries a number, because the handler copies the

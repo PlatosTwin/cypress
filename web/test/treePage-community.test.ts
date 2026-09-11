@@ -203,28 +203,39 @@ describe('the fact column when the service says nothing, or cannot be asked', ()
     assert.match(note, /city record/);
   });
 
-  it('the three states do not look identical, asserted on the rendered models', () => {
-    const rendered = (half: CommunityHalf) => {
+  it('the three states do not look identical TO A READER', () => {
+    /**
+     * **`communityState` is deliberately not in here, and that is the whole point of the test.**
+     *
+     * The first version of this assertion included it, and it stayed green when
+     * `communityNote` was broken to answer null for every state — because the state tag still
+     * differed and the JSON still differed. It was measuring the model, and what has to differ is
+     * the *page*. So this compares only what a reader can see: the rows and the sentence.
+     *
+     * The tag's own plumbing is asserted separately, below.
+     */
+    const seen = (half: CommunityHalf) => {
       const model = treePageModel({ ...lombard, community: half });
-      return JSON.stringify({
-        facts: model.facts,
-        note: model.communityNote,
-        state: model.communityState,
-      });
+      return JSON.stringify({ facts: model.facts, note: model.communityNote });
     };
-    const withData = rendered(answered);
-    const withNothing = rendered(empty);
-    const cannotAsk = rendered(unavailable);
-    assert.notEqual(withData, withNothing);
-    assert.notEqual(withNothing, cannotAsk);
-    assert.notEqual(withData, cannotAsk);
-    // The one pair that may agree on the reader-facing half: `unavailable` and `unconfigured` are
-    // one fact to a reader and two to an operator, and the second difference is the state tag.
-    const notConfigured = rendered(unconfigured);
-    assert.notEqual(cannotAsk, notConfigured);
-    assert.equal(
-      JSON.parse(cannotAsk).note as string,
-      JSON.parse(notConfigured).note as string,
+    const withData = seen(answered);
+    const withNothing = seen(empty);
+    const cannotAsk = seen(unavailable);
+    assert.notEqual(withData, withNothing, 'answered and empty render the same page');
+    assert.notEqual(
+      withNothing,
+      cannotAsk,
+      'a tree nobody has measured and a service this page could not reach render the same page, '
+        + 'so the page asserts the first every time the second is true',
+    );
+    assert.notEqual(withData, cannotAsk, 'answered and unavailable render the same page');
+    // The one pair that DOES agree for a reader, said out loud rather than left to be discovered:
+    // `unavailable` and `unconfigured` are one fact to a reader and two to an operator. The
+    // operator's difference is `communityState` and the route's log line, not the fact column.
+    assert.equal(seen(unavailable), seen(unconfigured));
+    assert.notEqual(
+      treePageModel({ ...lombard, community: unavailable }).communityState,
+      treePageModel({ ...lombard, community: unconfigured }).communityState,
     );
   });
 
