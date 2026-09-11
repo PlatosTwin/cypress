@@ -16,7 +16,7 @@ func applyDispute(t *testing.T, store *Store, dispute, tree uuid.UUID, owner Own
 	_, err := store.Apply(context.Background(), Mutation{
 		ClientUUID: uuid.New(), Kind: "data_dispute", TreeUUID: tree,
 		Payload: json.RawMessage(`{"id":"` + dispute.String() + `","treeID":"` + tree.String() +
-			`","treeSource":"city","issues":["wrong_species"]}`),
+			`","treeSource":"city_import","issues":["wrong_species"]}`),
 		OccurredAt: time.Now().UTC(),
 	}, owner)
 	if err != nil {

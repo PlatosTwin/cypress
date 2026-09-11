@@ -132,20 +132,41 @@ type measurementPayload struct {
 }
 
 // dataDisputePayload is `DataDispute` as the client encodes it (R79, `AppSchema` v22: keys stay the
-// Swift property names). The item this service is handed looks like
+// Swift property names). The item this service reads looks like
 //
-//	{"id":"…","clientUUID":"…","treeID":"…","treeSource":"city",
+//	{"id":"…","clientUUID":"…","treeID":"…","treeSource":"city_import",
 //	 "issues":["wrong_location","wrong_species"],
-//	 "suggestions":{"lat":"37.3382","lon":"-121.8863"},
+//	 "suggestions":{…},
 //	 "notes":"the trunk is across the path","occurredAt":"…"}
 //
-// **This is a proposal to the client half, not a shape matched to one.** v22 is not on any branch
-// this file can be built against, so every key below is this round's offer and PR-A is entitled to
-// push back on it — the server is the cheaper side to change, having no CI and no App Store queue.
-// What PR-A must not do is differ *silently*: `issues` is decoded into `[]string`, and a v22 that
-// encodes it as objects fails `json.Unmarshal`, which is `validation_failed`, which is **not
-// retried** — the row goes `.failed` on its first attempt and sits red on screen 17 forever. Same
-// for any UUID spelled outside the canonical 36-character hyphenated form (`internal/uuid`).
+// `treeSource` carries a `TreeSource` raw value — `city_import` or `community`. It said `city` here
+// until this file was read against the client's own enum, and `city` is nothing's raw value: the
+// client would have had every dispute refused. See `disputeTreeSources` below, and
+// `TestTheDisputeTreeSourcesMatchTheSwiftVocabulary`, which reads `Cypress/Core/Models/Tree.swift`
+// instead of restating it.
+//
+// **Most of this file was written as a proposal to a client half that did not exist yet, and that
+// half now does.** `DataDisputeReport` in `Cypress/Data/Outbox/CommunityMutations.swift` on branch
+// `feat/r79-city-disputes` — read at 4b0a11d, not compiled here — is what will travel, and two of
+// its keys are not the keys below:
+//
+//   - **the dispute's own id is `disputeID` there and `id` here, and that is unresolved.** This
+//     handler refuses a body with no top-level `id` ("That item named no dispute"), so as the two
+//     stand, a real dispute fails `validation_failed` — non-retryable — on its first attempt.
+//     Which side should move is not this change's to decide and is not decided: `store
+//     .disputeIsThisIdentitys` and `005_data_dispute_kinds.sql`'s partial index both read
+//     `payload ->> 'id'`, so moving this side costs a migration. Raised on PR #159.
+//   - `suggestions` is `TreeDataDispute.Suggestions` there, which encodes as
+//     `{"location":{"coordinate":{…},"accuracyM":…},"speciesID":…,"plantedYear":…,"status":…}` —
+//     not the flat object keyed by field name an earlier draft of this comment described. Nothing
+//     here decodes `suggestions`, so that difference costs nothing today; it is recorded because
+//     the paragraph below names the field vocabulary and a reader would otherwise take the shape
+//     on trust.
+//
+// What the two halves must not do is differ *silently*: `issues` is decoded into `[]string`, and a
+// client that encodes it as objects fails `json.Unmarshal`, which is `validation_failed`, which is
+// **not retried** — the row goes `.failed` on its first attempt and sits red on screen 17 forever.
+// Same for any UUID spelled outside the canonical 36-character hyphenated form (`internal/uuid`).
 //
 // **`id` is the dispute's own id and `clientUUID` is the item's**, different values by construction
 // exactly as they are for a reading (see `measurementPayload`), and the reason to require `id` is
@@ -156,20 +177,24 @@ type measurementPayload struct {
 // a second copy of either is a second place for one fact to be wrong.
 //
 // **`suggestions` and `notes` are on the wire and not read by this handler, and that is a decision.**
-// `suggestions` is a JSON **object keyed by field name** — `{"lat":"37.3382","species_id":"…"}`, one
-// value per field, exactly as in the example above and nowhere in this round an array of pairs. Each
-// key is CHECKed on the client against a vocabulary v22 names and this file does not; enforcing that
-// vocabulary from here would put one list in a Swift migration and another in a Go map, across two
-// files no build compiles together — which is the drift `TestTheHandlersVocabularyAndTheColumnsAgree`
-// exists because of, and here it would fail queues *non-retryably* on the first attempt. Nothing on
-// this side adjudicates a dispute, so nothing on this side needs to understand a suggested value: the
-// payload is stored whole, and the round that serves it back is the round that has to read it.
+// On the client a suggestion is one row per field — `tree_dispute_suggestions` is keyed
+// `(dispute_id, field)` — against a closed vocabulary v22 CHECKs and this file does not: `lat`,
+// `lon`, `location_accuracy_m`, `species_id`, `planted_year`, `status`. Enforcing
+// that vocabulary from here would put one list in a Swift migration and another in a Go map, across
+// two files no build compiles together — which is the drift
+// `TestTheHandlersVocabularyAndTheColumnsAgree` exists because of, and here it would fail queues
+// *non-retryably* on the first attempt. Nothing on this side adjudicates a dispute, so nothing on
+// this side needs to understand a suggested value: the payload is stored whole, and the round that
+// serves it back is the round that has to read it. That is also why the shape mismatch recorded
+// above is not a defect on this side — an object this handler never decodes cannot refuse anything.
 //
 // ── The one prohibition on this payload: **no top-level `speciesID`** ──────────────────────────
 //
-// A disputed species travels as `suggestions["species_id"]`, where nothing interprets it. A
-// top-level `speciesID` is forbidden, and the reason is not tidiness: **nothing in this service
-// obliges a payload read to narrow on `kind` at all, and one of them does not.**
+// A disputed species travels *inside* `suggestions`, where nothing interprets it — on the branch
+// read above that is `suggestions.speciesID`, and the nesting is the whole of what makes it safe,
+// not the spelling. A top-level `speciesID` is forbidden, and the reason is not tidiness:
+// **nothing in this service obliges a payload read to narrow on `kind` at all, and one of them
+// does not.**
 // `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid` over `contributions` filtered by
 // owner and `deleted_at` and by nothing else, so
 //
@@ -183,7 +208,9 @@ type measurementPayload struct {
 // is written up in `docs/errata-pending/grove-species-known-unscoped-cast.md` — but `wrong_species`
 // is one of three issue kinds here, which makes a suggested species the most natural thing for v22
 // to send, and `speciesID` the obvious key to send it under. Nothing in this file could refuse it
-// either: the payload decode is lenient by design, so this is a contract the client keeps.
+// either: the payload decode is lenient by design, so this is a contract the client keeps — and on
+// `feat/r79-city-disputes` as read it does keep it, `DataDisputeReport` having no top-level
+// `speciesID`.
 //
 // The general rule, for whoever adds the next key: before putting a name at the top level of a
 // payload, grep `internal/store` for `payload ->>` and check whether an existing read already
@@ -225,7 +252,18 @@ var disputeIssueKinds = map[string]bool{
 	"wrong_location": true, "wrong_species": true, "wrong_metadata": true,
 }
 
-// disputeTreeSources is `tree_data_disputes.tree_source`'s CHECK.
+// disputeTreeSources is `TreeSource`'s two raw values, which are what `tree_source` holds.
+//
+// **It read `{"city", "community"}` until 2026-09-10, and `city` is nothing's raw value.**
+// `TreeSource.cityImport` is `city_import` (`Cypress/Core/Models/Tree.swift`), v22 CHECKs
+// `tree_source IN ('city_import','community')`, and the shipped seed answers
+// `[('city_import', 198625)]` — three statements of one vocabulary, none of which is `city`. Since
+// `raiseDataDispute` sets `.cityImport` on every dispute it raises, this map refused **every**
+// dispute the client can send, `validation_failed`, which is not retried: the row went `.failed` on
+// its first attempt and sat red on screen 17 with nothing to clear it. It is worth being plain
+// about where the wrong pair came from — the round's brief named `('city','community')` and the
+// brief was wrong; the client's author checked the enum and this author did not.
+// `TestTheDisputeTreeSourcesMatchTheSwiftVocabulary` now reads the enum rather than restating it.
 //
 // Both values are accepted here even though this round's client raises disputes on **city** rows
 // only — a community row is `.forbidden` in `raiseDataDispute`, because a community tree's wrong
@@ -242,7 +280,7 @@ var disputeIssueKinds = map[string]bool{
 // second copy of R79 in a file no build compiles with the first, refusing well-formed items
 // **non-retryably** when the two drift. The round that adjudicates is the round that must know
 // these rows can exist.
-var disputeTreeSources = map[string]bool{"city": true, "community": true}
+var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 
 // syncKinds is every kind this service accepts on `POST /sync`.
 //

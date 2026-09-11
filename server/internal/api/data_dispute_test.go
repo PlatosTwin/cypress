@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,10 +13,19 @@ import (
 
 // The `data_dispute` / `data_dispute_withdrawal` half of `POST /sync` — R79's other side.
 //
-// Every item here is posted in the **client's own payload shape** (`AppSchema` v22's `DataDispute`
-// and `DataDisputeWithdrawal`, whose keys are the Swift property names), for the reason
-// `community_kinds_test.go` states: a test that invents its own wire format proves only that the
-// handler agrees with the test.
+// Every item here is posted in the shape this handler reads, which is meant to be the **client's
+// own** (`AppSchema` v22's `DataDispute` and `DataDisputeWithdrawal`, whose keys are the Swift
+// property names), for the reason `community_kinds_test.go` states: a test that invents its own wire
+// format proves only that the handler agrees with the test.
+//
+// **Two caveats, because that sentence has already been wrong once.** `treeSource` read `city` here
+// until 2026-09-10 and the client's raw value is `city_import`, so these tests agreed with a handler
+// that would have refused every real dispute — see `disputeTreeSources` in `sync.go` and
+// `TestTheDisputeTreeSourcesMatchTheSwiftVocabulary` below, which is the gate that stops the two
+// halves drifting again. The second is open: `DataDisputeReport` on `feat/r79-city-disputes` names
+// the dispute's own id `disputeID`, and this handler requires a top-level `id`. These tests post
+// `id`, because that is what the code under test reads; when the two halves settle on one key, this
+// file moves with them. Nothing below should be read as evidence that the key question is answered.
 //
 // **What these assert, and what they deliberately do not.** No dispute table exists on this side and
 // no row outside `contributions` is written, so there is no tally to read back the way
@@ -38,7 +48,7 @@ func disputePayload(dispute, tree uuid.UUID, issues []string, suggestions map[st
 		"id":          dispute,
 		"clientUUID":  uuid.New(),
 		"treeID":      tree,
-		"treeSource":  "city",
+		"treeSource":  "city_import",
 		"issues":      issues,
 		"suggestions": suggestions,
 		"notes":       notes,
@@ -264,7 +274,7 @@ func TestTheOwnershipLookupMatchesADisputeInEitherSpelling(t *testing.T) {
 		"client_uuid": uuid.New(), "kind": "data_dispute", "tree_uuid": tree,
 		"occurred_at": time.Now().UTC(),
 		"payload": json.RawMessage(`{"id":"` + upperCased + `","treeID":"` + tree.String() + `",` +
-			`"treeSource":"city","issues":["wrong_location"]}`),
+			`"treeSource":"city_import","issues":["wrong_location"]}`),
 	}
 	if result := h.syncOne(t, alice.AccessToken, raise); result.Status != "applied" {
 		t.Fatalf("raising with an uppercase id: status = %q (%s), want applied",
@@ -478,7 +488,7 @@ func TestTheDisputeRefusals(t *testing.T) {
 	raise := func() map[string]any {
 		return map[string]any{
 			"id": uuid.New(), "clientUUID": uuid.New(), "treeID": tree,
-			"treeSource": "city", "issues": []string{"wrong_location"},
+			"treeSource": "city_import", "issues": []string{"wrong_location"},
 			"suggestions": map[string]string{"lat": "37.3382"},
 			"notes":       "the trunk is across the path",
 			"occurredAt":  "2026-09-10T10:00:00Z",
@@ -564,5 +574,97 @@ func disputeItemWithPayload(tree uuid.UUID, payload json.RawMessage) map[string]
 		"client_uuid": uuid.New(), "kind": "data_dispute", "tree_uuid": tree,
 		"occurred_at": time.Now().UTC(),
 		"payload":     payload,
+	}
+}
+
+// ── The seam that failed: one vocabulary, two halves, no build compiling both ──────────────────
+
+// TestTheDisputeTreeSourcesMatchTheSwiftVocabulary is the gate this round shipped without.
+//
+// `disputeTreeSources` read `{"city", "community"}`, and `city` is not a `TreeSource` raw value:
+// `TreeSource.cityImport` is `city_import`, v22 CHECKs `tree_source IN ('city_import','community')`,
+// and the shipped seed answers `[('city_import', 198625)]`. `raiseDataDispute` stamps `.cityImport`
+// on every dispute it raises, so this handler would have refused **every** dispute a client can
+// send, with `validation_failed` — which is not retried, so the row goes `.failed` on its first
+// attempt and sits red on screen 17 with no way to clear it. Nothing caught it because every test in
+// this file spelled the source the same wrong way the handler did: the tests agreed with the code,
+// which is the one thing a test that restates a vocabulary can prove.
+//
+// **What this sees, and what it does not.** It reads the `case … = "…"` lines of `TreeSource` out of
+// `Cypress/Core/Models/Tree.swift` — that file's *text*, in this repo. Nothing here compiles Swift
+// and nothing here talks to a client. So it sees a raw value in that enum renamed, added or removed,
+// and it is blind to three things a reader might assume it covers:
+//
+//   - v22's own `tree_source` CHECK, a third copy of this vocabulary in `AppSchema.swift`;
+//   - whether `DataDisputeReport.treeSource` is still typed as a `TreeSource` at all — if it ever
+//     became a free string, this test would go on passing while the wire changed underneath it;
+//   - what a built client actually puts on the wire, which only the Swift suite can say.
+//
+// It is still worth more than the list it replaces, and the difference is exactly the one
+// `TestTreePlacementMatchesTheSwiftVocabulary` states for its own enum: a test that declares the
+// answer it checks proves the author transcribed it.
+//
+// No harness, deliberately — this arm must not skip on a machine with no Postgres, because the
+// drift it watches for is visible in two text files and needs no database to find.
+func TestTheDisputeTreeSourcesMatchTheSwiftVocabulary(t *testing.T) {
+	declared := swiftEnumRawValues(t, "../../../Cypress/Core/Models/Tree.swift", "TreeSource")
+	if len(declared) != 2 {
+		t.Fatalf("read %d raw values from TreeSource, want 2 — the extractor or the enum moved: %v",
+			len(declared), declared)
+	}
+
+	for _, value := range declared {
+		if !disputeTreeSources[value] {
+			t.Errorf("TreeSource declares %q and this service refuses it: a dispute on such a record "+
+				"comes back validation_failed, and that is never retried", value)
+		}
+	}
+	for value := range disputeTreeSources {
+		if !slices.Contains(declared, value) {
+			t.Errorf("this service accepts tree source %q, which is no TreeSource raw value: "+
+				"nothing can send it, so it is either a typo for a value that can or it is dead",
+				value)
+		}
+	}
+}
+
+// TestEveryTreeSourceTheSwiftEnumDeclaresIsAccepted is the same agreement measured through the
+// handler rather than through the variable.
+//
+// It is not a duplicate of the test above, and the difference is the point: that one compares two
+// lists, which is a claim about a map. This one posts a dispute carrying each declared value and
+// lets `POST /sync` answer — the map could match the enum perfectly while the gate read some other
+// list, or no list.
+//
+// The refused control is the half that keeps the loop honest. Without it every assertion here would
+// pass just as happily against a handler that had stopped checking `treeSource` altogether, which is
+// this repo's standing test defect: a guard that stays green while the thing it guards is absent.
+func TestEveryTreeSourceTheSwiftEnumDeclaresIsAccepted(t *testing.T) {
+	declared := swiftEnumRawValues(t, "../../../Cypress/Core/Models/Tree.swift", "TreeSource")
+	h := newHarness(t)
+	session := h.signIn(t, nil)
+
+	raiseWithSource := func(source string) syncResult {
+		tree := uuid.New()
+		return h.syncOne(t, session.AccessToken, disputeItemWithPayload(tree, jsonBody(map[string]any{
+			"id": uuid.New(), "clientUUID": uuid.New(), "treeID": tree,
+			"treeSource": source, "issues": []string{"wrong_location"},
+			"occurredAt": "2026-09-10T10:00:00Z",
+		})))
+	}
+
+	for _, value := range declared {
+		if result := raiseWithSource(value); result.Status != "applied" {
+			t.Errorf("a dispute whose treeSource is %q came back %q (%s), want applied — that is a "+
+				"terminal failure on a record the client can raise against", value,
+				result.Status, codeOf(result.Error))
+		}
+	}
+
+	refused := raiseWithSource("municipal")
+	if refused.Status != "failed" || codeOf(refused.Error) != "validation_failed" {
+		t.Fatalf("a dispute whose treeSource is no raw value at all came back %q (%s), want "+
+			"failed/validation_failed — the gate above is not being exercised",
+			refused.Status, codeOf(refused.Error))
 	}
 }

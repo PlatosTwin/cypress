@@ -6,8 +6,10 @@
 -- same refusal:
 --
 --   * before v22 the phone cannot store the queue row at all. That is the **expectation**, not a
---     measurement: v22 does not exist on any branch this file can be tested against, so nothing
---     here has observed it and nothing here should be read as having done so;
+--     measurement: v22 is Swift, on branch `feat/r79-city-disputes`, and nothing in this module
+--     compiles or runs it, so nothing here has observed that refusal and nothing here should be
+--     read as having done so. (The branch itself has been *read*, and the vocabulary it declares
+--     is what `api.disputeTreeSources` was corrected to — reading a file is not running it.);
 --   * before this file the service refuses the contribution, and that half **is** measured —
 --     `TestEveryKindTheHandlerAcceptsIsStorable` goes red on
 --     `violates check constraint "contributions_kind_admits_a_withdrawn_reading"` with 005 removed.
