@@ -16,4 +16,4 @@
 # When all of that has happened, the line belongs in a note of its own, written at the moment it
 # became true.
 
-internal: the sync service learns the `data_dispute` and `data_dispute_withdrawal` kinds and refuses a withdrawal of somebody else's dispute; no tester-visible change until the phone half merges, a screen exists, and the service is deployed.
+internal: the sync service learns the `data_dispute` and `data_dispute_withdrawal` kinds; no tester-visible change until the phone half merges and the service is deployed.
