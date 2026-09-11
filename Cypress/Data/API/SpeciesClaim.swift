@@ -24,15 +24,18 @@
 //     decision than this. `.forbidden` says so rather than failing silently — and the same refusal
 //     covers `correctSpecies` and `flagWrongSpecies`, for the same reason.
 //
-//     **That larger decision has since been taken, and it went the other way for *disputing*
-//     (RULINGS R79).** City rows become disputable from the UI: the dispute is a row in the app's
-//     writable database referencing the city tree, never a write to the attached file, so the
-//     inventory stays read-only and the refusal above stands exactly as written for `claimSpecies`
-//     and `correctSpecies`. What changes is `flagWrongSpecies`' half of it — a city row stops
-//     answering `.unavailable`, and the surface it gets is richer than this boolean pair (checked
-//     issue kinds, per-field suggested values, free text). Sync-back to the city's own dataset is
-//     explicitly deferred. None of that is built here; R79's round owns it, and this paragraph is
-//     the pointer so that whoever reads this refusal next does not read it as still open.
+//     **That larger decision was taken, it went the other way for *disputing*, and it is built**
+//     (RULINGS R79, `AppSchema` v22). A city row is disputable from the UI: the dispute is a row in
+//     the app's writable database referencing the city tree, never a write to the attached file. So
+//     the inventory stays read-only and **the refusal above stands exactly as written for
+//     `claimSpecies` and `correctSpecies`** — R79 changed disputing, not writing, and nothing in the
+//     dispute round weakens either of those two `.forbidden`s.
+//
+//     What changed is `flagWrongSpecies`' half of it. A city row no longer answers `.unavailable`
+//     here; it answers `.dataDispute`, and the surface behind that is richer than this boolean pair
+//     — checked issue kinds, per-field suggested values, free text (`DataDispute.swift`,
+//     `TreeDataDispute`). Sync-back to the city's own dataset remains explicitly deferred, and
+//     nothing on this device adjudicates a dispute.
 //
 //  2. **First claim wins; a second `claimSpecies` is `.conflict`, not an overwrite.** Replacing an
 //     existing claim is a *correction*, and it goes through the verb that keeps a history and asks
@@ -92,7 +95,10 @@ public extension CypressAPI {
 /// which a view has any business holding — the same argument that put `deletablePhotoIDs` on the
 /// payload rather than deriving it in `TreeProfilePresentation`.
 public enum SpeciesCorrectionOffer: Hashable, Sendable {
-    /// Nothing to correct: a city row, an unnamed tree, or a claim with no chain behind it.
+    /// Nothing to correct: an unnamed tree, or a claim with no chain behind it.
+    ///
+    /// **A city row is no longer one of these** — it was, and R79 is what changed it; see
+    /// `.dataDispute` below.
     ///
     /// Not spelled `none`. A case by that name shadows `Optional.none` at every call site that
     /// compares against a leading dot, and the compiler resolves the ambiguity silently.
@@ -105,4 +111,16 @@ public enum SpeciesCorrectionOffer: Hashable, Sendable {
     /// A report is open. `canResolve` is whether *this* viewer may answer it: the author of the
     /// disputed claim, or a lead.
     case underReview(flagID: UUID, canResolve: Bool)
+    /// A **city** row, whose species is disputed through R79's surface rather than through this one.
+    ///
+    /// The answer this case replaces was `.unavailable`, and that answer had become false: R79 made
+    /// city data disputable, so "nothing to do about the species here" stopped being true the day
+    /// `AppSchema` v22 landed.
+    ///
+    /// **The identical value is on `RecordDefectOffer` too, and one control is drawn from it, never
+    /// two.** R79's city surface is a single sheet whose three checkboxes cover both of these seams
+    /// — the species one and the record one — so both offers point at it and the state lives in one
+    /// place. `TreeProfile.cityDataDispute` is the accessor a view should use;
+    /// `DataDisputeTests.theTwoOffersAgreeOnACityRow` is what keeps them from disagreeing.
+    case dataDispute(DataDisputeOffer)
 }

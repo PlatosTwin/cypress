@@ -580,6 +580,21 @@ struct TreeProfileView: View {
         switch presentation.recordDefect {
         case .unavailable:
             EmptyView()
+        case .dataDispute:
+            // **R79's dispute action is deliberately not drawn yet.** Part 1 of that round built the
+            // record, the two verbs and this offer; the sheet the action opens is its own scheduled
+            // PR, and the owner has ruled where the action goes — exactly here, in this text-action
+            // area, replacing the two community flag actions for a city tree.
+            //
+            // Drawing a control now would mean inventing the sheet behind it, and a screen not in
+            // the mocks is a stop-and-ask (DECISIONS constraint 21). `EmptyView` leaves a city row
+            // rendering precisely as it did before v22 until that PR lands, which is the honest
+            // interim: nothing is offered, and nothing is promised that cannot be completed.
+            //
+            // The offer is read once, from `TreeProfile.cityDataDispute`, and **one** control is
+            // drawn from it — never one here and another under `speciesCorrection`, which carries
+            // the identical value.
+            EmptyView()
         case .reportable:
             recordLinkAction(TreeProfileCopy.reportNeverExistedAction) {
                 Task { await model.reportNeverExisted() }
@@ -623,7 +638,9 @@ struct TreeProfileView: View {
     @ViewBuilder
     private func speciesCorrection(_ presentation: TreeProfilePresentation) -> some View {
         switch presentation.speciesCorrection {
-        case .unavailable:
+        case .unavailable, .dataDispute:
+            // `.dataDispute` draws nothing here on purpose: R79's city surface is one action for the
+            // whole record, and `recordDefect`'s arm above is where it will be drawn. See that arm.
             EmptyView()
         case .correctable:
             recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }

@@ -892,6 +892,37 @@ city inventory stays read-only, and sync-back to the city is explicitly deferred
 "community rows only" deferral in `SpeciesClaim.swift`'s header. Needs the writable-schema
 migration seat after the §3.4 round's. Sequenced after §3.4 lands; exact slot at scheduling.
 
+**Part 1 is in flight** (owner decision round, 2026-09-10; the round's decisions and rulings are
+staged in `docs/rulings-pending/city-inventory-disputes.md`). The owner split this entry into four
+scheduled pieces, and part 1 is **the record and its two verbs**: `AppSchema` v22's
+`tree_data_disputes` and its two children, `raiseDataDispute` / `withdrawDataDispute` on
+`CypressAPI`, the two `OutboxItem.Kind` cases that carry them to `cypress-sync`, and city rows
+ceasing to answer `.unavailable` on the tree profile. Client is PR-A; the server's sync vocabulary
+is PR-B; screen 03's dispute **sheet** is PR-C.
+
+Still open after part 1, each its own scheduled PR and none of them started:
+- the flag **badge** on flagged trees, on the map and in the list — and it is the piece that needs a
+  server **read** endpoint, because part 1's ruling is that the service records disputes without
+  materializing them, so a device knows only its own;
+- the **"trees with data issues"** filter in the filters box;
+- the **missing-tree entry point** — a tree on city property and absent from the city database,
+  whose report has no profile to open from;
+- the **community-flagging redesign**, which is where community trees get their location and species
+  disputes: part 1 leaves `flagWrongSpecies` / `flagNeverExisted` untouched, and "location and
+  species only" is a narrowing of that flow rather than an addition beside it.
+
+**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
+three times.** Twice on the outbox kind list, and once on a whole table: `AppSchema` v22 added
+`tree_data_disputes` with a `raised_by` column and neither account-deletion door could see it, which
+PR #165's review measured and PR #165 fixed. Every one of the three failed **silently**, because a
+hand-kept list of table names matches nothing when it is short rather than erroring. The outbox half
+was closed by making `OutboxItem.Kind.accountDeletionTreatment` an exhaustive `switch`, so the
+compiler asks the question when a case is added; the table half has no equivalent. Design one — a
+test that reads the live schema for columns named `user_id` / `raised_by` / `given_by` / `set_by`
+and requires each to be named by one door or explicitly exempted is the obvious shape, and it is the
+shape that would have caught this. **A fourth hand-audit is not the fix.** Unscheduled; the badge
+round is the natural slot, because it is the next round to touch this table.
+
 **Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
 itself — "This is that almanac's 'walk the nine' list, one tree at a time" (screen 14) and its
