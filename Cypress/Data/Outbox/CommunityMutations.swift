@@ -364,10 +364,28 @@ public struct HazardRedirectReport: Codable, Hashable, Sendable {
 /// The photograph is deliberately absent, and there is none to be absent: a dispute is text and
 /// numbers. See `OutboxSendSink` for why the queue's photo phase is not something these types may
 /// grow into.
+///
+/// **The property names are the wire keys.** There are no `CodingKeys` here and there is no
+/// translation layer under this type: `RemoteAPI.sync` puts the stored payload on the wire verbatim
+/// (`payload: try JSONValue.parse(item.payload)`), so what this struct encodes is what
+/// `cypress-sync` decodes. `DataDisputeTests.theRaiseCarriesTheKeysTheServiceReads` pins the key set
+/// itself rather than the properties, because a model-level assertion cannot see a key-name
+/// mismatch — which is how the one below reached review.
 public struct DataDisputeReport: Codable, Hashable, Sendable {
     public let clientUUID: UUID
     /// The dispute's own id on this device, which is what a withdrawal will name.
-    public let disputeID: UUID
+    ///
+    /// **`id`, not `disputeID`, and the distinction is the convention this codebase already
+    /// follows.** A record's *own* id travels as `id` (`measurementPayload`); a pointer to
+    /// **another** record is named for what it points at — `MeasurementWithdrawal.measurementID`,
+    /// and `DataDisputeWithdrawal.disputeID` below. This payload *is* the dispute, so a `disputeID`
+    /// here would be the only record in the system naming its own id after itself.
+    ///
+    /// It is also what the service reads: `dataDisputePayload.ID` is `json:"id"` and
+    /// `payload.ID.IsNil()` is its first refusal, answered `validation_failed` — which
+    /// `OutboxRetryPolicy.nextState` never retries. Under the old name every dispute anyone filed
+    /// would have gone `.failed` on its first attempt and sat permanently red on screen 17.
+    public let id: UUID
     public let treeID: UUID
     public let treeSource: TreeSource
     public let issues: Set<TreeDataDispute.IssueKind>
@@ -378,7 +396,7 @@ public struct DataDisputeReport: Codable, Hashable, Sendable {
 
     public init(
         clientUUID: UUID,
-        disputeID: UUID,
+        id: UUID,
         treeID: UUID,
         treeSource: TreeSource,
         issues: Set<TreeDataDispute.IssueKind>,
@@ -388,7 +406,7 @@ public struct DataDisputeReport: Codable, Hashable, Sendable {
         occurredAt: Date
     ) {
         self.clientUUID = clientUUID
-        self.disputeID = disputeID
+        self.id = id
         self.treeID = treeID
         self.treeSource = treeSource
         self.issues = issues

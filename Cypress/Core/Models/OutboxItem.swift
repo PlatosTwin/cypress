@@ -195,6 +195,12 @@ public struct OutboxItem: CoreEntity {
             // `wrong_species_report` does, and the leaving door's promise is that the work stays and
             // the name goes. `discardedOutright` is for mutations that have no meaning without the
             // account, and "this record's data is wrong" keeps every bit of its meaning.
+            //
+            // **The queue row is half of that promise and `tree_data_disputes` is the other half**,
+            // which this comment asserted before either door could see the table. Both halves are
+            // named now — `AccountDeletion.anonymizeContributions` nulls `raised_by`,
+            // `eraseContributions` deletes the row — and `AccountDeletionTests
+            // .aDisputeIsVisibleToBothDoors` is what keeps the two halves of one act agreeing.
             case .visit, .observation, .measurement, .careEvent,
                  .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
                  .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,

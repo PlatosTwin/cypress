@@ -951,7 +951,7 @@ struct CommunityOutboxKindTests {
             // the whole payload rather than about an empty one. A suggestion set left empty would
             // round-trip through any encoder at all.
             .dataDispute(DataDisputeReport(
-                clientUUID: UUID(), disputeID: specimenDispute, treeID: tree,
+                clientUUID: UUID(), id: specimenDispute, treeID: tree,
                 treeSource: .cityImport,
                 issues: [.wrongLocation, .wrongSpecies, .wrongMetadata],
                 suggestions: TreeDataDispute.Suggestions(

@@ -87,8 +87,8 @@ public struct AccountDeletion {
         /// Visits, check-ins, measurements and care events whose `user_id` was nulled. They stay on
         /// their trees.
         public var anonymizedContributions: Int = 0
-        /// Tree names (D15), review flags and status overrides that carried the account as their
-        /// author.
+        /// Tree names (D15), review flags, data disputes (v22) and status overrides that carried the
+        /// account as their author.
         public var anonymizedAttributions: Int = 0
         /// Photo votes whose owner was nulled and which still count toward their photograph's hero
         /// (`AppSchema` v9).
@@ -113,8 +113,9 @@ public struct AccountDeletion {
 
         /// Visits, check-ins, measurements and care events deleted outright.
         public var deletedContributions: Int = 0
-        /// Tree names and review flags deleted outright. Status overrides are not counted here; a
-        /// moderation decision is anonymized under both doors (see `delete`).
+        /// Tree names, review flags and data disputes deleted outright — a dispute's two child
+        /// tables cascade with it (v22). Status overrides are not counted here; a moderation
+        /// decision is anonymized under both doors (see `delete`).
         public var deletedAttributions: Int = 0
         /// Photograph rows deleted. Their bytes are removed by the caller, before this runs.
         public var deletedPhotos: Int = 0
@@ -428,6 +429,27 @@ public struct AccountDeletion {
             userAndNow, on: connection
         )
 
+        // A data dispute is the same shape as a review flag and is anonymized on the same argument
+        // (`AppSchema` v22, `RULINGS R79`). It was missed when the table was added, which is what
+        // `ROADMAP`'s entry about enumerating the user-bearing tables is for: a hand-kept list
+        // cannot fail loudly, and this one did not.
+        //
+        // **What `raised_by IS NULL` then means, said out loud rather than inherited.** A NULL here
+        // is *this installation's* anonymous row and `TreeDataDispute.isAuthored(by:)` admits it, so
+        // an anonymized dispute is withdrawable by whoever signs in on this phone next — which
+        // `review_flags` has no equivalent of, because a flag has no author-only verb. That is the
+        // deliberate answer and not an oversight: the alternative is the row this round's ruling R-a
+        // exists to prevent, a standing objection **nobody** can retract. A dispute is about the
+        // *tree*, the leaving door's promise is that the work stays and the name goes, and a
+        // withdrawal by the next holder of the phone removes an objection rather than creating one.
+        outcome.anonymizedAttributions += try run(
+            """
+            UPDATE tree_data_disputes SET raised_by = NULL, updated_at = :now
+             WHERE raised_by = :user COLLATE NOCASE
+            """,
+            userAndNow, on: connection
+        )
+
         // The vote survives its voter (`AppSchema` v9), which is the concrete thing the owner asked
         // for when they said "up votes" among the things the default door leaves in place. Until v9
         // this was a `DELETE`, not because anybody had ruled that a vote should die with its voter —
@@ -517,6 +539,15 @@ public struct AccountDeletion {
         )
         outcome.deletedAttributions += try run(
             "DELETE FROM review_flags WHERE raised_by = :user COLLATE NOCASE", user, on: connection
+        )
+        // The dispute goes whole, children and all: `tree_dispute_issues` and
+        // `tree_dispute_suggestions` are `ON DELETE CASCADE` against this parent (`AppSchema` v22),
+        // so the checked issues and the suggested values go with it in the same statement. They are
+        // the account's own words about a record — "erase everything I contributed" reaches them —
+        // and a child row surviving its parent is not reachable while foreign keys are ON, which
+        // `SQLiteConnection` and `DatabaseQueue` both set.
+        outcome.deletedAttributions += try run(
+            "DELETE FROM tree_data_disputes WHERE raised_by = :user COLLATE NOCASE", user, on: connection
         )
     }
 

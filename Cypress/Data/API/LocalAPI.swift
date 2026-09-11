@@ -1086,6 +1086,17 @@ public actor LocalAPI: CypressAPI {
         // City rows only this round (R-b of the round's contract). A community row reaching here
         // would be a caller that stopped checking `tree.source`, and `.unavailable` is the safe
         // answer for it: no control, rather than a control `raiseDataDispute` would refuse.
+        //
+        // **`deletedAt` is deliberately not checked, and the gap is unreachable rather than
+        // overlooked.** The community arms of both callers check it because a community row can be
+        // withdrawn on this device; a *city* row's `deleted_at` would have to arrive in the seed,
+        // and the shipped seed holds none — `select count(*), sum(deleted_at is not null) from
+        // trees` answers `198625|0`, and nothing on the device may write that table (it is
+        // ATTACHed read-only). So there is no state in which this returns `.raisable` for a
+        // withdrawn city record. If a future pack or a downloaded city ever ships one, this is the
+        // clause that has to grow, and `raiseDataDispute` needs the same one — it does not check
+        // `deletedAt` on the city arm either, for exactly this reason. Building the machinery now
+        // would be a branch no test could reach and no seed could produce.
         guard tree.source == .cityImport else { return .unavailable }
         if let open = try disputes.openDispute(
             treeID: tree.id, raisedBy: userID, connection: connection
@@ -1135,8 +1146,12 @@ public actor LocalAPI: CypressAPI {
         suggestions: TreeDataDispute.Suggestions,
         notes: String?
     ) async throws -> TreeDataDispute {
+        // The reason is dropped here and kept on the pure function: `CypressAPI` throws
+        // BUILD-PLAN §6's closed taxonomy, and a screen that wants to say *which* rule refused
+        // calls `DataDisputeLimits.refusal` — the same function, with `Refusal` attached — before
+        // it calls this. See `DataDisputeLimits.Refusal`.
         if let refusal = DataDisputeLimits.refusal(issues: issues, suggestions: suggestions) {
-            throw refusal
+            throw refusal.apiError
         }
         let moment = now()
         let mine = attribution
@@ -1187,7 +1202,7 @@ public actor LocalAPI: CypressAPI {
                 .dataDispute(
                     DataDisputeReport(
                         clientUUID: dispute.clientUUID,
-                        disputeID: dispute.id,
+                        id: dispute.id,
                         treeID: treeID,
                         treeSource: dispute.treeSource,
                         issues: issues,

@@ -188,7 +188,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoWithdrawal(value): return value.treeID
         case let .hazardRedirect(value): return value.event.treeID
         case let .measurementWithdrawal(value): return value.treeID
-        // The record disputed. Carried on both payloads rather than resolved from `disputeID`,
+        // The record disputed. Carried on both payloads rather than resolved from the dispute's id,
         // because `POST /sync` names a tree on every item and a service that records without
         // materializing has no dispute row to join against.
         case let .dataDispute(value): return value.treeID

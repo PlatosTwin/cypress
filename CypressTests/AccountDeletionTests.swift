@@ -161,6 +161,156 @@ struct AccountDeletionTests {
         #expect(profile.visits.items.first?.note == "leafing out")
     }
 
+    // MARK: - 1b. The fifteenth user-bearing table (`AppSchema` v22)
+
+    /// A dispute this account raised, and a `review_flags` row beside it raised by the same account.
+    ///
+    /// The flag is the **calibration**, and it is what makes a green here mean something: it is a
+    /// table both doors have always handled, so if the harness were looking at an empty store, or at
+    /// the wrong user, or running no deletion at all, the flag's assertions would fail in the same
+    /// breath as the dispute's. A test that only watched the new table could pass by looking at
+    /// nothing.
+    @discardableResult
+    private static func writeDisputeAndFlag(
+        treeID: UUID,
+        raisedBy: UUID?,
+        in store: CypressStore
+    ) async throws -> TreeDataDispute {
+        let dispute = TreeDataDispute(
+            treeID: treeID,
+            treeSource: .cityImport,
+            raisedBy: raisedBy,
+            issues: [.wrongLocation, .wrongMetadata],
+            suggestions: TreeDataDispute.Suggestions(
+                location: TreeDataDispute.SuggestedLocation(
+                    coordinate: Coordinate(latitude: 37.77, longitude: -122.44), accuracyM: 4
+                ),
+                plantedYear: 1998
+            ),
+            notes: "the pin is across the street",
+            createdAt: moment,
+            updatedAt: moment
+        )
+        try await store.queue.write { connection in
+            try DataDisputeStore().insert(dispute, connection: connection)
+            try ContributionStore().insert(
+                ReviewFlag(
+                    treeID: treeID, kind: .appearsDead, raisedBy: raisedBy,
+                    createdAt: moment, updatedAt: moment
+                ),
+                connection: connection
+            )
+        }
+        return dispute
+    }
+
+    /// **The leaving door takes the name off a dispute, and the dispute stays withdrawable.**
+    ///
+    /// `tree_data_disputes` was invisible to both doors when v22 added it, and the consequence was
+    /// not a cosmetic residue: the row kept its `raised_by`, so after a deletion the standing
+    /// objection belonged to an account that no longer existed and **nobody could take it back** —
+    /// the exact defect this round's ruling R-a added the withdrawal verb to prevent, arriving
+    /// through a door nobody had looked at. `OutboxItem.Kind.accountDeletionTreatment` asserts the
+    /// promise ("the work stays and the name goes") that this table was breaking.
+    ///
+    /// What `raised_by IS NULL` means afterwards is decided rather than inherited: it is this
+    /// *installation's* anonymous row (`TreeDataDispute.isAuthored(by:)`), so the phone can still
+    /// retract it. The last block is that fact, asserted through a signed-out `LocalAPI`.
+    @Test("the leaving door anonymizes a dispute and leaves it withdrawable")
+    func theLeavingDoorAnonymizesADispute() async throws {
+        let (store, api) = try await Self.signedIn()
+        let tree = try await Self.makeTree(api: api, in: store)
+        let mine = try await Self.writeDisputeAndFlag(treeID: tree.id, raisedBy: Self.userID, in: store)
+        // A stranger's dispute on the same tree, which must not move.
+        let theirs = try await Self.writeDisputeAndFlag(
+            treeID: tree.id, raisedBy: Self.strangerID, in: store
+        )
+
+        let outcome = try await api.deleteAccount(.leaveRecords)
+        #expect(outcome.anonymizedAttributions == 2, "the flag and the dispute, and nothing else")
+
+        // The calibration first: a table this door has always handled, in this same store.
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM review_flags WHERE raised_by IS NULL", in: store
+        ) == 1)
+
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM tree_data_disputes", in: store
+        ) == 2, "the leaving door deleted a dispute instead of un-naming it")
+        #expect(try await Self.disputes(raisedBy: nil, in: store) == [mine.id.uuidString],
+                "the dispute still names the deleted account")
+        #expect(try await Self.disputes(raisedBy: Self.strangerID, in: store) == [theirs.id.uuidString],
+                "the door reached a stranger's dispute")
+        // The work stays: the children are the dispute's content and they are still there.
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM tree_dispute_issues WHERE dispute_id = '\(mine.id.uuidString)'",
+            in: store
+        ) == 2)
+
+        // And it is somebody's to withdraw. Signed out on this phone, which is what the anonymous
+        // arm of `isAuthored(by:)` means and the whole reason the column is nulled rather than left.
+        let signedOut = LocalAPI(
+            store: store, deviceID: Self.deviceID, userID: nil, now: { Self.moment }
+        )
+        try await signedOut.withdrawDataDispute(disputeID: mine.id)
+        #expect(try await Self.scalar(
+            """
+            SELECT COUNT(*) AS n FROM tree_data_disputes
+             WHERE id = '\(mine.id.uuidString)' AND withdrawn_at IS NOT NULL
+            """,
+            in: store
+        ) == 1)
+    }
+
+    /// **The erasing door removes the dispute, and its two children go with it.**
+    ///
+    /// The children are `ON DELETE CASCADE` against the parent (`AppSchema` v22) and foreign keys
+    /// are ON, so one `DELETE` takes all three rows — asserted here rather than assumed, because
+    /// the cascade is the same mechanism v22's own migration comment calls a hazard.
+    @Test("the erasing door removes a dispute with its issues and suggestions")
+    func theErasingDoorRemovesADispute() async throws {
+        let (store, api) = try await Self.signedIn()
+        let tree = try await Self.makeTree(api: api, in: store)
+        let mine = try await Self.writeDisputeAndFlag(treeID: tree.id, raisedBy: Self.userID, in: store)
+        let theirs = try await Self.writeDisputeAndFlag(
+            treeID: tree.id, raisedBy: Self.strangerID, in: store
+        )
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM tree_dispute_suggestions", in: store
+        ) == 8, "fixture: four suggested values on each of the two disputes")
+
+        let outcome = try await api.deleteAccount(.eraseEverything)
+        #expect(outcome.deletedAttributions == 2, "the flag and the dispute, and nothing else")
+
+        // The calibration: `review_flags` is a table this door has always handled.
+        #expect(try await Self.scalar("SELECT COUNT(*) AS n FROM review_flags", in: store) == 1)
+
+        #expect(try await Self.disputes(raisedBy: Self.userID, in: store).isEmpty,
+                "the erased account's dispute is still standing")
+        #expect(try await Self.disputes(raisedBy: Self.strangerID, in: store) == [theirs.id.uuidString],
+                "the door reached a stranger's dispute")
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM tree_dispute_issues WHERE dispute_id = '\(mine.id.uuidString)'",
+            in: store
+        ) == 0, "the cascade did not take the issues")
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM tree_dispute_suggestions", in: store
+        ) == 4, "the cascade took the wrong dispute's suggestions, or none")
+    }
+
+    /// The ids of the disputes one account raised — or, for `nil`, the anonymous ones. Read straight
+    /// out of SQL rather than through `DataDisputeStore`, which is not the thing under test here.
+    private static func disputes(raisedBy user: UUID?, in store: CypressStore) async throws -> [String] {
+        let predicate = user.map { "raised_by = '\($0.uuidString)' COLLATE NOCASE" } ?? "raised_by IS NULL"
+        return try await store.queue.read { connection in
+            let statement = try connection.prepare("""
+                SELECT CAST(id AS TEXT) AS id FROM tree_data_disputes WHERE \(predicate) ORDER BY id
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchAll { try $0.string("id") }
+        }
+    }
+
     @Test("the device link is severed and the signed-in state goes with it")
     func theDeviceLinkIsSevered() async throws {
         let (store, api) = try await Self.signedIn()

@@ -133,6 +133,9 @@ public struct TreeDataDispute: CoreEntity {
     /// is a real and useful report ("this is not a London Plane, I do not know what it is"). What is
     /// *not* allowed is a suggestion for an issue the dispute does not check — see
     /// `DataDisputeLimits.refusal(issues:suggestions:)`.
+    ///
+    /// **It codes as the field-keyed map, not as these four properties** — see `encode(to:)` below.
+    /// Typed in Swift, one shape everywhere it is written down.
     public struct Suggestions: Hashable, Sendable, Codable {
         public var location: SuggestedLocation?
         public var speciesID: UUID?
@@ -153,11 +156,6 @@ public struct TreeDataDispute: CoreEntity {
 
         public var isEmpty: Bool {
             location == nil && speciesID == nil && plantedYear == nil && status == nil
-        }
-
-        /// The issues these suggestions speak about — `SuggestedField.issue` for whatever is set.
-        public var issuesSpokenFor: Set<IssueKind> {
-            Set(stored.keys.map(\.issue))
         }
 
         /// The rows as the table holds them.
@@ -203,6 +201,47 @@ public struct TreeDataDispute: CoreEntity {
             suggestions.plantedYear = rows[.plantedYear].flatMap(Int.init)
             suggestions.status = rows[.status].flatMap(TreeStatus.init(rawValue:))
             self = suggestions
+        }
+
+        // MARK: - Coding
+
+        /// Codes as `stored` — `{"lat": "37.7749", "species_id": "…"}` — and not as the four
+        /// properties above.
+        ///
+        /// **One shape in the table, on the wire and in the service's own comment.** The synthesized
+        /// conformance would write a third: a nested object with `location.coordinate.latitude`
+        /// buried two levels down, true nowhere else in the round. `stored` already computes the
+        /// `(field, value)` rows for `tree_dispute_suggestions`, and `cypress-sync` documents
+        /// `suggestions` as a field-keyed object, so this is the shape that was already written down
+        /// twice.
+        ///
+        /// It is a hand-written pair rather than `Codable` synthesis on a dictionary property for a
+        /// reason that is easy to get wrong: a `Dictionary` whose key is a `String`-raw-value enum
+        /// does **not** encode as a JSON object — the stdlib keys objects only for `String`, `Int`
+        /// and `CodingKeyRepresentable` keys, and everything else becomes a flat array of alternating
+        /// keys and values. So the rawValue mapping is explicit on both sides.
+        ///
+        /// The round trip is lossless because `stored` and `init(stored:)` are lossless (
+        /// `DataDisputeTests.everySuggestedFieldRoundTrips`), and an unknown field name decodes to
+        /// nothing rather than throwing — the same direction `DataDisputeStore.withChildren` takes,
+        /// and for the same reason: a payload a screen draws controls from should lose a field it
+        /// cannot read, not fail whole.
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(
+                Dictionary(uniqueKeysWithValues: stored.map { ($0.key.rawValue, $0.value) })
+            )
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode([String: String].self)
+            var rows: [SuggestedField: String] = [:]
+            for (name, value) in raw {
+                guard let field = SuggestedField(rawValue: name) else { continue }
+                rows[field] = value
+            }
+            self.init(stored: rows)
         }
     }
 

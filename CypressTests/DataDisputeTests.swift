@@ -146,6 +146,26 @@ struct DataDisputeTests {
         }
     }
 
+    /// The queued payload **as JSON**, parsed by `JSONSerialization` rather than by the type that
+    /// wrote it.
+    ///
+    /// This is the wire, not a model of it: `RemoteAPI.sync` sends these bytes verbatim
+    /// (`payload: try JSONValue.parse(item.payload)`), so the object this returns is what
+    /// `cypress-sync` decodes. Decoding through `DataDisputeReport` instead — which
+    /// `eachActQueuesItsOwnKind` does, correctly, for the *values* — round-trips the payload through
+    /// the same key names that wrote it and therefore cannot see a key-name mismatch at all. One
+    /// reached review that way.
+    private static func wirePayload(
+        _ store: CypressStore,
+        ofKind kind: OutboxItem.Kind
+    ) async throws -> [String: Any] {
+        let rows = try await queued(store, ofKind: kind)
+        #expect(rows.count == 1, "\(kind.rawValue) queued \(rows.count) rows")
+        let bytes = try #require(rows.first).item.payload
+        let object = try JSONSerialization.jsonObject(with: bytes)
+        return try #require(object as? [String: Any], "the payload is not a JSON object")
+    }
+
     // MARK: - 1. The boundary R-b draws
 
     /// A city row is disputable and a community row is refused — the mirror image of the two flag
@@ -347,6 +367,70 @@ struct DataDisputeTests {
         #expect(allowed.suggestions.status == .vacantSite)
     }
 
+    /// **Each of the four rules answers with its own reason**, and all four still answer
+    /// `validation_failed` to the queue.
+    ///
+    /// The owner's ruling on the 10 m floor is that it stays *and* that the sheet explains it. A
+    /// refusal a screen cannot tell apart makes that unimplementable — the sheet would have to
+    /// re-implement the accuracy test to find out which rule fired, and the check in front of the
+    /// person and the check that binds would then be two different pieces of code. So the reason is
+    /// on the pure function, which is what a sheet calls.
+    ///
+    /// The control is the last line: the same suggestions with every issue checked are **not**
+    /// refused, so the four arms above are measuring their own rules and not a function that refuses
+    /// everything.
+    @Test("each refusal names the rule that refused, and all of them are validation failures")
+    func everyRefusalNamesItsOwnRule() throws {
+        let species = UUID()
+        let coarse = DataDisputeLimits.positionResolutionRadiusM + 0.5
+        let good = Self.everySuggestion(speciesID: species)
+
+        #expect(
+            DataDisputeLimits.refusal(issues: [], suggestions: good) == .noIssueChecked
+        )
+        #expect(
+            DataDisputeLimits.refusal(
+                issues: [.wrongLocation],
+                suggestions: TreeDataDispute.Suggestions(speciesID: species)
+            ) == .suggestionOutsideCheckedIssues([.speciesID])
+        )
+        #expect(
+            DataDisputeLimits.refusal(
+                issues: [.wrongLocation],
+                suggestions: TreeDataDispute.Suggestions(
+                    location: TreeDataDispute.SuggestedLocation(
+                        coordinate: Coordinate(latitude: 37.7749, longitude: -122.4194),
+                        accuracyM: coarse
+                    )
+                )
+            ) == .locationFixTooCoarse(
+                accuracyM: coarse, requiredM: DataDisputeLimits.positionResolutionRadiusM
+            ),
+            "the sheet cannot quote the two numbers its sentence needs"
+        )
+        #expect(
+            DataDisputeLimits.refusal(
+                issues: [.wrongMetadata], suggestions: TreeDataDispute.Suggestions(status: .alive)
+            ) == .unsupportedStatusSuggestion(.alive)
+        )
+
+        // The taxonomy is unchanged: the queue and `RemoteAPI` still see one non-retryable code.
+        for refusal: DataDisputeLimits.Refusal in [
+            .noIssueChecked,
+            .suggestionOutsideCheckedIssues([.speciesID]),
+            .locationFixTooCoarse(accuracyM: coarse, requiredM: 10),
+            .unsupportedStatusSuggestion(.alive)
+        ] {
+            #expect(refusal.apiError == .validationFailed)
+            #expect(!refusal.apiError.retryable, "a dispute refusal would burn 48 h of retries")
+        }
+
+        #expect(
+            DataDisputeLimits.refusal(issues: Self.everyIssue, suggestions: good) == nil,
+            "the fullest legal dispute was refused, so the arms above prove nothing"
+        )
+    }
+
     /// One open dispute per raiser per record; somebody else's does not block yours.
     @Test("a second dispute by the same raiser is a conflict, and a stranger's is not")
     func theConflictRuleIsPerRaiser() async throws {
@@ -507,7 +591,7 @@ struct DataDisputeTests {
             Issue.record("the queued raise did not decode as a dispute")
             return
         }
-        #expect(payload.disputeID == dispute.id)
+        #expect(payload.id == dispute.id)
         #expect(payload.treeID == city.id)
         #expect(payload.treeSource == .cityImport)
         #expect(payload.issues == Self.everyIssue)
@@ -531,6 +615,87 @@ struct DataDisputeTests {
         // Still one raise: the withdrawal did not remove the row that already left, which is what a
         // service matching the two has to be able to rely on.
         #expect(try await Self.queued(store, ofKind: .dataDispute).count == 1)
+    }
+
+    /// **The keys on the wire are the keys `cypress-sync` reads** — asserted as JSON, not as a
+    /// model.
+    ///
+    /// The round's contract fixes the raise's `id`, and a mismatch is not a degraded sync: the
+    /// service's first refusal is `payload.ID.IsNil()` answered `validation_failed`, which
+    /// `OutboxRetryPolicy` never retries, so every dispute anyone filed would sit permanently red on
+    /// screen 17. This branch shipped `disputeID` there and three green tests could not see it —
+    /// `eachActQueuesItsOwnKind` compares the decoded model to itself, and
+    /// `CommunityOutboxKindTests.everyPayloadRoundTrips` round-trips a type through its own encoder.
+    /// Both are correct about values and structurally blind to names, which is this repo's dominant
+    /// defect class.
+    ///
+    /// Four statements, each of which has been wrong at some point in this round:
+    ///
+    /// 1. the raise's top-level key set, exactly — a new key is as much of a change as a renamed one;
+    /// 2. `suggestions` is the **field-keyed map** `tree_dispute_suggestions` stores and the service
+    ///    documents, not the nested struct the Swift type looks like;
+    /// 3. the withdrawal still says `disputeID`, because it points at *another* record — the
+    ///    convention the rename above is an instance of, not an exception to;
+    /// 4. no top-level `speciesID`, which is `GroveSpeciesKnown`'s unscoped cast's contract.
+    @Test("the raise carries the keys the service reads, and the withdrawal keeps its own")
+    func theRaiseCarriesTheKeysTheServiceReads() async throws {
+        let store = try await Self.seededStore()
+        let api = Self.api(store, user: Self.accountA)
+        let city = try await Self.cityTree(api)
+        let species = try #require(await api.searchSpecies(query: "Platanus", limit: 1).first)
+
+        let dispute = try await api.raiseDataDispute(
+            treeID: city.id,
+            issues: Self.everyIssue,
+            suggestions: Self.everySuggestion(speciesID: species.id),
+            notes: "paved over"
+        )
+
+        let raise = try await Self.wirePayload(store, ofKind: .dataDispute)
+        #expect(
+            raise.keys.sorted() == [
+                "attribution", "clientUUID", "id", "issues", "notes",
+                "occurredAt", "suggestions", "treeID", "treeSource"
+            ],
+            "the raise's top-level keys are \(raise.keys.sorted())"
+        )
+        #expect(raise["id"] as? String == dispute.id.uuidString, "the service reads `id`")
+        #expect(raise["treeID"] as? String == city.id.uuidString)
+        #expect(raise["treeSource"] as? String == TreeSource.cityImport.rawValue)
+        #expect((raise["issues"] as? [String]).map(Set.init) == Set(Self.everyIssue.map(\.rawValue)))
+        #expect(
+            raise["speciesID"] == nil,
+            "a top-level speciesID is in reach of GroveSpeciesKnown's unscoped cast"
+        )
+
+        let suggestions = try #require(raise["suggestions"] as? [String: String],
+                                       "suggestions is not a field-keyed object of strings")
+        #expect(
+            suggestions.keys.sorted() == [
+                "lat", "location_accuracy_m", "lon", "planted_year", "species_id", "status"
+            ],
+            "the suggestion keys are \(suggestions.keys.sorted())"
+        )
+        // The literal above and the vocabulary are the same list, so widening the enum without
+        // deciding what goes on the wire fails here rather than shipping a seventh silent key.
+        #expect(
+            Set(suggestions.keys) == Set(TreeDataDispute.SuggestedField.allCases.map(\.rawValue))
+        )
+        #expect(suggestions["species_id"] == species.id.uuidString)
+        #expect(suggestions["status"] == TreeStatus.vacantSite.rawValue)
+        #expect(suggestions["lat"] == "37.7749295")
+
+        try await api.withdrawDataDispute(disputeID: dispute.id)
+        let withdrawal = try await Self.wirePayload(store, ofKind: .dataDisputeWithdrawal)
+        #expect(
+            withdrawal.keys.sorted() == ["attribution", "clientUUID", "disputeID", "occurredAt", "treeID"],
+            "the withdrawal's top-level keys are \(withdrawal.keys.sorted())"
+        )
+        #expect(
+            withdrawal["disputeID"] as? String == dispute.id.uuidString,
+            "a pointer to another record is named for what it points at"
+        )
+        #expect(withdrawal["id"] == nil, "the withdrawal is not the record it names")
     }
 
     /// A refused raise queues nothing — the ordering that keeps the queue from asserting something

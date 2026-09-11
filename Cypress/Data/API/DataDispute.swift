@@ -149,33 +149,78 @@ public enum DataDisputeLimits {
     /// change with a test behind it instead of a migration.
     public static let statusSuggestion: TreeStatus = .vacantSite
 
+    /// Which of the four rules a raise broke.
+    ///
+    /// **The taxonomy answers *whether*; this answers *why*.** All four are `APIError
+    /// .validationFailed` on the wire and that is correct — BUILD-PLAN §6's codes are a closed set
+    /// and the non-retryable half is where all four belong. What a code cannot carry is the
+    /// sentence a person needs, and the owner's ruling on the 10 m floor is exactly that sentence:
+    /// the floor stays *and the sheet says why*, pointing at Precise Location rather than failing
+    /// silently. A sheet handed one undifferentiated `.validationFailed` would have to re-implement
+    /// the accuracy test to find out which rule fired, which is how the check in front of a user
+    /// and the check that binds start to disagree.
+    ///
+    /// So `refusal(issues:suggestions:)` returns this, `LocalAPI.raiseDataDispute` throws
+    /// `apiError`, and a screen pre-checking the same pure function gets the reason. Nothing here
+    /// crosses the boundary into `APIError`: adding a code would change the taxonomy the outbox
+    /// dispatches on, for a distinction only this one surface makes.
+    ///
+    /// The associated values are what the copy needs and nothing more — the numbers a sentence about
+    /// accuracy has to quote, and the status that was refused.
+    public enum Refusal: Hashable, Sendable {
+        /// No checkbox is ticked. A dispute that checks nothing says nothing.
+        case noIssueChecked
+        /// A suggested value for an issue this dispute does not raise; the fields are the ones
+        /// speaking out of turn.
+        case suggestionOutsideCheckedIssues(Set<TreeDataDispute.SuggestedField>)
+        /// The phone's own fix is too coarse to pick out the tree it corrects — the owner's floor.
+        /// Both numbers travel because the sentence quotes both ("your fix is good to 40 m; a
+        /// correction has to be good to 10").
+        case locationFixTooCoarse(accuracyM: Double, requiredM: Double)
+        /// A status part 1 does not write. See `statusSuggestion`.
+        case unsupportedStatusSuggestion(TreeStatus)
+
+        /// The taxonomy's answer, which is the same one for every arm.
+        ///
+        /// Non-retryable, which is the property that matters to the queue: an outbox row carrying
+        /// one of these would fail on its first attempt rather than burn 48 h on an answer that will
+        /// not change (BUILD-PLAN §6). None of them is reachable by a drain in any case — they are
+        /// checked before the transaction that writes the row.
+        public var apiError: APIError { .validationFailed }
+    }
+
     /// Why this raise may not be written, or `nil` when it may.
     ///
-    /// Every arm is `validationFailed`, which is the taxonomy's non-retryable half — an outbox row
-    /// carrying one of these would fail on its first attempt rather than burn 48 h on an answer that
-    /// will not change (BUILD-PLAN §6). None of them can be reached by a drain in any case: these
-    /// are checked before the transaction that writes the row.
+    /// Pure and public so the sheet can ask the same question the API will, and get the same answer
+    /// with its reason attached. See `Refusal`.
     public static func refusal(
         issues: Set<TreeDataDispute.IssueKind>,
         suggestions: TreeDataDispute.Suggestions
-    ) -> APIError? {
+    ) -> Refusal? {
         // 1. A dispute that checks nothing says nothing. The round's contract names this refusal.
-        guard !issues.isEmpty else { return .validationFailed }
+        guard !issues.isEmpty else { return .noIssueChecked }
 
         // 2. A suggested value for an issue this dispute does not raise is a statement the dispute
         //    does not make. Storing it would leave a suggested species on a record whose species
         //    nobody disputed — and a later adjudicator reading the suggestions table has no way to
         //    tell that from a species the reporter meant.
-        guard suggestions.issuesSpokenFor.isSubset(of: issues) else { return .validationFailed }
+        let unchecked = suggestions.stored.keys.filter { !issues.contains($0.issue) }
+        guard unchecked.isEmpty else {
+            return .suggestionOutsideCheckedIssues(Set(unchecked))
+        }
 
         // 3. A position too coarse to pick out the tree it corrects. See `fixCanPlaceATree`.
-        if let location = suggestions.location,
-           !fixCanPlaceATree(accuracyM: location.accuracyM, withinM: positionResolutionRadiusM) {
-            return .validationFailed
+        if let location = suggestions.location, let accuracyM = location.accuracyM,
+           !fixCanPlaceATree(accuracyM: accuracyM, withinM: positionResolutionRadiusM) {
+            return .locationFixTooCoarse(
+                accuracyM: accuracyM, requiredM: positionResolutionRadiusM
+            )
         }
 
         // 4. Part 1's one status. See `statusSuggestion`.
-        if let status = suggestions.status, status != statusSuggestion { return .validationFailed }
+        if let status = suggestions.status, status != statusSuggestion {
+            return .unsupportedStatusSuggestion(status)
+        }
 
         return nil
     }
