@@ -1273,6 +1273,13 @@ func TestTheLiveSchemaAgreesWithTheMigrationFiles(t *testing.T) {
 // pattern, the two instruments agreed with each other about a vocabulary neither had read. The
 // delta review demonstrated it with this exact name, live in the schema and classified nowhere,
 // against three green guards. This specimen is what stops it coming back.
+//
+// **`speciesClaimV3` is in 002 for the same reason, one character class later.** Widening to
+// `[a-z0-9_]+` closed the digit gap and left every other naming convention open; the final
+// adversarial review reproduced the identical shape with a camelCase kind (and, separately, a
+// hyphenated one) against the widened pattern. `sqlQuotedValue` is now `[^']+`, and without this
+// specimen a revert back to an enumerated character class would pass this test — the guard's own
+// guard would be dead on exactly the shape it exists to catch.
 func TestContributionKindExtractorIsCalibrated(t *testing.T) {
 	dir := t.TempDir()
 	specimens := map[string]string{
@@ -1290,7 +1297,7 @@ ALTER TABLE contributions DROP CONSTRAINT contributions_kind_check;
 ALTER TABLE contributions ADD CONSTRAINT contributions_kind_is_known CHECK (kind IN (
     'visit', 'observation',
     -- a comment mentioning 'not_a_kind' in prose
-    'care_event', 'species_claim_v2'
+    'care_event', 'species_claim_v2', 'speciesClaimV3'
 ));
 
 CREATE INDEX something ON contributions (upper(payload ->> 'id')) WHERE kind = 'measurement';
@@ -1312,12 +1319,12 @@ ALTER TABLE contributions ADD COLUMN moderation_note TEXT;
 	}
 
 	got, source := contributionKindsFromMigrations(t, dir)
-	want := []string{"visit", "observation", "care_event", "species_claim_v2"}
+	want := []string{"visit", "observation", "care_event", "species_claim_v2", "speciesClaimV3"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the extractor read %v from a directory whose answer is %v — it must take the "+
 			"*last* file that declares the vocabulary, skip a commented value, stop at the CHECK's "+
 			"close so the trailing index's 'measurement' is not a kind, read a value whose name "+
-			"carries a digit, and not be fooled by prose",
+			"carries a digit or an uppercase letter, and not be fooled by prose",
 			got, want)
 	}
 	if source != "002_more_kinds.sql" {
@@ -1328,16 +1335,26 @@ ALTER TABLE contributions ADD COLUMN moderation_note TEXT;
 
 // sqlQuotedValue reads a single-quoted SQL literal.
 //
-// **The character class carries a `0-9` and that is the whole of a fix.** It was `[a-z_]+`, and a
-// kind whose name contains a digit was therefore dropped **silently** by both instruments that use
-// this pattern — the file reader and the live-schema reader — so the two agreed with each other
-// about a vocabulary neither of them had read. The delta review of this round's PR put a real
-// eighteenth kind, `species_claim_v2`, live in the schema and classified nowhere, and all three
-// guards stayed green: reproduced here before the change, and red after it.
+// **It matches anything between the quotes, on purpose, because an enumerated character class is
+// exactly the defect this pattern has now produced twice.** It was `[a-z_]+`, then `[a-z0-9_]+`
+// after the delta review put a real eighteenth kind, `species_claim_v2`, live in the schema and
+// classified nowhere while all three guards using this pattern stayed green — closing that one
+// character (a digit) left every other naming convention open. The final adversarial review of this
+// round's PR proved the class, not the instance: `speciesClaimV3` (camelCase) and
+// `never-existed-v2` (a hyphen) reproduced the identical shape against the widened `[a-z0-9_]+`,
+// with `TestEveryContributionKindIsClassified`, `TestTheLiveSchemaAgreesWithTheMigrationFiles`,
+// `TestSyncAcceptsEveryDeclaredContributionKind`, `TestEveryKindTheHandlerAcceptsIsStorable` and
+// `TestWithheldKindsProduceTheEmptyAnswer` all green while both were live in the schema and
+// classified nowhere. `TestTheLiveSchemaAgreesWithTheMigrationFiles` cannot be the backstop for this
+// shape no matter how the class is widened next, because it and the file reader share this one
+// pattern: two instruments that agree with each other about a vocabulary neither has read are not
+// two instruments.
 //
-// No kind has ever carried a digit, so nothing leaked. What was one naming convention away is the
-// exact defect B1 was filed for — a guard that is green while the thing it names is present.
-var sqlQuotedValue = regexp.MustCompile(`'([a-z0-9_]+)'`)
+// Inside a `CHECK (kind IN (…))` block every single-quoted literal already is a kind, so widening
+// the class to "anything but a quote" cannot introduce a false positive there — it retires the
+// character-class guessing game rather than extending it. An unreadable spelling now becomes a
+// loud, visible unclassified kind instead of a silent drop.
+var sqlQuotedValue = regexp.MustCompile(`'([^']+)'`)
 
 // migrationFilename is `internal/store/migrate.go`'s own pattern. The runner refuses a file this
 // does not match, so a file this skips is a file that never runs.
