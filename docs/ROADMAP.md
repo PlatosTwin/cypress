@@ -857,6 +857,18 @@ Still open after part 1, each its own scheduled PR and none of them started:
   disputes: part 1 leaves `flagWrongSpecies` / `flagNeverExisted` untouched, and "location and
   species only" is a narrowing of that flow rather than an addition beside it.
 
+**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
+three times.** Twice on the outbox kind list, and once on a whole table: `AppSchema` v22 added
+`tree_data_disputes` with a `raised_by` column and neither account-deletion door could see it, which
+PR #165's review measured and PR #165 fixed. Every one of the three failed **silently**, because a
+hand-kept list of table names matches nothing when it is short rather than erroring. The outbox half
+was closed by making `OutboxItem.Kind.accountDeletionTreatment` an exhaustive `switch`, so the
+compiler asks the question when a case is added; the table half has no equivalent. Design one — a
+test that reads the live schema for columns named `user_id` / `raised_by` / `given_by` / `set_by`
+and requires each to be named by one door or explicitly exempted is the obvious shape, and it is the
+shape that would have caught this. **A fourth hand-audit is not the fix.** Unscheduled; the badge
+round is the natural slot, because it is the next round to touch this table.
+
 **Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
 itself — "This is that almanac's 'walk the nine' list, one tree at a time" (screen 14) and its

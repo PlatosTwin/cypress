@@ -99,6 +99,39 @@ The reason for the split is that community disputes converge with the community 
 "location and species only" is a *narrowing* of a surface that already exists and is already ruled
 not-quality, not an addition to it. Building it here would mean designing the convergence twice.
 
+### R??? — An anonymized dispute stays withdrawable by the installation that raised it
+
+**Date:** 2026-09-10. **Decided by:** the round's orchestrator, on PR #165's review. **Status:**
+awaiting review.
+
+`tree_data_disputes` is one more table carrying a user column, and when v22 added it neither
+account-deletion door could see it. Both now do: the leaving door nulls `raised_by`, the erasing
+door deletes the row and the two `ON DELETE CASCADE` children go with it.
+
+The half that is a decision rather than an omission repaired is **what the leaving door's NULL then
+means**. `TreeDataDispute.isAuthored(by:)` reads `raised_by IS NULL` as *this installation's*
+anonymous row, so an anonymized dispute becomes withdrawable by whoever signs in on the phone next.
+`review_flags` has no equivalent, because a flag has no author-only verb; this table does, which is
+what makes the question exist at all.
+
+It is answered in favour of withdrawability. The alternative — leave the name on, or invent a
+tombstone that makes the row nobody's — produces a standing objection against a city record that
+**nobody can retract**, which is the exact defect ruling R-a added the withdrawal verb to prevent,
+arriving through a door nobody looked at. It was measured on the branch before the fix: after
+`deleteAccount(.leaveRecords)` both the next account and the signed-out state got `forbidden`. A
+dispute is a statement about a *tree*; the leaving door's promise is that the work stays and the name
+comes off; and a withdrawal by the phone's next holder removes an objection rather than creating one.
+`AccountDeletionTests.theLeavingDoorAnonymizesADispute` asserts the whole chain, with a
+`review_flags` row raised by the same account beside it so a green cannot mean the harness looked at
+nothing.
+
+**Owed to the badge round, not to this one:** no guard enumerates the tables carrying a user column.
+`forgetAccount` has gone stale three times in this repo — twice on the outbox kind list, once here on
+a whole table — and each time the omission matched nothing and failed silently. The outbox half was
+fixed by making the enum exhaustive so the compiler asks the question; the table half has no
+equivalent, and designing one is the fix worth making rather than a fourth hand-audit. It is in
+`docs/ROADMAP.md`.
+
 ### R??? — The server records a dispute; it does not materialize one
 
 **Date:** 2026-09-10. **Decided by:** the round's orchestrator. **Status:** awaiting review.
