@@ -155,6 +155,21 @@ const nav = ['Explore', 'Species', 'Neighborhoods', 'Data & export'];
         </div>
 
         {model.provenance && <p class="w1-provenance">{model.provenance}</p>}
+
+        {/*
+          The source's own obligation, rendered because the data is. R36's binding consequence (b)
+          makes it travel with whatever serves the data; R78 ruling 2 puts it on the surface that
+          offers it and is the constraint-21 sign-off for doing so; ruling 3 says the manifest's
+          machine-readable `attribution` array does not discharge it, so this has to be text on a
+          page. `sourceObligation` answers null for every id space that imposes none, which is why
+          there is no SF equivalent here rather than an empty block.
+        */}
+        {model.obligation && (
+          <section class="w1-obligation" aria-label={model.obligation.heading}>
+            <h2 class="w1-obligation-heading">{model.obligation.heading}</h2>
+            {model.obligation.paragraphs.map((paragraph) => <p>{paragraph}</p>)}
+          </section>
+        )}
       </aside>
     </div>
   </div>

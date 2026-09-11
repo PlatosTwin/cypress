@@ -11,6 +11,7 @@ import {
   W1Copy,
   type TreePageInput,
 } from '../src/lib/treePage.ts';
+import { NYC_DISCLAIMER_REQUIRED, NYC_ID_SPACE } from '../src/lib/obligations.ts';
 import { repoFile, swiftStringLet } from './support/sources.ts';
 
 /**
@@ -293,6 +294,19 @@ describe('the whole model', () => {
   it('has no provenance sentence when the pack cannot date the snapshot', () => {
     assert.equal(treePageModel({ ...lombard, inventorySnapshotOn: null }).provenance, null);
     assert.equal(treePageModel({ ...lombard, inventoryName: null }).provenance, null);
+  });
+
+  it('carries the source\u2019s obligation onto the model, so the page cannot omit it', () => {
+    // R36 consequence (b) and R78 ruling 3: a page serving New York's data renders the City's
+    // disclaimer, and the manifest's machine-readable `attribution` array does not discharge it.
+    // The obligation is a value on the model rather than a condition in the template so that
+    // "does this page carry it" is answerable here. `obligations.test.ts` checks the text itself
+    // against the app's; this checks that a New York tree gets one and a San Francisco tree
+    // does not.
+    assert.equal(treePageModel(lombard).obligation, null);
+    const newYork = treePageModel({ ...lombard, idSpace: NYC_ID_SPACE });
+    assert.notEqual(newYork.obligation, null);
+    assert.equal(newYork.obligation?.paragraphs[0], NYC_DISCLAIMER_REQUIRED);
   });
 
   it('describes the tree in facts, and in facts the page also shows', () => {

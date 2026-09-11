@@ -292,6 +292,41 @@
 
 /* The provenance sentence closes the column, where §W1 puts the recent-visits panel. It is the
    line that makes every row above it checkable, and it is the app's own — `CityRecordCopy`. */
+/*
+ * The source's attribution obligation (R36 consequence (b), R78 rulings 2 and 3).
+ *
+ * Set in the fact column's own body size rather than the faint provenance size: this is text a
+ * city requires a reader to be able to read, and shrinking it to a footnote is the one thing
+ * `MethodBadge`-style de-emphasis must not do here.
+ */
+.w1-obligation {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-web-row);
+  font-family: var(--font-body-125-family);
+  font-size: var(--font-body-125-size);
+  color: var(--color-text-body);
+  line-height: 1.5;
+}
+
+.w1-obligation p {
+  margin: 0 0 8px;
+}
+
+.w1-obligation p:last-child {
+  margin-bottom: 0;
+}
+
+.w1-obligation-heading {
+  margin: 0 0 8px;
+  font-family: var(--font-micro-label-family);
+  font-size: var(--font-micro-label-size);
+  font-weight: var(--font-micro-label-weight);
+  letter-spacing: var(--font-tracking-micro-label);
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
 .w1-provenance {
   margin: auto 0 0;
   padding-top: 22px;

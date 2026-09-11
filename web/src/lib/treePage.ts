@@ -41,6 +41,7 @@ import {
   statedValue,
   statusLabel,
 } from './cityRecord.ts';
+import { sourceObligation, type SourceObligation } from './obligations.ts';
 
 /** What one row of the fact column says. `SCREENS.md` C30 · `WebFactRow`. */
 export interface FactRow {
@@ -110,6 +111,15 @@ export interface TreePageModel {
   readonly terms: TermsLine;
   /** `From the SF Public Works street tree inventory, August 22, 2026.` — or absent. */
   readonly provenance: string | null;
+  /**
+   * What this record's source obliges the page to print, verbatim, or `null`.
+   *
+   * R36's binding consequence (b) and R78 ruling 3: the obligation follows the data onto whatever
+   * surface serves it, and a machine-readable `attribution` array does not discharge it. It is on
+   * the model rather than in the template so that "does this page carry it" is a question a test
+   * can ask of a value.
+   */
+  readonly obligation: SourceObligation | null;
   readonly documentTitle: string;
   readonly description: string;
 }
@@ -346,6 +356,7 @@ export function treePageModel(input: TreePageInput): TreePageModel {
     provenance: input.inventoryName === null
       ? null
       : provenanceNote(input.inventoryName, snapshotDay(input.inventorySnapshotOn)),
+    obligation: sourceObligation(input.idSpace),
     documentTitle: city === null ? heading : `${heading} · ${city}`,
   };
   return { ...partial, description: description(input, partial) };

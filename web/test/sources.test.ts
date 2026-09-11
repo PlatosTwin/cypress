@@ -33,6 +33,7 @@ import {
   swiftDeclaration,
   swiftClosureStringCases,
   swiftDoubleLet,
+  swiftMultilineStringLet,
   swiftEnumCases,
   swiftGradientRecipe,
   swiftStringCases,
@@ -42,6 +43,30 @@ import {
 } from './support/sources.ts';
 
 describe('the parsers the parity tests depend on', () => {
+  it('reads a multi-line string let, joining its line continuations and stripping its indent', () => {
+    // Specimen first, answer written out by hand before the parser saw it. Both of Swift's
+    // multi-line rules are in here and both are traps: the closing delimiter sets the indent that
+    // comes off every line, and a trailing backslash joins WITHOUT a newline. The second is how a
+    // one-sentence legal notice is written across four lines of Swift, and a parser that joined on
+    // newlines would return a value that is wrong in a way no diff viewer shows.
+    const specimen = [
+      '    static let notice = """',
+      '        One sentence written \\',
+      '        across two source lines.',
+      '        A second paragraph line.',
+      '        """',
+      '    static let other = "plain"',
+    ].join('\n');
+    assert.equal(
+      swiftMultilineStringLet(specimen, 'notice'),
+      'One sentence written across two source lines.\nA second paragraph line.',
+    );
+    // The control: it must not read a single-quoted let, and it must not run past the closing
+    // delimiter into the next declaration.
+    assert.throws(() => swiftMultilineStringLet(specimen, 'other'), /no `let other/);
+    assert.ok(!swiftMultilineStringLet(specimen, 'notice').includes('plain'));
+  });
+
   it('reads a Double let, and declines a differently typed one', () => {
     const specimen = [
       'public static let gridM: Double = 25',
@@ -570,8 +595,8 @@ describe('the sources the web suite reads', () => {
     assert.ok(root.length > 0);
     assert.equal(
       sourcesTheWebSuiteReads.length,
-      16,
-      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 16. If a check was `
+      17,
+      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 17. If a check was `
         + `added, add its source here and to web.yml; if one was removed, this count moves with it.`,
     );
     for (const relative of sourcesTheWebSuiteReads) {
@@ -645,6 +670,7 @@ describe('the sources the web suite reads', () => {
         'gradients.ts',
         'growthCharting.ts',
         'idSpaces.ts',
+        'obligations.ts',
         'ogCard.ts',
         'packLibrary.ts',
         'quantity.ts',

@@ -88,6 +88,8 @@ on:
       - 'Cypress/Features/TreeProfile/CityRecordPresentation.swift'
       - 'Cypress/Features/TreeProfile/TreeProfilePresentation.swift'
       - 'Cypress/Features/Site/SitePresentation.swift'
+      # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
+      - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
   pull_request:
     branches: [main, 'release/**']
     paths:
@@ -141,6 +143,8 @@ on:
       - 'Cypress/Features/TreeProfile/CityRecordPresentation.swift'
       - 'Cypress/Features/TreeProfile/TreeProfilePresentation.swift'
       - 'Cypress/Features/Site/SitePresentation.swift'
+      # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
+      - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
   # The escape hatch, the same one `testflight.yml` keeps: a run by hand when a change elsewhere
   # (a Node bump, a lockfile audit) needs this suite run without touching a path above.
   workflow_dispatch:

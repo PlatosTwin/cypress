@@ -81,6 +81,9 @@ export const sourcesTheWebSuiteReads = [
   'Cypress/Features/TreeProfile/CityRecordPresentation.swift',
   'Cypress/Features/TreeProfile/TreeProfilePresentation.swift',
   'Cypress/Features/Site/SitePresentation.swift',
+  // The NYC Data Mine disclaimer the public page must render verbatim (R36 (b), R78 rulings 2
+  // and 3). `web/test/obligations.test.ts` parses all three strings out of it at run time.
+  'Cypress/Features/Cities/CityDownloadsPresentation.swift',
 ] as const;
 
 export function repoFile(relative: string): string {
@@ -765,6 +768,54 @@ export function swiftStringLet(source: string, name: string): string {
   const match = /^"((?:[^"\\]|\\.)*)"/.exec(source.slice(found.index + found[0].length - 1));
   if (match?.[1] === undefined) fail(`\`let ${name}\`'s string literal is not closed`);
   return match[1];
+}
+
+/**
+ * The value of a `static let <name> = """ … """` — Swift's multi-line string literal.
+ *
+ * Written for one job: `CityDownloadsCopy.nycDisclaimerRequired`, the sentence
+ * `Cypress/Features/Cities/CityDownloadsPresentation.swift` calls "the only string in this app that
+ * must not be edited". A page that serves New York's data has to render it verbatim (R36
+ * consequence (b), R78 ruling 3), so the web's copy of it must be compared against the Swift's and
+ * not against a transcription — and the Swift writes it in the one literal form
+ * `swiftStringLet` cannot read.
+ *
+ * **The two rules that make this a parser rather than a slice**, both of which the specimen in
+ * `sources.test.ts` exercises because getting either wrong yields a string that merely looks right:
+ *
+ * 1. **The closing delimiter's indentation is stripped from every line.** Swift measures it off the
+ *    line the closing `"""` sits on, so the literal's own text starts at that column. Slicing the
+ *    raw lines instead would carry eight spaces of Swift source into the middle of a legal notice.
+ * 2. **A trailing `\` joins to the next line with no newline.** That is how a one-paragraph
+ *    sentence is written across four lines of Swift. Joining on `\n` regardless would put line
+ *    breaks inside the City's sentence, which is not the sentence.
+ *
+ * Escapes other than the line continuation are left alone; this literal has none, and inventing an
+ * unescaper for a case that does not arise would be code nothing here can check.
+ */
+export function swiftMultilineStringLet(source: string, name: string): string {
+  const header = new RegExp(String.raw`\blet\s+${name}\s*(?::\s*String\s*)?=\s*"""[^\n]*\n`)
+    .exec(source);
+  if (header === null) fail(`no \`let ${name} = """\` in the source`);
+  const body = source.slice(header.index + header[0].length);
+  const end = body.indexOf('"""');
+  if (end < 0) fail(`\`let ${name}\`'s multi-line literal is not closed`);
+  const lines = body.slice(0, end).split('\n');
+  // The closing delimiter's own line is the last one, and its leading whitespace is the indent
+  // Swift strips from every line above it.
+  const closing = lines.pop() ?? '';
+  const indent = /^[ \t]*/.exec(closing)?.[0] ?? '';
+  const stripped = lines.map((line) => (line.startsWith(indent) ? line.slice(indent.length) : line));
+  let text = '';
+  for (const [index, line] of stripped.entries()) {
+    if (line.endsWith('\\')) {
+      text += line.slice(0, -1);
+      continue;
+    }
+    text += line;
+    if (index < stripped.length - 1) text += '\n';
+  }
+  return text;
 }
 
 /**
