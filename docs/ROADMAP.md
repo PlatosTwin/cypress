@@ -199,6 +199,7 @@ growth loop" — terminate at the moment of sharing. W1 is the page those links 
 | | Milestone | Done when |
 |---|---|---|
 | ~~**W-A**~~ | ~~Foundation~~ | ~~`web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` judge a log rather than an exit code.~~ **SHIPPED** by `web/foundation`. `web/` reaches the classifier through a `WEB_ONLY` variable of its own rather than through `DOC_ONLY` — the web is not prose, it is tested on ubuntu, and the notice `plan` prints now says which of the two a skipped run was. `web/**` is deliberately **not** added to the push trigger's `paths-ignore`; see the chip backlog. |
+| **W-G** | The public community read | ~~`GET /api/v1/public/trees/{id}` answers the publicly visible community half of one tree with no credential, under a ruling that decides field by field what is publicly true about a tree.~~ **DONE** — the ruling is `docs/rulings-pending/public-tree-read.md` (unnumbered, awaiting the owner: it carries five questions), the endpoint and its golden fixtures are in `server/`. Ordered ahead of W-C by the owner on 2026-09-10, because §8a found that half of W1's fact column has no public read behind it. |
 | **W-B** | The three portable assets | Design tokens exported from the Swift declarations to CSS custom properties, with a test that the export still matches its source; the domain rules (vitality rubric, `Quantity`, the 25 m grid, growth-charting eligibility, ID spaces) re-derived in TypeScript against ported Swift test cases; ~~a read layer that opens a published city pack through the same schema the phone uses~~ — **the read layer SHIPPED** by `web/pack-read`: `web/src/lib/pack/`, on `node:sqlite`, no new dependency. It introspects a pack's shape rather than trusting a version integer, refuses a generation newer than it reads, and never writes. Two clauses remain open, so this row is not struck. |
 | **W-C** | W1 · Public tree page | The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients. |
 | **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — designed under the W-3 exception, ruled, then built. |
@@ -228,6 +229,25 @@ against the manifest, `count(*)` matching the manifest's tree count as the contr
   owner decision, not an implementation detail. The pack *does* answer the page's spine: address,
   city, species (though `common_name` is null on real rows), `planted_year`, `external_ref`,
   `inventory_source`, status, and the city's published DBH bucket.
+  **Answered by W-G, in part, and the part moved twice — after its adversarial review and again
+  after the delta review of the fixes.** The owner ordered the public community read built first, and
+  it exists: **height and trunk DBH** each reach W1 as a value, its method and the month it was
+  taken, and a **beloved** boolean reaches it too — a state and not a rank, per the owner's ruling of
+  2026-09-10, true only above R27.1 §2's ≥3 floor. §W1 does not draw that one; it is the fact column
+  being *longer* than its transcription in one place while being shorter in three.
+  **Two further owner rulings of 2026-09-10 changed what that boolean means.** It counts only
+  **account-backed** favorites — the delta review showed the old count was farmable at three
+  unauthenticated `POST /devices/register` calls, which is D1's own stated reason for refusing public
+  counts — and the **number rides along above the floor** (`beloved_by`), per R27.1 §1. W1 must
+  therefore be prepared to draw "beloved by 7" as well as the bare state, and to draw nothing at all
+  below the floor: the floor may well be unreachable in the beta, which the ruling says plainly
+  rather than dressing up.
+  **Vitality does not reach it**, though an earlier version of this bullet said it did: a published
+  rating has no takedown route in this system, so it is deferred rather than refused (item 2 above).
+  The recent-visits panel and the `214 PHOTOS SINCE 2019` count are refusals on the merits — things
+  a public page may not carry (see `docs/errata-pending/w1-contributed-half.md`, whose photo-count
+  argument was rebuilt after the review found its cited authority did not carry it). The H1 has no
+  source anywhere in the system and is Q3 of the ruling's questions for the owner.
 - **W-6 is withdrawn as a general answer.** "Explore draws pins over the neighborhood polygons already
   in the seed" holds for San Francisco and nowhere else: `Tools/build_seed.py:2105` loads exactly one
   polygon file, DataSF's SF-only `j2bu-swwd`, and `neighborhoods` is **0 rows** in the San Jose pack.
@@ -243,9 +263,50 @@ against the manifest, `count(*)` matching the manifest's tree count as the contr
    whether it is the owner's is not answerable from outside. W-E cannot finish without knowing, and
    the expiry is eight weeks out. Until then the site lives at its `.fly.dev` hostname and
    `ShareCopy.publicURLPrefix` does not move.
-2. **What a withdrawn or moderated record does to an indexed public page.** Not v1 — v1 renders
-   city-record facts only — but it lands the moment anything contributed reaches W1.
+2. **What a withdrawn or moderated record does to an indexed public page. STILL OPEN — answered for
+   what ships, not as a general rule.**
+
+   ~~Not v1 — v1 renders city-record facts only — but it lands the moment anything contributed
+   reaches W1.~~ **That scoping is dead**: W-G's endpoint ships contributed readings and a
+   contributed state, so anything contributed *has* reached W1 and this is a live question rather
+   than a future one.
+
+   ~~**CLOSED by W-G**, in `docs/rulings-pending/public-tree-read.md` §8. The answer in one line: **a
+   withdrawal removes a fact from a page, it does not remove a page.**~~ **Struck: W-G closed this
+   and its adversarial review reopened it.** The claim was true of two of the three values that
+   endpoint then published and false of the third. There is **no observation withdrawal anywhere in
+   this system** — `contributions.kind` carries `measurement_withdrawal` and `photo_withdrawal` and
+   no counterpart for the `observation` that holds a vitality rating — `contributions` has no
+   `moderation_state` and no operator takedown, and a withdrawal aimed at a rating answers `applied`
+   and changes nothing. The §8 bullet had listed an operator takedown among its three levers; that
+   column is on `photos`, not on `contributions`.
+
+   **What is settled, and it is most of it.** For the two readings and the beloved state: every
+   answer is computed from live rows at request time, so a contributor's withdrawal, an
+   un-favoriting and an anonymization each take effect on the next request with nothing to purge;
+   `Cache-Control: public, max-age=60` is the ceiling on downstream staleness, and the round that
+   renders the page may not cache beyond it. There is no dead URL to file a removal request for,
+   because the page's spine is the *city record* — public data under ODbL that no contributor can
+   withdraw — so nothing contributed is load-bearing for the URL's existence, and tree UUIDs stay
+   "stable and citable from day one".
+
+   **What is not settled, and closes this question when it is:** (a) an observation-withdrawal kind,
+   which is a **migration** and therefore a round with a migration author — W-G had none and
+   correctly did not take a seat, narrowing the endpoint instead so that the rating is not published
+   at all; (b) an **operator** route on `contributions`, which does not exist in any form, so a
+   reading that is wrong or malicious has no removal path but its own author's; and (c) the standing
+   rule this produced, which should be written down when it is true: **this endpoint publishes
+   nothing it cannot also un-publish.** Today it is true by subtraction.
+
+   Restoring the `Status` row on W1 depends on (a). Bring back with it the three guards W-G removed
+   with the field — `TestVitalityRatingsMatchTheSwiftRubric`,
+   `TestSwiftIntEnumExtractorIsCalibrated` and their `swiftIntEnumRawValues` reader — **before** the
+   projection, not after.
 3. **Server CORS and Sign in with Apple JS**, both prerequisites for any web surface that *writes*.
+   **W-G confirmed the read half needs neither** and deliberately built no CORS: the web renders
+   server-side and calls `GET /api/v1/public/trees/{id}` server-to-server. A later surface that calls
+   this service from browser JavaScript needs CORS *and* a fresh look at the public read's rate-limit
+   budget, which is sized for one rendering machine's address rather than for many browsers'.
    v1 needs neither. `authOIDC` requires a nonce and fails closed, and the web flow's nonce is not the
    native flow's; that is an integration change, not a client rewrite.
 4. **The Coordinator dashboard** (`PROTOTYPE-FLOW` PART 2, the paid org tier under D14). Fully drawn,
@@ -749,7 +810,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
    correct the comment to say what it actually survives, and red-prove it by adding a community
    tree inside the radius before the case resolves.
 
-8. **Serialise a reading against its own withdrawal across two concurrent drains** (top server
+9. **Serialise a reading against its own withdrawal across two concurrent drains** (top server
    item). PR #156's arrival-order guard closes the withdrawal-committed-in-an-earlier-drain
    ordering and **only** that one; two `Apply` transactions overlapping in time are still mutually
    blind. Mechanism: `Apply` runs at READ COMMITTED (`Store.Tx` calls `pool.Begin` with no
@@ -767,20 +828,20 @@ into this section in the round that finds it, and nowhere else. Each item stands
    same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
    recipe, and red-prove the race itself first so the fix has a witness. `server/` has no CI, so
    whatever lands here needs its own throwaway-Postgres run with stated pass/skip/fail counts.
-9. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
-   readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
-   to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
-   no way to clear the red row. This is not a `measurement_withdrawal` defect: #156's reviewer
-   compared the ownership rules to `photo_withdrawal`'s line by line and they are **identical**
-   (`user_id` match OR `device_id` match; anonymised rows owned by nobody and therefore refused),
-   because `ClaimDevice` moves a contribution's `device_id` to a `user_id` and nothing server-side
-   remembers which installation recorded it — the client's own gate has an installation arm and
-   this one cannot. So the divergence is `withdrawMeasurement`'s documented one, hit through a
-   second kind. Readings are recorded far more often than photographs, which is why the shared
-   rule's user-visible cost lands here first. Two halves to answer: whether the service should gain
-   an installation arm at all, and — independently — what screen 17 offers for a permanent
-   non-retryable failure on a mutation the phone has already applied locally.
-10. **Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
+10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
+    readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
+    to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
+    no way to clear the red row. This is not a `measurement_withdrawal` defect: #156's reviewer
+    compared the ownership rules to `photo_withdrawal`'s line by line and they are **identical**
+    (`user_id` match OR `device_id` match; anonymised rows owned by nobody and therefore refused),
+    because `ClaimDevice` moves a contribution's `device_id` to a `user_id` and nothing server-side
+    remembers which installation recorded it — the client's own gate has an installation arm and
+    this one cannot. So the divergence is `withdrawMeasurement`'s documented one, hit through a
+    second kind. Readings are recorded far more often than photographs, which is why the shared
+    rule's user-visible cost lands here first. Two halves to answer: whether the service should gain
+    an installation arm at all, and — independently — what screen 17 offers for a permanent
+    non-retryable failure on a mutation the phone has already applied locally.
+11. **Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
     remote.** Withdrawing the only reading on a tree leaves that tree in `GET /me/grove` with all
     four tallies zero and in `GET /me/map-membership?kind=yours`, and the `measurement_withdrawal`
     contribution row itself surfaces as a journal entry. Measured by #156's reviewer
@@ -792,7 +853,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     report. Check against PR #154 what a `measurement_withdrawal` journal row renders as when the
     journal goes remote, and decide whether an emptied tree should leave the grove and the `yours`
     filter or stay with zeroes.
-11. **Prose pass over `server/README.md`'s Deploy section — it is stale in a way that reads as a
+12. **Prose pass over `server/README.md`'s Deploy section — it is stale in a way that reads as a
     blocker.** It still says the `cypress-sync` machine "needs secrets and a Postgres that do not
     exist yet". Both #156's author and its reviewer checked: `fly secrets list --app cypress-sync`
     returns sixteen secrets, all `Deployed`, including `DATABASE_URL`, `SESSION_SIGNING_KEY`,
@@ -801,8 +862,84 @@ into this section in the round that finds it, and nowhere else. Each item stands
     auto-stopped (`min_machines_running = 0`), nothing in `.github/workflows/` touches `server/` or
     Fly, and so a migration only runs at the next boot of a **redeployed** image — merging server
     work changes nothing in production. Prose only; no code.
+13. **`GET /api/v1/trees/{id}` publishes two per-tree counts of user actions to any signed-in
+    caller, and nobody has ever tested that against D1.** Found by W-G while ruling on what the
+    *public* read may say, so it is filed rather than fixed — the shipped route is not this round's
+    to change. `treeProfile` returns `photo_count` and `visit_count` for **any** tree to **any**
+    authenticated caller, which is cross-user rather than private: it is not the E87 case (that
+    count was "not public — the rows exist on one phone and are attributed to nobody"), and it is
+    not obviously the F16 case either, because the noun is a tree. R27.1 is the ruling that decides
+    it — *"trees may be ranked; people may not"* — and under R27.1 §2 a per-tree count of somebody's
+    acts still wants the ≥3-distinct-people floor, because at one contributor the number is one
+    person's activity at a fixed location and at two it is inferable to the other. R27.1 §5 says
+    photograph counts specifically are not wanted. **What to do is a ruling, not a patch**: decide
+    whether these two counts stay, gain a floor, or go, and check what the client draws from them
+    before removing anything. `visit_count` is `TreeCommunityHalf`'s second query;
+    `photo_count` is `len(photos)` after the visibility filter, and screen 15's promise may rest on
+    one of them.
+14. **`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.** The
+    proposal's §7 records the gap; W-A's `web.yml` is for `web/`, not for this. A `server.yml` on
+    `ubuntu-latest` with a `postgres:16` service container and `CYPRESS_TEST_DATABASE_URL` set would
+    run the whole suite in about a minute, and — this is the part that matters here — it must
+    **assert the skip count is zero**, because `go test ./...` prints `ok` per package and exits 0
+    with every SQL test skipped. ~~Measured 2026-09-10: 60 pass / 108 skip with no database, 191 pass
+    / 0 skip with one.~~ **Those no-database numbers were the baseline tree's, mislabelled**; at
+    W-G's head after its review fixes, it is **67 pass / 131 skip / 0 fail** with no database and
+    **198 pass / 0 skip / 0 fail** with one (66 / 125 and 191 / 0 at the PR head before them). `testflight.yml` already excludes `server/`
+    from the archive, so a server-only workflow cannot mint a build.
 
-12. **Add `web/**` to the push trigger's `paths-ignore`.** ~~Teach `DeployPathsAgreeTests` a
+15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
+    whether an estimate may supersede a measurement when a single number has to be chosen. D7,
+    DECISIONS constraint 2, ARCHITECTURE §5 rule 3 and PRODUCT's non-goal (*"Never share a chart
+    line"*) are all rules about a **chart line**, and E103 extends them to a spoken summary; none is
+    about which number is current. The client picks the most recent regardless of method in three
+    places — `TreeProfilePresentation.latestMeasurement` (`Cypress/Features/TreeProfile/
+    TreeProfilePresentation.swift:1189`), `MeasureModel.previousMeasurement` (a verbatim second copy
+    of it) and `GrowthHistoryPresentation.chart(for:)`, which re-merges both series for its newest
+    and oldest labels — so a 90 cm estimate displaces a 64 cm taped reading on screen 03 today.
+    W-G's public read matches that deliberately rather than authoring a fourth answer, and pins it
+    in `TestANewerEstimateSupersedesAnOlderTapedReading`. **Answer it once, for all four sites**, and
+    note the two duplicated copies of the selection rule are their own small cleanup. Found by the
+    adversarial review of #163, which found the code claiming the opposite in a comment.
+
+16. **`clientKey` trusts a request-supplied header, on a route that now has no credential.**
+    `internal/api/server.go` returns `Fly-Client-IP` when the request supplies one, and the only
+    thing making that trustworthy is Fly's proxy overwriting it. The review measured it: after
+    exhausting a bucket, 25 of 25 requests carrying a self-chosen `Fly-Client-IP` were served, each
+    allocating its own bucket. Pre-existing and not a live exploit — but until W-G every route behind
+    it also required a credential, and `GET /public/trees/{id}` requires none. W-G narrowed it (a
+    value that is not an IP is not used as a key; `ratelimit.maxBuckets` bounds the map) and
+    deliberately did **not** fix it: the fix is to stop honoring the header unless the connection
+    came from the proxy, which is a trust-boundary change nothing in that round could verify against
+    a request it watched arrive. **It is moot if the answer to the ruling's Q4 is "SSR-only"**, so
+    do them together: decide Q4 first, and if the endpoint stays internet-facing, make the trust
+    explicit and prove it against a real Fly request rather than from documentation.
+17. **A `/* … */` decoy after the real declaration defeats the migration-file kind extractor.**
+    Raised by the delta review of PR #163. `contributionKindsFromMigrations` strips only lines that
+    *begin* with `--`, so a migration whose real `ADD CONSTRAINT` is followed by a block-commented
+    older draft yields the **draft's** vocabulary — measured as `[visit never_a_kind]` where the
+    answer is `[visit the_real_answer]`. Not a hole today: `TestTheLiveSchemaAgreesWithTheMigrationFiles`
+    catches it loudly, because the live schema and the file reader stop agreeing. But
+    `TestContributionKindExtractorIsCalibrated`'s specimens cover only `--` prose, so the shape is
+    untested, and the round that fixes it should add a `/* … */` specimen rather than only the strip.
+18. **Delete `kindsAwaitingTheirMigration` when PR #159's `005_data_dispute_kinds.sql` lands.**
+    PR #163 classifies `data_dispute` and `data_dispute_withdrawal` before their migration exists,
+    so neither PR's merge order breaks the other's guard. The map in `server/internal/api/public.go`
+    exempts them from "a classified kind must be a declared kind" until 005 arrives. It cannot hide
+    an unclassified kind — the safety-critical direction never reads it — so its expiry is a
+    **`t.Logf`, not a failure**, deliberately: failing would trade one red-on-main for another.
+    That is why this item exists rather than a test. One deletion, two entries, in the round that
+    merges 005 or the one after it.
+19. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
+    R27.1 asks for it in as many words — *"count it, do not guess it"* — and PR #163 shipped
+    R27.1's inherited ≥3 because the attempt to read the production distribution was refused before
+    a query ran. The floor may be raised by a measuring round and may not be lowered. Pair it with
+    the observation that since the 2026-09-10 ruling only **account-backed** favorites count, so the
+    distribution to measure is over `favorites.user_id`, not over all owners — and the answer may
+    well be that no tree in the beta reaches any floor at all, which is a finding rather than a
+    failure.
+
+20. **Add `web/**` to the push trigger's `paths-ignore`.** ~~Teach `DeployPathsAgreeTests` a
     third predicate~~ — **the guard half is DONE**, in `web/foundation` after adversarial review
     (#162, B1). This item used to describe the guard work as an optimization whose "prize is
     small"; that framing was wrong in a way worth recording, because the exposure ran the other
@@ -822,14 +959,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     to main. Do it as its own change with its own simulator run, never folded into a web feature
     round, and read the item below first — it changes what `paths:` on `web.yml` may say.
 
-13. **Give the web its own release-note channel, or rule that it needs none.** `plan`'s
+21. **Give the web its own release-note channel, or rule that it needs none.** `plan`'s
     release-note check treats a web-only pull request as not-required, because `docs/whats-new/`
     compiles into TestFlight's "What to Test" — a field attached to a **build**, which a web-only
     change does not mint. That is correct as far as it goes and it means web changes currently
     ship with no changelog anywhere. Decided by W-A in a comment rather than by anyone with the
     authority to decide it; it wants a ruling once the web is actually deployed (W-E), not before.
 
-14. **Make `web` a required status check, and drop `web.yml`'s `paths:` in the same change.**
+22. **Make `web` a required status check, and drop `web.yml`'s `paths:` in the same change.**
     Raised by #162's adversarial review, and it closes a loop nothing currently tracks. `gate` is
     the only required context on `main` (read from GitHub, not from prose:
     `main-pull-request-only → active`, required contexts = `gate`). For the entire class of change
@@ -840,7 +977,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     since a required check that a path filter skips never reports and blocks every pull request.
     Do both together, after `web` has reported on `main` at least once.
 
-15. **`git diff --name-only` hides a rename's source, so a move out of the app classifies as
+23. **`git diff --name-only` hides a rename's source, so a move out of the app classifies as
     web-only.** `git mv` a Swift file from the app's source tree into `web/` and
     `--name-only` reports only the destination; `--name-status` shows it as `R100` with both
     paths, and `--no-renames` reports both. (Reproduced in a throwaway repository — the example is
@@ -891,6 +1028,37 @@ than inheriting the shipped flow. Disputes are stored app-side in the writable d
 city inventory stays read-only, and sync-back to the city is explicitly deferred. Reverses the
 "community rows only" deferral in `SpeciesClaim.swift`'s header. Needs the writable-schema
 migration seat after the §3.4 round's. Sequenced after §3.4 lands; exact slot at scheduling.
+
+**Part 1 is in flight** (owner decision round, 2026-09-10; the round's decisions and rulings are
+staged in `docs/rulings-pending/city-inventory-disputes.md`). The owner split this entry into four
+scheduled pieces, and part 1 is **the record and its two verbs**: `AppSchema` v22's
+`tree_data_disputes` and its two children, `raiseDataDispute` / `withdrawDataDispute` on
+`CypressAPI`, the two `OutboxItem.Kind` cases that carry them to `cypress-sync`, and city rows
+ceasing to answer `.unavailable` on the tree profile. Client is PR-A; the server's sync vocabulary
+is PR-B; screen 03's dispute **sheet** is PR-C.
+
+Still open after part 1, each its own scheduled PR and none of them started:
+- the flag **badge** on flagged trees, on the map and in the list — and it is the piece that needs a
+  server **read** endpoint, because part 1's ruling is that the service records disputes without
+  materializing them, so a device knows only its own;
+- the **"trees with data issues"** filter in the filters box;
+- the **missing-tree entry point** — a tree on city property and absent from the city database,
+  whose report has no profile to open from;
+- the **community-flagging redesign**, which is where community trees get their location and species
+  disputes: part 1 leaves `flagWrongSpecies` / `flagNeverExisted` untouched, and "location and
+  species only" is a narrowing of that flow rather than an addition beside it.
+
+**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
+three times.** Twice on the outbox kind list, and once on a whole table: `AppSchema` v22 added
+`tree_data_disputes` with a `raised_by` column and neither account-deletion door could see it, which
+PR #165's review measured and PR #165 fixed. Every one of the three failed **silently**, because a
+hand-kept list of table names matches nothing when it is short rather than erroring. The outbox half
+was closed by making `OutboxItem.Kind.accountDeletionTreatment` an exhaustive `switch`, so the
+compiler asks the question when a case is added; the table half has no equivalent. Design one — a
+test that reads the live schema for columns named `user_id` / `raised_by` / `given_by` / `set_by`
+and requires each to be named by one door or explicitly exempted is the obvious shape, and it is the
+shape that would have caught this. **A fourth hand-audit is not the fix.** Unscheduled; the badge
+round is the natural slot, because it is the next round to touch this table.
 
 **Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to

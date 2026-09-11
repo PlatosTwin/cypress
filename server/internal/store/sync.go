@@ -78,6 +78,17 @@ type Mutation struct {
 	// closes is the same one: a call beside `Apply` could record the withdrawal, fail, and leave the
 	// client's retry to be deduped away against a reading that is still being counted.
 	WithdrawnMeasurementID *uuid.UUID
+	// WithdrawnDisputeID is set only for kind `data_dispute_withdrawal`: the dispute the person is
+	// taking back, carried here so the **ownership** question is asked where the rows are.
+	//
+	// **It is the one of these four that materializes nothing**, and the difference is worth stating
+	// beside the three that do. A withdrawn photograph is tombstoned, a withdrawn reading is
+	// tombstoned; a withdrawn dispute has nothing to tombstone, because no dispute table exists here
+	// and the `contributions` row is the whole record (R79's ruling, `syncKinds` in
+	// `internal/api/sync.go`). So `disputeIsThisIdentitys` only ever refuses or does nothing — the
+	// value travels inside the mutation for a second reason: the lookup and the insert then share
+	// one transaction and one snapshot, rather than deciding ownership from a read taken before it.
+	WithdrawnDisputeID *uuid.UUID
 	// RecordedMeasurementID is `TreeMeasurement.id` for kind `measurement`, read for exactly one
 	// purpose: so a reading that arrives **after** its own withdrawal is born tombstoned.
 	// `measurementWasWithdrawn` states why that order is reachable rather than theoretical.
@@ -172,6 +183,16 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		// agree rather than depend on each other.
 		if mutation.WithdrawnMeasurementID != nil {
 			return withdrawMeasurement(ctx, tx, *mutation.WithdrawnMeasurementID, owner, now)
+		}
+		// A refusal and nothing else: there is no dispute row to tombstone. Returning an error here
+		// rolls the transaction back, so a withdrawal of somebody else's dispute leaves no
+		// `contributions` row behind — which is the point, since that row *is* the record.
+		//
+		// After the dedupe for the same reason the two above are: a replay of a withdrawal this
+		// service already accepted answers `duplicate` and never reaches here, and the first pass is
+		// where the ownership question was asked.
+		if mutation.WithdrawnDisputeID != nil {
+			return disputeIsThisIdentitys(ctx, tx, *mutation.WithdrawnDisputeID, owner)
 		}
 		// ── The reading that arrives after its own withdrawal ───────────────────────────────────
 		//
