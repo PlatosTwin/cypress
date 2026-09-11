@@ -300,6 +300,22 @@ describe('resolving a request', () => {
     });
   }
 
+  it('resolves a pack carrying both keys the way the publisher resolved it', () => {
+    // `Tools/publish_cities.py` reads the first of these and falls back to the second, so the
+    // manifest entry a city was published under is the first one's value. A reader that picked the
+    // other would print terms the published manifest does not claim.
+    const both = directory();
+    const licensed = place(buildPack(17), both, 'sf.sqlite');
+    const db = new DatabaseSync(licensed);
+    const insert = db.prepare('INSERT OR REPLACE INTO seed_meta (key, value) VALUES (?, ?)');
+    insert.run(licenseKeys[0] ?? '', 'ODbL');
+    insert.run(licenseKeys[1] ?? '', 'CC-BY');
+    db.close();
+    const resolution = resolveTreePage('sf', FIXTURE.aliveTreeUUID, openPackLibrary(both));
+    assert.ok(resolution.ok);
+    assert.equal(resolution.model.terms.value, 'ODbL');
+  });
+
   it('says so, and says why, when the receipt records neither', () => {
     // The control for the pair above: San Francisco is this case on every real pack, so a reader
     // that always found a license would pass both of those and be wrong about the shipped one.

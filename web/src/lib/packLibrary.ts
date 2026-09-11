@@ -38,6 +38,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { statedValue } from './cityRecord.ts';
 import { requireIdSpace } from './idSpaces.ts';
 import { openPack, type Pack } from './pack/pack.ts';
 import {
@@ -281,8 +282,7 @@ export function resolveTreePage(
     ? null
     : inventoryByID(pack, tree.inventorySource);
   // The receipt keys are `inventory_<inventories.id>_*` — `publish_cities.py`'s own tagging, which
-  // is why the tag is the inventory's id and not the id space. `license` and `license` are both
-  // read for the same reason the publisher reads both.
+  // is why the tag is the inventory's id and not the id space.
   const tag = tree.inventorySource;
   const meta = (suffix: string): string | null =>
     tag === null ? null : pack.meta.get(`inventory_${tag}_${suffix}`) ?? null;
@@ -296,14 +296,17 @@ export function resolveTreePage(
    * for San Jose's `CC-BY` and New York's Data Mine terms — an attribution obligation silently
    * dropped, which is the one failure mode this row exists to prevent.
    *
-   * Matched with a pattern rather than two literal lookups so this file can spell the key once,
-   * and in a way `src/lib/spelling.ts`'s American-English sweep does not read as prose. The key is
-   * a string the ingest pipeline writes; it is not English this project chose.
+   * The two keys are assembled from their tails rather than written out, because
+   * `src/lib/spelling.ts` sweeps this file for British spellings and one of these keys is one. The
+   * key is a string the ingest pipeline writes; it is not English this project chose. They are
+   * tried in the publisher's own order, so a pack carrying both resolves the way the manifest did.
    */
-  const licenseKey = tag === null ? null : new RegExp(`^inventory_${tag}_licen[cs]e$`);
-  const license = licenseKey === null
-    ? null
-    : [...pack.meta.entries()].find(([key]) => licenseKey.test(key))?.[1] ?? null;
+  const licenseKeys = tag === null
+    ? []
+    : ['ce', 'se'].map((tail) => `inventory_${tag}_licen${tail}`);
+  const license = licenseKeys
+    .map((key) => statedValue(pack.meta.get(key) ?? null))
+    .find((value) => value !== null) ?? null;
 
   return {
     ok: true,

@@ -74,6 +74,20 @@ on:
       - 'Tools/build_seed.py'
       - 'docs/distilled/PRODUCT.md'
       - 'docs/distilled/SCREENS.md'
+      # ── W-C. The public tree page borrows its gradient and its copy ───────────────────────
+      # `web/src/lib/gradients.ts` re-emits CypressGradient.swift's recipes as CSS and
+      # `web/src/lib/cityRecord.ts` re-implements the labels and formats the cold tree profile
+      # already draws over these columns. `web/test/{gradients,cityRecord,treePage}.test.ts` parse
+      # all six at run time, and `web/test/swiftDrift.test.ts` fingerprints four declarations in
+      # two of them. CypressGradient.swift is inside the Tokens directory above and is named again
+      # here on purpose: `sources.test.ts` matches this list literally, and a directory glob
+      # standing in for a file is a coupling nobody could check.
+      - 'Cypress/DesignSystem/Tokens/CypressGradient.swift'
+      - 'Cypress/DesignSystem/Components/MethodBadge.swift'
+      - 'Cypress/DesignSystem/Components/SegmentedControl.swift'
+      - 'Cypress/Features/TreeProfile/CityRecordPresentation.swift'
+      - 'Cypress/Features/TreeProfile/TreeProfilePresentation.swift'
+      - 'Cypress/Features/Site/SitePresentation.swift'
   pull_request:
     branches: [main, 'release/**']
     paths:
@@ -113,6 +127,20 @@ on:
       - 'Tools/build_seed.py'
       - 'docs/distilled/PRODUCT.md'
       - 'docs/distilled/SCREENS.md'
+      # ── W-C. The public tree page borrows its gradient and its copy ───────────────────────
+      # `web/src/lib/gradients.ts` re-emits CypressGradient.swift's recipes as CSS and
+      # `web/src/lib/cityRecord.ts` re-implements the labels and formats the cold tree profile
+      # already draws over these columns. `web/test/{gradients,cityRecord,treePage}.test.ts` parse
+      # all six at run time, and `web/test/swiftDrift.test.ts` fingerprints four declarations in
+      # two of them. CypressGradient.swift is inside the Tokens directory above and is named again
+      # here on purpose: `sources.test.ts` matches this list literally, and a directory glob
+      # standing in for a file is a coupling nobody could check.
+      - 'Cypress/DesignSystem/Tokens/CypressGradient.swift'
+      - 'Cypress/DesignSystem/Components/MethodBadge.swift'
+      - 'Cypress/DesignSystem/Components/SegmentedControl.swift'
+      - 'Cypress/Features/TreeProfile/CityRecordPresentation.swift'
+      - 'Cypress/Features/TreeProfile/TreeProfilePresentation.swift'
+      - 'Cypress/Features/Site/SitePresentation.swift'
   # The escape hatch, the same one `testflight.yml` keeps: a run by hand when a change elsewhere
   # (a Node bump, a lockfile audit) needs this suite run without touching a path above.
   workflow_dispatch:
