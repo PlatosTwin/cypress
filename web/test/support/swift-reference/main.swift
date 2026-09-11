@@ -98,7 +98,18 @@ var cRows: [String] = []
 for (lat, lon) in coords {
     let c = Coordinate(latitude: lat, longitude: lon)
     let s = c.snappedToPublicPhotoGrid()
-    cRows.append("{\"lat\": \(j(lat)), \"lon\": \(j(lon)), \"snappedLat\": \(j(s.latitude)), \"snappedLon\": \(j(s.longitude))}")
+    // TWICE, as well as once. The snap is NOT idempotent: the longitude step is derived from the
+    // latitude, and the first pass moves the latitude, so the second pass measures the longitude
+    // against a different grid. Recorded rather than assumed -- see docs/errata-pending/.
+    let s2 = s.snappedToPublicPhotoGrid()
+    let s3 = s2.snappedToPublicPhotoGrid()
+    cRows.append(
+        "{\"lat\": \(j(lat)), \"lon\": \(j(lon))"
+        + ", \"snappedLat\": \(j(s.latitude)), \"snappedLon\": \(j(s.longitude))"
+        + ", \"twiceLat\": \(j(s2.latitude)), \"twiceLon\": \(j(s2.longitude))"
+        + ", \"thriceLat\": \(j(s3.latitude)), \"thriceLon\": \(j(s3.longitude))"
+        + ", \"driftM\": \(j(s.distance(to: s2)))}"
+    )
 }
 lines.append("  \"snapped\": [\n    " + cRows.joined(separator: ",\n    ") + "\n  ],")
 
