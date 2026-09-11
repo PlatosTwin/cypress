@@ -137,16 +137,26 @@ const OWN_FILE = basename(fileURLToPath(import.meta.url));
  *
  * Routing every registration through one wrapper costs the runner's per-test `location`, which
  * becomes the wrapper's line for every test in the file — a real loss of a navigation aid. This
- * buys it back: the frames belonging to this file are `it` (here), possibly `seedDependent`, and
- * then the `describe` callback, which is the line the reader wants. Taking the LAST of them lands
- * on that line for a direct call and for a helper call alike.
+ * buys it back: of this file's own frames, the first one that is not this machinery is the
+ * `describe` callback, at the line that made the call.
+ *
+ * **Not "the last frame in this file", which is what this did first and was wrong**: the `describe`
+ * callback runs synchronously from module scope, so the module's own `describe(…)` line is still on
+ * the stack underneath it and every test reported the `describe` line instead. Measured on a
+ * three-registration specimen rather than reasoned about — the frames are
+ * `declarationSite`, `it`, optionally `seedDependent`, `SuiteContext.<anonymous>`, and only
+ * sometimes the module frame.
  */
+const OWN_HELPER_FRAMES = /\bat (?:declarationSite|it|seedDependent) \(/;
+
 function declarationSite(): string {
-  const frames = (new Error().stack ?? '').split('\n').filter((line) => line.includes(OWN_FILE));
-  const last = frames[frames.length - 1];
-  if (last === undefined) return 'an unreadable stack';
-  const match = /([^/\\() ]+:\d+:\d+)\)?\s*$/.exec(last);
-  return match?.[1] ?? last.trim();
+  const frames = (new Error().stack ?? '')
+    .split('\n')
+    .filter((line) => line.includes(OWN_FILE) && !OWN_HELPER_FRAMES.test(line));
+  const frame = frames[0];
+  if (frame === undefined) return 'an unreadable stack';
+  const match = /([^/\\() ]+:\d+:\d+)\)?\s*$/.exec(frame);
+  return match?.[1] ?? frame.trim();
 }
 
 type TestBody = () => void | Promise<void>;
