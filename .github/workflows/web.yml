@@ -1,0 +1,106 @@
+# The web app's CI. Ubuntu, no simulator, no signing, no build number.
+#
+# It exists because `server/` does not have one and `docs/ROADMAP.md` calls that out as a known
+# gap. The Go service ships to Fly on a human's `flyctl deploy` with nothing between the commit
+# and the machine; W-A does not repeat that shape for the web.
+#
+# **This is the workflow that makes the carve-out in `testflight.yml` honest.** That file now
+# classifies a `web/` change as `tests=false ships=false`, and the notice it prints says the web
+# is tested here instead. If this workflow is deleted, renamed, or stops running, that notice
+# becomes false and a web change merges having been checked by nothing. The two files are a pair.
+name: Web
+
+on:
+  push:
+    branches: [main]
+    # An ALLOW-list, which is the opposite direction from `testflight.yml`'s deny-list, and the
+    # asymmetry is deliberate. There the danger is a new path silently ceasing to ship, so
+    # anything unnamed still ships. Here the only cost of not running is not running a suite that
+    # tests one directory: a path outside `web/` cannot affect this app, and a new one inside it
+    # is covered by the wildcard. The two harness scripts are named because they are how the
+    # suite is run and judged — a change to them proves itself by running the suite THROUGH them,
+    # exactly as `Tools/run_tests.sh` does on the iOS side.
+    paths:
+      - 'web/**'
+      - 'Tools/run_web_tests.sh'
+      - 'Tools/verify_web_test_log.sh'
+      - '.github/workflows/web.yml'
+  pull_request:
+    branches: [main, 'release/**']
+    paths:
+      - 'web/**'
+      - 'Tools/run_web_tests.sh'
+      - 'Tools/verify_web_test_log.sh'
+      - '.github/workflows/web.yml'
+  # The escape hatch, the same one `testflight.yml` keeps: a run by hand when a change elsewhere
+  # (a Node bump, a lockfile audit) needs this suite run without touching a path above.
+  workflow_dispatch:
+
+# **`paths:` here, where `testflight.yml`'s `pull_request` trigger deliberately has none.** The
+# difference is that `gate` is a REQUIRED check and this job is not: a required check that never
+# starts is a branch nobody can merge and no red anywhere saying why (E225). This one simply does
+# not appear on a pull request that does not touch the web, which is what it should do. **If this
+# job is ever made a required check, these `paths:` filters have to come off in the same change.**
+concurrency:
+  group: web-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # `node-version-file` rather than a literal, so the version lives in ONE place a human
+      # edits. `web/test/toolchain.test.ts` asserts that file agrees with `package.json`'s
+      # engines and with both Dockerfile stages, so a bump that misses one of the four goes red
+      # in the suite below rather than producing a container that differs from CI.
+      #
+      # No `cache: npm`. The suite's install phase is `npm ci` into a wiped tree, and its whole
+      # purpose is to certify that the lockfile installs — the same argument as certifying
+      # warnings on a fresh DerivedData rather than a warm one (E203). A restored cache is a
+      # warm tree wearing a fresh one's name. The install takes seconds; the certainty is worth
+      # more than the seconds.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+
+      # One command, and it runs install, typecheck, test and build in that order, into a log.
+      # **The same script an agent runs locally**, which is the point: a CI-only invocation is a
+      # second way to run the suite and the two are free to drift.
+      #
+      # The script judges its own log with `verify_web_test_log.sh` before it exits, so the step
+      # below is a re-judgment rather than the only one — deliberately, because that is what puts
+      # the VERIFY-WEB line in this job's own log where a reader of a red run will find it.
+      - name: Run the web suite, and judge the log rather than the exit code
+        run: |
+          set -euo pipefail
+          Tools/run_web_tests.sh "$RUNNER_TEMP/web.log"
+          Tools/verify_web_test_log.sh "$RUNNER_TEMP/web.log"
+
+      # Thirty days, the same as the iOS unit log and for the same reason: an errata entry cites
+      # the run it was written from, and a citation whose artifact expires before the next reader
+      # follows it is worse than a long retention.
+      - name: Keep the log, whatever happened
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-log
+          path: ${{ runner.temp }}/web.log
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The image is built, never pushed and never deployed — W-E deploys. What this catches is
+      # the class of defect the suite above structurally cannot: a Dockerfile that no longer
+      # builds, a COPY naming a path that moved, a stage pinned to a tag that has gone away.
+      # `server/Dockerfile` learned that one the hard way when `migrations/` was added and the
+      # first real image build was the thing that found out.
+      - name: Build the image the deployment will run
+        run: docker build --tag cypress-web:ci web

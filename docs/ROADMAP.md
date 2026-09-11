@@ -198,7 +198,7 @@ growth loop" — terminate at the moment of sharing. W1 is the page those links 
 
 | | Milestone | Done when |
 |---|---|---|
-| **W-A** | Foundation | `web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; the web run/verify pair W-9 proposes — `run_web_tests.sh` and `verify_web_test_log.sh`, to be written under `Tools/` by this milestone — judges a log rather than an exit code. |
+| ~~**W-A**~~ | ~~Foundation~~ | ~~`web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` judge a log rather than an exit code.~~ **SHIPPED** by `web/foundation`. `web/` reaches the classifier through a `WEB_ONLY` variable of its own rather than through `DOC_ONLY` — the web is not prose, it is tested on ubuntu, and the notice `plan` prints now says which of the two a skipped run was. `web/**` is deliberately **not** added to the push trigger's `paths-ignore`; see the chip backlog. |
 | **W-B** | The three portable assets | Design tokens exported from the Swift declarations to CSS custom properties, with a test that the export still matches its source; the domain rules (vitality rubric, `Quantity`, the 25 m grid, growth-charting eligibility, ID spaces) re-derived in TypeScript against ported Swift test cases; a read layer that opens a published city pack through the same schema the phone uses. |
 | **W-C** | W1 · Public tree page | The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients. |
 | **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — designed under the W-3 exception, ruled, then built. |
@@ -801,6 +801,60 @@ into this section in the round that finds it, and nowhere else. Each item stands
     auto-stopped (`min_machines_running = 0`), nothing in `.github/workflows/` touches `server/` or
     Fly, and so a migration only runs at the next boot of a **redeployed** image — merging server
     work changes nothing in production. Prose only; no code.
+
+12. **Add `web/**` to the push trigger's `paths-ignore`.** ~~Teach `DeployPathsAgreeTests` a
+    third predicate~~ — **the guard half is DONE**, in `web/foundation` after adversarial review
+    (#162, B1). This item used to describe the guard work as an optimization whose "prize is
+    small"; that framing was wrong in a way worth recording, because the exposure ran the other
+    way. `DeployPathsAgreeTests` read `DOC_ONLY` alone while the `scope` step subtracted
+    `^($WEB_ONLY|$DOC_ONLY)`, so any widening of `WEB_ONLY` — or of `GIT_METADATA`, added the same
+    round — could move a must-RUN path into the run-nothing set with the suite still green. The
+    reviewer red-proved it: one alternative added to `WEB_ONLY` made a `web.yml`-only push
+    `tests=false ships=false`, killing #212's guarantee for the file that defines the web
+    pipeline, and the test reported `Test run with 2 tests in 1 suite passed`. Nothing about that
+    was an optimization, and nothing about it was optional.
+
+    The test now derives the run-nothing predicate names from the `testable=` line itself and
+    checks every one it finds, so a fifth predicate cannot be unguarded the way the third was.
+    **What remains is the small part**: add `web/**` to `paths-ignore`, which needs the
+    trigger → predicate loop to accept a token appearing in any run-nothing predicate rather than
+    in `DOC_ONLY` specifically. The saving really is one ~10-second ubuntu job per web-only push
+    to main. Do it as its own change with its own simulator run, never folded into a web feature
+    round, and read the item below first — it changes what `paths:` on `web.yml` may say.
+
+13. **Give the web its own release-note channel, or rule that it needs none.** `plan`'s
+    release-note check treats a web-only pull request as not-required, because `docs/whats-new/`
+    compiles into TestFlight's "What to Test" — a field attached to a **build**, which a web-only
+    change does not mint. That is correct as far as it goes and it means web changes currently
+    ship with no changelog anywhere. Decided by W-A in a comment rather than by anyone with the
+    authority to decide it; it wants a ruling once the web is actually deployed (W-E), not before.
+
+14. **Make `web` a required status check, and drop `web.yml`'s `paths:` in the same change.**
+    Raised by #162's adversarial review, and it closes a loop nothing currently tracks. `gate` is
+    the only required context on `main` (read from GitHub, not from prose:
+    `main-pull-request-only → active`, required contexts = `gate`). For the entire class of change
+    this round carves out — a web-only diff — `gate` now goes green having run nothing, and the
+    job that DID test it, `web`, is not required. That is the right sequencing, because a context
+    has to report on `main` once before it can be required; it is not a resting place. `web.yml`'s
+    own comment says its `paths:` filters must come off in the same change that makes it required,
+    since a required check that a path filter skips never reports and blocks every pull request.
+    Do both together, after `web` has reported on `main` at least once.
+
+15. **`git diff --name-only` hides a rename's source, so a move out of the app classifies as
+    web-only.** `git mv` a Swift file from the app's source tree into `web/` and
+    `--name-only` reports only the destination; `--name-status` shows it as `R100` with both
+    paths, and `--no-renames` reports both. (Reproduced in a throwaway repository — the example is
+    written without literal paths on purpose, since a doc citing a file that does not exist is
+    what `DocumentCitationGuardTests` refuses, and it refused the first draft of this bullet.)
+    `plan` then says
+    `tests=false ships=false` and prints "Nothing here is an input to the iOS app or its tests"
+    about a commit that deleted a Swift file from the app target. **Pre-existing** — the same move
+    into `docs/` does it on `main` today — but `web/` is a far likelier rename destination from
+    `Cypress/` than `docs/` is, and the web notice makes a stronger claim than the prose one. The
+    fix is one flag, `--no-renames`, on the `changed=` line. Deliberately not folded into #162: it
+    changes the classifier's behavior for every predicate at once, which wants its own calibration
+    table and its own simulator run rather than a line in a round already correcting seven
+    findings.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

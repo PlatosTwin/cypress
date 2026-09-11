@@ -19,10 +19,24 @@ import Testing
 /// of a fact is a false green waiting for someone to edit one of them. There the matrix is derived;
 /// here it cannot be, so the agreement is asserted instead.
 ///
+/// **The `scope` step now has FOUR predicates, and this test derives the ones that matter rather
+/// than naming them.** `DOC_ONLY` (prose), `WEB_ONLY` (tested, on ubuntu, by `web.yml`),
+/// `GIT_METADATA` (root git metadata, runs but never ships) and `NO_ARCHIVE` (the union that
+/// decides `ships`). Adversarial review on #162 found that this file read `DOC_ONLY` alone while
+/// the step subtracted `$WEB_ONLY|$DOC_ONLY`, so one alternative added to `WEB_ONLY` could move a
+/// must-RUN path into the run-nothing set and this suite still reported
+/// `Test run with 2 tests in 1 suite passed`. Green, with the defect present — this project's
+/// dominant test-suite defect class, in the guard that was supposed to prevent it.
+///
+/// The fix is not a longer list. `runNothingPredicateNames` reads the `testable=` line and checks
+/// **every** predicate it finds, so the fifth one cannot be unguarded the way the third was.
+///
 /// **What this deliberately does NOT check:** that the regex is *correct*, only that it mentions
-/// every path the trigger ignores. A regex that mentions `docs/` and matches it wrongly would pass
-/// here. The predicate's behavior is checked by replaying it over real history, which is a shell
-/// concern and lives in the workflow's own comments.
+/// every path the trigger ignores, and that no must-RUN path is mentioned by anything that
+/// decides whether the suite runs. A regex that mentions `docs/` and matches it wrongly would pass
+/// here. The predicate's behavior is checked by replaying the real step over a literal path list,
+/// which is a shell concern and lives in the workflow's own comments and the pull requests that
+/// changed it.
 @Suite("The deploy deny-list agrees with the ships predicate")
 struct DeployPathsAgreeTests {
 
@@ -62,6 +76,64 @@ struct DeployPathsAgreeTests {
         }) else { return "" }
         let value = line.drop { $0 != "=" }.dropFirst()
         return value.trimmingCharacters(in: CharacterSet(charactersIn: "'\" "))
+    }
+
+    /// **The names of every predicate the `scope` step subtracts to decide `tests`.**
+    ///
+    /// Read out of the `testable=` line rather than listed here, and that is the whole point of
+    /// this function. Adversarial review's finding on #162 was not that some particular predicate
+    /// was wrong — it was that a predicate could be ADDED. The step said
+    ///
+    ///     testable="$(printf '%s\n' "$changed" | grep -vE "^($WEB_ONLY|$DOC_ONLY)" || true)"
+    ///
+    /// and this test read `DOC_ONLY` alone. So a widening of `WEB_ONLY` could move a must-RUN path
+    /// into the run-nothing set with nothing noticing, where the same widening of `DOC_ONLY` went
+    /// red. Red-proved before the fix: one alternative added to `WEB_ONLY`
+    /// (`\.github/workflows/web\.yml$`) made a `web.yml`-only push `tests=false ships=false` —
+    /// #212's guarantee that a pipeline change proves itself by running, gone — and this suite
+    /// reported `Test run with 2 tests in 1 suite passed`.
+    ///
+    /// A list of predicate names in this file would have the same defect one edit later: the
+    /// fifth predicate would be unguarded exactly as the third was. So the set is derived from the
+    /// line that uses it, and every name in it is then checked. Adding a predicate to `testable`
+    /// without an assignment this can find turns the suite red, which is the intended cost.
+    static func runNothingPredicateNames(root: URL) throws -> [String] {
+        let text = try String(contentsOf: root.appendingPathComponent(workflow), encoding: .utf8)
+        guard let line = text.split(separator: "\n").first(where: {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("testable=")
+        }) else { return [] }
+        // **Only the anchored alternation is read, not the whole line.** The line also names
+        // `$changed`, which is the input rather than a predicate; a first version of this scanner
+        // collected it and the suite went red naming `$changed` — the control working, one edit
+        // before it would have mattered. The alternation is the thing that decides membership, so
+        // that is the thing parsed: everything between `^(` and the `)` that closes it.
+        guard let open = line.range(of: "^(") else { return [] }
+        let afterOpen = line[open.upperBound...]
+        guard let close = afterOpen.firstIndex(of: ")") else { return [] }
+        let alternation = afterOpen[afterOpen.startIndex..<close]
+
+        // `$NAME` occurrences, in order, deduplicated.
+        var names: [String] = []
+        var current = ""
+        var reading = false
+        for character in alternation {
+            if character == "$" {
+                if reading, !current.isEmpty, !names.contains(current) { names.append(current) }
+                current = ""
+                reading = true
+                continue
+            }
+            guard reading else { continue }
+            if character.isLetter || character.isNumber || character == "_" {
+                current.append(character)
+            } else {
+                if !current.isEmpty, !names.contains(current) { names.append(current) }
+                current = ""
+                reading = false
+            }
+        }
+        if reading, !current.isEmpty, !names.contains(current) { names.append(current) }
+        return names
     }
 
     /// What a `paths-ignore` glob must leave a trace of in the predicate.
@@ -118,6 +190,94 @@ struct DeployPathsAgreeTests {
             by extending DOC_ONLY.
             """
         )
+
+        // ── The run-nothing set, whatever it is made of today ────────────────────────────────
+        //
+        // `runNothingPredicateNames` reads the `testable=` line; everything below checks every
+        // name it finds. See that function for the finding this replaces — the short version is
+        // that reading `DOC_ONLY` alone left `WEB_ONLY` unguarded, and enumerating the predicates
+        // here would leave the next one unguarded in the same way.
+        let runNothing = try Self.runNothingPredicateNames(root: root)
+        var runNothingValues: [String: String] = [:]
+        for name in runNothing {
+            runNothingValues[name] = try Self.assignment(name, root: root)
+        }
+
+        // Controls, in the order they can go wrong. A parser that found nothing, or found names
+        // with no assignments, makes every check below vacuous — which is this project's dominant
+        // test-suite defect and the exact shape the finding above had.
+        #expect(
+            runNothing.count >= 2,
+            """
+            found only \(runNothing.count) predicate name(s) in \(Self.workflow)'s `testable=` \
+            line \(runNothing) — the scanner is not reading the line that decides whether the \
+            suite runs, so this gate passes without checking anything. Fix the scanner, not the \
+            assertion.
+            """
+        )
+        #expect(
+            runNothing.contains("DOC_ONLY"),
+            """
+            \(Self.workflow)'s `testable=` line no longer subtracts $DOC_ONLY \(runNothing). \
+            Either the prose carve-out was removed, or this scanner is reading the wrong line — \
+            DOC_ONLY is the known positive that says the scanner works at all.
+            """
+        )
+        for name in runNothing {
+            #expect(
+                !(runNothingValues[name] ?? "").isEmpty,
+                """
+                `testable=` subtracts `$\(name)` and \(Self.workflow) has no `\(name)=` assignment \
+                this test can find. A predicate it cannot read is a predicate it cannot check, so \
+                every absence assertion below is passing vacuously for that one. Either the \
+                assignment moved off its own first line, or a new predicate arrived without \
+                telling this gate about it.
+                """
+            )
+        }
+
+        // **`GIT_METADATA` must NOT be one of them.** A root `.gitignore` or `.gitattributes` is
+        // in the run-but-do-not-ship set for the reason `.github/` is: it cannot reach the archive,
+        // and `DocumentCitationGuardTests` reasons about what a fresh clone contains, so a change
+        // to what this repository tracks proves itself by running. Moving it into `testable`'s
+        // subtraction would skip the suite for it.
+        #expect(
+            !runNothing.contains("GIT_METADATA"),
+            """
+            `testable=` now subtracts $GIT_METADATA, so a change to a root .gitignore or \
+            .gitattributes would SKIP the entire suite and `gate` would report success having \
+            tested nothing. GIT_METADATA belongs in NO_ARCHIVE only — it is the run-but-do-not-ship \
+            set, the same as .github/ and the two test directories.
+            """
+        )
+        // …and it must still be in NO_ARCHIVE, interpolated by name like the other two. This is
+        // the assertion that keeps 57b93e4 from being undone: without it a root .gitignore ships,
+        // and merging a diff that touches one mints a TestFlight build byte-identical to the last.
+        #expect(
+            noArchive.contains("$GIT_METADATA"),
+            """
+            NO_ARCHIVE no longer interpolates $GIT_METADATA. That restores the defect 57b93e4 \
+            fixed, which was found inside the pull request written to prevent it: a diff touching \
+            a root .gitignore or .gitattributes would mint a TestFlight build whose app is \
+            byte-identical to the last one (#212 / #215 / #31).
+            """
+        )
+        #expect(
+            !(try Self.assignment("GIT_METADATA", root: root)).isEmpty,
+            "found no `GIT_METADATA=` assignment in \(Self.workflow)'s `scope` step (see above)"
+        )
+        for name in runNothing {
+            #expect(
+                noArchive.contains("$\(name)"),
+                """
+                NO_ARCHIVE does not interpolate $\(name), which `testable=` subtracts. The \
+                containment that makes `ships=true` imply `tests=true` is broken: a path can now \
+                be buildable without being testable, and the release job becomes reachable by a \
+                run whose suite did not execute. That is #215's shape exactly — two literals \
+                where there should be one derivation.
+                """
+            )
+        }
 
         for glob in ignored {
             let token = Self.token(for: glob)
@@ -199,17 +359,28 @@ struct DeployPathsAgreeTests {
                 the build before it and notifying every tester about nothing.
                 """
             )
-            // And the converse, which is the newer half: these three must NOT be in DOC_ONLY.
-            // Putting one there would skip the suite for a change to the pipeline or to the tests
-            // themselves — a green required check over code nothing ran.
-            #expect(
-                !docOnly.contains(token),
-                """
-                DOC_ONLY now mentions `\(token)`, so \(change) would SKIP the entire suite and \
-                `gate` would report success having tested nothing. Only prose belongs in \
-                DOC_ONLY; \(token) belongs in NO_ARCHIVE, which is the run-but-do-not-ship set.
-                """
-            )
+            // And the converse, which is the newer half: these must NOT be in ANY predicate that
+            // `testable=` subtracts. Putting one there would skip the suite for a change to the
+            // pipeline or to the tests themselves — a green required check over code nothing ran.
+            //
+            // **Checked against every run-nothing predicate, not against DOC_ONLY alone**, which
+            // is #162's B1. Compared as a plain substring on purpose, unlike the presence check
+            // above: for an ABSENCE assertion a substring match is the strict direction, so a
+            // token buried inside a longer alternative (`\.github/workflows/web\.yml$` containing
+            // `\.github/`) still fires.
+            for name in runNothing {
+                let value = runNothingValues[name] ?? ""
+                #expect(
+                    !value.contains(token),
+                    """
+                    \(name) now mentions `\(token)`, and `testable=` subtracts $\(name), so \
+                    \(change) would SKIP the entire suite and `gate` would report success having \
+                    tested nothing. \(ticket) is what that costs. \(token) belongs in NO_ARCHIVE, \
+                    which is the run-but-do-not-ship set — never in a predicate that decides \
+                    whether the suite runs at all.
+                    """
+                )
+            }
         }
     }
 

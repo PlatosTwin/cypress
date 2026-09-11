@@ -1,0 +1,27 @@
+---
+import Base from '../layouts/Base.astro';
+
+// The placeholder, and it says so. W-C replaces the routing here with W1, the public tree page
+// that `SCREENS.md` section W1 transcribes and that every share link the iOS app has ever
+// produced already points at.
+//
+// It renders on the server rather than at build time, so that a request to this app proves the
+// whole path — adapter, entry, container, port — rather than proving that a file was copied.
+const renderedAt = new Date().toISOString();
+---
+
+<Base title="Cypress on the web">
+  <h1>Cypress on the web</h1>
+  <p>
+    This app is scaffolding. Nothing here is the product yet: milestone <strong>W-A</strong> builds
+    the directory, the CI carve-out and the test harness, and stops there.
+  </p>
+  <p>
+    The public tree page arrives in <strong>W-C</strong>. It is already transcribed in{' '}
+    <code>docs/distilled/SCREENS.md</code>, and the design that governs this whole round is{' '}
+    <code>docs/design-proposals/2026-09-10-web-version.md</code>.
+  </p>
+  <p>
+    Rendered on the server at <time datetime={renderedAt}>{renderedAt}</time>.
+  </p>
+</Base>
