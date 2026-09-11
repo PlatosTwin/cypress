@@ -1,9 +1,9 @@
-import { after, describe, it } from 'node:test';
+import { after, describe, it as declareTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { openPack, type Pack } from '../src/lib/pack/pack.ts';
@@ -57,13 +57,21 @@ import { NEWEST_KNOWN_PACK_SCHEMA_VERSION } from '../src/lib/pack/versions.ts';
  *    summary, where `Tools/verify_web_test_log.sh` reports it in its verdict line and notes that
  *    "a change in these between two runs of the same tree is worth a second look" — the same
  *    posture the iOS side takes toward `CypressUITests`'s skip count.
- * 4. **The census below always runs**, in every environment, and checks the list of
- *    seed-dependent tests against **what this file actually registered with `node:test`** — not
- *    against a literal beside it. A skip that hides a deleted test is the one thing a skip count
- *    cannot catch on its own, and a count compared against a hand-maintained list in the same file
- *    cannot catch it either: that was the first version of this census, and deleting a test with
- *    the list left alone was green in both tiers. See `seedDependent` below for what the census
- *    can and cannot see now.
+ * 4. **The census below always runs**, in every environment, and checks the two lists of test
+ *    names against **what this file actually registered with `node:test`** — not against a literal
+ *    beside it. A skip that hides a deleted test is the one thing a skip count cannot catch on its
+ *    own, and a count compared against a hand-maintained list in the same file cannot catch it
+ *    either: that was the first version of this census, and deleting a test with the list left
+ *    alone was green in both tiers.
+ *
+ *    The second version added a regex over this file's own bytes, to catch a test registered
+ *    directly instead of through the helper, and the comment beside it said that closed the hole.
+ *    **It did not**, and the review that checked it is why this one is built differently: the
+ *    pattern recognized a single spelling, missed nine others — including the multi-line form this
+ *    very file already uses for a long name — and reddened on a doc comment that merely described
+ *    the rule. Registration now goes through one wrapper that `node:test` can only be reached
+ *    through, so the census compares behavior rather than text; see `it` and `registrations` below
+ *    for what that does and does not reach.
  */
 const state = seedState();
 const havePinnedSeed = state.kind === 'present';
@@ -101,9 +109,99 @@ const SEED_DEPENDENT_TESTS: readonly string[] = [
   'the pinned seed is byte-for-byte what pinned-seed.json pins, after every read above',
 ];
 
+/**
+ * Every test in this file that does NOT need the seed, by name, in declaration order.
+ *
+ * The other half of the census, and the half that closes the evasions a list of seed-gated names
+ * cannot see on its own. A test gated inside its own BODY (`if (!havePinnedSeed) return;`, or
+ * `t.skip()`) registers ungated and would never appear in `SEED_DEPENDENT_TESTS` — but it does
+ * appear here, and it is not one of these four.
+ */
+const ALWAYS_RUN_TESTS: readonly string[] = [
+  'the census: this file registered the tests it says it does, gated as it says they are',
+  'the pin file is readable and states what it must, whether or not the seed is here',
+  'a seed that is present and is not the pinned one is a failure, not a skip',
+  'says out loud which tier this run is',
+];
+
 /** The sha256 of a file on disk, read whole. Used on a 103 MB file, twice, and that is fine. */
 function sha256Of(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+/** This file, by name, so its own frames can be picked out of a stack. */
+const OWN_FILE = basename(fileURLToPath(import.meta.url));
+
+/**
+ * Where in this file a test was declared, read off the stack at registration time.
+ *
+ * Routing every registration through one wrapper costs the runner's per-test `location`, which
+ * becomes the wrapper's line for every test in the file — a real loss of a navigation aid. This
+ * buys it back: the frames belonging to this file are `it` (here), possibly `seedDependent`, and
+ * then the `describe` callback, which is the line the reader wants. Taking the LAST of them lands
+ * on that line for a direct call and for a helper call alike.
+ */
+function declarationSite(): string {
+  const frames = (new Error().stack ?? '').split('\n').filter((line) => line.includes(OWN_FILE));
+  const last = frames[frames.length - 1];
+  if (last === undefined) return 'an unreadable stack';
+  const match = /([^/\\() ]+:\d+:\d+)\)?\s*$/.exec(last);
+  return match?.[1] ?? last.trim();
+}
+
+type TestBody = () => void | Promise<void>;
+type SeedGate = { readonly skip: boolean | string };
+
+/**
+ * What this file handed `node:test`, recorded by the **only** path it has to it.
+ *
+ * `node:test`'s `it` is imported under a different name and is called in exactly one place — the
+ * wrapper below. So a registration reaches the runner only by passing through code that records
+ * it, whatever the call looks like in the source: on one line or five, single- or double-quoted,
+ * `{ skip }` or `{ skip: havePinnedSeed ? false : 'why' }`, direct or through another helper.
+ *
+ * **This replaces a regex over this file's own bytes, which claimed to close the same hole and did
+ * not.** That pattern matched one formulation — `it('name', { skip }` on a single line — and the
+ * review that checked it found nine spellings it missed (a multi-line call in the shape this file
+ * itself already uses for a long name, double quotes, `it.skip`, `{ skip: skip }`, a second
+ * wrapper, in-body gating) and three it falsely tripped on (prose describing the rule,
+ * commented-out code, an unrelated `{ skip }`). A guard that reddens on its own documentation gets
+ * deleted by whoever hits it; and `web/` carries no linter and no formatter, so nothing keeps a
+ * future author on the one spelling a pattern can see. The difference is that the census is now a
+ * statement about BEHAVIOR — what the runner was given — rather than about text.
+ *
+ * **What it still cannot see**, stated because the last version of this comment overstated its
+ * reach: a registration made by calling `declareTest` directly, or by importing `node:test` a
+ * second time under another name. Both are a visible edit to the top of this file plus a call
+ * that does not look like its neighbors, which is what "deliberate" means here — the same standing
+ * as editing `SEED_DEPENDENT_TESTS` to cover a deletion. The claim is that no ORDINARY spelling of
+ * a test registration escapes, not that escape is impossible.
+ */
+const registrations: {
+  readonly name: string;
+  readonly gate: SeedGate | undefined;
+  readonly handle: unknown;
+}[] = [];
+
+function it(name: string, body: TestBody): unknown;
+function it(name: string, gate: SeedGate, body: TestBody): unknown;
+function it(name: string, second: TestBody | SeedGate, third?: TestBody): unknown {
+  const gate = typeof second === 'function' ? undefined : second;
+  const body = typeof second === 'function' ? second : third;
+  if (body === undefined) throw new TypeError(`"${name}" was registered with no body`);
+  const site = declarationSite();
+  const located = async (): Promise<void> => {
+    try {
+      await body();
+    } catch (error) {
+      // The navigation aid the wrapper took away, handed back on the one path that needs it.
+      if (error instanceof Error) error.message = `${error.message}\n  declared at ${site}`;
+      throw error;
+    }
+  };
+  const handle = gate === undefined ? declareTest(name, located) : declareTest(name, gate, located);
+  registrations.push({ name, gate, handle });
+  return handle;
 }
 
 describe('the pinned seed — the tier that needs a 103 MB file CI does not have', () => {
@@ -119,42 +217,60 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
   const skip = havePinnedSeed
     ? false
     : `no pinned seed at ${state.path} (state: ${state.kind}) — run Tools/setup_worktree.sh`;
+  /**
+   * The one gate object, shared by every seed-dependent registration.
+   *
+   * Shared rather than rebuilt per call on purpose: the census compares by IDENTITY, so a test
+   * gated on anything else — `{ skip: true }`, `{ skip: someOtherCondition }`, a fresh
+   * `{ skip }` literal — is a different object and is named, even if its name is on the list.
+   */
+  const seedGate: SeedGate = { skip };
 
   /**
-   * Registers a seed-dependent test, and records that it was registered.
+   * Registers a seed-dependent test: `it` above, with this file's one gate.
    *
-   * **This is the census's evidence, and it is why the census is not a literal compared against a
-   * literal.** The recording happens in the same expression that calls `node:test`'s `it`, and it
-   * keeps the handle `it` returns, so a name reaches `registrations` only by way of a real
-   * registration. Registration happens whether the test then runs or skips, so the census means
-   * the same thing in both tiers — which is the point, because the tier where a deleted test
-   * hides is the one where these are skipped.
+   * It is a convenience and a single place to put the gate, no longer the census's only evidence —
+   * `it` itself is what records, so a test written without this helper is seen all the same. What
+   * this adds is that the gate cannot drift: every seed-dependent test carries the SAME `skip`
+   * object, and the census asserts that identity rather than merely that some gate was passed.
    *
-   * **What it can catch**: a seed-dependent test deleted, renamed, reordered, or duplicated while
-   * `SEED_DEPENDENT_TESTS` is left alone. Any of those is red in both tiers.
+   * **What the census can catch**: a seed-dependent test deleted, renamed, reordered or
+   * duplicated; a new one added; a test gated on something other than the seed; a test that gates
+   * itself in its body instead of at registration; and an always-run test deleted or added. Every
+   * one of those is red in both tiers, because registration happens whether a test then runs or
+   * skips — which is the point, since the tier where a deleted test hides is the one where these
+   * are skipped.
    *
-   * **What it cannot catch**: a deletion that also edits the list AND the literal count in the
-   * census. That is three edits in one diff and it is what "deliberate" means here. It also cannot
-   * see a test registered with `it` directly instead of through this helper, which is why the
-   * census reads this file's own source for that shape and requires none.
+   * **What it cannot catch**: a deletion that also edits `SEED_DEPENDENT_TESTS` and the literal
+   * count beside it. That is three edits in one diff and it is what "deliberate" means here.
    */
-  const registrations: { readonly name: string; readonly handle: unknown }[] = [];
   const seedDependent = (name: string, body: () => void): void => {
-    registrations.push({ name, handle: it(name, { skip }, body) });
+    it(name, seedGate, body);
   };
 
   // ── Always runs, in every environment ──────────────────────────────────────────────────────
-  it('the census: this file registered the seed-dependent tests it says it does', () => {
+  it('the census: this file registered the tests it says it does, gated as it says they are', () => {
     // Declared first and therefore printed first, but it reads `registrations` — which is complete
     // by the time any test BODY runs, because `describe`'s callback registers every subtest
     // synchronously before the runner starts them. Confirmed against a three-test specimen before
     // this was written, rather than assumed from the docs.
+    const misdiagnosis = 'A deletion, a rename, a reorder or a new test is what this looks like — '
+      + 'compare POSITION as well as spelling before concluding something was removed. The list '
+      + 'is the declaration: fix whichever of the two is wrong.';
     assert.deepEqual(
-      registrations.map((entry) => entry.name),
+      registrations.filter((entry) => entry.gate !== undefined).map((entry) => entry.name),
       [...SEED_DEPENDENT_TESTS],
-      'the seed-dependent tests this file handed to node:test are not the ones '
-        + 'SEED_DEPENDENT_TESTS names. A deleted or renamed test is what this looks like, and the '
-        + 'list is the declaration: fix whichever of the two is wrong.',
+      `the GATED tests this file handed to node:test are not the ones SEED_DEPENDENT_TESTS names. ${misdiagnosis}`,
+    );
+    // The other half, and the one a list of seed-gated names cannot supply: everything else this
+    // file registered. A test that gates itself in its body rather than at registration lands
+    // here, where it is not one of the four names above.
+    assert.deepEqual(
+      registrations.filter((entry) => entry.gate === undefined).map((entry) => entry.name),
+      [...ALWAYS_RUN_TESTS],
+      `the UNGATED tests this file handed to node:test are not the ones ALWAYS_RUN_TESTS names. ${misdiagnosis} `
+        + 'A seed-dependent test that gates itself inside its own body registers ungated and '
+        + 'arrives here rather than in the list above.',
     );
     assert.equal(
       SEED_DEPENDENT_TESTS.length,
@@ -163,25 +279,49 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
         + 'number in the same change — and is a deletion hiding behind a skip otherwise.',
     );
     assert.equal(
-      new Set(SEED_DEPENDENT_TESTS).size,
-      SEED_DEPENDENT_TESTS.length,
-      'two seed-dependent tests share a name',
+      ALWAYS_RUN_TESTS.length,
+      4,
+      'the always-run test list changed size; same rule as the line above.',
     );
+    const names = registrations.map((entry) => entry.name);
+    assert.equal(new Set(names).size, names.length, 'two tests in this file share a name');
     assert.ok(
       registrations.every((entry) => entry.handle instanceof Promise),
       'a name reached the census without node:test returning a test handle for it, so the helper '
         + 'recorded something it did not register',
     );
-    // And nothing skipped its way past the helper. A seed-gated test written as a direct call
-    // would never appear in `registrations`, and the census would be blind to it exactly the way
-    // it was blind to a deletion before. Matched against this file's own bytes.
-    const ownSource = readFileSync(fileURLToPath(import.meta.url), 'utf8');
-    const direct = ownSource.match(/\bit\(\s*(?:'|`)[^\n]*\{\s*skip\s*\}/g) ?? [];
+    // Every gated test carries THE seed gate, by identity — not merely some gate. A test skipped
+    // for another reason, or pinned to `{ skip: true }` while its name stays on the list, is a
+    // test that no longer runs in the tier that has the seed, and it would otherwise look
+    // identical to one that does.
+    assert.ok(
+      registrations.filter((entry) => entry.gate !== undefined)
+        .every((entry) => entry.gate === seedGate),
+      'a test was gated on something other than this file\'s seed gate. Every seed-dependent test '
+        + 'must share the one `seedGate` object, so that "skipped" means "no pinned seed" and '
+        + 'nothing else.',
+    );
+    // And the gate is the one the environment calls for, which is what makes a skip in this run
+    // mean the seed is absent rather than that someone left a `true` behind.
+    assert.equal(seedGate.skip, havePinnedSeed ? false : skip);
+    // ── The census's own reach, asserted rather than asserted ABOUT ────────────────────────────
+    // It sees this file. A seed-gated test added to another file under `test/` is outside it
+    // entirely — outside the lists and outside the wrapper — so the one thing worth checking is
+    // that no other file has started down that road. This is exactly what it measures and no
+    // more: whether any sibling test file mentions `seedState`, which is the only way to learn
+    // whether the seed is here.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const siblings = readdirSync(here, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.test.ts') && entry.name !== OWN_FILE)
+      .filter((entry) => readFileSync(join(here, entry.name), 'utf8').includes('seedState'))
+      .map((entry) => entry.name);
     assert.deepEqual(
-      direct,
+      siblings,
       [],
-      'a seed-gated test was registered with node:test directly instead of through '
-        + 'seedDependent(), so the census cannot see it',
+      'another test file under web/test/ refers to seedState, so it can tell whether the pinned '
+        + 'seed is present — and a test gated on that in THAT file is invisible to this census, '
+        + 'which only ever sees its own registrations. Either move it here, or give that file a '
+        + 'census of its own.',
     );
   });
 
@@ -356,9 +496,47 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
       assert.ok(row.longitude >= bounds.minLongitude && row.longitude <= bounds.maxLongitude,
         `${row.uuid} is at lon ${row.longitude}, outside the box`);
     }
-    // The R*Tree is a CONSERVATIVE pre-filter, so the re-test on lat/lon above is load-bearing
-    // rather than belt-and-braces. A box just outside the city returns nothing at all, which is
-    // the control that says the filter is a filter.
+    // ── The R*Tree's own false positives, which the loop above could not see ──────────────────
+    //
+    // The R*Tree is a CONSERVATIVE pre-filter — it stores 32-bit floats and rounds every box
+    // outward — so for this box it hands back rows whose real coordinates are outside it, and the
+    // `lat`/`lon` re-test in `treesInBounds` is what removes them. The per-row loop above was
+    // written for exactly that and could never see one: measured with `sqlite3`, the box has 8,990
+    // live R*Tree candidates, 7 of them genuinely outside it, and NONE of those 7 in the first 200
+    // by uuid — so the loop is clipped by the `LIMIT 200` the line above asserts. Removing the
+    // re-test entirely was green in both tiers.
+    //
+    // So: count the two sets in SQL, assert there is something to remove, and then ask the read
+    // layer for the whole box.
+    const box = [
+      bounds.minLatitude, bounds.maxLatitude, bounds.minLongitude, bounds.maxLongitude,
+    ] as const;
+    const candidates = (retest: boolean): number => {
+      const row = pack.db.prepare(
+        `SELECT COUNT(*) AS n FROM trees_rtree r JOIN trees t ON t.id = r.id
+          WHERE r.max_lat >= ? AND r.min_lat <= ? AND r.max_lon >= ? AND r.min_lon <= ?
+            AND t.deleted_at IS NULL
+            ${retest ? 'AND t.lat BETWEEN ? AND ? AND t.lon BETWEEN ? AND ?' : ''}`,
+      ).get(...(retest ? [...box, ...box] : [...box])) as Record<string, unknown>;
+      return Number(row['n']);
+    };
+    const prefiltered = candidates(false);
+    const trulyInside = candidates(true);
+    assert.ok(
+      prefiltered > trulyInside,
+      `the R*Tree returns ${prefiltered} rows for this box and ${trulyInside} of them are really `
+        + 'inside it, so on this seed the pre-filter over-returns nothing and the assertion below '
+        + 'proves nothing about the re-test. Pick a box whose float32 boxes do escape it.',
+    );
+    assert.equal(
+      treesInBounds(pack, bounds, prefiltered + 1).length,
+      trulyInside,
+      `asked for the whole box, the read layer returned a different number of trees than the `
+        + `${trulyInside} whose lat/lon are actually inside it. The R*Tree pre-filter offers `
+        + `${prefiltered}; the difference is what the lat/lon re-test on trees exists to remove.`,
+    );
+    // A box just outside the city returns nothing at all, which is the control that says the
+    // filter is a filter.
     assert.deepEqual(
       treesInBounds(pack, {
         minLatitude: 37.75, maxLatitude: 37.77, minLongitude: -100.0, maxLongitude: -99.99,

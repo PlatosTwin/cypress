@@ -188,6 +188,64 @@ describe('trees in a bounding box', () => {
     );
   });
 
+  it('drops the R*Tree’s own false positives, which is what the lat/lon re-test is for', () => {
+    // **The assertion that makes the `lat`/`lon` re-test falsifiable without the 103 MB seed.**
+    //
+    // The R*Tree is a CONSERVATIVE pre-filter: it answers in 32-bit-float boxes rounded outward,
+    // so it returns rows whose real coordinates lie outside the box asked for, and `treesInBounds`
+    // re-tests `lat`/`lon` on `trees` to remove them. Until these specimens existed nothing
+    // anywhere could tell: replacing all four bounds with `? IS NOT NULL` was green in this tier
+    // AND against the seed, whose per-row loop is clipped by its own `LIMIT 200` (8,990 R*Tree
+    // candidates for its box, 7 genuinely outside it, 0 of those in the first 200 by uuid).
+    const pack = generation(17);
+    const returned = treesInBounds(pack, missionBounds, 50).map((row) => row.uuid);
+    for (const specimen of FIXTURE.rtreeFalsePositives) {
+      // Calibration first, and it is the whole point: each specimen must really BE a false
+      // positive — present in the table, outside the box, and handed back by the R*Tree for this
+      // box. A specimen the index does not return is a row the re-test never sees, and asserting
+      // its absence would be asserting nothing. That is exactly the defect this test repairs.
+      const row = pack.db
+        .prepare('SELECT id, lat, lon FROM trees WHERE uuid = ?')
+        .get(specimen.uuid) as Record<string, unknown> | undefined;
+      assert.ok(row !== undefined, `${specimen.uuid} is not in the fixture at all`);
+      const inside = Number(row['lat']) >= missionBounds.minLatitude
+        && Number(row['lat']) <= missionBounds.maxLatitude
+        && Number(row['lon']) >= missionBounds.minLongitude
+        && Number(row['lon']) <= missionBounds.maxLongitude;
+      assert.equal(
+        inside,
+        false,
+        `${specimen.uuid} is inside the box, so it is not a false positive`,
+      );
+      const candidate = pack.db
+        .prepare(
+          'SELECT COUNT(*) AS n FROM trees_rtree WHERE id = ? '
+            + 'AND max_lat >= ? AND min_lat <= ? AND max_lon >= ? AND min_lon <= ?',
+        )
+        .get(
+          Number(row['id']),
+          missionBounds.minLatitude,
+          missionBounds.maxLatitude,
+          missionBounds.minLongitude,
+          missionBounds.maxLongitude,
+        ) as Record<string, unknown>;
+      assert.equal(
+        Number(candidate['n']),
+        1,
+        `the R*Tree no longer returns ${specimen.uuid} (${specimen.escapes}) for this box, so the `
+          + 're-test has nothing to remove and this test is vacuous. The specimen relies on SQLite '
+          + "rounding a point's box outward to 32-bit floats — re-measure the offsets.",
+      );
+      // And only then: the read layer removes it.
+      assert.equal(
+        returned.includes(specimen.uuid),
+        false,
+        `${specimen.uuid} came back from a box it is outside of (${specimen.escapes}), so the `
+          + 'lat/lon re-test on trees is not being applied',
+      );
+    }
+  });
+
   it('an R*Tree row with no tree behind it produces no row', () => {
     // The other direction of the same join. `phantomRtreeId` sits inside this box and matches no
     // tree, so a projection reading the index rather than the table would emit a row for it.
@@ -195,8 +253,9 @@ describe('trees in a bounding box', () => {
     const entries = pack.db.prepare('SELECT COUNT(*) AS n FROM trees_rtree').get();
     assert.equal(
       Number((entries as Record<string, unknown>)['n']),
-      5,
-      'the R*Tree does not hold the phantom entry, so this test is asserting nothing',
+      9,
+      'the R*Tree does not hold what this fixture says it does — four trees, the soft-deleted '
+        + "one, the four false positives and the phantom, with the unindexed tree's row absent",
     );
     assert.equal(treesInBounds(pack, missionBounds, 50).length, 2);
   });
@@ -218,11 +277,20 @@ describe('trees in a bounding box', () => {
     const pack = generation(17);
     const wide = { minLatitude: 30, maxLatitude: 45, minLongitude: -125, maxLongitude: -70 };
     const uuids = treesInBounds(pack, wide, 50).map((row) => row.uuid);
-    assert.equal(uuids.length, 3, `a box holding every live tree returned ${uuids.length}`);
+    assert.equal(uuids.length, 7, `a box holding every live tree returned ${uuids.length}`);
     assert.ok(uuids.includes(FIXTURE.farAwayTreeUUID));
-    // Three, not four: the fourth live tree has no R*Tree row. Stated here so the count above is
-    // read as the arrangement it is rather than as `liveTreeCount`.
+    // Seven, not eight: one live tree has no R*Tree row. Stated here so the count above is read as
+    // the arrangement it is rather than as `liveTreeCount`.
     assert.equal(uuids.includes(FIXTURE.unindexedTreeUUID), false);
+    // And the four R*Tree false positives ARE here, which is the control the Mission box needs:
+    // they are excluded there for being outside it, not for being unreachable. A specimen that
+    // could never come back would make that exclusion prove nothing.
+    for (const specimen of FIXTURE.rtreeFalsePositives) {
+      assert.ok(
+        uuids.includes(specimen.uuid),
+        `${specimen.uuid} (${specimen.escapes}) is unreachable even from a box that holds it`,
+      );
+    }
   });
 
   it('excludes the soft-deleted tree even though it sits inside the box', () => {
@@ -309,14 +377,38 @@ describe('counting and identity', () => {
     assert.equal(rows('id_spaces'), 2);
     assert.notEqual(FIXTURE.cityDisplayName, FIXTURE.secondCityDisplayName);
     assert.notEqual(FIXTURE.packId, FIXTURE.secondPackId);
+    assert.notEqual(FIXTURE.idSpace, FIXTURE.secondIdSpace);
+    // **And a FACT row in the second id space**, which is the half that was missing. Two of
+    // everything at the dimension tables and nothing at `trees` is why a join predicate over those
+    // dimensions could be broken in a single-valued way — `dc.id = isp.city_id` → `dc.id = 1` —
+    // and pass here as well as against the seed, while mislabelling 52,788 real San Jose trees.
+    const sanJoseSpace = pack.db
+      .prepare('SELECT id_space FROM trees WHERE uuid = ?')
+      .get(FIXTURE.sanJoseTreeUUID) as Record<string, unknown> | undefined;
+    assert.ok(sanJoseSpace !== undefined, 'the fused fixture holds no San Jose tree');
+    assert.equal(
+      String(sanJoseSpace['id_space']),
+      FIXTURE.secondIdSpace,
+      'the San Jose tree is not in the second id space, so nothing here resolves through it',
+    );
 
     const identity = packIdentity(pack);
     assert.equal(identity.cityDisplayName, FIXTURE.cityDisplayName);
     assert.equal(identity.packId, FIXTURE.packId);
     assert.equal(identity.regionDisplayName, FIXTURE.regionDisplayName);
     // And the trees still resolve their own city through their own id space, not through whichever
-    // dim_city row came first.
+    // dim_city row came first. **Both directions**, which is what a single-valued join cannot
+    // survive: the SF tree names San Francisco and the San Jose tree names San Jose. A constant
+    // (`ON dc.id = 1`, or `ON dc.id = 2`) is wrong for exactly one of these two.
     assert.equal(treeByUUID(pack, FIXTURE.aliveTreeUUID)?.cityName, FIXTURE.cityDisplayName);
+    assert.equal(
+      treeByUUID(pack, FIXTURE.sanJoseTreeUUID)?.cityName,
+      FIXTURE.secondCityDisplayName,
+      'a tree in the second id space resolved the wrong city. `dim_city` is joined THROUGH '
+        + '`id_spaces` — `dc.id = isp.city_id` — so a join that resolves through one value labels '
+        + "every tree with the first city's name, which is an invented civic fact "
+        + '(DECISIONS constraint 15) on the one read surface cityName exists for.',
+    );
     // Each tree once, not once per id space. `cityNameSource` joins `id_spaces` on
     // `isp.id = t.id_space`; loosen that predicate and a one-id-space fixture cannot tell, because
     // there is nothing to duplicate against and `treeByUUID`'s LIMIT 1 hides the rest. Found by
