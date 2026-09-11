@@ -84,6 +84,23 @@ export const sourcesTheWebSuiteReads = [
   // The NYC Data Mine disclaimer the public page must render verbatim (R36 (b), R78 rulings 2
   // and 3). `web/test/obligations.test.ts` parses all three strings out of it at run time.
   'Cypress/Features/Cities/CityDownloadsPresentation.swift',
+  // ── W-C. The OpenGraph card is rasterized, and the rasterizer needs the faces as files ─────
+  //
+  // Not a port and not a parity check — the only entries here that are read as BYTES rather than
+  // parsed. `web/fonts/` is a checked-in copy of these five, because `@resvg/resvg-js` takes fonts
+  // as paths on disk and the image is built from a context of `web/`; `web/test/ogRaster.test.ts`
+  // hashes each copy against its original and fails on any difference.
+  //
+  // They belong on this list for the reason everything else on it does, and the reason is if
+  // anything sharper here: re-hinting a face changes the card's glyphs, touches no `web/` path,
+  // and would otherwise merge with the web suite never having started — surfacing later, as some
+  // unrelated web commit's fault. The rule is the one `web.yml` states: a file a web test opens is
+  // a file that triggers the web suite.
+  'Cypress/Resources/Fonts/AlegreyaSans-Bold.ttf',
+  'Cypress/Resources/Fonts/SourceSerif4-SemiBold.ttf',
+  'Cypress/Resources/Fonts/SourceSerif4-Italic.ttf',
+  'Cypress/Resources/Fonts/SplineSansMono-Regular.ttf',
+  'Cypress/Resources/Fonts/LICENSE.txt',
 ] as const;
 
 export function repoFile(relative: string): string {

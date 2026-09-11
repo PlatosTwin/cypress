@@ -90,6 +90,16 @@ on:
       - 'Cypress/Features/Site/SitePresentation.swift'
       # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
       - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
+      # ── W-C. The OpenGraph card is rasterized from font FILES ─────────────────────────────
+      # `web/fonts/` is a checked-in copy of these five, because `@resvg/resvg-js` takes fonts as
+      # paths on disk and this image is built from a context of `web/`. `web/test/ogRaster.test.ts`
+      # hashes each copy against its original: re-hint a face, touch no `web/` path, and without
+      # these lines the card's glyphs change with the web suite never having started.
+      - 'Cypress/Resources/Fonts/AlegreyaSans-Bold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-SemiBold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-Italic.ttf'
+      - 'Cypress/Resources/Fonts/SplineSansMono-Regular.ttf'
+      - 'Cypress/Resources/Fonts/LICENSE.txt'
   pull_request:
     branches: [main, 'release/**']
     paths:
@@ -145,6 +155,16 @@ on:
       - 'Cypress/Features/Site/SitePresentation.swift'
       # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
       - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
+      # ── W-C. The OpenGraph card is rasterized from font FILES ─────────────────────────────
+      # `web/fonts/` is a checked-in copy of these five, because `@resvg/resvg-js` takes fonts as
+      # paths on disk and this image is built from a context of `web/`. `web/test/ogRaster.test.ts`
+      # hashes each copy against its original: re-hint a face, touch no `web/` path, and without
+      # these lines the card's glyphs change with the web suite never having started.
+      - 'Cypress/Resources/Fonts/AlegreyaSans-Bold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-SemiBold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-Italic.ttf'
+      - 'Cypress/Resources/Fonts/SplineSansMono-Regular.ttf'
+      - 'Cypress/Resources/Fonts/LICENSE.txt'
   # The escape hatch, the same one `testflight.yml` keeps: a run by hand when a change elsewhere
   # (a Node bump, a lockfile audit) needs this suite run without touching a path above.
   workflow_dispatch:
