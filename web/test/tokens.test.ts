@@ -321,7 +321,7 @@ describe('the export against Cypress/DesignSystem/Tokens', () => {
       rendered === checkedIn,
       true,
       'web/src/styles/tokens.css no longer matches Cypress/DesignSystem/Tokens/*.swift.\n'
-        + 'Run Tools/export_tokens.mjs and commit the result. First differing line: '
+        + 'Run `npm run tokens` in web/ and commit the result. First differing line: '
         + firstDifference(checkedIn, rendered),
     );
   });
@@ -583,7 +583,7 @@ describe('web/src/styles/tokens.css', () => {
 
   it('says it is generated and names what regenerates it', () => {
     assert.ok(checkedIn.startsWith('/*\n * GENERATED FILE'));
-    assert.ok(checkedIn.includes('Tools/export_tokens.mjs'));
+    assert.ok(checkedIn.includes('web/scripts/export-tokens.mjs'));
   });
 
   it('carries no raw value the Swift does not declare', () => {

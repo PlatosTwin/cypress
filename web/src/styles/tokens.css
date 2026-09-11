@@ -1,9 +1,9 @@
 /*
  * GENERATED FILE — do not edit.
  *
- * Rendered from Cypress/DesignSystem/Tokens/*.swift by Tools/export_tokens.mjs.
- * web/test/tokens.test.ts re-runs that render against the Swift and fails when this file and
- * its source disagree, so an edit here is reverted by the next test run rather than kept.
+ * Rendered from Cypress/DesignSystem/Tokens/*.swift by web/scripts/export-tokens.mjs
+ * (`npm run tokens`). web/test/tokens.test.ts re-runs that render against the Swift and fails
+ * when this file and its source disagree, so an edit here is reverted by the next test run.
  *
  * Dark mode is a `prefers-color-scheme` block and nothing else, because that is what the Swift
  * declares: every paired token is `Color(UIColor { traits in traits.userInterfaceStyle == .dark })`,

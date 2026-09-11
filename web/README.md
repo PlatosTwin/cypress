@@ -30,7 +30,7 @@ As of W-A. Everything below was read from this directory, not remembered.
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
 | Pages | one placeholder at `/`. W1 is W-C |
-| Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `Tools/export_tokens.mjs` |
+| Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
@@ -135,14 +135,21 @@ fails a deploy halfway through creating the app.
 
 ## Design tokens (W-B)
 
-`src/styles/tokens.css` is **generated and checked in**. `Tools/export_tokens.mjs` reads
+`src/styles/tokens.css` is **generated and checked in**. `scripts/export-tokens.mjs` reads
 `Cypress/DesignSystem/Tokens/*.swift` and writes it; `test/tokens.test.ts` re-runs the same render
 and fails byte-for-byte when the two disagree. Do not edit the CSS — the next test run reverts it.
 
 ```sh
-Tools/export_tokens.mjs           # rewrite web/src/styles/tokens.css
-Tools/export_tokens.mjs --check   # exit 1 if it is stale (the test says the same thing, louder)
+npm run tokens         # rewrite src/styles/tokens.css
+npm run tokens:check   # exit 1 if it is stale (the test says the same thing, louder)
 ```
+
+The generator lives under `web/` rather than in `Tools/` because **both CI workflows classify by
+path**: `web.yml` runs on an allow-list and `testflight.yml`'s `WEB_ONLY` exempts the same set, and
+a script at `Tools/export_tokens.mjs` is in neither — a change to it alone would skip the web suite
+and run 34 minutes of `macos-26` that exercises nothing. Widening `WEB_ONLY` is the alternative and
+it is guarded by `CypressTests/DeployPathsAgreeTests`, so it is a change the **iOS** suite has to
+prove. Moving one file needs neither.
 
 **Why generated-and-checked-in rather than parsed at build time.** The Dockerfile copies
 `astro.config.mjs`, `tsconfig.json` and `src/` and nothing else — the Swift tree is not in the
