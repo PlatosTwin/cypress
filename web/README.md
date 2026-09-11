@@ -391,7 +391,7 @@ discovered later: `og.svg.ts` builds the card out of the same `TreePageModel` th
 which is what §W1's caption asks for, "rendered from the same three ingredients so the group-chat
 preview and the page agree" — but Facebook, X, Slack, iMessage and LinkedIn all want a raster.
 Rasterizing means a dependency, and this directory's discipline is zero extra runtime dependencies,
-so the choice is an owner's. It is chip backlog item 16.
+so the choice is an owner's. It is chip backlog item 24.
 
 **W1 is light-only on purpose.** Three of §W1's surfaces map to `lightOnly` tokens while the generic
 page tokens beside them are `dynamic`, so a dark rendering would be half of one palette over the

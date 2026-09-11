@@ -40,6 +40,13 @@ Each is **omitted**, not stubbed. There is no placeholder height, no greyed-out 
 `0 photos` — DECISIONS constraint 15 forbids inventing civic and botanical content, and an empty
 state drawn where the mock drew data is itself a screen nobody designed (constraint 21).
 
+**Two rows in that table stopped being unanswerable while this branch was in flight, and the branch
+did not notice until it merged `main`.** W-G's `GET /api/v1/public/trees/{id}` landed in #163 and
+publishes the latest live height and the latest live trunk DBH, each with its method and month, plus
+the beloved state. W1 does not call it. The table above is therefore accurate about **this page**
+and no longer accurate about **the system**: `Height` and a taped `Trunk · DBH` are available and
+unrendered, which is a different fact from unavailable. Chip backlog item 26.
+
 ### Four §W1 labels say more than the pack can support, and the page says less
 
 These are deviations from a transcribed mock, so they are written down rather than absorbed.

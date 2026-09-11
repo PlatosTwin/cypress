@@ -28,23 +28,29 @@ does rather than what the city failed to do: the receipt's silence is a fact abo
 pipeline, and a sentence implying a public works department withheld a license would assert
 something nobody measured. **Ratify, or replace the wording.**
 
-### The conflict: decision 1 says the community read comes first, and W-C built W1 without it
+### W-C shipped the pack half; W-G's endpoint landed while it was in flight
 
-`docs/rulings-pending/web-round-owner-decisions.md` records, as the round's **first** decision:
-"The public community read is built BEFORE W1, not after it", chosen over shipping the city-record
-spine with the contributed rows absent.
+**Written after merging `origin/main` into this branch, which is where the situation changed.** An
+earlier draft of this section reported a document conflict — the round's first owner decision says
+"the public community read is built BEFORE W1, not after it", while the W-C brief and
+`docs/ROADMAP.md`'s W-C row say "v1 renders city-record facts only". That framing is now obsolete
+and is not worth ratifying: **#163 merged, W-G is done, and the ordering the owner asked for was
+honored.** The two documents were describing two halves of one plan, not disagreeing.
 
-W-C's brief and `docs/ROADMAP.md`'s W-C row both say the opposite — "v1 renders city-record facts
-only" — and that is what this branch built. The page is therefore **the option the owner did not
-take**, shipped without the community read, and the two documents have been disagreeing since
-2026-09-10 without either being marked stale.
+So the honest statement of where this leaves W1 is a gap, not a contradiction:
 
-This branch followed the brief and the roadmap, conservatively: the contributed half is *omitted*
-rather than stubbed, so nothing on the page would have to be unsaid if the community read lands and
-the rows arrive. Nothing about the page's structure resists them — the fact column is a list the
-model builds, and a row absent for lack of a source looks identical to a row that has not been
-written yet.
+`GET /api/v1/public/trees/{id}` exists and this page does not call it. W-G's own ruling settles what
+it answers of §W1's fact column — the **latest live height** (value, entered unit, method, month),
+the **latest live trunk DBH** in the same shape, and the **beloved** state with its count above the
+floor. W1 therefore has three elements available to it today that this branch renders as absences,
+and `ROADMAP.md`'s W-G notes already assume the page will draw them ("Restoring the `Status` row on
+W1 depends on (a)").
 
-**What is wanted is one sentence saying which document is now current**, so the next round does not
-re-litigate it: either decision 1 stands and W1 is incomplete until the community read exists, or
-the roadmap's scoping supersedes it and decision 1 should be struck where it is recorded.
+That work is written into the chip backlog as item **26** rather than held here, because it is a
+task and not a decision. **What is a decision, and is the question:** does W-C count as done with
+the pack half alone — the roadmap row is struck on that basis — or should the row stay open until
+W1 renders what W-G publishes? Either answer is fine; the two documents should say the same one.
+
+Nothing in this branch resists the addition. The contributed elements are *omitted*, not stubbed, so
+no copy has to be unsaid; the fact column is a list `facts()` builds from a model, and a row absent
+for lack of a source is indistinguishable from a row not yet written.

@@ -133,7 +133,132 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /me/map-membership?kind=yours\|favorites` | Class R. |
 | `GET /trees/{id}` | The **community half** of `treeProfile`. R-required: this is the acceptance criterion's last mile. |
 | `GET /photos/{id}` | The photograph a device never wrote. |
+| `GET /public/trees/{id}` | **The only unauthenticated read.** The publicly visible community half of one tree — see below. |
 | `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
+
+### `GET /public/trees/{id}` is the one route with no credential, and what it may say is a ruling
+
+> **Corrected after this round's adversarial review; the wrong sentence is quoted rather than
+> deleted.** This section began *"Everything else here is Class R — the contributor's own data."*
+> **That is not true of `GET /trees/{id}` two rows up in the table.** `treeProfile`
+> (`internal/api/reads.go`) returns other contributors' publicly-visible photographs to **any**
+> authenticated caller for **any** tree, plus `photo_count` and `visit_count`. The next author to
+> rely on the sentence above would have concluded this service had never published one person's
+> record to another, and it has.
+
+Everything else here is either Class R — the contributor's own data — or, in the one case of
+`GET /trees/{id}`, cross-contributor behind a credential. **This route is different in the way that
+actually matters here: it answers somebody with no account at all**, on a page a search engine will
+index. What it returns was decided field by field in `docs/rulings-pending/public-tree-read.md`
+**before the handler was written**, against `SCREENS.md` §W1's fact column. The sentence the rest of
+it follows from:
+
+> The page publishes the state of the tree. It never publishes anybody's activity.
+
+…and a second one the review forced, which is a constraint rather than a principle:
+
+> This endpoint publishes nothing it cannot also un-publish.
+
+So it returns the latest reading per **measurement kind** — height and trunk DBH — each with its
+method and the **month** it was taken, plus a **beloved** boolean and, above the floor only, the
+number behind it. Nothing else. No count of anything else (ARCHITECTURE §5 rule 1 / DECISIONS §3
+constraint 1, the constraint form of D1, and the owner's refusal of tester report F16), no photograph
+or photo id (W-7, and `approval_reason = 'auto_approved_launch'` means "an account uploaded it", not
+"somebody looked at it"), no coordinate, no free text, no day-precision date, and no identifier of
+any contributor — `User.publicAttribution` is false by default, cannot be turned on anywhere in the
+app (E100), and `users` here has no column for it at all.
+
+**Two things are not what an earlier version of this file said, and both came out of the review:**
+
+- **No vitality rating.** It is a property of the tree and it passes every other test — and there is
+  no observation withdrawal anywhere in this system, no `moderation_state` on `contributions` and no
+  operator takedown, so a withdrawal aimed at a rating answers `applied` and the rating stays on an
+  indexed page. Adding the kind is a **migration**; the round that writes it restores the field, the
+  three guards that range-checked it against `Vitality.swift`, and the `Status` row on W1.
+- **"Latest per measurement series" was the wrong phrase**, in this file and in the code it
+  described. `DISTINCT ON (payload ->> 'kind')` groups on `MeasurementKind` (`dbh | height`), not on
+  `MeasurementSeries` (`measured | estimated`), so **a newer estimate does supersede an older taped
+  reading**. That is kept, because it is what the client does in all three places it picks a current
+  reading and no rule in the corpus states a precedence; what makes it honest is that the method
+  travels with the number. See `internal/store/public.go`.
+- **The `beloved` boolean and `beloved_by`** are R27.1's state, ruled onto this page by the owner on
+  2026-09-10 as a state and not a rank. Two further owner rulings that day changed both what is
+  counted and what travels, and the delta review of this PR is what forced each:
+
+  - **Only account-backed favorites count.** It was a count of favorite *owners*, and
+    `favorites_owner` makes an owner a user **or a device** — while `POST /devices/register` needs
+    no credential and mints one per UUID. Three unauthenticated requests set `beloved` on any tree
+    in the inventory, which D1's own reason for banning public counts names exactly. It counts
+    `count(DISTINCT user_id)` now. A device favorite keeps working, keeps syncing, and begins to
+    count when `claimDevice` re-homes it onto an account at sign-in.
+  - **The number rides along, above the floor.** R27.1 §1: *"Showing the number too is permitted and
+    preferred."* `beloved_by` carries it above the floor and is `null` below, so nought, one and two
+    stay one byte-identical answer — proved over a real socket, since a `ResponseRecorder` has no
+    `Content-Length`. A tree above the floor and one below are deliberately **not** identical; that
+    difference is the field.
+
+  **The cost the owner accepted, said plainly.** Reaching the floor needs three separate Apple
+  accounts to have favorited one tree. Accounts do work — `accountsAvailable` is true and
+  `POST /auth/oidc` is wired — but only the Apple route of screen 15's three does (R72 ruling 2
+  defers the magic link), favorites are device-scoped until somebody signs in, and the beta is
+  small. The web cannot help either — v1 omits `Sign in` from W1, because there is no web account and
+  this service cannot mint one for a browser — so every favorite that counts is one somebody made in
+  the iOS app while signed in. `beloved` may therefore be false on every tree for a while: this may
+  ship dormant. The
+  floor itself is R27.1's provisional ≥3 and is **not** measured — the round that measures the real
+  distribution may raise it, and may not lower it.
+
+Three mechanisms rather than three intentions, each with a test that goes red without it:
+
+- **An allow-list over `contributions.kind`.** Two of the seventeen values this tree declares are
+  readable by the public path; `withheldKinds` states the reason for every other one, and
+  `TestEveryContributionKindIsClassified` fails when a kind is in neither map. A deny-list here is
+  how `testflight.yml`'s path classifier came to treat a new top-level directory as "run everything
+  and ship a build".
+
+  **Two kinds are classified before their migration exists.** PR #159 adds `data_dispute` and
+  `data_dispute_withdrawal` in `migrations/005_data_dispute_kinds.sql`. The two PRs are independent,
+  so either merge order would have broken the other — #159 first blocks this one, this one first
+  turns the guard red on main. Both are classified now (withheld: an unadjudicated assertion about a
+  record, and a removal whose act is not public), and `kindsAwaitingTheirMigration` carries the
+  exemption. It cannot hide an unclassified kind, because the direction that matters — a declared
+  kind nobody has decided about — never consults it.
+
+  **The guard reads the whole migrations directory, and it did not always.** It read
+  `004_measurement_withdrawal_kind.sql` by hardcoded path while `loadMigrations` applies every `.sql`
+  in that directory, so the review added an eighteenth kind as `005_*.sql` and the guard stayed green
+  with an unclassified kind live in the schema. It now walks the directory in version order and takes
+  the last file that declares the vocabulary — which is the only way one can arrive, since an applied
+  migration is frozen. Two guards stand beside it:
+  `TestTheLiveSchemaAgreesWithTheMigrationFiles` asks the running database through `pg_constraint`,
+  parsing no SQL statement at all, and `TestSyncAcceptsEveryDeclaredContributionKind` holds
+  `syncKinds` — a third hand-written copy of the same vocabulary — against the same source.
+
+  **The two instruments were not as independent as that reads, and the delta review measured it.**
+  Both extracted values with one regexp, `'([a-z_]+)'`, which silently dropped any kind whose name
+  carried a **digit** — so the pair could agree with each other about a vocabulary neither of them
+  had read. A real eighteenth kind named `species_claim_v2`, applied to the live database and
+  classified nowhere, left all three guards green. No kind has ever carried a digit, so nothing
+  leaked; what was one naming convention away is the exact defect the directory walk above was filed
+  for. The class is `[a-z0-9_]+` now, the specimen directory carries a digit-bearing value, and the
+  red-proof is the reviewer's own case.
+- **Absent, empty and fully withdrawn are one answer** — 200 with a body byte-identical in all
+  three, and so is a tree held by one or two accounts — rather than the `not_found` the photo read
+  gives. A photo id is a private handle; a tree
+  UUID is public by design (it is the last path segment of every share link screen 10 produces), so
+  a 404 would answer the question that actually matters — does this tree have contributions? —
+  instead of avoiding it.
+- **Its own rate-limit budget** (`ratelimit.NewPublicRead`). The web is server-side rendered, so
+  every reader in the world arrives from one address; the phone's burst of 60 would throttle the
+  whole site to a page a second, which is `clientKey`'s own warning arriving from the other
+  direction.
+
+`Cache-Control: public, max-age=60` is the ceiling on how long a withdrawn value may survive
+downstream, chosen against the takedown route rather than against traffic.
+
+**No CORS, deliberately.** The web app renders on the server and calls this server-to-server. A
+later surface that calls it from browser JavaScript needs CORS *and* a fresh look at the budget
+above.
 
 ### `device_uuid` is a credential
 
@@ -375,6 +500,58 @@ would pass by being skipped on a machine with no network.
 
 ```sh
 CYPRESS_TEST_DATABASE_URL='postgres://…/postgres' go test ./...
+```
+
+**Count the skips before believing the green.** `go test ./...` prints `ok` for every package and
+exits 0 whether or not the SQL half ran, which is this project's signature failure mode in its Go
+dialect.
+
+> **The no-database figure here was wrong and it is corrected in place.** This paragraph read:
+> *"Measured on 2026-09-10 at commit `5b52b4e` + this round: **60 pass / 108 skip** with no database,
+> **191 pass / 0 skip** with one."* The second half reproduces exactly. **The first half is the
+> baseline tree's, labelled as this round's** — 60 + 108 = 168, which is the stated pre-round total,
+> and the review reproduced it by extracting `5b52b4e`'s `server/` and running it. It matters more
+> than a typo because the sentence after it is the calibration argument, and the calibration was
+> being made against the wrong reading. Independently reproduced twice since, by the review and by
+> this correction.
+
+Measured on 2026-09-11 at this round's head, on a throwaway Postgres: **67 pass / 134 skip / 0 fail**
+with no database, **201 pass / 0 skip / 0 fail** with one — so the move the instrument is reporting
+is **134 → 0**, not 108 → 0. (Counted with `grep -c -- '--- SKIP'`, which includes subtests; the
+top-level-only count is 129, and both are given because the two greps disagreeing is itself a thing
+worth knowing before quoting either.)
+
+**Every earlier figure in this round, in the order they were measured, because each supersedes the
+last and none of them is wrong for its own tree:**
+
+| tree | no database | with one |
+|---|---|---|
+| the PR head `afbb98d`, before its review's findings were fixed | 66 / 125 | 191 / 0 |
+| `d27766f`, after them — reproduced independently by the delta review | 67 / 131 | 198 / 0 |
+| this head, after the delta review's findings and the two owner rulings | 67 / 134 | 201 / 0 |
+
+The last move is **198 + 4 − 1 = 201**, and it is that for the stated reason. Four tests are
+genuinely new — `TestDeviceOnlyFavoritesDoNotReachTheFloor`,
+`TestASignedInDeviceFavoriteStartsCounting`, `TestTheFavoriteCountTravelsOnlyAboveTheFloor`,
+`TestBelowTheFloorIsOneAnswerOverRealHTTP` — one is genuinely gone
+(`TestNoFavoriteCountReachesThePublicRead`, whose assertion the owner's ruling reversed), and two are
+renames the code declares (`…ThreeDistinctOwners` → `…ThreeDistinctAccounts`, `…FiveKeys…` →
+`…SixKeys…`). All four new ones need a database, so the no-database skip count moves by the same
+net 3. The skip count is the reading that matters:
+
+```sh
+go test ./... -v 2>&1 | grep -c -- '--- SKIP'
+```
+
+A throwaway Postgres is one command, and it is what the numbers above were measured against:
+
+```sh
+docker run -d --name cypress-test-pg -e POSTGRES_PASSWORD=cypress -e POSTGRES_USER=cypress \
+    -e POSTGRES_DB=cypress -p 55433:5432 postgres:16-alpine
+# then wait for it, because `simctl`'s lesson applies to Postgres too:
+docker exec cypress-test-pg pg_isready -U cypress -d cypress
+CYPRESS_TEST_DATABASE_URL='postgres://cypress:cypress@127.0.0.1:55433/cypress?sslmode=disable' \
+    go test ./... -count=1
 ```
 
 There is deliberately no in-memory double behind the store. Claim idempotency, the #174 guard, the
