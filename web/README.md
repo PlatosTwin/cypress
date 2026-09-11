@@ -2,8 +2,10 @@
 
 **Astro + TypeScript, SSR on the Node adapter, self-hosted on Fly.** Opened 2026-09-10 by the
 owner; the authority is `docs/design-proposals/2026-09-10-web-version.md` and the queue underneath
-it is `docs/ROADMAP.md` section **W**. This directory is milestone **W-A**, the foundation: it
-builds, it is tested, and it renders one placeholder page.
+it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation — it builds, it is
+tested, and it renders one placeholder page. The **read layer** clause of **W-B** landed next and
+is described under "The read path" below; the other two W-B clauses (design tokens, the ported
+domain rules) are still open.
 
 **What v1 is** (ruling W-1): a public read surface. No login, no writes. The tree page, plus the
 `Explore` / `Species` / `Neighborhoods` / `Data & export` nav the spec draws.
@@ -30,12 +32,13 @@ As of W-A. Everything below was read from this directory, not remembered.
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
 | Pages | one placeholder at `/`. W1 is W-C |
+| Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
-tightly: it is in the standard library, which is what will make the Docker image simple when W-B
-opens a pack, and it is documented as experimental, which is what makes a floating Node tag a bad
-idea. Nothing here imports it yet.
+tightly: it is in the standard library, which is what keeps the Docker image simple now that the
+read layer opens packs, and it is documented as experimental, which is what makes a floating Node
+tag a bad idea. `src/lib/pack/` imports it; nothing else does.
 
 ## Running it
 
@@ -96,8 +99,17 @@ installs.
 ## CI
 
 `.github/workflows/web.yml`, on `ubuntu-latest`, triggered by `web/**`, the two harness scripts,
-and itself. It runs the same `Tools/run_web_tests.sh` an agent runs, keeps the log as an
-artifact for thirty days, and builds the Docker image without pushing it.
+itself, and **six files outside `web/` that the suite actually reads** — three Swift sources,
+`Tools/publish_cities.py`, and the two tracked files in `Fixtures/seed/`. It runs the same
+`Tools/run_web_tests.sh` an agent runs, keeps the log as an artifact for thirty days, and builds
+the Docker image without pushing it.
+
+Those six are not decoration. The list used to be three entries under a comment reading "a path
+outside `web/` cannot affect this app", which was true until a web test opened a Swift file — and
+a drift guard whose trigger excludes the file it guards is green on exactly the diff that breaks
+it. `test/pack-versions.test.ts` asserts that every out-of-`web/` file this suite reads is on both
+`paths:` lists and still exists. **The rule: a file a web test opens is a file that triggers the
+web suite.**
 
 **It is one half of a pair.** `.github/workflows/testflight.yml` classifies a `web/` change as
 `tests=false ships=false` — no iOS suite, no TestFlight build — and the notice it prints says so
@@ -132,13 +144,45 @@ to match the domain, because the domain can move and a Fly app name cannot.
 `fly.toml` deliberately declares **no `[mounts]`**. A mount naming a volume that does not exist
 fails a deploy halfway through creating the app.
 
-## The read path, when it arrives (W-B)
+## The read path (W-B)
 
 The web opens the **published city packs**, read-only, through the same schema the phone uses —
 decision W-5. Not Postgres, not browser-side SQLite over HTTP range requests. It reads
 `manifest-v2.json` the same way the app does, and refuses a pack whose `schema_version` is newer
 than it knows rather than guessing, which is the posture `SeedDatabase.newestKnownSchemaVersion`
 takes.
+
+`src/lib/pack/`, five modules, zero new dependencies:
+
+| | |
+|---|---|
+| `versions.ts` | The three version spaces, each written once and asserted against the Swift or Python it copies |
+| `seedSchema.ts` | `SeedSchema.introspect` ported — asks the file what it carries, never a version integer |
+| `pack.ts` | `openPack`, read-only and immutable, with `CityLibrary.validateCityFile`'s refusals |
+| `manifest.ts` | `CityManifest` ported — strict on `manifest_format`, tolerant of additive keys |
+| `queries.ts` | One tree by uuid, trees in a bounding box through the R\*Tree, counts, pack identity |
+
+**It never writes.** The open is `readOnly` *and* `mode=ro`, so a write is refused by SQLite
+rather than by a promise in a comment, and the suite asserts that on the real 103 MB seed as well
+as on fixtures.
+
+**It does not build `InventoryUnion`.** The phone attaches several packs at once with re-keyed
+species and composite ids because one device holds several cities; one pack at a time is what the
+web needs, and porting the union's identity arithmetic would import a hazard to solve a problem
+the web does not have.
+
+**What the suite proves without the 103 MB seed, which CI does not have.** Every claim about
+behavior is made against packs built at test time by *executing* `Fixtures/seed/schema.sql` — the
+repository's own generation-17 contract, which is tracked — at four generations, plus the live
+catalog captured verbatim as `test/support/manifest-v2.captured.json`. `test/pack-real-seed.test.ts`
+is an additional tier, not the only one: it covers scale and reality (198,625 real rows, a real
+R\*Tree, a real two-id-space file) and nothing that is covered *only* there. Without the seed those
+eight tests skip, loudly, and a census test that always runs asserts how many of them exist. **A
+seed that is present and is not the pinned one is a failure, not a skip** — `pinned-seed.json`'s
+size and sha256 are checked before a byte is believed.
+
+**The bundled seed is generation 16; every published pack is 17.** That is deliberate and it is why
+nothing here branches on a version integer. See the errata this round filed.
 
 **Three version spaces, and this file states none of their numbers.** The writable database's
 migration counter, the published seed's schema version and the manifest envelope format are
