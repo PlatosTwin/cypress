@@ -229,12 +229,19 @@ against the manifest, `count(*)` matching the manifest's tree count as the contr
   owner decision, not an implementation detail. The pack *does* answer the page's spine: address,
   city, species (though `common_name` is null on real rows), `planted_year`, `external_ref`,
   `inventory_source`, status, and the city's published DBH bucket.
-  **Answered by W-G, in part, and the part moved after its adversarial review.** The owner ordered
-  the public community read built first, and it exists: **height and trunk DBH** each reach W1 as a
-  value, its method and the month it was taken, and a **beloved** boolean reaches it too — a state
-  and not a rank, per the owner's ruling of 2026-09-10, true only above R27.1 §2's ≥3 floor. §W1
-  does not draw that one; it is the fact column being *longer* than its transcription in one place
-  while being shorter in three.
+  **Answered by W-G, in part, and the part moved twice — after its adversarial review and again
+  after the delta review of the fixes.** The owner ordered the public community read built first, and
+  it exists: **height and trunk DBH** each reach W1 as a value, its method and the month it was
+  taken, and a **beloved** boolean reaches it too — a state and not a rank, per the owner's ruling of
+  2026-09-10, true only above R27.1 §2's ≥3 floor. §W1 does not draw that one; it is the fact column
+  being *longer* than its transcription in one place while being shorter in three.
+  **Two further owner rulings of 2026-09-10 changed what that boolean means.** It counts only
+  **account-backed** favorites — the delta review showed the old count was farmable at three
+  unauthenticated `POST /devices/register` calls, which is D1's own stated reason for refusing public
+  counts — and the **number rides along above the floor** (`beloved_by`), per R27.1 §1. W1 must
+  therefore be prepared to draw "beloved by 7" as well as the bare state, and to draw nothing at all
+  below the floor: the floor may well be unreachable in the beta, which the ruling says plainly
+  rather than dressing up.
   **Vitality does not reach it**, though an earlier version of this bullet said it did: a published
   rating has no takedown route in this system, so it is deferred rather than refused (item 2 above).
   The recent-visits panel and the `214 PHOTOS SINCE 2019` count are refusals on the merits — things
@@ -907,6 +914,30 @@ into this section in the round that finds it, and nowhere else. Each item stands
     a request it watched arrive. **It is moot if the answer to the ruling's Q4 is "SSR-only"**, so
     do them together: decide Q4 first, and if the endpoint stays internet-facing, make the trust
     explicit and prove it against a real Fly request rather than from documentation.
+16. **A `/* … */` decoy after the real declaration defeats the migration-file kind extractor.**
+    Raised by the delta review of PR #163. `contributionKindsFromMigrations` strips only lines that
+    *begin* with `--`, so a migration whose real `ADD CONSTRAINT` is followed by a block-commented
+    older draft yields the **draft's** vocabulary — measured as `[visit never_a_kind]` where the
+    answer is `[visit the_real_answer]`. Not a hole today: `TestTheLiveSchemaAgreesWithTheMigrationFiles`
+    catches it loudly, because the live schema and the file reader stop agreeing. But
+    `TestContributionKindExtractorIsCalibrated`'s specimens cover only `--` prose, so the shape is
+    untested, and the round that fixes it should add a `/* … */` specimen rather than only the strip.
+17. **Delete `kindsAwaitingTheirMigration` when PR #159's `005_data_dispute_kinds.sql` lands.**
+    PR #163 classifies `data_dispute` and `data_dispute_withdrawal` before their migration exists,
+    so neither PR's merge order breaks the other's guard. The map in `server/internal/api/public.go`
+    exempts them from "a classified kind must be a declared kind" until 005 arrives. It cannot hide
+    an unclassified kind — the safety-critical direction never reads it — so its expiry is a
+    **`t.Logf`, not a failure**, deliberately: failing would trade one red-on-main for another.
+    That is why this item exists rather than a test. One deletion, two entries, in the round that
+    merges 005 or the one after it.
+18. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
+    R27.1 asks for it in as many words — *"count it, do not guess it"* — and PR #163 shipped
+    R27.1's inherited ≥3 because the attempt to read the production distribution was refused before
+    a query ran. The floor may be raised by a measuring round and may not be lowered. Pair it with
+    the observation that since the 2026-09-10 ruling only **account-backed** favorites count, so the
+    distribution to measure is over `favorites.user_id`, not over all owners — and the answer may
+    well be that no tree in the beta reaches any floor at all, which is a finding rather than a
+    failure.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

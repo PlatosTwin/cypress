@@ -65,7 +65,7 @@ because it is the only drawn specification of this page that exists.
 | `Status` · `Thriving · vitality 4` | ~~**Returned** — the latest live rating, 1–5, month-dated~~ **Not returned** | **Changed after review.** It is a property of the tree and it passes the rule above — but it has no takedown route, so it fails the second rule §8 grew. |
 | `Height` · `18 m` `est.` | **Returned** — latest live reading: value, entered unit, method, month | A property of the tree; D7 makes the method part of it. |
 | `Trunk · DBH` · `64 cm` `taped` | **Returned**, same shape | Same. The *city's* DBH bucket is the pack's, not this. |
-| *Beloved* — not drawn in §W1 | **Returned** as a boolean, at ≥3 distinct owners | Owner ruling, 2026-09-10: the beloved state ships, as a state and not a rank (§1a). |
+| *Beloved* — not drawn in §W1 | **Returned** as a boolean at ≥3 distinct **account-backed** owners, ~~and the count never travels~~ **with the count beside it above the floor** | Owner ruling, 2026-09-10: the beloved state ships, as a state and not a rank (§1a). Two further rulings the same day, after the delta review: the count is of accounts only, and the number rides along above the floor (§1a). |
 | Caption · `214 PHOTOS SINCE 2019` | **Not returned** | A public count of photographs. |
 | Foliage strip | **Not returned** | Species phenology; it comes from the pack. |
 | `Recent visits` panel | **Not returned** | Three independent grounds, below. |
@@ -168,15 +168,46 @@ owner overruled is a decision and deleting it would hide one.
 
 The shape, and every clause of it is load-bearing:
 
-- **A boolean, never the number.** R27.1 §1 permits the number — *"Showing the number too is
-  permitted and preferred"* — and this publishes less than permitted. Two reasons. §1's permission is
-  reasoning about a **ranking**, where showing an order while hiding the count is the worst of both
-  because the reader infers a number anyway and cannot tell how thin the margin is; there is no
-  ranking on a single tree's page and therefore no margin to misjudge. And this ruling's §1 refuses
-  every count on this page, so publishing one here would need §1 rewritten rather than read around.
-  Whether the number should ride along after all is **Q6** below.
-- **True only at three or more distinct favorite owners.** R27.1 §2's floor, unchanged and not
-  negotiable downward.
+- ~~**A boolean, never the number.**~~ **The state, and above the floor the number too.** The
+  paragraph that stood here argued for the boolean alone: §1's permission is reasoning about a
+  **ranking**, where showing an order while hiding the count is the worst of both because the reader
+  infers a number anyway and cannot tell how thin the margin is; there is no ranking on a single
+  tree's page and therefore no margin to misjudge — and this ruling's §1 refuses every count on this
+  page. **The owner overruled it on 2026-09-10, after the delta review, answering Q6 against its
+  recommendation:** the number publishes, per R27.1 §1's *"Showing the number too is permitted and
+  preferred"*. The argument is kept above rather than deleted, because a recommendation the owner
+  overruled is a decision and deleting it would hide one.
+
+  The clause that makes it safe is **above the floor only**. Below the floor `beloved_by` is null,
+  not nought: a number under a k-anonymity threshold is precisely the disclosure the threshold
+  exists to prevent, and `1` would be one person's private bookmark published as a digit. So §1's
+  refusal of counts is **narrowed rather than read around** — it still refuses photographs, visits,
+  contributors and readings, none of which has a floor available to it, which is §1's actual
+  argument.
+- ~~**True only at three or more distinct favorite owners.**~~ **True only at three or more distinct
+  account-backed owners**, and the change is the second owner ruling of 2026-09-10.
+
+  **The floor as first shipped was farmable by somebody with no account at all, and the delta review
+  demonstrated it end to end.** `favorites_owner` makes each row exactly one owner — a user *or a
+  device* — and `POST /devices/register` takes no credential and mints a fresh device, therefore a
+  fresh owner, per UUID handed to it. Three unauthenticated calls set `beloved` on any tree in the
+  inventory. The paragraph below called this "slightly weaker than three *people*, never stronger",
+  which was true and far too mild: **owners could be minted without a person or an account
+  existing**, and D1's whole stated reason for refusing public counts is that a count is farmable.
+
+  Only `favorites.user_id` counts now. A device-only favorite is unaffected everywhere else: it is
+  stored, it syncs, it draws the heart, and `claimDevice` re-homes it onto an account at sign-in — at
+  which point it begins to count. Minting an account costs Sign in with Apple, a real identity Apple
+  rate-limits; minting a device costs one HTTP request.
+
+  **The cost of this is real and the owner accepted it, so it is written plainly rather than
+  dressed up.** Reaching the floor now needs three separate Apple accounts to have favorited one
+  tree. Accounts do work today — `BetaCapability.accountsAvailable` is `true` and `POST /auth/oidc`
+  is wired (E124, #158) — but only the Apple route of screen 15's three does, R72 ruling 2 having
+  deferred the magic link; favorites are device-scoped until somebody signs in; and the beta's
+  population is small. **`beloved` may therefore be false on every tree in the inventory for a
+  while, and this field may ship dormant.** That is the trade: a state that is rarely true is worth
+  more than a state anybody with a shell script can set.
 - **It is a state, so PRODUCT's non-goal is not merely dodged but unmet.** The non-goals table
   forbids *"**Leaderboards or ranked counts** of photos/check-ins/care/favorites"* by name, and that
   row has never been struck or annotated for R27.1 — the tension between it and R27.1 §1's ordered
@@ -199,11 +230,20 @@ DECISIONS' caretakers precedent, and says so rather than presenting an unchanged
 finding. **The round that measures it may raise the floor; it may not lower it.** R27.1's other
 closing warning applies to a *ranking* at beta volumes and not to a state, which does not reshuffle.
 
-**One honest limitation, because the count is what the floor is made of.** `favorites` is keyed one
-row per **owner** per tree, and an owner is a user *or* a device (`favorites_owner`). One person
-holding a tree on a signed-out phone and a signed-in one is two owners. That makes the floor slightly
-weaker than three *people*, never stronger. Raising it is a data question and is part of what the
-measuring round should answer.
+> **The paragraph this replaces, kept because it is the mistake.** *"One honest limitation, because
+> the count is what the floor is made of. `favorites` is keyed one row per **owner** per tree, and an
+> owner is a user *or* a device (`favorites_owner`). One person holding a tree on a signed-out phone
+> and a signed-in one is two owners. That makes the floor slightly weaker than three people, never
+> stronger."* Every sentence in it is true, and together they state the defect as a rounding error.
+> The property it does not say is the one that matters: an owner could be minted **with no account
+> in existence**, three requests at a time. Disclosing a weakness in terms that make it sound like
+> a modelling nicety is not disclosure.
+
+**The limitation that remains, and it runs the other way.** The count is of **accounts**, so one
+person holding two Apple IDs is two of them. That is a smaller gap than the one it replaced and it
+costs an Apple account rather than an HTTP request, and nobody without an account can move the
+number at all. Whether ≥3 is the right threshold against the real distribution is still Q7's, and is
+part of what the measuring round should answer.
 
 **And it is the only publishable fact here whose way down is complete**, which is why it survived the
 narrowing §8 forced on the vitality rating. Un-favoriting is an ordinary toggle with a real off state
@@ -523,9 +563,11 @@ not read this file.
 | `species_claim`, `species_correction` | withheld | unadjudicated assertions; 002 declines to materialize the chain, and *"never displays as official until verified"* |
 | `wrong_species_report`, `never_existed_report` | withheld | unadjudicated accusations |
 | `species_review_dismissal`, `record_review_dismissal` | withheld | moderation bookkeeping |
-| `photo_vote` | withheld | a count of user actions. (R72 §5's *"a photo vote is not a report"* is about hero selection versus safety reporting and is **not** authority for withholding it here; cited earlier for a proposition it does not carry, corrected after review.) |
+| `photo_vote` | withheld | a count of user actions. (R72 §5's *"a photo vote is not a report"* is about hero selection versus safety reporting and is **not** authority for withholding it here; cited earlier for a proposition it does not carry, corrected after review — **and the delta review found `public.go` had not followed the correction, so it is corrected there too**.) |
 | `photo_withdrawal`, `measurement_withdrawal` | withheld | removals; the effect is visible, the act is not |
 | `hazard_redirect` | **withheld, absolutely** | see below |
+| `data_dispute` | withheld | an unadjudicated assertion about a record — the class `species_claim` and the two reports are in, and nothing in this system adjudicates it. Classified here **before its migration merges**; see below |
+| `data_dispute_withdrawal` | withheld | a removal; the effect is visible, the act is not. Publishing one republishes the claim it takes back, which is E280 |
 
 **`hazard_redirect` is the one with a pre-existing invariant attached to it.** DECISIONS §3.4:
 *"Hazard categories never produce a public note, never produce a community-visible record, and never
@@ -538,11 +580,52 @@ and corrected in `public.go`, which had rendered the rationale cell as *"Never."
 document does not have. (PRODUCT has a **second** hazard row at `:44`, about reports being accepted
 in-app; they are different rules and "the hazard row" names neither on its own.)
 
+> **This sentence was false when it was written, and the delta review caught it.** It claimed the
+> correction had been made in `public.go`; `public.go:205` and `public_test.go:495` were
+> byte-identical to `afbb98d` and still carried the misquote. It is true now — both sites reproduce
+> the row as a row — and the sentence is left standing with this note beside it rather than quietly
+> becoming true, because a ruling asserting a fact about the diff it ships in, wrongly, is the exact
+> failure this round's own thesis is about.
+
 Until this round there was no public surface query in the system, so that invariant test had no
 subject. It has one now, and the round writes it — and re-proved it after `vitality` left the
 response, because the payload the guard leans on had been given a rating *and* a quantity precisely
 so the widening would be observable, and removing one of the two could have reopened the
 green-with-the-defect-present hole. It did not: the quantity half still goes red.
+
+**Two kinds are classified before their migration exists, and the reason is an ordering problem with
+no safe order.** PR #159 (`server/data-dispute-kinds`) widens `contributions.kind` by `data_dispute`
+and `data_dispute_withdrawal` in `migrations/005_data_dispute_kinds.sql`, dropping
+`contributions_kind_admits_a_withdrawn_reading` and adding
+`contributions_kind_admits_a_disputed_record`. The two PRs are independent and either can land first:
+if #159 lands first this one cannot merge until it classifies both, and if this one lands first
+#159's merge turns `TestEveryContributionKindIsClassified` **red on main** for a change that did
+nothing wrong. Classifying both now removes the ordering entirely.
+
+Both are plainly withheld and neither is a close call. A dispute says *this city record is wrong*:
+it is an unadjudicated assertion about a record, which is the class `species_claim`,
+`wrong_species_report` and `never_existed_report` are already in, and nothing in this system
+adjudicates any of them. The withdrawal is refused for `photo_withdrawal`'s reason — publishing a
+withdrawal republishes the claim it takes back, which is E280, and `005`'s own header warns the
+round that serves a dispute back about exactly that.
+
+`kindsAwaitingTheirMigration` carries the exemption, and it is bounded in the direction that
+matters: it excuses only a *classification with no declaration yet*, never a declaration with no
+classification. The loop that catches an unclassified kind does not consult it at all, so the
+exemption cannot hide anything. When 005 lands the entry excuses nothing; the guard says so in its
+log rather than failing, because failing would be trading one red-on-main for another, and the
+deletion is written into `docs/ROADMAP.md` so it is somebody's rather than a log nobody reads.
+
+**And the two instruments that read this vocabulary were less independent than §10 claimed.**
+`TestTheLiveSchemaAgreesWithTheMigrationFiles` is argued above as a second instrument that parses
+nothing. It parses no SQL *statement* — but it extracted quoted values with the same regexp the file
+reader uses, and that pattern was `'([a-z_]+)'`, which **silently drops any value whose name carries
+a digit**. So the two instruments could agree with each other about a vocabulary neither of them had
+read. The delta review measured it: a real eighteenth kind named `species_claim_v2`, applied to the
+live database and classified nowhere, left all three guards green. No kind has ever carried a digit
+and the allow-list means an unseen kind is withheld rather than leaked, so nothing was exposed —
+what was lost is the **ordering** the guard exists to buy, which is the same thing B1 was filed for.
+The class is `[a-z0-9_]+` now and the calibration specimen carries a digit-bearing value.
 
 ---
 
@@ -696,14 +779,25 @@ still undrawn and still worth putting to design.
 *The three questions below arrived with the adversarial review and did not exist when this ruling was
 first written.*
 
-**Q6 · Does the beloved *count* ride along with the state?**
-*Recommended: no, ship the boolean alone.* R27.1 §1 permits the number and prefers it — but it is
-reasoning about a ranking, where an order without a count is the worst of both, and there is no
-ranking on one tree's page. §1 of this ruling refuses every count on this page, and publishing one
+**Q6 · Does the beloved *count* ride along with the state? — ANSWERED: yes, above the floor**
+(owner, 2026-09-10, after the delta review). Built as §1a describes: `beloved_by` carries the number
+above the floor and is `null` below it. The recommendation below is left standing because the owner
+overruled it, and a recommendation that was overruled is a decision.
+
+*Recommended (not taken): no, ship the boolean alone.* R27.1 §1 permits the number and prefers it —
+but it is reasoning about a ranking, where an order without a count is the worst of both, and there is
+no ranking on one tree's page. §1 of this ruling refuses every count on this page, and publishing one
 would need §1 rewritten rather than read around. **Trade-off:** "beloved" is a coarser fact than "11
 people keep this tree", and the number is the more interesting sentence to read. Against that, a
 number is farmable in a way a floored boolean is not, which is D1's whole reason, and the floor is
 currently a guess (Q7) — a number resting on an unmeasured threshold overstates its own precision.
+
+> **The farmability half of that trade-off was not hypothetical and was pointing the wrong way.** It
+> argued that a *number* is farmable where a floored *boolean* is not. The delta review showed the
+> boolean was farmable too, at three unauthenticated device registrations — so the protection was
+> never the boolean's coarseness, and §1a's second ruling is what actually supplies it. §1 is
+> narrowed rather than rewritten: it refuses every count that has no floor available to it, which
+> is every other count on this page.
 
 **Q7 · Choose the beloved floor from measured data, or keep R27.1's ≥3?**
 *Recommended: ship ≥3 now, measure before raising, never lower.* R27.1 asks for the real distribution

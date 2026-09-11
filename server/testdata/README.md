@@ -41,9 +41,16 @@ client-owned Swift type speaks that type's keys and everything else speaks the A
 
 **What the web owes them instead:** the round that builds W1 reads these files as its own fixtures,
 so a change to either moves both ends. `public_tree_empty.json` is not a curiosity — it is the answer
-for a tree this database has never heard of, for a tree whose contributions are all withdrawn, and
-for a tree that simply has none, byte-identical in all three. The page renders it, and it must render
-it as "nothing is known here" rather than as an error.
+for a tree this database has never heard of, for a tree whose contributions are all withdrawn, for a
+tree that simply has none, **and for a tree one or two accounts have favorited**, byte-identical in
+all four. The page renders it, and it must render it as "nothing is known here" rather than as an
+error.
+
+`beloved_by` is `null` in that file and `3` in `public_tree.json`, and the difference is the whole
+of the beloved floor: the number publishes only above it, so a null there means "fewer than three,
+and this service will not say which". A web page that rendered `beloved_by` as `0` would be inventing
+the fact the floor withholds. `public_tree.json` is seeded with three accounts **and one device**
+favorite; it reads `3`, which is the owner ruling of 2026-09-10 visible in the fixture itself.
 
 ## The key convention, because it is not uniform and the non-uniformity is deliberate
 

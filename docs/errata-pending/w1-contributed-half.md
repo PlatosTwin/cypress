@@ -112,8 +112,15 @@ draws nothing where `Status` is, and this is a **deferral**, not a refusal on th
 
 **Resolution: build W1 without the panel, without the count and without the `Status` row**, and take
 the H1 to the owner. §W1 gains one element it does not draw — the **beloved** state, ruled by the
-owner on 2026-09-10 and returned as a boolean above a ≥3 floor — so the fact column is short of its
-transcription in three places and long in one. The argument for each is in
+owner on 2026-09-10 and returned as a boolean above a ≥3 floor of **account-backed** favorites, with
+the count (`beloved_by`) beside it above that floor and `null` below — so the fact column is short of
+its transcription in three places and long in one.
+
+**Note for whoever draws it.** The state may simply never be true in the beta: the floor needs three
+separate accounts, only Sign in with Apple works among screen 15's three routes (R72 ruling 2), and
+favorites are device-scoped until somebody signs in. W1 must draw "nothing is known about who keeps
+this tree" as its ordinary case, not as a degradation — the house rule this page already follows for
+every other absent fact. The argument for each is in
 `docs/rulings-pending/public-tree-read.md` §1, §1a, §2 and §8, and the owner is asked to ratify the
 two refusals and to answer the H1 in that file's questions. Recorded here rather than
 only there because the next reader to open §W1 and count six fact rows plus a visits panel against a

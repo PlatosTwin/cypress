@@ -160,13 +160,13 @@ it follows from:
 > This endpoint publishes nothing it cannot also un-publish.
 
 So it returns the latest reading per **measurement kind** — height and trunk DBH — each with its
-method and the **month** it was taken, plus a **beloved** boolean, and nothing else. No count of
-anything (ARCHITECTURE §5 rule 1 / DECISIONS §3 constraint 1, the constraint form of D1, and the
-owner's refusal of tester report F16), no photograph or photo id (W-7, and `approval_reason =
-'auto_approved_launch'` means "an account uploaded it", not "somebody looked at it"), no coordinate,
-no free text, no day-precision date, and no identifier of any contributor — `User.publicAttribution`
-is false by default, cannot be turned on anywhere in the app (E100), and `users` here has no column
-for it at all.
+method and the **month** it was taken, plus a **beloved** boolean and, above the floor only, the
+number behind it. Nothing else. No count of anything else (ARCHITECTURE §5 rule 1 / DECISIONS §3
+constraint 1, the constraint form of D1, and the owner's refusal of tester report F16), no photograph
+or photo id (W-7, and `approval_reason = 'auto_approved_launch'` means "an account uploaded it", not
+"somebody looked at it"), no coordinate, no free text, no day-precision date, and no identifier of
+any contributor — `User.publicAttribution` is false by default, cannot be turned on anywhere in the
+app (E100), and `users` here has no column for it at all.
 
 **Two things are not what an earlier version of this file said, and both came out of the review:**
 
@@ -181,18 +181,45 @@ for it at all.
   reading**. That is kept, because it is what the client does in all three places it picks a current
   reading and no rule in the corpus states a precedence; what makes it honest is that the method
   travels with the number. See `internal/store/public.go`.
-- **The `beloved` boolean** is R27.1's state, ruled onto this page by the owner on 2026-09-10 as a
-  state and not a rank. True only at three or more distinct favorite owners, and the count itself
-  never travels. The floor is R27.1's provisional ≥3 and is **not** measured — the round that
-  measures the real distribution may raise it.
+- **The `beloved` boolean and `beloved_by`** are R27.1's state, ruled onto this page by the owner on
+  2026-09-10 as a state and not a rank. Two further owner rulings that day changed both what is
+  counted and what travels, and the delta review of this PR is what forced each:
+
+  - **Only account-backed favorites count.** It was a count of favorite *owners*, and
+    `favorites_owner` makes an owner a user **or a device** — while `POST /devices/register` needs
+    no credential and mints one per UUID. Three unauthenticated requests set `beloved` on any tree
+    in the inventory, which D1's own reason for banning public counts names exactly. It counts
+    `count(DISTINCT user_id)` now. A device favorite keeps working, keeps syncing, and begins to
+    count when `claimDevice` re-homes it onto an account at sign-in.
+  - **The number rides along, above the floor.** R27.1 §1: *"Showing the number too is permitted and
+    preferred."* `beloved_by` carries it above the floor and is `null` below, so nought, one and two
+    stay one byte-identical answer — proved over a real socket, since a `ResponseRecorder` has no
+    `Content-Length`. A tree above the floor and one below are deliberately **not** identical; that
+    difference is the field.
+
+  **The cost the owner accepted, said plainly.** Reaching the floor needs three separate Apple
+  accounts to have favorited one tree. Accounts do work — `accountsAvailable` is true and
+  `POST /auth/oidc` is wired — but only the Apple route of screen 15's three does (R72 ruling 2
+  defers the magic link), favorites are device-scoped until somebody signs in, and the beta is
+  small. `beloved` may therefore be false on every tree for a while: this may ship dormant. The
+  floor itself is R27.1's provisional ≥3 and is **not** measured — the round that measures the real
+  distribution may raise it, and may not lower it.
 
 Three mechanisms rather than three intentions, each with a test that goes red without it:
 
-- **An allow-list over `contributions.kind`.** Two of the seventeen values are readable by the
-  public path; `withheldKinds` states the reason for the other fifteen, and
+- **An allow-list over `contributions.kind`.** Two of the seventeen values this tree declares are
+  readable by the public path; `withheldKinds` states the reason for every other one, and
   `TestEveryContributionKindIsClassified` fails when a kind is in neither map. A deny-list here is
   how `testflight.yml`'s path classifier came to treat a new top-level directory as "run everything
   and ship a build".
+
+  **Two kinds are classified before their migration exists.** PR #159 adds `data_dispute` and
+  `data_dispute_withdrawal` in `migrations/005_data_dispute_kinds.sql`. The two PRs are independent,
+  so either merge order would have broken the other — #159 first blocks this one, this one first
+  turns the guard red on main. Both are classified now (withheld: an unadjudicated assertion about a
+  record, and a removal whose act is not public), and `kindsAwaitingTheirMigration` carries the
+  exemption. It cannot hide an unclassified kind, because the direction that matters — a declared
+  kind nobody has decided about — never consults it.
 
   **The guard reads the whole migrations directory, and it did not always.** It read
   `004_measurement_withdrawal_kind.sql` by hardcoded path while `loadMigrations` applies every `.sql`
@@ -201,10 +228,20 @@ Three mechanisms rather than three intentions, each with a test that goes red wi
   the last file that declares the vocabulary — which is the only way one can arrive, since an applied
   migration is frozen. Two guards stand beside it:
   `TestTheLiveSchemaAgreesWithTheMigrationFiles` asks the running database through `pg_constraint`,
-  parsing no SQL at all, and `TestSyncAcceptsEveryDeclaredContributionKind` holds `syncKinds` — a
-  third hand-written copy of the same seventeen values — against the same source.
+  parsing no SQL statement at all, and `TestSyncAcceptsEveryDeclaredContributionKind` holds
+  `syncKinds` — a third hand-written copy of the same vocabulary — against the same source.
+
+  **The two instruments were not as independent as that reads, and the delta review measured it.**
+  Both extracted values with one regexp, `'([a-z_]+)'`, which silently dropped any kind whose name
+  carried a **digit** — so the pair could agree with each other about a vocabulary neither of them
+  had read. A real eighteenth kind named `species_claim_v2`, applied to the live database and
+  classified nowhere, left all three guards green. No kind has ever carried a digit, so nothing
+  leaked; what was one naming convention away is the exact defect the directory walk above was filed
+  for. The class is `[a-z0-9_]+` now, the specimen directory carries a digit-bearing value, and the
+  red-proof is the reviewer's own case.
 - **Absent, empty and fully withdrawn are one answer** — 200 with a body byte-identical in all
-  three — rather than the `not_found` the photo read gives. A photo id is a private handle; a tree
+  three, and so is a tree held by one or two accounts — rather than the `not_found` the photo read
+  gives. A photo id is a private handle; a tree
   UUID is public by design (it is the last path segment of every share link screen 10 produces), so
   a 404 would answer the question that actually matters — does this tree have contributions? —
   instead of avoiding it.
@@ -475,14 +512,29 @@ dialect.
 > being made against the wrong reading. Independently reproduced twice since, by the review and by
 > this correction.
 
-Measured on 2026-09-10 at this round's head, on a throwaway Postgres: **67 pass / 131 skip / 0 fail**
-with no database, **198 pass / 0 skip / 0 fail** with one — so the move the instrument is reporting
-is **131 → 0**, not 108 → 0. (Counted with `grep -c -- '--- SKIP'`, which includes subtests; the
-top-level-only count is 126, and both are given because the two greps disagreeing is itself a thing
-worth knowing before quoting either. The review, and this correction's first pass, measured
-**66 / 125** and **191 / 0** at the PR head before the review's own findings were fixed; the nine
-tests those fixes added and the two they removed account for the difference exactly, which is the
-only reason to trust either reading.) The skip count is the reading that matters:
+Measured on 2026-09-11 at this round's head, on a throwaway Postgres: **67 pass / 134 skip / 0 fail**
+with no database, **201 pass / 0 skip / 0 fail** with one — so the move the instrument is reporting
+is **134 → 0**, not 108 → 0. (Counted with `grep -c -- '--- SKIP'`, which includes subtests; the
+top-level-only count is 129, and both are given because the two greps disagreeing is itself a thing
+worth knowing before quoting either.)
+
+**Every earlier figure in this round, in the order they were measured, because each supersedes the
+last and none of them is wrong for its own tree:**
+
+| tree | no database | with one |
+|---|---|---|
+| the PR head `afbb98d`, before its review's findings were fixed | 66 / 125 | 191 / 0 |
+| `d27766f`, after them — reproduced independently by the delta review | 67 / 131 | 198 / 0 |
+| this head, after the delta review's findings and the two owner rulings | 67 / 134 | 201 / 0 |
+
+The last move is **198 + 4 − 1 = 201**, and it is that for the stated reason. Four tests are
+genuinely new — `TestDeviceOnlyFavoritesDoNotReachTheFloor`,
+`TestASignedInDeviceFavoriteStartsCounting`, `TestTheFavoriteCountTravelsOnlyAboveTheFloor`,
+`TestBelowTheFloorIsOneAnswerOverRealHTTP` — one is genuinely gone
+(`TestNoFavoriteCountReachesThePublicRead`, whose assertion the owner's ruling reversed), and two are
+renames the code declares (`…ThreeDistinctOwners` → `…ThreeDistinctAccounts`, `…FiveKeys…` →
+`…SixKeys…`). All four new ones need a database, so the no-database skip count moves by the same
+net 3. The skip count is the reading that matters:
 
 ```sh
 go test ./... -v 2>&1 | grep -c -- '--- SKIP'
