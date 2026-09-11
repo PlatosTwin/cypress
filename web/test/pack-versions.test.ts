@@ -255,7 +255,16 @@ const READ_FROM_OUTSIDE_WEB: readonly string[] = [
 describe('the workflow triggers on every file this suite reads', () => {
   const workflow = read('.github/workflows/web.yml');
 
-  /** The quoted entries under a `paths:` key, per block. One list per trigger. */
+  /**
+   * The quoted entries under a `paths:` key, per block. One list per trigger.
+   *
+   * An entry may carry a trailing `#` comment, and this parser has to read one — `web.yml`
+   * annotates several of its entries with the test that reads them. The end-anchored form this
+   * started as matched neither branch below on such a line, so the line fell through to the
+   * termination rule and silently ENDED the block: every entry after the first annotated one
+   * became invisible, and the block-count control above still saw its two blocks. The `#` is
+   * matched only OUTSIDE the quotes, so a path that contains one is still a path.
+   */
   function pathBlocks(yaml: string): readonly (readonly string[])[] {
     const blocks: string[][] = [];
     let current: string[] | null = null;
@@ -266,7 +275,7 @@ describe('the workflow triggers on every file this suite reads', () => {
         continue;
       }
       if (current === null) continue;
-      const entry = /^\s*-\s*'([^']+)'\s*$/.exec(line);
+      const entry = /^\s*-\s*'([^']+)'\s*(?:#.*)?$/.exec(line);
       if (entry?.[1] !== undefined) {
         current.push(entry[1]);
         continue;
@@ -278,13 +287,21 @@ describe('the workflow triggers on every file this suite reads', () => {
   }
 
   it('the paths: parser reads a block and stops at the end of it', () => {
-    // Specimen first, answer known before the parser saw it — including the two traps: a comment
-    // between entries, and a following key whose value is also a quoted string.
+    // Specimen first, answer known before the parser saw it — including the four traps: a comment
+    // between entries, an entry carrying a TRAILING comment, an entry whose quoted path contains
+    // a `#`, and a following key whose value is also a quoted string.
+    //
+    // The trailing-comment entry is placed BEFORE another entry on purpose. The failure it guards
+    // is not that the annotated line is dropped — it is that a line matching neither branch ends
+    // the block, so everything after it disappears too. `Tools/x.sh` is what says so, and
+    // `'docs/a#b.md'` is what stops the fix from being "cut each line at the first #".
     const specimen = [
       '  push:',
       '    paths:',
       "      - 'web/**'",
+      "      - 'Cypress/DesignSystem/Tokens/**'   # named with the test that reads it",
       '      # a comment inside the list',
+      "      - 'docs/a#b.md'",
       "      - 'Tools/x.sh'",
       '  pull_request:',
       "    branches: ['main']",
@@ -293,7 +310,10 @@ describe('the workflow triggers on every file this suite reads', () => {
     ].join('\n');
     assert.deepEqual(
       pathBlocks(specimen).map((block) => [...block]),
-      [['web/**', 'Tools/x.sh'], ['web/**']],
+      [
+        ['web/**', 'Cypress/DesignSystem/Tokens/**', 'docs/a#b.md', 'Tools/x.sh'],
+        ['web/**'],
+      ],
     );
   });
 
