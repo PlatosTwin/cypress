@@ -58,14 +58,53 @@ describe('American spellings, over the web source', () => {
   // parsers get them: a matcher asserted only against the real files agrees with whatever those
   // files happen to say, and would agree just as readily if it matched nothing at all.
   it('finds the forms it names', () => {
-    const found = offenses('a colour pair\ntheir neighbours\nthe centre of it');
+    const found = offenses(
+      'a colour pair\ntheir neighbours\nthe centre of it\na nanometre\nsome picometres',
+    );
     assert.deepEqual(
       found.map((o) => [o.matched, o.american, o.line]),
       [
         ['colour', 'color', 1],
         ['neighbour', 'neighbor', 2],
         ['centre', 'center', 3],
+        // The `-metre` family, which had no case here at all until PR #173's delta review (D7).
+        // Its absence is exactly how `nanometres` got in: the sweep over `web/` passes whether or
+        // not the family exists, because it passes vacuously on the ABSENCE of the word, and the
+        // three occurrences that were there had just been fixed. A specimen is the only thing that
+        // tells the difference between a rule that works and a rule that is not there. `picometre`
+        // is the second row because the fix that would have been reached for — adding `nanometre`
+        // alone — leaves it in the same hole.
+        ['nanometre', 'nanometer', 4],
+        ['picometre', 'picometer', 5],
       ],
+    );
+  });
+
+  /**
+   * The false negative the bare-`metre` lookbehind costs, declared rather than discovered.
+   *
+   * `(?<![A-Za-z])` is what stops a bare `metre` striking "flameTree" as "fla-meTre-e", and the
+   * price is that a `metre` glued to the end of a longer word is not caught — a camelCase
+   * `fooMetre` included. `spelling.ts` says so in a comment; before this the comment claimed the
+   * test beside it asserted the fact, and the only related assertion was `flameTree` in the
+   * INNOCENT list, which guards the opposite thing (PR #173 delta review, D7).
+   *
+   * This assertion exists to be READ. If somebody ever finds a lookbehind that keeps `flameTree`
+   * innocent and catches `fooMetre`, this goes red and the comment gets rewritten with it.
+   */
+  it('declares the false negative the bare-metre lookbehind costs', () => {
+    assert.deepEqual(
+      offenses('fooMetre'),
+      [],
+      'a `metre` behind a letter is now caught; the deliberate false negative documented in '
+        + 'spelling.ts is no longer one, and that comment needs rewriting',
+    );
+    // Behind a space, the same word is caught — so the miss above is the lookbehind and not a
+    // missing rule. Without this line the assertion above would pass just as well if `metre` had
+    // been dropped from the list entirely.
+    assert.deepEqual(
+      offenses('one metre').map((o) => [o.matched, o.american]),
+      [['metre', 'meter']],
     );
   });
 

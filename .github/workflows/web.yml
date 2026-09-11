@@ -53,6 +53,27 @@ on:
       - 'Tools/publish_cities.py'
       - 'Fixtures/seed/schema.sql'
       - 'Fixtures/seed/pinned-seed.json'
+      # ── The sources W-B's ports are checked AGAINST ────────────────────────────────────────
+      # `web/src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` are second copies of
+      # rules that already exist in Swift and in Python, and `web/test/*.test.ts` proves each copy
+      # still agrees with its original by PARSING the original at run time. A check that does not
+      # run on the change it guards is not a check: without these lines a rewritten dieback band
+      # or a moved `growthChartingLimitM` would merge with the iOS suite green and the web's
+      # disagreement would surface on some later, unrelated web commit.
+      #
+      # The list is asserted, not trusted. `web/test/sources.test.ts` holds the same paths in
+      # `sourcesTheWebSuiteReads` and fails if either filter omits one, so the pair cannot drift
+      # in the direction that matters (a new parity check with no trigger behind it).
+      - 'Cypress/Core/Rubric/Vitality.swift'
+      - 'Cypress/Core/Units/Quantity.swift'
+      - 'Cypress/Core/Models/Geometry.swift'
+      - 'Cypress/Core/Models/CoreEntity.swift'
+      - 'Cypress/Core/Models/TreeMeasurement.swift'
+      - 'Cypress/Core/Models/Species.swift'
+      - 'Tools/inventory_contract.py'
+      - 'Tools/build_seed.py'
+      - 'docs/distilled/PRODUCT.md'
+      - 'docs/distilled/SCREENS.md'
   pull_request:
     branches: [main, 'release/**']
     paths:
@@ -71,6 +92,27 @@ on:
       - 'Tools/publish_cities.py'
       - 'Fixtures/seed/schema.sql'
       - 'Fixtures/seed/pinned-seed.json'
+      # ── The sources W-B's ports are checked AGAINST ────────────────────────────────────────
+      # `web/src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` are second copies of
+      # rules that already exist in Swift and in Python, and `web/test/*.test.ts` proves each copy
+      # still agrees with its original by PARSING the original at run time. A check that does not
+      # run on the change it guards is not a check: without these lines a rewritten dieback band
+      # or a moved `growthChartingLimitM` would merge with the iOS suite green and the web's
+      # disagreement would surface on some later, unrelated web commit.
+      #
+      # The list is asserted, not trusted. `web/test/sources.test.ts` holds the same paths in
+      # `sourcesTheWebSuiteReads` and fails if either filter omits one, so the pair cannot drift
+      # in the direction that matters (a new parity check with no trigger behind it).
+      - 'Cypress/Core/Rubric/Vitality.swift'
+      - 'Cypress/Core/Units/Quantity.swift'
+      - 'Cypress/Core/Models/Geometry.swift'
+      - 'Cypress/Core/Models/CoreEntity.swift'
+      - 'Cypress/Core/Models/TreeMeasurement.swift'
+      - 'Cypress/Core/Models/Species.swift'
+      - 'Tools/inventory_contract.py'
+      - 'Tools/build_seed.py'
+      - 'docs/distilled/PRODUCT.md'
+      - 'docs/distilled/SCREENS.md'
   # The escape hatch, the same one `testflight.yml` keeps: a run by hand when a change elsewhere
   # (a Node bump, a lockfile audit) needs this suite run without touching a path above.
   workflow_dispatch:

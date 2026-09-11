@@ -2,10 +2,11 @@
 
 **Astro + TypeScript, SSR on the Node adapter, self-hosted on Fly.** Opened 2026-09-10 by the
 owner; the authority is `docs/design-proposals/2026-09-10-web-version.md` and the queue underneath
-it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation — it builds, it is
-tested, and it renders one placeholder page. The **read layer** clause of **W-B** landed next and
-is described under "The read path" below; the other two W-B clauses (design tokens, the ported
-domain rules) are still open.
+it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation: it builds, it is
+tested, and it renders one placeholder page. All three clauses of **W-B** have since landed — the
+design tokens, the re-derived domain rules, and the pack read path — described under *Design
+tokens*, *The rules, re-derived* and *The read path* below. No page reads any of them yet; that is
+W-C.
 
 **What v1 is** (ruling W-1): a public read surface. No login, no writes. The tree page, plus the
 `Explore` / `Species` / `Neighborhoods` / `Data & export` nav the spec draws.
@@ -34,6 +35,7 @@ As of W-A. Everything below was read from this directory, not remembered.
 | Pages | one placeholder at `/`. W1 is W-C |
 | Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
 | Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
+| Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
@@ -214,6 +216,60 @@ prefixes the Swift declares, and they are the `name` table families of the TTFs 
 `Cypress/Resources/Fonts/`.
 
 ## The read path (W-B)
+## The rules, re-derived (W-B, first of three)
+
+`src/lib/` holds five rules that already exist elsewhere in this repository, re-derived in
+TypeScript and checked against the originals' own test cases:
+
+| Module | The declaration it is derived from |
+|---|---|
+| `vitality.ts` | `Cypress/Core/Rubric/Vitality.swift` (+ `LeafRetention` in `Core/Models/Species.swift`) |
+| `quantity.ts` | `Cypress/Core/Units/Quantity.swift`, `MeasurementKind.plausibleSIRange` in `Core/Models/TreeMeasurement.swift` |
+| `geometry.ts` | `Cypress/Core/Models/Geometry.swift` |
+| `growthCharting.ts` | `FieldCaptured.isEligibleForGrowthCharting` and `GPSAccuracy` in `Cypress/Core/Models/CoreEntity.swift`; `isChartable` / `splitBySeries` in `Core/Models/TreeMeasurement.swift` |
+| `idSpaces.ts` | `Tools/inventory_contract.py` — **not Swift.** `Tree.idSpace` is an opaque `String?` and `SeedCities` reads the pack's own `id_spaces` table; the registry exists once, in Python |
+
+**A second copy of a rule is how the vitality rubric forked for two weeks** (ticket #261:
+`Vitality.anchor`, `PRODUCT.md` §3 and `SCREENS.md` 05 §3 disagreed from the day both documents
+were distilled, and nothing read the two tables). So none of these is checked against a
+transcription. `web/test/support/sources.ts` parses the Swift, the Python and the two distilled
+markdown tables **at run time**, every parser is calibrated in `test/sources.test.ts` against a
+specimen whose answer was known first, and the paths it reads are listed in `web.yml`'s `paths:`
+so the checks fire on the change they guard — asserted, in `test/sources.test.ts`, in both filters.
+
+**Where the numbers came from, and what keeps them current.**
+`test/support/swift-reference.json` is what the real `Quantity.swift`, `Geometry.swift` and
+`CoreEntity.swift` printed when compiled unmodified; `test/support/swift-reference/main.swift` is
+the program that printed it and carries the command to regenerate it.
+
+It is a **recording**, and a recording does not move when its subject does. So the guard is in two
+halves and the honest description of it is *TypeScript against a recorded snapshot, plus a tripwire
+on the Swift source that snapshot came from*: `test/swiftDrift.test.ts` fingerprints the Swift
+declarations whose bodies the ports reproduce and no value parser reads, and goes red on any edit to
+them, cosmetic or not, with a message telling the reader to re-record the reference and re-verify
+parity before pasting a new fingerprint. That file states the membership rule, names the set it
+covers and lists what is deliberately out; this paragraph does not restate the list, because the
+first version of it did and was wrong about the set while being right about the count. Without that second half, two one-character edits to the real Swift — `111_320.0` to
+`111_000.0`, and `<=` to `<` on the D6 gate — left the suite green at `103 of 103` while the two
+implementations snapped the same coordinate 8.2 m apart and charted different sets of
+measurements. Both were found by PR #173's adversarial review, and both now go red.
+
+The suite has no Swift toolchain, so it still cannot prove the recording is current by running
+anything; the tripwire is what turns a stale recording into a red run rather than a green one. 76 of the 78 recorded coordinate comparisons match Swift to the bit. The two
+that do not are one unit in the last place of `cos()` at 40.7128° N — 1.2 nanometers — and the
+suite asserts that exactly two need its tolerance, so the tolerance cannot widen unnoticed.
+
+**Two things the port had to name rather than smooth over.** Swift's `Double.rounded()` breaks
+ties away from zero and JavaScript's `Math.round` breaks them toward positive infinity, which
+differs on every negative longitude this app has; `geometry.ts` implements the Swift rule
+explicitly in `roundedAwayFromZero`, which does use `Math.round` — under `Math.abs`, with the sign
+restored by `Math.sign`, so there is no signed tie for it to break. No **bare** `Math.round` on a
+signed value, which is the claim that is true. And `snappedToPublicPhotoGrid` is **not
+idempotent** — applying it twice moves a point by up to 12.20 m, and the SQLite read path applies
+it twice — which is written up in `docs/errata-pending/`, pinned by a test against the recorded
+Swift behavior, and left unrepaired because repairing it moves already-published coordinates.
+
+## The read path, when it arrives (W-B)
 
 The web opens the **published city packs**, read-only, through the same schema the phone uses —
 decision W-5. Not Postgres, not browser-side SQLite over HTTP range requests. It reads
