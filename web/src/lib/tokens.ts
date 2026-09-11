@@ -775,6 +775,8 @@ export const NOT_EXPORTED: Readonly<Record<string, string>> = {
     'gradient recipes — multi-stop linear and radial fields with their own geometry. Not a '
     + 'custom property; the W1 hero needs them and they are W-C\'s to port.',
   'Cypress/DesignSystem/Tokens/TokenGallery.swift':
-    'a SwiftUI gallery VIEW. Every value in it is read from the six files above; it declares no '
-    + 'token of its own.',
+    'a SwiftUI gallery VIEW that renders the six files above. What it declares of its own is '
+    + 'gallery metadata inside a private `TokenGalleryData` — swatch lists that reference '
+    + '`CypressColor.*`, a pair count, and the set of hexes SCREENS.md documents, which exists so '
+    + 'the review blurb can count reuse. No surface paints with any of it.',
 };
