@@ -136,8 +136,9 @@ type measurementPayload struct {
 //
 //	{"id":"…","clientUUID":"…","treeID":"…","treeSource":"city_import",
 //	 "issues":["wrong_location","wrong_species"],
-//	 "suggestions":{…},
-//	 "notes":"the trunk is across the path","occurredAt":"…"}
+//	 "suggestions":{"lat":"37.7749295","lon":"-122.4194","location_accuracy_m":"4.0",
+//	                "species_id":"…","planted_year":"1998","status":"vacant_site"},
+//	 "notes":"the trunk is across the path","attribution":{…},"occurredAt":"…"}
 //
 // `treeSource` carries a `TreeSource` raw value — `city_import` or `community`. It said `city` here
 // until this file was read against the client's own enum, and `city` is nothing's raw value: the
@@ -145,23 +146,32 @@ type measurementPayload struct {
 // `TestTheDisputeTreeSourcesMatchTheSwiftVocabulary`, which reads `Cypress/Core/Models/Tree.swift`
 // instead of restating it.
 //
-// **Most of this file was written as a proposal to a client half that did not exist yet, and that
-// half now does.** `DataDisputeReport` in `Cypress/Data/Outbox/CommunityMutations.swift` on branch
-// `feat/r79-city-disputes` — read at 4b0a11d, not compiled here — is what will travel, and two of
-// its keys are not the keys below:
+// **Most of this file was written as a proposal to a client half that did not exist yet. That half
+// now exists, and the two disagreements this paragraph used to record are both closed** — the
+// client moved, this side did not. `DataDisputeReport` in
+// `Cypress/Data/Outbox/CommunityMutations.swift` on branch `feat/r79-city-disputes` — read at
+// 8acab79, not compiled here — is what travels, and the shape above is read off that encoder rather
+// than proposed to it:
 //
-//   - **the dispute's own id is `disputeID` there and `id` here, and that is unresolved.** This
-//     handler refuses a body with no top-level `id` ("That item named no dispute"), so as the two
-//     stand, a real dispute fails `validation_failed` — non-retryable — on its first attempt.
-//     Which side should move is not this change's to decide and is not decided: `store
-//     .disputeIsThisIdentitys` and `005_data_dispute_kinds.sql`'s partial index both read
-//     `payload ->> 'id'`, so moving this side costs a migration. Raised on PR #159.
-//   - `suggestions` is `TreeDataDispute.Suggestions` there, which encodes as
-//     `{"location":{"coordinate":{…},"accuracyM":…},"speciesID":…,"plantedYear":…,"status":…}` —
-//     not the flat object keyed by field name an earlier draft of this comment described. Nothing
-//     here decodes `suggestions`, so that difference costs nothing today; it is recorded because
-//     the paragraph below names the field vocabulary and a reader would otherwise take the shape
-//     on trust.
+//   - **the dispute's own id is `id`**, matching the struct below. It was `disputeID` there while
+//     this comment was first written, which would have failed every dispute `validation_failed` —
+//     non-retryable — on its first attempt, since this handler refuses a body with no top-level
+//     `id` ("That item named no dispute"). The client moved because moving this side costs a
+//     migration: `store.disputeIsThisIdentitys` and `005_data_dispute_kinds.sql`'s partial index
+//     both read `payload ->> 'id'`. Raised on PR #159 and settled there.
+//     `DataDisputeTests.theRaiseCarriesTheKeysTheServiceReads` pins it from the client.
+//   - **`suggestions` is the flat object keyed by field name**, values all strings, exactly the
+//     vocabulary the paragraph below names: `lat`, `lon`, `location_accuracy_m`, `planted_year`,
+//     `species_id`, `status`. `TreeDataDispute.Suggestions` is typed in Swift but hand-writes
+//     `encode(to:)` to emit `stored` — its `(field, value)` rows — rather than taking the
+//     synthesized nesting, so the table, the wire and this comment are one shape. An earlier draft
+//     of this paragraph claimed the opposite, that it nested as
+//     `{"location":{"coordinate":{…}}, "speciesID":…}`; nothing here decodes `suggestions`, so that
+//     error cost nothing but a reader's trust in the vocabulary below.
+//
+// **The withdrawal is the one that still says `disputeID`, and that is correct rather than
+// left over** — see `dataDisputeWithdrawalPayload` below for why a pointer at another record is
+// named for what it points at while a record's own id is `id`.
 //
 // What the two halves must not do is differ *silently*: `issues` is decoded into `[]string`, and a
 // client that encodes it as objects fails `json.Unmarshal`, which is `validation_failed`, which is
@@ -191,8 +201,9 @@ type measurementPayload struct {
 // ── The one prohibition on this payload: **no top-level `speciesID`** ──────────────────────────
 //
 // A disputed species travels *inside* `suggestions`, where nothing interprets it — on the branch
-// read above that is `suggestions.speciesID`, and the nesting is the whole of what makes it safe,
-// not the spelling. A top-level `speciesID` is forbidden, and the reason is not tidiness:
+// read above that is the `species_id` key of the flat object, and being one level in is the whole of
+// what makes it safe, not the spelling. A top-level `speciesID` is forbidden, and the reason is not
+// tidiness:
 // **nothing in this service obliges a payload read to narrow on `kind` at all, and one of them
 // does not.**
 // `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid` over `contributions` filtered by
