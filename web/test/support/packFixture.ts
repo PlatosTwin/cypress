@@ -209,7 +209,7 @@ function degrade(db: DatabaseSync, generation: Generation): void {
  */
 export function buildPack(
   generation: Generation,
-  options: { publishSchemaVersion?: number | null } = {},
+  options: { publishSchemaVersion?: number | null; withShortNameToo?: boolean } = {},
 ): Fixture {
   const directory = mkdtempSync(join(tmpdir(), `cypress-pack-s${generation}-`));
   const path = join(directory, `s${generation}.sqlite`);
@@ -245,6 +245,19 @@ export function buildPack(
     }
 
     degrade(db, generation);
+
+    // **A file carrying BOTH civic name sources at once**, which no generation produces on its
+    // own — 16 added `dim_city` in the same pass that dropped `id_spaces.short_name`. It is the
+    // only shape in which the fallback's ORDER is observable, and without it a read layer that
+    // preferred `short_name` over `dim_city` passes every other test in this suite. Found by
+    // red-proving exactly that inversion and watching the suite stay green.
+    //
+    // Not hypothetical, either: the flags are introspected independently and `SeedSchema` says so
+    // outright, so a hand-built or transitional file with both is a file this layer may be handed.
+    if (options.withShortNameToo === true && generation >= 16) {
+      db.exec('ALTER TABLE id_spaces ADD COLUMN short_name TEXT');
+      db.exec(`UPDATE id_spaces SET short_name = '${FIXTURE.shortName}'`);
+    }
   } finally {
     db.close();
   }

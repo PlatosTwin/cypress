@@ -106,6 +106,27 @@ describe('the city-name fallback, which is three sources and not one', () => {
     assert.equal(treeByUUID(generation(15), FIXTURE.aliveTreeUUID)?.cityName, FIXTURE.shortName);
   });
 
+  it('dim_city wins when a file carries both sources, which is the order and not a coincidence', () => {
+    // No real generation has both — 16 added `dim_city` in the same pass that dropped
+    // `id_spaces.short_name` — so the PRECEDENCE between them is invisible on every other fixture
+    // here. This test exists because inverting the two branches in `cityNameSource` left the whole
+    // suite green: a guard that was green while the defect it names was present, caught by
+    // red-proving it rather than by reading it.
+    const fixture = buildPack(16, { withShortNameToo: true });
+    open.push(fixture);
+    const pack = openPack(fixture.path, { immutable: false });
+    packs.push(pack);
+    assert.equal(pack.schema.hasDimCity, true);
+    assert.equal(pack.schema.hasCivicShortNames, true, 'the fixture carries only one source');
+    assert.equal(
+      treeByUUID(pack, FIXTURE.aliveTreeUUID)?.cityName,
+      FIXTURE.cityDisplayName,
+      'the city name came from id_spaces.short_name, but dim_city is the preferred source: it is '
+        + 'the table id_spaces.short_name was absorbed INTO, so preferring short_name shows the '
+        + 'older of two answers as if it were the newer.',
+    );
+  });
+
   it('a generation-14 pack has neither, and says null rather than inventing one', () => {
     // DECISIONS constraint 15: do not invent civic content. Null is the honest answer.
     assert.equal(treeByUUID(generation(14), FIXTURE.aliveTreeUUID)?.cityName, null);
