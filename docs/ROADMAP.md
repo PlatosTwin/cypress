@@ -200,7 +200,7 @@ growth loop" — terminate at the moment of sharing. W1 is the page those links 
 |---|---|---|
 | ~~**W-A**~~ | ~~Foundation~~ | ~~`web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` judge a log rather than an exit code.~~ **SHIPPED** by `web/foundation`. `web/` reaches the classifier through a `WEB_ONLY` variable of its own rather than through `DOC_ONLY` — the web is not prose, it is tested on ubuntu, and the notice `plan` prints now says which of the two a skipped run was. `web/**` is deliberately **not** added to the push trigger's `paths-ignore`; see the chip backlog. |
 | **W-B** | The three portable assets | All three portable assets are now written and in flight. **Design tokens** (`web/tokens-css`): `web/src/styles/tokens.css`, generated from `Cypress/DesignSystem/Tokens/*.swift` and re-rendered by its own test, so a drifted export is red rather than stale. **The domain rules** (`web/domain-rules`): `web/src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts`, each checked against its original parsed at run time rather than against a transcription; the ID-space registry turned out to have no Swift declaration at all and lives only in `Tools/inventory_contract.py`; two findings came out of it — the 25 m grid is not idempotent and the read path applies it twice, and `Quantity` had no dedicated suite until now. **The read layer** (`web/pack-read`): `web/src/lib/pack/`, on `node:sqlite`, no new dependency — it introspects a pack's shape rather than trusting a version integer, refuses a generation newer than it reads, and never writes. The row strikes when all three have merged. |
-| **W-C** | W1 · Public tree page | The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients. |
+| ~~**W-C**~~ | ~~W1 · Public tree page~~ | ~~The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients.~~ **SHIPPED** by `web/w1-tree-page`, for the city-record half. Server-rendered from a mounted pack; verified against the pinned seed (sha256 and `count(*)` both checked) on a San Francisco tree, a San Jose vacant site, and on a synthetic `us-ny-nyc` pack. **Seven of §W1's eleven elements are omitted rather than stubbed** — height, the taped DBH reading, the foliage strip, its photo caption, the recent-visits panel, `Sign in` (owner decision 7) and `Open in the app` (no host resolves) — and four labels say less than the mock does; the element-by-element account and the four deviations are in `docs/errata-pending/web-w1-tree-page.md`. **The OpenGraph image is an SVG**, which the major social platforms do not render: making it a PNG needs a rasterizer, which is a dependency decision with an owner — chip backlog 16. New York's disclaimer now follows its data onto the page (R36 consequence (b), R78 rulings 2 and 3). **Two questions are open for the owner** in `docs/rulings-pending/w1-authored-copy.md`: two authored strings, and the live conflict between the round's first owner decision ("the public community read is built BEFORE W1") and this row's own scoping, which have disagreed since 2026-09-10 with neither marked stale. |
 | **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — designed under the W-3 exception, ruled, then built. |
 | **W-E** | It is on the internet | Deployed to Fly against a volume holding the published packs; the share link resolves. |
 
@@ -855,6 +855,23 @@ into this section in the round that finds it, and nowhere else. Each item stands
     changes the classifier's behavior for every predicate at once, which wants its own calibration
     table and its own simulator run rather than a line in a round already correcting seven
     findings.
+
+16. **Decide whether the OpenGraph card is rasterized, and by what.** W-C ships
+    `/‹id-space›/tree/‹uuid›/og.svg`, generated from the same `TreePageModel` the page renders, so
+    the group-chat preview and the page cannot disagree — which is what §W1's caption asks for,
+    except for the format. **The major social platforms do not accept `image/svg+xml` as an
+    `og:image`**, so the card today is correct and largely unrendered. Turning it into a PNG needs a
+    rasterizer, and `web/` holds a zero-extra-runtime-dependency discipline, so this is a decision
+    and not a task: a bundled rasterizer is the dependency that discipline exists to refuse, and the
+    alternatives are a build-time pre-render, an image service, or drawing a card out of primitives
+    every platform accepts. `web/src/lib/ogCard.ts`'s header states the constraint and takes no
+    side; read it first.
+17. **Give W1 a dark mode, or give its three surfaces dark counterparts.** §W1's page background,
+    fact-column fill and hairline map to `lightOnly` tokens, while the generic page tokens the same
+    page uses are `dynamic` — so `prefers-color-scheme: dark` produces a third rendering that no
+    mock draws (constraint 21). W-C took the conservative option: the page does not opt into a dark
+    scheme, and `web/src/styles/w1.css` says so in its header. The fix is a DesignSystem decision
+    about those three surfaces, not a page edit.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

@@ -21,7 +21,7 @@ it classifies, and did, in the pull request that created both.
 
 ## What exists, exactly
 
-As of W-A. Everything below was read from this directory, not remembered.
+As of W-C. Everything below was read from this directory, not remembered.
 
 | | |
 |---|---|
@@ -32,10 +32,13 @@ As of W-A. Everything below was read from this directory, not remembered.
 | React | none, deliberately (W-8) |
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
-| Pages | one placeholder at `/`. W1 is W-C |
+| Pages | `/` (placeholder) and **`/‹id-space›/tree/‹uuid›`** — W1, server-rendered from a mounted pack (W-C) |
+| OG cards | `/‹id-space›/tree/‹uuid›/og.svg` — **SVG**, which most social platforms will not render. See below |
+| Packs | read from the directory `CYPRESS_PACK_DIR` names. No default path: unset means the page says so, in a 503 |
 | Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
 | Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
 | Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
+| W1's own modules | `src/lib/{packLibrary,treePage,cityRecord,gradients,ogCard,obligations}.ts` and `src/styles/w1.css` |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
@@ -350,3 +353,46 @@ confusing them went stale twice while doing it. Read all three from the code.
 
 **NYC's disclaimer obligation follows the data.** Any page rendering NYC trees carries it,
 human-visible, because a machine-readable `attribution` array does not discharge it.
+
+---
+
+## W1 · the public tree page (W-C)
+
+`src/pages/[idSpace]/tree/[uuid].astro`, server-rendered, at the path
+`ShareCopy.publicURLPrefix` has pointed every share card the app has ever produced at. It reads a
+published pack through W-B's layer and renders `SCREENS.md` §W1.
+
+**Point it at packs with `CYPRESS_PACK_DIR`.** Every `*.sqlite` in that directory is opened
+read-only and indexed by the id spaces the **file itself** declares, not by its filename — New York
+is five packs in one id space and San Jose ships fused with San Francisco, so a filename convention
+would be a second copy of a fact the file already carries. There is no default path: with the
+variable unset the page returns **503** and writes a line to the log, because "no packs are mounted"
+is a deployment fault and a 404 would tell an operator it was a missing tree.
+
+**About half of §W1 is not in the pack, and that half is absent rather than faked.** Height, the
+taped DBH reading, the foliage strip, its photo caption and the recent-visits panel are contributed
+data behind a Class R surface; `Sign in` and `Open in the app` have no destination. The whole
+element-by-element account, and the four labels that say less than the mock does, are in this
+round's errata entry. **Nothing is stubbed, nothing renders a zero, and nothing invents a fact** —
+a placeholder in a fact column is a claim, and an empty state where the mock drew data is a screen
+nobody designed.
+
+**The gradient is ported, and guarded in two halves.** `src/lib/gradients.ts` emits CSS from a
+recipe. One half of the guard compares W1's recipe against §W1's own transcription, parsed out of
+`SCREENS.md` at run time; the other renders `CypressGradient.heroProfile` — parsed out of the Swift
+at run time — through the same emitter and requires it to equal what §3's screen 03 transcribes.
+That second half is what proves the **emitter**, because W1's hero is not in `CypressGradient.swift`
+at all: §W1 draws its own recipe, close to screen 03's and not equal to it. **CSS paints its first
+background layer on top and a SwiftUI `ZStack` paints its last on top**, so the layer order is
+inverted in the port and there is a test whose only job is to fail if somebody "fixes" it.
+
+**The OpenGraph card is an SVG, and most platforms will not render it.** Stated here rather than
+discovered later: `og.svg.ts` builds the card out of the same `TreePageModel` the page renders —
+which is what §W1's caption asks for, "rendered from the same three ingredients so the group-chat
+preview and the page agree" — but Facebook, X, Slack, iMessage and LinkedIn all want a raster.
+Rasterizing means a dependency, and this directory's discipline is zero extra runtime dependencies,
+so the choice is an owner's. It is chip backlog item 16.
+
+**W1 is light-only on purpose.** Three of §W1's surfaces map to `lightOnly` tokens while the generic
+page tokens beside them are `dynamic`, so a dark rendering would be half of one palette over the
+other — a state no mock draws. `src/styles/w1.css` carries the same note at the top of the file.
