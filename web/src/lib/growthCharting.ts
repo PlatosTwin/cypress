@@ -100,9 +100,13 @@ export function splitBySeries<Point extends ChartablePoint>(
   points: readonly Point[],
   kind: string,
 ): { readonly measured: readonly Point[]; readonly estimated: readonly Point[] } {
+  // `.filter` returns a new array, so the in-place `.sort` below cannot reach the caller's.
+  // That ordering is load-bearing and not incidental: JS's `sort` mutates where Swift's
+  // `sorted(by:)` does not, so a future edit that sorts BEFORE filtering would silently reorder a
+  // caller's cached array. `splitBySeries does not mutate the array it was handed` is the test
+  // that goes red for it, and it was red-proved by making exactly that swap.
   const eligible = points
     .filter((point) => point.kind === kind && isChartable(point))
-    .slice()
     .sort((a, b) => a.capturedAt - b.capturedAt);
   return {
     measured: eligible.filter((point) => point.series === 'measured'),
