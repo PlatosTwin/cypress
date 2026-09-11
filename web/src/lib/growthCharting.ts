@@ -44,12 +44,18 @@ export const growthChartingLimitM = 15;
  * asking for more than the predicate uses would refuse callers the Swift accepts.
  */
 export interface FieldCaptured {
-  readonly gpsAccuracyM?: number | null;
+  // `| undefined` is written out, not left to the `?`. `web/tsconfig.json` inherits
+  // `exactOptionalPropertyTypes` from astro's strictest preset, under which `x?: number | null`
+  // means "absent, a number, or null" and REFUSES an explicit `undefined`. The predicate below
+  // handles all three at run time, so the type has to say all three — otherwise the port would be
+  // claiming a guarantee it does not have, and the test that exercises the third case would not
+  // compile. That is the JS-vs-Swift difference this file's header names, spelled in the type.
+  readonly gpsAccuracyM?: number | null | undefined;
 }
 
 /** Nothing in the domain ever hard-deletes; sync needs the tombstone (BUILD-PLAN §4). */
 export interface SoftDeletable {
-  readonly deletedAt?: Date | string | null;
+  readonly deletedAt?: Date | string | null | undefined;
 }
 
 /**

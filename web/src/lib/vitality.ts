@@ -130,13 +130,19 @@ export type LeafRetention = (typeof leafRetentions)[number];
 export const suppressions = ['none', 'leafOffSeason'] as const;
 export type Suppression = (typeof suppressions)[number];
 
+/**
+ * `| undefined` is spelled out on both optional fields rather than left to the `?`: under
+ * `exactOptionalPropertyTypes` (astro's strictest, which `web/tsconfig.json` extends) a `?` field
+ * refuses an explicit `undefined`, and `isRatingPermitted` accepts one. See the same note in
+ * `growthCharting.ts`.
+ */
 export interface RatingWindow {
   /** The species attribute that drives all phenology surfaces (D5), or absent when unsourced. */
-  readonly leafRetention?: LeafRetention | null;
+  readonly leafRetention?: LeafRetention | null | undefined;
   /** Calendar month, 1–12. */
   readonly month: number;
   /** The months this species is in leaf, or absent when unknown. See `Species.leafOnMonths`. */
-  readonly leafOnMonths?: ReadonlySet<number> | null;
+  readonly leafOnMonths?: ReadonlySet<number> | null | undefined;
 }
 
 /**
