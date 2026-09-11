@@ -810,7 +810,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
    correct the comment to say what it actually survives, and red-prove it by adding a community
    tree inside the radius before the case resolves.
 
-8. **Serialise a reading against its own withdrawal across two concurrent drains** (top server
+9. **Serialise a reading against its own withdrawal across two concurrent drains** (top server
    item). PR #156's arrival-order guard closes the withdrawal-committed-in-an-earlier-drain
    ordering and **only** that one; two `Apply` transactions overlapping in time are still mutually
    blind. Mechanism: `Apply` runs at READ COMMITTED (`Store.Tx` calls `pool.Begin` with no
@@ -828,20 +828,20 @@ into this section in the round that finds it, and nowhere else. Each item stands
    same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
    recipe, and red-prove the race itself first so the fix has a witness. `server/` has no CI, so
    whatever lands here needs its own throwaway-Postgres run with stated pass/skip/fail counts.
-9. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
-   readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
-   to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
-   no way to clear the red row. This is not a `measurement_withdrawal` defect: #156's reviewer
-   compared the ownership rules to `photo_withdrawal`'s line by line and they are **identical**
-   (`user_id` match OR `device_id` match; anonymised rows owned by nobody and therefore refused),
-   because `ClaimDevice` moves a contribution's `device_id` to a `user_id` and nothing server-side
-   remembers which installation recorded it — the client's own gate has an installation arm and
-   this one cannot. So the divergence is `withdrawMeasurement`'s documented one, hit through a
-   second kind. Readings are recorded far more often than photographs, which is why the shared
-   rule's user-visible cost lands here first. Two halves to answer: whether the service should gain
-   an installation arm at all, and — independently — what screen 17 offers for a permanent
-   non-retryable failure on a mutation the phone has already applied locally.
-10. **Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
+10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
+    readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
+    to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
+    no way to clear the red row. This is not a `measurement_withdrawal` defect: #156's reviewer
+    compared the ownership rules to `photo_withdrawal`'s line by line and they are **identical**
+    (`user_id` match OR `device_id` match; anonymised rows owned by nobody and therefore refused),
+    because `ClaimDevice` moves a contribution's `device_id` to a `user_id` and nothing server-side
+    remembers which installation recorded it — the client's own gate has an installation arm and
+    this one cannot. So the divergence is `withdrawMeasurement`'s documented one, hit through a
+    second kind. Readings are recorded far more often than photographs, which is why the shared
+    rule's user-visible cost lands here first. Two halves to answer: whether the service should gain
+    an installation arm at all, and — independently — what screen 17 offers for a permanent
+    non-retryable failure on a mutation the phone has already applied locally.
+11. **Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
     remote.** Withdrawing the only reading on a tree leaves that tree in `GET /me/grove` with all
     four tallies zero and in `GET /me/map-membership?kind=yours`, and the `measurement_withdrawal`
     contribution row itself surfaces as a journal entry. Measured by #156's reviewer
@@ -853,7 +853,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     report. Check against PR #154 what a `measurement_withdrawal` journal row renders as when the
     journal goes remote, and decide whether an emptied tree should leave the grove and the `yours`
     filter or stay with zeroes.
-11. **Prose pass over `server/README.md`'s Deploy section — it is stale in a way that reads as a
+12. **Prose pass over `server/README.md`'s Deploy section — it is stale in a way that reads as a
     blocker.** It still says the `cypress-sync` machine "needs secrets and a Postgres that do not
     exist yet". Both #156's author and its reviewer checked: `fly secrets list --app cypress-sync`
     returns sixteen secrets, all `Deployed`, including `DATABASE_URL`, `SESSION_SIGNING_KEY`,
@@ -862,7 +862,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     auto-stopped (`min_machines_running = 0`), nothing in `.github/workflows/` touches `server/` or
     Fly, and so a migration only runs at the next boot of a **redeployed** image — merging server
     work changes nothing in production. Prose only; no code.
-12. **`GET /api/v1/trees/{id}` publishes two per-tree counts of user actions to any signed-in
+13. **`GET /api/v1/trees/{id}` publishes two per-tree counts of user actions to any signed-in
     caller, and nobody has ever tested that against D1.** Found by W-G while ruling on what the
     *public* read may say, so it is filed rather than fixed — the shipped route is not this round's
     to change. `treeProfile` returns `photo_count` and `visit_count` for **any** tree to **any**
@@ -877,7 +877,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     before removing anything. `visit_count` is `TreeCommunityHalf`'s second query;
     `photo_count` is `len(photos)` after the visibility filter, and screen 15's promise may rest on
     one of them.
-13. **`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.** The
+14. **`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.** The
     proposal's §7 records the gap; W-A's `web.yml` is for `web/`, not for this. A `server.yml` on
     `ubuntu-latest` with a `postgres:16` service container and `CYPRESS_TEST_DATABASE_URL` set would
     run the whole suite in about a minute, and — this is the part that matters here — it must
@@ -888,7 +888,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **198 pass / 0 skip / 0 fail** with one (66 / 125 and 191 / 0 at the PR head before them). `testflight.yml` already excludes `server/`
     from the archive, so a server-only workflow cannot mint a build.
 
-14. **One tree, one current height: should the method count?** Nothing in this corpus rules on
+15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
     whether an estimate may supersede a measurement when a single number has to be chosen. D7,
     DECISIONS constraint 2, ARCHITECTURE §5 rule 3 and PRODUCT's non-goal (*"Never share a chart
     line"*) are all rules about a **chart line**, and E103 extends them to a spoken summary; none is
@@ -902,7 +902,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     note the two duplicated copies of the selection rule are their own small cleanup. Found by the
     adversarial review of #163, which found the code claiming the opposite in a comment.
 
-15. **`clientKey` trusts a request-supplied header, on a route that now has no credential.**
+16. **`clientKey` trusts a request-supplied header, on a route that now has no credential.**
     `internal/api/server.go` returns `Fly-Client-IP` when the request supplies one, and the only
     thing making that trustworthy is Fly's proxy overwriting it. The review measured it: after
     exhausting a bucket, 25 of 25 requests carrying a self-chosen `Fly-Client-IP` were served, each
@@ -914,7 +914,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     a request it watched arrive. **It is moot if the answer to the ruling's Q4 is "SSR-only"**, so
     do them together: decide Q4 first, and if the endpoint stays internet-facing, make the trust
     explicit and prove it against a real Fly request rather than from documentation.
-16. **A `/* … */` decoy after the real declaration defeats the migration-file kind extractor.**
+17. **A `/* … */` decoy after the real declaration defeats the migration-file kind extractor.**
     Raised by the delta review of PR #163. `contributionKindsFromMigrations` strips only lines that
     *begin* with `--`, so a migration whose real `ADD CONSTRAINT` is followed by a block-commented
     older draft yields the **draft's** vocabulary — measured as `[visit never_a_kind]` where the
@@ -922,7 +922,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     catches it loudly, because the live schema and the file reader stop agreeing. But
     `TestContributionKindExtractorIsCalibrated`'s specimens cover only `--` prose, so the shape is
     untested, and the round that fixes it should add a `/* … */` specimen rather than only the strip.
-17. **Delete `kindsAwaitingTheirMigration` when PR #159's `005_data_dispute_kinds.sql` lands.**
+18. **Delete `kindsAwaitingTheirMigration` when PR #159's `005_data_dispute_kinds.sql` lands.**
     PR #163 classifies `data_dispute` and `data_dispute_withdrawal` before their migration exists,
     so neither PR's merge order breaks the other's guard. The map in `server/internal/api/public.go`
     exempts them from "a classified kind must be a declared kind" until 005 arrives. It cannot hide
@@ -930,7 +930,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **`t.Logf`, not a failure**, deliberately: failing would trade one red-on-main for another.
     That is why this item exists rather than a test. One deletion, two entries, in the round that
     merges 005 or the one after it.
-18. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
+19. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
     R27.1 asks for it in as many words — *"count it, do not guess it"* — and PR #163 shipped
     R27.1's inherited ≥3 because the attempt to read the production distribution was refused before
     a query ran. The floor may be raised by a measuring round and may not be lowered. Pair it with
@@ -939,7 +939,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     well be that no tree in the beta reaches any floor at all, which is a finding rather than a
     failure.
 
-12. **Add `web/**` to the push trigger's `paths-ignore`.** ~~Teach `DeployPathsAgreeTests` a
+20. **Add `web/**` to the push trigger's `paths-ignore`.** ~~Teach `DeployPathsAgreeTests` a
     third predicate~~ — **the guard half is DONE**, in `web/foundation` after adversarial review
     (#162, B1). This item used to describe the guard work as an optimization whose "prize is
     small"; that framing was wrong in a way worth recording, because the exposure ran the other
@@ -959,14 +959,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     to main. Do it as its own change with its own simulator run, never folded into a web feature
     round, and read the item below first — it changes what `paths:` on `web.yml` may say.
 
-13. **Give the web its own release-note channel, or rule that it needs none.** `plan`'s
+21. **Give the web its own release-note channel, or rule that it needs none.** `plan`'s
     release-note check treats a web-only pull request as not-required, because `docs/whats-new/`
     compiles into TestFlight's "What to Test" — a field attached to a **build**, which a web-only
     change does not mint. That is correct as far as it goes and it means web changes currently
     ship with no changelog anywhere. Decided by W-A in a comment rather than by anyone with the
     authority to decide it; it wants a ruling once the web is actually deployed (W-E), not before.
 
-14. **Make `web` a required status check, and drop `web.yml`'s `paths:` in the same change.**
+22. **Make `web` a required status check, and drop `web.yml`'s `paths:` in the same change.**
     Raised by #162's adversarial review, and it closes a loop nothing currently tracks. `gate` is
     the only required context on `main` (read from GitHub, not from prose:
     `main-pull-request-only → active`, required contexts = `gate`). For the entire class of change
@@ -977,7 +977,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     since a required check that a path filter skips never reports and blocks every pull request.
     Do both together, after `web` has reported on `main` at least once.
 
-15. **`git diff --name-only` hides a rename's source, so a move out of the app classifies as
+23. **`git diff --name-only` hides a rename's source, so a move out of the app classifies as
     web-only.** `git mv` a Swift file from the app's source tree into `web/` and
     `--name-only` reports only the destination; `--name-status` shows it as `R100` with both
     paths, and `--no-renames` reports both. (Reproduced in a throwaway repository — the example is
