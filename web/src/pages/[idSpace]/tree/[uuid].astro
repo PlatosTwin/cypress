@@ -28,7 +28,8 @@ import Base from '../../../layouts/Base.astro';
 import '../../../styles/w1.css';
 import { cssBackgroundImage, cssScrim, W1_HERO, W1_SCRIM } from '../../../lib/gradients.ts';
 import { packLibrary, resolveTreePage } from '../../../lib/packLibrary.ts';
-import { CARD_CONTENT_TYPE } from '../../../lib/ogCard.ts';
+import { CARD_HEIGHT, CARD_WIDTH } from '../../../lib/ogCard.ts';
+import { CARD_PNG_CONTENT_TYPE } from '../../../lib/ogRaster.ts';
 
 const idSpace = Astro.params.idSpace ?? '';
 const uuid = Astro.params.uuid ?? '';
@@ -62,7 +63,16 @@ if (!resolution.ok) {
 }
 
 const model = resolution.model;
-const cardPath = `${model.path}/og.svg`;
+/**
+ * The card the crawlers are told about is the RASTER one.
+ *
+ * `og.svg` is still served and is still the drawing `og.png` rasterizes — but Facebook, X,
+ * LinkedIn, Slack, Discord, iMessage and Telegram do not decode `image/svg+xml` as an `og:image`,
+ * so pointing this tag at it produced a preview with no image in every place §W1's caption cares
+ * about. `src/lib/ogRaster.ts` carries the whole account, the dependency it took and the ones it
+ * rejected.
+ */
+const cardPath = `${model.path}/og.png`;
 
 // The hero's two layers, handed to the CSS as custom properties. They are here rather than in
 // `w1.css` because they are the design system's own recipe (`src/lib/gradients.ts`) and a
@@ -93,7 +103,12 @@ const nav = ['Explore', 'Species', 'Neighborhoods', 'Data & export'];
   openGraph={{
     type: 'article',
     siteName: 'Cypress',
-    image: { path: cardPath, type: CARD_CONTENT_TYPE.split(';')[0] ?? 'image/svg+xml' },
+    image: {
+      path: cardPath,
+      type: CARD_PNG_CONTENT_TYPE,
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+    },
   }}
 >
   <div class="w1">
