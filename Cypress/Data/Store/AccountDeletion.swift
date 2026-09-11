@@ -434,14 +434,36 @@ public struct AccountDeletion {
         // `ROADMAP`'s entry about enumerating the user-bearing tables is for: a hand-kept list
         // cannot fail loudly, and this one did not.
         //
-        // **What `raised_by IS NULL` then means, said out loud rather than inherited.** A NULL here
-        // is *this installation's* anonymous row and `TreeDataDispute.isAuthored(by:)` admits it, so
-        // an anonymized dispute is withdrawable by whoever signs in on this phone next — which
-        // `review_flags` has no equivalent of, because a flag has no author-only verb. That is the
-        // deliberate answer and not an oversight: the alternative is the row this round's ruling R-a
-        // exists to prevent, a standing objection **nobody** can retract. A dispute is about the
-        // *tree*, the leaving door's promise is that the work stays and the name goes, and a
-        // withdrawal by the next holder of the phone removes an objection rather than creating one.
+        // **What `raised_by IS NULL` then means, said out loud rather than inherited, because the
+        // table's own NULL cannot say it.** A NULL in `raised_by` is also D9's ordinary case — a
+        // dispute raised on this phone before it had an account — so the column alone cannot tell an
+        // un-named row from an unsigned-in one. `review_flags` never had to: a flag has no
+        // author-only verb. This table does, and the answer to "whose is it now" is **nobody's**.
+        //
+        // That is not this half's ruling to make. `server/internal/store/disputes.go`'s
+        // `disputeIsThisIdentitys` counts a dispute as the caller's on a `user_id` or a `device_id`
+        // match, this door clears both, and a comparison against two NULLs falls out of its
+        // `FILTER` — "a record owned by nobody is not withdrawable by anybody", measured there by
+        // `TestAnAnonymizedDisputeIsWithdrawableByNobody`. The service cannot adopt the other answer
+        // even in principle, because `ClaimDevice` has already folded the row's `device_id` into its
+        // `user_id` and there is no installation identity left to match. A phone that offered the
+        // withdrawal anyway would apply it locally, queue a `data_dispute_withdrawal` and be
+        // answered `forbidden` — a dispute shown as withdrawn while the service goes on holding it,
+        // which is the shape ERRATA **E280** records for `photo_withdrawal`, reached here through a
+        // third verb.
+        //
+        // So the tombstone goes down first, exactly as it does for the four tables above and for the
+        // reason `MeasurementForWithdrawal.isAnonymized` gives: the fact cannot be read off the
+        // owner column, the `client_uuid` is the key the row already carries, and the `UPDATE` below
+        // is what stops the predicate matching. `TreeDataDispute.isAuthored(by:)` refuses on it, and
+        // `DataDisputeStore`'s `WHERE` clauses carry the same refusal so the two gates cannot differ.
+        try run(
+            """
+            INSERT OR IGNORE INTO anonymized_contributions (client_uuid, anonymized_at)
+            SELECT client_uuid, :now FROM tree_data_disputes WHERE raised_by = :user COLLATE NOCASE
+            """,
+            userAndNow, on: connection
+        )
         outcome.anonymizedAttributions += try run(
             """
             UPDATE tree_data_disputes SET raised_by = NULL, updated_at = :now

@@ -176,6 +176,26 @@ struct AccountDeletionTests {
         raisedBy: UUID?,
         in store: CypressStore
     ) async throws -> TreeDataDispute {
+        let dispute = try await writeDispute(treeID: treeID, raisedBy: raisedBy, in: store)
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                ReviewFlag(
+                    treeID: treeID, kind: .appearsDead, raisedBy: raisedBy,
+                    createdAt: moment, updatedAt: moment
+                ),
+                connection: connection
+            )
+        }
+        return dispute
+    }
+
+    /// One dispute, with no flag beside it — for the row that is in a test as the thing the door
+    /// must **not** reach, where a second `review_flags` row would only muddy the calibration count.
+    private static func writeDispute(
+        treeID: UUID,
+        raisedBy: UUID?,
+        in store: CypressStore
+    ) async throws -> TreeDataDispute {
         let dispute = TreeDataDispute(
             treeID: treeID,
             treeSource: .cityImport,
@@ -193,30 +213,34 @@ struct AccountDeletionTests {
         )
         try await store.queue.write { connection in
             try DataDisputeStore().insert(dispute, connection: connection)
-            try ContributionStore().insert(
-                ReviewFlag(
-                    treeID: treeID, kind: .appearsDead, raisedBy: raisedBy,
-                    createdAt: moment, updatedAt: moment
-                ),
-                connection: connection
-            )
         }
         return dispute
     }
 
-    /// **The leaving door takes the name off a dispute, and the dispute stays withdrawable.**
+    /// **The leaving door takes the name off a dispute, and then nobody may withdraw it.**
     ///
     /// `tree_data_disputes` was invisible to both doors when v22 added it, and the consequence was
     /// not a cosmetic residue: the row kept its `raised_by`, so after a deletion the standing
-    /// objection belonged to an account that no longer existed and **nobody could take it back** —
-    /// the exact defect this round's ruling R-a added the withdrawal verb to prevent, arriving
-    /// through a door nobody had looked at. `OutboxItem.Kind.accountDeletionTreatment` asserts the
-    /// promise ("the work stays and the name goes") that this table was breaking.
+    /// objection still named an account that no longer existed.
+    /// `OutboxItem.Kind.accountDeletionTreatment` asserts the promise ("the work stays and the name
+    /// goes") that this table was breaking.
     ///
-    /// What `raised_by IS NULL` means afterwards is decided rather than inherited: it is this
-    /// *installation's* anonymous row (`TreeDataDispute.isAuthored(by:)`), so the phone can still
-    /// retract it. The last block is that fact, asserted through a signed-out `LocalAPI`.
-    @Test("the leaving door anonymizes a dispute and leaves it withdrawable")
+    /// **What `raised_by IS NULL` means afterwards is not this half's to decide.**
+    /// `server/internal/store/disputes.go` counts a dispute as the caller's on a `user_id` or a
+    /// `device_id` match, this door clears both, and `TestAnAnonymizedDisputeIsWithdrawableByNobody`
+    /// measures the result — a record owned by nobody is not withdrawable by anybody. A phone that
+    /// answered otherwise would apply a withdrawal locally, queue it, and be told `forbidden`. So
+    /// the two refusals below are asserted through both identities that could plausibly claim the
+    /// row: the phone signed out, and the next account to sign in on it.
+    ///
+    /// **Three controls, because a refusal is the easiest assertion in this repo to pass by
+    /// accident.** `review_flags` is the calibration for the door itself — a table both doors have
+    /// always handled, so a harness looking at an empty store or at the wrong user fails there
+    /// first. The stranger's dispute is the control on the door's reach. And the third is the one
+    /// that discriminates: a dispute this installation raised **before it had an account** is a
+    /// `raised_by IS NULL` row the door never touches, and it is still withdrawable at the end. A
+    /// refusal written on the column alone would take that row with it and this test would go red.
+    @Test("the leaving door anonymizes a dispute and nobody may withdraw it afterwards")
     func theLeavingDoorAnonymizesADispute() async throws {
         let (store, api) = try await Self.signedIn()
         let tree = try await Self.makeTree(api: api, in: store)
@@ -225,6 +249,9 @@ struct AccountDeletionTests {
         let theirs = try await Self.writeDisputeAndFlag(
             treeID: tree.id, raisedBy: Self.strangerID, in: store
         )
+        // D9's ordinary case: raised on this phone before it had an account. The door's predicate is
+        // `raised_by = :user`, which a NULL never matches, so nothing here is about to happen to it.
+        let anonymous = try await Self.writeDispute(treeID: tree.id, raisedBy: nil, in: store)
 
         let outcome = try await api.deleteAccount(.leaveRecords)
         #expect(outcome.anonymizedAttributions == 2, "the flag and the dispute, and nothing else")
@@ -236,8 +263,9 @@ struct AccountDeletionTests {
 
         #expect(try await Self.scalar(
             "SELECT COUNT(*) AS n FROM tree_data_disputes", in: store
-        ) == 2, "the leaving door deleted a dispute instead of un-naming it")
-        #expect(try await Self.disputes(raisedBy: nil, in: store) == [mine.id.uuidString],
+        ) == 3, "the leaving door deleted a dispute instead of un-naming it")
+        #expect(try await Self.disputes(raisedBy: nil, in: store)
+                == [mine.id.uuidString, anonymous.id.uuidString].sorted(),
                 "the dispute still names the deleted account")
         #expect(try await Self.disputes(raisedBy: Self.strangerID, in: store) == [theirs.id.uuidString],
                 "the door reached a stranger's dispute")
@@ -247,19 +275,49 @@ struct AccountDeletionTests {
             in: store
         ) == 2)
 
-        // And it is somebody's to withdraw. Signed out on this phone, which is what the anonymous
-        // arm of `isAuthored(by:)` means and the whole reason the column is nulled rather than left.
+        // And it is nobody's to withdraw. Signed out on this phone first — the identity the old
+        // answer handed the row to.
         let signedOut = LocalAPI(
             store: store, deviceID: Self.deviceID, userID: nil, now: { Self.moment }
         )
-        try await signedOut.withdrawDataDispute(disputeID: mine.id)
+        await #expect(throws: APIError.forbidden) {
+            try await signedOut.withdrawDataDispute(disputeID: mine.id)
+        }
+        // Then the next account signed in on the same phone, which is the other reading of "this
+        // installation's anonymous row" and is refused for the same reason.
+        let nextAccount = LocalAPI(
+            store: store, deviceID: Self.deviceID,
+            userID: UUID(uuidString: "0E000000-0000-4000-8000-0000000000C4")!,
+            now: { Self.moment }
+        )
+        await #expect(throws: APIError.forbidden) {
+            try await nextAccount.withdrawDataDispute(disputeID: mine.id)
+        }
         #expect(try await Self.scalar(
             """
             SELECT COUNT(*) AS n FROM tree_data_disputes
              WHERE id = '\(mine.id.uuidString)' AND withdrawn_at IS NOT NULL
             """,
             in: store
-        ) == 1)
+        ) == 0, "a refused withdrawal stamped the row anyway")
+        #expect(try await Self.scalar(
+            "SELECT COUNT(*) AS n FROM outbox WHERE kind = 'data_dispute_withdrawal'", in: store
+        ) == 0, "a refused withdrawal queued a retraction the service will answer forbidden")
+        // The profile offers nothing to withdraw either: `.raisedByYou` is drawn from exactly the
+        // read this refusal now narrows.
+        #expect(try await store.queue.read { connection in
+            try DataDisputeStore().openDispute(treeID: tree.id, raisedBy: nil, connection: connection)
+        }?.id == anonymous.id, "the offer still finds the anonymized dispute")
+
+        // The discriminating control: the row the door never touched is still this phone's.
+        try await signedOut.withdrawDataDispute(disputeID: anonymous.id)
+        #expect(try await Self.scalar(
+            """
+            SELECT COUNT(*) AS n FROM tree_data_disputes
+             WHERE id = '\(anonymous.id.uuidString)' AND withdrawn_at IS NOT NULL
+            """,
+            in: store
+        ) == 1, "the refusal reached a dispute raised before this phone had an account")
     }
 
     /// **The erasing door removes the dispute, and its two children go with it.**

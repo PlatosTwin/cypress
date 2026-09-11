@@ -115,10 +115,19 @@ public struct DataDisputeStore {
     /// rather than a silent re-stamp with a later timestamp — the moment a dispute was taken back is
     /// a fact, not a value to overwrite.
     ///
-    /// **The predicate is `TreeDataDispute.isAuthored(by:)` in SQL**, and it is one clause doing the
-    /// work of `withdrawMeasurement`'s two arms. `raised_by IS NULL` is a dispute this *installation*
-    /// raised before it had an account (D9), which stays its own to take back after signing in —
-    /// nothing syncs another person's disputes into this database, so a NULL here is nobody else's.
+    /// **The predicate is `TreeDataDispute.isAuthored(by:)` in SQL**, refusal first and then the two
+    /// arms, written in that order because the Swift rule is written in that order.
+    ///
+    /// `Self.notAnonymized` is the refusal: an account deletion through the leaving door un-names
+    /// the row and a record owned by nobody is not withdrawable by anybody. It leads rather than
+    /// joining the `OR` for `PhotoOwner.permitsRemoval`'s reason — R3 is not a clause in a boolean
+    /// expression — and it is a tombstone lookup rather than a column test because the leaving
+    /// door's NULL is the same NULL D9's ordinary case writes. See `TreeDataDispute.isAnonymized`,
+    /// and `ContributionStore.withdrawalPredicate` where `measurements` says it the same way.
+    ///
+    /// Then `raised_by IS NULL`, which after that refusal is a dispute this *installation* raised
+    /// before it had an account (D9) and which stays its own to take back after signing in —
+    /// nothing syncs another person's disputes into this database, so such a NULL is nobody else's.
     /// `raised_by = :by` is the account arm. Signed out, `:by` binds NULL, `raised_by = NULL` is
     /// never true, and the clause correctly narrows to the anonymous rows alone rather than
     /// admitting an account's.
@@ -133,6 +142,7 @@ public struct DataDisputeStore {
                SET withdrawn_at = :now, updated_at = :now
              WHERE id = :id COLLATE NOCASE
                AND withdrawn_at IS NULL
+               AND \(ContributionStore.notAnonymized("tree_data_disputes"))
                AND (raised_by IS NULL OR raised_by = :by COLLATE NOCASE)
             """)
         _ = try statement.bind([":id": id, ":now": date, ":by": raisedBy])
@@ -147,7 +157,7 @@ public struct DataDisputeStore {
     /// One dispute by id, children included, or nil when there is no such row.
     public func dispute(id: UUID, connection: SQLiteConnection) throws -> TreeDataDispute? {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM tree_data_disputes WHERE id = :id COLLATE NOCASE
+            SELECT *, \(Self.anonymizedColumn) FROM tree_data_disputes WHERE id = :id COLLATE NOCASE
             """)
         _ = try statement.bind([":id": id])
         guard let bare = try statement.fetchOne(Self.decode) else { return nil }
@@ -162,7 +172,7 @@ public struct DataDisputeStore {
     /// different name for the same thing.
     public func disputes(treeID: UUID, connection: SQLiteConnection) throws -> [TreeDataDispute] {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM tree_data_disputes
+            SELECT *, \(Self.anonymizedColumn) FROM tree_data_disputes
              WHERE tree_id = :tree COLLATE NOCASE
              ORDER BY created_at DESC, id
             """)
@@ -178,8 +188,12 @@ public struct DataDisputeStore {
     /// `flagWrongSpecies`' reasoning — the person can see their own objection on the screen they are
     /// tapping from.
     ///
-    /// "Theirs" is `TreeDataDispute.isAuthored(by:)` — see `withdraw` for why the anonymous arm is
-    /// this installation's own and not a hole.
+    /// "Theirs" is `TreeDataDispute.isAuthored(by:)` — see `withdraw` for why the refusal leads, and
+    /// for why the anonymous arm after it is this installation's own and not a hole. The refusal is
+    /// the reason this read is also **what stops the profile offering a withdrawal it cannot
+    /// perform**: `LocalAPI.dataDisputeOffer` returns `.raisedByYou` from exactly this row, so an
+    /// anonymized dispute that matched here would draw a control whose action the service answers
+    /// `forbidden` — ERRATA E280's shape, reached through a third verb.
     ///
     /// Children are **not** read: every caller of this wants the id and whether there is one, and
     /// the profile's offer carries nothing else. `dispute(id:)` is the whole-record read.
@@ -189,9 +203,10 @@ public struct DataDisputeStore {
         connection: SQLiteConnection
     ) throws -> TreeDataDispute? {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM tree_data_disputes
+            SELECT *, \(Self.anonymizedColumn) FROM tree_data_disputes
              WHERE tree_id = :tree COLLATE NOCASE
                AND withdrawn_at IS NULL
+               AND \(ContributionStore.notAnonymized("tree_data_disputes"))
                AND (raised_by IS NULL OR raised_by = :by COLLATE NOCASE)
              ORDER BY created_at DESC, id
              LIMIT 1
@@ -241,9 +256,21 @@ public struct DataDisputeStore {
             notes: dispute.notes,
             createdAt: dispute.createdAt,
             updatedAt: dispute.updatedAt,
-            withdrawnAt: dispute.withdrawnAt
+            withdrawnAt: dispute.withdrawnAt,
+            isAnonymized: dispute.isAnonymized
         )
     }
+
+    /// The tombstone lookup, as a selected column, so `decode` can answer
+    /// `TreeDataDispute.isAnonymized` from the same row it reads everything else from.
+    ///
+    /// Every `SELECT` in this file carries it, and that is deliberate rather than incidental: the
+    /// fact is what `isAuthored(by:)` refuses on, and a read that came back without it would produce
+    /// a dispute claiming nobody had un-named it. `ContributionStore.notAnonymized` is the shared
+    /// predicate — the same one the `WHERE` clauses here use — so the column and the gate cannot
+    /// drift apart.
+    private static let anonymizedColumn =
+        "NOT (\(ContributionStore.notAnonymized("tree_data_disputes"))) AS anonymized"
 
     /// The parent row, with empty children. Every caller either fills them in or does not need them.
     static func decode(_ row: SQLiteRow) throws -> TreeDataDispute {
@@ -260,7 +287,11 @@ public struct DataDisputeStore {
             notes: try row.stringIfPresent("notes"),
             createdAt: try row.date("created_at"),
             updatedAt: try row.date("updated_at"),
-            withdrawnAt: try row.dateIfPresent("withdrawn_at")
+            withdrawnAt: try row.dateIfPresent("withdrawn_at"),
+            // `anonymizedColumn`, which every `SELECT` in this file selects. Read rather than
+            // defaulted: the leaving door's NULL and D9's NULL are the same NULL in `raised_by`,
+            // and this is the only thing on the row that tells them apart.
+            isAnonymized: try row.bool("anonymized")
         )
     }
 }

@@ -198,9 +198,13 @@ public struct OutboxItem: CoreEntity {
             //
             // **The queue row is half of that promise and `tree_data_disputes` is the other half**,
             // which this comment asserted before either door could see the table. Both halves are
-            // named now — `AccountDeletion.anonymizeContributions` nulls `raised_by`,
-            // `eraseContributions` deletes the row — and `AccountDeletionTests
-            // .aDisputeIsVisibleToBothDoors` is what keeps the two halves of one act agreeing.
+            // named now — `AccountDeletion.anonymizeContributions` tombstones the `client_uuid` and
+            // nulls `raised_by`, `eraseContributions` deletes the row — and `AccountDeletionTests`'
+            // `theLeavingDoorAnonymizesADispute` and `theErasingDoorRemovesADispute` are what keep
+            // the two halves of one act agreeing. What the leaving door's NULL then means is
+            // `TreeDataDispute.isAuthored(by:)`: the name goes and the objection stays, withdrawable
+            // by nobody, because the service already answers it that way and cannot answer
+            // otherwise.
             case .visit, .observation, .measurement, .careEvent,
                  .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
                  .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,

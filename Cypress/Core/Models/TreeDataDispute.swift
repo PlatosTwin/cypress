@@ -259,7 +259,8 @@ public struct TreeDataDispute: CoreEntity {
     /// The account that raised it, or `nil` for a device that has not signed in (D9).
     ///
     /// `review_flags.raised_by`'s shape and its meaning: this database belongs to one installation,
-    /// so a `NULL` here is *this* device's anonymous contributor and no one else's.
+    /// so a `NULL` here is *this* device's anonymous contributor — **unless** the leaving door put
+    /// the `NULL` there, which is what `isAnonymized` tells apart.
     public let raisedBy: UUID?
     public let issues: Set<IssueKind>
     public let suggestions: Suggestions
@@ -270,15 +271,50 @@ public struct TreeDataDispute: CoreEntity {
     /// When the author took it back, or `nil` while it stands.
     public var withdrawnAt: Date?
 
+    /// Whether an account deletion through the leaving door un-named this row
+    /// (`AccountDeletion.anonymizeContributions`, `AppSchema` v13's `anonymized_contributions`).
+    ///
+    /// **Not a column, and it cannot be one of the columns this table has.** The leaving door's
+    /// whole act on this table is to null `raised_by`, which lands the row in exactly the shape D9's
+    /// ordinary case already occupies — a dispute raised on this phone before it had an account.
+    /// The two are indistinguishable by `raised_by` alone, so the fact is read off the tombstone
+    /// keyed on `client_uuid`, which is where `measurements` keeps the same fact for the same reason
+    /// (`ContributionStore.MeasurementForWithdrawal.isAnonymized`, and `claimDevice`'s own comment
+    /// about the pair the tombstone exists to tell apart).
+    ///
+    /// `false` for a dispute built in memory, which is every construction outside
+    /// `DataDisputeStore.decode`: a row that has not been read back has not been anonymized by
+    /// anything.
+    public let isAnonymized: Bool
+
     public var isOpen: Bool { withdrawnAt == nil }
 
     /// Whether this dispute is the given account's to take back.
     ///
-    /// **Two arms, and the second is not a hole.** `raisedBy == userID` is the account arm.
+    /// **An anonymized dispute is nobody's, and that line comes first.** The leaving door clears the
+    /// author, and a record owned by nobody is not withdrawable by anybody — which is not this
+    /// half's ruling to make: the service already answers it that way and cannot answer otherwise.
+    /// `server/internal/store/disputes.go`'s `disputeIsThisIdentitys` counts a row as the caller's on
+    /// a `user_id` or a `device_id` match, `.leaveRecords` clears both, and a comparison against two
+    /// NULLs falls out of the `FILTER` — measured there by
+    /// `TestAnAnonymizedDisputeIsWithdrawableByNobody`. The service could not adopt the other answer
+    /// even in principle: `ClaimDevice` has already moved the row's `device_id` into its `user_id`,
+    /// so after the deletion there is no installation identity left on the row to compare against.
+    /// A phone that offered the withdrawal anyway would apply it locally, queue a
+    /// `data_dispute_withdrawal`, and be answered `forbidden` — showing a dispute as withdrawn while
+    /// the service went on holding it. That is the shape ERRATA **E280** records for `photo_withdrawal`,
+    /// reached here through a third verb.
+    ///
+    /// It is written as a leading refusal rather than a clause in the `&&` below for
+    /// `PhotoOwner.permitsRemoval`'s stated reason: R3 is not a clause in a boolean expression, and
+    /// a row that reaches here already un-named should be refused whatever the rest says.
+    ///
+    /// **Then two arms, and the second is not a hole.** `raisedBy == userID` is the account arm.
     /// `raisedBy == nil` is a dispute raised by this *installation* before it had an account (D9,
     /// which keeps a device anonymous until the third save) — it stays its own to withdraw after
     /// signing in, because nothing ever syncs another person's disputes into this database and a
-    /// `NULL` here is therefore nobody else's.
+    /// `NULL` the leaving door did not write is therefore nobody else's. Account deletion does not
+    /// touch such a row: its predicate is `raised_by = :user`, which a NULL never matches.
     ///
     /// Signed out, `userID` is nil and only the anonymous arm can match, so a signed-out reader is
     /// **not** handed an account's dispute. That asymmetry is the point: it is the same shape
@@ -289,7 +325,8 @@ public struct TreeDataDispute: CoreEntity {
     /// The `WHERE` clauses in `DataDisputeStore` are this rule in SQL, written the same way round so
     /// the Swift gate and the SQL gate cannot say different things.
     public func isAuthored(by userID: UUID?) -> Bool {
-        raisedBy == nil || raisedBy == userID
+        if isAnonymized { return false }
+        return raisedBy == nil || raisedBy == userID
     }
 
     public init(
@@ -303,7 +340,8 @@ public struct TreeDataDispute: CoreEntity {
         notes: String? = nil,
         createdAt: Date,
         updatedAt: Date,
-        withdrawnAt: Date? = nil
+        withdrawnAt: Date? = nil,
+        isAnonymized: Bool = false
     ) {
         self.id = id
         self.clientUUID = clientUUID
@@ -316,5 +354,6 @@ public struct TreeDataDispute: CoreEntity {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.withdrawnAt = withdrawnAt
+        self.isAnonymized = isAnonymized
     }
 }

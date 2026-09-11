@@ -819,13 +819,14 @@ struct DataDisputeTests {
         #expect(TreeDataDispute.SuggestedField.status.issue == .wrongMetadata)
     }
 
-    /// `isAuthored(by:)`'s two arms, including the asymmetry that is the point of it.
-    @Test("authorship admits this installation's anonymous rows and never another account's")
+    /// `isAuthored(by:)`'s leading refusal, its two arms, and the asymmetry that is the point of it.
+    @Test("authorship admits this installation's anonymous rows, never another account's, and never an anonymized one")
     func authorshipHasTwoArmsAndOneAsymmetry() {
-        func dispute(raisedBy: UUID?) -> TreeDataDispute {
+        func dispute(raisedBy: UUID?, anonymized: Bool = false) -> TreeDataDispute {
             TreeDataDispute(
                 treeID: UUID(), treeSource: .cityImport, raisedBy: raisedBy,
-                issues: [.wrongSpecies], createdAt: Date(), updatedAt: Date()
+                issues: [.wrongSpecies], createdAt: Date(), updatedAt: Date(),
+                isAnonymized: anonymized
             )
         }
         #expect(dispute(raisedBy: nil).isAuthored(by: nil), "this device cannot take back its own")
@@ -836,5 +837,12 @@ struct DataDisputeTests {
             !dispute(raisedBy: Self.accountA).isAuthored(by: nil),
             "a signed-out reader was handed an account's dispute"
         )
+        // The refusal leads, so it wins over both arms and over every reader. The rows the leaving
+        // door produces are the first two; the third could not be written by this app and is here
+        // because `PhotoOwner.permitsRemoval`'s ordering is the reason the check is a leading `if`
+        // rather than a clause in the `||`.
+        #expect(!dispute(raisedBy: nil, anonymized: true).isAuthored(by: nil))
+        #expect(!dispute(raisedBy: nil, anonymized: true).isAuthored(by: Self.accountA))
+        #expect(!dispute(raisedBy: Self.accountA, anonymized: true).isAuthored(by: Self.accountA))
     }
 }
