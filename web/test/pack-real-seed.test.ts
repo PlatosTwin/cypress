@@ -1,5 +1,10 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { openPack, type Pack } from '../src/lib/pack/pack.ts';
 import { packIdentity, treeByUUID, treeCount, treesInBounds } from '../src/lib/pack/queries.ts';
@@ -36,9 +41,13 @@ import { NEWEST_KNOWN_PACK_SCHEMA_VERSION } from '../src/lib/pack/versions.ts';
  *    summary, where `Tools/verify_web_test_log.sh` reports it in its verdict line and notes that
  *    "a change in these between two runs of the same tree is worth a second look" — the same
  *    posture the iOS side takes toward `CypressUITests`'s skip count.
- * 4. **The census below always runs**, in every environment, and asserts how many tests this file
- *    holds. A skip that hides a deleted test is the one thing a skip count cannot catch on its
- *    own.
+ * 4. **The census below always runs**, in every environment, and checks the list of
+ *    seed-dependent tests against **what this file actually registered with `node:test`** — not
+ *    against a literal beside it. A skip that hides a deleted test is the one thing a skip count
+ *    cannot catch on its own, and a count compared against a hand-maintained list in the same file
+ *    cannot catch it either: that was the first version of this census, and deleting a test with
+ *    the list left alone was green in both tiers. See `seedDependent` below for what the census
+ *    can and cannot see now.
  */
 const state = seedState();
 const havePinnedSeed = state.kind === 'present';
@@ -57,10 +66,12 @@ const MEASURED = {
 } as const;
 
 /**
- * Every test in this file that needs the seed, by name.
+ * Every test in this file that needs the seed, by name, **in declaration order**.
  *
- * Named rather than counted in the abstract so the census below can assert both the number and
- * that it is this list — a count on its own goes stale silently when a test is renamed away.
+ * The census compares this against the names `seedDependent` handed to `node:test`, so it is a
+ * declaration that gets checked rather than a number that gets believed. Order-sensitive on
+ * purpose: a mismatch then names the position as well as the name, which is the difference between
+ * "the list is wrong" and "the list is wrong HERE". Reordering the tests means reordering the list.
  */
 const SEED_DEPENDENT_TESTS: readonly string[] = [
   'opens the pinned seed exactly as the phone opens a pack',
@@ -70,15 +81,68 @@ const SEED_DEPENDENT_TESTS: readonly string[] = [
   'reads a real tree, by a uuid taken from the file itself',
   'a bounding box over the Mission returns real trees, all inside it',
   'is a fused two-city seed, which a published pack is not',
-  'refuses every write, on the real file',
+  'refuses every write, on a byte-identical copy of the real file',
+  'the pinned seed is byte-for-byte what pinned-seed.json pins, after every read above',
 ];
 
+/** The sha256 of a file on disk, read whole. Used on a 103 MB file, twice, and that is fine. */
+function sha256Of(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
 describe('the pinned seed — the tier that needs a 103 MB file CI does not have', () => {
+  const seeded: Pack[] = [];
+  after(() => {
+    for (const pack of seeded) pack.close();
+  });
+  const withSeed = (): Pack => {
+    const pack = openPack(state.path);
+    seeded.push(pack);
+    return pack;
+  };
+  const skip = havePinnedSeed
+    ? false
+    : `no pinned seed at ${state.path} (state: ${state.kind}) — run Tools/setup_worktree.sh`;
+
+  /**
+   * Registers a seed-dependent test, and records that it was registered.
+   *
+   * **This is the census's evidence, and it is why the census is not a literal compared against a
+   * literal.** The recording happens in the same expression that calls `node:test`'s `it`, and it
+   * keeps the handle `it` returns, so a name reaches `registrations` only by way of a real
+   * registration. Registration happens whether the test then runs or skips, so the census means
+   * the same thing in both tiers — which is the point, because the tier where a deleted test
+   * hides is the one where these are skipped.
+   *
+   * **What it can catch**: a seed-dependent test deleted, renamed, reordered, or duplicated while
+   * `SEED_DEPENDENT_TESTS` is left alone. Any of those is red in both tiers.
+   *
+   * **What it cannot catch**: a deletion that also edits the list AND the literal count in the
+   * census. That is three edits in one diff and it is what "deliberate" means here. It also cannot
+   * see a test registered with `it` directly instead of through this helper, which is why the
+   * census reads this file's own source for that shape and requires none.
+   */
+  const registrations: { readonly name: string; readonly handle: unknown }[] = [];
+  const seedDependent = (name: string, body: () => void): void => {
+    registrations.push({ name, handle: it(name, { skip }, body) });
+  };
+
   // ── Always runs, in every environment ──────────────────────────────────────────────────────
-  it('the census: this file holds the seed-dependent tests it says it does', () => {
+  it('the census: this file registered the seed-dependent tests it says it does', () => {
+    // Declared first and therefore printed first, but it reads `registrations` — which is complete
+    // by the time any test BODY runs, because `describe`'s callback registers every subtest
+    // synchronously before the runner starts them. Confirmed against a three-test specimen before
+    // this was written, rather than assumed from the docs.
+    assert.deepEqual(
+      registrations.map((entry) => entry.name),
+      [...SEED_DEPENDENT_TESTS],
+      'the seed-dependent tests this file handed to node:test are not the ones '
+        + 'SEED_DEPENDENT_TESTS names. A deleted or renamed test is what this looks like, and the '
+        + 'list is the declaration: fix whichever of the two is wrong.',
+    );
     assert.equal(
       SEED_DEPENDENT_TESTS.length,
-      8,
+      9,
       'the seed-dependent test list changed size. That is fine if it was deliberate — update this '
         + 'number in the same change — and is a deletion hiding behind a skip otherwise.',
     );
@@ -86,6 +150,22 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
       new Set(SEED_DEPENDENT_TESTS).size,
       SEED_DEPENDENT_TESTS.length,
       'two seed-dependent tests share a name',
+    );
+    assert.ok(
+      registrations.every((entry) => entry.handle instanceof Promise),
+      'a name reached the census without node:test returning a test handle for it, so the helper '
+        + 'recorded something it did not register',
+    );
+    // And nothing skipped its way past the helper. A seed-gated test written as a direct call
+    // would never appear in `registrations`, and the census would be blind to it exactly the way
+    // it was blind to a deletion before. Matched against this file's own bytes.
+    const ownSource = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+    const direct = ownSource.match(/\bit\(\s*(?:'|`)[^\n]*\{\s*skip\s*\}/g) ?? [];
+    assert.deepEqual(
+      direct,
+      [],
+      'a seed-gated test was registered with node:test directly instead of through '
+        + 'seedDependent(), so the census cannot see it',
     );
   });
 
@@ -134,20 +214,7 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
   });
 
   // ── Needs the seed ─────────────────────────────────────────────────────────────────────────
-  const seeded: Pack[] = [];
-  after(() => {
-    for (const pack of seeded) pack.close();
-  });
-  const withSeed = (): Pack => {
-    const pack = openPack(state.path);
-    seeded.push(pack);
-    return pack;
-  };
-  const skip = havePinnedSeed
-    ? false
-    : `no pinned seed at ${state.path} (state: ${state.kind}) — run Tools/setup_worktree.sh`;
-
-  it('opens the pinned seed exactly as the phone opens a pack', { skip }, () => {
+  seedDependent('opens the pinned seed exactly as the phone opens a pack', () => {
     // `immutable: true` here, unlike every fixture test: the pinned seed is a real, immutable
     // artifact at a path nothing writes, which is the case `immutable=1` is sound for.
     const pack = withSeed();
@@ -160,7 +227,7 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
     assert.equal(pack.schema.hasCityRaw, true);
   });
 
-  it('is generation 16 by shape, which is a generation behind every published pack', { skip }, () => {
+  seedDependent('is generation 16 by shape, which is a generation behind every published pack', () => {
     // **The finding this tier exists to pin.** The checked-in seed has `dim_city` and no
     // `dim_region`; every pack in the live catalog is generation 17. The two are different
     // generations at the same time, on purpose — `SeedDatabase` says the app "deliberately bundles
@@ -182,7 +249,7 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
     assert.ok(MEASURED.pinnedGeneration < NEWEST_KNOWN_PACK_SCHEMA_VERSION);
   });
 
-  it('states no generation about itself, and its PRAGMA user_version is 0', { skip }, () => {
+  seedDependent('states no generation about itself, and its PRAGMA user_version is 0', () => {
     // Two facts that are easy to assume and are both false of this file.
     //
     // 1. The SOURCE seed carries no `publish_schema_version`: `Tools/publish_cities.py` writes that
@@ -201,7 +268,7 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
     assert.equal(pack.meta.get('generator'), 'Tools/build_seed.py');
   });
 
-  it('holds the row counts the sqlite3 CLI reported', { skip }, () => {
+  seedDependent('holds the row counts the sqlite3 CLI reported', () => {
     // Every number here was read with `sqlite3` before this file was written, which is the
     // calibration that separates a measurement from whatever the query happened to return.
     const pack = withSeed();
@@ -220,7 +287,7 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
     assert.equal(treeCount(pack), state.pin.treeCount);
   });
 
-  it('reads a real tree, by a uuid taken from the file itself', { skip }, () => {
+  seedDependent('reads a real tree, by a uuid taken from the file itself', () => {
     // The uuid is drawn from the seed rather than hard-coded, because a hard-coded one pins a row
     // that a rebuild may legitimately renumber. What IS asserted hard is that the round trip
     // returns the SAME row the direct query did, field by field — which a query reading the wrong
@@ -252,7 +319,7 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
     assert.equal(treeByUUID(pack, uuid.toUpperCase())?.uuid, uuid);
   });
 
-  it('a bounding box over the Mission returns real trees, all inside it', { skip }, () => {
+  seedDependent('a bounding box over the Mission returns real trees, all inside it', () => {
     const pack = withSeed();
     const bounds = {
       minLatitude: 37.75,
@@ -284,7 +351,7 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
     );
   });
 
-  it('is a fused two-city seed, which a published pack is not', { skip }, () => {
+  seedDependent('is a fused two-city seed, which a published pack is not', () => {
     // The other difference between this file and a pack, and the reason `packIdentity` reads the
     // FIRST row rather than assuming one: `publish_cities.py` narrows both `dim_city` and
     // `dim_region` to the single unit a pack is for. The fused seed they are cut FROM carries all
@@ -301,18 +368,73 @@ describe('the pinned seed — the tier that needs a 103 MB file CI does not have
     assert.equal(pack.meta.get('id_spaces_in_file'), 'sf,us-ca-sj');
   });
 
-  it('refuses every write, on the real file', { skip }, () => {
-    // The fixture tests prove this on a file the suite wrote. This proves it on the artifact the
-    // web will actually be pointed at, and it is the assertion that makes "read-only" a property
-    // of the connection rather than a promise in a comment.
-    const pack = withSeed();
-    for (const write of [
-      "UPDATE trees SET status = 'removed' WHERE id = 1",
-      'DELETE FROM trees WHERE id = 1',
-      'CREATE TABLE scratch (a INTEGER)',
-      'PRAGMA user_version = 99',
-    ]) {
-      assert.throws(() => pack.db.exec(write), `"${write}" was not refused on the pinned seed`);
+  seedDependent('refuses every write, on a byte-identical copy of the real file', () => {
+    // The fixture tests prove this on a file the suite wrote. This proves it on a 103 MB, real,
+    // two-id-space artifact, which is the thing a fixture cannot pretend to.
+    //
+    // **On a COPY, and that is not fastidiousness.** This test used to probe
+    // `Fixtures/seed/cypress-seed.sqlite` itself, and when the read-only property was red-proved
+    // by removing `readOnly: true` the probes below did not merely fail — they SUCCEEDED, and
+    // rewrote the pinned seed in place: still 108,249,088 bytes, sha256 `c9a440b2…` → `0c2b699a…`.
+    // The size never moved, so only the hash half of the pin would have caught it, and the next
+    // agent to run the suite would have been chasing a mismatched seed it did not cause. A
+    // destructive probe belongs on a file the suite is allowed to destroy. `copyFileSync` of 103 MB
+    // costs a fraction of a second and the copy is hashed before it is trusted, so it is the same
+    // artifact in every sense this test cares about.
+    const directory = mkdtempSync(join(tmpdir(), 'cypress-seed-write-probe-'));
+    try {
+      const copy = join(directory, 'cypress-seed.sqlite');
+      copyFileSync(state.path, copy);
+      assert.equal(sha256Of(copy), state.pin.sha256, 'the copy is not byte-identical to the seed');
+
+      const pack = openPack(copy);
+      try {
+        for (const write of [
+          "UPDATE trees SET status = 'removed' WHERE id = 1",
+          'DELETE FROM trees WHERE id = 1',
+          'CREATE TABLE scratch (a INTEGER)',
+          'PRAGMA user_version = 99',
+        ]) {
+          assert.throws(() => pack.db.exec(write), `"${write}" was not refused on the real file`);
+        }
+      } finally {
+        pack.close();
+      }
+      // A refusal that threw and wrote anyway is a shape `assert.throws` cannot see. Cheap here,
+      // and it is the same assertion `pack-open.test.ts` makes about a session of reads.
+      assert.equal(sha256Of(copy), state.pin.sha256, 'a write reached the file despite throwing');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  seedDependent(
+    'the pinned seed is byte-for-byte what pinned-seed.json pins, after every read above',
+    () => {
+      // Declared last, so it runs last — `node:test` runs a suite's subtests in declaration order.
+      // But it does not DEPEND on running last: it compares against the pin rather than against a
+      // value captured earlier in this file, so wherever it runs it is a true statement about the
+      // artifact at that moment. `seedState()` is memoized over the whole process and cannot serve
+      // here; this re-reads the bytes.
+      //
+      // `pack-open.test.ts:217` makes the same assertion about a fixture after a session of reads.
+      // The real-seed tier had no equivalent, and the tier that had no equivalent is the one where
+      // the artifact is irreplaceable and git-ignored.
+      const size = statSync(state.path).size;
+      assert.equal(
+        size,
+        state.pin.bytes,
+        `${state.path} is now ${size} bytes and pinned-seed.json pins ${state.pin.bytes}. `
+          + 'Something in this run wrote to it. Restore it with Tools/setup_worktree.sh.',
+      );
+      const actual = sha256Of(state.path);
+      assert.equal(
+        actual,
+        state.pin.sha256,
+        `${state.path} now hashes to ${actual} and pinned-seed.json pins ${state.pin.sha256}, at `
+          + 'the same size. Something in this run wrote to it — the size is why a size check alone '
+          + 'would not have told you. Restore it with Tools/setup_worktree.sh.',
+      );
+    },
+  );
 });

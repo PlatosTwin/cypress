@@ -56,7 +56,10 @@ describe('one tree by uuid', () => {
     assert.equal(tree.status, 'vacant_site');
     assert.equal(tree.speciesScientificName, null);
     assert.equal(tree.speciesCommonName, null);
-    assert.equal(tree.neighborhoodName, FIXTURE.neighborhoodName);
+    // The OTHER neighborhood, not the alive tree's. The two differ on purpose: a neighborhood
+    // join that read a constant row would agree with itself on a fixture where every tree shared
+    // one neighborhood, which is what this fixture used to be.
+    assert.equal(tree.neighborhoodName, FIXTURE.otherNeighborhoodName);
   });
 
   it('matches an uppercase uuid, because the app binds uppercase and packs store lowercase', () => {
@@ -159,6 +162,56 @@ describe('trees in a bounding box', () => {
     );
   });
 
+  it('goes through the R*Tree: a live tree in the box with no R*Tree row is not returned', () => {
+    // **The assertion that makes the R*Tree join falsifiable without the 103 MB seed.**
+    //
+    // `treesInBounds` re-tests `lat`/`lon` on `trees` after the join, so a fixture whose every
+    // tree is reachable through some R*Tree row cannot tell a correct join from a wrong one — the
+    // re-test re-derives the right answer either way. `unindexedTreeUUID` is live, sits inside
+    // this box, and has no R*Tree row, so the correct query CANNOT return it and any query that
+    // reaches it did not go through the index. See `packFixture.ts`'s `insertTrees`.
+    const pack = generation(17);
+    assert.equal(
+      treeByUUID(pack, FIXTURE.unindexedTreeUUID)?.uuid,
+      FIXTURE.unindexedTreeUUID,
+      'the unindexed tree is missing from the table, so its absence below would prove nothing',
+    );
+    const indexed = pack.db
+      .prepare('SELECT COUNT(*) AS n FROM trees_rtree WHERE id = 5')
+      .get() as Record<string, unknown>;
+    assert.equal(Number(indexed['n']), 0, 'the unindexed tree acquired an R*Tree row');
+    assert.equal(
+      treesInBounds(pack, missionBounds, 50).map((row) => row.uuid)
+        .includes(FIXTURE.unindexedTreeUUID),
+      false,
+      'a tree with no R*Tree row came back from a query that is supposed to go through it',
+    );
+  });
+
+  it('an R*Tree row with no tree behind it produces no row', () => {
+    // The other direction of the same join. `phantomRtreeId` sits inside this box and matches no
+    // tree, so a projection reading the index rather than the table would emit a row for it.
+    const pack = generation(17);
+    const entries = pack.db.prepare('SELECT COUNT(*) AS n FROM trees_rtree').get();
+    assert.equal(
+      Number((entries as Record<string, unknown>)['n']),
+      5,
+      'the R*Tree does not hold the phantom entry, so this test is asserting nothing',
+    );
+    assert.equal(treesInBounds(pack, missionBounds, 50).length, 2);
+  });
+
+  it('the two trees in the box resolve different neighborhoods', () => {
+    // Not decoration: it is the statement that `neighborhood_id` varies across these rows, which
+    // is what makes wiring the R*Tree join to that column change the answer. If this ever
+    // collapses to one name, the R*Tree join has stopped being falsifiable here.
+    assert.notEqual(FIXTURE.neighborhoodName, FIXTURE.otherNeighborhoodName);
+    assert.deepEqual(
+      treesInBounds(generation(17), missionBounds, 50).map((row) => row.neighborhoodName),
+      [FIXTURE.neighborhoodName, FIXTURE.otherNeighborhoodName],
+    );
+  });
+
   it('the excluded tree is excluded for being outside, not for being absent', () => {
     // The control that separates "the filter works" from "the query returns nothing". Widen the
     // box to hold all three and the third appears.
@@ -167,6 +220,9 @@ describe('trees in a bounding box', () => {
     const uuids = treesInBounds(pack, wide, 50).map((row) => row.uuid);
     assert.equal(uuids.length, 3, `a box holding every live tree returned ${uuids.length}`);
     assert.ok(uuids.includes(FIXTURE.farAwayTreeUUID));
+    // Three, not four: the fourth live tree has no R*Tree row. Stated here so the count above is
+    // read as the arrangement it is rather than as `liveTreeCount`.
+    assert.equal(uuids.includes(FIXTURE.unindexedTreeUUID), false);
   });
 
   it('excludes the soft-deleted tree even though it sits inside the box', () => {
