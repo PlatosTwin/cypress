@@ -1168,7 +1168,9 @@ public struct TreeProfile: Hashable, Sendable {
     /// warn about ("a view that assembled them from separate flags could draw two controls"), so the
     /// pair is read here rather than at a call site: **one control, from one value.**
     ///
-    /// `LocalAPI` writes the identical value into both, and `DataDisputeTests` pins that. This reads
+    /// `LocalAPI` writes the identical value into both — it calls `dataDisputeOffer` twice, from the
+    /// same `tree` and the same connection inside one read, so there is no state in which the two
+    /// can disagree — and `DataDisputeTests` pins that. This reads
     /// `recordDefect` first and falls back to `speciesCorrection` so that a stub or a preview which
     /// set only one of them still answers, rather than silently offering nothing.
     public var cityDataDispute: DataDisputeOffer? {
