@@ -69,6 +69,18 @@ export const sourcesTheWebSuiteReads = [
   'Tools/build_seed.py',
   'docs/distilled/PRODUCT.md',
   'docs/distilled/SCREENS.md',
+  // ── W-C. The public tree page borrows its gradient and its copy rather than authoring them ──
+  //
+  // `CypressGradient.swift` is already covered by `web.yml`'s `Cypress/DesignSystem/Tokens/**`
+  // entry, and it is named here anyway: this list is what `sources.test.ts` matches against the
+  // workflow literally, and a directory glob standing in for a file is a coupling nobody could
+  // check. The five `Features`/`Components` files have no such glob behind them at all.
+  'Cypress/DesignSystem/Tokens/CypressGradient.swift',
+  'Cypress/DesignSystem/Components/MethodBadge.swift',
+  'Cypress/DesignSystem/Components/SegmentedControl.swift',
+  'Cypress/Features/TreeProfile/CityRecordPresentation.swift',
+  'Cypress/Features/TreeProfile/TreeProfilePresentation.swift',
+  'Cypress/Features/Site/SitePresentation.swift',
 ] as const;
 
 export function repoFile(relative: string): string {

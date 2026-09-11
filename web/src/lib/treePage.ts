@@ -78,8 +78,8 @@ export interface TreePageInput {
   readonly inventoryURL: string | null;
   /** `seed_meta.inventory_<id>_snapshot_on` — a bare `YYYY-MM-DD`, or absent. */
   readonly inventorySnapshotOn: string | null;
-  /** `seed_meta.inventory_<id>_licence` — absent for San Francisco, and that is the honest state. */
-  readonly inventoryLicence: string | null;
+  /** `seed_meta.inventory_<id>_license` — absent for San Francisco, and that is the honest state. */
+  readonly inventoryLicense: string | null;
 }
 
 /** The italic-or-not runs of the serif line under the H1. */
@@ -126,8 +126,8 @@ export interface TreePageModel {
  * entry states what each one is allowed to claim.
  */
 export const W1Copy = {
-  /** The `Data` row's value when the publisher's receipt records no licence for the inventory. */
-  noLicenceRecorded: 'no licence recorded',
+  /** The `Data` row's value when the publisher's receipt records no license for the inventory. */
+  noLicenseRecorded: 'no license recorded',
   /**
    * Why that row is empty, because ruling 4 requires the page to say why rather than look broken.
    *
@@ -135,7 +135,7 @@ export const W1Copy = {
    * about the pipeline, and a sentence blaming a public works department for it would be asserting
    * something this project did not measure.
    */
-  noLicenceNote:
+  noLicenseNote:
     'Cypress states each source’s own terms and says nothing where the record carries none.',
   /** `TreeProfilePresentation.fallbackTitle`, for a record with no species and no address. */
   unnamedRecord: 'Tree',
@@ -298,20 +298,20 @@ export function facts(input: TreePageInput): readonly FactRow[] {
  * less where it does not.**
  *
  * The mock's transcribed value is `ODbL · CSV / GeoJSON`, and it cannot be rendered. ODbL is the
- * licence *contributors* grant at signup; v1 publishes no contributions, so claiming it over city
- * rows would assert a licence over data this project does not hold the rights to license. The
+ * license *contributors* grant at signup; v1 publishes no contributions, so claiming it over city
+ * rows would assert a license over data this project does not hold the rights to license. The
  * ingest receipt carries San Jose's `CC-BY` and New York's Data Mine terms and carries **nothing
  * for San Francisco**, the largest and oldest source — so San Francisco's row is the emptiest one
  * on the page, which is the honest state and is why the note exists.
  *
- * The licence string is reproduced **verbatim** from the receipt rather than shortened. New York's
+ * The license string is reproduced **verbatim** from the receipt rather than shortened. New York's
  * reads `NYC Open Data / Data Mine terms; notification + verbatim disclaimer required`, and a
  * reader is owed the whole of it — an obligation summarized away is an obligation not discharged.
  */
 export function terms(input: TreePageInput): TermsLine {
-  const licence = statedValue(input.inventoryLicence);
-  if (licence !== null) return { label: 'Data', value: licence, note: null };
-  return { label: 'Data', value: W1Copy.noLicenceRecorded, note: W1Copy.noLicenceNote };
+  const license = statedValue(input.inventoryLicense);
+  if (license !== null) return { label: 'Data', value: license, note: null };
+  return { label: 'Data', value: W1Copy.noLicenseRecorded, note: W1Copy.noLicenseNote };
 }
 
 /** One factual sentence for `og:description` and `<meta name="description">`. */

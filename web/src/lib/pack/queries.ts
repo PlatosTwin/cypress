@@ -298,7 +298,7 @@ export interface TreeFactsRow extends TreeRow {
   readonly source: string | null;
   readonly plantedYear: number | null;
   /**
-   * The city's published DBH bucket, in centimetres. **`max` is EXCLUSIVE**, mirroring the
+   * The city's published DBH bucket, in centimeters. **`max` is EXCLUSIVE**, mirroring the
    * Postgres `[)` the seed was built from and `Tree.dbhCityCmRange`'s `IntRange` on the phone.
    * Rendered by `cityDBHRangeText`, never by arithmetic here.
    */

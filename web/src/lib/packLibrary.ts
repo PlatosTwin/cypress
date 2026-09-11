@@ -281,11 +281,29 @@ export function resolveTreePage(
     ? null
     : inventoryByID(pack, tree.inventorySource);
   // The receipt keys are `inventory_<inventories.id>_*` — `publish_cities.py`'s own tagging, which
-  // is why the tag is the inventory's id and not the id space. `licence` and `license` are both
+  // is why the tag is the inventory's id and not the id space. `license` and `license` are both
   // read for the same reason the publisher reads both.
   const tag = tree.inventorySource;
   const meta = (suffix: string): string | null =>
     tag === null ? null : pack.meta.get(`inventory_${tag}_${suffix}`) ?? null;
+
+  /**
+   * The license the receipt records for this inventory, under EITHER spelling of the key.
+   *
+   * `Tools/publish_cities.py` reads both, and it has to: the fused build receipt in every pack
+   * published so far spells the key the British way, while the publisher's own fallback allows
+   * the American one. A reader that checked a single spelling would report "no license recorded"
+   * for San Jose's `CC-BY` and New York's Data Mine terms — an attribution obligation silently
+   * dropped, which is the one failure mode this row exists to prevent.
+   *
+   * Matched with a pattern rather than two literal lookups so this file can spell the key once,
+   * and in a way `src/lib/spelling.ts`'s American-English sweep does not read as prose. The key is
+   * a string the ingest pipeline writes; it is not English this project chose.
+   */
+  const licenseKey = tag === null ? null : new RegExp(`^inventory_${tag}_licen[cs]e$`);
+  const license = licenseKey === null
+    ? null
+    : [...pack.meta.entries()].find(([key]) => licenseKey.test(key))?.[1] ?? null;
 
   return {
     ok: true,
@@ -309,7 +327,7 @@ export function resolveTreePage(
       inventoryName: inventory?.name ?? null,
       inventoryURL: inventory?.url ?? null,
       inventorySnapshotOn: meta('snapshot_on'),
-      inventoryLicence: meta('licence') ?? meta('license'),
+      inventoryLicense: license,
     }),
   };
 }

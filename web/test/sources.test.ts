@@ -20,6 +20,9 @@ import { join } from 'node:path';
 import {
   ParseFailure,
   markdownAnchorTable,
+  markdownGradientRecipe,
+  markdownScrim,
+  markdownSection,
   pythonIdSpacePrefixes,
   pythonStringConstant,
   pythonUUIDConstant,
@@ -28,9 +31,13 @@ import {
   sourcesTheWebSuiteReads,
   swiftClosedRangeLet,
   swiftDeclaration,
+  swiftClosureStringCases,
   swiftDoubleLet,
   swiftEnumCases,
+  swiftGradientRecipe,
   swiftStringCases,
+  swiftStringLet,
+  swiftStringSetLet,
   swiftSwitchTable,
 } from './support/sources.ts';
 
@@ -216,6 +223,139 @@ describe('the parsers the parity tests depend on', () => {
       () => markdownAnchorTable('### Empty\nno table here at all\n', '### Empty'),
       ParseFailure,
     );
+  });
+
+  // ── W-C's parsers ─────────────────────────────────────────────────────────────────────────
+
+  it('slices one markdown section and stops at the next heading of its level', () => {
+    const specimen = [
+      '#### 03 · Tree profile',
+      'Gradient: `radial(28% 46%, #4E8F6A 0→36%)`,',
+      'base `linear-gradient(180deg,#EAF0E2 0%,#CFE0D2 55%,#9DBFA6 100%)`.',
+      '##### A deeper heading, which is INSIDE the section',
+      'still 03',
+      '#### 04 · Visit',
+      'Gradient: `radial(99% 99%, #000000 0→99%)`,',
+      'base `linear-gradient(180deg,#111111 0%,#222222 100%)`.',
+    ].join('\n');
+    const three = markdownSection(specimen, '#### 03 · Tree profile');
+    assert.ok(three.includes('28% 46%'));
+    assert.ok(three.includes('still 03'), 'a deeper heading must not end the section');
+    // The near miss the whole bounding exists for: an unbounded slice answers 04's question with
+    // 03's gradient and looks entirely reasonable doing it.
+    assert.ok(!three.includes('99% 99%'), 'the slice ran into the next screen');
+    assert.throws(() => markdownSection(specimen, '#### 99 · Nothing'), ParseFailure);
+  });
+
+  it('reads a hero gradient stack out of a section, and not the thumbs below it', () => {
+    const specimen = [
+      '1. **Hero**. Gradient:',
+      '   `radial(28% 46%, #4E8F6A 0→36%)`, `radial(54% 32%, #35704F 0→42%)`,',
+      '   base `linear-gradient(180deg,#EAF0E2 0%,#CFE0D2 55%,#9DBFA6 100%)`.',
+      '   Scrim `rgba(16,32,22,0)→.5` from 48%.',
+      '2. Activity thumb — `radial(40% 40%, #4E8F6A 0→50%)` over something else.',
+    ].join('\n');
+    const recipe = markdownGradientRecipe(specimen);
+    // Two, not three: the activity thumb sits after the base and belongs to another element.
+    assert.equal(recipe.radials.length, 2);
+    assert.deepEqual(recipe.radials[0], {
+      x: 0.28, y: 0.46, color: { rgb: 0x4e8f6a, alpha: 1 }, extent: 0.36,
+    });
+    assert.equal(recipe.base.degrees, 180);
+    assert.deepEqual(recipe.base.stops.map((stop) => stop.position), [0, 0.55, 1]);
+    assert.deepEqual(markdownScrim(specimen), { rgb: 0x102016, from: 0.48, to: 0.5 });
+  });
+
+  it('reads an rgba layer and a base with no stated stop positions', () => {
+    const specimen = [
+      '   - Base: `radial(34% 44%, rgba(78,143,106,.5) 0→40%)`,',
+      '     `linear-gradient(170deg,#E4EBD8,#B9CDBC)`.',
+    ].join('\n');
+    const recipe = markdownGradientRecipe(specimen);
+    assert.deepEqual(recipe.radials[0]?.color, { rgb: 0x4e8f6a, alpha: 0.5 });
+    // CSS puts an unpositioned two-stop base at 0 and 1. Derived, not defaulted to 0 — a default
+    // would put both stops in the same place and still parse.
+    assert.deepEqual(recipe.base.stops.map((stop) => stop.position), [0, 1]);
+    assert.throws(() => markdownGradientRecipe('nothing here'), ParseFailure);
+    assert.throws(() => markdownScrim('nothing here'), ParseFailure);
+  });
+
+  it('reads a CypressGradientRecipe out of Swift, in both of its linear forms', () => {
+    const specimen = [
+      '    static let heroX = CypressGradientRecipe(',
+      '        base: linear(180, [(0xEAF0E2, 0), (0xCFE0D2, 0.55), (0x9DBFA6, 1)]),',
+      '        radials: [',
+      '            CypressRadialStop(0.28, 0.46, hex(0x4E8F6A), 0.36),',
+      '            CypressRadialStop(0.54, 0.32, hex(0x35704F, 0.6), 0.42),',
+      '        ]',
+      '    )',
+      '    static let thumbX = CypressGradientRecipe(',
+      '        base: CypressGradient.linear(170, 0xE4EBD8, 0xB9CDBC),',
+      '        radials: [CypressRadialStop(0.40, 0.40, CypressGradient.hex(0x4E8F6A), 0.50)]',
+      '    )',
+    ].join('\n');
+    const hero = swiftGradientRecipe(specimen, 'heroX');
+    assert.equal(hero.radials.length, 2, 'the parser reached into the second recipe, or missed one');
+    assert.deepEqual(hero.radials[1]?.color, { rgb: 0x35704f, alpha: 0.6 });
+    assert.deepEqual(hero.base.stops.map((stop) => stop.position), [0, 0.55, 1]);
+
+    const thumb = swiftGradientRecipe(specimen, 'thumbX');
+    assert.equal(thumb.radials.length, 1);
+    assert.deepEqual(thumb.base.stops.map((stop) => stop.color.rgb), [0xe4ebd8, 0xb9cdbc]);
+    assert.throws(() => swiftGradientRecipe(specimen, 'absentX'), ParseFailure);
+  });
+
+  it('reads a string constant, and is not fooled by one quoted in a comment', () => {
+    const specimen = [
+      '    /// It used to read `static let header = "What San Francisco has on file"`.',
+      '    static let header = "What the city has on file"',
+      '    static let plotWidthSuffix = " ft wide"',
+    ].join('\n');
+    assert.equal(swiftStringLet(specimen, 'header'), 'What the city has on file');
+    assert.equal(swiftStringLet(specimen, 'plotWidthSuffix'), ' ft wide');
+    assert.throws(() => swiftStringLet(specimen, 'absent'), ParseFailure);
+  });
+
+  it('reads a Set<String> across however many lines it is written on', () => {
+    const specimen = [
+      '    static let markers: Set<String> = [',
+      '        "n/a", "n.a.", "na",',
+      '        "not applicable",',
+      '    ]',
+      '    static let other: Set<String> = ["x"]',
+    ].join('\n');
+    assert.deepEqual(swiftStringSetLet(specimen, 'markers'), ['n/a', 'n.a.', 'na', 'not applicable']);
+    assert.deepEqual(swiftStringSetLet(specimen, 'other'), ['x']);
+    assert.throws(() => swiftStringSetLet(specimen, 'absent'), ParseFailure);
+  });
+
+  it('reads the switch inside a closure, scoped to the one the marker names', () => {
+    const specimen = [
+      '        SegmentedControl(',
+      '            options: [.alive, .declining],',
+      '            selection: selection,',
+      '            label: { status in',
+      '                switch status {',
+      '                case .alive: return "Alive"',
+      '                case .vacantSite: return "Vacant site"',
+      '                }',
+      '            }',
+      '        )',
+      '    }',
+      '}',
+      'extension Other {',
+      '    label: { method in',
+      '        switch method {',
+      '        case .tape: return "Tape"',
+      '        }',
+      '    }',
+    ].join('\n');
+    const labels = swiftClosureStringCases(specimen, 'options: [.alive, .declining],');
+    // `vacantSite` is in the switch and not in the options, which is the case the real file has
+    // and the one a parser that stopped at the options would drop.
+    assert.deepEqual([...labels], [['alive', 'Alive'], ['vacantSite', 'Vacant site']]);
+    assert.ok(!labels.has('tape'), 'the scan ran on into a second closure');
+    assert.throws(() => swiftClosureStringCases(specimen, 'absent'), ParseFailure);
   });
 });
 
@@ -430,8 +570,8 @@ describe('the sources the web suite reads', () => {
     assert.ok(root.length > 0);
     assert.equal(
       sourcesTheWebSuiteReads.length,
-      10,
-      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 10. If a check was `
+      16,
+      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 16. If a check was `
         + `added, add its source here and to web.yml; if one was removed, this count moves with it.`,
     );
     for (const relative of sourcesTheWebSuiteReads) {
@@ -500,12 +640,18 @@ describe('the sources the web suite reads', () => {
     assert.deepEqual(
       onDisk,
       [
+        'cityRecord.ts',
         'geometry.ts',
+        'gradients.ts',
         'growthCharting.ts',
         'idSpaces.ts',
+        'ogCard.ts',
+        'packLibrary.ts',
         'quantity.ts',
         'spelling.ts',
+        'tokens.ts',
         'toolchain.ts',
+        'treePage.ts',
         'vitality.ts',
       ],
       'web/src/lib no longer holds the modules this suite was built around. A module that left '
