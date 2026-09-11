@@ -64,8 +64,9 @@ export const FIXTURE = {
    *
    * **It carries hex LETTERS on purpose.** An all-digit uuid is unchanged by `toUpperCase()`, so
    * the test that proves an uppercase uuid still matches would compare a string with itself and
-   * pass against a query that did no normalization at all. It also sorts before the others, which
-   * keeps `treesInBounds`'s `ORDER BY uuid` stable and readable.
+   * pass against a query that did no normalization at all. It sorts before the vacant site and the
+   * far-away tree, and AFTER the four R*Tree false positives, whose uuids sort first while their
+   * rowids sort last — see `rtreeFalsePositives` for why that crossing matters.
    */
   aliveTreeUUID: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
   vacantTreeUUID: '22222222-2222-4222-8222-222222222222',
@@ -95,28 +96,35 @@ export const FIXTURE = {
    *
    * **One per bound**, so each of the four re-tested bounds has a row only it excludes: drop any
    * single `BETWEEN` end and exactly one of these comes back.
+   *
+   * Their uuids sort BEFORE every other tree's while their `trees.id`s come after, which is a
+   * second job: it is what makes `treesInBounds`'s `ORDER BY t.<identity column>` falsifiable.
+   * With uuid order and rowid order agreeing — which they did while these were `6666…` — ordering
+   * by `t.id` instead, or dropping the `ORDER BY` altogether, changed nothing any test could see,
+   * and the order is what makes a `LIMIT`ed read deterministic rather than "whatever the join
+   * produced first".
    */
   rtreeFalsePositives: [
     {
-      uuid: '66666666-6666-4666-8666-000000000001',
+      uuid: '06666666-6666-4666-8666-000000000001',
       lat: 37.780001,
       lon: -122.42,
       escapes: 'its latitude is above the box',
     },
     {
-      uuid: '66666666-6666-4666-8666-000000000002',
+      uuid: '06666666-6666-4666-8666-000000000002',
       lat: 37.769999,
       lon: -122.42,
       escapes: 'its latitude is below the box',
     },
     {
-      uuid: '66666666-6666-4666-8666-000000000003',
+      uuid: '06666666-6666-4666-8666-000000000003',
       lat: 37.775,
       lon: -122.409999,
       escapes: 'its longitude is above the box',
     },
     {
-      uuid: '66666666-6666-4666-8666-000000000004',
+      uuid: '06666666-6666-4666-8666-000000000004',
       lat: 37.775,
       lon: -122.4300001,
       escapes: 'its longitude is below the box',
@@ -526,6 +534,66 @@ export function buildNonPack(): Fixture {
   db.exec('CREATE TABLE something_else (a INTEGER); INSERT INTO something_else VALUES (1)');
   db.close();
   return { path, generation: 17, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
+}
+
+/**
+ * A pack with **`dim_city` and no `trees.id_space`**, and with **no `trees.deleted_at`**.
+ *
+ * The mirror image of `buildShortNameWithoutIdSpacePack`, and it exists because the re-audit that
+ * found the `dim_city` join resolving through one value found two more branches of the same shape:
+ * claims the read layer makes that no fixture could falsify.
+ *
+ * 1. **`cityNameSource` gates `dc.display_name` on `hasDimCity && hasIdSpace`, never on
+ *    `hasDimCity` alone**, because `dc` is joined THROUGH `isp` — its docstring says so at length
+ *    and no fixture could show it. Dropping `&& schema.hasIdSpace` was green in both tiers: every
+ *    other pack here with a `dim_city` also has `trees.id_space`, so the two flags never disagreed.
+ *    On this file they do, and the mutation becomes `no such column: isp.city_id` at prepare time.
+ * 2. **`softDeletePredicate` applies `deleted_at IS NULL` only where the column exists.** Every
+ *    other fixture carries the column — `schema.sql` always has — so hard-coding the predicate
+ *    "always applied" was green everywhere. Here the column is absent and the same mutation is
+ *    `no such column: t.deleted_at`.
+ *
+ * Two degeneracies in one specimen, which is worth being uneasy about; they are kept together
+ * because their failures name different columns and cannot be confused for one another, and both
+ * were red-proved by mutation before this comment was written.
+ *
+ * Hand-built for the reason the sibling below gives: `trees.id_space` is part of
+ * `UNIQUE (id_space, external_ref)` and SQLite refuses `DROP COLUMN` on an indexed column, so this
+ * shape cannot be degraded out of the real contract.
+ */
+export function buildDimCityWithoutIdSpacePack(): Fixture {
+  const directory = mkdtempSync(join(tmpdir(), 'cypress-pack-dimcity-noidspace-'));
+  const path = join(directory, 'degenerate-dim-city.sqlite');
+  const db = new DatabaseSync(path);
+  const now = '2026-01-01T00:00:00Z';
+  db.exec(`
+    CREATE TABLE species (id INTEGER PRIMARY KEY, uuid TEXT NOT NULL UNIQUE,
+                          scientific_name TEXT NOT NULL, common_name TEXT);
+    CREATE TABLE neighborhoods (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+    CREATE TABLE dim_city (id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE,
+                           display_name TEXT NOT NULL, state TEXT NOT NULL, county TEXT NOT NULL,
+                           urban_forestry_url TEXT NOT NULL);
+    CREATE TABLE id_spaces (id TEXT PRIMARY KEY, identity_prefix TEXT NOT NULL,
+                            note TEXT NOT NULL, city_id INTEGER NOT NULL REFERENCES dim_city(id));
+    CREATE TABLE trees (id INTEGER PRIMARY KEY, uuid TEXT NOT NULL UNIQUE,
+                        lat REAL NOT NULL, lon REAL NOT NULL, status TEXT NOT NULL,
+                        address TEXT, neighborhood_id INTEGER, species_current INTEGER,
+                        created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE VIRTUAL TABLE trees_rtree USING rtree(id, min_lat, max_lat, min_lon, max_lon);
+    INSERT INTO dim_city (id, slug, display_name, state, county, urban_forestry_url)
+    VALUES (1, 'us-ca-sf', '${FIXTURE.cityDisplayName}', 'CA', 'San Francisco',
+            'https://example.invalid/urban-forestry');
+    INSERT INTO id_spaces (id, identity_prefix, note, city_id)
+    VALUES ('${FIXTURE.idSpace}', '', 'fixture', 1);
+    INSERT INTO trees (id, uuid, lat, lon, status, created_at, updated_at)
+    VALUES (1, '${FIXTURE.aliveTreeUUID}', ${FIXTURE.aliveTreeLatitude},
+            ${FIXTURE.aliveTreeLongitude}, 'alive', '${now}', '${now}');
+    INSERT INTO trees_rtree (id, min_lat, max_lat, min_lon, max_lon)
+    VALUES (1, ${FIXTURE.aliveTreeLatitude}, ${FIXTURE.aliveTreeLatitude},
+            ${FIXTURE.aliveTreeLongitude}, ${FIXTURE.aliveTreeLongitude});
+  `);
+  db.close();
+  return { path, generation: 16, cleanup: () => rmSync(directory, { recursive: true, force: true }) };
 }
 
 /**

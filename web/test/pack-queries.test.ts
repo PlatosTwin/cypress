@@ -5,6 +5,7 @@ import { openPack, type Pack } from '../src/lib/pack/pack.ts';
 import { packIdentity, treeByUUID, treeCount, treesInBounds } from '../src/lib/pack/queries.ts';
 import {
   FIXTURE,
+  buildDimCityWithoutIdSpacePack,
   buildPack,
   buildShortNameWithoutIdSpacePack,
   type Fixture,
@@ -127,6 +128,47 @@ describe('the city-name fallback, which is three sources and not one', () => {
       'the city name came from id_spaces.short_name, but dim_city is the preferred source: it is '
         + 'the table id_spaces.short_name was absorbed INTO, so preferring short_name shows the '
         + 'older of two answers as if it were the newer.',
+    );
+  });
+
+  it('dim_city with no trees.id_space prepares and answers null, instead of throwing', () => {
+    // The mirror of the test below, and the branch `cityNameSource`'s docstring is most emphatic
+    // about: `dc` is joined THROUGH `isp`, so projecting `dc.display_name` on `hasDimCity` alone
+    // is `no such column: isp.city_id` at prepare time. Every other fixture with a `dim_city` also
+    // has `trees.id_space`, so the two flags never disagreed and dropping `&& schema.hasIdSpace`
+    // was green in both tiers — the same shape as the `dim_city` join resolving through one value.
+    const fixture = buildDimCityWithoutIdSpacePack();
+    open.push(fixture);
+    const pack = openPack(fixture.path, { immutable: false });
+    packs.push(pack);
+    assert.equal(pack.schema.hasDimCity, true);
+    assert.equal(pack.schema.hasIdSpace, false, 'the fixture carries trees.id_space after all');
+    const tree = treeByUUID(pack, FIXTURE.aliveTreeUUID);
+    assert.ok(tree !== null, 'the degenerate pack returned no tree at all');
+    assert.equal(tree.cityName, null);
+  });
+
+  it('a pack with no trees.deleted_at reads without a soft-delete predicate', () => {
+    // `softDeletePredicate` applies `deleted_at IS NULL` only where the column exists, and every
+    // other fixture has it — `schema.sql` always has — so hard-coding the predicate as always
+    // applied was green everywhere. All three reads go through the predicate, so all three are
+    // asked here.
+    const fixture = buildDimCityWithoutIdSpacePack();
+    open.push(fixture);
+    const pack = openPack(fixture.path, { immutable: false });
+    packs.push(pack);
+    const columns = pack.db.prepare('SELECT name FROM pragma_table_info(?)').all('trees')
+      .map((row) => String((row as Record<string, unknown>)['name']));
+    assert.equal(
+      columns.includes('deleted_at'),
+      false,
+      'the fixture has a deleted_at column, so it cannot say anything about a pack without one',
+    );
+    assert.equal(treeByUUID(pack, FIXTURE.aliveTreeUUID)?.uuid, FIXTURE.aliveTreeUUID);
+    assert.equal(treeCount(pack), 1);
+    assert.deepEqual(
+      treesInBounds(pack, missionBounds, 50).map((row) => row.uuid),
+      [FIXTURE.aliveTreeUUID],
     );
   });
 
@@ -302,6 +344,42 @@ describe('trees in a bounding box', () => {
 
   it('honors the limit', () => {
     assert.equal(treesInBounds(generation(17), missionBounds, 1).length, 1);
+  });
+
+  it('orders by the identity column, which is what makes a limited read deterministic', () => {
+    // `ORDER BY t.<treeIdentityColumn>` decides WHICH rows a `LIMIT` returns, so it is not
+    // cosmetic — and until the false positives' uuids were made to sort against their rowids,
+    // nothing could tell: ordering by `t.id` instead, or dropping the `ORDER BY` entirely, was
+    // green in both tiers, because every fixture uuid happened to sort in rowid order.
+    const pack = generation(17);
+    const wide = { minLatitude: 30, maxLatitude: 45, minLongitude: -125, maxLongitude: -70 };
+    // Both expected orders come from the FIXTURE, never from the query — otherwise a query that
+    // ordered by rowid would satisfy the calibration and then be accused of a fixture defect,
+    // which is a failure message that sends the reader to the wrong file.
+    const byRowid = pack.db
+      .prepare(
+        'SELECT t.uuid AS uuid FROM trees_rtree r JOIN trees t ON t.id = r.id '
+          + 'WHERE t.deleted_at IS NULL ORDER BY t.id',
+      )
+      .all()
+      .map((row) => String((row as Record<string, unknown>)['uuid']));
+    const byUUID = [...byRowid].sort();
+    assert.notDeepEqual(
+      byUUID,
+      byRowid,
+      'this fixture sorts the same way by uuid and by rowid, so no assertion below can tell which '
+        + 'the query used. Restore the crossing described on FIXTURE.rtreeFalsePositives.',
+    );
+    const uuids = treesInBounds(pack, wide, 50).map((row) => row.uuid);
+    assert.deepEqual(
+      uuids,
+      byUUID,
+      'the box did not come back in uuid order. Ordering by rowid instead, or not ordering at '
+        + 'all, is the difference between a LIMITed read that is repeatable and one that returns '
+        + 'whatever the join produced first.',
+    );
+    // And a limit takes a PREFIX of that order rather than an arbitrary subset.
+    assert.deepEqual(treesInBounds(pack, wide, 3).map((row) => row.uuid), byUUID.slice(0, 3));
   });
 
   it('refuses a limit that is not a positive whole number', () => {
