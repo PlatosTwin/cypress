@@ -16,9 +16,13 @@ diff that skips the job it runs in.** It executes only as a passenger on some un
 happens to touch Swift. `gate` is green either way, and its green is honest about what it checked:
 that the diff was prose. It says nothing about the prose.
 
-This is not hypothetical and it is not old. #158 (`5ff63c1`, "open the web round") cited
-`` `Tools/run_web_tests.sh` `` and `` `Tools/verify_web_test_log.sh` `` as backticked repo-relative
-paths in four documents. Both scripts were still unmerged on the web foundation branch, so main
+This is not hypothetical and it is not old. #158 (`5ff63c1`, "open the web round") cited the web
+round's two verification scripts — `run_web_tests.sh` and `verify_web_test_log.sh`, then unwritten,
+proposed to live under `Tools/` — as backticked **repo-relative paths**, prefix included, in four
+documents. (They are named without their directory here for the reason #166 named them that way in
+the roadmap: a token carrying no `/` is not a path to this guard, and an errata entry about dangling
+citations that dangles two of its own is a poor advertisement. That is not a hypothetical either —
+the first draft of this entry did exactly that, and the out-of-band check caught it.) Both scripts were still unmerged on the web foundation branch, so main
 took on eight dangling citations in one commit. Three further prose-only PRs — #160, #161 and #164 —
 then merged green on top of a main that was already carrying them, because each of the four is
 classified prose-only and `unit` reports `skipping` on all of them (checked, not assumed: none of
