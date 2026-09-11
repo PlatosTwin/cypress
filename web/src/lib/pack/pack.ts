@@ -37,14 +37,18 @@ import { NEWEST_KNOWN_PACK_SCHEMA_VERSION } from './versions.ts';
 
 /** A pack whose generation this build does not read, refused before anything is queried. */
 export class PackTooNewError extends Error {
-  constructor(
-    readonly fileVersion: number,
-    readonly buildKnows: number,
-  ) {
+  /** The generation the file states about itself. */
+  readonly fileVersion: number;
+  /** `NEWEST_KNOWN_PACK_SCHEMA_VERSION`, repeated on the error so a handler need not import it. */
+  readonly buildKnows: number;
+
+  constructor(fileVersion: number, buildKnows: number) {
     // The phone's wording, pointed the same way: a generation from the future is refused before
     // ATTACH, never after.
     super(`pack is schema generation ${fileVersion} but this build knows up to ${buildKnows}`);
     this.name = 'PackTooNewError';
+    this.fileVersion = fileVersion;
+    this.buildKnows = buildKnows;
   }
 }
 
