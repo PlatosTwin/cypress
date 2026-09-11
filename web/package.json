@@ -1,0 +1,26 @@
+{
+  "name": "cypress-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The public read surface for Cypress. Milestone W-A: the foundation only.",
+  "engines": {
+    "node": ">=24.13.1 <25"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "start": "node ./dist/server/entry.mjs",
+    "typecheck": "astro check --minimumFailingSeverity warning && tsc --noEmit",
+    "test": "node --test --test-reporter=tap \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@astrojs/node": "11.1.5",
+    "astro": "7.3.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@types/node": "24.13.4",
+    "typescript": "5.9.3"
+  }
+}
