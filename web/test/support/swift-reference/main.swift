@@ -36,10 +36,18 @@
 //   1. **Values.** `web/test/*.test.ts` parses `publicPhotoGridM`, `growthChartingLimitM`, the
 //      `metersPerUnit` table and both `PlausibleRange` bounds out of the live Swift and asserts
 //      this fixture still agrees with them.
-//   2. **The source itself.** `web/test/swiftDrift.test.ts` fingerprints the eleven Swift
-//      declarations the ports re-implement — signature through closing brace, comments and layout
-//      normalized away — and goes red on ANY edit to them, behavioral or cosmetic. Its failure
-//      message points the reader back at the command above.
+//   2. **The source itself.** `web/test/swiftDrift.test.ts` fingerprints the Swift declarations
+//      whose bodies the ports reproduce and no value parser reads — signature through closing
+//      brace, comments and layout normalized away — and goes red on ANY edit to them, behavioral
+//      or cosmetic. That file states the membership rule, names the set, and says which
+//      declarations are deliberately out and why; it is the place to reconcile against, and this
+//      comment deliberately does not restate the list. Its failure message points the reader back
+//      at the command above.
+//
+//      Note which of those declarations this program exercises and which it does not: it compiles
+//      `Quantity.swift`, `Geometry.swift` and `CoreEntity.swift` only, so `TreeMeasurement` and
+//      `Vitality` are fingerprinted with no recorded output behind them. For those two the
+//      tripwire is the whole guard, not half of it.
 //
 // Said plainly, because a comment that overstates a guard is what caused this correction: what the
 // web suite proves is **TypeScript against this recording, plus a tripwire on the Swift source

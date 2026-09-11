@@ -352,10 +352,73 @@ describe('the whole-declaration fingerprint', () => {
     );
   });
 
-  it('refuses a signature that is absent, and one with no body after it', () => {
+  it('refuses a signature that is absent, and one with no balanced body anywhere after it', () => {
     assert.throws(() => swiftDeclaration(specimen, 'public func absent()'), ParseFailure);
     assert.throws(
       () => swiftDeclaration('public static let bare: Double = 25\n', 'public static let bare'),
+      ParseFailure,
+    );
+  });
+
+  /**
+   * The other half of that sentence, asserted rather than left to the reader.
+   *
+   * This test used to be named "…and one with no body after it", which is not what the specimen
+   * above proves: the specimen is the LAST thing in its string, so the scan runs off the end. Give
+   * the body-less signature a neighbor and the refusal disappears — the scan closes on the
+   * neighbor's brace instead (PR #173 delta review, D4).
+   *
+   * That is written down here, and asserted, because it is a documented behavior and not a bug:
+   * the fingerprint then covers MORE text than the row names, so it is strictly more sensitive.
+   * If anyone ever tightens the bound to "a body of its own", this assertion goes red and the
+   * decision gets read rather than discovered.
+   */
+  it('fingerprints a body-less signature through to the next declaration when one follows', () => {
+    const withNeighbor = 'public func foo() -> Double\n\npublic var bar: Int { return 1 }\n';
+    const found = swiftDeclaration(withNeighbor, 'public func foo() -> Double');
+    assert.equal(found.normalized, 'public func foo() -> Double public var bar: Int { return 1 }');
+  });
+
+  /**
+   * Comment-insensitivity at the LOOKUP stage, which is a different claim from the normalizer's.
+   *
+   * `swiftDrift.test.ts` tells its reader that reflowing or rewriting a doc comment does not trip
+   * the wire. It did trip it, before `codeOnly`: the ambiguity count scanned raw text, so a doc
+   * comment naming the function it documents made the lookup report `appears more than once in the
+   * source — narrow the signature` — advice that cannot be followed, for an edit that changed no
+   * code. Demonstrated by PR #173's delta review on the real `Geometry.swift`.
+   */
+  it('does not count a signature quoted in a comment or a string as a second declaration', () => {
+    const quotedInComment = [
+      '/// Calls `public func snap(_ x: Double) -> Double` and rounds the result.',
+      'public func snap(_ x: Double) -> Double {',
+      '    return x',
+      '}',
+    ].join('\n');
+    const found = swiftDeclaration(quotedInComment, 'public func snap(_ x: Double) -> Double');
+    assert.equal(found.normalized, 'public func snap(_ x: Double) -> Double { return x }');
+
+    const quotedInString = [
+      'public var usage: String {',
+      '    return "public func snap(_ x: Double) -> Double"',
+      '}',
+      'public func snap(_ x: Double) -> Double {',
+      '    return x',
+      '}',
+    ].join('\n');
+    assert.equal(
+      swiftDeclaration(quotedInString, 'public func snap(_ x: Double) -> Double').normalized,
+      'public func snap(_ x: Double) -> Double { return x }',
+    );
+
+    // And the blanking does not cost the parser its real ambiguity refusal: two genuine
+    // declarations still collide. Without this the fix could have been "never refuse anything".
+    const twoReal = [
+      'public func snap(_ x: Double) -> Double { return x }',
+      'public func snap(_ x: Double) -> Double { return -x }',
+    ].join('\n');
+    assert.throws(
+      () => swiftDeclaration(twoReal, 'public func snap(_ x: Double) -> Double'),
       ParseFailure,
     );
   });

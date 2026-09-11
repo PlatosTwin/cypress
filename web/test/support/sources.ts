@@ -147,6 +147,25 @@ export function swiftDoubleLet(source: string, name: string): number {
  * different, still deterministic, fingerprint, so the wire trips rather than failing open. There
  * are none in the declarations listed today, and this is recorded so the next reader does not
  * have to re-derive whether it matters.
+ *
+ * The comment-insensitivity has to hold at the LOOKUP stage too, not only in the normalizer, or a
+ * doc comment quoting the signature it documents counts as a second declaration and the caller is
+ * told to "narrow the signature" for a pure-prose edit. `codeOnly` below is what makes that true;
+ * it also blanks string-literal bodies, so a signature quoted inside a literal is likewise not a
+ * declaration.
+ *
+ * ── What the bounding does NOT refuse ────────────────────────────────────────────────────────
+ *
+ * The scan takes the first balanced `{ … }` it meets after the signature, wherever that is. A
+ * signature with no body of its own — a protocol requirement, a `let` — therefore fingerprints
+ * through to the NEXT declaration's closing brace whenever one follows, and only fails when
+ * nothing does. That is not a hole in the wire: the fingerprint then covers MORE text than the
+ * row names, so it is strictly more sensitive, never less, and a red still points at the file and
+ * the signature. But it means the refusal is "no balanced body anywhere after this", not "no body
+ * of its own", and the calibration below is named for what it proves rather than for what the
+ * refusal sounds like. Found by PR #173's delta review (D4). Every row in the tripwire table
+ * today names a declaration that does have its own body, which is the condition under which the
+ * bound is exact; adding a body-less one would need this widened first.
  */
 export interface SwiftDeclaration {
   /** The declaration exactly as the file has it, signature through closing brace. */
@@ -157,13 +176,71 @@ export interface SwiftDeclaration {
   readonly fingerprint: string;
 }
 
+/**
+ * `source` with every comment body and string-literal body blanked to spaces, same length.
+ *
+ * Positions are preserved deliberately: an index found in this masked copy indexes the ORIGINAL,
+ * so the body scan below still reads real source. Newlines survive so line structure does.
+ *
+ * This exists because the lookup used to scan raw text, which made the signature search sensitive
+ * to prose. A doc comment that names the function it documents — an ordinary thing to write — made
+ * `swiftDeclaration` report `appears more than once in the source — narrow the signature`, advice
+ * that cannot be followed, for an edit that changed no code. Demonstrated on the real
+ * `Geometry.swift` by PR #173's delta review (D5). Comment-insensitivity is claimed twice in
+ * `swiftDrift.test.ts`, so it has to hold at the lookup stage and not only in the normalizer.
+ */
+function codeOnly(source: string): string {
+  const out = source.split('');
+  const blank = (index: number): void => {
+    if (out[index] !== '\n') out[index] = ' ';
+  };
+  let mode: 'code' | 'line' | 'block' | 'string' = 'code';
+  let blockDepth = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    const c = source[i] as string;
+    const next = source[i + 1];
+    if (mode === 'code') {
+      if (c === '/' && next === '/') { mode = 'line'; blank(i); blank(i + 1); i += 1; continue; }
+      if (c === '/' && next === '*') {
+        mode = 'block'; blockDepth = 1; blank(i); blank(i + 1); i += 1; continue;
+      }
+      // The delimiters stay; only what is between them is blanked, so `return "x"` keeps its shape.
+      if (c === '"') { mode = 'string'; continue; }
+      continue;
+    }
+    if (mode === 'line') {
+      if (c === '\n') { mode = 'code'; continue; }
+      blank(i);
+      continue;
+    }
+    if (mode === 'block') {
+      if (c === '/' && next === '*') { blockDepth += 1; blank(i); blank(i + 1); i += 1; continue; }
+      if (c === '*' && next === '/') {
+        blockDepth -= 1; blank(i); blank(i + 1); i += 1;
+        if (blockDepth === 0) mode = 'code';
+        continue;
+      }
+      blank(i);
+      continue;
+    }
+    // string
+    if (c === '\\') { blank(i); if (i + 1 < source.length) blank(i + 1); i += 1; continue; }
+    if (c === '"') { mode = 'code'; continue; }
+    blank(i);
+  }
+  return out.join('');
+}
+
 export function swiftDeclaration(source: string, signature: string): SwiftDeclaration {
-  const first = source.indexOf(signature);
+  // Both the search and the ambiguity count run over code only — see `codeOnly`. A signature
+  // quoted in a doc comment is not a second declaration and must not be counted as one.
+  const code = codeOnly(source);
+  const first = code.indexOf(signature);
   if (first < 0) fail(`no \`${signature}\` in the source`);
   // Ambiguity is refused rather than resolved by taking the first. `Quantity.series` and
   // `MeasurementMethod.series` share a prefix in one file, and a parser that quietly picked one
   // of two would fingerprint whichever the file happened to list first.
-  if (source.indexOf(signature, first + 1) >= 0) {
+  if (code.indexOf(signature, first + 1) >= 0) {
     fail(`\`${signature}\` appears more than once in the source — narrow the signature`);
   }
 

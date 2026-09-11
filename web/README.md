@@ -162,10 +162,12 @@ the program that printed it and carries the command to regenerate it.
 
 It is a **recording**, and a recording does not move when its subject does. So the guard is in two
 halves and the honest description of it is *TypeScript against a recorded snapshot, plus a tripwire
-on the Swift source that snapshot came from*: `test/swiftDrift.test.ts` fingerprints the eleven
-Swift declarations the ports re-implement and goes red on any edit to them, cosmetic or not, with a
-message telling the reader to re-record the reference and re-verify parity before pasting a new
-fingerprint. Without that second half, two one-character edits to the real Swift — `111_320.0` to
+on the Swift source that snapshot came from*: `test/swiftDrift.test.ts` fingerprints the Swift
+declarations whose bodies the ports reproduce and no value parser reads, and goes red on any edit to
+them, cosmetic or not, with a message telling the reader to re-record the reference and re-verify
+parity before pasting a new fingerprint. That file states the membership rule, names the set it
+covers and lists what is deliberately out; this paragraph does not restate the list, because the
+first version of it did and was wrong about the set while being right about the count. Without that second half, two one-character edits to the real Swift — `111_320.0` to
 `111_000.0`, and `<=` to `<` on the D6 gate — left the suite green at `103 of 103` while the two
 implementations snapped the same coordinate 8.2 m apart and charted different sets of
 measurements. Both were found by PR #173's adversarial review, and both now go red.

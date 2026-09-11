@@ -27,9 +27,11 @@
  *
  * ── What this file does, scoped honestly ─────────────────────────────────────────────────────
  *
- * It fingerprints the exact Swift declarations the ports re-implement — signature through closing
- * brace, comments dropped, whitespace collapsed — and asserts each fingerprint is the one recorded
- * below. It is a TRIPWIRE, and the whole of what it proves is:
+ * It fingerprints Swift declarations — signature through closing brace, comments dropped,
+ * whitespace collapsed — and asserts each fingerprint is the one recorded below. WHICH
+ * declarations, and why those, is set out under "Which declarations are in the table" below; the
+ * short version is the ones a port reproduces the body of and no value parser reads. It is a
+ * TRIPWIRE, and the whole of what it proves is:
  *
  *   **this Swift has not been edited since these fingerprints were recorded.**
  *
@@ -44,18 +46,46 @@
  * A red here is not "the Swift is wrong", it is "a human has to look", and looking is the step
  * that was missing.
  *
- * ── What it does NOT cover ───────────────────────────────────────────────────────────────────
+ * ── Which declarations are in the table, and why the rest are not ────────────────────────────
  *
- *   * Swift outside the eleven declarations listed below. `Species.swift`'s data, the `Codable`
- *     conformances, anything in `Data` or `Features`: unfingerprinted, and the ports do not claim
- *     to reproduce them.
- *   * The enum cases and switch tables that `quantity.test.ts` and `vitality.test.ts` already
- *     parse by VALUE — `metersPerUnit`, `isMetric`, `MeasurementMethod.series`, `Vitality.label`,
- *     `Vitality.anchor`. A fingerprint there would be a second, more brittle copy of a check that
- *     already bites on the thing that matters.
- *   * The Python. `inventory_contract.py`'s prefixes are parsed by value; its inventory NAMES and
- *     URLs are still an unguarded transcription (#173 review, N4) and this file does not change
- *     that.
+ * **The rule: a Swift declaration is listed below when something in `web/src/lib/` reproduces its
+ * BODY, and no value parser already reads that body.** Both halves matter. The first is what makes
+ * the table a statement about the ports rather than a sample of the Swift; the second is what keeps
+ * it from becoming a second, more brittle copy of a check that already bites.
+ *
+ * The rule is stated because the first version of this table failed the first half of it and said
+ * otherwise. It listed eleven declarations and called them "the declarations the ports
+ * re-implement"; `Quantity.series` and the `Codable` wire contract were missing, and the guard on
+ * the table counted rows rather than naming them, so nothing noticed. PR #173's delta review
+ * mutated both to a green suite (D2). `quantity.ts` had said all along, in these words, that it
+ * reproduces `Quantity.init(from:)`. The count was true and the claim around it was not.
+ *
+ * So, what is OUT, each with the reason:
+ *
+ *   * **The enum cases and switch tables `quantity.test.ts` and `vitality.test.ts` parse by
+ *     VALUE** — `LengthUnit.metersPerUnit`, `isMetric`, `MeasurementMethod.series`,
+ *     `MeasurementKind.plausibleSIRange`, `Vitality`'s raw values, `label`, `anchor`, and the
+ *     ORDER of `Vitality.rubric`. Those tests read the live Swift and compare the values
+ *     themselves, which is strictly better than a hash: they say WHICH entry moved. Note the
+ *     distinction this draws, because it is the one the first table got wrong —
+ *     `MeasurementMethod.series` is read by value and is out; `Quantity.series`, the one-line
+ *     delegation to it, is read by nothing and is IN.
+ *   * **`Quantity.encode(to:)`.** Nothing in `web/src/lib/` writes this wire — `quantity.ts`
+ *     exports `quantityFromJSON` and no encoder — and the key names an encoder would write come
+ *     from `CodingKeys`, which IS in the table. If the web ever gains a writer, this row is owed.
+ *   * **`TreeMeasurement.series` and `TreeMeasurement.isPlausible`.** Both are one-line
+ *     compositions, and the port composes neither: `growthCharting.ts`'s `ChartablePoint` takes
+ *     `series` as a field the caller supplies rather than deriving it, and `quantity.ts` exports
+ *     `isPlausible` and `plausibleSIRange` separately with nothing pairing them. What the port
+ *     does reproduce — the two halves — is covered above and below.
+ *   * **`Double.rounded()`**, which `geometry.ts`'s `roundedAwayFromZero` reproduces. It is
+ *     stdlib, not a declaration in this repository, and its behavior is recorded by measurement in
+ *     `swift-reference.json`'s `rounded` rows, which `geometry.test.ts` asserts against.
+ *   * **Swift the ports do not touch at all**: `Species.swift`'s data, anything in `Data` or
+ *     `Features`.
+ *   * **The Python.** `inventory_contract.py`'s prefixes are parsed by value; its inventory NAMES
+ *     and URLs are still an unguarded transcription (#173 review, N4) and this file does not
+ *     change that.
  *
  * ── When this goes red ───────────────────────────────────────────────────────────────────────
  *
@@ -83,10 +113,9 @@
  * bit, so a Linux re-run diffed byte-for-byte against `swift-reference.json` may well fail for a
  * reason that is not drift. That is answerable — with the same tolerance machinery
  * `geometry.test.ts` already uses — and it is a round of its own, on a runner, watched. Reported to
- * the orchestrator for `docs/ROADMAP.md` rather than guessed at here; this PR does not edit the
- * roadmap, because two other live branches are editing the same row. Until that round happens this
- * tripwire is toolchain-free, runs everywhere the suite runs, and catches both mutations above in
- * under a millisecond.
+ * the orchestrator rather than guessed at here. Until that round happens this tripwire is
+ * toolchain-free, runs everywhere the suite runs, and catches both mutations above in under a
+ * millisecond.
  */
 
 import { describe, it } from 'node:test';
@@ -109,12 +138,29 @@ interface Region {
    * signature rather than as a fingerprint mismatch. Both are red and the message says which.
    */
   readonly signature: string;
+  /**
+   * An enclosing declaration to look inside first, when the signature is only unique within one
+   * type.
+   *
+   * `Quantity.series` and `MeasurementMethod.series` are both `public var series:
+   * MeasurementSeries` and both live in `Quantity.swift`, so the bare signature is refused as
+   * ambiguous — correctly. The alternative was to narrow by pasting body text into the signature
+   * (`… { method.series }`), which would turn the very mutation this row exists to catch into a
+   * "signature not found" rather than a fingerprint mismatch. Scoping instead keeps the signature
+   * free of the body, so a body edit reports as what it is.
+   *
+   * Resolved with `swiftDeclaration` itself, so an edit to the enclosing declaration's own header
+   * is refused by the same rules rather than silently widening the search.
+   */
+  readonly within?: string;
   /** `sha256` of the normalized declaration, recorded at PR #173 and re-recorded deliberately. */
   readonly fingerprint: string;
 }
 
 /**
- * The Swift the ports re-implement, declaration by declaration.
+ * The Swift the ports re-implement, declaration by declaration, under the membership rule in the
+ * file header. `swiftDrift.test.ts`'s own last test names this set, so a row that goes missing is
+ * red rather than merely uncounted.
  *
  * Recorded 2026-09-10 against `origin/main` merged into `web/domain-rules`, on the same machine
  * and in the same sitting as the `swift-reference.json` regeneration — the reference was
@@ -159,6 +205,57 @@ const REGIONS: readonly Region[] = [
     fingerprint: 'c35e1cdd1c8a7c1ab6a9934a39c0e218230381edfb295c64f63befe0d8f8d627',
   },
   {
+    // `quantity.ts:seriesOfQuantity`. NOT the same declaration as `MeasurementMethod.series`,
+    // which `quantity.test.ts` reads by value as a switch table: this is the one-line DELEGATION
+    // to it, and the delegation is what `swift-reference.json` records in each quantity row's
+    // `"series"`. Changing it to `{ .measured }` put every `estimate` measurement in a different
+    // series in Swift than in the port and left the suite at `124 of 124` (#173 delta review, D2a).
+    name: 'Quantity.series',
+    file: 'Cypress/Core/Units/Quantity.swift',
+    signature: 'public var series: MeasurementSeries',
+    within: 'public struct Quantity: Hashable, Codable, Sendable',
+    fingerprint: '5aa83df437d9b9e8d93dda520b9799bca70cc06cc9ea75c903c124f54a3462f0',
+  },
+  {
+    // The wire contract `quantity.ts:quantityFromJSON` reads, and the one #172's pack read layer
+    // meets a stored row through. These three case names ARE the JSON keys; giving one a raw value
+    // (`unitEntered = "unit_entered"`) renames a key the port still looks for under the old name,
+    // and left the suite at `124 of 124` (#173 delta review, D2b).
+    name: 'Quantity.CodingKeys',
+    file: 'Cypress/Core/Units/Quantity.swift',
+    signature: 'private enum CodingKeys: String, CodingKey',
+    fingerprint: 'bb63b32f685a0f96882cb6aef922991a1d3e990a1e077fd6f00853eef3c0553b',
+  },
+  {
+    // `quantity.ts:quantityFromJSON`, which the file says in these words: "This is
+    // `Quantity.init(from:)` in the Swift." The rule that travels with it is that `siValue` is
+    // RE-DERIVED rather than read, so a persisted row disagreeing with itself resolves to the
+    // entered value. A decoder that started trusting a stored `siValue` would diverge silently.
+    name: 'Quantity.init(from:)',
+    file: 'Cypress/Core/Units/Quantity.swift',
+    signature: 'public init(from decoder: Decoder) throws',
+    fingerprint: '805cce04d4197ddd53a649de307eab1d3cf2c8e79b8bc0ed85355c284bf745a1',
+  },
+  {
+    // `growthCharting.ts:isDeleted`, whose doc comment names it: "`SoftDeletable.isDeleted`
+    // inverted". The port's `isChartable` is built out of it, where the Swift's `isChartable`
+    // spells `deletedAt == nil` inline — so the two agree only as long as this one line does.
+    name: 'SoftDeletable.isDeleted',
+    file: 'Cypress/Core/Models/CoreEntity.swift',
+    signature: 'public var isDeleted: Bool',
+    fingerprint: 'ce4adf18729163b740bbdb609ba51ce9cb0962628b7faf51b79a9462f63e928a',
+  },
+  {
+    // `vitality.ts:classNumberOf`. Same shape as `Quantity.series`: the RAW VALUES are read by
+    // value (`swiftEnumCases`, asserted in `vitality.test.ts`), and this delegation to them is
+    // not. `{ rawValue + 1 }` would store a different integer in `observations.vitality` than the
+    // web reads back, with every value assertion still green.
+    name: 'Vitality.classNumber',
+    file: 'Cypress/Core/Rubric/Vitality.swift',
+    signature: 'public var classNumber: Int',
+    fingerprint: '9e3af4c1021fa3d9931fa078645fa090e5b3d219eca41c7780ad086e08758198',
+  },
+  {
     name: 'TreeMeasurement.isChartable',
     file: 'Cypress/Core/Models/TreeMeasurement.swift',
     signature: 'public var isChartable: Bool',
@@ -194,7 +291,11 @@ const REGIONS: readonly Region[] = [
 describe('the Swift the ports were derived from has not moved under them', () => {
   for (const region of REGIONS) {
     it(`${region.name} is the declaration the reference was recorded from`, () => {
-      const found = swiftDeclaration(repoFile(region.file), region.signature);
+      const whole = repoFile(region.file);
+      const scope = region.within === undefined
+        ? whole
+        : swiftDeclaration(whole, region.within).source;
+      const found = swiftDeclaration(scope, region.signature);
       assert.equal(
         found.fingerprint,
         region.fingerprint,
@@ -225,8 +326,8 @@ describe('the Swift the ports were derived from has not moved under them', () =>
   it('the table still covers every Swift file whose arithmetic the ports reproduce', () => {
     assert.equal(
       REGIONS.length,
-      11,
-      `the tripwire lists ${REGIONS.length} declarations, not 11. A row that disappears takes its `
+      16,
+      `the tripwire lists ${REGIONS.length} declarations, not 16. A row that disappears takes its `
         + `guard with it and nothing else notices.`,
     );
     assert.deepEqual(
@@ -247,6 +348,47 @@ describe('the Swift the ports were derived from has not moved under them', () =>
       REGIONS.length,
       'two rows of the tripwire carry the same fingerprint, which means one of them was pasted '
         + 'over the other',
+    );
+  });
+
+  /**
+   * The set itself, named.
+   *
+   * A count is what let the previous version of this table be wrong while looking right: `11` was
+   * a true count of a set that was missing `Quantity.series` and the `Codable` wire contract, and
+   * the header, `web/README.md` and `main.swift` all called that set "the declarations the ports
+   * re-implement" (#173 delta review, D2). A count cannot notice an omission; a list can.
+   *
+   * So the rule for this table is written down and the membership is asserted against it. **A
+   * Swift declaration belongs here when something in `web/src/lib/` reproduces its body, and no
+   * value parser already reads that body.** Adding a port function without adding its row turns
+   * this red, which is the moment to decide rather than the moment to discover.
+   */
+  it('names the declarations it covers, so an omission is red rather than silent', () => {
+    assert.deepEqual(
+      REGIONS.map((r) => r.name).sort(),
+      [
+        'Collection.splitBySeries(kind:)',
+        'Coordinate.distance(to:)',
+        'Coordinate.snappedToPublicPhotoGrid()',
+        'FieldCaptured.isEligibleForGrowthCharting',
+        'Quantity.CodingKeys',
+        'Quantity.converted(to:)',
+        'Quantity.init(from:)',
+        'Quantity.init(value:unit:method:)',
+        'Quantity.isPlausible(within:)',
+        'Quantity.series',
+        'SoftDeletable.isDeleted',
+        'TreeMeasurement.isChartable',
+        'Vitality.classNumber',
+        'Vitality.isRatingPermitted(for:month:)',
+        'Vitality.isRatingPermitted(leafRetention:month:leafOnMonths:)',
+        'Vitality.suppression(for:month:)',
+      ],
+      'the set of fingerprinted declarations changed. If a port gained a re-implementation, this '
+        + 'is where it gets acknowledged; if one left, say so here too. Do not widen this list to '
+        + 'match whatever the table happens to hold — the header above states which declarations '
+        + 'belong and why the rest are out, and that paragraph is the thing to reconcile against.',
     );
   });
 });

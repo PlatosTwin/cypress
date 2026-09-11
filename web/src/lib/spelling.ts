@@ -65,9 +65,18 @@ export const britishForms: readonly BritishForm[] = [
   // **What the lookbehind still excludes, said plainly.** `(?<![A-Za-z])` is load-bearing — a bare
   // `metre` strikes "flameTree" as "fla-meTre-e". It also means a `metre` glued to the end of a
   // longer word is NOT caught, a camelCase `fooMetre` included. That is a deliberate false
-  // negative, not a claim of coverage, and it is asserted as such in the test beside this file.
-  ...['', 'nano', 'micro', 'milli', 'centi', 'deci', 'deka', 'deca', 'hecto', 'kilo', 'mega',
-    'giga', 'tera', 'pico', 'femto'].map((prefix) => ({
+  // negative rather than a claim of coverage, and `spelling.test.ts` asserts it as one, by name,
+  // in `declares the false negative the bare-metre lookbehind costs` — an assertion that exists to
+  // be read, not to pass. (It used to say "asserted as such in the test beside this file", which
+  // was a stretch: the only related assertion was `flameTree` in the INNOCENT list, which guards a
+  // false positive and says nothing about this. PR #173 delta review, D7.)
+  //
+  // The prefix list is every SI prefix, quetta down to quecto, plus both spellings of deca- and
+  // the empty prefix for a bare `metre`. It stopped at femto/tera until the same review counted
+  // it; `peta`, `exa`, `atto`, `zepto` and `yocto` were in exactly the hole `nano` had been in.
+  ...['', 'quetta', 'ronna', 'yotta', 'zetta', 'exa', 'peta', 'tera', 'giga', 'mega', 'kilo',
+    'hecto', 'deka', 'deca', 'deci', 'centi', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto',
+    'zepto', 'yocto', 'ronto', 'quecto'].map((prefix) => ({
     pattern: new RegExp(String.raw`(?<![A-Za-z])${prefix}metre`, 'gi'),
     american: `${prefix}meter`,
   })),
