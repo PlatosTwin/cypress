@@ -44,7 +44,7 @@ be overturned on the merits rather than rediscovered.
 | **W-6** | **No raster basemap in v1.** Explore draws pins over the neighborhood polygons already shipped in the seed. PMTiles on Tigris is the named path if a basemap is later wanted. | §5 |
 | **W-7** | **No photos on the public surface in v1.** W1's specified hero is a gradient, not a photograph; a public photo read path is a privacy decision (D11) and gets its own round. | §6 |
 | **W-8** | Astro + TypeScript, `node:sqlite`, no React in v1. | §3 |
-| **W-9** | Verification gets a web pair — `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` — because judging a run by its exit code is this project's signature failure mode and nothing about that changes on a different platform. | §8 |
+| **W-9** | Verification gets a web pair under `Tools/` — proposed names `run_web_tests.sh` and `verify_web_test_log.sh`, neither written yet — because judging a run by its exit code is this project's signature failure mode and nothing about that changes on a different platform. | §8 |
 
 ---
 
@@ -253,11 +253,13 @@ on `ubuntu-latest` is part of the foundation round.
 ## 8. Verification (W-9)
 
 This project's signature failure mode is false green, and nothing about that changes on a different
-platform. The web gets the same shape of instrument the iOS side has:
+platform. The web gets the same shape of instrument the iOS side has. Neither of the two scripts
+below exists yet: W-A is the milestone that writes them, they will live beside the iOS pair under
+`Tools/`, and the names here are proposals until it lands.
 
-- `Tools/run_web_tests.sh` — runs the suite to a log with a `CYPRESS-WEB-RUN:` provenance header
+- `run_web_tests.sh` — runs the suite to a log with a `CYPRESS-WEB-RUN:` provenance header
   (commit, node version, pack versions read from the manifest, working tree).
-- `Tools/verify_web_test_log.sh` — judges the log. **Never the exit code.** It asserts a positive
+- `verify_web_test_log.sh` — judges the log. **Never the exit code.** It asserts a positive
   pass line with a nonzero test count, and refuses to certify a log with zero tests executed — the
   web analogue of `Executed 0 tests / All tests passed`.
 - The zero-warning line carries over as `tsc --noEmit` clean plus a lint gate, certified on a fresh
@@ -265,6 +267,61 @@ platform. The web gets the same shape of instrument the iOS side has:
   warning count.
 - Every new test is red-proved, and **the red-proof must go red for the reason expected** — the
   failure message is read, not just the colour.
+
+---
+
+## 8a. AMENDMENT, 2026-09-10 — two of this document's own decisions were wrong
+
+Written the same day, before any web code existed, by opening a real published pack and querying it.
+Recorded here rather than silently edited above, because the method that caught them is the point.
+
+**The pack was verified before it was trusted.** `us-ca-sj` downloaded from the public bucket:
+29,372,416 bytes against the manifest's 29,372,416, sha256
+`2d979b9a0ff90bea058eb409a29ae36019c949ddae82aead9259e9f906383671` against the manifest's, identical.
+`select count(*) from trees` returns 52,775 against the manifest's 52,775 — the control that says the
+file being queried is the file the manifest describes.
+
+### A. W1's fact column is about half contributed data, and v1 has no public read for it
+
+§4 said the web reads the published base layer and left it there, and §6 deferred only *photos*. That
+was too narrow. Reading `SCREENS.md` §W1 against `trees`' actual 30 columns:
+
+| W1 element | Answerable from a pack? |
+|---|---|
+| Eyebrow — `Great Highway at Judah · San Francisco` | **Yes** — `address`, `dim_city.display_name` |
+| Latin line — `Monterey Cypress · Hesperocyparis macrocarpa` | **Yes** — `species_current` → `species`, though `common_name` is **null on real rows** (measured: two of two sampled alive SJ trees) |
+| `In the city record since` — `1898` | **Yes** — `planted_year` |
+| `City record` — `SF DPW #114-88 · synced weekly` | **Yes** — `external_ref`, `inventory_source` |
+| `Data` — `ODbL · CSV / GeoJSON` | **Yes** — static |
+| H1 — `Grandmother Cypress` | **No.** There is no name column in the seed contract. A named tree is contributed. |
+| `Status` — `Thriving · vitality 4` | **No.** `vitality` is declared in `AppSchema` (the *writable* database), not in the seed. The pack's `status` is the lifecycle enum (`alive`, `vacant_site`, …), a different thing. |
+| `Height` — `18 m` `est.` | **No.** A contributed measurement. |
+| `Trunk · DBH` — `64 cm` `taped` | **No** for the taped reading. The pack carries `dbh_city_cm_min`/`_max`, the city's published *bucket* (measured: `0`–`5` cm on a 2025 planting) — which is the "city-bucket tree" the ROADMAP already names, not a reading with a method badge. |
+| Foliage strip, `214 PHOTOS SINCE 2019` | **No.** Contributed. |
+| `Recent visits` panel | **No.** Contributed. |
+
+So W1 is roughly half city record and half community layer, and the community layer is in Postgres
+behind an API whose read surface is **Class R — the contributor's own data**. There is no public read
+of it, and creating one is a privacy ruling, not an implementation detail.
+
+**This does not make W1 unbuildable.** Everything the pack answers is the spine of the page, and
+"render nothing where knowledge is absent" is the house style, not a degradation. It does mean the
+scope of W-C is a decision the owner has to take, and it is put to them rather than assumed here.
+
+### B. Neighborhood polygons are San Francisco only, so §5's Explore falls over outside SF
+
+**W-6 said Explore draws pins over "the neighborhood polygons already shipped in the seed."** In the
+`us-ca-sj` pack, `neighborhoods` holds **0 rows**. The reason is in the builder:
+`Tools/build_seed.py:2105` loads exactly one file, `sf_analysis_neighborhoods.geojson` — DataSF's
+`j2bu-swwd`, an SF dataset. San Jose and the five NYC boroughs have no polygons at all.
+
+**Consequence:** an Explore page that draws its geography from `neighborhoods` shows San Francisco and
+six blank rectangles. The Neighborhoods nav destination has the same problem in a sharper form — for
+six of seven packs there are no neighborhoods to list.
+
+W-6 stands for San Francisco and is **withdrawn as a general answer**. The round that builds Explore
+either sources polygons for the other cities, scopes the geography to SF, or takes the basemap
+question the proposal deferred. Not decided here; named as open.
 
 ---
 
