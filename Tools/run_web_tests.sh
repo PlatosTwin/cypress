@@ -146,7 +146,8 @@ is_own_business() {
 # worktree named after it (`…/cypress` and `…/cypress-w8b`), which is the same prefix trap
 # `collision_check` records paying for — matching on it would recreate this bug one worktree over.
 #
-# Two facts about a candidate can put it in this checkout, and both are needed:
+# Two facts about a candidate can put it in this checkout, and EITHER is enough — they cover
+# different invocation shapes, and a guard that demanded both would miss each of them:
 #   * its command line names a path inside `$REPO` — the usual shape, an agent invoking the
 #     script by absolute path;
 #   * its working directory is inside `$REPO` — the shape with no absolute path in argv
@@ -163,7 +164,9 @@ REPO_PHYS="$(cd "$REPO" 2>/dev/null && pwd -P)"
 [ -n "$REPO_PHYS" ] || REPO_PHYS="$REPO"
 
 # The only way to ask what directory another process is sitting in. Absent or restricted `lsof`
-# returns nothing, and the caller treats that as "cannot tell", never as "no conflict".
+# returns nothing, and the caller treats that as "cannot tell", never as "no conflict" — measured
+# by running this guard with `lsof` off PATH against a collision it otherwise refuses: it printed
+# the unplaced note and ran, rather than silently clearing the process.
 cwd_of() {
   lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1
 }
