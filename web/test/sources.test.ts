@@ -16,7 +16,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import {
   ParseFailure,
@@ -517,6 +517,46 @@ describe('the sources the web suite reads', () => {
   });
 
   /**
+   * The modules a source file IMPORTS, as absolute paths. Relative specifiers only.
+   *
+   * Specifiers, not every quoted path that happens to appear in the file — and the difference is
+   * not academic. The first version of the arrival scan below asked whether the text
+   * `src/lib/<module>` occurred anywhere in any `*.test.ts`. `spelling.test.ts` names
+   * `'src/lib/tokens.ts'` in the list of files its sweep has to reach, so `tokens.ts` counted as
+   * checked by a file that does not import it, and deleting `tokens.test.ts` outright left the
+   * whole suite green. A scan that cannot tell an import from a mention is answering a different
+   * question than the one asked; this was found by running the red-proof, and by nothing else.
+   */
+  function importedPaths(source: string, fromDir: string): string[] {
+    const found: string[] = [];
+    for (const pattern of [/\bfrom\s+'([^']+)'/g, /\bimport\(\s*'([^']+)'\s*\)/g]) {
+      for (const match of source.matchAll(pattern)) {
+        const specifier = match[1];
+        if (specifier === undefined || !specifier.startsWith('.')) continue;
+        found.push(resolve(fromDir, specifier));
+      }
+    }
+    return found;
+  }
+
+  it('the import scan reads specifiers, not every quoted path in the file', () => {
+    // Specimen first, answer known before the scan saw it, and every line after the second is a
+    // near miss it has to DECLINE: a bare-module import, the exact prose form that made this
+    // scan vacuous, and a relative path sitting in a data list rather than in an import.
+    const specimen = [
+      "import { a } from '../src/lib/geometry.ts';",
+      "const late = await import('../src/lib/pack/pack.ts');",
+      "import { readFileSync } from 'node:fs';",
+      "const namedInProse = 'src/lib/tokens.ts';",
+      "const alsoNamed = ['../src/lib/vitality.ts'];",
+    ].join('\n');
+    assert.deepEqual(importedPaths(specimen, '/w/test'), [
+      '/w/src/lib/geometry.ts',
+      '/w/src/lib/pack/pack.ts',
+    ]);
+  });
+
+  /**
    * **The census, and the hole it closes.**
    *
    * PR #173's review deleted `src/lib/growthCharting.ts` AND `test/growthCharting.test.ts` and the
@@ -593,9 +633,10 @@ describe('the sources the web suite reads', () => {
 
     // ── Half two: arrival ─────────────────────────────────────────────────────────────────────
     // Every module on disk must be imported by a `*.test.ts`, including ones that arrived from a
-    // branch that never saw this file. This file is excluded from the scan it performs: it names
-    // modules in its own roster and in its own failure messages, and a census that can satisfy
-    // itself by mentioning a module is not a census.
+    // branch that never saw this file. Two things keep the scan from satisfying itself: it reads
+    // import SPECIFIERS rather than raw text (see `importedPaths` above, and the red-proof that
+    // bought that distinction), and it excludes THIS file, which names modules in its own roster
+    // and in its own failure messages. A census that can be satisfied by a mention is not one.
     const testDir = join(root, 'web', 'test');
     const testFiles = modulesUnder(testDir).filter(
       (relative) => relative.endsWith('.test.ts') && relative !== 'sources.test.ts',
@@ -606,20 +647,24 @@ describe('the sources the web suite reads', () => {
         + 'has lost most of itself, or the scan is reading the wrong directory; both would make '
         + 'the loop below report every module as unchecked for the wrong reason.',
     );
-    const testSources = testFiles.map((relative) => readFileSync(join(testDir, relative), 'utf8'));
-    const importedByATest = (module: string): boolean =>
-      testSources.some((text) => text.includes(`src/lib/${module}`));
+    const imported = new Set(
+      testFiles.flatMap((relative) => {
+        const full = join(testDir, relative);
+        return importedPaths(readFileSync(full, 'utf8'), dirname(full));
+      }),
+    );
 
+    const lib = join(root, 'web', 'src', 'lib');
     for (const module of onDisk) {
       assert.ok(
-        importedByATest(module),
+        imported.has(join(lib, module)),
         `web/src/lib/${module} is on disk and no *.test.ts under web/test imports it, so it is a `
           + 'module with no parity check. Whoever added it owes it one, in the same change.',
       );
     }
     // The same calibration for the scan: a module nothing imports must be reported unchecked.
     assert.equal(
-      importedByATest('thereIsNoSuchModule.ts'),
+      imported.has(join(lib, 'thereIsNoSuchModule.ts')),
       false,
       'the import scan says a module is imported that no test imports',
     );
