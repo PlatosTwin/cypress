@@ -578,9 +578,13 @@ function color(hex: string, alpha: number): ParsedColor {
  * thumb out of a hero's answer; without it screen 03's four-layer hero parses as five.
  */
 export function markdownGradientRecipe(section: string): ParsedRecipe {
-  const baseMatch = /base\s+`linear-gradient\(\s*(\d+)deg\s*,([^`]*)\)`/.exec(section);
+  // `base` is optional because §3 writes the stack two ways: screens 03 and W1 label the linear
+  // layer `base`, screen 04 writes `Base: <radials>, <linear>` with the word on the whole line.
+  // The FIRST linear-gradient in the section is the base in both spellings, and anything after it
+  // — 04's ghost overlay, 13's photo strip — belongs to another element.
+  const baseMatch = /(?:base\s+)?`linear-gradient\(\s*(\d+)deg\s*,([^`]*)\)`/.exec(section);
   if (baseMatch?.[1] === undefined || baseMatch[2] === undefined) {
-    fail('the section has no ``base `linear-gradient(<deg>, …)``` line');
+    fail('the section has no `linear-gradient(<deg>, …)` base');
   }
   const beforeBase = section.slice(0, baseMatch.index);
   const radials: ParsedRadial[] = [];

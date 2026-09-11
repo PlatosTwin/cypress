@@ -87,6 +87,22 @@
  *     and URLs are still an unguarded transcription (#173 review, N4) and this file does not
  *     change that.
  *
+ * ── Two kinds of row, added by W-C ───────────────────────────────────────────────────────────
+ *
+ * Everything above describes the ARITHMETIC rows, which are the whole of what this file covered
+ * until the public tree page was built. W-C added four more, marked `kind: 'copy'`, and they are
+ * different in one way that matters to whoever reads a red: they are `Features` declarations that
+ * decide what a screen SAYS — a non-value filter, a range format, a record number, a provenance
+ * sentence — and `swift-reference.json` does not cover them, because the recorder compiles `Core`
+ * and they are not in it. So the repair for a copy row is to reconcile `src/lib/cityRecord.ts`
+ * with the diff, not to re-record anything, and the failure message says so per row rather than
+ * telling every reader to run a command that would not help half of them.
+ *
+ * They are here rather than in a table of their own because the membership rule below is a rule
+ * about `web/src/lib/` and says nothing about the recording. A second table would have made this
+ * one's own completeness assertion — "every Swift file whose arithmetic the ports reproduce" —
+ * quietly false, which is the shape of defect that rule was written after.
+ *
  * ── When this goes red ───────────────────────────────────────────────────────────────────────
  *
  * Read the diff on the named Swift declaration and decide which it is:
@@ -153,6 +169,29 @@ interface Region {
    * is refused by the same rules rather than silently widening the search.
    */
   readonly within?: string;
+  /**
+   * Which guard this row belongs to, because there are now two and they go red for different
+   * reasons.
+   *
+   * `arithmetic` — the original set. `test/support/swift-reference.json` is a recording of what
+   * these declarations PRINT, every parity assertion compares a port against that recording, and a
+   * red here means the recording may no longer describe its subject. The repair begins with
+   * re-recording.
+   *
+   * `copy` — added by W-C. `src/lib/cityRecord.ts` re-implements four small declarations that
+   * decide what the public tree page SAYS: a non-value filter, a range format, a record number and
+   * a provenance sentence. Nothing about them is in `swift-reference.json` — they are `Features`
+   * code, print nothing, and the recorder does not compile that target — so "re-record the
+   * reference" is not the repair and telling a reader to do it would send them somewhere useless.
+   * The repair is to read the diff and reconcile `cityRecord.ts` with it, which
+   * `test/cityRecord.test.ts` checks by value for everything a value parser can reach.
+   *
+   * They are in THIS table rather than in a second one because the membership rule below is a
+   * rule about `web/src/lib/`, not about the recording, and a table that silently meant "the
+   * arithmetic ones" while stating the general rule is exactly the defect PR #173's delta review
+   * found in its first version.
+   */
+  readonly kind: 'arithmetic' | 'copy';
   /** `sha256` of the normalized declaration, recorded at PR #173 and re-recorded deliberately. */
   readonly fingerprint: string;
 }
@@ -172,36 +211,42 @@ const REGIONS: readonly Region[] = [
     name: 'Coordinate.distance(to:)',
     file: 'Cypress/Core/Models/Geometry.swift',
     signature: 'public func distance(to other: Coordinate) -> Double',
+    kind: 'arithmetic',
     fingerprint: '5b7d6b964bae6aaf33a317cdf190f90a06677977d5d5cae76339254a6f18cb8f',
   },
   {
     name: 'Coordinate.snappedToPublicPhotoGrid()',
     file: 'Cypress/Core/Models/Geometry.swift',
     signature: 'public func snappedToPublicPhotoGrid() -> Coordinate',
+    kind: 'arithmetic',
     fingerprint: '56c4e1f3086aff301e952a2ebb72add230eae51eea938402c7d3a0466a5074bb',
   },
   {
     name: 'FieldCaptured.isEligibleForGrowthCharting',
     file: 'Cypress/Core/Models/CoreEntity.swift',
     signature: 'public var isEligibleForGrowthCharting: Bool',
+    kind: 'arithmetic',
     fingerprint: '4068764cdc3b9f7a5a6dc1034d83e21266d9271996355740a57679150464c88a',
   },
   {
     name: 'Quantity.init(value:unit:method:)',
     file: 'Cypress/Core/Units/Quantity.swift',
     signature: 'public init(value: Double, unit: LengthUnit, method: MeasurementMethod)',
+    kind: 'arithmetic',
     fingerprint: '72b4d2e5f1fdc76834606f6e382d4c244819c72fd0a0bed6418b3e2d0102ae9d',
   },
   {
     name: 'Quantity.converted(to:)',
     file: 'Cypress/Core/Units/Quantity.swift',
     signature: 'public func converted(to unit: LengthUnit) -> Double',
+    kind: 'arithmetic',
     fingerprint: 'b49424910d6dd22cb1864586c24301482eca8c10ad93ec3943d7c2b0ec983a89',
   },
   {
     name: 'Quantity.isPlausible(within:)',
     file: 'Cypress/Core/Units/Quantity.swift',
     signature: 'public func isPlausible(within range: ClosedRange<Double>) -> Bool',
+    kind: 'arithmetic',
     fingerprint: 'c35e1cdd1c8a7c1ab6a9934a39c0e218230381edfb295c64f63befe0d8f8d627',
   },
   {
@@ -214,6 +259,7 @@ const REGIONS: readonly Region[] = [
     file: 'Cypress/Core/Units/Quantity.swift',
     signature: 'public var series: MeasurementSeries',
     within: 'public struct Quantity: Hashable, Codable, Sendable',
+    kind: 'arithmetic',
     fingerprint: '5aa83df437d9b9e8d93dda520b9799bca70cc06cc9ea75c903c124f54a3462f0',
   },
   {
@@ -224,6 +270,7 @@ const REGIONS: readonly Region[] = [
     name: 'Quantity.CodingKeys',
     file: 'Cypress/Core/Units/Quantity.swift',
     signature: 'private enum CodingKeys: String, CodingKey',
+    kind: 'arithmetic',
     fingerprint: 'bb63b32f685a0f96882cb6aef922991a1d3e990a1e077fd6f00853eef3c0553b',
   },
   {
@@ -234,6 +281,7 @@ const REGIONS: readonly Region[] = [
     name: 'Quantity.init(from:)',
     file: 'Cypress/Core/Units/Quantity.swift',
     signature: 'public init(from decoder: Decoder) throws',
+    kind: 'arithmetic',
     fingerprint: '805cce04d4197ddd53a649de307eab1d3cf2c8e79b8bc0ed85355c284bf745a1',
   },
   {
@@ -243,6 +291,7 @@ const REGIONS: readonly Region[] = [
     name: 'SoftDeletable.isDeleted',
     file: 'Cypress/Core/Models/CoreEntity.swift',
     signature: 'public var isDeleted: Bool',
+    kind: 'arithmetic',
     fingerprint: 'ce4adf18729163b740bbdb609ba51ce9cb0962628b7faf51b79a9462f63e928a',
   },
   {
@@ -253,18 +302,21 @@ const REGIONS: readonly Region[] = [
     name: 'Vitality.classNumber',
     file: 'Cypress/Core/Rubric/Vitality.swift',
     signature: 'public var classNumber: Int',
+    kind: 'arithmetic',
     fingerprint: '9e3af4c1021fa3d9931fa078645fa090e5b3d219eca41c7780ad086e08758198',
   },
   {
     name: 'TreeMeasurement.isChartable',
     file: 'Cypress/Core/Models/TreeMeasurement.swift',
     signature: 'public var isChartable: Bool',
+    kind: 'arithmetic',
     fingerprint: 'e84e18caa51130f74172b79f38407646941b9073ae2ce3d2aaabaa8606b7a83f',
   },
   {
     name: 'Collection.splitBySeries(kind:)',
     file: 'Cypress/Core/Models/TreeMeasurement.swift',
     signature: 'public func splitBySeries(kind: MeasurementKind)',
+    kind: 'arithmetic',
     fingerprint: '267478f351ffe7d50e1b79223540d7d063162b2b3c00f9ddf5263f9065af26d9',
   },
   {
@@ -272,25 +324,59 @@ const REGIONS: readonly Region[] = [
     file: 'Cypress/Core/Rubric/Vitality.swift',
     // The newline narrows this away from the `(for species:…)` overload below.
     signature: 'public static func isRatingPermitted(\n',
+    kind: 'arithmetic',
     fingerprint: '2327ada371667a4afdba9a12cae8e97b06381c75ddd57788e656f540f3d6c41a',
   },
   {
     name: 'Vitality.isRatingPermitted(for:month:)',
     file: 'Cypress/Core/Rubric/Vitality.swift',
     signature: 'public static func isRatingPermitted(for species: Species, month: Int) -> Bool',
+    kind: 'arithmetic',
     fingerprint: '3b21c518e79b24c9a25ed64ccc2636e556f4ab8a638992028863205026b96d40',
   },
   {
     name: 'Vitality.suppression(for:month:)',
     file: 'Cypress/Core/Rubric/Vitality.swift',
     signature: 'public static func suppression(for species: Species, month: Int) -> Suppression',
+    kind: 'arithmetic',
     fingerprint: 'd064eb4643fc222bdf5fa811e19a528f4fc12b4c11b9a675bf17a2769ad4baf0',
+  },
+  {
+    name: 'CityRecordPresentation.statedValue(_:)',
+    file: 'Cypress/Features/TreeProfile/CityRecordPresentation.swift',
+    signature: 'static func statedValue(_ raw: String) -> String?',
+    kind: 'copy',
+    fingerprint: '34fb7572d2428b3c4a362e82c8909a55be16397ea23ec9b07b5c04a329adfd6e',
+  },
+  {
+    name: 'CityRecordCopy.recordNumber(_:)',
+    file: 'Cypress/Features/TreeProfile/CityRecordPresentation.swift',
+    signature: 'static func recordNumber(_ ref: String) -> String',
+    kind: 'copy',
+    fingerprint: '90de64124d3eb3c91afff2e47222cc3956ca8589d7f9260899b2d3f5ca0db8c5',
+  },
+  {
+    name: 'CityRecordCopy.provenanceNote(source:snapshot:)',
+    file: 'Cypress/Features/TreeProfile/CityRecordPresentation.swift',
+    signature: 'static func provenanceNote(source: String, snapshot: String) -> String',
+    kind: 'copy',
+    fingerprint: '23eb2a21da6fe5b46004d7cd09bc75b6262e4833b6f72ef92ad3f20804e3d405',
+  },
+  {
+    name: 'TreeProfilePresentation.cityDBHRangeText',
+    file: 'Cypress/Features/TreeProfile/TreeProfilePresentation.swift',
+    signature: 'var cityDBHRangeText: String?',
+    kind: 'copy',
+    fingerprint: '2ef73a5258ba64cf7333cb71957759a8ee42cd02c22172c94d48743ee3c62564',
   },
 ];
 
 describe('the Swift the ports were derived from has not moved under them', () => {
   for (const region of REGIONS) {
-    it(`${region.name} is the declaration the reference was recorded from`, () => {
+    const what = region.kind === 'arithmetic'
+      ? 'is the declaration the reference was recorded from'
+      : 'still says what cityRecord.ts says it says';
+    it(`${region.name} ${what}`, () => {
       const whole = repoFile(region.file);
       const scope = region.within === undefined
         ? whole
@@ -304,14 +390,22 @@ describe('the Swift the ports were derived from has not moved under them', () =>
           + `  now       ${found.fingerprint}\n\n`
           + `  the declaration as it reads today, normalized:\n`
           + `  ${found.normalized}\n\n`
-          + `THIS IS NOT A FAILURE OF THE TYPESCRIPT. It means test/support/swift-reference.json — `
-          + `a RECORDING of what this Swift printed — may no longer describe this Swift, and every `
-          + `parity assertion in this directory compares the port against that recording. Read the `
-          + `diff. If the behavior changed: regenerate the reference (the command is in `
-          + `test/support/swift-reference/main.swift), re-run the whole suite so the ports are `
-          + `re-checked against the new Swift, fix what that turns red, and only then paste the `
-          + `fingerprint above into test/swiftDrift.test.ts. If the edit is cosmetic: paste it and `
-          + `say why in the commit message.`,
+          + `THIS IS NOT A FAILURE OF THE TYPESCRIPT. `
+          + (region.kind === 'arithmetic'
+            ? `It means test/support/swift-reference.json — a RECORDING of what this Swift `
+              + `printed — may no longer describe this Swift, and every parity assertion in this `
+              + `directory compares the port against that recording. Read the diff. If the `
+              + `behavior changed: regenerate the reference (the command is in `
+              + `test/support/swift-reference/main.swift), re-run the whole suite so the ports are `
+              + `re-checked against the new Swift, fix what that turns red, and only then paste `
+              + `the fingerprint above into test/swiftDrift.test.ts. If the edit is cosmetic: `
+              + `paste it and say why in the commit message.`
+            : `This declaration decides what the public tree page SAYS, and web/src/lib/`
+              + `cityRecord.ts re-implements it. It is NOT in swift-reference.json — that `
+              + `recording covers Core only — so re-recording is not the repair here. Read the `
+              + `diff, reconcile cityRecord.ts with it, run test/cityRecord.test.ts (which checks `
+              + `by value everything a value parser can reach), and then paste the fingerprint `
+              + `above. If the edit is cosmetic: paste it and say why in the commit message.`),
       );
     });
   }
@@ -326,8 +420,8 @@ describe('the Swift the ports were derived from has not moved under them', () =>
   it('the table still covers every Swift file whose arithmetic the ports reproduce', () => {
     assert.equal(
       REGIONS.length,
-      16,
-      `the tripwire lists ${REGIONS.length} declarations, not 16. A row that disappears takes its `
+      20,
+      `the tripwire lists ${REGIONS.length} declarations, not 20. A row that disappears takes its `
         + `guard with it and nothing else notices.`,
     );
     assert.deepEqual(
@@ -338,8 +432,10 @@ describe('the Swift the ports were derived from has not moved under them', () =>
         'Cypress/Core/Models/TreeMeasurement.swift',
         'Cypress/Core/Rubric/Vitality.swift',
         'Cypress/Core/Units/Quantity.swift',
+        'Cypress/Features/TreeProfile/CityRecordPresentation.swift',
+        'Cypress/Features/TreeProfile/TreeProfilePresentation.swift',
       ],
-      'the tripwire no longer reaches one of the five Swift files the ports re-implement',
+      'the tripwire no longer reaches one of the seven Swift files the ports re-implement',
     );
     // Every fingerprint distinct: a copy-paste that repeated one row's hash into another's would
     // pin two declarations to the same text and pass only by coincidence.
@@ -368,6 +464,9 @@ describe('the Swift the ports were derived from has not moved under them', () =>
     assert.deepEqual(
       REGIONS.map((r) => r.name).sort(),
       [
+        'CityRecordCopy.provenanceNote(source:snapshot:)',
+        'CityRecordCopy.recordNumber(_:)',
+        'CityRecordPresentation.statedValue(_:)',
         'Collection.splitBySeries(kind:)',
         'Coordinate.distance(to:)',
         'Coordinate.snappedToPublicPhotoGrid()',
@@ -380,6 +479,7 @@ describe('the Swift the ports were derived from has not moved under them', () =>
         'Quantity.series',
         'SoftDeletable.isDeleted',
         'TreeMeasurement.isChartable',
+        'TreeProfilePresentation.cityDBHRangeText',
         'Vitality.classNumber',
         'Vitality.isRatingPermitted(for:month:)',
         'Vitality.isRatingPermitted(leafRetention:month:leafOnMonths:)',
