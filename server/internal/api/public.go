@@ -50,20 +50,41 @@ type publicTreeRead struct {
 	// value this body can carry: nothing in this system verifies a contribution, the verification
 	// tier is unbuilt, and `TreeMeasurement.verificationState` is `.unverified` on every row.
 	//
-	// It ships as a field rather than being left implicit because PRODUCT's non-goals require it:
-	// *"Community-added trees shown as official inventory — the community layer is visually
-	// distinct and never displays as official until verified."* This is the machine-readable half
-	// of that obligation, so the page cannot render these numbers as the city's by omission.
+	// It ships as a field rather than being left implicit because PRODUCT's non-goals require it.
+	// The row, reproduced as a row: `| Community-added trees shown as official inventory |
+	// Community layer is visually distinct and never displays as official until verified. |`
+	// (`PRODUCT.md:48`). The earlier form here ran the two cells into one sentence and prepended a
+	// lowercase "the" **inside** the quotation marks; the cell begins "Community layer".
+	//
+	// This field is the machine-readable half of that obligation, so the page cannot render these
+	// numbers as the city's by omission.
 	//
 	// Fixed values in a response have `wireTree`'s precedent, which fixes `source` and
 	// `verificationState` on the same argument. When a verification tier ships this must become a
 	// per-value field read off the record, because verification is per-record (D12).
 	VerificationState string `json:"verification_state"`
 
-	// Beloved is R27.1's state, and it is a **bool** rather than a number. See `belovedFloor`.
-	Beloved  bool           `json:"beloved"`
-	Height   *publicReading `json:"height"`
-	TrunkDBH *publicReading `json:"trunk_dbh"`
+	// Beloved is R27.1's state: true at `belovedFloor` distinct account-backed favorite owners or
+	// more, false below it, and false covers nought, one and two indistinguishably.
+	Beloved bool `json:"beloved"`
+	// BelovedBy is the number behind the state, and it is present **only above the floor**.
+	//
+	// R27.1 §1: *"Showing the number too is permitted and preferred"* — "ranking while coyly hiding
+	// the count is the worst of both, since the reader infers a number anyway and cannot tell how
+	// thin the margin is." The owner ruled on 2026-09-10 that the number rides along with the
+	// state here too.
+	//
+	// **It is a pointer because below the floor there is no number, not a zero.** A `0` on the wire
+	// would be a count of user actions published for every tree in the inventory, and it would
+	// distinguish a tree with two favoriters from one with none the moment somebody wrote `2`. Null
+	// is the same "this service has no answer behind that" every other field here uses, and
+	// `TestBelowTheFloorIsOneAnswerOverRealHTTP` holds nought, one and two to one byte-identical
+	// body — which is the k-anonymity property, and the only one that has to hold. A tree above the
+	// floor and a tree below it are *not* byte-identical and must not be: that difference is the
+	// field.
+	BelovedBy *int           `json:"beloved_by"`
+	Height    *publicReading `json:"height"`
+	TrunkDBH  *publicReading `json:"trunk_dbh"`
 }
 
 // ── What §W1's `Status` row does not get, and why the field is gone rather than nulled ─────────
@@ -87,23 +108,27 @@ type publicTreeRead struct {
 
 // belovedFloor is R27.1 §2's k-anonymity threshold, and the number is provisional.
 //
-// **The state, not the rank, and not the number.** The owner ruled on 2026-09-10 that the beloved
-// state ships on the public tree page as a state. R27.1 §1 permits the count as well — *"Showing the
-// number too is permitted and preferred"* — and this endpoint does not publish it, for two reasons
-// worth writing down rather than inferring: §1's permission is about a *ranking*, where hiding the
-// number while showing the order is the worst of both, and there is no ranking here; and the round's
-// own ruling refuses every count on this page. Shipping the boolean is therefore less than R27.1
-// permits, deliberately, and whether the number rides along is a question for the owner in the
-// ruling rather than a decision taken here.
+// **The state, and above the floor the number too.** The owner ruled on 2026-09-10 that the beloved
+// state ships on the public tree page as a state and not a rank, and — answering this ruling's own
+// Q6 against its recommendation — that the count rides along with it, per R27.1 §1: *"Showing the
+// number too is permitted and preferred."* The count publishes **only above the floor**. Below it
+// there is no number at all, because a number below a k-anonymity floor is the disclosure the floor
+// exists to prevent; `beloved_by` is null there and nought, one and two produce one byte-identical
+// body.
 //
-// **Why a boolean is safe here when the ruling refused one for photographs.** The ruling's §1 argues
-// that a boolean is a count at one bit of resolution and that one bit is enough when a tree has one
+// This ruling's §1 refuses every count on this page, and the owner's ruling narrows that refusal
+// rather than being read around it: §1a now carries the carve-out and says what it is carved out
+// of. The refusal still stands for photographs, visits, contributors and readings — none of which
+// has a floor available to it, which is §1's actual argument.
+//
+// **Why this is safe here when the ruling refused it for photographs.** The ruling's §1 argues that
+// a boolean is a count at one bit of resolution and that one bit is enough when a tree has one
 // contributor. That is true of a photo count, which has no floor available to it — the number *is*
 // §W1's headline fact, so suppressing it below a floor publishes "fewer than three people
-// photographed this tree", the same disclosure with a step. It is not true here: the boolean is only
-// ever `true` at three or more distinct owners, so it cannot publish one person's private bookmark,
-// and `false` covers everything from nought to two indistinguishably. R27.1 §2 is exactly that
-// argument and it is why the floor is a privacy mechanism rather than modesty.
+// photographed this tree", the same disclosure with a step. It is not true here: nothing is
+// published at all below three distinct account-backed owners, so no private bookmark reaches the
+// page, and `false` with a null count covers nought, one and two indistinguishably. R27.1 §2 is
+// exactly that argument and it is why the floor is a privacy mechanism rather than modesty.
 //
 // **Three is R27.1's provisional figure and this round did not improve on it.** R27.1 leaves the
 // number open — *"the numeric floor, which wants the real distribution of favorites per tree before
@@ -114,8 +139,29 @@ type publicTreeRead struct {
 // because a guessed threshold presented as a measured one is the failure R27.1's own sentence is
 // written against. It is not negotiable downward, and the round that measures it may raise it.
 //
-// The count behind it is a count of favorite *owners*, and one person on two devices is two of them
-// — see `PublicTreeCommunityHalf`. The floor is therefore slightly weaker than it reads.
+// ── The count is of accounts, and that is the second owner ruling of 2026-09-10 ────────────────
+//
+// **The floor used to be farmable by somebody with no account at all.** It counted favorite
+// *owners*, and `favorites_owner` makes an owner a user **or a device** — while
+// `POST /devices/register` is unauthenticated and mints a device per UUID handed to it. Three
+// requests made any tree beloved. The comment that stood here said the floor was "slightly weaker
+// than it reads, never stronger", which was true and far too mild: D1's stated reason for banning
+// public counts is farmability, and this was farmable in three HTTP calls.
+//
+// It now counts **distinct account-backed owners** (`store.PublicTreeCommunityHalf`). Device-only
+// favorites keep working and keep syncing and begin to count the moment `claimDevice` re-homes
+// them onto an account; they simply do not move a public number on their own.
+//
+// **The owner accepted a known cost and it should not be dressed up.** Reaching this floor needs
+// three separate Apple accounts to have favorited one tree. Accounts do work — `accountsAvailable`
+// is true and `POST /auth/oidc` is wired — but only the Apple route of screen 15's three does
+// (R72 ruling 2 defers the magic link), favorites are device-scoped until somebody signs in, and
+// the beta's population is small. So `beloved` may be false on every tree in the inventory for a
+// while, and this field may ship dormant. That is the trade the ruling names in §1a: a state that
+// is rarely true is better than a state anybody can forge.
+//
+// The residual limitation runs the other way now, and it is smaller: one person with two Apple IDs
+// is two accounts. Nobody without an account can move it at all.
 const belovedFloor = 3
 
 // publicReading is §W1's `Height` and `Trunk · DBH` rows — `18 m` `est.`, `64 cm` `taped`.
@@ -182,8 +228,11 @@ var publicKinds = map[string]bool{
 	"observation": true,
 }
 
-// withheldKinds is the other fifteen, each with the reason it is not public. The ruling argues them;
+// withheldKinds is every kind that is not public, each with the reason. The ruling argues them;
 // these are the one-line forms, kept here so the classification cannot be silently incomplete.
+//
+// **Two of the entries are classified ahead of their migration**, which is unusual and is the point
+// — see `kindsAwaitingTheirMigration`.
 var withheldKinds = map[string]string{
 	"visit":                    "a dated visit at a fixed place is a public user location history — PRODUCT's non-goals: Never",
 	"care_event":               "an account of a person's actions at a place, not a property of the tree",
@@ -196,16 +245,71 @@ var withheldKinds = map[string]string{
 	"never_existed_report":     "an unadjudicated accusation",
 	"species_review_dismissal": "moderation bookkeeping",
 	"record_review_dismissal":  "moderation bookkeeping",
-	"photo_vote":               "a count of user actions, and R72: a photo vote is not a report",
-	"photo_withdrawal":         "a removal; its effect is visible, the act is not",
-	"measurement_withdrawal":   "a removal; its effect is visible, the act is not",
+	// R72 §5's *"a photo vote is not a report"* was cited here as the reason and it is **not**
+	// authority for it: that sentence is about hero selection versus safety reporting, not about
+	// what a public page may show. The ruling's own kind table withdrew the citation after review
+	// and this line had not followed. The reason is the count, on its own.
+	"photo_vote":             "a count of user actions",
+	"photo_withdrawal":       "a removal; its effect is visible, the act is not",
+	"measurement_withdrawal": "a removal; its effect is visible, the act is not",
 	// DECISIONS §3.4, verbatim: "Hazard categories never produce a public note, never produce a
 	// community-visible record, and never auto-stale. **No public surface query may be able to
 	// return a hazard-category note (enforced by a schema invariant test).**" PRODUCT's non-goals
-	// say it in three words: "Hazards becoming public notes | Never." Until this round there was no
-	// public surface query in this system, so that invariant test had no subject. It has one now —
-	// `TestNoHazardRedirectReachesThePublicRead`.
+	// table carries it as a row, reproduced here as a row rather than as a sentence:
+	// `| Hazards becoming public notes | Hazards can never become public notes. |` (`PRODUCT.md:51`).
+	//
+	// **This comment used to read "PRODUCT's non-goals say it in three words: 'Hazards becoming
+	// public notes | Never.'", and the document does not contain those three words.** The two
+	// adjacent rows do have bare-`Never.` rationale cells — public user location history at `:49`,
+	// the chart line at `:50` — which is where the substitution came from. It is corrected rather
+	// than deleted, because this round's own thesis is that a miscitation survives by looking like
+	// a citation, and the delta review caught this one after the ruling had already claimed it
+	// fixed.
+	//
+	// Until this round there was no public surface query in this system, so that invariant test had
+	// no subject. It has one now — `TestNoHazardRedirectReachesThePublicRead`.
 	"hazard_redirect": "DECISIONS §3.4 and PRODUCT's non-goals: a hazard never becomes a public note",
+
+	// ── R79's two, classified before their migration has merged ────────────────────────────────
+	//
+	// A dispute says *this city record is wrong*. It is an unadjudicated assertion about a record
+	// — the same class as `species_claim`, `wrong_species_report` and `never_existed_report`, and
+	// refused here for the same reason those are: nothing in this system adjudicates it, and
+	// PRODUCT's non-goals refuse an unverified community claim drawn as the record
+	// (`PRODUCT.md:48`). Publishing one would put an accusation about the city's data on an
+	// indexed page with nobody having ruled on it.
+	//
+	// The withdrawal is refused for `photo_withdrawal`'s reason, which is this file's general rule
+	// for removals: the *effect* of a withdrawal is visible — the thing stops being published —
+	// and the *act* is not. Publishing a withdrawal would republish the claim it takes back, which
+	// is ERRATA E280's sentence and is exactly what `005`'s own header warns the next round about.
+	"data_dispute":            "an unadjudicated assertion about a record; nothing here adjudicates it",
+	"data_dispute_withdrawal": "a removal; its effect is visible, the act is not",
+}
+
+// kindsAwaitingTheirMigration are kinds classified above whose `CHECK` value is not in this tree yet.
+//
+// **Why classify a kind before it exists.** `contributions.kind`'s vocabulary is widened by PR #159
+// (`server/migrations/005_data_dispute_kinds.sql`, branch `server/data-dispute-kinds`), which DROPs
+// `contributions_kind_admits_a_withdrawn_reading` and ADDs
+// `contributions_kind_admits_a_disputed_record` with `data_dispute` and `data_dispute_withdrawal`.
+// The two PRs are independent and either can merge first, and the allow-list guard makes that an
+// ordering problem with no safe order:
+//
+//   - #159 first, and this PR cannot merge until it classifies both;
+//   - this PR first, and #159's merge turns `TestEveryContributionKindIsClassified` **red on main**
+//     — a guard going red on main for a merge that did nothing wrong.
+//
+// Classifying both now removes the ordering entirely, and this map is what keeps that honest in the
+// meantime: `TestEveryContributionKindIsClassified` exempts these two from "a classified kind must
+// be a declared kind", **and fails when the exemption stops being needed**. The day 005 lands, the
+// guard's message is "delete this entry", not silence. An exemption that outlives its reason is an
+// exemption nothing ever removes.
+//
+// The value is where the kind comes from, so the failure names it.
+var kindsAwaitingTheirMigration = map[string]string{
+	"data_dispute":            "PR #159, server/migrations/005_data_dispute_kinds.sql",
+	"data_dispute_withdrawal": "PR #159, server/migrations/005_data_dispute_kinds.sql",
 }
 
 // ── The handler ────────────────────────────────────────────────────────────────────────────────
@@ -254,9 +358,15 @@ func (s *Server) publicTree(w http.ResponseWriter, r *http.Request) error {
 	body := publicTreeRead{
 		TreeUUID:          id,
 		VerificationState: "unverified",
-		// The comparison is `>=` and the count never leaves this line. A body that carried the
-		// number would be a count of user actions on a public page whatever it was called.
-		Beloved: half.Favorites >= belovedFloor,
+		Beloved:           half.Favorites >= belovedFloor,
+	}
+	// **The number is copied only inside this branch, and that is the k-anonymity mechanism.** A
+	// projection that set `BelovedBy` unconditionally and let the web hide it below the floor would
+	// put the count of every tree in the inventory on an indexed page. Below the floor the number
+	// is discarded here; `beloved_by` is null and nought, one and two are one answer.
+	if body.Beloved {
+		count := half.Favorites
+		body.BelovedBy = &count
 	}
 	for _, reading := range half.Readings {
 		projected := publicReadingFrom(reading)

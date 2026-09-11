@@ -57,9 +57,11 @@ type PublicReading struct {
 // answer here is a uniform 200 rather than the `not_found` the photo read gives.
 type PublicTreeCommunity struct {
 	Readings []PublicReading
-	// Favorites is how many distinct owners currently hold this tree as a favorite. It is a count
-	// on the way out of the database and a **boolean** by the time it reaches the wire — see
-	// `belovedFloor` in the api package. Nothing publishes this number.
+	// Favorites is how many distinct **accounts** currently hold this tree as a favorite.
+	//
+	// Device-only favorites are excluded, and that is an owner ruling rather than a query detail —
+	// see the query. The count reaches the wire only above `belovedFloor` (api package); below the
+	// floor the number is discarded here and nothing downstream can publish it.
 	Favorites int
 }
 
@@ -91,7 +93,7 @@ func (s *Store) PublicTreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID)
 	// The rating comes back in the round that adds the withdrawal kind. Until then the page draws
 	// nothing where a rating would be, which is the house style rather than a degradation.
 
-	// How many distinct owners currently hold this tree as a favorite.
+	// How many distinct **account-backed** owners currently hold this tree as a favorite.
 	//
 	// **This is the one publishable fact in this system whose takedown route is complete**, which is
 	// why it is here while the rating is not. Un-favoriting is an ordinary toggle that writes
@@ -103,13 +105,38 @@ func (s *Store) PublicTreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID)
 	// `is_favorite` rather than row existence: the table holds tombstones, and an un-favorited tree
 	// is not one anybody would say they have (`MapMembership`'s own rule, verbatim).
 	//
-	// **A count of rows is a count of owners, not of people**, and the difference is stated rather
-	// than glossed: the two unique indexes give one row per user per tree and one per device per
-	// tree, so one person holding a tree on a signed-out phone and a signed-in one counts twice.
-	// That makes the floor slightly weaker than it reads, never stronger, and the api package's
-	// comment on `belovedFloor` carries it too.
+	// ── `user_id IS NOT NULL`, and it is the whole of an owner ruling ──────────────────────────
+	//
+	// **This was `count(*)` over every favorite row, and it was farmable by somebody with no
+	// account at all.** `favorites_owner` makes each row exactly one owner, *user or device*;
+	// `POST /devices/register` takes no credential and mints a fresh device — therefore a fresh
+	// owner — per UUID it is handed. Three unauthenticated calls and three toggles set `beloved`
+	// on any tree in the inventory. The delta review of this round's PR demonstrated it, and the
+	// comment that stood here called the floor "slightly weaker than it reads, never stronger",
+	// which undersold it: the real property was that an *owner could be minted without a person or
+	// an account existing*, and farmability is D1's whole stated reason for banning public counts.
+	//
+	// The owner ruled on 2026-09-10 that only account-backed favorites count toward the public
+	// floor. A device-only favorite keeps working exactly as it does now — it is stored, it syncs,
+	// it draws the heart, and `claimDevice` still re-homes it onto an account at sign-in
+	// (`identity.go`) at which point it begins to count. It simply does not reach the public page
+	// on its own. Minting an account costs Sign in with Apple, which is a real identity Apple
+	// rate-limits; minting a device costs an HTTP request.
+	//
+	// `count(DISTINCT user_id)` rather than `count(*)` over the same predicate. The two are equal
+	// under `idx_favorites_user_tree` — one row per user per tree — and the `DISTINCT` is written
+	// anyway so the statement says what it counts rather than relying on an index elsewhere in the
+	// file to make an ambiguous statement unambiguous.
+	//
+	// The remaining honest limitation is now the opposite one, and it is smaller: the count is of
+	// **accounts**, so one person with two Apple IDs is two. It can no longer be moved by anybody
+	// without an account.
 	err := s.pool.QueryRow(ctx, `
-		SELECT count(*) FROM favorites WHERE tree_uuid = $1 AND is_favorite
+		SELECT count(DISTINCT user_id)
+		  FROM favorites
+		 WHERE tree_uuid = $1
+		   AND is_favorite
+		   AND user_id IS NOT NULL
 	`, treeUUID).Scan(&half.Favorites)
 	if err != nil {
 		return PublicTreeCommunity{}, err

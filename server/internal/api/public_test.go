@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/apierr"
+	"github.com/PlatosTwin/cypress/server/internal/apple"
 	"github.com/PlatosTwin/cypress/server/internal/ratelimit"
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
 )
@@ -95,17 +97,22 @@ func (h *harness) applyItem(t *testing.T, bearer string, item map[string]any) {
 // its rating is refused: a fixture that stopped recording one could not tell a withheld rating from
 // an absent one.
 //
-// The three favorites are the beloved floor exactly met, from three distinct owners, so the golden
-// file's `"beloved": true` is a boundary rather than a comfortable margin.
+// The three favorites are the beloved floor exactly met, from three distinct **accounts**, so the
+// golden file's `"beloved": true` and `"beloved_by": 3` are a boundary rather than a comfortable
+// margin. A device favorite is seeded alongside them and deliberately does not raise the number:
+// the golden file would read 4 if it did, so the fixture itself carries the owner's ruling.
+//
+// `bearer` is spent last, because `favoriteOwner` changes the harness's Apple identity and a caller
+// that signed in first still holds a perfectly good session either way.
 func seedOneTreeWithEverything(t *testing.T, h *harness, bearer string, tree uuid.UUID) {
 	t.Helper()
 	h.applyItem(t, bearer, measurementItemWithQuantity(tree, "height", 18, "m", "estimate", "2026-08-14T17:04:11Z"))
 	h.applyItem(t, bearer, measurementItemWithQuantity(tree, "dbh", 64, "cm", "tape", "2026-07-02T09:12:00Z"))
 	h.applyItem(t, bearer, observationItem(tree, 4, "2026-09-03T18:30:00Z"))
-	h.applyItem(t, bearer, favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
-	for owner := 0; owner < 2; owner++ {
+	for owner := 0; owner < 3; owner++ {
 		h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
 	}
+	h.applyItem(t, favoriteDeviceOwner(t, h), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
 }
 
 // ── What the page gets ─────────────────────────────────────────────────────────────────────────
@@ -135,13 +142,17 @@ func TestTheEmptyAnswerIsAlsoAFixture(t *testing.T) {
 	compareGolden(t, "public_tree_empty.json", h.readPublicly(t, publicTreeID).Body.Bytes())
 }
 
-// TestTheBodyCarriesTheseFiveKeysAndNoOthers is the count refusal, asserted positively.
+// TestTheBodyCarriesTheseSixKeysAndNoOthers is the count refusal, asserted positively.
 //
-// The ruling's §1 forbids **every** count — photographs, visits, contributors, readings — and a test
-// that searched for the word "count" would pass on a field called `photos_since`. So the whole
-// top-level key set is pinned instead: a sixth key fails whatever it is called, and the author who
-// adds one has to come here and say why.
-func TestTheBodyCarriesTheseFiveKeysAndNoOthers(t *testing.T) {
+// The ruling's §1 forbids every count except the one the owner carved out — photographs, visits,
+// contributors and readings are all still refused — and a test that searched for the word "count"
+// would pass on a field called `photos_since`. So the whole top-level key set is pinned instead: a
+// seventh key fails whatever it is called, and the author who adds one has to come here and say why.
+//
+// **It was five keys until the owner ruled the beloved count rides along** (2026-09-10, R27.1 §1).
+// `beloved_by` is the sixth and it is null below the floor, which is why it is a *key* rather than
+// an omission — see `publicTreeRead`.
+func TestTheBodyCarriesTheseSixKeysAndNoOthers(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
 	seedOneTreeWithEverything(t, h, session.AccessToken, publicTreeID)
@@ -162,7 +173,7 @@ func TestTheBodyCarriesTheseFiveKeysAndNoOthers(t *testing.T) {
 		got = append(got, key)
 	}
 	sort.Strings(got)
-	want := []string{"beloved", "height", "tree_uuid", "trunk_dbh", "verification_state"}
+	want := []string{"beloved", "beloved_by", "height", "tree_uuid", "trunk_dbh", "verification_state"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the public body's keys are %v, want exactly %v — a new key on a public page is a "+
 			"disclosure decision and belongs in the ruling before it belongs here", got, want)
@@ -300,17 +311,47 @@ func TestNoVitalityRatingReachesThePublicRead(t *testing.T) {
 
 // ── The beloved state ──────────────────────────────────────────────────────────────────────────
 
-// favoriteOwner mints a bearer for a **distinct** favorite owner.
+// favoriteOwner mints a bearer for a **distinct account**, which since the owner's 2026-09-10
+// ruling is the only kind of favorite owner that counts toward the beloved floor.
 //
-// `signIn` cannot do this: the harness's Apple identity is fixed, so every `signIn` is the same
-// person and the `idx_favorites_user_tree` unique index collapses their favorites to one row. That
-// is correct behavior, and it made the first version of these tests report `beloved = false` at
-// four "owners" — a harness defect that looks exactly like a broken floor. A device registration
-// mints a new `devices` row per UUID, which is the other owner arm of `favorites_owner`, and D9
-// makes device-scoped ownership the house rule anyway.
+// **This used to mint a device, and that is the finding rather than a detail.** A device
+// registration needs no credential, so three of them made any tree beloved — which the delta review
+// of this round's PR demonstrated end to end. The floor now counts `favorites.user_id`, so a test
+// that stands up device owners is testing that they do *not* count (see `favoriteDeviceOwner`).
+//
+// A distinct account needs a distinct Apple subject: `newHarness` pins one identity, so every plain
+// `signIn` is the same person and `idx_favorites_user_tree` collapses their favorites to one row.
+// That is correct behavior and it once made these tests report `beloved = false` at four "owners" —
+// a harness defect that looks exactly like a broken floor. The subject is therefore varied here, the
+// way `TestSignInOnAPhoneHeldByAnotherAccountIsRefused` already varies it.
 func favoriteOwner(t *testing.T, h *harness) string {
 	t.Helper()
+	h.apple.identity = apple.Identity{
+		Subject: "0012345." + uuid.New().String() + ".0001",
+		Email:   uuid.New().String() + "@b.test",
+		Nonce:   sha256Hex(harnessNonce),
+	}
+	return h.signIn(t, nil).AccessToken
+}
+
+// favoriteDeviceOwner mints a bearer for a favorite owner with **no account behind it** — the arm
+// of `favorites_owner` that `POST /devices/register` hands out to anybody who asks.
+func favoriteDeviceOwner(t *testing.T, h *harness) string {
+	t.Helper()
 	return h.registerDeviceToken(t, uuid.New())
+}
+
+// belovedByOf renders the nullable count readably.
+//
+// `%v` on a `*int` prints an **address**, which is `codeOf`'s lesson in this package arriving on a
+// different type: a red-proof of `TestDeviceOnlyFavoritesDoNotReachTheFloor` printed
+// `beloved_by = 0x456185508630` and named neither the number it got nor the defect. A failure
+// message that cannot name the answer is not evidence of anything.
+func belovedByOf(count *int) string {
+	if count == nil {
+		return "<absent>"
+	}
+	return strconv.Itoa(*count)
 }
 
 // favoriteItem is a `favorite_toggle` in the client's own payload shape.
@@ -323,25 +364,135 @@ func favoriteItem(tree uuid.UUID, on bool, occurredAt string) map[string]any {
 	}
 }
 
-// TestTheBelovedStateNeedsThreeDistinctOwners is R27.1 §2's floor, measured rather than asserted.
+// TestTheBelovedStateNeedsThreeDistinctAccounts is R27.1 §2's floor, measured rather than asserted.
 //
 // The floor is a k-anonymity threshold and not modesty: at one favorite the surface would publish
 // somebody's *private bookmark* (R27.1 §2's own noun), and at two it is inferable to whoever knows
 // they are the other. Three is R27.1's provisional figure — its "count it, do not guess it" is
 // still open — so this test pins the boundary rather than the number's justification.
-func TestTheBelovedStateNeedsThreeDistinctOwners(t *testing.T) {
+//
+// **The count is also asserted at every step**, because since the owner's 2026-09-10 ruling the
+// number rides along above the floor. A test that only read the boolean would be green on a
+// projection that published `beloved_by` below the floor as well.
+func TestTheBelovedStateNeedsThreeDistinctAccounts(t *testing.T) {
 	h := newHarness(t)
 	tree := uuid.New()
 
 	for owner := 1; owner <= 4; owner++ {
 		h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-0"+strconv.Itoa(owner)+"T12:00:00Z"))
 
-		beloved := decodePublic(t, h.readPublicly(t, tree)).Beloved
-		if want := owner >= 3; beloved != want {
-			t.Errorf("with %d favorite owners beloved = %v, want %v — the floor is %d and it is a "+
-				"privacy mechanism, so below it the answer must be indistinguishable from none",
-				owner, beloved, want, belovedFloor)
+		body := decodePublic(t, h.readPublicly(t, tree))
+		if want := owner >= 3; body.Beloved != want {
+			t.Errorf("with %d favoriting accounts beloved = %v, want %v — the floor is %d and it is "+
+				"a privacy mechanism, so below it the answer must be indistinguishable from none",
+				owner, body.Beloved, want, belovedFloor)
 		}
+		if owner < belovedFloor {
+			if body.BelovedBy != nil {
+				t.Errorf("with %d favoriting accounts beloved_by = %d; below the floor there is no "+
+					"number, and a number below a k-anonymity floor is the disclosure the floor is for",
+					owner, *body.BelovedBy)
+			}
+			continue
+		}
+		if body.BelovedBy == nil {
+			t.Errorf("with %d favoriting accounts beloved_by is absent; above the floor the number "+
+				"rides along with the state (R27.1 §1, owner ruling 2026-09-10)", owner)
+			continue
+		}
+		if *body.BelovedBy != owner {
+			t.Errorf("with %d favoriting accounts beloved_by = %d", owner, *body.BelovedBy)
+		}
+	}
+}
+
+// TestDeviceOnlyFavoritesDoNotReachTheFloor is the owner's 2026-09-10 ruling, measured.
+//
+// **This is the farm, run against the shipped code.** `POST /devices/register` takes no credential
+// and mints a device — an arm of `favorites_owner`, therefore a favorite owner — per UUID handed to
+// it. Under the count this endpoint used to run, the seven registrations below made the tree
+// beloved with no account in existence anywhere, and the delta review of this round's PR
+// demonstrated exactly that. D1's stated reason for banning public counts is farmability.
+//
+// The two assertions are both necessary. That seven device favorites publish nothing is the ruling.
+// That the **eighth owner, an account, is counted as one** is the control: without it this test is
+// green on a store that lost the favorites query altogether, and on one that counts nothing at all.
+func TestDeviceOnlyFavoritesDoNotReachTheFloor(t *testing.T) {
+	h := newHarness(t)
+	tree := uuid.New()
+
+	for owner := 0; owner < 7; owner++ {
+		h.applyItem(t, favoriteDeviceOwner(t, h), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+	}
+	// The rows are really there. Without this the refusal below could be a sync that dropped them.
+	var rows int
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM favorites WHERE tree_uuid = $1 AND is_favorite AND device_id IS NOT NULL`,
+		tree).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 7 {
+		t.Fatalf("%d device favorites were stored, want 7 — a device favorite must keep working in "+
+			"the app and keep syncing; what the ruling changed is only whether it counts publicly", rows)
+	}
+
+	body := decodePublic(t, h.readPublicly(t, tree))
+	if body.Beloved || body.BelovedBy != nil {
+		t.Errorf("seven device registrations made this tree beloved (beloved=%v, beloved_by=%s). "+
+			"`POST /devices/register` needs no credential, so that is a public state one person "+
+			"with a script can set on any tree in the inventory",
+			body.Beloved, belovedByOf(body.BelovedBy))
+	}
+
+	// And one account on the same tree counts as exactly one, not as eight.
+	h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-02T12:00:00Z"))
+	if after := decodePublic(t, h.readPublicly(t, tree)); after.Beloved {
+		t.Errorf("one account plus seven devices is beloved; the account arm is counting the " +
+			"devices too and the ruling has not been applied")
+	}
+}
+
+// TestASignedInDeviceFavoriteStartsCounting is the other half of the ruling: a device favorite is
+// not discarded, it is waiting.
+//
+// `claimDevice` re-homes a device's favorites onto the account (`store/identity.go` — the three
+// statements that merge, delete the loser and then `UPDATE favorites SET user_id = $2`). So the
+// person who favorited a tree before signing in does not lose their contribution to the floor; it
+// arrives when they sign in. A ruling that silently discarded their favorite would be a different
+// and worse ruling, and this is what tells the two apart.
+func TestASignedInDeviceFavoriteStartsCounting(t *testing.T) {
+	h := newHarness(t)
+	tree := uuid.New()
+
+	// Two accounts, so the tree sits one short of the floor.
+	for owner := 0; owner < 2; owner++ {
+		h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+	}
+	// And a third person, on a phone with no account yet.
+	deviceUUID := uuid.New()
+	h.applyItem(t, h.registerDeviceToken(t, deviceUUID), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+	if before := decodePublic(t, h.readPublicly(t, tree)); before.Beloved {
+		t.Fatal("the control: two accounts and one device are already beloved, so the sign-in below " +
+			"would prove nothing")
+	}
+
+	// They sign in on that phone. `POST /auth/oidc` claims the device inline when the body carries
+	// a `device_uuid`, which is the seam that re-homes the favorite.
+	h.apple.identity = apple.Identity{
+		Subject: "0012345." + uuid.New().String() + ".0002",
+		Email:   uuid.New().String() + "@b.test",
+		Nonce:   sha256Hex(harnessNonce),
+	}
+	h.signIn(t, &deviceUUID)
+
+	after := decodePublic(t, h.readPublicly(t, tree))
+	if !after.Beloved {
+		t.Fatal("a device favorite did not begin to count when its phone signed in; the ruling " +
+			"excludes device-only favorites from the public floor, it does not discard them")
+	}
+	if after.BelovedBy == nil || *after.BelovedBy != 3 {
+		t.Errorf("beloved_by = %s, want 3 — the re-homed favorite is one account, not a second one",
+			belovedByOf(after.BelovedBy))
 	}
 }
 
@@ -376,12 +527,19 @@ func TestTheBelovedStateFallsWhenAFavoriteIsRemoved(t *testing.T) {
 	}
 }
 
-// TestNoFavoriteCountReachesThePublicRead. The state travels and the number does not.
+// TestTheFavoriteCountTravelsOnlyAboveTheFloor. The number rides along with the state, and below the
+// floor there is no number.
 //
-// `belovedFloor` explains why this endpoint publishes less than R27.1 §1 permits. This asserts it on
-// the bytes, because "we do not send the count" is a property of the projection and a stranger only
-// ever sees the body.
-func TestNoFavoriteCountReachesThePublicRead(t *testing.T) {
+// **This test was `TestNoFavoriteCountReachesThePublicRead` and asserted the opposite.** The owner
+// ruled on 2026-09-10 that the count publishes, per R27.1 §1 — *"Showing the number too is permitted
+// and preferred"* — so the old assertion is gone rather than weakened, and what replaces it is the
+// clause that makes the permission safe: **only above the floor.** Below it the number would be the
+// disclosure the k-anonymity floor exists to prevent, and one person's private bookmark would
+// publish as `1`.
+//
+// Both halves are asserted on the bytes, because "we send it" and "we do not send it" are properties
+// of the projection and a stranger only ever sees the body.
+func TestTheFavoriteCountTravelsOnlyAboveTheFloor(t *testing.T) {
 	h := newHarness(t)
 	tree := uuid.New()
 	for owner := 0; owner < 7; owner++ {
@@ -390,16 +548,28 @@ func TestNoFavoriteCountReachesThePublicRead(t *testing.T) {
 
 	recorder := h.readPublicly(t, tree)
 	if !decodePublic(t, recorder).Beloved {
-		t.Fatal("the control: seven owners favorited and the tree is not beloved")
+		t.Fatal("the control: seven accounts favorited and the tree is not beloved")
 	}
 	// `7` spelled bare would match a hex digit of the echoed UUID roughly always, which is the
-	// coincidence `TestWithheldKindsProduceTheEmptyAnswer` was caught by. Spelled as a JSON number
-	// after a colon, it cannot.
-	for _, canary := range []string{":7", "favorite", "count"} {
-		if strings.Contains(recorder.Body.String(), canary) {
-			t.Errorf("the body carries %q — the beloved state is a bool and a count of user actions "+
-				"is not published on this page whatever it is called:\n%s",
-				canary, recorder.Body.String())
+	// coincidence `TestWithheldKindsProduceTheEmptyAnswer` was caught by. Spelled as a JSON member
+	// it cannot.
+	if !strings.Contains(recorder.Body.String(), `"beloved_by":7`) {
+		t.Errorf("the body does not carry `\"beloved_by\":7` above the floor:\n%s", recorder.Body.String())
+	}
+
+	// And below the floor: two accounts, which is one short.
+	below := uuid.New()
+	for owner := 0; owner < 2; owner++ {
+		h.applyItem(t, favoriteOwner(t, h), favoriteItem(below, true, "2026-09-01T12:00:00Z"))
+	}
+	quiet := h.readPublicly(t, below)
+	if !strings.Contains(quiet.Body.String(), `"beloved_by":null`) {
+		t.Errorf("below the floor the body does not carry `\"beloved_by\":null`; a present number "+
+			"there publishes what the floor is for:\n%s", quiet.Body.String())
+	}
+	for _, canary := range []string{":2", ":1", "favorite", "count"} {
+		if strings.Contains(quiet.Body.String(), canary) {
+			t.Errorf("below the floor the body carries %q:\n%s", canary, quiet.Body.String())
 		}
 	}
 }
@@ -492,8 +662,11 @@ func TestNoDayLevelTimestampReachesThePublicRead(t *testing.T) {
 //
 // §3.4, verbatim: *"Hazard categories never produce a public note, never produce a community-visible
 // record, and never auto-stale. No public surface query may be able to return a hazard-category note
-// (enforced by a schema invariant test)."* PRODUCT's non-goals: *"Hazards becoming public notes |
-// Never."* This is the first public surface query this system has ever had.
+// (enforced by a schema invariant test)."* PRODUCT's non-goals carry the row
+// `| Hazards becoming public notes | Hazards can never become public notes. |` (`PRODUCT.md:51`) —
+// reproduced as a row, because the earlier form here quoted the rationale cell as *"Never."*, which
+// is the neighbouring rows' cell and not this one's. This is the first public surface query this
+// system has ever had.
 func TestNoHazardRedirectReachesThePublicRead(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)
@@ -637,6 +810,100 @@ func TestAbsentEmptyAndWithdrawnAreOneAnswer(t *testing.T) {
 			t.Fatalf("%s and %s answer differently:\n%s\n%s",
 				reference, name, normalized[reference], normalized[name])
 		}
+	}
+}
+
+// TestBelowTheFloorIsOneAnswerOverRealHTTP is the k-anonymity property, measured on a socket.
+//
+// **What must hold, stated precisely, because the round's brief had it wrong once.** A tree above
+// the floor and a tree below it are *not* byte-identical and must not be — that difference is the
+// feature, and `beloved: true` with a number beside it is longer than `beloved: false` with a null.
+// The property that has to hold is the one the floor is for: **nought, one and two account-backed
+// owners are byte-identical to each other and to a tree this database has never heard of.** At two,
+// the reader must not be able to tell that somebody else has favorited the tree they favorited.
+//
+// **`httptest.NewServer` rather than `httptest.NewRecorder`, and that is not fussiness.** A recorder
+// has no `Content-Length`: it never runs `net/http`'s response writer, so a body whose *length*
+// varies with the state would compare equal on a recorder and differ on the wire, where a length is
+// a side channel a passive observer reads without parsing anything. The header set is compared too,
+// `Date` excluded because it is a wall clock.
+//
+// A tree above the floor is read at the end **as the control**. Without it every comparison here
+// would pass on an endpoint that had stopped publishing the beloved state altogether.
+func TestBelowTheFloorIsOneAnswerOverRealHTTP(t *testing.T) {
+	h := newHarness(t)
+	server := httptest.NewServer(h.handler)
+	defer server.Close()
+
+	read := func(tree uuid.UUID) ([]byte, http.Header) {
+		t.Helper()
+		response, err := http.Get(server.URL + Prefix + "/public/trees/" + tree.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d", response.StatusCode)
+		}
+		raw, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		headers := response.Header.Clone()
+		headers.Del("Date")
+		// The echoed id is the caller's own input and can say nothing the caller did not know.
+		return bytes.ReplaceAll(raw, []byte(tree.String()), []byte("THE-ID")), headers
+	}
+
+	// Four trees, differing only in how many accounts hold them.
+	states := []struct {
+		name   string
+		owners int
+	}{
+		{"a tree this database has never heard of", 0},
+		{"one account", 1},
+		{"two accounts — one short of the floor", 2},
+	}
+	var reference []byte
+	var referenceName string
+	var referenceHeaders http.Header
+	for _, state := range states {
+		tree := uuid.New()
+		for owner := 0; owner < state.owners; owner++ {
+			h.applyItem(t, favoriteOwner(t, h), favoriteItem(tree, true, "2026-09-01T12:00:00Z"))
+		}
+		body, headers := read(tree)
+		if reference == nil {
+			reference, referenceName, referenceHeaders = body, state.name, headers
+			t.Logf("%s: %d bytes, Content-Length %q", state.name, len(body), headers.Get("Content-Length"))
+			continue
+		}
+		t.Logf("%s: %d bytes, Content-Length %q", state.name, len(body), headers.Get("Content-Length"))
+		if !bytes.Equal(reference, body) {
+			t.Errorf("%s and %s answer differently — below the floor there is one answer:\n%s\n%s",
+				referenceName, state.name, reference, body)
+		}
+		if fmt.Sprint(headers) != fmt.Sprint(referenceHeaders) {
+			t.Errorf("%s and %s differ in headers, which is a side channel that needs no parsing:\n%v\n%v",
+				referenceName, state.name, referenceHeaders, headers)
+		}
+	}
+
+	// The control, and the feature: at the floor the answer changes.
+	loved := uuid.New()
+	for owner := 0; owner < belovedFloor; owner++ {
+		h.applyItem(t, favoriteOwner(t, h), favoriteItem(loved, true, "2026-09-01T12:00:00Z"))
+	}
+	above, _ := read(loved)
+	t.Logf("at the floor (%d accounts): %d bytes", belovedFloor, len(above))
+	if bytes.Equal(reference, above) {
+		t.Fatal("a tree at the floor answers the same bytes as a tree with no favorites at all; " +
+			"this endpoint is not publishing the beloved state, so every comparison above passed " +
+			"on an empty question")
+	}
+	if !bytes.Contains(above, []byte(`"beloved":true`)) ||
+		!bytes.Contains(above, fmt.Appendf(nil, `"beloved_by":%d`, belovedFloor)) {
+		t.Fatalf("the control body does not carry the state and its number: %s", above)
 	}
 }
 
@@ -845,17 +1112,53 @@ func TestEveryContributionKindIsClassified(t *testing.T) {
 		}
 	}
 	for kind := range withheldKinds {
-		if !slices.Contains(declared, kind) {
-			t.Errorf("withheldKinds names `%s`, which is not a contribution kind", kind)
+		if slices.Contains(declared, kind) {
+			continue
+		}
+		if where, awaited := kindsAwaitingTheirMigration[kind]; awaited {
+			t.Logf("`%s` is classified ahead of its migration (%s); exempted here until it lands", kind, where)
+			continue
+		}
+		t.Errorf("withheldKinds names `%s`, which is not a contribution kind", kind)
+	}
+	// The exemption map is itself held to the one property that matters: **it cannot hide an
+	// unclassified kind.** It only ever excuses the *reverse* direction — a classification with no
+	// declaration yet — and the loop above, which is the safety-critical one, does not consult it
+	// at all. So the assertion here is that every kind awaiting a migration is in fact classified.
+	//
+	// When the migration lands, the entry becomes redundant rather than wrong: the ordinary loop
+	// covers the kind and this one has nothing to excuse. That is said as a **log and not a
+	// failure**, deliberately. Failing would mean #159's merge turns this guard red on main for a
+	// merge that did nothing wrong, which is the exact ordering problem classifying early was meant
+	// to remove — trading one red-on-main for another is not a fix. The deletion is a tidy-up and
+	// it is written into `docs/ROADMAP.md` so it is somebody's, not a log nobody reads.
+	for kind, where := range kindsAwaitingTheirMigration {
+		_, withheld := withheldKinds[kind]
+		if !withheld && !publicKinds[kind] {
+			t.Errorf("`%s` is awaiting a migration and is classified nowhere; the whole reason for "+
+				"that map is that the decision is taken before the kind arrives", kind)
+		}
+		if slices.Contains(declared, kind) {
+			t.Logf("`%s` is declared in %s now (%s landed), so its kindsAwaitingTheirMigration "+
+				"entry excuses nothing and can be deleted", kind, source, where)
 		}
 	}
 	// The count, asserted **after** the classification rather than before it, so an author who adds
-	// an eighteenth kind reads the sentence about their kind first and this one as context. Kept
-	// because it is the extractor's own calibration against the live tree: a reader that silently
-	// began matching nothing would leave the loops above with nothing to say.
-	if len(declared) != 17 {
-		t.Errorf("read %d kinds from %s, want 17 — either the vocabulary grew (classify the new "+
-			"one above) or the extractor moved: %v", len(declared), source, declared)
+	// an eighteenth kind reads the sentence about their kind first and this one as context. It is
+	// the extractor's own calibration against the live tree: a reader that silently began matching
+	// nothing would leave the loops above with nothing to say.
+	//
+	// **A floor rather than an equality, and the change is deliberate.** It read `!= 17`, which made
+	// every widening of the vocabulary go red here — including a widening that arrives from a
+	// different PR and has done nothing wrong (#159's `005`, two kinds, classified above). The
+	// ordering this guard exists to buy is *somebody decides about the new kind*, and the loops
+	// above are what buy it; the number bought only the calibration, and a floor buys that too. It
+	// is a floor rather than a range because this vocabulary cannot shrink: an applied migration is
+	// frozen, and a value already stored in a row cannot be dropped from the CHECK without
+	// orphaning it.
+	if len(declared) < 17 {
+		t.Errorf("read %d kinds from %s, want at least 17 — the vocabulary cannot shrink, so this "+
+			"is the extractor having stopped reading: %v", len(declared), source, declared)
 	}
 	// And the decision itself, pinned: exactly two kinds are public. Widening this is a privacy
 	// decision and must arrive with the ruling that took it, not as a still-passing test.
@@ -958,11 +1261,18 @@ func TestTheLiveSchemaAgreesWithTheMigrationFiles(t *testing.T) {
 //
 // The specimen directory is the shape of the real one and each file is there for a case that has
 // bitten: 001 declares the vocabulary **inline in a CREATE TABLE** (the real 001 does), 002 replaces
-// it through `ADD CONSTRAINT` (the real 002 and 004 do), 003 touches something else entirely and
-// must not blank the answer, and 004 carries the pattern **inside a comment**, which must not be
+// it through `ADD CONSTRAINT` (the real 002, 004 and 005 do), 003 touches something else entirely
+// and must not blank the answer, and 004 carries the pattern **inside a comment**, which must not be
 // mistaken for a declaration. The answer is 002's, because that is the last file that declares it —
 // and it is deliberately *not* the first file's and *not* the last file's, so a reader that took
 // either would be caught.
+//
+// **`species_claim_v2` is in 002 because a digit in a kind name was a silent blind spot**, not
+// because any kind is named that. `sqlQuotedValue` was `[a-z_]+`, so a digit-bearing value was
+// dropped by the file reader and by the live-schema reader alike — and because both used the one
+// pattern, the two instruments agreed with each other about a vocabulary neither had read. The
+// delta review demonstrated it with this exact name, live in the schema and classified nowhere,
+// against three green guards. This specimen is what stops it coming back.
 func TestContributionKindExtractorIsCalibrated(t *testing.T) {
 	dir := t.TempDir()
 	specimens := map[string]string{
@@ -980,7 +1290,7 @@ ALTER TABLE contributions DROP CONSTRAINT contributions_kind_check;
 ALTER TABLE contributions ADD CONSTRAINT contributions_kind_is_known CHECK (kind IN (
     'visit', 'observation',
     -- a comment mentioning 'not_a_kind' in prose
-    'care_event'
+    'care_event', 'species_claim_v2'
 ));
 
 CREATE INDEX something ON contributions (upper(payload ->> 'id')) WHERE kind = 'measurement';
@@ -1002,11 +1312,12 @@ ALTER TABLE contributions ADD COLUMN moderation_note TEXT;
 	}
 
 	got, source := contributionKindsFromMigrations(t, dir)
-	want := []string{"visit", "observation", "care_event"}
+	want := []string{"visit", "observation", "care_event", "species_claim_v2"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the extractor read %v from a directory whose answer is %v — it must take the "+
 			"*last* file that declares the vocabulary, skip a commented value, stop at the CHECK's "+
-			"close so the trailing index's 'measurement' is not a kind, and not be fooled by prose",
+			"close so the trailing index's 'measurement' is not a kind, read a value whose name "+
+			"carries a digit, and not be fooled by prose",
 			got, want)
 	}
 	if source != "002_more_kinds.sql" {
@@ -1015,7 +1326,18 @@ ALTER TABLE contributions ADD COLUMN moderation_note TEXT;
 	}
 }
 
-var sqlQuotedValue = regexp.MustCompile(`'([a-z_]+)'`)
+// sqlQuotedValue reads a single-quoted SQL literal.
+//
+// **The character class carries a `0-9` and that is the whole of a fix.** It was `[a-z_]+`, and a
+// kind whose name contains a digit was therefore dropped **silently** by both instruments that use
+// this pattern — the file reader and the live-schema reader — so the two agreed with each other
+// about a vocabulary neither of them had read. The delta review of this round's PR put a real
+// eighteenth kind, `species_claim_v2`, live in the schema and classified nowhere, and all three
+// guards stayed green: reproduced here before the change, and red after it.
+//
+// No kind has ever carried a digit, so nothing leaked. What was one naming convention away is the
+// exact defect B1 was filed for — a guard that is green while the thing it names is present.
+var sqlQuotedValue = regexp.MustCompile(`'([a-z0-9_]+)'`)
 
 // migrationFilename is `internal/store/migrate.go`'s own pattern. The runner refuses a file this
 // does not match, so a file this skips is a file that never runs.
@@ -1205,6 +1527,7 @@ type publicBody struct {
 	TreeUUID          uuid.UUID      `json:"tree_uuid"`
 	VerificationState string         `json:"verification_state"`
 	Beloved           bool           `json:"beloved"`
+	BelovedBy         *int           `json:"beloved_by"`
 	Height            *publicReading `json:"height"`
 	TrunkDBH          *publicReading `json:"trunk_dbh"`
 	// Vitality is decoded so the guards can assert it is **absent**. The field left this response
@@ -1234,7 +1557,7 @@ func assertEmptyPublicBody(t *testing.T, raw []byte, tree uuid.UUID) {
 	if body.TreeUUID != tree {
 		t.Errorf("tree_uuid = %s, want the id that was asked for", body.TreeUUID)
 	}
-	if body.Beloved || body.Height != nil || body.TrunkDBH != nil || body.Vitality != nil {
+	if body.Beloved || body.BelovedBy != nil || body.Height != nil || body.TrunkDBH != nil || body.Vitality != nil {
 		t.Errorf("the body is not the empty answer: %s", raw)
 	}
 }
