@@ -30,6 +30,7 @@ As of W-A. Everything below was read from this directory, not remembered.
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
 | Pages | one placeholder at `/`. W1 is W-C |
+| Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `Tools/export_tokens.mjs` |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
@@ -131,6 +132,57 @@ to match the domain, because the domain can move and a Fly app name cannot.
 
 `fly.toml` deliberately declares **no `[mounts]`**. A mount naming a volume that does not exist
 fails a deploy halfway through creating the app.
+
+## Design tokens (W-B)
+
+`src/styles/tokens.css` is **generated and checked in**. `Tools/export_tokens.mjs` reads
+`Cypress/DesignSystem/Tokens/*.swift` and writes it; `test/tokens.test.ts` re-runs the same render
+and fails byte-for-byte when the two disagree. Do not edit the CSS — the next test run reverts it.
+
+```sh
+Tools/export_tokens.mjs           # rewrite web/src/styles/tokens.css
+Tools/export_tokens.mjs --check   # exit 1 if it is stale (the test says the same thing, louder)
+```
+
+**Why generated-and-checked-in rather than parsed at build time.** The Dockerfile copies
+`astro.config.mjs`, `tsconfig.json` and `src/` and nothing else — the Swift tree is not in the
+image and never will be, because putting it there would make the iOS source a build input of a
+web container. A build-time parse would also make every page render depend on a parser that has to
+be right. So the CSS is a real file: it ships, it is reviewable in a diff, and a designer can read
+what the web is actually painting. The cost of that choice is staleness, and the staleness is
+exactly what `test/tokens.test.ts` refuses.
+
+**Nothing is skipped silently.** Every `static let` in a token scope becomes a token, a private
+constant, or a **named** entry on a skip list the test asserts one line at a time. A declaration
+that matches no rule throws rather than being dropped — an exporter that returns "the tokens I
+understood" is green on the day it stops understanding one.
+
+**Dark mode is `prefers-color-scheme` and nothing else.** Every paired token in the Swift is
+`Color(UIColor { traits in traits.userInterfaceStyle == .dark })`, which resolves off the *system*
+setting; the app has no in-app appearance control (the only `preferredColorScheme` calls in the
+target are in `#Preview` blocks). A `[data-theme]` attribute hook would be exporting a product
+decision the source does not contain, and a test that the export matches its source cannot protect
+anything the source does not say. Only tokens whose dark value differs appear in the dark block —
+`lightOnly` and `escalated` resolve to one value in both schemes by definition.
+
+**Three things the export does not carry**, each named in the test rather than left to be noticed:
+
+- `CypressGradient.swift` — multi-stop linear and radial recipes with their own geometry. Not one
+  custom property. W1's hero is a gradient, so W-C ports them.
+- The eight composed `Animation`s. Their curves are `--motion-ease-*` and six of their durations
+  are `--motion-duration-*`; `camera` (0.4 s) and `selection` (0.18 s) write their durations inline
+  rather than in `CypressMotion.Duration`, so those two numbers have no token on either platform.
+- `CypressFont.LineSpacing` is exported verbatim, in **points of extra leading**, which is SwiftUI's
+  unit and not CSS `line-height`. `CypressFont.swift` gives the conversion it was derived under
+  (`lineSpacing ≈ size × (lineHeight − 1.2)`); a consumer that wants a `line-height` inverts it.
+  Nothing is transformed here, because inverting an approximation and calling it a token would be
+  inventing a value the design system does not state.
+
+The one web-only judgment in the whole export is `GENERIC_FALLBACKS` in `src/lib/tokens.ts`: the
+generic CSS fallback after each family, which iOS has no equivalent of. The family *names* are not
+invented — `Source Serif 4`, `Alegreya Sans` and `Spline Sans Mono` are derived from the PostScript
+prefixes the Swift declares, and they are the `name` table families of the TTFs in
+`Cypress/Resources/Fonts/`.
 
 ## The read path, when it arrives (W-B)
 

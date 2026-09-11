@@ -346,6 +346,9 @@ function color(hexText: string, alphaText: string | undefined): ColorValue | nul
   return { hex: h, alpha };
 }
 
+/** Why a `private static let` is not a token: it is resolved, then left out of the file. */
+const PRIVATE_REASON = 'private to the Swift — resolved for the declarations that name it, not a token of its own';
+
 // ── The classifier ───────────────────────────────────────────────────────────────────────────
 
 /** The six token files, in emission order. `Record<file name, source text>`. */
@@ -423,7 +426,7 @@ export function parseTokens(sources: TokenSources): ParsedTokens {
         }
         if (pair !== null) {
           colors.set(`${declaration.scope}.${declaration.name}`, pair);
-          if (declaration.isPrivate) skip(declaration, 'private');
+          if (declaration.isPrivate) skip(declaration, PRIVATE_REASON);
           else emit({ kind: 'color', light: pair.light, dark: pair.dark });
           continue;
         }
@@ -503,8 +506,15 @@ export function parseTokens(sources: TokenSources): ParsedTokens {
       if (declaration.typeAnnotation === '(Double, Double, Double, Double)') {
         const tuple = flat.startsWith('(') && flat.endsWith(')') ? flat.slice(1, -1) : '';
         const values = tuple.split(',').map((part) => number(part));
-        if (values.length === 4 && values.every((v): v is number => v !== null)) {
-          emit({ kind: 'cubicBezier', points: [values[0], values[1], values[2], values[3]] as const });
+        const [x1, y1, x2, y2] = values;
+        if (
+          values.length === 4
+          && x1 !== null && x1 !== undefined
+          && y1 !== null && y1 !== undefined
+          && x2 !== null && x2 !== undefined
+          && y2 !== null && y2 !== undefined
+        ) {
+          emit({ kind: 'cubicBezier', points: [x1, y1, x2, y2] });
           continue;
         }
       }
@@ -537,7 +547,7 @@ export function parseTokens(sources: TokenSources): ParsedTokens {
         if (value !== null) {
           scalars.set(`${declaration.scope}.${declaration.name}`, value);
           if (declaration.isPrivate) {
-            skip(declaration, 'private');
+            skip(declaration, PRIVATE_REASON);
           } else if (rule.family === 'motion' && declaration.scope === 'CypressMotion.Duration') {
             emit({ kind: 'seconds', value });
           } else if (annotation === 'Double' || UNITLESS_CGFLOATS.includes(`${declaration.scope}.${declaration.name}`)) {
