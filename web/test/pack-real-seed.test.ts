@@ -28,8 +28,24 @@ import { NEWEST_KNOWN_PACK_SCHEMA_VERSION } from '../src/lib/pack/versions.ts';
  *    `pack-open.test.ts`, `pack-queries.test.ts`, `pack-manifest.test.ts` and
  *    `pack-live-manifest.test.ts`, against packs built by executing the repository's own tracked
  *    `Fixtures/seed/schema.sql` and against the live catalog captured verbatim. Those run on a
- *    runner with no seed, and they fail there if they are broken. **Nothing in the suite is
- *    covered only here**, so a skipped tier costs scale, not coverage.
+ *    runner with no seed, and they fail there if they are broken.
+ *
+ *    **"Nothing is covered only here" was written as an assertion about the suite and it was
+ *    false, twice.** Both times the fixture tier held a test for the behavior and the fixture
+ *    agreed with the defect anyway:
+ *
+ *    * `treesInBounds`'s R*Tree join, wired to `t.neighborhood_id`, passed all seven fixture
+ *      bounding-box tests — every fixture tree carried `neighborhood_id` 1, and the `lat`/`lon`
+ *      re-test on `trees` re-derived the right answer from the wrong join. Only the Mission test
+ *      below went red, and only on a machine holding the seed.
+ *    * `packIdentity`'s `ORDER BY id LIMIT 1`, reversed to `DESC`, reddened nothing without the
+ *      seed: no fixture carried a second `dim_city` row, which is the only shape that choice is
+ *      about. Found by re-auditing the claim after the first one was reported.
+ *
+ *    Both fixtures were made discriminating (`packFixture.ts`'s `insertTrees` and its `fused`
+ *    option) and both mutations are now red with the seed moved aside. The claim is therefore
+ *    made in the form it can be held to: **the way to believe it is to mutate the behavior, move
+ *    the seed aside, and require red** — not to read this comment.
  * 2. **What IS only here is scale and reality**: 198,625 real rows, a real R*Tree, a real
  *    two-id-space file, real species names. A fixture cannot pretend to those, so the assertions
  *    below are the ones whose answers were confirmed with the `sqlite3` CLI before this file was

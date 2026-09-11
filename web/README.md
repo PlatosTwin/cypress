@@ -152,7 +152,7 @@ decision W-5. Not Postgres, not browser-side SQLite over HTTP range requests. It
 than it knows rather than guessing, which is the posture `SeedDatabase.newestKnownSchemaVersion`
 takes.
 
-`src/lib/pack/`, five modules, zero new dependencies:
+`src/lib/pack/`, six modules, zero new dependencies:
 
 | | |
 |---|---|
@@ -161,6 +161,7 @@ takes.
 | `pack.ts` | `openPack`, read-only and immutable, with `CityLibrary.validateCityFile`'s refusals |
 | `manifest.ts` | `CityManifest` ported — strict on `manifest_format`, tolerant of additive keys |
 | `queries.ts` | One tree by uuid, trees in a bounding box through the R\*Tree, counts, pack identity |
+| `localSeed.ts` | Which of three states this checkout's ~103 MB seed is in — present, absent, or not the pinned one |
 
 **It never writes.** The open is `readOnly` *and* `mode=ro`, so a write is refused by SQLite
 rather than by a promise in a comment, and the suite asserts that on the real 103 MB seed as well
@@ -176,10 +177,27 @@ behavior is made against packs built at test time by *executing* `Fixtures/seed/
 repository's own generation-17 contract, which is tracked — at four generations, plus the live
 catalog captured verbatim as `test/support/manifest-v2.captured.json`. `test/pack-real-seed.test.ts`
 is an additional tier, not the only one: it covers scale and reality (198,625 real rows, a real
-R\*Tree, a real two-id-space file) and nothing that is covered *only* there. Without the seed those
-eight tests skip, loudly, and a census test that always runs asserts how many of them exist. **A
-seed that is present and is not the pinned one is a failure, not a skip** — `pinned-seed.json`'s
-size and sha256 are checked before a byte is believed.
+R\*Tree, a real two-id-space file). Without the seed its nine tests skip, loudly.
+
+**"Nothing is covered only in the seed tier" is a claim that has to be measured, and it was
+false twice.** A fixture can agree with a wrong query — that is the failure mode here, not a
+missing test. The R\*Tree join was wired to the wrong column and every fixture bounding-box test
+still passed, because every fixture tree shared one `neighborhood_id` and `treesInBounds` re-tests
+`lat`/`lon` on `trees` afterwards, re-deriving the right answer from the wrong join; only the
+seed-gated test went red, on a machine that has the seed. Reversing `packIdentity`'s
+`ORDER BY id LIMIT 1` was the same shape, for the same reason: no fixture carried more than one
+`dim_city` row. Both fixtures now discriminate — a tree in the box with no R\*Tree row, an R\*Tree
+row with no tree, neighborhood ids that cross over the tree ids, and a fused two-city, two-region,
+two-id-space file — and both mutations are red on a runner with no seed. The claim is worth stating
+only alongside how it was checked: mutate the thing, move the seed aside, require red.
+
+**The census is derived, not declared.** `SEED_DEPENDENT_TESTS` is compared against the names this
+file actually handed to `node:test`, so a deleted or renamed seed-dependent test is red in both
+tiers. It used to be a literal compared against a literal in the same file, which is green on a
+deletion — which is how a review found it. **A seed that is present and is not the pinned one is a
+failure, not a skip** — `pinned-seed.json`'s size and sha256 are checked before a byte is believed,
+and they are checked again at the end of the seed tier, because a read-only regression once rewrote
+the pinned seed in place at an unchanged size.
 
 **The bundled seed is generation 16; every published pack is 17.** That is deliberate and it is why
 nothing here branches on a version integer. See the errata this round filed.

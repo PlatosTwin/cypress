@@ -99,3 +99,73 @@ Cities screen offline on the publish that introduced it.
 Recorded because the tolerance is easy to mistake for an oversight, and because it is now a tested
 property rather than an accident of nobody having looked: `web/test/pack-live-manifest.test.ts`
 asserts both that the captured catalog still carries the key and that the decoded value does not.
+
+### A census that compares a literal against a literal is green on the deletion it exists to catch
+
+`web/test/pack-real-seed.test.ts` gates eight tests on a ~103 MB seed CI does not have. The skip is
+the right call and the hazard it creates is the one CLAUDE.md names: a deleted test and a skipped
+test look identical in a summary. The guard written for that was
+
+    assert.equal(SEED_DEPENDENT_TESTS.length, 8, …);
+
+— a hand-maintained array compared against a hand-written number, both in the file the guard is
+about, neither consulting anything the test runner had registered. Deleting a seed-dependent test
+and leaving the array alone was **green in both tiers**: `106 of 106, 0 skipped` with the seed,
+`99 of 106, 7 skipped` without. The only trace was the skip count moving by one, which is a note a
+human may read and not an assertion. Three places — the PR body, `web/README.md`, and the file's own
+header — named this mechanism as the protection against exactly that deletion.
+
+The general form, which is not about this file: **a self-check is only a check if one of its two
+sides comes from outside the author's hand.** The fix routes every seed-gated registration through
+one helper that records the name in the same expression that calls `node:test`'s `it` and keeps the
+handle `it` returns, so the list is compared against what was registered; registration happens
+whether the test then runs or skips, so the census means the same thing in the tier where the
+deletion would hide. The helper's exclusivity is then the only remaining hole, and the census closes
+it by matching this file's own bytes for a direct skip-gated registration and requiring none —
+calibrated by planting one and watching it name the offending text.
+
+### A fixture that re-derives the right answer cannot falsify the query that produced it
+
+Two defects in the same round shipped green on every runner without the seed, and in both the
+fixture tier *had* a test for the behavior:
+
+* `treesInBounds` joins `trees_rtree` to `trees` on `t.<rtreeJoinColumn> = r.id` and then re-tests
+  `lat`/`lon` on `trees`. Wiring that join to `t.neighborhood_id` passed all seven fixture
+  bounding-box tests, because every fixture tree carried `neighborhood_id` 1 and the re-test
+  re-derived the right rows from the resulting cross product. Exactly one test went red — the
+  seed-gated one, on a machine holding the seed.
+* `packIdentity` reads `ORDER BY id LIMIT 1` because the *source* seed carries two `dim_city` rows
+  while a pack carries one. Reversing it to `ORDER BY id DESC` reddened one seed-gated test and
+  nothing at all without the seed: no fixture carried a second row, so the ordering was
+  unobservable. Found by re-auditing the claim after the first was reported, not by being told.
+
+The lesson is narrower than "fixtures are weak" and worth stating in that narrow form: **when a
+query filters twice, the second filter can hide the first, and a fixture in which the join column
+is indistinguishable from its neighbors will agree with any join at all.** A fixture earns a
+coverage claim only when the wrong answer and the right answer are different *sets*. The fixtures
+now carry a live tree inside the box with no R\*Tree row, an R\*Tree row with no tree, neighborhood
+ids that cross over the tree ids, and an opt-in fused two-city file — and each mutation above is
+red with the seed moved aside.
+
+A third mutation found while checking the second was green in **both** tiers: loosening
+`cityNameSource`'s `LEFT JOIN id_spaces isp ON isp.id = t.id_space` to `ON 1 = 1` changed no
+assertion anywhere, because the single-id-space fixtures had nothing to duplicate against and the
+seed's own bounding-box test is limit-bound at 200 rows either way. The fused fixture closes it.
+
+### A destructive probe against the pinned seed rewrote the pinned seed, at an unchanged size
+
+`pack-real-seed.test.ts` asserted read-only by issuing `UPDATE` / `DELETE` / `CREATE TABLE` /
+`PRAGMA user_version = 99` against `Fixtures/seed/cypress-seed.sqlite` itself. That is safe exactly
+while the property under test holds. Red-proving it — removing `readOnly: true` from `openPack` —
+made the probes succeed: the pinned seed stayed **108,249,088 bytes** and its sha256 moved from
+`c9a440b2…` to `0c2b699a…`. The file is git-ignored and ~103 MB, so nothing in a `git status` would
+have shown it, and the next agent to run any suite against that worktree would have been chasing a
+seed mismatch it did not cause.
+
+Two things follow. **A destructive probe belongs on a file the suite is allowed to destroy** — the
+probe now runs against a `copyFileSync` copy whose hash is checked against the pin before it is
+trusted, which costs a fraction of a second and is the same artifact in every sense the test cares
+about. And **the pin's size half would not have caught this**: an in-place `PRAGMA` write moves no
+bytes. The seed tier now re-hashes the pinned file at the end of the run and names
+`Tools/setup_worktree.sh` in the failure, the same assertion `pack-open.test.ts` already made about
+a fixture after a session of reads.
