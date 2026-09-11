@@ -90,6 +90,14 @@ on:
       - 'Cypress/Features/Site/SitePresentation.swift'
       # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
       - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
+      # ── The community half (W-C, over #163's public read) ──────────────────────────────────
+      # `web/src/lib/publicTreeRead.ts` decodes `GET /api/v1/public/trees/{id}`.
+      # `web/test/publicTreeRead.test.ts` parses the handler's own `json:` tags for the key set
+      # and drives a local stub server from the handler's own golden bodies, so a change to any
+      # of these three is a change to the contract this page renders — and runs this suite.
+      - 'server/internal/api/public.go'
+      - 'server/testdata/public_tree.json'
+      - 'server/testdata/public_tree_empty.json'
   pull_request:
     branches: [main, 'release/**']
     paths:
@@ -145,6 +153,14 @@ on:
       - 'Cypress/Features/Site/SitePresentation.swift'
       # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
       - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
+      # ── The community half (W-C, over #163's public read) ──────────────────────────────────
+      # `web/src/lib/publicTreeRead.ts` decodes `GET /api/v1/public/trees/{id}`.
+      # `web/test/publicTreeRead.test.ts` parses the handler's own `json:` tags for the key set
+      # and drives a local stub server from the handler's own golden bodies, so a change to any
+      # of these three is a change to the contract this page renders — and runs this suite.
+      - 'server/internal/api/public.go'
+      - 'server/testdata/public_tree.json'
+      - 'server/testdata/public_tree_empty.json'
   # The escape hatch, the same one `testflight.yml` keeps: a run by hand when a change elsewhere
   # (a Node bump, a lockfile audit) needs this suite run without touching a path above.
   workflow_dispatch:

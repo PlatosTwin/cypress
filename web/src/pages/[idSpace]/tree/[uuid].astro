@@ -23,16 +23,29 @@
  * stated reason, and none of them is stubbed. The pull request that added this file lists all
  * seven; the short version is that three are contributed data with no public read and the other
  * two would be controls that visibly do nothing, which is the failure E100 is written against.
+ *
+ * **Two of the seven came back.** `GET /api/v1/public/trees/{id}` (#163, W-G) publishes the latest
+ * live height and the latest live trunk DBH, so `Height` and a taped `Trunk · DBH` render when the
+ * service answers with them — and a `Beloved` row joins them, which §W1 does not draw and an owner
+ * ruling of 2026-09-10 requires. The other five are still absent for their original reasons, and
+ * the vitality half of the `Status` row is absent for a new one: it was removed from the endpoint
+ * before it merged, because a published rating has no route back down.
+ *
+ * The endpoint is **not deployed** as this ships — measured, not assumed, on 2026-09-11 — so the
+ * page's ordinary state is still the city record alone, and it says so rather than implying that
+ * nobody has ever measured this tree. `src/lib/publicTreeRead.ts` carries the whole account.
  */
 import Base from '../../../layouts/Base.astro';
 import '../../../styles/w1.css';
 import { cssBackgroundImage, cssScrim, W1_HERO, W1_SCRIM } from '../../../lib/gradients.ts';
-import { packLibrary, resolveTreePage } from '../../../lib/packLibrary.ts';
+import { packLibrary, resolveTreePageInput } from '../../../lib/packLibrary.ts';
 import { CARD_CONTENT_TYPE } from '../../../lib/ogCard.ts';
+import { communityHalf, PUBLIC_PAGE_MAX_AGE_S } from '../../../lib/publicTreeRead.ts';
+import { treePageModel } from '../../../lib/treePage.ts';
 
 const idSpace = Astro.params.idSpace ?? '';
 const uuid = Astro.params.uuid ?? '';
-const resolution = resolveTreePage(idSpace, uuid, packLibrary());
+const resolution = resolveTreePageInput(idSpace, uuid, packLibrary());
 
 if (!resolution.ok) {
   const refusal = resolution.refusal;
@@ -61,8 +74,41 @@ if (!resolution.ok) {
   return new Response(null, { status: 404 });
 }
 
-const model = resolution.model;
+/**
+ * The community half, asked for with the **pack's** spelling of the uuid rather than the URL's.
+ *
+ * A uuid typed in capitals resolves against the pack, and the request that follows has to carry
+ * the identity the file holds — the same rule the page already follows when it states the uuid.
+ *
+ * `communityHalf` never throws and never rejects: an unset variable, a refused connection, a
+ * timeout, a non-200 and an unreadable body all come back as a named state. There is deliberately
+ * no `try` here, because a `catch` would be an invitation to add one that swallows.
+ */
+const community = await communityHalf(resolution.input.uuid);
+const model = treePageModel({ ...resolution.input, community });
 const cardPath = `${model.path}/og.svg`;
+
+/**
+ * The 60-second ceiling the ruling's §8b puts on the round that renders this page.
+ *
+ * *"Nothing downstream may hold a contributed value after its contributor has taken it back"* — so
+ * the page carries the same `max-age` the endpoint sends, and a withdrawal reaches a reader inside
+ * a minute wherever the page was cached. It is set on every answer rather than only on the ones
+ * carrying community values: a page with no header at all is one a cache may keep by heuristic for
+ * as long as it likes, and the next reader's render is where the contributed value would appear.
+ */
+Astro.response.headers.set('cache-control', `public, max-age=${String(PUBLIC_PAGE_MAX_AGE_S)}`);
+
+/**
+ * The operator's channel, which for a page is the process log — W-C measured that and wrote it
+ * down above: a `.astro` page's headers do not survive Astro's 404 rendering, and a reason on a
+ * 200 is still not something anybody reads off a served page.
+ *
+ * Only the two states nobody asked for are logged. `answered` and `empty` are the endpoint working.
+ */
+if (community.state === 'unavailable' || community.state === 'unconfigured') {
+  console.warn(`w1: community half ${community.state} for ${model.path} — ${community.detail}`);
+}
 
 // The hero's two layers, handed to the CSS as custom properties. They are here rather than in
 // `w1.css` because they are the design system's own recipe (`src/lib/gradients.ts`) and a
@@ -123,14 +169,32 @@ const nav = ['Explore', 'Species', 'Neighborhoods', 'Data & export'];
       </section>
 
       <aside class="w1-facts">
-        <dl class="w1-fact-list">
+        {/*
+          `data-community` is the whole reason the five states are on the model: it is how a test —
+          and an operator with a browser — tells "the service answered and this tree has nothing"
+          from "this page could not ask", which are the two silences that must never look alike.
+        */}
+        <dl class="w1-fact-list" data-community={model.communityState}>
           {
             model.facts.map((row) => (
               <div class="w1-fact" data-emphasized={String(row.emphasized)} data-fact={row.id}>
                 <dt>{row.label}</dt>
                 <dd>
                   {row.value}
-                  {row.badge && <span class="w1-badge">{row.badge}</span>}
+                  {
+                    row.badge && (
+                      <span class="w1-badge" data-tone={row.badge.tone}>
+                        {/*
+                          `MethodBadge.accessibilityLabel`, which exists because D7's distinction
+                          is the meaning and not the four letters: a badge that read out `est.`
+                          would hand a listener the abbreviation and keep the difference between a
+                          reading and a guess to itself.
+                        */}
+                        <span class="w1-spoken">{row.badge.spoken}</span>
+                        <span aria-hidden="true">{row.badge.text}</span>
+                      </span>
+                    )
+                  }
                 </dd>
               </div>
             ))
@@ -140,6 +204,7 @@ const nav = ['Explore', 'Species', 'Neighborhoods', 'Data & export'];
             <dd>{model.terms.value}</dd>
           </div>
         </dl>
+        {model.communityNote && <p class="w1-terms-note" data-community-note>{model.communityNote}</p>}
         {model.terms.note && <p class="w1-terms-note">{model.terms.note}</p>}
 
         <div class="w1-actions">

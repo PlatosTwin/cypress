@@ -84,6 +84,15 @@ export const sourcesTheWebSuiteReads = [
   // The NYC Data Mine disclaimer the public page must render verbatim (R36 (b), R78 rulings 2
   // and 3). `web/test/obligations.test.ts` parses all three strings out of it at run time.
   'Cypress/Features/Cities/CityDownloadsPresentation.swift',
+  // ── The community half. The first Go file this list has ever named ────────────────────────
+  //
+  // `web/src/lib/publicTreeRead.ts` decodes `GET /api/v1/public/trees/{id}`, and the shape it
+  // decodes is declared in exactly one place: the `publicTreeRead` and `publicReading` structs'
+  // `json:` tags. `web/test/publicTreeRead.test.ts` parses them at run time and fails when the
+  // web requires a key the handler does not emit, or ignores one it does — which is the drift a
+  // golden file alone cannot catch, because a golden file is one body and the struct is every
+  // body. A Go-only change to that handler now runs this suite, which is the point.
+  'server/internal/api/public.go',
 ] as const;
 
 export function repoFile(relative: string): string {

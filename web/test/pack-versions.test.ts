@@ -250,12 +250,35 @@ const READ_FROM_OUTSIDE_WEB: readonly string[] = [
   PUBLISH_CITIES_PY,
   'Fixtures/seed/schema.sql',
   'Fixtures/seed/pinned-seed.json',
+  // The community half. `web/test/publicTreeRead.test.ts` reads the handler for its key set and
+  // both golden bodies for its stub server — the same three files `web.yml` now triggers on.
+  'server/internal/api/public.go',
+  'server/testdata/public_tree.json',
+  'server/testdata/public_tree_empty.json',
 ];
 
 describe('the workflow triggers on every file this suite reads', () => {
   const workflow = read('.github/workflows/web.yml');
 
-  /** The quoted entries under a `paths:` key, per block. One list per trigger. */
+  /**
+   * The quoted entries under a `paths:` key, per block. One list per trigger.
+   *
+   * ── A trailing comment on an entry used to end the block, and it was doing so ─────────────
+   *
+   * The entry pattern anchored at `'\s*$`, so `- 'Cypress/DesignSystem/Tokens/**'   # …` matched
+   * neither the entry rule nor the comment rule and fell through to "anything else ends the
+   * list". **Both of `web.yml`'s filters carry exactly that line as their second entry**, so this
+   * parser read one path out of each block and reported every other file as missing.
+   *
+   * The test below then failed — truthfully, since the assertion is "this file is not in the
+   * block I parsed" — while naming a file the workflow has listed since W-B. A guard going red
+   * for a reason that is not the defect it guards is the same failure as one going green over a
+   * defect: what it reports is not what it measured. `web.yml` is correct YAML and GitHub reads
+   * the whole list; the parser was the thing that was wrong.
+   *
+   * The specimen below now carries the trailing-comment line as a third trap, so the fix is
+   * calibrated against a case whose answer was known before the parser saw it.
+   */
   function pathBlocks(yaml: string): readonly (readonly string[])[] {
     const blocks: string[][] = [];
     let current: string[] | null = null;
@@ -266,26 +289,30 @@ describe('the workflow triggers on every file this suite reads', () => {
         continue;
       }
       if (current === null) continue;
-      const entry = /^\s*-\s*'([^']+)'\s*$/.exec(line);
+      // A trailing `#` comment is part of the entry's line and not the end of the list. The quoted
+      // value is matched first and whatever follows it is allowed to be a comment.
+      const entry = /^\s*-\s*'([^']+)'\s*(?:#.*)?$/.exec(line);
       if (entry?.[1] !== undefined) {
         current.push(entry[1]);
         continue;
       }
-      // A comment inside the list is still inside the list; anything else ends it.
+      // A comment on its own line is still inside the list; anything else ends it.
       if (!/^\s*#/.test(line) && line.trim().length > 0) current = null;
     }
     return blocks;
   }
 
   it('the paths: parser reads a block and stops at the end of it', () => {
-    // Specimen first, answer known before the parser saw it — including the two traps: a comment
-    // between entries, and a following key whose value is also a quoted string.
+    // Specimen first, answer known before the parser saw it — including the three traps: a comment
+    // between entries, a comment at the end of an entry's own line, and a following key whose
+    // value is also a quoted string.
     const specimen = [
       '  push:',
       '    paths:',
       "      - 'web/**'",
       '      # a comment inside the list',
-      "      - 'Tools/x.sh'",
+      "      - 'Tools/x.sh'   # and one at the end of an entry",
+      "      - 'Tools/y.sh'",
       '  pull_request:',
       "    branches: ['main']",
       '    paths:',
@@ -293,8 +320,11 @@ describe('the workflow triggers on every file this suite reads', () => {
     ].join('\n');
     assert.deepEqual(
       pathBlocks(specimen).map((block) => [...block]),
-      [['web/**', 'Tools/x.sh'], ['web/**']],
+      [['web/**', 'Tools/x.sh', 'Tools/y.sh'], ['web/**']],
     );
+    // And the block still ends where it should: the `branches:` line above did not become an
+    // entry, and neither does a key whose value is a quoted string on the same line.
+    assert.equal(pathBlocks(specimen).length, 2);
   });
 
   it('every out-of-web file the suite reads is on both trigger lists', () => {
