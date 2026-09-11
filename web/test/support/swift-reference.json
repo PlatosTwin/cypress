@@ -1,0 +1,46 @@
+{
+  "lengthUnits": [
+    {"unit": "mm", "metersPerUnit": 0.001, "isMetric": true},
+    {"unit": "cm", "metersPerUnit": 0.01, "isMetric": true},
+    {"unit": "m", "metersPerUnit": 1.0, "isMetric": true},
+    {"unit": "in", "metersPerUnit": 0.0254, "isMetric": false},
+    {"unit": "ft", "metersPerUnit": 0.3048, "isMetric": false}
+  ],
+  "quantities": [
+        {"value": 5.0, "unit": "ft", "method": "tape", "siValue": 1.524, "series": "measured", "plausibleDBH": true, "plausibleHeight": true, "converted": {"mm": 1524.0, "cm": 152.4, "m": 1.524, "in": 60.0, "ft": 5.0}},
+        {"value": 12.5, "unit": "in", "method": "caliper", "siValue": 0.3175, "series": "measured", "plausibleDBH": true, "plausibleHeight": true, "converted": {"mm": 317.5, "cm": 31.75, "m": 0.3175, "in": 12.5, "ft": 1.0416666666666665}},
+        {"value": 64.0, "unit": "cm", "method": "tape", "siValue": 0.64, "series": "measured", "plausibleDBH": true, "plausibleHeight": true, "converted": {"mm": 640.0, "cm": 64.0, "m": 0.64, "in": 25.19685039370079, "ft": 2.099737532808399}},
+        {"value": 900.0, "unit": "cm", "method": "tape", "siValue": 9.0, "series": "measured", "plausibleDBH": false, "plausibleHeight": true, "converted": {"mm": 9000.0, "cm": 900.0, "m": 9.0, "in": 354.33070866141736, "ft": 29.527559055118108}},
+        {"value": 0.5, "unit": "mm", "method": "estimate", "siValue": 0.0005, "series": "estimated", "plausibleDBH": false, "plausibleHeight": false, "converted": {"mm": 0.5, "cm": 0.05, "m": 0.0005, "in": 0.01968503937007874, "ft": 0.0016404199475065617}},
+        {"value": 1.0, "unit": "m", "method": "laser", "siValue": 1.0, "series": "measured", "plausibleDBH": true, "plausibleHeight": true, "converted": {"mm": 1000.0, "cm": 100.0, "m": 1.0, "in": 39.37007874015748, "ft": 3.280839895013123}},
+        {"value": 40.0, "unit": "ft", "method": "estimate", "siValue": 12.192, "series": "estimated", "plausibleDBH": false, "plausibleHeight": true, "converted": {"mm": 12192.0, "cm": 1219.2, "m": 12.192, "in": 480.0, "ft": 40.0}},
+        {"value": 0.1, "unit": "in", "method": "tape", "siValue": 0.00254, "series": "measured", "plausibleDBH": true, "plausibleHeight": false, "converted": {"mm": 2.54, "cm": 0.254, "m": 0.00254, "in": 0.1, "ft": 0.008333333333333333}},
+        {"value": 3.7, "unit": "m", "method": "laser", "siValue": 3.7, "series": "measured", "plausibleDBH": true, "plausibleHeight": true, "converted": {"mm": 3700.0, "cm": 370.0, "m": 3.7, "in": 145.6692913385827, "ft": 12.139107611548557}},
+        {"value": -2.5, "unit": "ft", "method": "tape", "siValue": -0.762, "series": "measured", "plausibleDBH": false, "plausibleHeight": false, "converted": {"mm": -762.0, "cm": -76.2, "m": -0.762, "in": -30.0, "ft": -2.5}},
+        {"value": 0.0, "unit": "cm", "method": "estimate", "siValue": 0.0, "series": "estimated", "plausibleDBH": false, "plausibleHeight": false, "converted": {"mm": 0.0, "cm": 0.0, "m": 0.0, "in": 0.0, "ft": 0.0}}
+  ],
+  "plausible": {"dbhLow": 0.001, "dbhHigh": 4.0, "heightLow": 0.05, "heightHigh": 120.0},
+  "publicPhotoGridM": 25.0,
+  "snapped": [
+    {"lat": 37.760123, "lon": -122.505456, "snappedLat": 37.7600610851599, "snappedLon": -122.50543919558282},
+    {"lat": 37.7601, "lon": -122.5054, "snappedLat": 37.7600610851599, "snappedLon": -122.50540110493117},
+    {"lat": 0.0, "lon": 0.0, "snappedLat": 0.0, "snappedLon": 0.0},
+    {"lat": 37.0, "lon": -122.0, "snappedLat": 37.0000898311175, "snappedLon": -121.99999091861186},
+    {"lat": -33.8688, "lon": 151.2093, "snappedLat": -33.86880165289256, "snappedLon": 151.20939678335256},
+    {"lat": 51.5074, "lon": -0.1278, "snappedLat": 51.507366151634926, "snappedLon": -0.12772944684760346},
+    {"lat": 89.9, "lon": 100.0, "snappedLat": 89.90006288178225, "snappedLon": 99.97943604852682},
+    {"lat": -89.9, "lon": -100.0, "snappedLat": -89.90006288178225, "snappedLon": -99.97943604852682},
+    {"lat": 40.7128, "lon": -74.006, "snappedLat": 40.71280991735537, "snappedLon": -74.00601052599357},
+    {"lat": 37.3382, "lon": -121.8863, "snappedLat": 37.338303988501615, "snappedLon": -121.88624956610198},
+    {"lat": 0.0001, "lon": -0.0001, "snappedLat": 0.0, "snappedLon": -0.0}
+  ],
+  "distances": [
+    {"a": [37.760123, -122.505456], "b": [37.7601, -122.5054], "meters": 5.547575946039777},
+    {"a": [0.0, 0.0], "b": [0.0, 1.0], "meters": 111195.0802335329},
+    {"a": [0.0, 0.0], "b": [1.0, 0.0], "meters": 111195.0802335329},
+    {"a": [37.7601, -122.5054], "b": [40.7128, -74.006], "meters": 4136756.194658928},
+    {"a": [37.7601, -122.5054], "b": [37.7601, -122.5054], "meters": 0.0}
+  ],
+  "rounded": [{"x": 2.5, "rounded": 3.0}, {"x": -2.5, "rounded": -3.0}, {"x": 0.5, "rounded": 1.0}, {"x": -0.5, "rounded": -1.0}, {"x": 1.5, "rounded": 2.0}, {"x": -1.5, "rounded": -2.0}, {"x": 2.4, "rounded": 2.0}, {"x": -2.4, "rounded": -2.0}, {"x": 3.5, "rounded": 4.0}, {"x": -3.5, "rounded": -4.0}],
+  "growthChartingLimitM": 15.0
+}
