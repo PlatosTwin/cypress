@@ -44,7 +44,7 @@ be overturned on the merits rather than rediscovered.
 | **W-6** | **No raster basemap in v1.** Explore draws pins over the neighborhood polygons already shipped in the seed. PMTiles on Tigris is the named path if a basemap is later wanted. | §5 |
 | **W-7** | **No photos on the public surface in v1.** W1's specified hero is a gradient, not a photograph; a public photo read path is a privacy decision (D11) and gets its own round. | §6 |
 | **W-8** | Astro + TypeScript, `node:sqlite`, no React in v1. | §3 |
-| **W-9** | Verification gets a web pair — `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` — because judging a run by its exit code is this project's signature failure mode and nothing about that changes on a different platform. | §8 |
+| **W-9** | Verification gets a web pair under `Tools/` — proposed names `run_web_tests.sh` and `verify_web_test_log.sh`, neither written yet — because judging a run by its exit code is this project's signature failure mode and nothing about that changes on a different platform. | §8 |
 
 ---
 
@@ -253,11 +253,13 @@ on `ubuntu-latest` is part of the foundation round.
 ## 8. Verification (W-9)
 
 This project's signature failure mode is false green, and nothing about that changes on a different
-platform. The web gets the same shape of instrument the iOS side has:
+platform. The web gets the same shape of instrument the iOS side has. Neither of the two scripts
+below exists yet: W-A is the milestone that writes them, they will live beside the iOS pair under
+`Tools/`, and the names here are proposals until it lands.
 
-- `Tools/run_web_tests.sh` — runs the suite to a log with a `CYPRESS-WEB-RUN:` provenance header
+- `run_web_tests.sh` — runs the suite to a log with a `CYPRESS-WEB-RUN:` provenance header
   (commit, node version, pack versions read from the manifest, working tree).
-- `Tools/verify_web_test_log.sh` — judges the log. **Never the exit code.** It asserts a positive
+- `verify_web_test_log.sh` — judges the log. **Never the exit code.** It asserts a positive
   pass line with a nonzero test count, and refuses to certify a log with zero tests executed — the
   web analogue of `Executed 0 tests / All tests passed`.
 - The zero-warning line carries over as `tsc --noEmit` clean plus a lint gate, certified on a fresh

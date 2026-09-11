@@ -62,6 +62,6 @@ The orchestrator took five further decisions under the owner's instruction to ru
 recorded in the proposal's Decisions table as **W-5** through **W-9** and each overturnable on the
 merits: the read path is the published city packs mounted read-only rather than a Postgres import or
 browser-side SQLite; no raster basemap in v1; no photos on the public surface in v1; Astro with
-`node:sqlite` and no React; and a `Tools/run_web_tests.sh` / `Tools/verify_web_test_log.sh` pair,
-because judging a run by its exit code is this project's signature failure mode and the platform does
-not change that.
+`node:sqlite` and no React; and a proposed `run_web_tests.sh` / `verify_web_test_log.sh` pair under
+`Tools/`, neither yet written, because judging a run by its exit code is this project's signature
+failure mode and the platform does not change that.
