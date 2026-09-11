@@ -506,3 +506,299 @@ function cells(row: string): string[] {
   if (parts.length <= 2) return [];
   return parts.slice(1, -1).map((cell) => cell.trim().replace(/^`+|`+$/g, ''));
 }
+
+// ── Gradients (W-C) ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The two documents below both declare gradient stacks, in two notations, and
+ * `web/src/lib/gradients.ts` is a third copy of some of them. The parsers here are what keep the
+ * third copy honest — the same posture as every other parser on this page, and for the same
+ * reason ticket #261 records.
+ *
+ * `RecipeColor`, `RadialStop` and the rest are re-declared here as plain data rather than imported
+ * from `src/lib/gradients.ts`: a parser that returns the type the thing under test defines is a
+ * parser that agrees with it by construction, and this one has to be able to disagree.
+ */
+export interface ParsedColor {
+  readonly rgb: number;
+  readonly alpha: number;
+}
+
+export interface ParsedRadial {
+  readonly x: number;
+  readonly y: number;
+  readonly color: ParsedColor;
+  readonly extent: number;
+}
+
+export interface ParsedRecipe {
+  readonly radials: readonly ParsedRadial[];
+  readonly base: { readonly degrees: number; readonly stops: readonly { color: ParsedColor; position: number }[] };
+}
+
+export interface ParsedScrim {
+  readonly rgb: number;
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * The lines under one `#### <heading>` of a markdown document, up to the next heading of the same
+ * or a higher level.
+ *
+ * Bounded rather than "everything after", because `SCREENS.md` draws twenty screens and every one
+ * of them has a gradient: an unbounded slice would let screen 04's viewfinder answer a question
+ * about screen 03's hero, and the answer would look entirely reasonable.
+ */
+export function markdownSection(markdown: string, heading: string): string {
+  const lines = markdown.split('\n');
+  const start = lines.findIndex((line) => line.startsWith(heading));
+  if (start < 0) fail(`no line begins “${heading}”`);
+  const level = /^#+/.exec(heading)?.[0].length ?? 0;
+  if (level === 0) fail(`“${heading}” is not a markdown heading, so its section cannot be bounded`);
+  const rest = lines.slice(start + 1);
+  const stop = rest.findIndex((line) => {
+    const hashes = /^#+/.exec(line)?.[0].length;
+    return hashes !== undefined && hashes <= level;
+  });
+  return (stop < 0 ? rest : rest.slice(0, stop)).join('\n');
+}
+
+function color(hex: string, alpha: number): ParsedColor {
+  return { rgb: Number.parseInt(hex.replace(/^#|^0x/i, ''), 16), alpha };
+}
+
+/**
+ * `radial(28% 46%, #4E8F6A 0→36%)` … `base `linear-gradient(180deg,#EAF0E2 0%,…)`` — one screen's
+ * hero stack, as `SCREENS.md` §3 transcribes it.
+ *
+ * **Only the radials BEFORE the base are taken.** Every hero in the document is written radials
+ * first and base last, and the screens that carry a second gradient — 03's activity thumbs, 13's
+ * photo strip — write theirs further down the same section. Stopping at the base is what keeps a
+ * thumb out of a hero's answer; without it screen 03's four-layer hero parses as five.
+ */
+export function markdownGradientRecipe(section: string): ParsedRecipe {
+  const baseMatch = /base\s+`linear-gradient\(\s*(\d+)deg\s*,([^`]*)\)`/.exec(section);
+  if (baseMatch?.[1] === undefined || baseMatch[2] === undefined) {
+    fail('the section has no ``base `linear-gradient(<deg>, …)``` line');
+  }
+  const beforeBase = section.slice(0, baseMatch.index);
+  const radials: ParsedRadial[] = [];
+  const radial = /radial\(\s*([\d.]+)%\s+([\d.]+)%\s*,\s*(#[0-9A-Fa-f]{6}|rgba\(([^)]*)\))\s+0→([\d.]+)%\s*\)/g;
+  let found: RegExpExecArray | null;
+  while ((found = radial.exec(beforeBase)) !== null) {
+    const [, x, y, colorText, rgbaBody, extent] = found;
+    if (x === undefined || y === undefined || colorText === undefined || extent === undefined) continue;
+    radials.push({
+      x: Number(x) / 100,
+      y: Number(y) / 100,
+      color: rgbaBody === undefined ? color(colorText, 1) : rgbaText(rgbaBody),
+      extent: Number(extent) / 100,
+    });
+  }
+  if (radials.length === 0) fail('the section declares no `radial(x% y%, C 0→N%)` layers');
+
+  const stops = baseMatch[2]
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map((part) => {
+      const stop = /^(#[0-9A-Fa-f]{6})(?:\s+([\d.]+)%)?$/.exec(part);
+      if (stop?.[1] === undefined) fail(`\`${part}\` is not a \`#RRGGBB [N%]\` linear stop`);
+      return { text: stop[1], position: stop[2] };
+    });
+  return {
+    radials,
+    base: {
+      degrees: Number(baseMatch[1]),
+      stops: stops.map((stop, index) => ({
+        color: color(stop.text, 1),
+        // A two-stop base is written without positions — `linear-gradient(170deg,#E4EBD8,#B9CDBC)`
+        // — and CSS puts those at 0 and 1. Derived rather than defaulted to 0, because defaulting
+        // would put both stops of every such base in the same place and still parse.
+        position: stop.position === undefined
+          ? (stops.length === 1 ? 0 : index / (stops.length - 1))
+          : Number(stop.position) / 100,
+      })),
+    },
+  };
+}
+
+function rgbaText(body: string): ParsedColor {
+  const parts = body.split(',').map((part) => part.trim());
+  const [r, g, b, a] = parts;
+  if (r === undefined || g === undefined || b === undefined || a === undefined) {
+    fail(`\`rgba(${body})\` does not have four components`);
+  }
+  return {
+    rgb: (Number(r) << 16) | (Number(g) << 8) | Number(b),
+    alpha: Number(a),
+  };
+}
+
+/** `Scrim `rgba(16,32,22,0)→.5` from 48%.` — C2's scrim, as a screen's section states it. */
+export function markdownScrim(section: string): ParsedScrim {
+  const match = /[Ss]crim\s+`rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*0\s*\)→(\.?[\d.]+)`\s+from\s+([\d.]+)%/
+    .exec(section);
+  if (match === null) fail('the section has no `Scrim `rgba(r,g,b,0)→.N`` from M%` line');
+  const [, r, g, b, to, from] = match;
+  if (r === undefined || g === undefined || b === undefined || to === undefined || from === undefined) {
+    fail('the scrim line matched without its numbers');
+  }
+  return {
+    rgb: (Number(r) << 16) | (Number(g) << 8) | Number(b),
+    from: Number(from) / 100,
+    to: Number(to),
+  };
+}
+
+/**
+ * `static let <name> = CypressGradientRecipe(base: linear(…), radials: [CypressRadialStop(…)])`,
+ * out of `Cypress/DesignSystem/Tokens/CypressGradient.swift`.
+ *
+ * The Swift writes the base FIRST and the radials after, because a SwiftUI `ZStack` draws its
+ * first child at the back. CSS draws its first background layer at the front. This parser returns
+ * the recipe in neither order — it returns the two halves named — so the renderer under test is
+ * the only thing that decides an order, which is what makes getting it backwards a red.
+ */
+export function swiftGradientRecipe(source: string, name: string): ParsedRecipe {
+  const header = new RegExp(String.raw`\blet\s+${name}\s*=\s*CypressGradientRecipe\s*\(`).exec(source);
+  if (header === null) fail(`no \`let ${name} = CypressGradientRecipe(\` in the source`);
+  const open = header.index + header[0].length - 1;
+  let depth = 0;
+  let end = -1;
+  for (let i = open; i < source.length; i += 1) {
+    const character = source[i];
+    if (character === '(') depth += 1;
+    else if (character === ')') {
+      depth -= 1;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  if (end < 0) fail(`\`${name}\`'s CypressGradientRecipe(…) is not closed`);
+  const body = source.slice(open + 1, end);
+
+  const radials: ParsedRadial[] = [];
+  const stop = /CypressRadialStop\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*(?:CypressGradient\.)?hex\(\s*0x([0-9A-Fa-f]{6})\s*(?:,\s*([\d.]+)\s*)?\)\s*,\s*([\d.]+)\s*\)/g;
+  let found: RegExpExecArray | null;
+  while ((found = stop.exec(body)) !== null) {
+    const [, x, y, hexText, alpha, extent] = found;
+    if (x === undefined || y === undefined || hexText === undefined || extent === undefined) continue;
+    radials.push({
+      x: Number(x),
+      y: Number(y),
+      color: color(hexText, alpha === undefined ? 1 : Number(alpha)),
+      extent: Number(extent),
+    });
+  }
+  if (radials.length === 0) fail(`\`${name}\` declares no CypressRadialStop layers`);
+
+  return { radials, base: swiftLinearBase(body, name) };
+}
+
+/**
+ * `linear(180, [(0xEAF0E2, 0), (0xCFE0D2, 0.55), (0x9DBFA6, 1)])` or the two-color shorthand
+ * `linear(170, 0xE4EBD8, 0xB9CDBC)`, which the Swift itself expands to stops at 0 and 1.
+ */
+function swiftLinearBase(body: string, name: string): ParsedRecipe['base'] {
+  const listed = /(?:CypressGradient\.)?linear\(\s*(\d+)\s*,\s*\[([^\]]*)\]\s*\)/.exec(body);
+  if (listed?.[1] !== undefined && listed[2] !== undefined) {
+    const stops: { color: ParsedColor; position: number }[] = [];
+    const pair = /\(\s*0x([0-9A-Fa-f]{6})\s*,\s*([\d.]+)\s*\)/g;
+    let found: RegExpExecArray | null;
+    while ((found = pair.exec(listed[2])) !== null) {
+      const [, hexText, position] = found;
+      if (hexText === undefined || position === undefined) continue;
+      stops.push({ color: color(hexText, 1), position: Number(position) });
+    }
+    if (stops.length === 0) fail(`\`${name}\`'s linear(…) base lists no (hex, position) stops`);
+    return { degrees: Number(listed[1]), stops };
+  }
+  const shorthand = /(?:CypressGradient\.)?linear\(\s*(\d+)\s*,\s*0x([0-9A-Fa-f]{6})\s*,\s*0x([0-9A-Fa-f]{6})\s*\)/
+    .exec(body);
+  if (shorthand?.[1] === undefined || shorthand[2] === undefined || shorthand[3] === undefined) {
+    fail(`\`${name}\` has no \`linear(<deg>, …)\` base in either of the two forms`);
+  }
+  return {
+    degrees: Number(shorthand[1]),
+    stops: [
+      { color: color(shorthand[2], 1), position: 0 },
+      { color: color(shorthand[3], 1), position: 1 },
+    ],
+  };
+}
+
+// ── Swift string constants (W-C) ────────────────────────────────────────────────────────────
+
+/**
+ * `static let <name> = "…"` — a copy constant, as written.
+ *
+ * Escape sequences are NOT decoded: the constants this reads are plain prose and a `\n` appearing
+ * in one would be a different kind of value than the one this is for. It would come back as the
+ * two characters, and the comparison against the TypeScript would fail rather than quietly
+ * succeed on a string neither file contains.
+ */
+export function swiftStringLet(source: string, name: string): string {
+  // The DECLARATION is found in the masked copy and the VALUE is read from the original, because
+  // `codeOnly` blanks string bodies: running the value regex over the mask would return a string
+  // of spaces, which is a parser that always agrees with nothing. Positions are preserved by
+  // `codeOnly` precisely so a two-step lookup like this one is possible.
+  const declaration = new RegExp(String.raw`\blet\s+${name}\s*(?::\s*String\s*)?=\s*"`);
+  const found = declaration.exec(codeOnly(source));
+  if (found === null) fail(`no \`let ${name} = "…"\` in the source`);
+  const match = /^"((?:[^"\\]|\\.)*)"/.exec(source.slice(found.index + found[0].length - 1));
+  if (match?.[1] === undefined) fail(`\`let ${name}\`'s string literal is not closed`);
+  return match[1];
+}
+
+/**
+ * The string members of a `static let <name>: Set<String> = [ … ]`, in declaration order.
+ *
+ * Bounded by the closing bracket rather than by a line count, because the set this exists to read
+ * — `CityRecordCopy.noValueMarkers` — is written across three lines today and the number of lines
+ * is not a fact anybody should have to preserve.
+ */
+export function swiftStringSetLet(source: string, name: string): string[] {
+  const header = new RegExp(String.raw`\blet\s+${name}\s*:\s*Set<String>\s*=\s*\[`)
+    .exec(codeOnly(source));
+  if (header === null) fail(`no \`let ${name}: Set<String> = [\` in the source`);
+  const open = header.index + header[0].length - 1;
+  const close = source.indexOf(']', open);
+  if (close < 0) fail(`\`${name}\` is not closed`);
+  const members = [...source.slice(open + 1, close).matchAll(/"((?:[^"\\]|\\.)*)"/g)]
+    .map((match) => match[1])
+    .filter((value): value is string => value !== undefined);
+  if (members.length === 0) fail(`\`${name}\` holds no string members`);
+  return members;
+}
+
+/**
+ * The `case .<name>: return "<text>"` rows of a `switch` inside a Swift closure — the shape
+ * `SegmentedControl.status`'s `label:` argument is written in, which is neither a computed
+ * property nor a top-level function and so is reachable by neither `swiftStringCases` nor
+ * `swiftSwitchTable`.
+ *
+ * Scoped to the text between `marker` and the first line that closes a brace at the given indent,
+ * for `swiftStringCases`' reason: an unscoped scan over a file with several `switch`es returns
+ * whichever rows the file happens to list, which is a parser that agrees with everything.
+ */
+export function swiftClosureStringCases(source: string, marker: string): Map<string, string> {
+  const code = codeOnly(source);
+  const start = code.indexOf(marker);
+  if (start < 0) fail(`no \`${marker}\` in the source`);
+  if (code.indexOf(marker, start + 1) >= 0) {
+    fail(`\`${marker}\` appears more than once in the source — narrow the marker`);
+  }
+  const rest = source.slice(start);
+  const end = /\n {12}\}/.exec(rest);
+  const scope = rest.slice(0, end === null ? rest.length : end.index);
+  const table = new Map<string, string>();
+  for (const match of scope.matchAll(/case\s+\.(\w+)\s*:\s*return\s+"((?:[^"\\]|\\.)*)"/g)) {
+    const name = match[1];
+    const text = match[2];
+    if (name === undefined || text === undefined) continue;
+    table.set(name, text);
+  }
+  if (table.size === 0) fail(`\`${marker}\` has no \`case .x: return "…"\` rows`);
+  return table;
+}

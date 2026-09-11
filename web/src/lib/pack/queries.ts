@@ -270,3 +270,156 @@ export function packIdentity(pack: Pack): PackIdentity {
     statedSchemaVersion: pack.statedSchemaVersion,
   };
 }
+
+// ── W1 · the public tree page's own read (W-C) ──────────────────────────────────────────────
+
+/**
+ * Everything `SCREENS.md` §W1 asks of a pack, for one tree.
+ *
+ * A superset of `TreeRow` rather than a second query shape: the page needs the spine `TreeRow`
+ * already answers (address, city, species, neighborhood, status) **and** the city-record columns
+ * the map never asked for. Keeping them in one statement keeps the page to one seek.
+ *
+ * **Every added column is projected through the introspected column set, not assumed.** They all
+ * exist in the generation-17 contract this repository checks in, and that is exactly why the gate
+ * is here: `TreeQueries`' whole argument is that a query written for one generation throws
+ * `no such column` on a pack a generation behind, and this layer is handed whatever the bucket
+ * holds. A column the file does not carry projects `NULL`, which the page renders as absence —
+ * the same answer it gives for a row where the city simply wrote nothing.
+ */
+export interface TreeFactsRow extends TreeRow {
+  /** The id space this row's numbering is drawn from (`sf`, `us-ca-sj`). Null before generation 14. */
+  readonly idSpace: string | null;
+  /** The publishing inventory's own id for this record — SF's `TreeID`, San Jose's `FACILITYID`. */
+  readonly externalRef: string | null;
+  /** Which of a city's inventories listed this row (`inventories.id`). Null before generation 13. */
+  readonly inventorySource: string | null;
+  /** `city_import` | `community`. Every row in a published pack is the former. */
+  readonly source: string | null;
+  readonly plantedYear: number | null;
+  /**
+   * The city's published DBH bucket, in centimetres. **`max` is EXCLUSIVE**, mirroring the
+   * Postgres `[)` the seed was built from and `Tree.dbhCityCmRange`'s `IntRange` on the phone.
+   * Rendered by `cityDBHRangeText`, never by arithmetic here.
+   */
+  readonly dbhCityCmMin: number | null;
+  readonly dbhCityCmMax: number | null;
+  /** The publisher's own placement string, an open vocabulary kept as free text (BUILD-PLAN §7). */
+  readonly siteType: string | null;
+  readonly speciesFamily: string | null;
+  /** `evergreen` | `deciduous` | `semi_deciduous`, or null on the 353 species with none. */
+  readonly speciesLeafRetention: string | null;
+}
+
+/** `column` when the table has it, `NULL` otherwise — see `TreeFactsRow`'s note on gating. */
+function optionalTreeColumn(columns: ReadonlySet<string>, column: string): string {
+  return columns.has(column) ? `t.${column}` : 'NULL';
+}
+
+function decodeTreeFactsRow(row: unknown): TreeFactsRow {
+  const record = row as Record<string, unknown>;
+  const text = (key: string): string | null => {
+    const value = record[key];
+    return value === null || value === undefined ? null : String(value);
+  };
+  const integer = (key: string): number | null => {
+    const value = record[key];
+    if (value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    ...decodeTreeRow(row),
+    idSpace: text('id_space'),
+    externalRef: text('external_ref'),
+    inventorySource: text('inventory_source'),
+    source: text('source'),
+    plantedYear: integer('planted_year'),
+    dbhCityCmMin: integer('dbh_city_cm_min'),
+    dbhCityCmMax: integer('dbh_city_cm_max'),
+    siteType: text('site_type'),
+    speciesFamily: text('species_family'),
+    speciesLeafRetention: text('species_leaf_retention'),
+  };
+}
+
+/**
+ * One tree's full W1 fact set by uuid, or null.
+ *
+ * `lower(?)` for `treeByUUID`'s reason, which is not a style choice: `trees.uuid` is
+ * `NOT NULL UNIQUE` so its index is BINARY, and a `COLLATE NOCASE` comparison cannot seek it —
+ * the plan degrades to a full scan of every row in the pack to fetch one tree.
+ */
+export function treeFactsByUUID(pack: Pack, uuid: string): TreeFactsRow | null {
+  const columns = treeColumnSet(pack);
+  const { joins, projection } = cityNameSource(pack.schema);
+  const sql = `
+    SELECT ${treeProjection(pack.schema, projection)},
+           ${optionalTreeColumn(columns, 'id_space')} AS id_space,
+           ${optionalTreeColumn(columns, 'external_ref')} AS external_ref,
+           ${optionalTreeColumn(columns, 'inventory_source')} AS inventory_source,
+           ${optionalTreeColumn(columns, 'source')} AS source,
+           ${optionalTreeColumn(columns, 'planted_year')} AS planted_year,
+           ${optionalTreeColumn(columns, 'dbh_city_cm_min')} AS dbh_city_cm_min,
+           ${optionalTreeColumn(columns, 'dbh_city_cm_max')} AS dbh_city_cm_max,
+           ${optionalTreeColumn(columns, 'site_type')} AS site_type,
+           s.family AS species_family,
+           s.leaf_retention AS species_leaf_retention
+      FROM trees t
+      LEFT JOIN species s ON s.id = t.species_current
+      LEFT JOIN neighborhoods n ON n.id = t.neighborhood_id
+      ${joins}
+     WHERE t.${pack.schema.treeIdentityColumn} = lower(?)
+       ${softDeletePredicate(pack.schema, columns)}
+     LIMIT 1
+  `;
+  const row = pack.db.prepare(sql).get(uuid);
+  return row === undefined ? null : decodeTreeFactsRow(row);
+}
+
+/**
+ * The id spaces this pack's rows are keyed in, in `id_spaces.id` order.
+ *
+ * **Empty is an answer, not a failure.** A pack older than generation 14 has no `id_spaces` table
+ * at all, so it cannot say which numbering its rows belong to and cannot be addressed by the
+ * `/‹id-space›/tree/‹uuid›` route. The caller refuses it rather than guessing `sf`, which is the
+ * guess that would silently serve one city's pack under another city's URL.
+ */
+export function idSpacesInPack(pack: Pack): readonly string[] {
+  if (!pack.schema.hasIdSpace) return [];
+  const rows = pack.db.prepare('SELECT id FROM id_spaces ORDER BY id').all();
+  return rows.map((row) => String((row as Record<string, unknown>)['id']));
+}
+
+/** One published inventory, as the pack's own `inventories` table states it. */
+export interface InventoryRow {
+  readonly id: string;
+  readonly idSpace: string;
+  readonly name: string;
+  readonly url: string;
+}
+
+/**
+ * The inventory a row's `inventory_source` names, read from the pack's own table.
+ *
+ * **From the file, never from `src/lib/idSpaces.ts`.** That module is the ingest *contract* — the
+ * frozen prefixes a new city must declare — and it carries the same names because the publisher
+ * wrote them there. The page states what THIS file says listed THIS row; a pack published before a
+ * name changed would otherwise be described by the registry's newer wording, which is a claim about
+ * the pack that the pack does not make. `SeedCities` reads the pack's own `id_spaces` table for
+ * exactly this reason.
+ */
+export function inventoryByID(pack: Pack, inventoryID: string): InventoryRow | null {
+  if (!pack.schema.hasIdSpace) return null;
+  const row = pack.db
+    .prepare('SELECT id, id_space, name, url FROM inventories WHERE id = ? LIMIT 1')
+    .get(inventoryID);
+  if (row === undefined) return null;
+  const record = row as Record<string, unknown>;
+  return {
+    id: String(record['id']),
+    idSpace: String(record['id_space']),
+    name: String(record['name']),
+    url: String(record['url']),
+  };
+}
