@@ -40,6 +40,7 @@ const source = join(repo, 'Cypress', 'Resources', 'Fonts');
 const target = join(web, 'fonts');
 const files = [...CARD_FONT_FACES, FONT_LICENSE];
 
+/** @param {Buffer} bytes */
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 mkdirSync(target, { recursive: true });
