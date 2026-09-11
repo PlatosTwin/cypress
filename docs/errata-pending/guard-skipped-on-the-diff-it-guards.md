@@ -16,13 +16,19 @@ diff that skips the job it runs in.** It executes only as a passenger on some un
 happens to touch Swift. `gate` is green either way, and its green is honest about what it checked:
 that the diff was prose. It says nothing about the prose.
 
-This is not hypothetical and it is not old. Four prose-only PRs merged green on 2026-09-10 —
-#158, #160, #161 and #164 — each citing `` `Tools/run_web_tests.sh` `` and
-`` `Tools/verify_web_test_log.sh` `` as backticked repo-relative paths. Both scripts were still
-unmerged on the web foundation branch. Main carried eight dangling citations, every check on every
-one of those PRs was green, and nothing reported it until an unrelated code PR ran `unit` and went
-red **for a defect it had not introduced**. #166 reworded the prose to land the fix; this entry is
-the class.
+This is not hypothetical and it is not old. #158 (`5ff63c1`, "open the web round") cited
+`` `Tools/run_web_tests.sh` `` and `` `Tools/verify_web_test_log.sh` `` as backticked repo-relative
+paths in four documents. Both scripts were still unmerged on the web foundation branch, so main
+took on eight dangling citations in one commit. Three further prose-only PRs — #160, #161 and #164 —
+then merged green on top of a main that was already carrying them, because each of the four is
+classified prose-only and `unit` reports `skipping` on all of them (checked, not assumed: none of
+the four touches a non-prose path). Nothing reported the defect until an unrelated code PR ran
+`unit` and went red **for something it had not introduced**. #166 reworded the prose to land the
+fix; this entry is the class.
+
+The count is the part worth keeping. **One bad commit, three green PRs after it, and the number of
+runs that could have caught it was zero** — not "low", zero, because the job that holds the guard
+cannot be reached by any diff of this shape.
 
 The shape is the project's dominant test-suite defect, recorded four times before on 2026-08-07:
 **a guard that is green because the defect is present.** The three earlier shapes were input
