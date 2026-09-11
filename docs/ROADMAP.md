@@ -201,7 +201,7 @@ growth loop" — terminate at the moment of sharing. W1 is the page those links 
 | **W-A** | Foundation | `web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; the web run/verify pair W-9 proposes — `run_web_tests.sh` and `verify_web_test_log.sh`, to be written under `Tools/` by this milestone — judges a log rather than an exit code. |
 | **W-B** | The three portable assets | Design tokens exported from the Swift declarations to CSS custom properties, with a test that the export still matches its source; the domain rules (vitality rubric, `Quantity`, the 25 m grid, growth-charting eligibility, ID spaces) re-derived in TypeScript against ported Swift test cases; a read layer that opens a published city pack through the same schema the phone uses. |
 | **W-C** | W1 · Public tree page | The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients. |
-| **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — designed under the W-3 exception, ruled, then built. |
+| **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — ~~designed under the W-3 exception~~ **designed**, in `docs/rulings-pending/web-nav-destinations.md` (unnumbered; §7a carries the orchestrator's answers to its open questions), then ruled, then built. |
 | **W-E** | It is on the internet | Deployed to Fly against a volume holding the published packs; the share link resolves. |
 
 ### Decided in the proposal, not open
