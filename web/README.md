@@ -33,18 +33,26 @@ As of W-C. Everything below was read from this directory, not remembered.
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
 | Pages | `/` (placeholder) and **`/‹id-space›/tree/‹uuid›`** — W1, server-rendered from a mounted pack (W-C) |
-| OG cards | `/‹id-space›/tree/‹uuid›/og.svg` — **SVG**, which most social platforms will not render. See below |
+| OG cards | `/‹id-space›/tree/‹uuid›/og.png` — 1200×630 raster, what `og:image` points at. `og.svg` is still served and is the drawing it is made of |
 | Packs | read from the directory `CYPRESS_PACK_DIR` names. No default path: unset means the page says so, in a 503 |
 | Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
+| Card fonts | `fonts/`, **copied** from `Cypress/Resources/Fonts/` by `scripts/export-card-fonts.mjs`. Four faces, 852 KB |
 | Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
 | Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
 | W1's own modules | `src/lib/{packLibrary,treePage,cityRecord,gradients,ogCard,obligations}.ts` and `src/styles/w1.css` |
 
-**Two runtime dependencies and three development ones**, and no test framework at all, which is
-the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
-tightly: it is in the standard library, which is what keeps the Docker image simple now that the
-read layer opens packs, and it is documented as experimental, which is what makes a floating Node
-tag a bad idea. `src/lib/pack/` imports it; nothing else does.
+**Three runtime dependencies and three development ones**, and no test framework at all. The
+third arrived in W-C's raster round and is the only one this directory has ever added on purpose:
+`@resvg/resvg-js`, so the OpenGraph card can be a PNG. What it is, what it cost and what was
+rejected instead are in `src/lib/ogRaster.ts`'s header; the short version is 3.4 MB, one transitive
+platform binary, no system libraries, and it renders text from font files handed to it rather than
+from whatever the host has installed. The discipline is not "never add one" — it is that adding one
+is a decision with an owner, and this one was ruled.
+
+`node:sqlite` is why the runtime is pinned this tightly: it is in the standard library, which is
+what keeps the Docker image simple now that the read layer opens packs, and it is documented as
+experimental, which is what makes a floating Node tag a bad idea. `src/lib/pack/` imports it;
+nothing else does.
 
 ## Running it
 
@@ -159,6 +167,8 @@ and fails byte-for-byte when the two disagree. Do not edit the CSS — the next 
 ```sh
 npm run tokens         # rewrite src/styles/tokens.css
 npm run tokens:check   # exit 1 if it is stale (the test says the same thing, louder)
+npm run fonts          # rewrite fonts/ from Cypress/Resources/Fonts (W-C's card raster)
+npm run fonts:check    # exit 1 if a face is stale, missing, or unaccounted for
 ```
 
 The generator lives under `web/` rather than in `Tools/` because **both CI workflows classify by
@@ -386,12 +396,35 @@ at all: §W1 draws its own recipe, close to screen 03's and not equal to it. **C
 background layer on top and a SwiftUI `ZStack` paints its last on top**, so the layer order is
 inverted in the port and there is a test whose only job is to fail if somebody "fixes" it.
 
-**The OpenGraph card is an SVG, and most platforms will not render it.** Stated here rather than
-discovered later: `og.svg.ts` builds the card out of the same `TreePageModel` the page renders —
-which is what §W1's caption asks for, "rendered from the same three ingredients so the group-chat
-preview and the page agree" — but Facebook, X, Slack, iMessage and LinkedIn all want a raster.
-Rasterizing means a dependency, and this directory's discipline is zero extra runtime dependencies,
-so the choice is an owner's. It is chip backlog item 24.
+**The OpenGraph card is a PNG, rasterized from that SVG.** `og.svg.ts` builds the card out of the
+same `TreePageModel` the page renders — which is what §W1's caption asks for, "rendered from the
+same three ingredients so the group-chat preview and the page agree" — and Facebook, X, Slack,
+iMessage and LinkedIn all want a raster. The owner ruled the dependency in; `og.png.ts` rasterizes
+the string `treeCardSVG` returns, so the two encodings are one drawing and there is nothing to
+diverge. `<meta property="og:image">` points at the PNG and now also declares `og:image:type`,
+`og:image:width` and `og:image:height` — **the last two of which this page never declared at all**,
+which is a separate defect the same round found.
+
+**The faces are files in this directory, and that is not an accident.** `@resvg/resvg-js` 2.6.2
+takes fonts as paths on disk, and the image is built from a context of `web/`
+(`docker build … web`), so nothing outside this directory can reach the container. `fonts/` is a
+checked-in copy of the four faces the card sets, written by `npm run fonts` and hashed against
+`Cypress/Resources/Fonts/` by `test/ogRaster.test.ts` — the same generated-and-checked-in bargain
+`tokens.css` is. The five sources are on both of `web.yml`'s `paths:` filters for the same reason
+every other out-of-`web/` source is.
+
+**A missing face is a 500, not a blank card.** The render sets `loadSystemFonts: false`, which is
+what makes the card look the same on a laptop, on `ubuntu-latest` and in the container — and is
+also the setting under which resvg draws *nothing at all* for a family it cannot resolve: no error,
+no fallback, a gradient with no words on it. So the directory is checked before a render is
+attempted and `MissingCardFonts` names what is absent. Verified by running the built image against
+an empty font directory: `500`, `x-cypress-refusal: rasterizer`, and the reason in the log.
+
+**The suite reads the bytes, not the renderer.** `test/support/png.ts` decodes the PNG — signature,
+IHDR, inflate, unfilter — and the measure that tells type from no type is a count of luma steps
+rather than a count of ink-colored pixels, because three of the card's four runs are drawn below
+full opacity. Measured on the real card: 0 steps in a 1080×300 window of pure gradient, and 1,700
+to 4,800 in each of the four text bands.
 
 **W1 is light-only on purpose.** Three of §W1's surfaces map to `lightOnly` tokens while the generic
 page tokens beside them are `dynamic`, so a dark rendering would be half of one palette over the
