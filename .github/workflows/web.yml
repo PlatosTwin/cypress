@@ -15,13 +15,18 @@ on:
     branches: [main]
     # An ALLOW-list, which is the opposite direction from `testflight.yml`'s deny-list, and the
     # asymmetry is deliberate. There the danger is a new path silently ceasing to ship, so
-    # anything unnamed still ships. Here the only cost of not running is not running a suite that
-    # tests one directory: a path outside `web/` cannot affect this app, and a new one inside it
-    # is covered by the wildcard. The two harness scripts are named because they are how the
-    # suite is run and judged — a change to them proves itself by running the suite THROUGH them,
-    # exactly as `Tools/run_tests.sh` does on the iOS side.
+    # anything unnamed still ships. Here the danger is that a change which BREAKS this suite
+    # starts no job at all, and goes red later on an unrelated pull request whose author did not
+    # cause it. Everything under `web/` is covered by the wildcard; everything OUTSIDE `web/`
+    # that the suite READS is named below, one path per line, each with the reader that makes it
+    # a dependency. Add a line when a test starts reading a new tree — do not widen an existing
+    # entry to cover it. The two harness scripts are named because they are how the suite is run
+    # and judged — a change to them proves itself by running the suite THROUGH them, exactly as
+    # `Tools/run_tests.sh` does on the iOS side.
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
@@ -29,6 +34,8 @@ on:
     branches: [main, 'release/**']
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
