@@ -2,8 +2,9 @@
 
 **Astro + TypeScript, SSR on the Node adapter, self-hosted on Fly.** Opened 2026-09-10 by the
 owner; the authority is `docs/design-proposals/2026-09-10-web-version.md` and the queue underneath
-it is `docs/ROADMAP.md` section **W**. This directory is milestone **W-A**, the foundation: it
-builds, it is tested, and it renders one placeholder page.
+it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation: it builds, it is
+tested, and it renders one placeholder page. Part of **W-B** has since landed: the domain rules
+are re-derived in `src/lib/` — see *The rules, re-derived* below.
 
 **What v1 is** (ruling W-1): a public read surface. No login, no writes. The tree page, plus the
 `Explore` / `Species` / `Neighborhoods` / `Data & export` nav the spec draws.
@@ -30,6 +31,7 @@ As of W-A. Everything below was read from this directory, not remembered.
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
 | Pages | one placeholder at `/`. W1 is W-C |
+| Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
@@ -131,6 +133,42 @@ to match the domain, because the domain can move and a Fly app name cannot.
 
 `fly.toml` deliberately declares **no `[mounts]`**. A mount naming a volume that does not exist
 fails a deploy halfway through creating the app.
+
+## The rules, re-derived (W-B, first of three)
+
+`src/lib/` holds five rules that already exist elsewhere in this repository, re-derived in
+TypeScript and checked against the originals' own test cases:
+
+| Module | The declaration it is derived from |
+|---|---|
+| `vitality.ts` | `Cypress/Core/Rubric/Vitality.swift` (+ `LeafRetention` in `Core/Models/Species.swift`) |
+| `quantity.ts` | `Cypress/Core/Units/Quantity.swift`, `MeasurementKind.plausibleSIRange` in `Core/Models/TreeMeasurement.swift` |
+| `geometry.ts` | `Cypress/Core/Models/Geometry.swift` |
+| `growthCharting.ts` | `FieldCaptured.isEligibleForGrowthCharting` and `GPSAccuracy` in `Cypress/Core/Models/CoreEntity.swift`; `isChartable` / `splitBySeries` in `Core/Models/TreeMeasurement.swift` |
+| `idSpaces.ts` | `Tools/inventory_contract.py` — **not Swift.** `Tree.idSpace` is an opaque `String?` and `SeedCities` reads the pack's own `id_spaces` table; the registry exists once, in Python |
+
+**A second copy of a rule is how the vitality rubric forked for two weeks** (ticket #261:
+`Vitality.anchor`, `PRODUCT.md` §3 and `SCREENS.md` 05 §3 disagreed from the day both documents
+were distilled, and nothing read the two tables). So none of these is checked against a
+transcription. `web/test/support/sources.ts` parses the Swift, the Python and the two distilled
+markdown tables **at run time**, every parser is calibrated in `test/sources.test.ts` against a
+specimen whose answer was known first, and the paths it reads are listed in `web.yml`'s `paths:`
+so the checks fire on the change they guard — asserted, in `test/sources.test.ts`, in both filters.
+
+**Where the numbers came from.** `test/support/swift-reference.json` is what the real
+`Quantity.swift`, `Geometry.swift` and `CoreEntity.swift` printed when compiled unmodified;
+`test/support/swift-reference/main.swift` is the program that printed it and carries the command
+to regenerate it. 64 of the 66 recorded coordinate comparisons match Swift to the bit. The two
+that do not are one unit in the last place of `cos()` at 40.7128° N — 1.2 nanometres — and the
+suite asserts that exactly two need its tolerance, so the tolerance cannot widen unnoticed.
+
+**Two things the port had to name rather than smooth over.** Swift's `Double.rounded()` breaks
+ties away from zero and JavaScript's `Math.round` breaks them toward positive infinity, which
+differs on every negative longitude this app has; `geometry.ts` implements the Swift rule
+explicitly and `Math.round` appears nowhere in it. And `snappedToPublicPhotoGrid` is **not
+idempotent** — applying it twice moves a point by up to 12.20 m, and the SQLite read path applies
+it twice — which is written up in `docs/errata-pending/`, pinned by a test against the recorded
+Swift behavior, and left unrepaired because repairing it moves already-published coordinates.
 
 ## The read path, when it arrives (W-B)
 
