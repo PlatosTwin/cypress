@@ -82,9 +82,11 @@
  * output, and glibc's `cos`, `atan2` and `sqrt` are not required to agree with Darwin's to the
  * bit, so a Linux re-run diffed byte-for-byte against `swift-reference.json` may well fail for a
  * reason that is not drift. That is answerable — with the same tolerance machinery
- * `geometry.test.ts` already uses — and it is a round of its own, on a runner, watched. Logged for
- * `docs/ROADMAP.md` rather than guessed at here. Until then this tripwire is toolchain-free, runs
- * everywhere the suite runs, and catches both mutations above in under a millisecond.
+ * `geometry.test.ts` already uses — and it is a round of its own, on a runner, watched. Reported to
+ * the orchestrator for `docs/ROADMAP.md` rather than guessed at here; this PR does not edit the
+ * roadmap, because two other live branches are editing the same row. Until that round happens this
+ * tripwire is toolchain-free, runs everywhere the suite runs, and catches both mutations above in
+ * under a millisecond.
  */
 
 import { describe, it } from 'node:test';
