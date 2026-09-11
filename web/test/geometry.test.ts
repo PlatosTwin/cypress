@@ -186,7 +186,7 @@ describe('the 25 m public photo grid', () => {
    * The longitude step is derived from the latitude — `metersPerDegreeLon = 111_320 · cos(lat)` —
    * and the first pass MOVES the latitude. A second pass therefore measures the longitude against
    * a different grid and lands in a different cell. Measured on the real `Geometry.swift`: up to
-   * 12.20 m of movement on the second pass across the eleven reference coordinates, settling from
+   * 12.20 m of movement on the second pass across the thirteen reference coordinates, settling from
    * the third.
    *
    * It is reachable. `ContributionStore.decodePhoto` (`Cypress/Data/Store/ContributionStore.swift`,
