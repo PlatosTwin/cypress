@@ -68,3 +68,34 @@ next reader who opens the mock and finds five rows has the answer.
 
 The two rows the mock lacks entirely — `In the city record since`, and the split — both come from the
 pack, so neither is blocked on anything.
+
+### CLAUDE.md restates ARCHITECTURE §6 more strictly than §6 says, and the restatement is what gets quoted
+
+`docs/ARCHITECTURE.md` §6 scopes its literal ban to the feature layer, in two sentences that agree
+with each other:
+
+> Never write a raw hex or a raw font size inside a feature. Use `CypressColor.*`, `CypressFont.*`,
+> `CypressRadius.*`, `CypressShadow.*`. **A literal in `Features/` is a bug.**
+
+`CLAUDE.md` restates it without the scope, and adds a category §6 does not name:
+
+> No raw hex, font sizes, or radii — tokens only (§6).
+
+Radii are not in §6's sentence, and "tokens only" with no qualifier reads as a whole-repository
+rule. Because CLAUDE.md loads automatically for every session and every subagent, **the unscoped
+version is the one that gets quoted** — it was relayed verbatim into a web-round review brief on
+2026-09-10, where it would have made `Base.astro`'s five hand-written sizes a §6 violation. They
+are not one: §6 does not reach outside `Features/`, and it does not reach outside Swift at all.
+The reviewer caught it by reading §6 instead of the restatement, which is the only way this class
+is ever caught.
+
+**The defect is not that either sentence is wrong** — §6 is right about `Features/`, and a
+tokens-only discipline for the web is a perfectly good thing to want. It is that a **citation by
+number** (`§6`) is attached to a rule its source does not state, so the restatement borrows an
+authority it was not given, and no reader who trusts the citation will check. Same family as the
+citation guards: a reference that resolves to the wrong thing is worse than one that resolves to
+nothing, because nothing reports it.
+
+Two separable fixes, and they are not alternatives: narrow CLAUDE.md's sentence to what §6 says,
+**and** — if a tokens-only rule should bind the web — write that rule somewhere that governs the
+web, where it can be cited honestly.
