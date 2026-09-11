@@ -266,7 +266,14 @@ describe('the workflow triggers on every file this suite reads', () => {
         continue;
       }
       if (current === null) continue;
-      const entry = /^\s*-\s*'([^']+)'\s*$/.exec(line);
+      // The trailing `#…` is not decoration in this regex. `web.yml` writes at least one entry as
+      // `- 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS`,
+      // and without the comment group that line matches no entry, is not a comment line either,
+      // and so ENDS the block — silently dropping every path after it. The suite went red on
+      // `SeedDatabase.swift`, the first entry below that line, and the report read as a missing
+      // trigger rather than as a parser that had stopped reading. The specimen below carries the
+      // same shape, so a future narrowing of this regex fails against a known answer first.
+      const entry = /^\s*-\s*'([^']+)'\s*(?:#.*)?$/.exec(line);
       if (entry?.[1] !== undefined) {
         current.push(entry[1]);
         continue;
@@ -278,14 +285,21 @@ describe('the workflow triggers on every file this suite reads', () => {
   }
 
   it('the paths: parser reads a block and stops at the end of it', () => {
-    // Specimen first, answer known before the parser saw it — including the two traps: a comment
-    // between entries, and a following key whose value is also a quoted string.
+    // Specimen first, answer known before the parser saw it — including the three traps: a comment
+    // between entries, an entry with a comment AFTER it on the same line, and a following key
+    // whose value is also a quoted string.
+    //
+    // The middle one is in `web.yml` today and was not in this specimen when the parser was
+    // written; the parser ended the block on it and reported the six entries below it as absent
+    // from a filter that lists all six. A specimen that does not carry the shapes the real file
+    // carries is a calibration of the wrong instrument.
     const specimen = [
       '  push:',
       '    paths:',
       "      - 'web/**'",
       '      # a comment inside the list',
-      "      - 'Tools/x.sh'",
+      "      - 'Tools/x.sh'   # and a comment after an entry, on the entry's own line",
+      "      - 'Fixtures/y.sql'",
       '  pull_request:',
       "    branches: ['main']",
       '    paths:',
@@ -293,7 +307,7 @@ describe('the workflow triggers on every file this suite reads', () => {
     ].join('\n');
     assert.deepEqual(
       pathBlocks(specimen).map((block) => [...block]),
-      [['web/**', 'Tools/x.sh'], ['web/**']],
+      [['web/**', 'Tools/x.sh', 'Fixtures/y.sql'], ['web/**']],
     );
   });
 
