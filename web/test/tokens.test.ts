@@ -339,6 +339,36 @@ describe('the export against Cypress/DesignSystem/Tokens', () => {
     assert.ok(parsed.tokens.length > 500, `only ${parsed.tokens.length} tokens were found`);
   });
 
+  it('the sources hold the two things stripComments assumes about them', () => {
+    // `stripComments` in src/lib/tokens.ts takes both on faith: no `/* … */` block, and no `//`
+    // inside a string literal. A stripper that eats half a string literal fails by producing
+    // plausible garbage rather than by throwing, so the assumption is asserted here rather than
+    // trusted in a comment. Both are true today; this is what makes them stay true.
+    //
+    // Calibrated, in the same run, against text whose answers are known beforehand: a file that
+    // DOES carry block comments, and a line that DOES hide `//` in a literal.
+    const literals = (text: string): string[] => [...text.matchAll(/"(?:[^"\\]|\\.)*"/g)].map((m) => m[0]);
+    const specimen = 'let home = "https://example.com" // the trailing comment';
+    assert.ok(checkedIn.includes('/*'), 'calibration: tokens.css does carry a block comment');
+    assert.ok(
+      literals(specimen).some((literal) => literal.includes('//')),
+      'calibration: the literal scan does find `//` inside a string literal',
+    );
+
+    for (const [file, source] of Object.entries(sources)) {
+      assert.equal(source.includes('/*'), false, `${file} now carries a /* … */ block comment`);
+      for (const [index, line] of source.split('\n').entries()) {
+        for (const literal of literals(line)) {
+          assert.equal(
+            literal.includes('//'),
+            false,
+            `${file}:${index + 1} hides // inside a string literal: ${literal}`,
+          );
+        }
+      }
+    }
+  });
+
   it('every .swift in Tokens/ is either read or named as not-exported, with a reason', () => {
     // A seventh token file appearing in that directory and being missed is the failure this
     // catches. The directory is listed rather than assumed.
@@ -564,7 +594,11 @@ describe('web/src/styles/tokens.css', () => {
     assert.ok(overridden.has('color-surface-screen'));
     assert.ok(!overridden.has('color-cypress-deep'));
     assert.ok(!overridden.has('color-hero-meta-pill-fill'));
-    // Nothing but colors is scheme-dependent in the Swift, so nothing but colors is here.
+    // Only COLORS are exported per scheme. Shadows are scheme-dependent in the Swift too —
+    // `CypressShadow.Dark` declares five dark elevations and `CypressSchemeShadow` resolves them
+    // off `@Environment(\.colorScheme)`, with `cypressCardShadow()` meaning NO shadow in dark —
+    // but the export mirrors the Swift's own shape and emits that family as flat `--shadow-dark-*`
+    // properties in `:root`, for a consumer to select between. So the dark BLOCK is colors only.
     for (const name of overridden) assert.ok(name.startsWith('color-'), `${name} is in the dark block`);
   });
 
@@ -584,6 +618,60 @@ describe('web/src/styles/tokens.css', () => {
   it('says it is generated and names what regenerates it', () => {
     assert.ok(checkedIn.startsWith('/*\n * GENERATED FILE'));
     assert.ok(checkedIn.includes('web/scripts/export-tokens.mjs'));
+  });
+
+  it('the header names the line-spacings that are a clamp, and the line-height each one hides', () => {
+    // `--font-line-spacing-*` is SwiftUI's EXTRA leading, not CSS `line-height`. The README's
+    // inversion (`line-height = 1.2 + leading / size`) is exact for four of the six and WRONG for
+    // the two the Swift declares `0`: that `0` is SwiftUI's floor, stated as such in the doc
+    // comment beside each, and inverting it returns 1.2 against a documented 1.1 and 1.05 —
+    // looser than the design, on the two largest display styles. The caveat has to travel with
+    // the artifact rather than live in prose, so it is in the generated file's own header. WHICH
+    // two and WHAT line-height are read out of the Swift here, so lifting a clamp in the source
+    // makes the header stale and this test red instead of leaving a wrong number in front of a
+    // consumer. Same shape as the shadow doc-comment scrape above: the source's own words are an
+    // independent transcription, and a round trip through the parser can never be one.
+    const swift = (sources['Cypress/DesignSystem/Tokens/CypressFont.swift'] ?? '').split('\n');
+    const lineSpacings = parsed.tokens.filter((t) => t.scope === 'CypressFont.LineSpacing');
+    assert.equal(lineSpacings.length, 6, 'CypressFont.LineSpacing no longer declares six tokens');
+
+    const clamped = new Map<string, string>();
+    for (const t of lineSpacings) {
+      // The doc comment directly above the declaration; `t.line` is 1-based.
+      const comment = swift[t.line - 2] ?? '';
+      assert.match(
+        comment,
+        /line-height/,
+        `${t.scope}.${t.name} no longer documents a line-height on the line above it, so a `
+          + 'consumer has nothing to use in place of the exported leading',
+      );
+      if (!comment.includes('clamp at 0')) continue;
+      assert.deepEqual(t.value, { kind: 'length', px: 0 }, `${t.name} says "clamp at 0" and is not 0`);
+      const documented = /line-height (\d+(?:\.\d+)?)/.exec(comment);
+      assert.ok(documented !== null, `${t.name}'s clamp comment states no line-height`);
+      clamped.set(t.cssName, documented[1] ?? '');
+    }
+    // A scrape that matched nothing would satisfy every loop below it.
+    assert.deepEqual(
+      [...clamped.keys()].sort(),
+      ['font-line-spacing-species-hero', 'font-line-spacing-tree-name-hero'],
+    );
+
+    const header = checkedIn.split('*/')[0] ?? '';
+    for (const [cssName, lineHeight] of clamped) {
+      assert.match(
+        header,
+        new RegExp(`--${cssName}\\b[^\\n]*line-height ${lineHeight.replace('.', '\\.')}(?!\\d)`),
+        `tokens.css's header does not say that --${cssName} is a clamp hiding line-height `
+          + `${lineHeight}. The Swift documents it; the generated file has to carry it.`,
+      );
+    }
+    // Both directions. If a clamp is lifted in the Swift and the header left alone, the header
+    // names a token that is no longer clamped, and that is just as wrong as omitting one.
+    const named = new Set(
+      [...header.matchAll(/--(font-line-spacing-[a-z0-9-]+)/g)].map((m) => m[1] ?? ''),
+    );
+    assert.deepEqual([...named].sort(), [...clamped.keys()].sort());
   });
 
   it('carries no raw value the Swift does not declare', () => {

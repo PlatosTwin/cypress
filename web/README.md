@@ -181,9 +181,19 @@ anything the source does not say. Only tokens whose dark value differs appear in
   rather than in `CypressMotion.Duration`, so those two numbers have no token on either platform.
 - `CypressFont.LineSpacing` is exported verbatim, in **points of extra leading**, which is SwiftUI's
   unit and not CSS `line-height`. `CypressFont.swift` gives the conversion it was derived under
-  (`lineSpacing ≈ size × (lineHeight − 1.2)`); a consumer that wants a `line-height` inverts it.
-  Nothing is transformed here, because inverting an approximation and calling it a token would be
-  inventing a value the design system does not state.
+  (`lineSpacing ≈ size × (lineHeight − 1.2)`). Nothing is transformed here, because inverting an
+  approximation and calling it a token would be inventing a value the design system does not state.
+
+  **Inverting it yields the wrong answer for two of the six, and the two are named in the
+  generated file's own header.** `speciesHero` and `treeNameHero` are declared `0` in the Swift
+  *because SwiftUI cannot set leading tighter than the face's natural line height* — the doc
+  comment beside each says "tighter than natural; clamp at 0". `0` is that clamp, not the design
+  value, so inverting `--font-line-spacing-species-hero: 0px` returns `line-height: 1.2` where the
+  source documents **1.1**, and `--font-line-spacing-tree-name-hero` the same against **1.05** —
+  *looser* than intended, on the two largest display styles. CSS has no such floor. A consumer
+  that wants a `line-height` inverts the other four and uses the documented figure for these two;
+  `test/tokens.test.ts` reads both figures out of the Swift and fails if the header stops matching
+  them.
 
 The one web-only judgment in the whole export is `GENERIC_FALLBACKS` in `src/lib/tokens.ts`: the
 generic CSS fallback after each family, which iOS has no equivalent of. The family *names* are not

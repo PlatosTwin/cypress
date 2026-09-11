@@ -203,8 +203,10 @@ interface Declaration {
 
 /**
  * Strip `//` line comments. The token files carry no `/* … *\/` blocks and no `//` inside a
- * string literal — both are asserted in the test rather than assumed, because a comment
- * stripper that eats half a string literal fails by producing plausible garbage.
+ * string literal — both are asserted over the real sources by `test/tokens.test.ts`'s "the
+ * sources hold the two things stripComments assumes about them", rather than assumed here,
+ * because a comment stripper that eats half a string literal fails by producing plausible
+ * garbage rather than by throwing.
  */
 function stripComments(source: string): string {
   return source
@@ -718,6 +720,16 @@ const HEADER = `/*
  *
  * Only tokens whose dark value DIFFERS appear in the dark block. \`lightOnly\` and \`escalated\`
  * tokens resolve to the same value in both schemes by definition and are absent from it.
+ *
+ * TWO VALUES HERE ARE A SWIFTUI CLAMP AND NOT THE DESIGN VALUE. The line-spacing custom
+ * properties carry SwiftUI's EXTRA leading in px, not CSS \`line-height\`; a consumer inverts
+ * them with \`line-height = 1.2 + leading / font-size\`, which is exact for four of the six. It
+ * is WRONG for the two listed below. They are \`0px\` only because SwiftUI cannot set leading
+ * tighter than the face's natural line height, so inverting \`0\` returns 1.2 — LOOSER than the
+ * design, on the two largest display styles. CSS has no such floor: use the documented figure.
+ *
+ *   --font-line-spacing-species-hero     0px, and the Swift documents line-height 1.1
+ *   --font-line-spacing-tree-name-hero   0px, and the Swift documents line-height 1.05
  */`;
 
 /** The whole `tokens.css` file, byte for byte. */
