@@ -155,17 +155,32 @@ markdown tables **at run time**, every parser is calibrated in `test/sources.tes
 specimen whose answer was known first, and the paths it reads are listed in `web.yml`'s `paths:`
 so the checks fire on the change they guard — asserted, in `test/sources.test.ts`, in both filters.
 
-**Where the numbers came from.** `test/support/swift-reference.json` is what the real
-`Quantity.swift`, `Geometry.swift` and `CoreEntity.swift` printed when compiled unmodified;
-`test/support/swift-reference/main.swift` is the program that printed it and carries the command
-to regenerate it. 64 of the 66 recorded coordinate comparisons match Swift to the bit. The two
-that do not are one unit in the last place of `cos()` at 40.7128° N — 1.2 nanometres — and the
+**Where the numbers came from, and what keeps them current.**
+`test/support/swift-reference.json` is what the real `Quantity.swift`, `Geometry.swift` and
+`CoreEntity.swift` printed when compiled unmodified; `test/support/swift-reference/main.swift` is
+the program that printed it and carries the command to regenerate it.
+
+It is a **recording**, and a recording does not move when its subject does. So the guard is in two
+halves and the honest description of it is *TypeScript against a recorded snapshot, plus a tripwire
+on the Swift source that snapshot came from*: `test/swiftDrift.test.ts` fingerprints the eleven
+Swift declarations the ports re-implement and goes red on any edit to them, cosmetic or not, with a
+message telling the reader to re-record the reference and re-verify parity before pasting a new
+fingerprint. Without that second half, two one-character edits to the real Swift — `111_320.0` to
+`111_000.0`, and `<=` to `<` on the D6 gate — left the suite green at `103 of 103` while the two
+implementations snapped the same coordinate 8.2 m apart and charted different sets of
+measurements. Both were found by PR #173's adversarial review, and both now go red.
+
+The suite has no Swift toolchain, so it still cannot prove the recording is current by running
+anything; the tripwire is what turns a stale recording into a red run rather than a green one. 76 of the 78 recorded coordinate comparisons match Swift to the bit. The two
+that do not are one unit in the last place of `cos()` at 40.7128° N — 1.2 nanometers — and the
 suite asserts that exactly two need its tolerance, so the tolerance cannot widen unnoticed.
 
 **Two things the port had to name rather than smooth over.** Swift's `Double.rounded()` breaks
 ties away from zero and JavaScript's `Math.round` breaks them toward positive infinity, which
 differs on every negative longitude this app has; `geometry.ts` implements the Swift rule
-explicitly and `Math.round` appears nowhere in it. And `snappedToPublicPhotoGrid` is **not
+explicitly in `roundedAwayFromZero`, which does use `Math.round` — under `Math.abs`, with the sign
+restored by `Math.sign`, so there is no signed tie for it to break. No **bare** `Math.round` on a
+signed value, which is the claim that is true. And `snappedToPublicPhotoGrid` is **not
 idempotent** — applying it twice moves a point by up to 12.20 m, and the SQLite read path applies
 it twice — which is written up in `docs/errata-pending/`, pinned by a test against the recorded
 Swift behavior, and left unrepaired because repairing it moves already-published coordinates.

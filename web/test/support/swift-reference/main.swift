@@ -18,12 +18,34 @@
 // Those three Swift files are compiled UNMODIFIED — that is the whole point, and it is why this
 // file holds no copy of the rules, only calls into them.
 //
-// WHAT KEEPS THE FIXTURE FROM GOING STALE. It records derived OUTPUTS, which cannot drift on their
-// own; what can drift is the constants they were derived from. `web/test/*.test.ts` therefore
-// parses `publicPhotoGridM`, `growthChartingLimitM`, the `metersPerUnit` table and both
-// `PlausibleRange` bounds out of the live Swift and asserts the fixture still agrees with them. A
-// constant that moves turns those red with "regenerate the fixture" rather than leaving a green
-// suite comparing today's TypeScript against last month's Swift.
+// WHAT KEEPS THE FIXTURE FROM GOING STALE — corrected, because what stood here was false.
+//
+// It used to say: "It records derived OUTPUTS, which cannot drift on their own; what can drift is
+// the constants they were derived from." The second half is the part that was wrong. The CODE the
+// outputs were derived from can drift too, and when it does, this recording and the TypeScript go
+// on agreeing with each other while both disagree with the Swift. PR #173's reviewer proved it
+// with two one-character edits to the real Swift that left the web suite at `103 of 103 tests
+// passed`: `metersPerDegreeLat` from `111_320.0` to `111_000.0` (Swift and the port then snapped
+// the same coordinate 8.2 m apart in latitude) and `gpsAccuracyM <=` to `<` (the D6 boundary the
+// growth-charting test says it exists to protect). Neither is a value any parser on this page was
+// reading: the first is an un-annotated function-local `let`, which `swiftDoubleLet` declines by
+// design, and the second is an operator.
+//
+// So the guard is in two halves, and BOTH are needed:
+//
+//   1. **Values.** `web/test/*.test.ts` parses `publicPhotoGridM`, `growthChartingLimitM`, the
+//      `metersPerUnit` table and both `PlausibleRange` bounds out of the live Swift and asserts
+//      this fixture still agrees with them.
+//   2. **The source itself.** `web/test/swiftDrift.test.ts` fingerprints the eleven Swift
+//      declarations the ports re-implement — signature through closing brace, comments and layout
+//      normalized away — and goes red on ANY edit to them, behavioral or cosmetic. Its failure
+//      message points the reader back at the command above.
+//
+// Said plainly, because a comment that overstates a guard is what caused this correction: what the
+// web suite proves is **TypeScript against this recording, plus a tripwire on the Swift source
+// this recording came from.** It does not run Swift, so it cannot prove the recording is current
+// on its own; the tripwire is what turns a stale recording into a red run instead of a green one.
+// Regenerating this file and re-recording that fingerprint are one act, not two.
 //
 // WHY IT IS IN A DIRECTORY OF ITS OWN, NAMED `main.swift`. Swift allows top-level statements in a
 // file with exactly that name and in no other, so `swift-reference.swift` beside the JSON does not
@@ -88,8 +110,20 @@ let coords: [(Double, Double)] = [
     (37.0, -122.0),
     (-33.8688, 151.2093),       // southern hemisphere, positive longitude
     (51.5074, -0.1278),
-    (89.9, 100.0),              // near the pole, where cos collapses
-    (-89.9, -100.0),
+    (89.9, 100.0),              // near the pole, where cos collapses — but see below: the
+    (-89.9, -100.0),            // `latStep` fallback is NOT in force at 89.9, it needs ~89.99949
+    // The `lonStep = latStep` fallback, actually reached. Measured, not assumed: the branch fires
+    // when `metersPerDegreeLon = 111_320 * cos(lat)` drops to 1 or below, which is latitude above
+    // 89.99948530560983 — bisected in real Swift against this very `Geometry.swift`, where 89.9
+    // gives 194.28995369179447 m per degree and 89.9999 gives 0.19429005234069185. Until these two
+    // rows the fallback was the one branch of the ported function with no reference behind it, and
+    // `geometry.ts` reproduced it by READING the Swift rather than by measuring it.
+    //
+    // The longitudes are deliberately off-grid: 100.0 is an exact multiple of `latStep`
+    // (100 * 111_320 / 25 = 445_280), so it would snap to itself under the fallback and the row
+    // would pass for a port that had the branch wrong.
+    (89.9999, 100.0001),
+    (-89.99995, -100.0001),
     (40.7128, -74.0060),        // NYC
     (37.3382, -121.8863),       // San Jose
     (0.0001, -0.0001),

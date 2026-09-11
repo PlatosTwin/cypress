@@ -54,12 +54,23 @@ export const britishForms: readonly BritishForm[] = [
   { pattern: /litre/gi, american: 'liter' },
   { pattern: /sombre/gi, american: 'somber' },
   { pattern: /calibre/gi, american: 'caliber' },
-  { pattern: /millimetre/gi, american: 'millimeter' },
-  { pattern: /centimetre/gi, american: 'centimeter' },
-  { pattern: /kilometre/gi, american: 'kilometer' },
-  // A bare `metre` strikes "flameTree" — "fla-meTre-e" — so it is anchored the way the Swift
-  // list anchors it: word-initial, or behind a metric prefix, or at a camelCase hump.
-  { pattern: /(?<![A-Za-z])metre/gi, american: 'meter' },
+  // `-metre`, bare or behind any SI prefix, generated rather than listed one prefix at a time.
+  //
+  // It used to be four hand-written entries — `millimetre`, `centimetre`, `kilometre` and a bare
+  // `metre` — and `nanometres` fell between them: the bare rule's lookbehind is defeated by the
+  // `o` of `nano`, and no entry named that prefix. Three occurrences sat inside `web/`, past this
+  // sweep, until a reviewer read them (PR #173). Enumerating the prefixes is the fix; adding
+  // `nanometre` alone would have left `picometre` in the same hole.
+  //
+  // **What the lookbehind still excludes, said plainly.** `(?<![A-Za-z])` is load-bearing — a bare
+  // `metre` strikes "flameTree" as "fla-meTre-e". It also means a `metre` glued to the end of a
+  // longer word is NOT caught, a camelCase `fooMetre` included. That is a deliberate false
+  // negative, not a claim of coverage, and it is asserted as such in the test beside this file.
+  ...['', 'nano', 'micro', 'milli', 'centi', 'deci', 'deka', 'deca', 'hecto', 'kilo', 'mega',
+    'giga', 'tera', 'pico', 'femto'].map((prefix) => ({
+    pattern: new RegExp(String.raw`(?<![A-Za-z])${prefix}metre`, 'gi'),
+    american: `${prefix}meter`,
+  })),
   // -ce -> -se, and the two -ise families that occur in prose about code.
   { pattern: /licence/gi, american: 'license' },
   { pattern: /defence/gi, american: 'defense' },

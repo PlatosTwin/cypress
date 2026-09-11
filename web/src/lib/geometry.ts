@@ -18,7 +18,12 @@
  * the one this app is actually in. It only bites when `coordinate / step` lands exactly on a half
  * — rare, and the size of the disagreement is one grid cell, which is 25 m, which is the entire
  * point of the grid. `roundedAwayFromZero` below is therefore explicit and tested against a
- * negative tie; `Math.round` appears nowhere in this file.
+ * negative tie — and it is built ON `Math.round`, under `Math.abs`. That is the file's one and
+ * only CALL to `Math.round`; every other mention of the name here is prose. It is also the only
+ * place a call to it is safe: `Math.abs` hands it a non-negative magnitude, so there is no signed
+ * tie for round-half-up to break the wrong way, and `Math.sign` puts the sign back afterwards.
+ * The claim, stated so it is true: **no bare `Math.round` on a signed value.** This paragraph
+ * read "`Math.round` appears nowhere in this file" until PR #173's review pointed at the call.
  *
  * ── Where the two implementations may legitimately differ ────────────────────────────────────
  *

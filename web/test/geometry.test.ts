@@ -62,13 +62,13 @@ const reference = JSON.parse(
  *     Node   cos = 0.757988524197136    (0x3fe84171264570ac)
  *
  * That is a one-bit difference. It reaches the snapped longitude as 1.42e-14 degrees, which is
- * 1.2 NANOMETRES — eleven orders of magnitude under the 25 m cell it is a coordinate on.
+ * 1.2 NANOMETERS — eleven orders of magnitude under the 25 m cell it is a coordinate on.
  *
  * So the comparator below accepts bit-equality, or a difference under a threshold stated in
  * degrees and far too small to hide a real error: a wrong rounding rule misplaces a point by a
  * whole cell and a transposed step by more, both of which are 1e12 times this. **And the tolerance
  * cannot quietly widen into covering a real divergence, because the number of comparisons that
- * NEED it is asserted** — 2 of 66 today, measured. A port that started needing the tolerance
+ * NEED it is asserted** — 2 of 78 today, measured. A port that started needing the tolerance
  * everywhere would fail that count, which is the assertion that keeps this from being a way of
  * saying "close enough".
  */
@@ -137,8 +137,8 @@ describe('the 25 m public photo grid', () => {
   it('reproduces the Swift’s snapped coordinates', () => {
     assert.equal(
       reference.snapped.length,
-      11,
-      `the reference holds ${reference.snapped.length} snapped coordinates, not 11 — a case table `
+      13,
+      `the reference holds ${reference.snapped.length} snapped coordinates, not 13 — a case table `
         + `that shrank is a check that stopped checking`,
     );
     for (const row of reference.snapped) {
@@ -230,6 +230,66 @@ describe('the 25 m public photo grid', () => {
     );
   });
 
+  /**
+   * **The `lonStep = latStep` fallback, measured rather than read.**
+   *
+   * This test did not exist, and the errata said the fallback was "in force" at 89.9. It is not.
+   * PR #173's review caught the sentence; the threshold was then bisected in real Swift against
+   * this repository's own `Geometry.swift` — the branch fires at latitude above
+   * **89.99948530560983°**, where `111_320 · cos(lat)` finally drops to 1 or below. At 89.9 that
+   * expression is 194.28995369179447, which is not remotely close.
+   *
+   * So until the two rows above 89.9999 were added to the reference table, NO reference coordinate
+   * reached the branch, `geometry.ts` reproduced it by reading the Swift rather than by measuring
+   * it, and this suite would have been just as green with the fallback written any other way. The
+   * assertion below is what makes the branch a measured one: it checks the reference actually
+   * contains coordinates on BOTH sides of the threshold, so the rows above cannot quietly drift
+   * back out of the branch and leave the exact comparisons passing on the near side only.
+   */
+  it('the reference reaches the pole fallback, on both sides of the threshold', () => {
+    // Recomputed here from the constants the port declares, rather than pasted as 89.99949: a
+    // threshold transcribed from a comment is the thing that was wrong in the first place.
+    const metersPerDegreeLon = (lat: number): number =>
+      111_320.0 * Math.cos((lat * Math.PI) / 180);
+    const inFallback = (lat: number): boolean => !(metersPerDegreeLon(Math.abs(lat)) > 1);
+
+    assert.equal(inFallback(89.9), false, 'the premise: 89.9 is NOT in the fallback');
+    assert.ok(
+      metersPerDegreeLon(89.9) > 190,
+      `111_320·cos(89.9°) is ${metersPerDegreeLon(89.9)} m/°, nowhere near the 1 m/° the branch needs`,
+    );
+
+    const reached = reference.snapped.filter((row) => inFallback(row.lat));
+    assert.ok(
+      reached.length >= 2,
+      `${reached.length} of the ${reference.snapped.length} reference coordinates reach the `
+        + `\`lonStep = latStep\` fallback. Below two, the branch is exercised on one side of the `
+        + `pole or on neither, and geometry.ts reproduces it from a reading of the Swift rather `
+        + `than from measured output — which is the thing this whole directory exists not to do.`,
+    );
+    assert.equal(
+      new Set(reached.map((row) => Math.sign(row.lat))).size,
+      2,
+      'the fallback coordinates are all in one hemisphere',
+    );
+    // And the branch actually DID something: with the cos-derived step these longitudes would land
+    // in an entirely different place (25/0.194 ≈ 129° per cell), so a port that took the wrong
+    // branch could not produce the recorded value by accident.
+    for (const row of reached) {
+      const cosStep = publicPhotoGridM / metersPerDegreeLon(row.lat);
+      assert.ok(
+        cosStep > 100,
+        `at ${row.lat} the cos-derived step is ${cosStep}°, which is close enough to the latitude `
+          + `step that this row does not distinguish the two branches`,
+      );
+      assert.ok(
+        Math.abs(row.snappedLon - row.lon) < 0.001,
+        `snap(${row.lat}, ${row.lon}) moved the longitude to ${row.snappedLon}, which is not the `
+          + `small move the latitude-sized step produces — read the reference, not this comment`,
+      );
+    }
+  });
+
   it('no snapped point is further than one cell from where it started', () => {
     // The property the grid is FOR, stated independently of the arithmetic that implements it:
     // the published point stays in the neighborhood of the real one.
@@ -272,7 +332,7 @@ describe('the size of the libm disagreement', () => {
     assert.equal(
       toleranceUsed,
       2,
-      `${toleranceUsed} of the 66 coordinate comparisons needed the ${TOLERANCE_DEGREES}° `
+      `${toleranceUsed} of the 78 coordinate comparisons needed the ${TOLERANCE_DEGREES}° `
         + `tolerance rather than matching Swift to the bit; 2 did when this was measured, both of `
         + `them the longitude of the second snap at 40.7128, -74.006, where Darwin's cos() and `
         + `V8's differ in the last bit. MORE than 2 means something in the port stopped being `

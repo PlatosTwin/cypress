@@ -14,6 +14,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   ParseFailure,
@@ -25,6 +27,7 @@ import {
   repositoryRoot,
   sourcesTheWebSuiteReads,
   swiftClosedRangeLet,
+  swiftDeclaration,
   swiftDoubleLet,
   swiftEnumCases,
   swiftStringCases,
@@ -216,6 +219,148 @@ describe('the parsers the parity tests depend on', () => {
   });
 });
 
+/**
+ * The tripwire's instrument, calibrated the same way every other parser on this page is.
+ *
+ * `swiftDeclaration` is the only parser here that reads a WHOLE declaration rather than a value
+ * out of one, and it is the only one whose output is a hash — which means a broken version of it
+ * fails in a way nobody can read. Two properties have to hold and both are asserted against
+ * specimens whose answers were known before the parser saw them:
+ *
+ *   * it is INSENSITIVE to the things a fingerprint must not trip on (comments, indentation,
+ *     line breaks), or every reflowed doc comment cries wolf until somebody stops reading it;
+ *   * it is SENSITIVE to the things it exists to catch — the two exact edits PR #173's reviewer
+ *     made to the real Swift are reproduced here in miniature, so this file proves the wire is
+ *     live without needing the real Swift to be mutated.
+ */
+describe('the whole-declaration fingerprint', () => {
+  const specimen = [
+    'struct Sample {',
+    '    /// A doc comment.',
+    '    public func snap(_ x: Double) -> Double {',
+    '        let step = 111_320.0   // a trailing comment',
+    '        return (x / step).rounded() * step',
+    '    }',
+    '',
+    '    public var gate: Bool {',
+    '        return accuracy <= 15',
+    '    }',
+    '}',
+  ].join('\n');
+
+  it('bounds the declaration at its own closing brace, not the next one down', () => {
+    const snap = swiftDeclaration(specimen, 'public func snap(_ x: Double) -> Double');
+    // `gate` is the declaration BELOW. A parser that ran to the struct's closing brace would
+    // swallow it, and would then report the same fingerprint for a file that had reordered two
+    // functions — or a different one for a change in a function this row does not name.
+    assert.ok(!snap.source.includes('gate'), `the body ran past its own brace: ${snap.source}`);
+    assert.ok(snap.source.endsWith('}'));
+    assert.equal(
+      snap.normalized,
+      'public func snap(_ x: Double) -> Double { let step = 111_320.0 return (x / step).rounded() '
+        + '* step }',
+    );
+  });
+
+  it('closes over nested braces rather than the first one it meets', () => {
+    const closure = [
+      'public func split(kind: Kind) -> [Row] {',
+      '    let points = filter { $0.kind == kind }',
+      '    return points',
+      '}',
+    ].join('\n');
+    const found = swiftDeclaration(closure, 'public func split(kind: Kind) -> [Row]');
+    assert.ok(found.source.includes('return points'), `stopped at the closure: ${found.source}`);
+  });
+
+  it('is blind to comments and to layout, which is what keeps it from crying wolf', () => {
+    const reflowed = [
+      'struct Sample {',
+      '    /// A doc comment, rewritten entirely, now spanning',
+      '    /// two lines and saying something else.',
+      '    public func snap(_ x: Double) -> Double {',
+      '        /* a block comment where a trailing one used to be */',
+      '        let step = 111_320.0',
+      '            return (x / step).rounded() * step',
+      '    }',
+      '}',
+    ].join('\n');
+    assert.equal(
+      swiftDeclaration(reflowed, 'public func snap(_ x: Double) -> Double').fingerprint,
+      swiftDeclaration(specimen, 'public func snap(_ x: Double) -> Double').fingerprint,
+      'reformatting and rewriting comments moved the fingerprint; it would go red on every '
+        + 'cosmetic edit and be re-recorded without being read',
+    );
+  });
+
+  it('does not read a `//` inside a string literal as a comment', () => {
+    const withURL = 'public var host: String {\n    return "https://example.org/x"\n}';
+    const found = swiftDeclaration(withURL, 'public var host: String');
+    assert.ok(
+      found.normalized.includes('https://example.org/x'),
+      `the URL was eaten as a comment: ${found.normalized}`,
+    );
+  });
+
+  /**
+   * **The sensitivity proof: the two edits from the #173 review, in miniature.**
+   *
+   * Each changes one character of the specimen and nothing else. If either of these fingerprints
+   * came back equal to the baseline, the tripwire in `swiftDrift.test.ts` would be recording a
+   * constant and the suite would be green for the same reason it was green before this file
+   * existed.
+   */
+  it('moves when a constant moves, and when a comparison flips', () => {
+    const baselineSnap = swiftDeclaration(specimen, 'public func snap(_ x: Double) -> Double');
+    const baselineGate = swiftDeclaration(specimen, 'public var gate: Bool');
+
+    const constantMoved = specimen.replace('111_320.0', '111_000.0');
+    assert.notEqual(constantMoved, specimen, 'the mutation did not apply; this measures nothing');
+    assert.notEqual(
+      swiftDeclaration(constantMoved, 'public func snap(_ x: Double) -> Double').fingerprint,
+      baselineSnap.fingerprint,
+      '111_320 -> 111_000 left the fingerprint unchanged',
+    );
+
+    const comparisonFlipped = specimen.replace('accuracy <= 15', 'accuracy < 15');
+    assert.notEqual(comparisonFlipped, specimen, 'the mutation did not apply; this measures nothing');
+    assert.notEqual(
+      swiftDeclaration(comparisonFlipped, 'public var gate: Bool').fingerprint,
+      baselineGate.fingerprint,
+      '<= -> < left the fingerprint unchanged, which is the exact hole this file closes',
+    );
+    // And the OTHER declaration in the same file is untouched by either, so a red names the
+    // declaration that actually changed rather than everything in the file.
+    assert.equal(
+      swiftDeclaration(comparisonFlipped, 'public func snap(_ x: Double) -> Double').fingerprint,
+      baselineSnap.fingerprint,
+    );
+  });
+
+  it('refuses an ambiguous signature rather than picking one of two', () => {
+    const twoOverloads = [
+      'public static func permitted(month: Int) -> Bool { return true }',
+      'public static func permitted(month: Int, habit: Habit) -> Bool { return false }',
+    ].join('\n');
+    // The shared prefix matches both. Taking the first would fingerprint whichever the file
+    // happens to list first, and would move for free the day somebody reorders them.
+    assert.throws(() => swiftDeclaration(twoOverloads, 'public static func permitted(month: Int'), ParseFailure);
+    // Narrowed, it resolves.
+    assert.ok(
+      swiftDeclaration(twoOverloads, 'public static func permitted(month: Int) -> Bool')
+        .normalized.includes('return true'),
+    );
+  });
+
+  it('refuses a signature that is absent, and one with no body after it', () => {
+    assert.throws(() => swiftDeclaration(specimen, 'public func absent()'), ParseFailure);
+    assert.throws(
+      () => swiftDeclaration('public static let bare: Double = 25\n', 'public static let bare'),
+      ParseFailure,
+    );
+  });
+});
+
 describe('the sources the web suite reads', () => {
   it('the repository root resolves and every named source exists and is not empty', () => {
     const root = repositoryRoot();
@@ -266,6 +411,55 @@ describe('the sources the web suite reads', () => {
         occurrences >= 2,
         `web.yml names ${relative} ${occurrences} time(s); it belongs in both the push and the `
           + `pull_request \`paths:\` filter, and a pull request is judged by the second`,
+      );
+    }
+  });
+
+  /**
+   * **The census, and the hole it closes.**
+   *
+   * PR #173's review deleted `src/lib/growthCharting.ts` AND `test/growthCharting.test.ts` and the
+   * suite went green at 92 of 92 — with `Cypress/Core/Models/CoreEntity.swift` still in
+   * `sourcesTheWebSuiteReads` and still in both of `web.yml`'s `paths:` filters, triggering a
+   * workflow for a file nothing read any more. Every assertion above is satisfied by that state:
+   * the rule and its only check left together, so nothing was left behind to notice.
+   *
+   * A count is what notices. `web/src/lib/` is enumerated and compared against a named list, so a
+   * module that disappears is red and a module that appears without anybody adding it here is red
+   * too. Named rather than counted, because a count of eight is satisfied by deleting one file and
+   * adding another.
+   */
+  it('every module under src/lib is still here, and is still checked by a test', () => {
+    const lib = join(repositoryRoot(), 'web', 'src', 'lib');
+    const onDisk = readdirSync(lib)
+      .filter((entry) => statSync(join(lib, entry)).isFile() && entry.endsWith('.ts'))
+      .sort();
+    assert.deepEqual(
+      onDisk,
+      [
+        'geometry.ts',
+        'growthCharting.ts',
+        'idSpaces.ts',
+        'quantity.ts',
+        'spelling.ts',
+        'toolchain.ts',
+        'vitality.ts',
+      ],
+      'web/src/lib no longer holds the modules this suite was built around. A module that left '
+        + 'took its test with it and nothing else here would have said so; a module that arrived '
+        + 'has no parity check until somebody writes one. Whichever it is, the list belongs in '
+        + 'this assertion in the same change.',
+    );
+    // And each has a test file that imports it. A module kept with its test deleted is the same
+    // hole one file further along.
+    for (const module of onDisk) {
+      const name = module.replace(/\.ts$/, '');
+      const testPath = join(repositoryRoot(), 'web', 'test', `${name}.test.ts`);
+      const text = readFileSync(testPath, 'utf8');
+      assert.ok(
+        text.includes(`../src/lib/${module}`),
+        `web/test/${name}.test.ts exists but does not import ../src/lib/${module}, so the module `
+          + `is unchecked despite having a test file named for it`,
       );
     }
   });

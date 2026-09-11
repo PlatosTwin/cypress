@@ -20,8 +20,17 @@
  * caused it. `sourcesTheWebSuiteReads` below is the list of files that gap covers, and
  * `test/sources.test.ts` asserts the workflow names every one of them in its `paths:` — which is
  * what closes it.
+ *
+ * **And these parsers read VALUES, not arithmetic.** A constant, a range, an enum's cases, a
+ * switch table. They are blind to the expressions that combine those values and to the operators
+ * that gate them, which is how two one-character edits to the real Swift passed the whole suite in
+ * PR #173's review. `swiftDeclaration` below, and the tripwire table in `test/swiftDrift.test.ts`
+ * that uses it, are the answer to that; both carry the full account. Value parsing and the
+ * tripwire are complements, not alternatives — the first says what the Swift MEANS, the second
+ * only that it has not moved.
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -97,6 +106,120 @@ export function swiftDoubleLet(source: string, name: string): number {
     fail(`no \`let ${name}: Double = <number>\` in the source`);
   }
   return Number(match[1].replace(/_/g, ''));
+}
+
+/**
+ * A whole Swift declaration — signature through its closing brace — normalized and fingerprinted.
+ *
+ * ── Why this exists, and what it is NOT ──────────────────────────────────────────────────────
+ *
+ * The other Swift parsers on this page read VALUES: a constant, a range, an enum's cases, a
+ * switch table. They are blind to everything between those values — the arithmetic that combines
+ * them and the comparisons that gate them. PR #173's review demonstrated the hole with two
+ * one-character edits to the real Swift that left the whole web suite green while the two
+ * implementations genuinely diverged:
+ *
+ *   * `Geometry.swift`, `metersPerDegreeLat` from `111_320.0` to `111_000.0` — an un-annotated,
+ *     function-local `let` that `swiftDoubleLet` cannot see by design. The two implementations
+ *     then snapped the same coordinate 8.2 m apart in latitude, and the suite said 103 of 103.
+ *   * `CoreEntity.swift`, `gpsAccuracyM <= …` to `<` — the D6 boundary. The test pins the number
+ *     15 three times and never the comparison, so it stayed green.
+ *
+ * A fingerprint over the declaration's own text catches both, and catches the next one too,
+ * because it is not a list of the things somebody thought to look for.
+ *
+ * **It is a tripwire, not a parity check.** It proves the Swift has not been edited since the
+ * fingerprint was recorded. It cannot tell an edit that changes behavior from one that does not,
+ * and it says nothing at all about whether the TypeScript agrees with the Swift — that is the
+ * recorded `swift-reference.json` run's job, and re-recording BOTH is what a legitimate Swift
+ * change owes. A cosmetic edit going red here is the tripwire working, not a false positive: a
+ * human reads the diff and decides, which is exactly the step the review found missing.
+ *
+ * ── The normalization, and its one known blind spot ──────────────────────────────────────────
+ *
+ * Comments are dropped (a `//` line, a `/* … *\/` block, nested as Swift allows) and every run of
+ * whitespace collapses to a single space, so reflowing a doc comment or re-indenting a body does
+ * not trip the wire. Everything else is kept verbatim, operators and parentheses included.
+ *
+ * The scanner tracks `"…"` string literals so a `//` inside one is not read as a comment. It does
+ * NOT know about `"""` multi-line literals. If one ever appears inside a fingerprinted
+ * declaration the string state flips and the scan ends somewhere arbitrary — which produces a
+ * different, still deterministic, fingerprint, so the wire trips rather than failing open. There
+ * are none in the declarations listed today, and this is recorded so the next reader does not
+ * have to re-derive whether it matters.
+ */
+export interface SwiftDeclaration {
+  /** The declaration exactly as the file has it, signature through closing brace. */
+  readonly source: string;
+  /** The same with comments dropped and whitespace runs collapsed to one space. */
+  readonly normalized: string;
+  /** `sha256` of `normalized`, hex — what the tripwire table records. */
+  readonly fingerprint: string;
+}
+
+export function swiftDeclaration(source: string, signature: string): SwiftDeclaration {
+  const first = source.indexOf(signature);
+  if (first < 0) fail(`no \`${signature}\` in the source`);
+  // Ambiguity is refused rather than resolved by taking the first. `Quantity.series` and
+  // `MeasurementMethod.series` share a prefix in one file, and a parser that quietly picked one
+  // of two would fingerprint whichever the file happened to list first.
+  if (source.indexOf(signature, first + 1) >= 0) {
+    fail(`\`${signature}\` appears more than once in the source — narrow the signature`);
+  }
+
+  let mode: 'code' | 'line' | 'block' | 'string' = 'code';
+  let blockDepth = 0;
+  let braceDepth = 0;
+  let sawBrace = false;
+  let end = -1;
+  const out: string[] = [];
+
+  for (let i = first; i < source.length; i += 1) {
+    const c = source[i] as string;
+    const next = source[i + 1];
+    if (mode === 'code') {
+      if (c === '/' && next === '/') { mode = 'line'; out.push(' '); i += 1; continue; }
+      if (c === '/' && next === '*') { mode = 'block'; blockDepth = 1; out.push(' '); i += 1; continue; }
+      if (c === '"') { mode = 'string'; out.push(c); continue; }
+      if (c === '{') { braceDepth += 1; sawBrace = true; }
+      if (c === '}') {
+        braceDepth -= 1;
+        out.push(c);
+        if (sawBrace && braceDepth === 0) { end = i; break; }
+        continue;
+      }
+      out.push(c);
+      continue;
+    }
+    if (mode === 'line') { if (c === '\n') { mode = 'code'; out.push(' '); } continue; }
+    if (mode === 'block') {
+      if (c === '/' && next === '*') { blockDepth += 1; i += 1; continue; }
+      if (c === '*' && next === '/') {
+        blockDepth -= 1; i += 1;
+        if (blockDepth === 0) { mode = 'code'; out.push(' '); }
+        continue;
+      }
+      continue;
+    }
+    // string
+    out.push(c);
+    if (c === '\\') { const escaped = source[i + 1]; if (escaped !== undefined) out.push(escaped); i += 1; continue; }
+    if (c === '"') mode = 'code';
+  }
+
+  if (end < 0) {
+    fail(
+      `\`${signature}\` has no balanced \`{ … }\` body after it — the declaration runs to the end `
+        + `of the file, which means the signature matched something this parser cannot bound`,
+    );
+  }
+
+  const normalized = out.join('').replace(/\s+/g, ' ').trim();
+  return {
+    source: source.slice(first, end + 1),
+    normalized,
+    fingerprint: createHash('sha256').update(normalized, 'utf8').digest('hex'),
+  };
 }
 
 /** `… let <name>: ClosedRange<Double> = <low>...<high>`. */
