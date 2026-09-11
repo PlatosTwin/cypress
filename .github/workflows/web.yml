@@ -15,13 +15,21 @@ on:
     branches: [main]
     # An ALLOW-list, which is the opposite direction from `testflight.yml`'s deny-list, and the
     # asymmetry is deliberate. There the danger is a new path silently ceasing to ship, so
-    # anything unnamed still ships. Here the only cost of not running is not running a suite that
-    # tests one directory: a path outside `web/` cannot affect this app, and a new one inside it
-    # is covered by the wildcard. The two harness scripts are named because they are how the
+    # anything unnamed still ships. Here the danger is the reverse: a change this suite READS but
+    # the list does not name starts no job at all, so the guard goes red later, on an unrelated
+    # pull request whose author did not cause it. **A file a web test opens is a file that
+    # triggers the web suite.** Everything inside `web/` is covered by the wildcard; everything
+    # outside it is named below, one path per line, each with the reader that makes it a
+    # dependency — so adding one is an addition to that block and nothing else.
+    # The two harness scripts are named because they are how the
     # suite is run and judged — a change to them proves itself by running the suite THROUGH them,
     # exactly as `Tools/run_tests.sh` does on the iOS side.
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      # The DIRECTORY, not its six files: tokens.test.ts lists it and fails if a seventh .swift
+      # appears there unread, so that seventh file has to start this job too.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
@@ -29,6 +37,10 @@ on:
     branches: [main, 'release/**']
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      # The DIRECTORY, not its six files: tokens.test.ts lists it and fails if a seventh .swift
+      # appears there unread, so that seventh file has to start this job too.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
