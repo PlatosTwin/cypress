@@ -51,8 +51,15 @@ export interface Fixture {
  * happen to say."
  */
 export const FIXTURE = {
-  /** Lowercase, as every pack stores its uuids — see `treeByUUID`'s note on the BINARY index. */
-  aliveTreeUUID: '11111111-1111-4111-8111-111111111111',
+  /**
+   * Lowercase, as every pack stores its uuids — see `treeByUUID`'s note on the BINARY index.
+   *
+   * **It carries hex LETTERS on purpose.** An all-digit uuid is unchanged by `toUpperCase()`, so
+   * the test that proves an uppercase uuid still matches would compare a string with itself and
+   * pass against a query that did no normalization at all. It also sorts before the others, which
+   * keeps `treesInBounds`'s `ORDER BY uuid` stable and readable.
+   */
+  aliveTreeUUID: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
   vacantTreeUUID: '22222222-2222-4222-8222-222222222222',
   farAwayTreeUUID: '33333333-3333-4333-8333-333333333333',
   softDeletedTreeUUID: '44444444-4444-4444-8444-444444444444',

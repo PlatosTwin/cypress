@@ -1,0 +1,229 @@
+import { after, describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { openPack, type Pack } from '../src/lib/pack/pack.ts';
+import { packIdentity, treeByUUID, treeCount, treesInBounds } from '../src/lib/pack/queries.ts';
+import {
+  FIXTURE,
+  buildPack,
+  buildShortNameWithoutIdSpacePack,
+  type Fixture,
+} from './support/packFixture.ts';
+
+const open: Fixture[] = [];
+const packs: Pack[] = [];
+function generation(n: 14 | 15 | 16 | 17): Pack {
+  const fixture = buildPack(n);
+  open.push(fixture);
+  const pack = openPack(fixture.path, { immutable: false });
+  packs.push(pack);
+  return pack;
+}
+after(() => {
+  for (const pack of packs) pack.close();
+  for (const fixture of open) fixture.cleanup();
+});
+
+/** The box that holds the two Mission trees and excludes the far-away one. */
+const missionBounds = {
+  minLatitude: 37.77,
+  maxLatitude: 37.78,
+  minLongitude: -122.43,
+  maxLongitude: -122.41,
+};
+
+describe('one tree by uuid', () => {
+  it('returns the row, field for field', () => {
+    const tree = treeByUUID(generation(17), FIXTURE.aliveTreeUUID);
+    assert.notEqual(tree, null, 'the alive tree was not found — every assertion below would be vacuous');
+    assert.ok(tree !== null);
+    assert.equal(tree.uuid, FIXTURE.aliveTreeUUID);
+    assert.equal(tree.latitude, FIXTURE.aliveTreeLatitude);
+    assert.equal(tree.longitude, FIXTURE.aliveTreeLongitude);
+    assert.equal(tree.status, 'alive');
+    assert.equal(tree.address, '100 Valencia St');
+    assert.equal(tree.speciesScientificName, FIXTURE.speciesScientificName);
+    assert.equal(tree.speciesCommonName, FIXTURE.speciesCommonName);
+    assert.equal(tree.neighborhoodName, FIXTURE.neighborhoodName);
+    assert.equal(tree.cityName, FIXTURE.cityDisplayName);
+  });
+
+  it('a vacant planting site has no species, and is a row all the same', () => {
+    // The LEFT JOIN this asserts is the difference between "no species" and "no tree". A vacant
+    // site is a real record — it is what a reader plants into — and an INNER JOIN would delete it.
+    const tree = treeByUUID(generation(17), FIXTURE.vacantTreeUUID);
+    assert.ok(tree !== null, 'the vacant site vanished, which an INNER JOIN would do');
+    assert.equal(tree.status, 'vacant_site');
+    assert.equal(tree.speciesScientificName, null);
+    assert.equal(tree.speciesCommonName, null);
+    assert.equal(tree.neighborhoodName, FIXTURE.neighborhoodName);
+  });
+
+  it('matches an uppercase uuid, because the app binds uppercase and packs store lowercase', () => {
+    // `lower(?)` in the SQL. Foundation's canonical UUID string is uppercase; every pack stores
+    // lowercase. Without the normalization this returns null and looks like a missing tree.
+    const pack = generation(17);
+    const upper = FIXTURE.aliveTreeUUID.toUpperCase();
+    assert.notEqual(upper, FIXTURE.aliveTreeUUID, 'the specimen is not actually uppercase');
+    assert.equal(treeByUUID(pack, upper)?.uuid, FIXTURE.aliveTreeUUID);
+  });
+
+  it('returns null for a uuid that is not there', () => {
+    assert.equal(treeByUUID(generation(17), '00000000-0000-4000-8000-000000000000'), null);
+  });
+
+  it('does not return a soft-deleted tree', () => {
+    // The row exists in the table. It must not come back through any read here.
+    const pack = generation(17);
+    const raw = pack.db
+      .prepare('SELECT COUNT(*) AS n FROM trees WHERE deleted_at IS NOT NULL')
+      .get();
+    assert.equal(
+      Number((raw as Record<string, unknown>)['n']),
+      1,
+      'the fixture holds no soft-deleted tree, so this test proves nothing',
+    );
+    assert.equal(treeByUUID(pack, FIXTURE.softDeletedTreeUUID), null);
+  });
+});
+
+describe('the city-name fallback, which is three sources and not one', () => {
+  it('a generation-16-or-newer pack names the city from dim_city', () => {
+    for (const n of [16, 17] as const) {
+      assert.equal(
+        treeByUUID(generation(n), FIXTURE.aliveTreeUUID)?.cityName,
+        FIXTURE.cityDisplayName,
+        `s${n} did not resolve its city through dim_city`,
+      );
+    }
+  });
+
+  it('a generation-15 pack falls back to id_spaces.short_name, and the text proves which', () => {
+    // The two sources carry DELIBERATELY DIFFERENT strings in the fixture — "San Francisco" in
+    // `dim_city.display_name`, "SF (short name)" in `id_spaces.short_name`. If they matched, this
+    // assertion would pass whichever source the query read, which is a test agreeing with itself.
+    assert.notEqual(FIXTURE.cityDisplayName, FIXTURE.shortName);
+    assert.equal(treeByUUID(generation(15), FIXTURE.aliveTreeUUID)?.cityName, FIXTURE.shortName);
+  });
+
+  it('a generation-14 pack has neither, and says null rather than inventing one', () => {
+    // DECISIONS constraint 15: do not invent civic content. Null is the honest answer.
+    assert.equal(treeByUUID(generation(14), FIXTURE.aliveTreeUUID)?.cityName, null);
+  });
+
+  it('short_name with no trees.id_space prepares and answers null, instead of throwing', () => {
+    // The prepare-time collision the gating exists for. A projection of `isp.short_name` gated on
+    // `hasCivicShortNames` ALONE references an alias its own join never introduced, and SQLite
+    // answers `no such column: isp.short_name` when the statement is prepared — a failure that
+    // looks like a naming bug and is a gating bug.
+    const fixture = buildShortNameWithoutIdSpacePack();
+    open.push(fixture);
+    const pack = openPack(fixture.path, { immutable: false });
+    packs.push(pack);
+    assert.equal(pack.schema.hasCivicShortNames, true);
+    assert.equal(pack.schema.hasIdSpace, false);
+    const tree = treeByUUID(pack, FIXTURE.aliveTreeUUID);
+    assert.ok(tree !== null, 'the degenerate pack returned no tree at all');
+    assert.equal(tree.cityName, null);
+  });
+});
+
+describe('trees in a bounding box', () => {
+  it('returns the trees inside it and not the one outside', () => {
+    const rows = treesInBounds(generation(17), missionBounds, 50);
+    assert.deepEqual(
+      rows.map((row) => row.uuid),
+      [FIXTURE.aliveTreeUUID, FIXTURE.vacantTreeUUID],
+      'the box did not return exactly the two Mission trees',
+    );
+  });
+
+  it('the excluded tree is excluded for being outside, not for being absent', () => {
+    // The control that separates "the filter works" from "the query returns nothing". Widen the
+    // box to hold all three and the third appears.
+    const pack = generation(17);
+    const wide = { minLatitude: 30, maxLatitude: 45, minLongitude: -125, maxLongitude: -70 };
+    const uuids = treesInBounds(pack, wide, 50).map((row) => row.uuid);
+    assert.equal(uuids.length, 3, `a box holding every live tree returned ${uuids.length}`);
+    assert.ok(uuids.includes(FIXTURE.farAwayTreeUUID));
+  });
+
+  it('excludes the soft-deleted tree even though it sits inside the box', () => {
+    // It shares the alive tree's coordinates exactly, so the R*Tree returns it and only the
+    // predicate can drop it. That is what makes this an assertion about the predicate.
+    const uuids = treesInBounds(generation(17), missionBounds, 50).map((row) => row.uuid);
+    assert.equal(uuids.includes(FIXTURE.softDeletedTreeUUID), false);
+  });
+
+  it('honors the limit', () => {
+    assert.equal(treesInBounds(generation(17), missionBounds, 1).length, 1);
+  });
+
+  it('refuses a limit that is not a positive whole number', () => {
+    // A read surface that can be asked for every row by a query string has a denial of service in
+    // it, and a default nobody chose is how that ships.
+    const pack = generation(17);
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      assert.throws(() => treesInBounds(pack, missionBounds, bad), RangeError);
+    }
+  });
+
+  it('returns the same rows on every generation, because geometry did not change', () => {
+    for (const n of [14, 15, 16, 17] as const) {
+      assert.deepEqual(
+        treesInBounds(generation(n), missionBounds, 50).map((row) => row.uuid),
+        [FIXTURE.aliveTreeUUID, FIXTURE.vacantTreeUUID],
+        `s${n} returned a different set for the same box`,
+      );
+    }
+  });
+
+  it('an empty box returns nothing, and that is not how a broken query looks', () => {
+    // Asserted beside the populated case on purpose. On its own an empty result is exactly what a
+    // query reading the wrong table produces.
+    const empty = { minLatitude: -1, maxLatitude: -0.9, minLongitude: -1, maxLongitude: -0.9 };
+    assert.deepEqual(treesInBounds(generation(17), empty, 50), []);
+  });
+});
+
+describe('counting and identity', () => {
+  it('counts the live trees and not the soft-deleted one', () => {
+    const pack = generation(17);
+    assert.equal(treeCount(pack), FIXTURE.liveTreeCount);
+    const total = pack.db.prepare('SELECT COUNT(*) AS n FROM trees').get();
+    assert.equal(
+      Number((total as Record<string, unknown>)['n']),
+      FIXTURE.liveTreeCount + 1,
+      'the table holds no soft-deleted row, so treeCount excluding one proves nothing',
+    );
+  });
+
+  it('a generation-17 pack states its region, its level and its city', () => {
+    const identity = packIdentity(generation(17));
+    assert.deepEqual(identity, {
+      packId: FIXTURE.packId,
+      regionDisplayName: FIXTURE.regionDisplayName,
+      regionLevel: FIXTURE.regionLevel,
+      cityDisplayName: FIXTURE.cityDisplayName,
+      cityState: 'CA',
+      urbanForestryURL: 'https://example.invalid/urban-forestry',
+      statedPackId: FIXTURE.packId,
+      statedSchemaVersion: 17,
+    });
+  });
+
+  it('a generation-16 pack has a city and no region, and says so with nulls', () => {
+    const identity = packIdentity(generation(16));
+    assert.equal(identity.packId, null);
+    assert.equal(identity.regionLevel, null);
+    assert.equal(identity.cityDisplayName, FIXTURE.cityDisplayName);
+    assert.equal(identity.statedSchemaVersion, 16);
+  });
+
+  it('a generation-15 pack has neither table, and reads without throwing', () => {
+    const identity = packIdentity(generation(15));
+    assert.equal(identity.packId, null);
+    assert.equal(identity.cityDisplayName, null);
+    assert.equal(identity.statedSchemaVersion, 15);
+  });
+});
