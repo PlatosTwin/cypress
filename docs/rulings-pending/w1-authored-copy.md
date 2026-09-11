@@ -54,3 +54,76 @@ W1 renders what W-G publishes? Either answer is fine; the two documents should s
 Nothing in this branch resists the addition. The contributed elements are *omitted*, not stubbed, so
 no copy has to be unsaid; the fact column is a list `facts()` builds from a model, and a row absent
 for lack of a source is indistinguishable from a row not yet written.
+
+---
+
+## Addendum, from branch `web/w1-live-facts` — the gap above is closed, and it cost two more strings
+
+**The owner ruled that W-C stays open and W1 fills the gap.** It does: `src/lib/publicTreeRead.ts`
+calls `GET /api/v1/public/trees/{id}` and the fact column now draws §W1's `Height` row, a live
+`Trunk · DBH` reading in place of the city's bucket, and a `Beloved` row. The question in the
+section above — *does W-C count as done with the pack half alone* — is answered by the owner and
+needs no ruling here; what follows are the decisions that filling it required.
+
+### Two more authored strings (constraint 21), both conservative, both wanting ratification
+
+3. **`Beloved`** — the label of a row **§W1 does not draw at all**. It is here because the owner
+   ruled on 2026-09-10 that the beloved state ships on the public tree page, *as a state and not a
+   rank* (`public-tree-read.md` §1a). Nothing in `Cypress/`, in the mocks or in `SCREENS.md` says
+   the word `beloved`; R27.1 does, and it is R27.1's state, so R27.1's word is the label.
+
+   The value is **`3 favorites`**, not `3 people`. The count is of distinct account-backed favorite
+   owners, so one person with two Apple IDs is two of them, and `people` would overstate what the
+   number is. The plural agrees with the number rather than being hard-coded: the floor makes `1`
+   unreachable today, and `1 favorites` would be wrong on the day somebody moves the floor.
+
+   **Where it sits:** last, after every row §W1 draws. The specification's order is a
+   transcription and an undrawn row has no place in it to claim.
+
+4. **`Community contributions could not be loaded, so this page shows the city record alone.`** —
+   one sentence, shown only when this page could not ask: the API base is unset or unusable, the
+   service refused, timed out, answered a non-200, or answered a body this build cannot read.
+
+   It is **not** shown when the service answers and the tree has nothing. That case renders
+   nothing, which is the house style and misleads nobody. The sentence exists for the opposite
+   case, and the reason is the whole design: without it, "this page could not ask" and "nobody has
+   ever measured this tree" would render identically, and the page would assert the second every
+   time the first was true. `CYPRESS_PACK_DIR`'s own comment is the same argument — *a default
+   would make "not mounted" look exactly like "mounted and empty"*.
+
+   It names no host, no variable and no status code. A reader is owed the fact; the operator's
+   diagnosis goes to the process log, which is where W-C already sends this page's refusals.
+   `contributions` rather than `measurements`, because the beloved state is not a measurement and
+   this sentence covers its absence too.
+
+**Ratify both, or replace the wording.**
+
+### Three decisions taken conservatively, each named so the owner can overrule it
+
+- **A vacant planting site draws no community reading, even when the service has one.**
+  `SitePresentation.stats` refuses a measurement on a site because *"the second is a claim about a
+  tree"*, and a reading is no less a claim about a tree for having been taped by a person. A
+  reading against a basin the city records as empty is a disagreement with the city record — which
+  is `data_dispute`'s subject, and which `public.go` withholds from this endpoint by name. The
+  beloved state is kept there: a site can be somebody's favorite, and saying so asserts no tree.
+  **The alternative** is to draw it, which would make W1 the surface where a community measurement
+  silently contradicts the city's own lifecycle column, with nothing on the page saying so.
+
+- **`unavailable` and `unconfigured` say the same thing to a reader.** They are one fact to
+  somebody reading the page — this page cannot say — and two facts to an operator, which is what
+  `data-community` in the markup and the log line carry. **The alternative** is a second sentence,
+  which puts a deployment's internal state in a fact column.
+
+- **The page sends `Cache-Control: public, max-age=60`,** which is the endpoint's own header and
+  the ruling's §8b ceiling on the round that renders the page. It is sent on every answer, not
+  only on the ones carrying community values: a page with no header is one a cache may keep by
+  heuristic for as long as it likes, and the next reader's render is where a withdrawn value
+  would reappear.
+
+### One thing this branch did NOT do, and it is the owner's to weigh
+
+**The OpenGraph card does not read the community half.** `og.svg.ts` was being edited in parallel
+this round and this branch stayed out of it, so the card renders the pack half alone — its state is
+`notRequested`, which is honest but is a disagreement with §W1's own caption: *"the OpenGraph image
+is rendered from the same three ingredients so the group-chat preview and the page agree."* It is on
+the chip backlog. Nothing about the card is wrong today; it is simply narrower than the page.

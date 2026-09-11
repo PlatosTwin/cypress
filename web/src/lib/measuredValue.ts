@@ -72,7 +72,7 @@ export function methodBadge(method: MeasurementMethod): Badge {
   if (badge === undefined) {
     // `MeasurementMethod` is a closed enum in Swift and an erased union here, so this is the one
     // place a fourth value could arrive. It throws rather than defaulting: a badge that guessed
-    // would put an unlabelled number on a public page, which is the laundering D7 forbids.
+    // would put an unlabeled number on a public page, which is the laundering D7 forbids.
     throw new Error(
       `no badge for measurement method ${JSON.stringify(method)} — the registered methods are `
         + `${Object.keys(methodBadges).join(', ')}, and a number drawn without its method would be `
