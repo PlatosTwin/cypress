@@ -15,23 +15,172 @@ on:
     branches: [main]
     # An ALLOW-list, which is the opposite direction from `testflight.yml`'s deny-list, and the
     # asymmetry is deliberate. There the danger is a new path silently ceasing to ship, so
-    # anything unnamed still ships. Here the only cost of not running is not running a suite that
-    # tests one directory: a path outside `web/` cannot affect this app, and a new one inside it
-    # is covered by the wildcard. The two harness scripts are named because they are how the
-    # suite is run and judged — a change to them proves itself by running the suite THROUGH them,
-    # exactly as `Tools/run_tests.sh` does on the iOS side.
+    # anything unnamed still ships. Here the cost of not running is not running a suite — so the
+    # list has to name every file the suite actually reads, and nothing else.
+    #
+    # The two harness scripts are named because they are how the suite is run and judged — a
+    # change to them proves itself by running the suite THROUGH them, exactly as
+    # `Tools/run_tests.sh` does on the iOS side.
+    #
+    # **The six paths below `web/**` are new with the pack read layer (W-B), and they exist
+    # because "a path outside `web/` cannot affect this app" — what this comment said when the
+    # list was three entries long — STOPPED BEING TRUE the moment a web test read a Swift file.**
+    # `web/test/pack-versions.test.ts` asserts that `web/src/lib/pack/versions.ts` still agrees
+    # with `SeedDatabase.newestKnownSchemaVersion`, `CityManifest.knownFormat(s)` and
+    # `Tools/publish_cities.py`'s two constants; `web/test/support/packFixture.ts` builds every
+    # test pack by executing `Fixtures/seed/schema.sql`; and `pinned-seed.json` is what says
+    # which seed `pack-real-seed.test.ts` is allowed to believe.
+    #
+    # A drift guard that CI skips on exactly the diff that causes the drift is worse than no
+    # guard, because its green is read as evidence. Bumping `newestKnownSchemaVersion` in Swift
+    # touches no `web/` path; without these entries the assertion that the web still reads the
+    # same generation would first run on some later, unrelated web change, and would then look
+    # like that change's fault. The rule for this list: **a file a web test opens is a file that
+    # triggers the web suite.**
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      # The DIRECTORY, not its six files: tokens.test.ts lists it and fails if a seventh .swift
+      # appears there unread, so that seventh file has to start this job too.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
+      # Read by the web suite. See the note above: a file a web test opens triggers the suite.
+      - 'Cypress/Data/Store/SeedDatabase.swift'
+      - 'Cypress/Data/Store/AppSchema.swift'
+      - 'Cypress/Data/Cities/CityManifest.swift'
+      - 'Tools/publish_cities.py'
+      - 'Fixtures/seed/schema.sql'
+      - 'Fixtures/seed/pinned-seed.json'
+      # ── The sources W-B's ports are checked AGAINST ────────────────────────────────────────
+      # `web/src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` are second copies of
+      # rules that already exist in Swift and in Python, and `web/test/*.test.ts` proves each copy
+      # still agrees with its original by PARSING the original at run time. A check that does not
+      # run on the change it guards is not a check: without these lines a rewritten dieback band
+      # or a moved `growthChartingLimitM` would merge with the iOS suite green and the web's
+      # disagreement would surface on some later, unrelated web commit.
+      #
+      # The list is asserted, not trusted. `web/test/sources.test.ts` holds the same paths in
+      # `sourcesTheWebSuiteReads` and fails if either filter omits one, so the pair cannot drift
+      # in the direction that matters (a new parity check with no trigger behind it).
+      - 'Cypress/Core/Rubric/Vitality.swift'
+      - 'Cypress/Core/Units/Quantity.swift'
+      - 'Cypress/Core/Models/Geometry.swift'
+      - 'Cypress/Core/Models/CoreEntity.swift'
+      - 'Cypress/Core/Models/TreeMeasurement.swift'
+      - 'Cypress/Core/Models/Species.swift'
+      - 'Tools/inventory_contract.py'
+      - 'Tools/build_seed.py'
+      - 'docs/distilled/PRODUCT.md'
+      - 'docs/distilled/SCREENS.md'
+      # ── W-C. The public tree page borrows its gradient and its copy ───────────────────────
+      # `web/src/lib/gradients.ts` re-emits CypressGradient.swift's recipes as CSS and
+      # `web/src/lib/cityRecord.ts` re-implements the labels and formats the cold tree profile
+      # already draws over these columns. `web/test/{gradients,cityRecord,treePage}.test.ts` parse
+      # all six at run time, and `web/test/swiftDrift.test.ts` fingerprints four declarations in
+      # two of them. CypressGradient.swift is inside the Tokens directory above and is named again
+      # here on purpose: `sources.test.ts` matches this list literally, and a directory glob
+      # standing in for a file is a coupling nobody could check.
+      - 'Cypress/DesignSystem/Tokens/CypressGradient.swift'
+      - 'Cypress/DesignSystem/Components/MethodBadge.swift'
+      - 'Cypress/DesignSystem/Components/SegmentedControl.swift'
+      - 'Cypress/Features/TreeProfile/CityRecordPresentation.swift'
+      - 'Cypress/Features/TreeProfile/TreeProfilePresentation.swift'
+      - 'Cypress/Features/Site/SitePresentation.swift'
+      # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
+      - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
+      # ── W-C. The OpenGraph card is rasterized from font FILES ─────────────────────────────
+      # `web/fonts/` is a checked-in copy of these five, because `@resvg/resvg-js` takes fonts as
+      # paths on disk and this image is built from a context of `web/`. `web/test/ogRaster.test.ts`
+      # hashes each copy against its original: re-hint a face, touch no `web/` path, and without
+      # these lines the card's glyphs change with the web suite never having started.
+      - 'Cypress/Resources/Fonts/AlegreyaSans-Bold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-SemiBold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-Italic.ttf'
+      - 'Cypress/Resources/Fonts/SplineSansMono-Regular.ttf'
+      - 'Cypress/Resources/Fonts/LICENSE.txt'
+      # ── The community half (W-C, over #163's public read) ──────────────────────────────────
+      # `web/src/lib/publicTreeRead.ts` decodes `GET /api/v1/public/trees/{id}`.
+      # `web/test/publicTreeRead.test.ts` parses the handler's own `json:` tags for the key set
+      # and drives a local stub server from the handler's own golden bodies, so a change to any
+      # of these three is a change to the contract this page renders — and runs this suite.
+      - 'server/internal/api/public.go'
+      - 'server/testdata/public_tree.json'
+      - 'server/testdata/public_tree_empty.json'
   pull_request:
     branches: [main, 'release/**']
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      # The DIRECTORY, not its six files: tokens.test.ts lists it and fails if a seventh .swift
+      # appears there unread, so that seventh file has to start this job too.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
+      # Read by the web suite. See the note above: a file a web test opens triggers the suite.
+      - 'Cypress/Data/Store/SeedDatabase.swift'
+      - 'Cypress/Data/Store/AppSchema.swift'
+      - 'Cypress/Data/Cities/CityManifest.swift'
+      - 'Tools/publish_cities.py'
+      - 'Fixtures/seed/schema.sql'
+      - 'Fixtures/seed/pinned-seed.json'
+      # ── The sources W-B's ports are checked AGAINST ────────────────────────────────────────
+      # `web/src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` are second copies of
+      # rules that already exist in Swift and in Python, and `web/test/*.test.ts` proves each copy
+      # still agrees with its original by PARSING the original at run time. A check that does not
+      # run on the change it guards is not a check: without these lines a rewritten dieback band
+      # or a moved `growthChartingLimitM` would merge with the iOS suite green and the web's
+      # disagreement would surface on some later, unrelated web commit.
+      #
+      # The list is asserted, not trusted. `web/test/sources.test.ts` holds the same paths in
+      # `sourcesTheWebSuiteReads` and fails if either filter omits one, so the pair cannot drift
+      # in the direction that matters (a new parity check with no trigger behind it).
+      - 'Cypress/Core/Rubric/Vitality.swift'
+      - 'Cypress/Core/Units/Quantity.swift'
+      - 'Cypress/Core/Models/Geometry.swift'
+      - 'Cypress/Core/Models/CoreEntity.swift'
+      - 'Cypress/Core/Models/TreeMeasurement.swift'
+      - 'Cypress/Core/Models/Species.swift'
+      - 'Tools/inventory_contract.py'
+      - 'Tools/build_seed.py'
+      - 'docs/distilled/PRODUCT.md'
+      - 'docs/distilled/SCREENS.md'
+      # ── W-C. The public tree page borrows its gradient and its copy ───────────────────────
+      # `web/src/lib/gradients.ts` re-emits CypressGradient.swift's recipes as CSS and
+      # `web/src/lib/cityRecord.ts` re-implements the labels and formats the cold tree profile
+      # already draws over these columns. `web/test/{gradients,cityRecord,treePage}.test.ts` parse
+      # all six at run time, and `web/test/swiftDrift.test.ts` fingerprints four declarations in
+      # two of them. CypressGradient.swift is inside the Tokens directory above and is named again
+      # here on purpose: `sources.test.ts` matches this list literally, and a directory glob
+      # standing in for a file is a coupling nobody could check.
+      - 'Cypress/DesignSystem/Tokens/CypressGradient.swift'
+      - 'Cypress/DesignSystem/Components/MethodBadge.swift'
+      - 'Cypress/DesignSystem/Components/SegmentedControl.swift'
+      - 'Cypress/Features/TreeProfile/CityRecordPresentation.swift'
+      - 'Cypress/Features/TreeProfile/TreeProfilePresentation.swift'
+      - 'Cypress/Features/Site/SitePresentation.swift'
+      # The NYC Data Mine disclaimer W1 renders verbatim (R36 (b), R78 rulings 2 and 3).
+      - 'Cypress/Features/Cities/CityDownloadsPresentation.swift'
+      # ── W-C. The OpenGraph card is rasterized from font FILES ─────────────────────────────
+      # `web/fonts/` is a checked-in copy of these five, because `@resvg/resvg-js` takes fonts as
+      # paths on disk and this image is built from a context of `web/`. `web/test/ogRaster.test.ts`
+      # hashes each copy against its original: re-hint a face, touch no `web/` path, and without
+      # these lines the card's glyphs change with the web suite never having started.
+      - 'Cypress/Resources/Fonts/AlegreyaSans-Bold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-SemiBold.ttf'
+      - 'Cypress/Resources/Fonts/SourceSerif4-Italic.ttf'
+      - 'Cypress/Resources/Fonts/SplineSansMono-Regular.ttf'
+      - 'Cypress/Resources/Fonts/LICENSE.txt'
+      # ── The community half (W-C, over #163's public read) ──────────────────────────────────
+      # `web/src/lib/publicTreeRead.ts` decodes `GET /api/v1/public/trees/{id}`.
+      # `web/test/publicTreeRead.test.ts` parses the handler's own `json:` tags for the key set
+      # and drives a local stub server from the handler's own golden bodies, so a change to any
+      # of these three is a change to the contract this page renders — and runs this suite.
+      - 'server/internal/api/public.go'
+      - 'server/testdata/public_tree.json'
+      - 'server/testdata/public_tree_empty.json'
   # The escape hatch, the same one `testflight.yml` keeps: a run by hand when a change elsewhere
   # (a Node bump, a lockfile audit) needs this suite run without touching a path above.
   workflow_dispatch:

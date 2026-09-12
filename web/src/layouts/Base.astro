@@ -1,18 +1,89 @@
 ---
 /**
- * The one page shell, until W-B lands real tokens.
+ * The one page shell.
  *
  * Deliberately unstyled beyond a reading measure and a color pair. The design system is 213
  * colors, 224 spacing values and 105 font declarations of Swift `static let`s, and W-B exports
  * them mechanically with a test that the export still matches its source. Hand-typing a hex here
  * would be the first copy of a fact that already has an owner — the same mistake in a new
  * language.
+ *
+ * `tokens.css` is imported here and consumed by the pages. W1 (`src/styles/w1.css`) is the first
+ * page that draws from it.
+ *
+ * ── `indexable` and the robots tag ───────────────────────────────────────────────────────────
+ *
+ * W-A shipped `noindex` on every page because no page was a real page. W1 is one, so it opts in
+ * and everything else stays out — the placeholder at `/` is still scaffolding and a search engine
+ * finding it first would be worse than not being found. The default is therefore `false`: a new
+ * page is not indexable until somebody decides it is.
+ *
+ * ── `main` ──────────────────────────────────────────────────────────────────────────────────
+ *
+ * The prose measure lives on `main`, and a page that is not prose — W1 is a two-column layout —
+ * asks for `bare` and takes the whole viewport. One measure per page either way; the two never mix
+ * on one page, which is the failure that leaves a paragraph wrapping early beside a full-width
+ * table.
  */
+import '../styles/tokens.css';
+
 interface Props {
   title: string;
+  /** `<meta name="description">` and, when `openGraph` is set, its `og:description`. */
+  description?: string | undefined;
+  /** Absolute or root-relative path this page is canonically at. */
+  canonical?: string | undefined;
+  /** Set to publish OpenGraph and Twitter card tags. */
+  openGraph?:
+    | {
+        readonly type: string;
+        readonly siteName: string;
+        /**
+         * Root-relative URL of the card image, the MIME type a crawler should expect, and the
+         * size it will be.
+         *
+         * **`width` and `height` are required rather than optional, and that is the repair of a
+         * real omission.** This shell published `og:image` and `og:image:type` and nothing else,
+         * so every consumer had to fetch the card before it could lay anything out — and the ones
+         * that lay out first and fetch second (Slack's unfurl, LinkedIn's post composer) size the
+         * preview from the tags or fall back to a small square. `src/lib/ogCard.ts` has stated
+         * 1200×630 since the card was written; the page simply never said so. A card whose
+         * dimensions are declared in the code and nowhere in the markup is a card the crawler is
+         * guessing at.
+         *
+         * Required, because an optional one is the same omission with a default.
+         */
+        readonly image?:
+          | {
+              readonly path: string;
+              readonly type: string;
+              readonly width: number;
+              readonly height: number;
+            }
+          | undefined;
+      }
+    | undefined;
+  /** Whether this page may be indexed. Defaults to false — see the note above. */
+  indexable?: boolean | undefined;
+  /** `bare` drops the prose measure; the page owns its own layout. */
+  layout?: 'prose' | 'bare' | undefined;
 }
 
-const { title } = Astro.props;
+const {
+  title,
+  description,
+  canonical,
+  openGraph,
+  indexable = false,
+  layout = 'prose',
+} = Astro.props;
+
+// Absolute URLs, resolved against the URL this request actually arrived on. There is no `site`
+// configured in `astro.config.mjs` and there deliberately is not one yet: the public hostname is
+// `cypressgrove.app` by the web round's second owner decision, and nothing answers on it until
+// W-E. Resolving against `Astro.url` means the tags are right on `localhost:4321` and right on the
+// `.fly.dev` hostname without either being written down twice.
+const absolute = (path: string): string => new URL(path, Astro.url).href;
 ---
 
 <!doctype html>
@@ -21,10 +92,29 @@ const { title } = Astro.props;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
-    <!-- No page is a real page yet, so nothing here should be indexed or previewed. W-C removes
-         this line in the same change that adds the OpenGraph tags SCREENS.md section W1
-         specifies. -->
-    <meta name="robots" content="noindex" />
+    {description && <meta name="description" content={description} />}
+    {canonical && <link rel="canonical" href={absolute(canonical)} />}
+    {!indexable && <meta name="robots" content="noindex" />}
+    {
+      openGraph && (
+        <>
+          <meta property="og:type" content={openGraph.type} />
+          <meta property="og:site_name" content={openGraph.siteName} />
+          <meta property="og:title" content={title} />
+          {description && <meta property="og:description" content={description} />}
+          {canonical && <meta property="og:url" content={absolute(canonical)} />}
+          {openGraph.image && (
+            <>
+              <meta property="og:image" content={absolute(openGraph.image.path)} />
+              <meta property="og:image:type" content={openGraph.image.type} />
+              <meta property="og:image:width" content={String(openGraph.image.width)} />
+              <meta property="og:image:height" content={String(openGraph.image.height)} />
+            </>
+          )}
+          <meta name="twitter:card" content="summary_large_image" />
+        </>
+      )
+    }
     <style>
       :root {
         color-scheme: light dark;
@@ -34,12 +124,12 @@ const { title } = Astro.props;
         font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       }
       /* One reading measure, set once, on the container. */
-      main {
+      main.prose {
         max-width: 42rem;
         margin: 0 auto;
         padding: 3rem 1.25rem;
       }
-      h1 {
+      main.prose h1 {
         font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
         line-height: 1.2;
         margin: 0 0 1rem;
@@ -49,9 +139,10 @@ const { title } = Astro.props;
         font-size: 0.9em;
       }
     </style>
+    <slot name="head" />
   </head>
   <body>
-    <main>
+    <main class={layout === 'prose' ? 'prose' : 'bare'}>
       <slot />
     </main>
   </body>
