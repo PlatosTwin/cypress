@@ -1,0 +1,273 @@
+{
+  "manifest_format": 2,
+  "generated_at": "2026-08-25T07:04:04+00:00",
+  "generator": "Tools/publish_cities.py",
+  "base_url_hint": "https://cypress-cities.t3.tigrisbucket.io",
+  "source_seed": {
+    "generated_at": "2026-07-20T00:00:00+00:00",
+    "tree_count": 1097382,
+    "sha256": "ac7b1cccd7de413c3e3a06be3f5f881e9e6d9c8b53d932268d353dab146ad03e",
+    "build_id": "ac7b1ccc",
+    "path": "seed/ac7b1ccc/cypress-seed.sqlite",
+    "bytes": 706535424
+  },
+  "cities": [
+    {
+      "id": "sf",
+      "display_name": "San Francisco",
+      "coverage": "full",
+      "region": {
+        "level": "city",
+        "parent_city": "sf",
+        "parent_city_display_name": "San Francisco"
+      },
+      "bbox": {
+        "min_lat": 37.70802,
+        "max_lat": 37.819956,
+        "min_lon": -122.511131,
+        "max_lon": -122.366622
+      },
+      "centroid": {
+        "lat": 37.763988,
+        "lon": -122.438877
+      },
+      "tree_count": 145964,
+      "schema_version": 17,
+      "content_rev": "2026-08-22.02",
+      "version": "s17-r2026-08-22.02-ac7b1ccc",
+      "path": "cities/sf/s17-r2026-08-22.02-ac7b1ccc/sf.sqlite",
+      "bytes": 82796544,
+      "sha256": "15d9521e4772f48f420c961ea633730f8c80a7cfeb5ff95c1e82e6d14ac65f00",
+      "attribution": [
+        {
+          "inventory": "sf_city",
+          "name": "SF Public Works street tree inventory",
+          "url": "https://services.arcgis.com/Zs2aNLFN00jrS4gG/arcgis/rest/services/BUF_Street_Trees/FeatureServer/3",
+          "snapshot_on": "2026-08-22"
+        },
+        {
+          "inventory": "sf_datasf",
+          "name": "DataSF Street Tree List",
+          "url": "https://data.sfgov.org/api/views/tkzw-k3nq/rows.csv?accessType=DOWNLOAD",
+          "snapshot_on": "2026-07-20"
+        }
+      ]
+    },
+    {
+      "id": "us-ca-sj",
+      "display_name": "San Jose",
+      "coverage": "downtown",
+      "region": {
+        "level": "city",
+        "parent_city": "us-ca-sj",
+        "parent_city_display_name": "San Jose"
+      },
+      "bbox": {
+        "min_lat": 37.30500015369086,
+        "max_lat": 37.369997952018124,
+        "min_lon": -121.92999999994288,
+        "max_lon": -121.85500000120548
+      },
+      "centroid": {
+        "lat": 37.337499,
+        "lon": -121.8925
+      },
+      "tree_count": 52775,
+      "schema_version": 17,
+      "content_rev": "2026-08-22.02",
+      "version": "s17-r2026-08-22.02-ac7b1ccc",
+      "path": "cities/us-ca-sj/s17-r2026-08-22.02-ac7b1ccc/us-ca-sj.sqlite",
+      "bytes": 29372416,
+      "sha256": "2d979b9a0ff90bea058eb409a29ae36019c949ddae82aead9259e9f906383671",
+      "attribution": [
+        {
+          "inventory": "sj_street_tree",
+          "name": "City of San Jose Street Tree inventory",
+          "url": "https://geo.sanjoseca.gov/server/rest/services/OPN/OPN_OpenDataService/MapServer/510",
+          "snapshot_on": "2026-08-22",
+          "license": "CC-BY"
+        }
+      ]
+    },
+    {
+      "id": "us-ny-nyc-manhattan",
+      "display_name": "Manhattan",
+      "coverage": "full",
+      "region": {
+        "level": "borough",
+        "parent_city": "us-ny-nyc",
+        "parent_city_display_name": "New York City"
+      },
+      "bbox": {
+        "min_lat": 40.70114164529962,
+        "max_lat": 40.879004479769556,
+        "min_lon": -74.01882447024728,
+        "max_lon": -73.90747928519902
+      },
+      "centroid": {
+        "lat": 40.790073,
+        "lon": -73.963152
+      },
+      "tree_count": 98929,
+      "schema_version": 17,
+      "content_rev": "2026-08-22.02",
+      "version": "s17-r2026-08-22.02-ac7b1ccc",
+      "path": "cities/us-ny-nyc-manhattan/s17-r2026-08-22.02-ac7b1ccc/us-ny-nyc-manhattan.sqlite",
+      "bytes": 66891776,
+      "sha256": "b8d50b4ee422976872d85cdd1b1357f9641907bdd19b3817d2a519f6b3d2bfa1",
+      "attribution": [
+        {
+          "inventory": "nyc_tree_points",
+          "name": "NYC Parks Forestry Tree Points",
+          "url": "https://data.cityofnewyork.us/resource/hn5i-inap",
+          "snapshot_on": "2026-08-22",
+          "license": "NYC Open Data / Data Mine terms; notification + verbatim disclaimer required"
+        }
+      ]
+    },
+    {
+      "id": "us-ny-nyc-brooklyn",
+      "display_name": "Brooklyn",
+      "coverage": "full",
+      "region": {
+        "level": "borough",
+        "parent_city": "us-ny-nyc",
+        "parent_city_display_name": "New York City"
+      },
+      "bbox": {
+        "min_lat": 40.57154855943495,
+        "max_lat": 40.7390119162918,
+        "min_lon": -74.04181129214089,
+        "max_lon": -73.8557740070646
+      },
+      "centroid": {
+        "lat": 40.65528,
+        "lon": -73.948793
+      },
+      "tree_count": 237596,
+      "schema_version": 17,
+      "content_rev": "2026-08-22.02",
+      "version": "s17-r2026-08-22.02-ac7b1ccc",
+      "path": "cities/us-ny-nyc-brooklyn/s17-r2026-08-22.02-ac7b1ccc/us-ny-nyc-brooklyn.sqlite",
+      "bytes": 159080448,
+      "sha256": "5ce4295f8456696d115a9873f1d385f5e301f594c6234324ff0e68d7271ef52e",
+      "attribution": [
+        {
+          "inventory": "nyc_tree_points",
+          "name": "NYC Parks Forestry Tree Points",
+          "url": "https://data.cityofnewyork.us/resource/hn5i-inap",
+          "snapshot_on": "2026-08-22",
+          "license": "NYC Open Data / Data Mine terms; notification + verbatim disclaimer required"
+        }
+      ]
+    },
+    {
+      "id": "us-ny-nyc-queens",
+      "display_name": "Queens",
+      "coverage": "full",
+      "region": {
+        "level": "borough",
+        "parent_city": "us-ny-nyc",
+        "parent_city_display_name": "New York City"
+      },
+      "bbox": {
+        "min_lat": 40.560759538444884,
+        "max_lat": 40.79982408602251,
+        "min_lon": -73.96191680490988,
+        "max_lon": -73.69808293842301
+      },
+      "centroid": {
+        "lat": 40.680292,
+        "lon": -73.83
+      },
+      "tree_count": 298839,
+      "schema_version": 17,
+      "content_rev": "2026-08-22.02",
+      "version": "s17-r2026-08-22.02-ac7b1ccc",
+      "path": "cities/us-ny-nyc-queens/s17-r2026-08-22.02-ac7b1ccc/us-ny-nyc-queens.sqlite",
+      "bytes": 199163904,
+      "sha256": "46c8bdd3129ee8d5558323bef2a02f1755408fbaf3248dfc5e37e664dc4c0318",
+      "attribution": [
+        {
+          "inventory": "nyc_tree_points",
+          "name": "NYC Parks Forestry Tree Points",
+          "url": "https://data.cityofnewyork.us/resource/hn5i-inap",
+          "snapshot_on": "2026-08-22",
+          "license": "NYC Open Data / Data Mine terms; notification + verbatim disclaimer required"
+        }
+      ]
+    },
+    {
+      "id": "us-ny-nyc-bronx",
+      "display_name": "Bronx",
+      "coverage": "full",
+      "region": {
+        "level": "borough",
+        "parent_city": "us-ny-nyc",
+        "parent_city_display_name": "New York City"
+      },
+      "bbox": {
+        "min_lat": 40.798019007690726,
+        "max_lat": 40.914190560211395,
+        "min_lon": -73.93241217479543,
+        "max_lon": -73.76579812005211
+      },
+      "centroid": {
+        "lat": 40.856105,
+        "lon": -73.849105
+      },
+      "tree_count": 137858,
+      "schema_version": 17,
+      "content_rev": "2026-08-22.02",
+      "version": "s17-r2026-08-22.02-ac7b1ccc",
+      "path": "cities/us-ny-nyc-bronx/s17-r2026-08-22.02-ac7b1ccc/us-ny-nyc-bronx.sqlite",
+      "bytes": 92061696,
+      "sha256": "be4f9db4d621be88193096cb70246ac5ef7aab9b2bb1fa8326df62a1f16a5bdf",
+      "attribution": [
+        {
+          "inventory": "nyc_tree_points",
+          "name": "NYC Parks Forestry Tree Points",
+          "url": "https://data.cityofnewyork.us/resource/hn5i-inap",
+          "snapshot_on": "2026-08-22",
+          "license": "NYC Open Data / Data Mine terms; notification + verbatim disclaimer required"
+        }
+      ]
+    },
+    {
+      "id": "us-ny-nyc-staten-island",
+      "display_name": "Staten Island",
+      "coverage": "full",
+      "region": {
+        "level": "borough",
+        "parent_city": "us-ny-nyc",
+        "parent_city_display_name": "New York City"
+      },
+      "bbox": {
+        "min_lat": 40.49724479423906,
+        "max_lat": 40.75900034113973,
+        "min_lon": -74.2549416539502,
+        "max_lon": -73.8696141404574
+      },
+      "centroid": {
+        "lat": 40.628123,
+        "lon": -74.062278
+      },
+      "tree_count": 125421,
+      "schema_version": 17,
+      "content_rev": "2026-08-22.02",
+      "version": "s17-r2026-08-22.02-ac7b1ccc",
+      "path": "cities/us-ny-nyc-staten-island/s17-r2026-08-22.02-ac7b1ccc/us-ny-nyc-staten-island.sqlite",
+      "bytes": 84238336,
+      "sha256": "65e4a9718b0cb2041f99a82ec00ef474007d42a6d9f486ac45764ba08d49e423",
+      "attribution": [
+        {
+          "inventory": "nyc_tree_points",
+          "name": "NYC Parks Forestry Tree Points",
+          "url": "https://data.cityofnewyork.us/resource/hn5i-inap",
+          "snapshot_on": "2026-08-22",
+          "license": "NYC Open Data / Data Mine terms; notification + verbatim disclaimer required"
+        }
+      ]
+    }
+  ]
+}

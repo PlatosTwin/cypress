@@ -499,6 +499,37 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.noRouteOnThisService
     }
 
+    /// **No route.** R79's disputes are new in this round and the service has no verb for either of
+    /// them — BUILD-PLAN §6 predates the ruling and nothing is deployed. The way a dispute reaches an
+    /// account is the queue: `AppSchema` v22 widened `outbox.kind` so `data_dispute` and
+    /// `data_dispute_withdrawal` rows can be written, and `POST /sync` is the route that carries
+    /// them **once the service accepts the kinds**.
+    ///
+    /// It does not yet, and the failure is terminal rather than pending, exactly as
+    /// `withdrawMeasurement` above describes for its own kind: `sync.go`'s `syncKinds` and the
+    /// `contributions.kind` CHECK stop short of these two, so a drained dispute is answered
+    /// `validation_failed` — non-retryable, so `OutboxRetryPolicy.nextState` moves the item to
+    /// `failed` on its first attempt and screen 17 keeps a red row. Widening those two is this
+    /// round's PR-B, a change to `server/`, which has no CI and does not travel with an app change.
+    ///
+    /// Declared here rather than inherited from `DataDispute.swift`'s defaults, for the reason
+    /// `APIConformanceGuardTests` enforces on every shipping conformance: an inherited answer is a
+    /// static-dispatch trap beside a requirement, and `noRouteOnThisService` says which of the two
+    /// "no" answers this is, where the default's `notFound` would claim the record is not there.
+    public func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
+    /// **No route**, for `raiseDataDispute`'s reason and through the same queue.
+    public func withdrawDataDispute(disputeID: UUID) async throws {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
     // MARK: - Personal surfaces
 
     /// **Community half only.** `GET /me/grove` sends `tree_uuid`, the favorite bit, the last visit,

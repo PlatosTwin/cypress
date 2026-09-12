@@ -75,8 +75,17 @@ conflicts with convenience, the rule wins.
   it is guarded (`gate` reads `plan` first, so a crashed `plan` cannot masquerade as a prose-only
   run), but it changes what the badge means: **a green check is now evidence about the diff, not
   evidence about the code.** Before citing CI as proof that a change is safe, read `plan`'s
-  decision — the run's own log says `the suite runs — these are not prose:` or `only prose
-  changed`. A one-minute run did not test anything, and it does not claim to.
+  decision. **There are now THREE decisions and the run's own log says which**, so look for one of
+  these three strings and treat anything else as a fourth case nobody told you about:
+  - `the suite runs — these are not prose:` — the suite ran; the green means what you think.
+  - `only prose changed` — nothing was tested, because there was nothing here to test.
+  - `this diff is web-only` — added by the web round. **Not prose and not untested**: `web/` and
+    the two `Tools/*web*` scripts are tested by `.github/workflows/web.yml` on ubuntu, and this
+    workflow skipped its suite because nothing under `web/` is an input to the iOS app or its
+    tests. A green `gate` here says nothing about the web — `web` is not a required check yet, so
+    **go and read the `web` workflow's run for that commit**, and if it did not run, nothing did.
+
+  A one-minute run did not test anything, and it does not claim to.
 
 ## Simulators
 - **The plain iPhone 16 is the owner's — keep it free.** Its UDID is deliberately not written
