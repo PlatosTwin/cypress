@@ -201,7 +201,7 @@ growth loop" — terminate at the moment of sharing. W1 is the page those links 
 | ~~**W-A**~~ | ~~Foundation~~ | ~~`web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` judge a log rather than an exit code.~~ **SHIPPED** by `web/foundation`. `web/` reaches the classifier through a `WEB_ONLY` variable of its own rather than through `DOC_ONLY` — the web is not prose, it is tested on ubuntu, and the notice `plan` prints now says which of the two a skipped run was. `web/**` is deliberately **not** added to the push trigger's `paths-ignore`; see the chip backlog. |
 | **W-G** | The public community read | ~~`GET /api/v1/public/trees/{id}` answers the publicly visible community half of one tree with no credential, under a ruling that decides field by field what is publicly true about a tree.~~ **DONE** — the ruling is `docs/rulings-pending/public-tree-read.md` (unnumbered, awaiting the owner: it carries five questions), the endpoint and its golden fixtures are in `server/`. Ordered ahead of W-C by the owner on 2026-09-10, because §8a found that half of W1's fact column has no public read behind it. |
 | **W-B** | The three portable assets | ~~Design tokens exported from the Swift declarations to CSS custom properties, with a test that the export still matches its source; the domain rules (vitality rubric, `Quantity`, the 25 m grid, growth-charting eligibility, ID spaces) re-derived in TypeScript against ported Swift test cases; a read layer that opens a published city pack through the same schema the phone uses.~~ **ALL THREE SHIPPED.** Tokens by `web/tokens-css` (`web/src/styles/tokens.css`, generated and byte-checked against its source). Read layer by `web/pack-read` (`web/src/lib/pack/`, on `node:sqlite`, no new dependency — it introspects a pack's shape rather than trusting a version integer, refuses a generation newer than it reads, and never writes). Domain rules by `web/domain-rules` (`web/src/lib/`, each checked against its original parsed at run time rather than against a transcription; the ID-space registry has no Swift declaration and lives only in `Tools/inventory_contract.py`). Two findings came out of the rules third: the 25 m grid is not idempotent and the read path applies it twice, and `Quantity` had no dedicated suite until now. |
-| **W-C** | W1 · Public tree page | The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients. |
+| ~~**W-C**~~ | ~~W1 · Public tree page~~ | ~~The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients.~~ **SHIPPED** by `web/w1-tree-page`, and completed by the two rounds merged into it. Server-rendered from a mounted pack; verified against the pinned seed (sha256 and `count(*)` both checked) on a San Francisco tree, a San Jose vacant site, and on a synthetic `us-ny-nyc` pack. **Seven of §W1's eleven elements were omitted rather than stubbed** — height, the taped DBH reading, the foliage strip, its photo caption, the recent-visits panel, `Sign in` (owner decision 7) and `Open in the app` (no host resolves) — and four labels say less than the mock does; the element-by-element account and the four deviations are in `docs/errata-pending/web-w1-tree-page.md`. ~~**The OpenGraph image is an SVG**, which the major social platforms do not render: making it a PNG needs a rasterizer, which is a dependency decision with an owner — chip backlog 24.~~ **The owner ruled and `web/og-raster` shipped it**: `og:image` is a PNG, rasterized from the same SVG by `@resvg/resvg-js`, and the page now declares the card's type, width and height. New York's disclaimer now follows its data onto the page (R36 consequence (b), R78 rulings 2 and 3). **The community half landed too**, by `web/w1-live-facts`: the owner ruled on 2026-09-11 that this row stays open until W1 draws what W-G publishes, and it now does — §W1's `Height`, the live trunk DBH in place of the city bucket, and a `Beloved` row (chip backlog **26**, struck). **The endpoint is not deployed** — measured, `cypress-sync` answers `404 page not found` for the route while `/health` is 200 — so the page's ordinary state is still the city record alone, and it says so rather than implying nothing has been measured. **The two rounds were merged and the merged tree was run**, which is where the one coupling neither branch could see was checked: the card is built by `resolveTreePage`, which requests no community half, so the `immutable` year-long cache on `og.png` and the page's 60-second `max-age` are consistent rather than in conflict — the card holds no contributed value to take back (chip backlog **27** is where that would change). Open for the owner in `docs/rulings-pending/w1-authored-copy.md`: **four** authored strings now, and three conservative calls named there (a vacant site draws no reading; `unavailable` and `unconfigured` read alike to a reader; the page sends `max-age=60`). |
 | **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — designed under the W-3 exception, ruled, then built. |
 | **W-E** | It is on the internet | Deployed to Fly against a volume holding the published packs; the share link resolves. |
 
@@ -992,6 +992,60 @@ into this section in the round that finds it, and nowhere else. Each item stands
     changes the classifier's behavior for every predicate at once, which wants its own calibration
     table and its own simulator run rather than a line in a round already correcting seven
     findings.
+
+24. ~~**Decide whether the OpenGraph card is rasterized, and by what.**~~ **DECIDED AND SHIPPED**
+    by `web/og-raster`. The owner ruled: add the dependency. `/‹id-space›/tree/‹uuid›/og.png` is
+    now what `og:image` points at, with `og:image:type`, `og:image:width` and `og:image:height` —
+    the last two of which the page had never declared at all. The rasterizer is
+    **`@resvg/resvg-js` 2.6.2**, pinned exactly, 3.4 MB installed, one transitive package and no
+    system libraries; it rasterizes the string `treeCardSVG` already returns, so there is no second
+    drawing to diverge. It was chosen over `sharp` (resolves text through fontconfig, so the card's
+    typography would be whatever the container happened to have), `puppeteer`/`playwright` (a
+    browser in the image), `satori` (replaces the drawing rather than rasterizing it) and
+    `@napi-rs/canvas` (a second copy of the layout). Because resvg 2.6.2 takes fonts as paths on
+    disk and the image is built from a context of `web/`, the four faces the card sets are copied
+    into `web/fonts/` and hashed against `Cypress/Resources/Fonts/` by the suite. `og.svg` stays —
+    it is the drawing the PNG is made of.
+25. **Give W1 a dark mode, or give its three surfaces dark counterparts.** §W1's page background,
+    fact-column fill and hairline map to `lightOnly` tokens, while the generic page tokens the same
+    page uses are `dynamic` — so `prefers-color-scheme: dark` produces a third rendering that no
+    mock draws (constraint 21). W-C took the conservative option: the page does not opt into a dark
+    scheme, and `web/src/styles/w1.css` says so in its header. The fix is a DesignSystem decision
+    about those three surfaces, not a page edit.
+
+26. ~~**Have W1 call the public community read it was ordered after.**~~ **DONE** — `web/w1-live-facts`,
+    2026-09-11, into W-C. All three elements render: §W1's `Height` row, the live trunk DBH taking the
+    `Trunk · DBH` row from the city's bucket (which falls back with its `city record` badge when there
+    is no reading), and a `Beloved` row carrying the count above the floor. `Status` stays on the
+    pack's lifecycle value, as this item said it must. `src/lib/publicTreeRead.ts` is the client and
+    `src/lib/measuredValue.ts` the ported `MethodBadge` / `MeasuredValue` copy.
+
+    **The endpoint is not deployed and the page is built for that**, which is the half of this item
+    nobody had written down. Measured 2026-09-11: `cypress-sync` serves `/health` 200 and answers Go's
+    bare `404 page not found` for this route, where a registered route on another verb answers `405`.
+    So there are five named states and the two silences are kept apart — `empty` (the service answered,
+    this tree has nothing) renders nothing, while `unavailable` / `unconfigured` (this page could not
+    ask) renders one sentence, because otherwise the page asserts the first every time the second is
+    true. No default host, no retry, a 1500 ms budget, no new dependency, and the page carries the
+    endpoint's own `max-age=60` (the W-G ruling's §8b ceiling).
+
+27. **The OpenGraph card does not read the community half, and §W1's caption says it should.** The
+    caption is explicit: *"the OpenGraph image is rendered from the same three ingredients so the
+    group-chat preview and the page agree."* After item 26 the page draws a height, a taped diameter
+    and a beloved state that the card does not, so the preview is now narrower than the page it
+    previews. It is not wrong — the card's community state is `notRequested`, which is honest — and
+    `treePageModel` already takes the half as an argument, so the change is for `og.svg.ts` to await
+    `communityHalf` the way `[uuid].astro` does. Left undone on purpose: `og.svg.ts` was being edited
+    in parallel by the rasterizer round (chip backlog 24) and `web/w1-live-facts` stayed out of it.
+    **Decide it with 24**, because a card that fetches per request costs a crawler round trip per
+    preview and the rasterizer changes what that costs.
+
+28. **A page-level `Cache-Control` is now W1's, and W-E has to agree with it.** `[uuid].astro` sends
+    `public, max-age=60` on every 200, which is the W-G ruling's §8b ceiling on a page carrying a
+    withdrawable contributed value. Nothing about the deployment knows that yet: if W-E puts a CDN or
+    Fly cache in front of the web with its own policy, the sixty seconds has to survive it, and a
+    `stale-while-revalidate` added for latency would be exactly the thing §8b forbids. Check it with
+    the deployment in front of you.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

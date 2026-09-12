@@ -4,8 +4,9 @@
 owner; the authority is `docs/design-proposals/2026-09-10-web-version.md` and the queue underneath
 it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation: it builds, it is
 tested, and it renders one placeholder page. **W-B** has since landed in full — the design tokens,
-the pack read layer and the re-derived domain rules — described under *Design tokens*, *The read
-path* and *The rules, re-derived* below. No page reads any of them yet; that is W-C.
+the pack read layer and the re-derived domain rules — described under *Design tokens*, *The rules,
+re-derived* and *The read path* below. **W-C** reads all three: the public tree page is served from
+a mounted pack, painted with the exported tokens, and its facts pass through the re-derived rules.
 
 **What v1 is** (ruling W-1): a public read surface. No login, no writes. The tree page, plus the
 `Explore` / `Species` / `Neighborhoods` / `Data & export` nav the spec draws.
@@ -20,7 +21,7 @@ it classifies, and did, in the pull request that created both.
 
 ## What exists, exactly
 
-As of W-A. Everything below was read from this directory, not remembered.
+As of W-C. Everything below was read from this directory, not remembered.
 
 | | |
 |---|---|
@@ -31,16 +32,27 @@ As of W-A. Everything below was read from this directory, not remembered.
 | React | none, deliberately (W-8) |
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
-| Pages | one placeholder at `/`. W1 is W-C |
+| Pages | `/` (placeholder) and **`/‹id-space›/tree/‹uuid›`** — W1, server-rendered from a mounted pack (W-C) |
+| OG cards | `/‹id-space›/tree/‹uuid›/og.png` — 1200×630 raster, what `og:image` points at. `og.svg` is still served and is the drawing it is made of |
+| Packs | read from the directory `CYPRESS_PACK_DIR` names. No default path: unset means the page says so, in a 503 |
 | Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
-| Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
+| Card fonts | `fonts/`, **copied** from `Cypress/Resources/Fonts/` by `scripts/export-card-fonts.mjs`. Four faces, 852 KB |
+| Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. W1 reads it through `src/lib/packLibrary.ts` |
 | Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
+| W1's own modules | `src/lib/{packLibrary,treePage,cityRecord,gradients,ogCard,obligations}.ts` and `src/styles/w1.css` |
 
-**Two runtime dependencies and three development ones**, and no test framework at all, which is
-the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
-tightly: it is in the standard library, which is what keeps the Docker image simple now that the
-read layer opens packs, and it is documented as experimental, which is what makes a floating Node
-tag a bad idea. `src/lib/pack/` imports it; nothing else does.
+**Three runtime dependencies and three development ones**, and no test framework at all. The
+third arrived in W-C's raster round and is the only one this directory has ever added on purpose:
+`@resvg/resvg-js`, so the OpenGraph card can be a PNG. What it is, what it cost and what was
+rejected instead are in `src/lib/ogRaster.ts`'s header; the short version is 3.4 MB, one transitive
+platform binary, no system libraries, and it renders text from font files handed to it rather than
+from whatever the host has installed. The discipline is not "never add one" — it is that adding one
+is a decision with an owner, and this one was ruled.
+
+`node:sqlite` is why the runtime is pinned this tightly: it is in the standard library, which is
+what keeps the Docker image simple now that the read layer opens packs, and it is documented as
+experimental, which is what makes a floating Node tag a bad idea. `src/lib/pack/` imports it;
+nothing else does.
 
 ## Running it
 
@@ -146,6 +158,76 @@ to match the domain, because the domain can move and a Fly app name cannot.
 `fly.toml` deliberately declares **no `[mounts]`**. A mount naming a volume that does not exist
 fails a deploy halfway through creating the app.
 
+## Design tokens (W-B)
+
+`src/styles/tokens.css` is **generated and checked in**. `scripts/export-tokens.mjs` reads
+`Cypress/DesignSystem/Tokens/*.swift` and writes it; `test/tokens.test.ts` re-runs the same render
+and fails byte-for-byte when the two disagree. Do not edit the CSS — the next test run reverts it.
+
+```sh
+npm run tokens         # rewrite src/styles/tokens.css
+npm run tokens:check   # exit 1 if it is stale (the test says the same thing, louder)
+npm run fonts          # rewrite fonts/ from Cypress/Resources/Fonts (W-C's card raster)
+npm run fonts:check    # exit 1 if a face is stale, missing, or unaccounted for
+```
+
+The generator lives under `web/` rather than in `Tools/` because **both CI workflows classify by
+path**: `web.yml` runs on an allow-list and `testflight.yml`'s `WEB_ONLY` exempts the same set, and
+a script at `Tools/export_tokens.mjs` is in neither — a change to it alone would skip the web suite
+and run 34 minutes of `macos-26` that exercises nothing. Widening `WEB_ONLY` is the alternative and
+it is guarded by `CypressTests/DeployPathsAgreeTests`, so it is a change the **iOS** suite has to
+prove. Moving one file needs neither.
+
+**Why generated-and-checked-in rather than parsed at build time.** The Dockerfile copies
+`astro.config.mjs`, `tsconfig.json` and `src/` and nothing else — the Swift tree is not in the
+image and never will be, because putting it there would make the iOS source a build input of a
+web container. A build-time parse would also make every page render depend on a parser that has to
+be right. So the CSS is a real file: it ships, it is reviewable in a diff, and a designer can read
+what the web is actually painting. The cost of that choice is staleness, and the staleness is
+exactly what `test/tokens.test.ts` refuses.
+
+**Nothing is skipped silently.** Every `static let` in a token scope becomes a token, a private
+constant, or a **named** entry on a skip list the test asserts one line at a time. A declaration
+that matches no rule throws rather than being dropped — an exporter that returns "the tokens I
+understood" is green on the day it stops understanding one.
+
+**Dark mode is `prefers-color-scheme` and nothing else.** Every paired token in the Swift is
+`Color(UIColor { traits in traits.userInterfaceStyle == .dark })`, which resolves off the *system*
+setting; the app has no in-app appearance control (the only `preferredColorScheme` calls in the
+target are in `#Preview` blocks). A `[data-theme]` attribute hook would be exporting a product
+decision the source does not contain, and a test that the export matches its source cannot protect
+anything the source does not say. Only tokens whose dark value differs appear in the dark block —
+`lightOnly` and `escalated` resolve to one value in both schemes by definition.
+
+**Three things the export does not carry**, each named in the test rather than left to be noticed:
+
+- `CypressGradient.swift` — multi-stop linear and radial recipes with their own geometry. Not one
+  custom property. W1's hero is a gradient, so W-C ports them.
+- The eight composed `Animation`s. Their curves are `--motion-ease-*` and six of their durations
+  are `--motion-duration-*`; `camera` (0.4 s) and `selection` (0.18 s) write their durations inline
+  rather than in `CypressMotion.Duration`, so those two numbers have no token on either platform.
+- `CypressFont.LineSpacing` is exported verbatim, in **points of extra leading**, which is SwiftUI's
+  unit and not CSS `line-height`. `CypressFont.swift` gives the conversion it was derived under
+  (`lineSpacing ≈ size × (lineHeight − 1.2)`). Nothing is transformed here, because inverting an
+  approximation and calling it a token would be inventing a value the design system does not state.
+
+  **Inverting it yields the wrong answer for two of the six, and the two are named in the
+  generated file's own header.** `speciesHero` and `treeNameHero` are declared `0` in the Swift
+  *because SwiftUI cannot set leading tighter than the face's natural line height* — the doc
+  comment beside each says "tighter than natural; clamp at 0". `0` is that clamp, not the design
+  value, so inverting `--font-line-spacing-species-hero: 0px` returns `line-height: 1.2` where the
+  source documents **1.1**, and `--font-line-spacing-tree-name-hero` the same against **1.05** —
+  *looser* than intended, on the two largest display styles. CSS has no such floor. A consumer
+  that wants a `line-height` inverts the other four and uses the documented figure for these two;
+  `test/tokens.test.ts` reads both figures out of the Swift and fails if the header stops matching
+  them.
+
+The one web-only judgment in the whole export is `GENERIC_FALLBACKS` in `src/lib/tokens.ts`: the
+generic CSS fallback after each family, which iOS has no equivalent of. The family *names* are not
+invented — `Source Serif 4`, `Alegreya Sans` and `Spline Sans Mono` are derived from the PostScript
+prefixes the Swift declares, and they are the `name` table families of the TTFs in
+`Cypress/Resources/Fonts/`.
+
 ## The rules, re-derived (W-B, first of three)
 
 `src/lib/` holds five rules that already exist elsewhere in this repository, re-derived in
@@ -199,7 +281,7 @@ idempotent** — applying it twice moves a point by up to 12.20 m, and the SQLit
 it twice — which is written up in `docs/errata-pending/`, pinned by a test against the recorded
 Swift behavior, and left unrepaired because repairing it moves already-published coordinates.
 
-## The read path, when it arrives (W-B)
+## The read path (W-B)
 
 The web opens the **published city packs**, read-only, through the same schema the phone uses —
 decision W-5. Not Postgres, not browser-side SQLite over HTTP range requests. It reads
@@ -280,3 +362,69 @@ confusing them went stale twice while doing it. Read all three from the code.
 
 **NYC's disclaimer obligation follows the data.** Any page rendering NYC trees carries it,
 human-visible, because a machine-readable `attribution` array does not discharge it.
+
+---
+
+## W1 · the public tree page (W-C)
+
+`src/pages/[idSpace]/tree/[uuid].astro`, server-rendered, at the path
+`ShareCopy.publicURLPrefix` has pointed every share card the app has ever produced at. It reads a
+published pack through W-B's layer and renders `SCREENS.md` §W1.
+
+**Point it at packs with `CYPRESS_PACK_DIR`.** Every `*.sqlite` in that directory is opened
+read-only and indexed by the id spaces the **file itself** declares, not by its filename — New York
+is five packs in one id space and San Jose ships fused with San Francisco, so a filename convention
+would be a second copy of a fact the file already carries. There is no default path: with the
+variable unset the page returns **503** and writes a line to the log, because "no packs are mounted"
+is a deployment fault and a 404 would tell an operator it was a missing tree.
+
+**About half of §W1 is not in the pack, and that half is absent rather than faked.** Height, the
+taped DBH reading, the foliage strip, its photo caption and the recent-visits panel are contributed
+data behind a Class R surface; `Sign in` and `Open in the app` have no destination. The whole
+element-by-element account, and the four labels that say less than the mock does, are in this
+round's errata entry. **Nothing is stubbed, nothing renders a zero, and nothing invents a fact** —
+a placeholder in a fact column is a claim, and an empty state where the mock drew data is a screen
+nobody designed.
+
+**The gradient is ported, and guarded in two halves.** `src/lib/gradients.ts` emits CSS from a
+recipe. One half of the guard compares W1's recipe against §W1's own transcription, parsed out of
+`SCREENS.md` at run time; the other renders `CypressGradient.heroProfile` — parsed out of the Swift
+at run time — through the same emitter and requires it to equal what §3's screen 03 transcribes.
+That second half is what proves the **emitter**, because W1's hero is not in `CypressGradient.swift`
+at all: §W1 draws its own recipe, close to screen 03's and not equal to it. **CSS paints its first
+background layer on top and a SwiftUI `ZStack` paints its last on top**, so the layer order is
+inverted in the port and there is a test whose only job is to fail if somebody "fixes" it.
+
+**The OpenGraph card is a PNG, rasterized from that SVG.** `og.svg.ts` builds the card out of the
+same `TreePageModel` the page renders — which is what §W1's caption asks for, "rendered from the
+same three ingredients so the group-chat preview and the page agree" — and Facebook, X, Slack,
+iMessage and LinkedIn all want a raster. The owner ruled the dependency in; `og.png.ts` rasterizes
+the string `treeCardSVG` returns, so the two encodings are one drawing and there is nothing to
+diverge. `<meta property="og:image">` points at the PNG and now also declares `og:image:type`,
+`og:image:width` and `og:image:height` — **the last two of which this page never declared at all**,
+which is a separate defect the same round found.
+
+**The faces are files in this directory, and that is not an accident.** `@resvg/resvg-js` 2.6.2
+takes fonts as paths on disk, and the image is built from a context of `web/`
+(`docker build … web`), so nothing outside this directory can reach the container. `fonts/` is a
+checked-in copy of the four faces the card sets, written by `npm run fonts` and hashed against
+`Cypress/Resources/Fonts/` by `test/ogRaster.test.ts` — the same generated-and-checked-in bargain
+`tokens.css` is. The five sources are on both of `web.yml`'s `paths:` filters for the same reason
+every other out-of-`web/` source is.
+
+**A missing face is a 500, not a blank card.** The render sets `loadSystemFonts: false`, which is
+what makes the card look the same on a laptop, on `ubuntu-latest` and in the container — and is
+also the setting under which resvg draws *nothing at all* for a family it cannot resolve: no error,
+no fallback, a gradient with no words on it. So the directory is checked before a render is
+attempted and `MissingCardFonts` names what is absent. Verified by running the built image against
+an empty font directory: `500`, `x-cypress-refusal: rasterizer`, and the reason in the log.
+
+**The suite reads the bytes, not the renderer.** `test/support/png.ts` decodes the PNG — signature,
+IHDR, inflate, unfilter — and the measure that tells type from no type is a count of luma steps
+rather than a count of ink-colored pixels, because three of the card's four runs are drawn below
+full opacity. Measured on the real card: 0 steps in a 1080×300 window of pure gradient, and 1,700
+to 4,800 in each of the four text bands.
+
+**W1 is light-only on purpose.** Three of §W1's surfaces map to `lightOnly` tokens while the generic
+page tokens beside them are `dynamic`, so a dark rendering would be half of one palette over the
+other — a state no mock draws. `src/styles/w1.css` carries the same note at the top of the file.

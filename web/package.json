@@ -14,10 +14,13 @@
     "typecheck": "astro check --minimumFailingSeverity warning && tsc --noEmit",
     "test": "node --test --test-reporter=tap \"test/**/*.test.ts\"",
     "tokens": "node scripts/export-tokens.mjs",
-    "tokens:check": "node scripts/export-tokens.mjs --check"
+    "tokens:check": "node scripts/export-tokens.mjs --check",
+    "fonts": "node scripts/export-card-fonts.mjs",
+    "fonts:check": "node scripts/export-card-fonts.mjs --check"
   },
   "dependencies": {
     "@astrojs/node": "11.1.5",
+    "@resvg/resvg-js": "2.6.2",
     "astro": "7.3.2"
   },
   "devDependencies": {

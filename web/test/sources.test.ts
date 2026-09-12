@@ -21,6 +21,9 @@ import { dirname, join, resolve } from 'node:path';
 import {
   ParseFailure,
   markdownAnchorTable,
+  markdownGradientRecipe,
+  markdownScrim,
+  markdownSection,
   pythonIdSpacePrefixes,
   pythonStringConstant,
   pythonUUIDConstant,
@@ -29,13 +32,42 @@ import {
   sourcesTheWebSuiteReads,
   swiftClosedRangeLet,
   swiftDeclaration,
+  swiftClosureStringCases,
   swiftDoubleLet,
+  swiftMultilineStringLet,
   swiftEnumCases,
+  swiftGradientRecipe,
   swiftStringCases,
+  swiftStringLet,
+  swiftStringSetLet,
   swiftSwitchTable,
 } from './support/sources.ts';
 
 describe('the parsers the parity tests depend on', () => {
+  it('reads a multi-line string let, joining its line continuations and stripping its indent', () => {
+    // Specimen first, answer written out by hand before the parser saw it. Both of Swift's
+    // multi-line rules are in here and both are traps: the closing delimiter sets the indent that
+    // comes off every line, and a trailing backslash joins WITHOUT a newline. The second is how a
+    // one-sentence legal notice is written across four lines of Swift, and a parser that joined on
+    // newlines would return a value that is wrong in a way no diff viewer shows.
+    const specimen = [
+      '    static let notice = """',
+      '        One sentence written \\',
+      '        across two source lines.',
+      '        A second paragraph line.',
+      '        """',
+      '    static let other = "plain"',
+    ].join('\n');
+    assert.equal(
+      swiftMultilineStringLet(specimen, 'notice'),
+      'One sentence written across two source lines.\nA second paragraph line.',
+    );
+    // The control: it must not read a single-quoted let, and it must not run past the closing
+    // delimiter into the next declaration.
+    assert.throws(() => swiftMultilineStringLet(specimen, 'other'), /no `let other/);
+    assert.ok(!swiftMultilineStringLet(specimen, 'notice').includes('plain'));
+  });
+
   it('reads a Double let, and declines a differently typed one', () => {
     const specimen = [
       'public static let gridM: Double = 25',
@@ -217,6 +249,139 @@ describe('the parsers the parity tests depend on', () => {
       () => markdownAnchorTable('### Empty\nno table here at all\n', '### Empty'),
       ParseFailure,
     );
+  });
+
+  // ── W-C's parsers ─────────────────────────────────────────────────────────────────────────
+
+  it('slices one markdown section and stops at the next heading of its level', () => {
+    const specimen = [
+      '#### 03 · Tree profile',
+      'Gradient: `radial(28% 46%, #4E8F6A 0→36%)`,',
+      'base `linear-gradient(180deg,#EAF0E2 0%,#CFE0D2 55%,#9DBFA6 100%)`.',
+      '##### A deeper heading, which is INSIDE the section',
+      'still 03',
+      '#### 04 · Visit',
+      'Gradient: `radial(99% 99%, #000000 0→99%)`,',
+      'base `linear-gradient(180deg,#111111 0%,#222222 100%)`.',
+    ].join('\n');
+    const three = markdownSection(specimen, '#### 03 · Tree profile');
+    assert.ok(three.includes('28% 46%'));
+    assert.ok(three.includes('still 03'), 'a deeper heading must not end the section');
+    // The near miss the whole bounding exists for: an unbounded slice answers 04's question with
+    // 03's gradient and looks entirely reasonable doing it.
+    assert.ok(!three.includes('99% 99%'), 'the slice ran into the next screen');
+    assert.throws(() => markdownSection(specimen, '#### 99 · Nothing'), ParseFailure);
+  });
+
+  it('reads a hero gradient stack out of a section, and not the thumbs below it', () => {
+    const specimen = [
+      '1. **Hero**. Gradient:',
+      '   `radial(28% 46%, #4E8F6A 0→36%)`, `radial(54% 32%, #35704F 0→42%)`,',
+      '   base `linear-gradient(180deg,#EAF0E2 0%,#CFE0D2 55%,#9DBFA6 100%)`.',
+      '   Scrim `rgba(16,32,22,0)→.5` from 48%.',
+      '2. Activity thumb — `radial(40% 40%, #4E8F6A 0→50%)` over something else.',
+    ].join('\n');
+    const recipe = markdownGradientRecipe(specimen);
+    // Two, not three: the activity thumb sits after the base and belongs to another element.
+    assert.equal(recipe.radials.length, 2);
+    assert.deepEqual(recipe.radials[0], {
+      x: 0.28, y: 0.46, color: { rgb: 0x4e8f6a, alpha: 1 }, extent: 0.36,
+    });
+    assert.equal(recipe.base.degrees, 180);
+    assert.deepEqual(recipe.base.stops.map((stop) => stop.position), [0, 0.55, 1]);
+    assert.deepEqual(markdownScrim(specimen), { rgb: 0x102016, from: 0.48, to: 0.5 });
+  });
+
+  it('reads an rgba layer and a base with no stated stop positions', () => {
+    const specimen = [
+      '   - Base: `radial(34% 44%, rgba(78,143,106,.5) 0→40%)`,',
+      '     `linear-gradient(170deg,#E4EBD8,#B9CDBC)`.',
+    ].join('\n');
+    const recipe = markdownGradientRecipe(specimen);
+    assert.deepEqual(recipe.radials[0]?.color, { rgb: 0x4e8f6a, alpha: 0.5 });
+    // CSS puts an unpositioned two-stop base at 0 and 1. Derived, not defaulted to 0 — a default
+    // would put both stops in the same place and still parse.
+    assert.deepEqual(recipe.base.stops.map((stop) => stop.position), [0, 1]);
+    assert.throws(() => markdownGradientRecipe('nothing here'), ParseFailure);
+    assert.throws(() => markdownScrim('nothing here'), ParseFailure);
+  });
+
+  it('reads a CypressGradientRecipe out of Swift, in both of its linear forms', () => {
+    const specimen = [
+      '    static let heroX = CypressGradientRecipe(',
+      '        base: linear(180, [(0xEAF0E2, 0), (0xCFE0D2, 0.55), (0x9DBFA6, 1)]),',
+      '        radials: [',
+      '            CypressRadialStop(0.28, 0.46, hex(0x4E8F6A), 0.36),',
+      '            CypressRadialStop(0.54, 0.32, hex(0x35704F, 0.6), 0.42),',
+      '        ]',
+      '    )',
+      '    static let thumbX = CypressGradientRecipe(',
+      '        base: CypressGradient.linear(170, 0xE4EBD8, 0xB9CDBC),',
+      '        radials: [CypressRadialStop(0.40, 0.40, CypressGradient.hex(0x4E8F6A), 0.50)]',
+      '    )',
+    ].join('\n');
+    const hero = swiftGradientRecipe(specimen, 'heroX');
+    assert.equal(hero.radials.length, 2, 'the parser reached into the second recipe, or missed one');
+    assert.deepEqual(hero.radials[1]?.color, { rgb: 0x35704f, alpha: 0.6 });
+    assert.deepEqual(hero.base.stops.map((stop) => stop.position), [0, 0.55, 1]);
+
+    const thumb = swiftGradientRecipe(specimen, 'thumbX');
+    assert.equal(thumb.radials.length, 1);
+    assert.deepEqual(thumb.base.stops.map((stop) => stop.color.rgb), [0xe4ebd8, 0xb9cdbc]);
+    assert.throws(() => swiftGradientRecipe(specimen, 'absentX'), ParseFailure);
+  });
+
+  it('reads a string constant, and is not fooled by one quoted in a comment', () => {
+    const specimen = [
+      '    /// It used to read `static let header = "What San Francisco has on file"`.',
+      '    static let header = "What the city has on file"',
+      '    static let plotWidthSuffix = " ft wide"',
+    ].join('\n');
+    assert.equal(swiftStringLet(specimen, 'header'), 'What the city has on file');
+    assert.equal(swiftStringLet(specimen, 'plotWidthSuffix'), ' ft wide');
+    assert.throws(() => swiftStringLet(specimen, 'absent'), ParseFailure);
+  });
+
+  it('reads a Set<String> across however many lines it is written on', () => {
+    const specimen = [
+      '    static let markers: Set<String> = [',
+      '        "n/a", "n.a.", "na",',
+      '        "not applicable",',
+      '    ]',
+      '    static let other: Set<String> = ["x"]',
+    ].join('\n');
+    assert.deepEqual(swiftStringSetLet(specimen, 'markers'), ['n/a', 'n.a.', 'na', 'not applicable']);
+    assert.deepEqual(swiftStringSetLet(specimen, 'other'), ['x']);
+    assert.throws(() => swiftStringSetLet(specimen, 'absent'), ParseFailure);
+  });
+
+  it('reads the switch inside a closure, scoped to the one the marker names', () => {
+    const specimen = [
+      '        SegmentedControl(',
+      '            options: [.alive, .declining],',
+      '            selection: selection,',
+      '            label: { status in',
+      '                switch status {',
+      '                case .alive: return "Alive"',
+      '                case .vacantSite: return "Vacant site"',
+      '                }',
+      '            }',
+      '        )',
+      '    }',
+      '}',
+      'extension Other {',
+      '    label: { method in',
+      '        switch method {',
+      '        case .tape: return "Tape"',
+      '        }',
+      '    }',
+    ].join('\n');
+    const labels = swiftClosureStringCases(specimen, 'options: [.alive, .declining],');
+    // `vacantSite` is in the switch and not in the options, which is the case the real file has
+    // and the one a parser that stopped at the options would drop.
+    assert.deepEqual([...labels], [['alive', 'Alive'], ['vacantSite', 'Vacant site']]);
+    assert.ok(!labels.has('tape'), 'the scan ran on into a second closure');
+    assert.throws(() => swiftClosureStringCases(specimen, 'absent'), ParseFailure);
   });
 });
 
@@ -431,8 +596,8 @@ describe('the sources the web suite reads', () => {
     assert.ok(root.length > 0);
     assert.equal(
       sourcesTheWebSuiteReads.length,
-      10,
-      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 10. If a check was `
+      23,
+      `the parity checks name ${sourcesTheWebSuiteReads.length} sources, not 23. If a check was `
         + `added, add its source here and to web.yml; if one was removed, this count moves with it.`,
     );
     for (const relative of sourcesTheWebSuiteReads) {
@@ -592,14 +757,34 @@ describe('the sources the web suite reads', () => {
    * filter opened. Its modules are censused by the recursive walker like every other module, and
    * they are held to the import scan rather than to the `<name>.test.ts` convention, because
    * their tests are named for the layer (`pack-queries.test.ts`) and not for the module.
+   *
+   * **What the roster is, stated as a rule rather than as a list.** Every module directly under
+   * `src/lib` is rostered; the modules inside `src/lib/pack/` are not, for the reason just given.
+   * The rule is what made this list answerable at the W-C merge, where nine more modules arrived
+   * at once: the question for each was not "does this feel like a parity check" but "is it a
+   * top-level module with a `<name>.test.ts` that imports it", and all nine were. `tokens.ts`
+   * was rostered in the same change — it is #171's, it has always satisfied the rule, and it was
+   * missing here only because this file was written on a branch that did not yet hold it. That
+   * is the omission the rule exists to stop being possible: a module whose departure nothing
+   * would have reported.
    */
   const PARITY_CHECKED_MODULES: readonly string[] = [
+    'cityRecord.ts',
     'geometry.ts',
+    'gradients.ts',
     'growthCharting.ts',
     'idSpaces.ts',
+    'measuredValue.ts',
+    'obligations.ts',
+    'ogCard.ts',
+    'ogRaster.ts',
+    'packLibrary.ts',
+    'publicTreeRead.ts',
     'quantity.ts',
     'spelling.ts',
+    'tokens.ts',
     'toolchain.ts',
+    'treePage.ts',
     'vitality.ts',
   ];
 
@@ -671,7 +856,9 @@ describe('the sources the web suite reads', () => {
 
     // ── And the rostered modules keep the convention that names their check ───────────────────
     // A module kept with its own test deleted is the same hole one file further along, and for
-    // these seven the test is named for the module, so the file itself can be demanded by name.
+    // every rostered module the test is named for the module, so the file itself can be demanded
+    // by name. (`src/lib/pack/`'s six are held to the import scan above instead; their tests are
+    // named for the layer, so there is no file name to demand.)
     for (const module of PARITY_CHECKED_MODULES) {
       const name = module.replace(/\.ts$/, '');
       const testPath = join(testDir, `${name}.test.ts`);
