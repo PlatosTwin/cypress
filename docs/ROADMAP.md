@@ -746,6 +746,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
    sentence. Rework the test's gesture (or its precondition) so a delivered-but-unregistered pan
    retries or fails as an environment refusal rather than a red; keep the regression it guards
    (a deliberate pan surviving a tab switch must still fail if the camera resets).
+
+   **2026-09-11: six failures in a 90-minute window, and the probe says it is not the flake the
+   retry was built for.** The web round saw this test fail on six branches that afternoon, every
+   one reading `panBegan=3 panEnded=3 panCancelled=0 panFailed=0` at `GATE_SCREEN_WIDTH_PT: 402`
+   — all three synthesized drags recognized end to end, camera still on "Centered on you". #230's
+   retry hardened the COALESCED TOUCH STREAM, whose signature is `panBegan=0`, so whatever this
+   is, it is not that. `MapAnnotationLayer.swift:445` names this exact pattern as the
+   `layoutMargins` content-inset signature, reproduced 4/4 at 402 pt on an iPhone 16 Pro. That
+   leaves two readings — a width-marginal camera behavior, or a slow-runner variant where the
+   camera moves and snaps back — and the fields that separate them, `lastEndedTranslation` and
+   `settles`, are cut out of the job log by the truncation in item 40. **Start from a
+   `ui-xcresult` artifact rather than from a re-run.**
 6. **Sweep `library.stagingURL`'s lifecycle for leaks** (chip still pending as of this note). The
    #123 reviewer left it deliberately unfiled: can a process death, failed verification, cancelled
    transfer, or refused install leave orphans in the staging directory, and does anything clean
@@ -932,6 +944,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **`t.Logf`, not a failure**, deliberately: failing would trade one red-on-main for another.
     That is why this item exists rather than a test. One deletion, two entries, in the round that
     merges 005 or the one after it.
+
+    **The trigger has fired**: `server/migrations/005_data_dispute_kinds.sql` is on `main` (PR
+    #159 merged), so both entries now excuse nothing, and
+    `TestEveryContributionKindIsClassified`'s `t.Logf` asks for their deletion on every run of a
+    suite item 14 says nothing runs.
 19. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
     R27.1 asks for it in as many words — *"count it, do not guess it"* — and PR #163 shipped
     R27.1's inherited ≥3 because the attempt to read the production distribution was refused before
@@ -1048,6 +1065,181 @@ into this section in the round that finds it, and nowhere else. Each item stands
     Fly cache in front of the web with its own policy, the sixty seconds has to survive it, and a
     `stale-while-revalidate` added for latency would be exactly the thing §8b forbids. Check it with
     the deployment in front of you.
+
+29. **Reserve the nav slugs beside `ID_SPACES`, in the file that mints the ids.** `explore`,
+    `species`, `neighborhoods`, `data` and `site` are the web's top-level paths (§2 of
+    `docs/rulings-pending/web-nav-destinations.md`), and the tree page's route is
+    `web/src/pages/[idSpace]/tree/[uuid].astro` — a dynamic FIRST segment, so an id space named
+    `explore` would shadow a nav destination outright. Nothing stops one being minted:
+    `Tools/inventory_contract.py:227` hand-enters `ID_SPACES` and its own health check
+    (`id_space_problems`) tests ids and identity prefixes, not a reserved list. Free today
+    (`sf`, `us-ca-sj`, `us-ny-nyc`) and a published-path rewrite the day somebody enters a
+    colliding one — tree uuids are frozen per space under DECISIONS constraint 13, so the space
+    cannot simply be renamed afterwards. The reserved list belongs in the minting file, not in the
+    web app, which is downstream of the mistake.
+
+30. **Establish DataSF's terms for the Street Tree list, and record them where the other two are.**
+    `Tools/build_seed.py:3105` carries `inventory_sj_street_tree_licence` as `CC-BY` and `:3145`
+    the NYC Data Mine terms string; there is no San Francisco counterpart anywhere — not in
+    `build_seed.py`, not in `Tools/inventory_contract.py`, not in `seed_meta` — so
+    `attribution_for` (`Tools/publish_cities.py:855`) publishes that city with no `license` field
+    at all. The owner's 2026-09-10 ruling on the export page is "state each source's own terms,
+    say nothing where the receipt has none", which means San Francisco's row on `/data` says
+    least, of the city whose data the app ships most of. Establishing the terms is research, not
+    code; recording them is one key.
+
+31. **Name the round that builds the public planting-site page, before two rounds build it or none
+    does.** `/‹id_space›/site/‹uuid›` is designed element for element in §4.3 of
+    `docs/rulings-pending/web-nav-destinations.md` — it is E107's iOS answer ported, and E206 puts
+    24,200 pins, 12.2% of the map, behind it. W-C is struck as shipped and did not build it; W-D's
+    milestone row names `Explore`, `Species`, `Neighborhoods` and `Data & export` and does not
+    mention it. A page every milestone assumes another one owns is how a designed page never
+    ships, and a page two rounds both start is how two copies of one number begin.
+
+32. **Rule on whether iOS adopts the hollow, dashed-outline planting-site pin.** The web takes it
+    under the W-3 exception (`docs/rulings-pending/web-nav-destinations.md`, §2's map vocabulary),
+    on the argument that dashed-for-absence is the design's existing idiom rather than a new one —
+    the C14 callout, screen 14's empty well, C15 and 06's disclosure are all drawn that way, and
+    E107 chose the dashed callout on exactly that ground. E107 declined to invent a pin on iOS
+    because a pin is a drawn decision, so the phone still draws a vacant site with the `removed`
+    vocabulary, which says *was and is no longer* about a basin that never held a tree. If the web
+    ships it and the phone does not, one map disagrees with the other about 12.2% of its pins.
+    Owner's call; a Swift round with its own review, not a web change.
+
+33. **`attribution_for` iterates `inventories` only, so a polygon source carries no attribution
+    into the manifest.** `Tools/publish_cities.py:842` selects `FROM inventories WHERE id_space =
+    ?` and builds one entry per row; neighborhood polygons have no row in that table, so nothing
+    they came from reaches the city file — under a docstring that says "R36 binding consequence
+    (b): published data carries its sources' attribution obligations". Latent today, because the
+    only polygon file is DataSF's `j2bu-swwd` and its terms are unrecorded anyway (item 30). It
+    becomes a live license obligation the moment CC-BY San Jose polygons land, which is the same
+    round item 34 has to be fixed in.
+
+34. **`load_neighborhoods` numbers polygons by their position in a name sort, so adding a source
+    renumbers the ones already published.** `Tools/build_seed.py:1996` sorts the features by name
+    and `enumerate(..., start=1)`s them into `neighborhoods.id`, commented "Sort by name so
+    integer ids are stable across re-downloads" — stable across re-downloads of ONE file, and
+    across nothing else. A second source's names interleave into the same sort, every id after the
+    first insertion shifts, `trees.neighborhood_id` changes for San Francisco rows that did not
+    change, and every device re-downloads a city whose data is identical to the one it holds.
+    Nothing pins an id to its polygon: give them an identity from the source (the source's own
+    area key, or a uuid5 of the name) inside the ingest round, while San Francisco's 41 are still
+    the only published ones.
+
+35. **`build_seed.py` does not prune unreferenced polygons the way `publish_cities.py` does.**
+    `Tools/publish_cities.py:669` deletes every neighborhood no surviving tree references;
+    `Tools/build_seed.py:2177` inserts every polygon the file carried, referenced or not. No
+    difference anyone can measure today — San Francisco's 41 are all referenced — but W-F measured
+    230 of San Jose's 297 as unreferenced, and those would ride into the **app bundle**, which is
+    the one copy of this data a device cannot re-download. Prune on the same rule at build time,
+    and state the rule once rather than in two tools that could drift.
+
+36. **`AreaPickerSheet`'s disambiguator separates two cities, not two neighborhoods in one city.**
+    `Cypress/Features/Journal/AreaPickerSheet.swift:103` counts colliding names and qualifies each
+    with `choice.cityName`, so two areas both named `Commercial` in San Jose become two chips both
+    reading `Commercial · San Jose` — identical labels with nothing to choose between, which is
+    the failure the qualifier was added to prevent (PR #132 review, F4). The file says plainly
+    that today's bundle cannot reach it (41 distinct San Francisco names, no San Jose polygons);
+    W-F reports the San Jose candidate source repeats names inside the city, so the ingest round
+    is what makes it reachable. Fix needs a second qualifier the data actually carries, which is
+    item 34's question about what identifies a polygon.
+
+37. **The F17 refusal is calibrated on San Francisco's polygons and tested on San Francisco's
+    geometry.** `AlmanacLimits.fixCanResolveAnArea` (`Cypress/Data/API/Almanac.swift:471`) and the
+    1,200 m fallback radius below it are argued from "SF's 41 Analysis Neighborhoods span
+    0.015–0.045 degrees of latitude" (`:482`), and `AreaPickerTests` exercises the refusal on
+    San Francisco coordinates. Six more packs gaining polygons puts that number in front of areas
+    nobody has measured: a radius that is neighborhood-sized in San Francisco can be a whole
+    district or a single block elsewhere, and the thresholds the stats screens read change meaning
+    with it. Measure the new sources' polygon spans in the ingest round, and extend the tests to a
+    second city's geometry rather than assuming the first one's.
+
+38. **`Tools/setup_worktree.sh` derives the repository root from its own path, so running it from a
+    fresh worktree accuses the main checkout.** Line 24 is
+    `REPO="$(cd "$(dirname "$0")/.." && pwd)"` and line 30 exits with `seed missing at $SEED — main
+    checkout is itself broken`. Invoked from the new worktree as `Tools/setup_worktree.sh .` — the
+    obvious spelling, and the one a new agent reaches for — `$REPO` is the seedless worktree
+    itself and the message blames the one checkout that is fine. Every agent brief works around it
+    in prose instead. Take the source root explicitly (an argument, or `git rev-parse
+    --git-common-dir`), and keep a calibration that a genuinely broken source still says so.
+
+39. **`ShareCopy.publicURLPrefix` points at a domain a third party holds.**
+    `Cypress/Features/Share/SharePresentation.swift:245` is `https://cypress.app/sf/tree/`, and
+    the RDAP measurement in "Open, and named as open" item 1 says that name is registered to a
+    redacted holder through 2026-11-03 with nothing served on it. Every share the beta has
+    produced carries that prefix. Moving it — to the `cypressgrove.app` the web round proposed, or
+    to whatever host W-E resolves — is shipped iOS copy, so it is a Swift round with its own
+    review and its own build, and the builds already in testers' hands cannot be recalled: links
+    already sent stay pointed where they point whatever is decided. Sequence it with W-E rather
+    than after it, because the first deployed host is the one the copy should already name.
+
+40. **`verify_test_log.sh`'s failure-detail printer truncates the pan probe.**
+    `FAILURE_EXCERPT_COLUMNS=400` (`Tools/verify_test_log.sh:118`) clips every failure line at
+    `:166`, and #241's probe — added precisely so two `MapPanTabSwitchUITests` failure modes could
+    be told apart — runs longer than that, so `lastEndedTranslation` and `settles` never reach the
+    job log at all. The tool that exists to make a red log readable is cutting off the field the
+    test was instrumented to carry. The clip has a real reason (one XCTest message in this suite
+    is a 400-character sentence, and a wrapped wall of them is as unreadable as no message), so
+    the fix is not a bigger number: print the harness's own probe lines in full, or clip them on a
+    different rule. Item 5 is the investigation this blinds.
+
+41. **Sweep the `readdirSync` censuses that stop covering the tree the day a directory appears.** A
+    guard named for "every module under `src/lib`" censused only the top level, because
+    `readdirSync` with an `isFile()` filter skips a directory silently instead of descending; it
+    went green about six modules it could not see, for as long as that directory had no
+    subdirectory. Fixed on `web/domain-rules` (`web/test/sources.test.ts:650` is recursive now,
+    with a fixture that plants a nested file); the CLASS is not. `web/test/tokens.test.ts:376` is
+    the same shape — it lists `Cypress/DesignSystem/Tokens`, keeps the `.swift` entries and
+    compares that against its accounted list, so a token file moved one directory down vanishes
+    from the census with the assertion still green. Find every directory census in the repo and
+    red-prove each against a planted subdirectory; a guard that silently stops covering its
+    subject is this repository's signature defect, not a nit.
+
+42. **`CypressMotion.camera` and `.selection` write their durations inline, so two numbers the map
+    depends on have a token on neither platform.** `Cypress/DesignSystem/Tokens/CypressMotion.swift:146`
+    and `:152` hand `duration: 0.4` and `duration: 0.18` to `Animation.timingCurve` rather than
+    naming them in `CypressMotion.Duration`, where every other duration in the file lives — the
+    two curves were themselves a consolidation of three literals, and the durations were the half
+    that did not get names. The web's export reads declarations, so it cannot see them and a web
+    surface that moves a camera re-types them. A small iOS change, and it has to happen on the
+    source side: the export may not invent what the design system does not state.
+
+43. **Widen `WEB_ONLY` to the files the web pipeline is made of, naming them one by one.**
+    `.github/workflows/testflight.yml:322` is
+    `WEB_ONLY='web/|Tools/run_web_tests\.sh$|Tools/verify_web_test_log\.sh$'`, so
+    `.github/workflows/web.yml` — the file that DEFINES the web's CI — matches neither it nor
+    `DOC_ONLY`, and a one-line edit to it runs `unit` plus four `ui` shards on macos-26 testing
+    nothing it changed, while whatever actually needs those runners waits. Every web round edits
+    that file; the beta round measured two such pull requests in one day. The same holds for any
+    web-adjacent script under `Tools/` that is not one of the two named — the token exporter was
+    moved into `web/` to dodge exactly this. Name the paths individually: the comment at `:318`
+    says why a `Tools/web_*` prefix is not safe, and `Tools/fetch_seed.sh` is the sibling it is
+    afraid of. Budget one simulator run, because `DeployPathsAgreeTests` reads this file. **One
+    problem with items 20 and 44** — do the three in one round.
+
+44. **A web pull request stacked on a non-`main` base runs no CI at all, and still reports
+    `CLEAN`.** `.github/workflows/web.yml:111` and `.github/workflows/testflight.yml:124` both
+    filter `pull_request: branches: [main, 'release/**']`, so the three W-B pull requests opened
+    against `web/foundation` had `gh pr checks` answer "no checks reported" while
+    `mergeStateStatus` said `CLEAN` — which here means "no required check applies", not "checks
+    passed", because the `main-pull-request-only` ruleset governs only pull requests targeting
+    `main`. Found independently by two W-B agents and confirmed by the orchestrator. Decide it:
+    widen both `branches:` filters, or forbid stacking web pull requests. Until it is decided the
+    workaround is rebase-onto-`main` and force-push — a real `synchronize` event, since GitHub's
+    auto-retarget on a deleted base fires `edited` and starts nothing — and then reading that
+    checks EXIST rather than that the state says `CLEAN`.
+
+45. **The token export publishes leading in points while W1 writes its own line-heights, and
+    nothing checks they agree.** `CypressFont.LineSpacing` is SwiftUI's EXTRA leading;
+    `web/src/lib/tokens.ts:725` exports it in px and documents the inversion
+    (`line-height = 1.2 + leading / font-size`), naming the two display styles where inverting is
+    wrong because SwiftUI clamps them to `0`. The export deliberately did not invert — that would
+    author a value the design system does not state — and W1 then authored one anyway:
+    `web/src/styles/w1.css:48` sets `--w1-hero-title-line-height: 1.05` from the figure the Swift
+    documents in prose, and three more rules write `line-height: 1.5` as literals. Two
+    transcriptions of one typographic decision, on two platforms, with no guard between them.
+    Decide where line-height lives — a figure in the Swift the export can read, or a rule the web
+    owns explicitly — and guard whichever it is.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
