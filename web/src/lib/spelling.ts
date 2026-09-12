@@ -54,12 +54,32 @@ export const britishForms: readonly BritishForm[] = [
   { pattern: /litre/gi, american: 'liter' },
   { pattern: /sombre/gi, american: 'somber' },
   { pattern: /calibre/gi, american: 'caliber' },
-  { pattern: /millimetre/gi, american: 'millimeter' },
-  { pattern: /centimetre/gi, american: 'centimeter' },
-  { pattern: /kilometre/gi, american: 'kilometer' },
-  // A bare `metre` strikes "flameTree" — "fla-meTre-e" — so it is anchored the way the Swift
-  // list anchors it: word-initial, or behind a metric prefix, or at a camelCase hump.
-  { pattern: /(?<![A-Za-z])metre/gi, american: 'meter' },
+  // `-metre`, bare or behind any SI prefix, generated rather than listed one prefix at a time.
+  //
+  // It used to be four hand-written entries — `millimetre`, `centimetre`, `kilometre` and a bare
+  // `metre` — and `nanometres` fell between them: the bare rule's lookbehind is defeated by the
+  // `o` of `nano`, and no entry named that prefix. Three occurrences sat inside `web/`, past this
+  // sweep, until a reviewer read them (PR #173). Enumerating the prefixes is the fix; adding
+  // `nanometre` alone would have left `picometre` in the same hole.
+  //
+  // **What the lookbehind still excludes, said plainly.** `(?<![A-Za-z])` is load-bearing — a bare
+  // `metre` strikes "flameTree" as "fla-meTre-e". It also means a `metre` glued to the end of a
+  // longer word is NOT caught, a camelCase `fooMetre` included. That is a deliberate false
+  // negative rather than a claim of coverage, and `spelling.test.ts` asserts it as one, by name,
+  // in `declares the false negative the bare-metre lookbehind costs` — an assertion that exists to
+  // be read, not to pass. (It used to say "asserted as such in the test beside this file", which
+  // was a stretch: the only related assertion was `flameTree` in the INNOCENT list, which guards a
+  // false positive and says nothing about this. PR #173 delta review, D7.)
+  //
+  // The prefix list is every SI prefix, quetta down to quecto, plus both spellings of deca- and
+  // the empty prefix for a bare `metre`. It stopped at femto/tera until the same review counted
+  // it; `peta`, `exa`, `atto`, `zepto` and `yocto` were in exactly the hole `nano` had been in.
+  ...['', 'quetta', 'ronna', 'yotta', 'zetta', 'exa', 'peta', 'tera', 'giga', 'mega', 'kilo',
+    'hecto', 'deka', 'deca', 'deci', 'centi', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto',
+    'zepto', 'yocto', 'ronto', 'quecto'].map((prefix) => ({
+    pattern: new RegExp(String.raw`(?<![A-Za-z])${prefix}metre`, 'gi'),
+    american: `${prefix}meter`,
+  })),
   // -ce -> -se, and the two -ise families that occur in prose about code.
   { pattern: /licence/gi, american: 'license' },
   { pattern: /defence/gi, american: 'defense' },

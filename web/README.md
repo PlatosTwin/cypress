@@ -2,10 +2,10 @@
 
 **Astro + TypeScript, SSR on the Node adapter, self-hosted on Fly.** Opened 2026-09-10 by the
 owner; the authority is `docs/design-proposals/2026-09-10-web-version.md` and the queue underneath
-it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation — it builds, it is
-tested, and it renders one placeholder page. The **read layer** clause of **W-B** landed next and
-is described under "The read path" below; the other two W-B clauses (design tokens, the ported
-domain rules) are still open.
+it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation: it builds, it is
+tested, and it renders one placeholder page. **W-B** has since landed in full — the design tokens,
+the pack read layer and the re-derived domain rules — described under *Design tokens*, *The read
+path* and *The rules, re-derived* below. No page reads any of them yet; that is W-C.
 
 **What v1 is** (ruling W-1): a public read surface. No login, no writes. The tree page, plus the
 `Explore` / `Species` / `Neighborhoods` / `Data & export` nav the spec draws.
@@ -34,6 +34,7 @@ As of W-A. Everything below was read from this directory, not remembered.
 | Pages | one placeholder at `/`. W1 is W-C |
 | Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
 | Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
+| Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
@@ -145,75 +146,60 @@ to match the domain, because the domain can move and a Fly app name cannot.
 `fly.toml` deliberately declares **no `[mounts]`**. A mount naming a volume that does not exist
 fails a deploy halfway through creating the app.
 
-## Design tokens (W-B)
+## The rules, re-derived (W-B, first of three)
 
-`src/styles/tokens.css` is **generated and checked in**. `scripts/export-tokens.mjs` reads
-`Cypress/DesignSystem/Tokens/*.swift` and writes it; `test/tokens.test.ts` re-runs the same render
-and fails byte-for-byte when the two disagree. Do not edit the CSS — the next test run reverts it.
+`src/lib/` holds five rules that already exist elsewhere in this repository, re-derived in
+TypeScript and checked against the originals' own test cases:
 
-```sh
-npm run tokens         # rewrite src/styles/tokens.css
-npm run tokens:check   # exit 1 if it is stale (the test says the same thing, louder)
-```
+| Module | The declaration it is derived from |
+|---|---|
+| `vitality.ts` | `Cypress/Core/Rubric/Vitality.swift` (+ `LeafRetention` in `Core/Models/Species.swift`) |
+| `quantity.ts` | `Cypress/Core/Units/Quantity.swift`, `MeasurementKind.plausibleSIRange` in `Core/Models/TreeMeasurement.swift` |
+| `geometry.ts` | `Cypress/Core/Models/Geometry.swift` |
+| `growthCharting.ts` | `FieldCaptured.isEligibleForGrowthCharting` and `GPSAccuracy` in `Cypress/Core/Models/CoreEntity.swift`; `isChartable` / `splitBySeries` in `Core/Models/TreeMeasurement.swift` |
+| `idSpaces.ts` | `Tools/inventory_contract.py` — **not Swift.** `Tree.idSpace` is an opaque `String?` and `SeedCities` reads the pack's own `id_spaces` table; the registry exists once, in Python |
 
-The generator lives under `web/` rather than in `Tools/` because **both CI workflows classify by
-path**: `web.yml` runs on an allow-list and `testflight.yml`'s `WEB_ONLY` exempts the same set, and
-a script at `Tools/export_tokens.mjs` is in neither — a change to it alone would skip the web suite
-and run 34 minutes of `macos-26` that exercises nothing. Widening `WEB_ONLY` is the alternative and
-it is guarded by `CypressTests/DeployPathsAgreeTests`, so it is a change the **iOS** suite has to
-prove. Moving one file needs neither.
+**A second copy of a rule is how the vitality rubric forked for two weeks** (ticket #261:
+`Vitality.anchor`, `PRODUCT.md` §3 and `SCREENS.md` 05 §3 disagreed from the day both documents
+were distilled, and nothing read the two tables). So none of these is checked against a
+transcription. `web/test/support/sources.ts` parses the Swift, the Python and the two distilled
+markdown tables **at run time**, every parser is calibrated in `test/sources.test.ts` against a
+specimen whose answer was known first, and the paths it reads are listed in `web.yml`'s `paths:`
+so the checks fire on the change they guard — asserted, in `test/sources.test.ts`, in both filters.
 
-**Why generated-and-checked-in rather than parsed at build time.** The Dockerfile copies
-`astro.config.mjs`, `tsconfig.json` and `src/` and nothing else — the Swift tree is not in the
-image and never will be, because putting it there would make the iOS source a build input of a
-web container. A build-time parse would also make every page render depend on a parser that has to
-be right. So the CSS is a real file: it ships, it is reviewable in a diff, and a designer can read
-what the web is actually painting. The cost of that choice is staleness, and the staleness is
-exactly what `test/tokens.test.ts` refuses.
+**Where the numbers came from, and what keeps them current.**
+`test/support/swift-reference.json` is what the real `Quantity.swift`, `Geometry.swift` and
+`CoreEntity.swift` printed when compiled unmodified; `test/support/swift-reference/main.swift` is
+the program that printed it and carries the command to regenerate it.
 
-**Nothing is skipped silently.** Every `static let` in a token scope becomes a token, a private
-constant, or a **named** entry on a skip list the test asserts one line at a time. A declaration
-that matches no rule throws rather than being dropped — an exporter that returns "the tokens I
-understood" is green on the day it stops understanding one.
+It is a **recording**, and a recording does not move when its subject does. So the guard is in two
+halves and the honest description of it is *TypeScript against a recorded snapshot, plus a tripwire
+on the Swift source that snapshot came from*: `test/swiftDrift.test.ts` fingerprints the Swift
+declarations whose bodies the ports reproduce and no value parser reads, and goes red on any edit to
+them, cosmetic or not, with a message telling the reader to re-record the reference and re-verify
+parity before pasting a new fingerprint. That file states the membership rule, names the set it
+covers and lists what is deliberately out; this paragraph does not restate the list, because the
+first version of it did and was wrong about the set while being right about the count. Without that second half, two one-character edits to the real Swift — `111_320.0` to
+`111_000.0`, and `<=` to `<` on the D6 gate — left the suite green at `103 of 103` while the two
+implementations snapped the same coordinate 8.2 m apart and charted different sets of
+measurements. Both were found by PR #173's adversarial review, and both now go red.
 
-**Dark mode is `prefers-color-scheme` and nothing else.** Every paired token in the Swift is
-`Color(UIColor { traits in traits.userInterfaceStyle == .dark })`, which resolves off the *system*
-setting; the app has no in-app appearance control (the only `preferredColorScheme` calls in the
-target are in `#Preview` blocks). A `[data-theme]` attribute hook would be exporting a product
-decision the source does not contain, and a test that the export matches its source cannot protect
-anything the source does not say. Only tokens whose dark value differs appear in the dark block —
-`lightOnly` and `escalated` resolve to one value in both schemes by definition.
+The suite has no Swift toolchain, so it still cannot prove the recording is current by running
+anything; the tripwire is what turns a stale recording into a red run rather than a green one. 76 of the 78 recorded coordinate comparisons match Swift to the bit. The two
+that do not are one unit in the last place of `cos()` at 40.7128° N — 1.2 nanometers — and the
+suite asserts that exactly two need its tolerance, so the tolerance cannot widen unnoticed.
 
-**Three things the export does not carry**, each named in the test rather than left to be noticed:
+**Two things the port had to name rather than smooth over.** Swift's `Double.rounded()` breaks
+ties away from zero and JavaScript's `Math.round` breaks them toward positive infinity, which
+differs on every negative longitude this app has; `geometry.ts` implements the Swift rule
+explicitly in `roundedAwayFromZero`, which does use `Math.round` — under `Math.abs`, with the sign
+restored by `Math.sign`, so there is no signed tie for it to break. No **bare** `Math.round` on a
+signed value, which is the claim that is true. And `snappedToPublicPhotoGrid` is **not
+idempotent** — applying it twice moves a point by up to 12.20 m, and the SQLite read path applies
+it twice — which is written up in `docs/errata-pending/`, pinned by a test against the recorded
+Swift behavior, and left unrepaired because repairing it moves already-published coordinates.
 
-- `CypressGradient.swift` — multi-stop linear and radial recipes with their own geometry. Not one
-  custom property. W1's hero is a gradient, so W-C ports them.
-- The eight composed `Animation`s. Their curves are `--motion-ease-*` and six of their durations
-  are `--motion-duration-*`; `camera` (0.4 s) and `selection` (0.18 s) write their durations inline
-  rather than in `CypressMotion.Duration`, so those two numbers have no token on either platform.
-- `CypressFont.LineSpacing` is exported verbatim, in **points of extra leading**, which is SwiftUI's
-  unit and not CSS `line-height`. `CypressFont.swift` gives the conversion it was derived under
-  (`lineSpacing ≈ size × (lineHeight − 1.2)`). Nothing is transformed here, because inverting an
-  approximation and calling it a token would be inventing a value the design system does not state.
-
-  **Inverting it yields the wrong answer for two of the six, and the two are named in the
-  generated file's own header.** `speciesHero` and `treeNameHero` are declared `0` in the Swift
-  *because SwiftUI cannot set leading tighter than the face's natural line height* — the doc
-  comment beside each says "tighter than natural; clamp at 0". `0` is that clamp, not the design
-  value, so inverting `--font-line-spacing-species-hero: 0px` returns `line-height: 1.2` where the
-  source documents **1.1**, and `--font-line-spacing-tree-name-hero` the same against **1.05** —
-  *looser* than intended, on the two largest display styles. CSS has no such floor. A consumer
-  that wants a `line-height` inverts the other four and uses the documented figure for these two;
-  `test/tokens.test.ts` reads both figures out of the Swift and fails if the header stops matching
-  them.
-
-The one web-only judgment in the whole export is `GENERIC_FALLBACKS` in `src/lib/tokens.ts`: the
-generic CSS fallback after each family, which iOS has no equivalent of. The family *names* are not
-invented — `Source Serif 4`, `Alegreya Sans` and `Spline Sans Mono` are derived from the PostScript
-prefixes the Swift declares, and they are the `name` table families of the TTFs in
-`Cypress/Resources/Fonts/`.
-
-## The read path (W-B)
+## The read path, when it arrives (W-B)
 
 The web opens the **published city packs**, read-only, through the same schema the phone uses —
 decision W-5. Not Postgres, not browser-side SQLite over HTTP range requests. It reads
