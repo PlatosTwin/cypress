@@ -252,6 +252,8 @@ against the manifest, `count(*)` matching the manifest's tree count as the contr
   in the seed" holds for San Francisco and nowhere else: `Tools/build_seed.py:2105` loads exactly one
   polygon file, DataSF's SF-only `j2bu-swwd`, and `neighborhoods` is **0 rows** in the San Jose pack.
   Six of seven packs have no neighborhoods, which hits the `Neighborhoods` nav destination hardest.
+  The measurement, the two replacement sources and each source's own terms are in
+  `docs/investigations/neighborhood-polygons.md`.
 
 ### Open, and named as open
 
