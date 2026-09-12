@@ -74,6 +74,23 @@ on:
     # unusable for a different reason worth recording: `/dist/` is git-ignored in full (publisher
     # output, `.gitignore`), so a note written there is never committed and the compile — which
     # reads git history and nothing else — would find nothing.
+    # **`web/**` is deliberately NOT on this list**, even though a web-only push is classified
+    # `tests=false ships=false` by the `scope` step below and therefore costs one ~10-second
+    # ubuntu job and nothing else. Two reasons, and the second is the one that decided it.
+    #
+    # `CypressTests/DeployPathsAgreeTests` asserts, path by path, that everything ignored here
+    # also appears in `DOC_ONLY` — the *prose* predicate, not the wider run-nothing predicate.
+    # Adding `web/**` here therefore forces `web/` into a variable named DOC_ONLY, and the
+    # workflow starts calling a TypeScript app prose in the one place a reader goes to find out
+    # what a green check meant. The alternative — teaching that test a third name — is a real
+    # option and is written up in the roadmap; it is not a thing to do in passing, because that
+    # test is what stands between this file and #212.
+    #
+    # And the saving is close to zero. On `push`, ignoring a path buys a skipped run; classifying
+    # it in `scope` buys a skipped SUITE and a skipped ARCHIVE, which is all the cost there was.
+    # What the run does buy is a record: a web-only push to main leaves a notice on the record
+    # saying it was recognized as web and skipped on purpose, which is exactly the evidence
+    # CLAUDE.md tells a reader to go and look for before trusting a green check.
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -237,7 +254,9 @@ jobs:
           # nothing a test could exercise. `*` does not cross a `/` in those glob patterns, so
           # `*.md` is the repository root only and is anchored the same way here.
           DOC_ONLY='docs/|graphify-out/|[^/]*\.md$'
-          # Plus the eight that must RUN and must not SHIP. `.github/` because a pipeline change
+          # Plus the eight that must RUN and must not SHIP — eight, still, after the web landed:
+          # `WEB_ONLY` below is a different answer to the first question, so it is a different
+          # variable and is not counted here. `.github/` because a pipeline change
           # proves itself by running (#212); the two test directories because they ARE the suite,
           # and cannot reach the archive — Cypress.xcscheme has one BuildActionEntry, the app
           # target (#215); `Tools/ui-test-shards.txt` (exact file, not `Tools/` broadly — see
@@ -273,10 +292,74 @@ jobs:
           # `proximity_conflict.json` off disk, so regenerating a Go-side fixture can turn the
           # iOS unit suite red. A `server/` change has to RUN.
           #
+          # `WEB_ONLY` is the web version (W-A, docs/design-proposals/2026-09-10-web-version.md).
+          # It is a THIRD set, deliberately not folded into either of the two above, because it
+          # answers the two questions differently from anything already on this list:
+          #
+          #   * it must not SHIP, for `server/`'s reason exactly — the project's three
+          #     `PBXFileSystemSynchronizedRootGroup`s are `Cypress`, `CypressTests` and
+          #     `CypressUITests`, and `web/` is in none of them, so nothing under it is an
+          #     archive input and a web-only commit leaves the app byte-identical. Minting a
+          #     build for one is #1 / #215 / #31 arriving through a new door.
+          #   * it must not RUN the Xcode suite either, which is where it parts company with
+          #     `server/`. `server/` has to run because `CypressTests/GoldenWireFixtureTests`
+          #     reads `server/testdata/*.json` off disk, so a Go-side fixture can turn the iOS
+          #     suite red. Nothing in `CypressTests` or `CypressUITests` opens a file under
+          #     `web/` — the web app is TypeScript over the *published* city packs and shares no
+          #     file with the Xcode targets — so 34 minutes on two `macos-26` runners would
+          #     exercise exactly nothing. The web has its own CI, on ubuntu, in `web.yml`.
+          #
+          # It is NOT `DOC_ONLY`, and that distinction is the point rather than pedantry: this
+          # code is tested, just not here, and the notice below has to keep saying something
+          # true. Folding `web/` into a variable named DOC_ONLY would make the run's own log
+          # call a TypeScript app prose, which is the class of confident-but-wrong statement
+          # this repository keeps paying for.
+          #
+          # The two harness scripts ride with it for the same reason `Tools/run_tests.sh` and
+          # `Tools/verify_test_log.sh` ride with the iOS list, and they are named ONE BY ONE
+          # rather than as `Tools/web_*`: a blanket prefix is how `Tools/fetch_seed.sh`, a
+          # genuine build input, would eventually be swept up by a sibling named to match.
+          WEB_ONLY='web/|Tools/run_web_tests\.sh$|Tools/verify_web_test_log\.sh$'
+          # The two root git-metadata files, added to the run-but-do-not-ship set by the round
+          # that created `web/` — because that round is the one that walked into the gap.
+          #
+          # **How it was found, which is the part worth keeping.** W-A built a calibration table
+          # for its own predicate and ran the real `scope` step against it. The table covered
+          # `web/`, the harness scripts, `.github/`, `server/`, `docs/` and three adversarial
+          # lookalikes. It did **not** cover `.gitignore`, which that same pull request had to
+          # edit — a table of the paths the change was designed for rather than the paths the
+          # change actually touched. CI answered `shipping — these can affect the app:
+          # .gitattributes .gitignore`, and merging it would have minted a TestFlight build
+          # byte-identical to the last one, expired the build the testers were on and notified
+          # all of them: #212 / #215 / #31 exactly, arriving inside the pull request written to
+          # prevent it.
+          #
+          # **Why they cannot reach the archive.** Neither is compiled, bundled or read during a
+          # build: the three `PBXFileSystemSynchronizedRootGroup`s are `Cypress`, `CypressTests`
+          # and `CypressUITests`, and both files sit at the repository root outside all three.
+          # `.gitignore` decides what git TRACKS, not what Xcode builds — and a file that starts
+          # being tracked because this file changed appears in the diff under its own name, where
+          # this predicate judges it on its own merits. `.gitattributes` here sets a merge driver
+          # and a linguist hint; it carries no `export-ignore` and no filter, so it changes no
+          # bytes in a checkout.
+          #
+          # **They must RUN, and that is not caution.** `CypressTests/DocumentCitationGuardTests`
+          # reasons about which files are absent from a fresh clone and records that deriving that
+          # set from `.gitignore` was tried and is wrong in principle — the comment survives at
+          # `DocumentCitationGuardTests.swift:95`. Nothing reads either file at test time today
+          # (checked: every mention in the three targets is a comment, with the grep calibrated
+          # against `pinned-seed.json`, which it does find). But a change to what this repository
+          # tracks is exactly the change that guard exists near, so it proves itself by running.
+          #
+          # Anchored with `$` and matched against `^(…)`, so these are the ROOT files only. A
+          # `Cypress/.gitignore` would not match and would ship, which is the safe default this
+          # whole list is built on.
+          GIT_METADATA='\.gitignore$|\.gitattributes$'
           # One assignment on one line, however long: `DeployPathsAgreeTests` reads the first line
           # that starts with `NO_ARCHIVE=`, and a continuation would leave the tokens below the
-          # first line unchecked — a gate passing on half the list.
-          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$DOC_ONLY"
+          # first line unchecked — a gate passing on half the list. `$DOC_ONLY` is interpolated
+          # by name and not re-typed, which that same test asserts.
+          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$GIT_METADATA|$WEB_ONLY|$DOC_ONLY"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # The escape hatch: a manual run tests everything and ships. This is what makes the
@@ -312,17 +395,40 @@ jobs:
           changed="$(git diff --name-only "$before" "${{ github.sha }}")"
           echo "changed paths:"; echo "$changed" | sed 's/^/  /'
 
-          testable="$(printf '%s\n' "$changed" | grep -vE "^($DOC_ONLY)" || true)"
+          # The containment that makes `ships=true` imply `tests=true` still holds, and it is
+          # worth restating now that there are three sets rather than two: `NO_ARCHIVE` is built
+          # from `$WEB_ONLY` and `$DOC_ONLY`, which is exactly the union this line subtracts. So
+          # nothing can be buildable without also being testable, and the `release` job can never
+          # be reached by a run whose suite did not execute.
+          testable="$(printf '%s\n' "$changed" | grep -vE "^($WEB_ONLY|$DOC_ONLY)" || true)"
           buildable="$(printf '%s\n' "$changed" | grep -vE "^($NO_ARCHIVE)" || true)"
 
           if [ -z "$changed" ] || [ -z "$testable" ]; then
             echo "tests=false" >> "$GITHUB_OUTPUT"
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            # No backticks in this string, and that is not a style preference. It is a DOUBLE-quoted
-            # shell string, so `word` is command substitution: written with them, the shell ran
-            # `gate` as a command, got nothing, and silently deleted the word from the notice a
-            # reader sees. Harmless with that word; arbitrary execution with a different one.
-            echo "::notice::only prose changed (docs/, graphify-out/ or a root *.md), so no test can exercise it and no build is minted. The suite is skipped deliberately, and the gate job checks that it was skipped for this reason. Run this workflow manually (workflow_dispatch) to force a full run."
+            # TWO notices, not one widened notice, and the reason is that a notice is a CLAIM.
+            # There are now two different ways to reach this branch and they are not the same
+            # fact about the diff: prose has nothing to test anywhere, while a web-only change is
+            # tested — on ubuntu, by web.yml — just not here. One sentence covering both would
+            # have to say something vague enough to be true of each, and the reader of a skipped
+            # required check is exactly the reader who cannot afford a vague sentence.
+            #
+            # Keeping the prose wording byte-identical is deliberate too: CLAUDE.md tells a
+            # reader to look for these words before citing a green check as evidence, and a
+            # quoted string that quietly stops existing is how that instruction rots.
+            #
+            # No backticks in either string, and that is not a style preference. It is a
+            # DOUBLE-quoted shell string, so `word` is command substitution: written with them,
+            # the shell ran `gate` as a command, got nothing, and silently deleted the word from
+            # the notice a reader sees. Harmless with that word; arbitrary execution with a
+            # different one.
+            non_prose="$(printf '%s\n' "$changed" | grep -vE "^($DOC_ONLY)" || true)"
+            if [ -z "$non_prose" ]; then
+              echo "::notice::only prose changed (docs/, graphify-out/ or a root *.md), so no test can exercise it and no build is minted. The suite is skipped deliberately, and the gate job checks that it was skipped for this reason. Run this workflow manually (workflow_dispatch) to force a full run."
+            else
+              echo "the web paths in this diff:"; echo "$non_prose" | sed 's/^/  /'
+              echo "::notice::this diff is web-only (web/, Tools/run_web_tests.sh, Tools/verify_web_test_log.sh), possibly alongside prose. It is NOT prose and it IS tested — by .github/workflows/web.yml on ubuntu, which is where the web suite lives. Nothing here is an input to the iOS app or its tests, so this workflow skips its suite deliberately and mints no build; the gate job checks that it was skipped for this reason. Read the web workflow's run for this commit, not this one, to know whether the web is green."
+            fi
             exit 0
           fi
 
@@ -331,7 +437,7 @@ jobs:
 
           if [ -z "$buildable" ]; then
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests, server//, Tools/ui-test-shards.txt, Tools/run_tests.sh, Tools/verify_test_log.sh, Tools/test_harness_guards.sh, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
+            echo "::notice::nothing changed that can affect the built app (only .github/, CypressTests/, CypressUITests/, server/, web/, a root .gitignore or .gitattributes, Tools/ui-test-shards.txt, Tools/run_tests.sh, Tools/verify_test_log.sh, Tools/test_harness_guards.sh, Tools/run_web_tests.sh, Tools/verify_web_test_log.sh, docs/, graphify-out/ or a root *.md), so the suite runs but no build is minted — it would be byte-identical to the last one. Run this workflow manually (workflow_dispatch) if a pipeline or test change needs a real archive to prove it: signing, export options, or the upload step."
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
             echo "shipping — these can affect the app:"; echo "$buildable" | sed 's/^/  /'
@@ -371,7 +477,15 @@ jobs:
           fi
           if [ "${{ steps.scope.outputs.tests }}" != "true" ]; then
             echo "state=not-required" >> "$GITHUB_OUTPUT"
-            echo "prose-only change — no build is minted, so no release note is required (one is welcome anyway; it waits in docs/whats-new/ for the next build)"
+            # `tests=false` now covers two shapes, prose and web-only, and neither owes a note.
+            # For prose that is the ruling's own wording. For web-only it follows from what the
+            # note IS: one tester-voice line for TestFlight's What to Test, compiled into a
+            # BUILD. A web-only pull request mints no build, so there is no field for its
+            # sentence to appear in and no tester who would read it there. When the web has
+            # something to announce it will need its own channel; borrowing TestFlight's would
+            # put a line about a web page in front of people holding a phone build that does not
+            # contain it. Written down because it is a decision, not an oversight.
+            echo "no iOS-testable change (prose, or web-only) — no build is minted, so no release note is required (one is welcome anyway; it waits in docs/whats-new/ for the next build)"
             exit 0
           fi
           # A branch name may contain slashes; a note filename must not, or the suggestion would
@@ -535,7 +649,7 @@ jobs:
   # does not treat a skipped required check as a failed one — the branch would go mergeable
   # precisely when the suite went red. So it always runs, and reads the results itself.
   #
-  # Since the suite can now be skipped ON PURPOSE for a prose-only change, this job is the only
+  # Since the suite can now be skipped ON PURPOSE for a prose-only or web-only change, this job is the only
   # thing standing between that optimization and a check that goes green without testing anything.
   # It does not accept a skip; it accepts a skip that MATCHES plan's decision.
   gate:
@@ -583,7 +697,7 @@ jobs:
               || { echo "::error::plan said tests=false but unit is '$unit', not 'skipped'"; exit 1; }
             [ "$ui" = "skipped" ] \
               || { echo "::error::plan said tests=false but ui is '$ui', not 'skipped'"; exit 1; }
-            echo "prose-only change: the suite was skipped, and skipped for that reason"
+            echo "plan said nothing here is exercisable by the iOS suite — prose, or web-only (see plan's notice for which): the suite was skipped, and skipped for that reason"
           fi
 
           # ── The release note ────────────────────────────────────────────────────────────
@@ -620,7 +734,8 @@ jobs:
     # through `ui`.
     #
     # Nothing extra is needed for the skipped-suite case, and that is a property of the derivation
-    # rather than luck: `NO_ARCHIVE` strictly contains `DOC_ONLY`, so `ships=true` implies
+    # rather than luck: `NO_ARCHIVE` strictly contains `$WEB_ONLY|$DOC_ONLY`, which is exactly
+    # the set the `testable` filter subtracts, so `ships=true` implies
     # `tests=true`, and a run whose suite was skipped can never satisfy this condition. Belt and
     # braces anyway — `needs: [unit, ui]` means GitHub skips this job outright when they skip.
     if: github.event_name != 'pull_request' && needs.plan.outputs.ships == 'true'

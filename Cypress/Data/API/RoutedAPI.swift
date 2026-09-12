@@ -424,6 +424,25 @@ public struct RoutedAPI: CypressAPI {
         try await local.withdrawMeasurement(id: id)
     }
 
+    /// Local, like every other contribution write: the dispute is a row in this phone's writable
+    /// database referencing a city record it must never write, and the account's copy is reached
+    /// through the queue rather than through a second call (`AppSchema` v22).
+    public func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute {
+        try await local.raiseDataDispute(
+            treeID: treeID, issues: issues, suggestions: suggestions, notes: notes
+        )
+    }
+
+    /// Local, for the reason above. The dispute being taken back is this device's own row.
+    public func withdrawDataDispute(disputeID: UUID) async throws {
+        try await local.withdrawDataDispute(disputeID: disputeID)
+    }
+
     public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
         try await local.logHazardRedirect(event)
     }

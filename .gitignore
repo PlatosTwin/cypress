@@ -27,7 +27,13 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Bundled seed: an 88 MB build product of Tools/build_seed.py, byte-for-byte reproducible.
+# Bundled seed: a build product of Tools/build_seed.py, byte-for-byte reproducible.
+# **Its size is NOT written here**, deliberately, and this comment states no number so that it
+# cannot go stale again. This line carried "88 MB" until 2026-09-10 and had been wrong for two
+# publishes by then: San Jose landed after the number was written, and New York after that, and
+# nothing about editing a .gitignore prompts anyone to re-measure. The size lives in
+# Fixtures/seed/pinned-seed.json, which is the file that decides which bytes this repository
+# builds against; read it from there, every time, and never from a comment.
 # Regenerate with: python3 Tools/build_seed.py
 # schema.sql beside it IS checked in — it is the readable contract; the .sqlite is just its output.
 Fixtures/seed/*.sqlite
@@ -60,3 +66,19 @@ shots/
 # record; these are what the current build derived, written here so a build never
 # modifies a tracked input. Update the tracked copy with --write-species-map.
 Fixtures/build/
+
+# The web app (W-A, docs/design-proposals/2026-09-10-web-version.md). Three build products and
+# nothing else — the two manifests, package.json and package-lock.json, ARE source and are
+# tracked. `npm ci` reads the lockfile and refuses when it disagrees with package.json, which is
+# what makes the Docker image reproducible; an ignored lockfile would make every image a fresh
+# resolution of a version range.
+#
+# `.astro/` is the types directory Astro regenerates on every build and dev start — the same
+# category as graphify-out/, output ABOUT the source, read by the editor and by `astro check`.
+web/node_modules/
+web/dist/
+web/.astro/
+# Local environment for `astro dev`. Nothing in v1 needs one; it is here because the day
+# something does is not the day to be discovering that this line is missing.
+web/.env
+web/.env.*

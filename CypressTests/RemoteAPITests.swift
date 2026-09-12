@@ -768,6 +768,12 @@ struct RemoteAPITests {
             // the way the nine above it now do — through the queue, on `AppSchema` v21's widened
             // vocabulary — so nothing here is on a send sink's path.
             "withdrawMeasurement",
+            // R79's two, and the same kind of missing route: BUILD-PLAN §6 predates the ruling, and
+            // both reach an account through the queue on `AppSchema` v22's widened vocabulary. PR-B
+            // of that round is what teaches `sync.go` the two kinds; until it is deployed a drained
+            // dispute is answered `validation_failed`, which is non-retryable and visible on screen
+            // 17 — not a `RemoteSurface` message to somebody with four bars.
+            "raiseDataDispute", "withdrawDataDispute",
             // Halves: the service answers part and the whole client type needs the city file.
             // `grovePage` sits with `grove` and for its reason: the service sends no display
             // name and no coordinate, so there is no `GroveEntry` here to cut into pages.

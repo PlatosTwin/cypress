@@ -39,6 +39,18 @@
 //  row, for the same stated reason. What that leaves undone is named in `RULINGS R50` rather than
 //  left to be discovered.
 //
+//  ── What R79 did about it, and what it deliberately did not ────────────────────────────────────
+//  `RULINGS R79` gave the city row a different surface rather than lifting this refusal. `AppSchema`
+//  v22's `tree_data_disputes` records "a recorded tree whose plot is actually empty" as a status
+//  suggestion of `vacant_site` on a dispute — a row in the app's writable database, referencing the
+//  city tree, adjudicated by nobody on this phone.
+//
+//  So the two sentences above are both still true and neither is weakened: `flagNeverExisted` still
+//  refuses a city row, because it still cannot resolve one; the profile's `RecordDefectOffer` for a
+//  city row is now `.dataDispute` rather than `.unavailable`, because there is now something to
+//  report and somewhere for it to go. The verb that would actually withdraw a city record is still
+//  `RULINGS R50`'s and is still not built.
+//
 
 import Foundation
 
@@ -69,8 +81,11 @@ public extension CypressAPI {
 /// separate flags could draw both controls or neither. The decision needs the viewer's role and a
 /// `review_flags` read, neither of which a presentation has any business holding.
 public enum RecordDefectOffer: Hashable, Sendable {
-    /// Nothing to report: a city row (whose withdrawal this app cannot perform), or a record already
-    /// withdrawn.
+    /// Nothing to report: a record already withdrawn.
+    ///
+    /// **A city row is no longer one of these.** It was — this app cannot withdraw one, and still
+    /// cannot — and R79 gave it a surface that does not require withdrawing anything. See
+    /// `.dataDispute` below.
     ///
     /// Not spelled `none`, for the reason `SpeciesCorrectionOffer.unavailable` gives: a case by that
     /// name shadows `Optional.none` at every call site comparing against a leading dot, and the
@@ -82,4 +97,13 @@ public enum RecordDefectOffer: Hashable, Sendable {
     /// lead, because `community_trees` records no author (R45's finding, unchanged) and so there is
     /// nobody whose own record this is to withdraw.
     case underReview(flagID: UUID, canResolve: Bool)
+    /// A **city** row, whose record is disputed through R79's surface rather than through this one.
+    ///
+    /// The answer this case replaces was `.unavailable`, and R79 is what made that answer false: "a
+    /// recorded tree whose plot is actually empty" is named in the ruling as one of the three issue
+    /// kinds, so there is now something to report against a city record and a way to report it.
+    ///
+    /// **`SpeciesCorrectionOffer` carries the identical value, and one control is drawn from the
+    /// pair.** See that case for the argument; `TreeProfile.cityDataDispute` is the accessor.
+    case dataDispute(DataDisputeOffer)
 }

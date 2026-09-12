@@ -360,6 +360,12 @@ enum OutboxCopy {
         // `Photo removed`'s twin, one contribution table over: the queue row says what was
         // withdrawn, and `detail(for:)` below says which of the two series it was in.
         case .measurementWithdrawal: return "Reading withdrawn"
+        // R79's two. **NOT SPECIFIED** in the same way as everything above, and answered the same
+        // way: `Data issue` is the owner's own noun for this — the ruling asks for a "trees with
+        // data issues" filter in those words — and the retraction takes `Reading withdrawn`'s shape
+        // rather than a second noun. Neither invents a botanical or civic fact.
+        case .dataDispute: return "Data issue"
+        case .dataDisputeWithdrawal: return "Data issue withdrawn"
         }
     }
 
@@ -412,7 +418,13 @@ enum OutboxCopy {
         // makes that a stop-and-ask, and the kind label already says what the person did.
         case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport, .neverExistedReport,
              .speciesReviewDismissal, .recordReviewDismissal, .photoVote, .photoWithdrawal,
-             .hazardRedirect:
+             .hazardRedirect,
+             // R79's two, for the identical reason and not by analogy. The dispute payload *does*
+             // carry its checked issue kinds — but printing them needs a human phrase per checkbox,
+             // and R79 is the constraint-21 authority for which controls exist while the words on
+             // them are still the owner's to give (the sheet's whole copy is PR-C's ask). A sub-line
+             // here would be this file inventing that copy first and the sheet inheriting it.
+             .dataDispute, .dataDisputeWithdrawal:
             return nil
 
         // The one §3.4-shaped kind that *does* carry a sub-line, because the fact is on the payload
