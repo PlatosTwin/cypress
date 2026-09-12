@@ -787,6 +787,17 @@ private struct ProbeAPI: CypressAPI {
     func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
         throw log.reached("withdrawMeasurement")
     }
+    func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute {
+        throw log.reached("raiseDataDispute")
+    }
+    func withdrawDataDispute(disputeID: UUID) async throws {
+        throw log.reached("withdrawDataDispute")
+    }
     func grove() async throws -> [GroveEntry] { throw log.reached("grove") }
     func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> { throw log.reached("grovePage") }
     func isFavorite(treeID: UUID) async throws -> Bool { throw log.reached("isFavorite") }
@@ -1116,6 +1127,13 @@ struct APIConformanceGuardTests {
         await check("setPhotoVote") { try await api.setPhotoVote(photoID: id, vote: .up) }
         await check("deletePhoto") { _ = try await api.deletePhoto(id: id) }
         await check("withdrawMeasurement") { _ = try await api.withdrawMeasurement(id: id) }
+        await check("raiseDataDispute") {
+            _ = try await api.raiseDataDispute(
+                treeID: id, issues: [.wrongSpecies],
+                suggestions: TreeDataDispute.Suggestions(), notes: nil
+            )
+        }
+        await check("withdrawDataDispute") { try await api.withdrawDataDispute(disputeID: id) }
         await check("grove") { _ = try await api.grove() }
         await check("grovePage") { _ = try await api.grovePage(cursor: nil, limit: 1) }
         await check("isFavorite") { _ = try await api.isFavorite(treeID: id) }
