@@ -746,6 +746,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
    sentence. Rework the test's gesture (or its precondition) so a delivered-but-unregistered pan
    retries or fails as an environment refusal rather than a red; keep the regression it guards
    (a deliberate pan surviving a tab switch must still fail if the camera resets).
+
+   **2026-09-11: six failures in a 90-minute window, and the probe says it is not the flake the
+   retry was built for.** The web round saw this test fail on six branches that afternoon, every
+   one reading `panBegan=3 panEnded=3 panCancelled=0 panFailed=0` at `GATE_SCREEN_WIDTH_PT: 402`
+   — all three synthesized drags recognized end to end, camera still on "Centered on you". #230's
+   retry hardened the COALESCED TOUCH STREAM, whose signature is `panBegan=0`, so whatever this
+   is, it is not that. `MapAnnotationLayer.swift:445` names this exact pattern as the
+   `layoutMargins` content-inset signature, reproduced 4/4 at 402 pt on an iPhone 16 Pro. That
+   leaves two readings — a width-marginal camera behavior, or a slow-runner variant where the
+   camera moves and snaps back — and the fields that separate them, `lastEndedTranslation` and
+   `settles`, are cut out of the job log by the truncation in item 40. **Start from a
+   `ui-xcresult` artifact rather than from a re-run.**
 6. **Sweep `library.stagingURL`'s lifecycle for leaks** (chip still pending as of this note). The
    #123 reviewer left it deliberately unfiled: can a process death, failed verification, cancelled
    transfer, or refused install leave orphans in the staging directory, and does anything clean
@@ -932,6 +944,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **`t.Logf`, not a failure**, deliberately: failing would trade one red-on-main for another.
     That is why this item exists rather than a test. One deletion, two entries, in the round that
     merges 005 or the one after it.
+
+    **The trigger has fired**: `server/migrations/005_data_dispute_kinds.sql` is on `main` (PR
+    #159 merged), so both entries now excuse nothing, and
+    `TestEveryContributionKindIsClassified`'s `t.Logf` asks for their deletion on every run of a
+    suite item 14 says nothing runs.
 19. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
     R27.1 asks for it in as many words — *"count it, do not guess it"* — and PR #163 shipped
     R27.1's inherited ≥3 because the attempt to read the production distribution was refused before
