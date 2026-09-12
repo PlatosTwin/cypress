@@ -39,6 +39,10 @@ on:
     # triggers the web suite.**
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      # The DIRECTORY, not its six files: tokens.test.ts lists it and fails if a seventh .swift
+      # appears there unread, so that seventh file has to start this job too.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
@@ -53,6 +57,10 @@ on:
     branches: [main, 'release/**']
     paths:
       - 'web/**'
+      # Sources outside `web/` that the suite reads, one per line, each naming its reader.
+      # The DIRECTORY, not its six files: tokens.test.ts lists it and fails if a seventh .swift
+      # appears there unread, so that seventh file has to start this job too.
+      - 'Cypress/DesignSystem/Tokens/**'   # web/test/tokens.test.ts re-renders these to CSS
       - 'Tools/run_web_tests.sh'
       - 'Tools/verify_web_test_log.sh'
       - '.github/workflows/web.yml'
