@@ -16,6 +16,8 @@ public actor LocalAPI: CypressAPI {
     private let communityTrees = CommunityTreeStore()
     private let contributions = ContributionStore()
     private let assertions = SpeciesAssertionStore()
+    /// `tree_data_disputes` and its two children (`AppSchema` v22, `RULINGS R79`).
+    private let disputes = DataDisputeStore()
     private let groveQueries: GroveQueries?
     private let almanacQueries: AlmanacQueries?
     private let cityQueries: CityQueries?
@@ -862,7 +864,14 @@ public actor LocalAPI: CypressAPI {
         tree: Tree,
         connection: SQLiteConnection
     ) throws -> SpeciesCorrectionOffer {
-        guard tree.source == .community, tree.speciesCurrentID != nil else { return .unavailable }
+        // **A city row answers R79's surface, not this one.** It answered `.unavailable` until
+        // `AppSchema` v22, and that answer stopped being true the day city data became disputable.
+        // The species is still not correctable here and `correctSpecies` still refuses one — what
+        // changed is that there is now somewhere for the disagreement to go.
+        guard tree.source == .community else {
+            return .dataDispute(try dataDisputeOffer(tree: tree, connection: connection))
+        }
+        guard tree.speciesCurrentID != nil else { return .unavailable }
         let head = try assertions.current(treeID: tree.id, connection: connection)
         let isMine = head?.isSupersedable(by: attribution) ?? false
         let reported = try Self.openSpeciesReviews(
@@ -1035,24 +1044,231 @@ public actor LocalAPI: CypressAPI {
     /// A city row is `.unavailable` rather than `.reportable`, matching what `flagNeverExisted`
     /// would do with the tap: a control that exists only to be refused is worse than no control.
     ///
-    /// **RULINGS R79 reverses that for city rows, and the round that builds it changes this
-    /// function.** City-inventory data became disputable on 2026-08-21 — stored app-side, the
-    /// attached file still read-only — and "a recorded tree whose plot is empty" is named in the
-    /// ruling as one of the issue kinds. So a city row stops answering `.unavailable` here; it does
-    /// not simply become `.reportable`, because R79's city surface is a checkbox set with suggested
-    /// values and notes rather than this boolean. Unchanged until that round lands, deliberately —
-    /// see `SpeciesClaim.swift`'s header for the same note on the species half.
+    /// **RULINGS R79 reversed that for city rows and this is what it did**, built in `AppSchema`
+    /// v22's round. City-inventory data is disputable — stored app-side, the attached file still
+    /// read-only — and "a recorded tree whose plot is empty" is one of the ruling's three issue
+    /// kinds. So a city row does not answer `.unavailable` here, and it does **not** answer
+    /// `.reportable` either: `flagNeverExisted` still refuses one, because nothing on this device
+    /// can withdraw a city record and a report nothing can resolve is the E170 defect. It answers
+    /// `.dataDispute`, whose surface is a checkbox set with suggested values and notes rather than
+    /// this boolean. `SpeciesClaim.swift`'s header carries the same note for the species half.
     private func recordDefectOffer(
         tree: Tree,
         connection: SQLiteConnection
     ) throws -> RecordDefectOffer {
-        guard tree.source == .community, tree.deletedAt == nil else { return .unavailable }
+        guard tree.source == .community else {
+            return .dataDispute(try dataDisputeOffer(tree: tree, connection: connection))
+        }
+        guard tree.deletedAt == nil else { return .unavailable }
         if let reported = try Self.openRecordReviews(
             treeID: tree.id, store: contributions, connection: connection
         ).first {
             return .underReview(flagID: reported.id, canResolve: userRole.canConfirmReviewFlag)
         }
         return .reportable
+    }
+
+    // MARK: - Disputing a city record's data (RULINGS R79, `AppSchema` v22)
+
+    /// What this viewer may do about the data on a **city** record, decided where the identity lives
+    /// rather than in a view (`DataDisputeOffer`).
+    ///
+    /// Read inside the profile's own transaction, like the two offers that call it and for the same
+    /// reason: a control drawn from one moment's answer over another moment's record offers to raise
+    /// a dispute that already stands, or to take back one that has already gone.
+    ///
+    /// `.raisable` even when somebody else's dispute is open on this record, because the conflict
+    /// rule is per raiser — see `DataDisputeStore.openDispute`.
+    private func dataDisputeOffer(
+        tree: Tree,
+        connection: SQLiteConnection
+    ) throws -> DataDisputeOffer {
+        // City rows only this round (R-b of the round's contract). A community row reaching here
+        // would be a caller that stopped checking `tree.source`, and `.unavailable` is the safe
+        // answer for it: no control, rather than a control `raiseDataDispute` would refuse.
+        //
+        // **`deletedAt` is deliberately not checked, and the gap is unreachable rather than
+        // overlooked.** The community arms of both callers check it because a community row can be
+        // withdrawn on this device; a *city* row's `deleted_at` would have to arrive in the seed,
+        // and the shipped seed holds none — `select count(*), sum(deleted_at is not null) from
+        // trees` answers `198625|0`, and nothing on the device may write that table (it is
+        // ATTACHed read-only). So there is no state in which this returns `.raisable` for a
+        // withdrawn city record. If a future pack or a downloaded city ever ships one, this is the
+        // clause that has to grow, and `raiseDataDispute` needs the same one — it does not check
+        // `deletedAt` on the city arm either, for exactly this reason. Building the machinery now
+        // would be a branch no test could reach and no seed could produce.
+        guard tree.source == .cityImport else { return .unavailable }
+        if let open = try disputes.openDispute(
+            treeID: tree.id, raisedBy: userID, connection: connection
+        ) {
+            return .raisedByYou(disputeID: open.id)
+        }
+        return .raisable
+    }
+
+    /// Raises a dispute against a city record's data (`RULINGS R79`).
+    ///
+    /// ── One transaction, and the gates in it are ordered ──────────────────────────────────────
+    ///
+    /// The pure rules first, before the store is touched at all: an empty checkbox set, a suggestion
+    /// for an issue the dispute does not raise, a fix too coarse to pick out the tree it corrects, a
+    /// status part 1 does not write. `DataDisputeLimits.refusal` is all four and it takes no
+    /// database, which is what lets the sheet in a later round pre-check exactly what this enforces
+    /// rather than a paraphrase of it.
+    ///
+    /// Then **one write block**, and the existence check, the conflict check and the insert are all
+    /// inside it. `flagNeverExisted` splits its read from its write and leaves a window in which the
+    /// record changes underneath; this does not, because the conflict rule is "one open dispute per
+    /// raiser per record" and a window between reading that and writing is a window in which two
+    /// taps become two disputes. The queue row goes in from inside the same transaction, so a queued
+    /// dispute exists only for a dispute that was allowed and committed.
+    ///
+    /// ── The three refusals, and why a community row is `.forbidden` and not `.notFound` ───────
+    ///
+    /// `.notFound` when no half of the inventory holds the id. `.forbidden` for a community row:
+    /// the record is there and this verb will not serve it *this round* — R79 gives community trees
+    /// location and species disputes and the community round is where the two surfaces converge, so
+    /// `.notFound` would be a false statement about a tree the caller can see on screen.
+    /// `.conflict` when this raiser's own dispute is already standing, on `flagWrongSpecies`'
+    /// reasoning: BUILD-PLAN §6's "two offline users flagging the same tree produce two flags on one
+    /// thread" governs the sync merge between devices that could not see each other, and this is a
+    /// local write by somebody looking at their own open dispute on their own screen.
+    ///
+    /// ── Nothing in the inventory moves ────────────────────────────────────────────────────────
+    ///
+    /// No `trees` write, no `tree_status_overrides` write, no `species_assertions` write, and none
+    /// may be added here. The city's rows are in an ATTACHed read-only database and R79 defers
+    /// whether a dispute ever reaches a city's own dataset; a device that acted on an unadjudicated
+    /// dispute would be moving city data on a say-so nobody weighed (ARCHITECTURE §8).
+    public func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute {
+        // The reason is dropped here and kept on the pure function: `CypressAPI` throws
+        // BUILD-PLAN §6's closed taxonomy, and a screen that wants to say *which* rule refused
+        // calls `DataDisputeLimits.refusal` — the same function, with `Refusal` attached — before
+        // it calls this. See `DataDisputeLimits.Refusal`.
+        if let refusal = DataDisputeLimits.refusal(issues: issues, suggestions: suggestions) {
+            throw refusal.apiError
+        }
+        let moment = now()
+        let mine = attribution
+        let raiser = userID
+
+        return try await store.queue.write { connection -> TreeDataDispute in
+            // `flatMap` on the optional *store* rather than optional-chaining the call: a `try
+            // treeQueries?.tree(…)` is a `TreeRecord??`, and `!= nil` on one of those is true
+            // whenever a seed is attached at all — the same double-optional trap `flagNeverExisted`
+            // spells out beside its own read.
+            let city = try treeQueries.flatMap { try $0.tree(id: treeID, connection: connection) }
+            guard city != nil else {
+                // `let` and then the `deletedAt` check, not one optional-chained comparison: a
+                // missing row makes `tree(id:)?.deletedAt` nil, and `nil == nil` would read a record
+                // that is not there as a live one. `flagNeverExisted` spells out the same trap.
+                let community = try communityTrees.tree(id: treeID, connection: connection)
+                if let community, community.deletedAt == nil { throw APIError.forbidden }
+                // Either there is no such record at all, or the community row has been withdrawn.
+                // Neither is a tree to dispute.
+                throw APIError.notFound
+            }
+
+            guard try disputes.openDispute(
+                treeID: treeID, raisedBy: raiser, connection: connection
+            ) == nil else { throw APIError.conflict }
+
+            let dispute = TreeDataDispute(
+                treeID: treeID,
+                treeSource: .cityImport,
+                raisedBy: raiser,
+                issues: issues,
+                suggestions: suggestions,
+                notes: notes,
+                createdAt: moment,
+                updatedAt: moment
+            )
+            // `.duplicate` here is a `client_uuid` collision on a key minted three lines up, not a
+            // retry: this method has no idempotency key from a caller. It is refused rather than
+            // ignored, because returning a dispute this call did not write would be the same
+            // silent-success shape every default in `DataDispute.swift` exists to avoid.
+            guard try disputes.insert(dispute, connection: connection) == .inserted else {
+                throw APIError.conflict
+            }
+
+            // From inside the transaction that wrote the row, so the queue cannot hold a dispute the
+            // store does not (`OutboxPayload.isAppliedBeforeItIsQueued`).
+            try Self.queueAppliedMutation(
+                .dataDispute(
+                    DataDisputeReport(
+                        clientUUID: dispute.clientUUID,
+                        id: dispute.id,
+                        treeID: treeID,
+                        treeSource: dispute.treeSource,
+                        issues: issues,
+                        suggestions: suggestions,
+                        notes: notes,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+            return dispute
+        }
+    }
+
+    /// Takes back a dispute this person raised (`RULINGS R79`, the round's ruling R-a).
+    ///
+    /// **It ships beside the raise deliberately.** The owner's standing complaint about the
+    /// community flagging flow is that a flag cannot be retracted by its author; a new dispute
+    /// surface with the same gap would repeat that defect on new ground.
+    ///
+    /// The authorship rule is `TreeDataDispute.isAuthored(by:)`, checked in Swift so the refusal can
+    /// be the right one and **carried again in the `UPDATE`'s own predicate** so the write cannot
+    /// outlive the check — `deletePhoto`'s ordering, kept because it was paid for.
+    ///
+    /// Nothing is deleted. `withdrawn_at` is stamped, the issues and suggestions stay where they
+    /// are, and the queue row names the dispute id the raise already sent — a service that received
+    /// the objection has to be able to match the retraction to it.
+    ///
+    /// - Throws: `.notFound` when there is no such dispute, or it is already withdrawn — "there is
+    ///   no open dispute with that id" is exactly true of both. `.forbidden` when it is another
+    ///   account's, which is reachable: two accounts can sign in on one phone.
+    public func withdrawDataDispute(disputeID: UUID) async throws {
+        let moment = now()
+        let mine = attribution
+        let raiser = userID
+
+        try await store.queue.write { connection in
+            guard let dispute = try disputes.dispute(id: disputeID, connection: connection) else {
+                throw APIError.notFound
+            }
+            guard dispute.isAuthored(by: raiser) else { throw APIError.forbidden }
+            guard dispute.isOpen else { throw APIError.notFound }
+
+            let withdrawn = try disputes.withdraw(
+                id: disputeID, raisedBy: raiser, at: moment, connection: connection
+            )
+            // The predicate in the UPDATE matched nothing although the read said it would. A success
+            // here would be this call claiming to have done something it did not do.
+            guard withdrawn == 1 else { throw APIError.notFound }
+
+            try Self.queueAppliedMutation(
+                .dataDisputeWithdrawal(
+                    DataDisputeWithdrawal(
+                        clientUUID: UUID(),
+                        disputeID: disputeID,
+                        treeID: dispute.treeID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
     }
 
     // MARK: - Species
@@ -1747,7 +1963,12 @@ public actor LocalAPI: CypressAPI {
             // tombstone a reading that is already withdrawn and queue a second withdrawal for it.
             case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
                  .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
-                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal:
+                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal,
+                 // R79's two, here because the compiler made them be. Re-applying a
+                 // `data_dispute` would file a second objection against a record that already
+                 // carries this person's; re-applying a withdrawal would re-stamp a
+                 // `withdrawn_at` that is already a fact.
+                 .dataDispute, .dataDisputeWithdrawal:
                 throw APIError.validationFailed
             }
         }
