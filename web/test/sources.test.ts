@@ -14,8 +14,9 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 import {
   ParseFailure,
@@ -644,6 +645,83 @@ describe('the sources the web suite reads', () => {
   });
 
   /**
+   * Every `.ts` module under a `lib` directory, as `/`-separated paths relative to it, sorted.
+   *
+   * Recursive, which the first version of the census was not: it filtered `readdirSync` with
+   * `statSync(...).isFile()`, so a subdirectory was skipped whole. That is a census of the TOP
+   * LEVEL of `src/lib` wearing the name "every module under src/lib" — and when W-B's pack read
+   * layer landed six modules in `src/lib/pack/`, it counted none of them and stayed green. A
+   * guard that quietly reads less than it claims is the failure this file exists to prevent, and
+   * the walker below is calibrated against a specimen before it is pointed at the repository.
+   */
+  function modulesUnder(dir: string, prefix = ''): string[] {
+    const found: string[] = [];
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) found.push(...modulesUnder(full, `${prefix}${entry}/`));
+      else if (entry.endsWith('.ts')) found.push(`${prefix}${entry}`);
+    }
+    return found.sort();
+  }
+
+  it('the module walker descends into subdirectories', () => {
+    // Specimen first, answer known before the walker saw it. The defect it replaces was a walker
+    // that stopped at the top level; nothing in its output said so, and the assertion it fed was
+    // satisfied either way.
+    const root = mkdtempSync(join(tmpdir(), 'cypress-lib-census-'));
+    try {
+      mkdirSync(join(root, 'sub', 'deeper'), { recursive: true });
+      writeFileSync(join(root, 'a.ts'), '');
+      writeFileSync(join(root, 'notes.md'), '');
+      writeFileSync(join(root, 'sub', 'b.ts'), '');
+      writeFileSync(join(root, 'sub', 'deeper', 'c.ts'), '');
+      assert.deepEqual(modulesUnder(root), ['a.ts', 'sub/b.ts', 'sub/deeper/c.ts']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * The modules a source file IMPORTS, as absolute paths. Relative specifiers only.
+   *
+   * Specifiers, not every quoted path that happens to appear in the file — and the difference is
+   * not academic. The first version of the arrival scan below asked whether the text
+   * `src/lib/<module>` occurred anywhere in any `*.test.ts`. `spelling.test.ts` names
+   * `'src/lib/tokens.ts'` in the list of files its sweep has to reach, so `tokens.ts` counted as
+   * checked by a file that does not import it, and deleting `tokens.test.ts` outright left the
+   * whole suite green. A scan that cannot tell an import from a mention is answering a different
+   * question than the one asked; this was found by running the red-proof, and by nothing else.
+   */
+  function importedPaths(source: string, fromDir: string): string[] {
+    const found: string[] = [];
+    for (const pattern of [/\bfrom\s+'([^']+)'/g, /\bimport\(\s*'([^']+)'\s*\)/g]) {
+      for (const match of source.matchAll(pattern)) {
+        const specifier = match[1];
+        if (specifier === undefined || !specifier.startsWith('.')) continue;
+        found.push(resolve(fromDir, specifier));
+      }
+    }
+    return found;
+  }
+
+  it('the import scan reads specifiers, not every quoted path in the file', () => {
+    // Specimen first, answer known before the scan saw it, and every line after the second is a
+    // near miss it has to DECLINE: a bare-module import, the exact prose form that made this
+    // scan vacuous, and a relative path sitting in a data list rather than in an import.
+    const specimen = [
+      "import { a } from '../src/lib/geometry.ts';",
+      "const late = await import('../src/lib/pack/pack.ts');",
+      "import { readFileSync } from 'node:fs';",
+      "const namedInProse = 'src/lib/tokens.ts';",
+      "const alsoNamed = ['../src/lib/vitality.ts'];",
+    ].join('\n');
+    assert.deepEqual(importedPaths(specimen, '/w/test'), [
+      '/w/src/lib/geometry.ts',
+      '/w/src/lib/pack/pack.ts',
+    ]);
+  });
+
+  /**
    * **The census, and the hole it closes.**
    *
    * PR #173's review deleted `src/lib/growthCharting.ts` AND `test/growthCharting.test.ts` and the
@@ -652,47 +730,138 @@ describe('the sources the web suite reads', () => {
    * workflow for a file nothing read any more. Every assertion above is satisfied by that state:
    * the rule and its only check left together, so nothing was left behind to notice.
    *
-   * A count is what notices. `web/src/lib/` is enumerated and compared against a named list, so a
-   * module that disappears is red and a module that appears without anybody adding it here is red
-   * too. Named rather than counted, because a count of eight is satisfied by deleting one file and
-   * adding another.
+   * The property, in two halves:
+   *
+   *   - **A module that LEFT** took its test with it, so nothing on disk is short of anything.
+   *     Only a written-down roster notices, and `PARITY_CHECKED_MODULES` is it.
+   *   - **A module that ARRIVED** has no parity check until somebody writes one. What notices is
+   *     not the roster but the question itself: is there a test that imports this module?
+   *
+   * The first version asserted both halves with one `deepEqual` against a roster of exactly what
+   * `src/lib` held the day it was written, and that is why this is being rewritten rather than
+   * extended. An exact roster is a claim about the whole repository made from one branch, and
+   * three branches were in flight: #171 added `tokens.ts` and #172 added `src/lib/pack/`, each
+   * with its own tests, each green alone, and the merge went red on a census neither had any way
+   * to edit. That red said "a module arrived" about modules that had arrived WITH their checks —
+   * bookkeeping, not the property.
+   *
+   * So the halves are asserted separately and each against the thing that can actually answer it.
+   * Both still fail: delete a rostered module and the roster says so; add a module nothing
+   * imports and the import scan says so; delete the test that imported an unrostered module and
+   * the import scan says so. What is deliberately no longer red is the one case that was never a
+   * defect — a module arriving with a parity check already written for it.
+   *
+   * `src/lib/pack/` is NOT an entry in the roster, and the reason is worth stating: `pack` is a
+   * directory, not a module. A roster entry naming it would assert that a name exists on disk
+   * and attach no check to any of the six modules inside — the precise hole the `.isFile()`
+   * filter opened. Its modules are censused by the recursive walker like every other module, and
+   * they are held to the import scan rather than to the `<name>.test.ts` convention, because
+   * their tests are named for the layer (`pack-queries.test.ts`) and not for the module.
+   *
+   * **What the roster is, stated as a rule rather than as a list.** Every module directly under
+   * `src/lib` is rostered; the modules inside `src/lib/pack/` are not, for the reason just given.
+   * The rule is what made this list answerable at the W-C merge, where nine more modules arrived
+   * at once: the question for each was not "does this feel like a parity check" but "is it a
+   * top-level module with a `<name>.test.ts` that imports it", and all nine were. `tokens.ts`
+   * was rostered in the same change — it is #171's, it has always satisfied the rule, and it was
+   * missing here only because this file was written on a branch that did not yet hold it. That
+   * is the omission the rule exists to stop being possible: a module whose departure nothing
+   * would have reported.
    */
+  const PARITY_CHECKED_MODULES: readonly string[] = [
+    'cityRecord.ts',
+    'geometry.ts',
+    'gradients.ts',
+    'growthCharting.ts',
+    'idSpaces.ts',
+    'measuredValue.ts',
+    'obligations.ts',
+    'ogCard.ts',
+    'ogRaster.ts',
+    'packLibrary.ts',
+    'publicTreeRead.ts',
+    'quantity.ts',
+    'spelling.ts',
+    'tokens.ts',
+    'toolchain.ts',
+    'treePage.ts',
+    'vitality.ts',
+  ];
+
   it('every module under src/lib is still here, and is still checked by a test', () => {
-    const lib = join(repositoryRoot(), 'web', 'src', 'lib');
-    const onDisk = readdirSync(lib)
-      .filter((entry) => statSync(join(lib, entry)).isFile() && entry.endsWith('.ts'))
-      .sort();
+    const root = repositoryRoot();
+    const onDisk = modulesUnder(join(root, 'web', 'src', 'lib'));
+    // No count guard stands between here and the roster below, deliberately. One did, and it
+    // caught the roster's own red-proof first: deleting `growthCharting.ts` with its test made
+    // the census fail on "the walker found 6 modules, fewer than the 7 this suite checks. It is
+    // reading the wrong directory" — red for a reason that was not true, about a case the very
+    // next assertion names exactly. A walker pointed at the wrong directory returns nothing, and
+    // the roster then reports all seven missing, which is the same evidence and the right words.
+
+    // ── Half one: departure ───────────────────────────────────────────────────────────────────
     assert.deepEqual(
-      onDisk,
-      [
-        'cityRecord.ts',
-        'geometry.ts',
-        'gradients.ts',
-        'growthCharting.ts',
-        'idSpaces.ts',
-        'measuredValue.ts',
-        'obligations.ts',
-        'ogCard.ts',
-        'ogRaster.ts',
-        'packLibrary.ts',
-        'publicTreeRead.ts',
-        'quantity.ts',
-        'spelling.ts',
-        'tokens.ts',
-        'toolchain.ts',
-        'treePage.ts',
-        'vitality.ts',
-      ],
-      'web/src/lib no longer holds the modules this suite was built around. A module that left '
-        + 'took its test with it and nothing else here would have said so; a module that arrived '
-        + 'has no parity check until somebody writes one. Whichever it is, the list belongs in '
-        + 'this assertion in the same change.',
+      PARITY_CHECKED_MODULES.filter((module) => !onDisk.includes(module)),
+      [],
+      'a module this suite was built around is gone from web/src/lib. It took its test with it '
+        + 'and nothing else here would have said so — the parity check it held up, and any entry '
+        + 'in sourcesTheWebSuiteReads and web.yml that existed only for it, go in the same change '
+        + 'as its removal from this roster.',
     );
-    // And each has a test file that imports it. A module kept with its test deleted is the same
-    // hole one file further along.
+    // Calibration of the membership test, against a case whose answer is known: a module that is
+    // deliberately not there must be reported absent. Without it an `includes` that always
+    // answered true would satisfy the assertion above and the loop below.
+    assert.equal(
+      onDisk.includes('thereIsNoSuchModule.ts'),
+      false,
+      'the census says web/src/lib holds a module it does not hold',
+    );
+
+    // ── Half two: arrival ─────────────────────────────────────────────────────────────────────
+    // Every module on disk must be imported by a `*.test.ts`, including ones that arrived from a
+    // branch that never saw this file. Two things keep the scan from satisfying itself: it reads
+    // import SPECIFIERS rather than raw text (see `importedPaths` above, and the red-proof that
+    // bought that distinction), and it excludes THIS file, which names modules in its own roster
+    // and in its own failure messages. A census that can be satisfied by a mention is not one.
+    const testDir = join(root, 'web', 'test');
+    const testFiles = modulesUnder(testDir).filter(
+      (relative) => relative.endsWith('.test.ts') && relative !== 'sources.test.ts',
+    );
+    assert.ok(
+      testFiles.length >= 5,
+      `the import scan found ${testFiles.length} test file(s) under web/test. Either this suite `
+        + 'has lost most of itself, or the scan is reading the wrong directory; both would make '
+        + 'the loop below report every module as unchecked for the wrong reason.',
+    );
+    const imported = new Set(
+      testFiles.flatMap((relative) => {
+        const full = join(testDir, relative);
+        return importedPaths(readFileSync(full, 'utf8'), dirname(full));
+      }),
+    );
+
+    const lib = join(root, 'web', 'src', 'lib');
     for (const module of onDisk) {
+      assert.ok(
+        imported.has(join(lib, module)),
+        `web/src/lib/${module} is on disk and no *.test.ts under web/test imports it, so it is a `
+          + 'module with no parity check. Whoever added it owes it one, in the same change.',
+      );
+    }
+    // The same calibration for the scan: a module nothing imports must be reported unchecked.
+    assert.equal(
+      imported.has(join(lib, 'thereIsNoSuchModule.ts')),
+      false,
+      'the import scan says a module is imported that no test imports',
+    );
+
+    // ── And the rostered modules keep the convention that names their check ───────────────────
+    // A module kept with its own test deleted is the same hole one file further along, and for
+    // every rostered module the test is named for the module, so the file itself can be demanded
+    // by name. (`src/lib/pack/`'s six are held to the import scan above instead; their tests are
+    // named for the layer, so there is no file name to demand.)
+    for (const module of PARITY_CHECKED_MODULES) {
       const name = module.replace(/\.ts$/, '');
-      const testPath = join(repositoryRoot(), 'web', 'test', `${name}.test.ts`);
+      const testPath = join(testDir, `${name}.test.ts`);
       const text = readFileSync(testPath, 'utf8');
       assert.ok(
         text.includes(`../src/lib/${module}`),

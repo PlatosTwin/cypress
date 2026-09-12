@@ -3,10 +3,10 @@
 **Astro + TypeScript, SSR on the Node adapter, self-hosted on Fly.** Opened 2026-09-10 by the
 owner; the authority is `docs/design-proposals/2026-09-10-web-version.md` and the queue underneath
 it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation: it builds, it is
-tested, and it renders one placeholder page. All three clauses of **W-B** have since landed — the
-design tokens, the re-derived domain rules, and the pack read path — described under *Design
-tokens*, *The rules, re-derived* and *The read path* below. No page reads any of them yet; that is
-W-C.
+tested, and it renders one placeholder page. **W-B** has since landed in full — the design tokens,
+the pack read layer and the re-derived domain rules — described under *Design tokens*, *The rules,
+re-derived* and *The read path* below. **W-C** reads all three: the public tree page is served from
+a mounted pack, painted with the exported tokens, and its facts pass through the re-derived rules.
 
 **What v1 is** (ruling W-1): a public read surface. No login, no writes. The tree page, plus the
 `Explore` / `Species` / `Neighborhoods` / `Data & export` nav the spec draws.
@@ -37,7 +37,7 @@ As of W-C. Everything below was read from this directory, not remembered.
 | Packs | read from the directory `CYPRESS_PACK_DIR` names. No default path: unset means the page says so, in a 503 |
 | Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
 | Card fonts | `fonts/`, **copied** from `Cypress/Resources/Fonts/` by `scripts/export-card-fonts.mjs`. Four faces, 852 KB |
-| Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
+| Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. W1 reads it through `src/lib/packLibrary.ts` |
 | Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
 | W1's own modules | `src/lib/{packLibrary,treePage,cityRecord,gradients,ogCard,obligations}.ts` and `src/styles/w1.css` |
 
@@ -228,7 +228,6 @@ invented — `Source Serif 4`, `Alegreya Sans` and `Spline Sans Mono` are derive
 prefixes the Swift declares, and they are the `name` table families of the TTFs in
 `Cypress/Resources/Fonts/`.
 
-## The read path (W-B)
 ## The rules, re-derived (W-B, first of three)
 
 `src/lib/` holds five rules that already exist elsewhere in this repository, re-derived in
@@ -282,7 +281,7 @@ idempotent** — applying it twice moves a point by up to 12.20 m, and the SQLit
 it twice — which is written up in `docs/errata-pending/`, pinned by a test against the recorded
 Swift behavior, and left unrepaired because repairing it moves already-published coordinates.
 
-## The read path, when it arrives (W-B)
+## The read path (W-B)
 
 The web opens the **published city packs**, read-only, through the same schema the phone uses —
 decision W-5. Not Postgres, not browser-side SQLite over HTTP range requests. It reads
