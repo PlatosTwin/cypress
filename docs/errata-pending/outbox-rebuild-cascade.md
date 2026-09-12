@@ -71,3 +71,36 @@ The table comparison catches a counter left too *high* by a cascade that fired n
 fixture comparison catches one recomputed too *low* against children that are already gone. The
 lesson is not "assert against the table" — it is that a counter needs an assertion on each side of
 it, because the two failures are not the same failure.
+
+---
+
+## Addendum, 2026-09-10 — the same trap now has a second parent in this schema
+
+`AppSchema` v22 (`RULINGS R79`) adds `tree_data_disputes` with **two** `ON DELETE CASCADE` children,
+`tree_dispute_issues` and `tree_dispute_suggestions`. Everything in the first entry above applies to
+that parent unchanged: a rebuild of `tree_data_disputes` — which any widening of its `tree_source`
+`CHECK` would be, since SQLite cannot widen one in place — drops the parent, the drop cascades, and
+both children are emptied with no error anywhere. `defer_foreign_keys` does not help, for the reason
+measured above.
+
+Two things are different and both are worth writing down.
+
+**There is no counter here, and that is the smaller half of the hazard rather than none of it.**
+`outbox.photos_outstanding` is what made the v18/v21 loss *permanent* — a queue that can never
+settle. A dispute has no derived count, so the failure mode is a plain silent deletion: every checked
+issue and every suggested value gone, the parent rows intact, and a dispute that now says a person
+objected to nothing in particular. That is quieter, not better.
+
+**Widening the *children's* vocabularies is a different and much cheaper operation, and the round's
+contract asked the question directly.** `tree_dispute_suggestions.field` and
+`tree_dispute_issues.kind` are both CHECKs, so widening either needs a table rebuild — but the table
+being rebuilt is a **child**, and a cascade runs parent to child. Dropping and recreating
+`tree_dispute_suggestions` cascades nothing. So: widening the suggestion vocabulary is a migration
+and is *not* free, and it is also not the dangerous rebuild. Rebuilding `tree_data_disputes` is.
+
+`SchemaV22Tests.theCascadeIsRealOnThisSQLite` measures the cascade on this build's own SQLite,
+inside a transaction, with `PRAGMA foreign_keys` asserted on first so the measurement cannot be
+vacuous — because the whole thing standing between the next author of that rebuild and two emptied
+tables is a paragraph in a comment, and this project's rule is that a confident comment is where
+bugs survive. Red-proved by removing `ON DELETE CASCADE` from both children: the test reports
+`(issues == 0 → false)`.

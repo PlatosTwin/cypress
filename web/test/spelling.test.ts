@@ -16,7 +16,7 @@ const webRoot = fileURLToPath(new URL('../', import.meta.url));
  * `node_modules` alone holds 229 top-level directories that are nobody's prose.
  */
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.astro', '.git']);
-const EXTENSIONS = ['.ts', '.astro', '.mjs', '.js', '.json', '.md', '.toml'];
+const EXTENSIONS = ['.ts', '.astro', '.mjs', '.js', '.json', '.md', '.toml', '.css'];
 
 /**
  * **The only two files this sweep does not read, and why the list is asserted rather than
@@ -169,6 +169,10 @@ describe('American spellings, over the web source', () => {
       'src/layouts/Base.astro',
       'src/pages/index.astro',
       'src/lib/toolchain.ts',
+      'src/lib/tokens.ts',
+      // Generated, and checked anyway: W-B's export names 600 tokens after the Swift, and a
+      // British spelling arriving through the generator is the same defect as one typed here.
+      'src/styles/tokens.css',
       'tsconfig.json',
       'README.md',
       'fly.toml',

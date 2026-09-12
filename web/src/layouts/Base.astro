@@ -1,13 +1,20 @@
 ---
 /**
- * The one page shell, until W-B lands real tokens.
+ * The one page shell.
  *
  * Deliberately unstyled beyond a reading measure and a color pair. The design system is 213
  * colors, 224 spacing values and 105 font declarations of Swift `static let`s, and W-B exports
  * them mechanically with a test that the export still matches its source. Hand-typing a hex here
  * would be the first copy of a fact that already has an owner — the same mistake in a new
  * language.
+ *
+ * `tokens.css` is imported and NOT yet used. It only *declares* custom properties, so it changes
+ * nothing a reader sees; what it buys today is that `npm run build` parses the generated file on
+ * every run, and a render that emitted broken CSS would fail the build rather than ship. W-C is
+ * where the page starts drawing from these.
  */
+import '../styles/tokens.css';
+
 interface Props {
   title: string;
 }

@@ -3,8 +3,9 @@
 **Astro + TypeScript, SSR on the Node adapter, self-hosted on Fly.** Opened 2026-09-10 by the
 owner; the authority is `docs/design-proposals/2026-09-10-web-version.md` and the queue underneath
 it is `docs/ROADMAP.md` section **W**. Milestone **W-A** built the foundation: it builds, it is
-tested, and it renders one placeholder page. Part of **W-B** has since landed: the domain rules
-are re-derived in `src/lib/` — see *The rules, re-derived* below.
+tested, and it renders one placeholder page. **W-B** has since landed in full — the design tokens,
+the pack read layer and the re-derived domain rules — described under *Design tokens*, *The read
+path* and *The rules, re-derived* below. No page reads any of them yet; that is W-C.
 
 **What v1 is** (ruling W-1): a public read surface. No login, no writes. The tree page, plus the
 `Explore` / `Species` / `Neighborhoods` / `Data & export` nav the spec draws.
@@ -31,13 +32,15 @@ As of W-A. Everything below was read from this directory, not remembered.
 | Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
 | Volume | none yet; W-E creates the one the city packs are read from |
 | Pages | one placeholder at `/`. W1 is W-C |
+| Design tokens | `src/styles/tokens.css`, **generated** from the Swift by `scripts/export-tokens.mjs` |
+| Pack reads | `src/lib/pack/` — opens a published pack read-only through `node:sqlite`. No pages read it yet |
 | Rules | `src/lib/{vitality,quantity,geometry,growthCharting,idSpaces}.ts` — W-B's first third |
 
 **Two runtime dependencies and three development ones**, and no test framework at all, which is
 the same discipline `server/` holds with two. `node:sqlite` is why the runtime is pinned this
-tightly: it is in the standard library, which is what will make the Docker image simple when W-B
-opens a pack, and it is documented as experimental, which is what makes a floating Node tag a bad
-idea. Nothing here imports it yet.
+tightly: it is in the standard library, which is what keeps the Docker image simple now that the
+read layer opens packs, and it is documented as experimental, which is what makes a floating Node
+tag a bad idea. `src/lib/pack/` imports it; nothing else does.
 
 ## Running it
 
@@ -98,8 +101,17 @@ installs.
 ## CI
 
 `.github/workflows/web.yml`, on `ubuntu-latest`, triggered by `web/**`, the two harness scripts,
-and itself. It runs the same `Tools/run_web_tests.sh` an agent runs, keeps the log as an
-artifact for thirty days, and builds the Docker image without pushing it.
+itself, and **six files outside `web/` that the suite actually reads** — three Swift sources,
+`Tools/publish_cities.py`, and the two tracked files in `Fixtures/seed/`. It runs the same
+`Tools/run_web_tests.sh` an agent runs, keeps the log as an artifact for thirty days, and builds
+the Docker image without pushing it.
+
+Those six are not decoration. The list used to be three entries under a comment reading "a path
+outside `web/` cannot affect this app", which was true until a web test opened a Swift file — and
+a drift guard whose trigger excludes the file it guards is green on exactly the diff that breaks
+it. `test/pack-versions.test.ts` asserts that every out-of-`web/` file this suite reads is on both
+`paths:` lists and still exists. **The rule: a file a web test opens is a file that triggers the
+web suite.**
 
 **It is one half of a pair.** `.github/workflows/testflight.yml` classifies a `web/` change as
 `tests=false ships=false` — no iOS suite, no TestFlight build — and the notice it prints says so
@@ -194,6 +206,72 @@ decision W-5. Not Postgres, not browser-side SQLite over HTTP range requests. It
 `manifest-v2.json` the same way the app does, and refuses a pack whose `schema_version` is newer
 than it knows rather than guessing, which is the posture `SeedDatabase.newestKnownSchemaVersion`
 takes.
+
+`src/lib/pack/`, six modules, zero new dependencies:
+
+| | |
+|---|---|
+| `versions.ts` | The three version spaces, each written once and asserted against the Swift or Python it copies |
+| `seedSchema.ts` | `SeedSchema.introspect` ported — asks the file what it carries, never a version integer |
+| `pack.ts` | `openPack`, read-only and immutable, with `CityLibrary.validateCityFile`'s refusals |
+| `manifest.ts` | `CityManifest` ported — strict on `manifest_format`, tolerant of additive keys |
+| `queries.ts` | One tree by uuid, trees in a bounding box through the R\*Tree, counts, pack identity |
+| `localSeed.ts` | Which of three states this checkout's ~103 MB seed is in — present, absent, or not the pinned one |
+
+**It never writes.** The open is `readOnly` *and* `mode=ro`, so a write is refused by SQLite
+rather than by a promise in a comment, and the suite asserts that on the real 103 MB seed as well
+as on fixtures.
+
+**It does not build `InventoryUnion`.** The phone attaches several packs at once with re-keyed
+species and composite ids because one device holds several cities; one pack at a time is what the
+web needs, and porting the union's identity arithmetic would import a hazard to solve a problem
+the web does not have.
+
+**What the suite proves without the 103 MB seed, which CI does not have.** Every claim about
+behavior is made against packs built at test time by *executing* `Fixtures/seed/schema.sql` — the
+repository's own generation-17 contract, which is tracked — at four generations, plus the live
+catalog captured verbatim as `test/support/manifest-v2.captured.json`. `test/pack-real-seed.test.ts`
+is an additional tier, not the only one: it covers scale and reality (198,625 real rows, a real
+R\*Tree, a real two-id-space file). Without the seed its nine tests skip, loudly.
+
+**"Nothing is covered only in the seed tier" is a claim that has to be measured, and it was
+false twice.** A fixture can agree with a wrong query — that is the failure mode here, not a
+missing test. The R\*Tree join was wired to the wrong column and every fixture bounding-box test
+still passed, because every fixture tree shared one `neighborhood_id` and `treesInBounds` re-tests
+`lat`/`lon` on `trees` afterwards, re-deriving the right answer from the wrong join; only the
+seed-gated test went red, on a machine that has the seed. Reversing `packIdentity`'s
+`ORDER BY id LIMIT 1` was the same shape, for the same reason: no fixture carried more than one
+`dim_city` row. Both fixtures now discriminate — a tree in the box with no R\*Tree row, an R\*Tree
+row with no tree, neighborhood ids that cross over the tree ids, and a fused two-city, two-region,
+two-id-space file — and both mutations are red on a runner with no seed. The claim is worth stating
+only alongside how it was checked: mutate the thing, move the seed aside, require red.
+
+**Twice more, that check found the repair itself.** The fused fixture doubled every *dimension*
+table and left every tree in the first id space, so `LEFT JOIN dim_city dc ON dc.id = isp.city_id`
+loosened to `ON dc.id = 1` stayed green in both tiers while mislabeling 52,788 San Jose trees in
+the seed; and the `lat`/`lon` re-test that removes the R\*Tree's false positives could be deleted
+in silence, because the seed test's per-row loop sits behind its own `LIMIT 200` and none of that
+box's seven escapees sort into the first 200. The fixtures now carry a fact row in the second id
+space and four trees whose float32-expanded R\*Tree box overlaps the test's box while their
+coordinates do not. **A dimension table with two rows proves nothing until a fact row resolves
+through the second one**, and **a guard downstream of a `LIMIT` proves nothing about the rows the
+limit does not reach.**
+
+**The census is derived, not declared.** `SEED_DEPENDENT_TESTS` and `ALWAYS_RUN_TESTS` are compared
+against the names this file actually handed to `node:test`, so a deleted, renamed, reordered or
+newly added test is red in both tiers. It used to be a literal compared against a literal in the
+same file, which is green on a deletion — which is how a review found it. Registration goes through
+one wrapper that `node:test` can only be reached through, rather than through a pattern matched
+against this file's source: a pattern recognizes one spelling, and a review found nine spellings
+that got past the one that was there and three innocent lines it reddened on, a doc comment among
+them. **The census sees its own file only** — a seed-gated test in another file under `test/` is
+outside it, which is why it also asserts that no sibling test file refers to `seedState`. **A seed that is present and is not the pinned one is a
+failure, not a skip** — `pinned-seed.json`'s size and sha256 are checked before a byte is believed,
+and they are checked again at the end of the seed tier, because a read-only regression once rewrote
+the pinned seed in place at an unchanged size.
+
+**The bundled seed is generation 16; every published pack is 17.** That is deliberate and it is why
+nothing here branches on a version integer. See the errata this round filed.
 
 **Three version spaces, and this file states none of their numbers.** The writable database's
 migration counter, the published seed's schema version and the manifest envelope format are
