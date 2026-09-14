@@ -1,7 +1,9 @@
 # The public web surface. **W-A wrote this file as the deployment written down and never ran it;
 # W-E is the round that runs it** — so what changed here is tense and facts, not shape. The app
-# `cypress-web` still does not exist on Fly as this file is committed: the orchestrator creates it,
-# creates the volume named below, and deploys. Nothing in this round talks to Fly from an agent.
+# `cypress-web` **now exists on Fly** — the orchestrator created it while this round was open — and
+# it is empty: no machines, no volume, nothing deployed to it, and it answers on no hostname. What
+# remains is the volume named below and a deploy. Nothing in this round talks to Fly from an agent;
+# an earlier version of this paragraph said the app did not exist, and it was true when written.
 #
 # Shaped after `server/fly.toml`, which runs `cypress-sync`: one small machine in `sjc`, scaling
 # to zero when idle. The differences from that file are all downstream of one fact — this process
@@ -55,9 +57,12 @@ primary_region = 'sjc'
   # that makes a fresh volume behave. A volume is empty when Fly creates it, so a `CYPRESS_PACK_DIR`
   # pointing INTO it at a path nothing has made yet would not exist on first boot —
   # `openPackLibrary` refuses a missing directory outright (correctly: "a missing one is a
-  # deployment that did not finish") and every page would 500 until the sync ran. Pointed at the
-  # mount itself, the directory always exists and is merely empty, which is the state the read path
-  # already handles: `/health` reports `state: empty` and a tree URL answers 503 `noPacks`.
+  # deployment that did not finish") and **every TREE route would 500** until the sync ran. Measured
+  # against the built server, because the first draft of this sentence said "every page": `/`
+  # renders and answers 200, and `/health` answers 200 saying `unreadable`; it is
+  # `/‹id-space›/tree/‹uuid›` and its `og.png` that 500. Pointed at the mount itself, the directory
+  # always exists and is merely empty, which is the state the read path already handles: `/health`
+  # reports `state: empty` and a tree URL answers 503 `noPacks`.
   #
   # **A note for whatever fills this volume:** `openPackLibrary` opens every `*.sqlite` directly in
   # this directory. A partially written download must not sit here under that name while it is
@@ -96,6 +101,13 @@ primary_region = 'sjc'
 # What this check is therefore worth: it proves the process is serving HTTP and routing a request
 # through Astro, which is strictly more than a TCP accept proved. Whether the volume arrived is a
 # question for `curl https://<host>/health | jq .ready`, and for the operator running the deploy.
+#
+# **`path` below and the file that answers it are one fact written twice**, the same shape as
+# `CYPRESS_PACK_DIR` and `destination` above, and with a worse failure: a path no route answers
+# 404s every 30 s, so the machine never becomes healthy and the release rolls back. It is guarded —
+# `web/test/toolchain.test.ts` resolves this path to a file under `src/pages/`, requires exactly
+# one, and imports it to check it exports `method`. Adversarial review found that hole by setting
+# this line to `/healthz` and watching the whole suite stay green; it does not any more.
 [[http_service.checks]]
   interval = '30s'
   timeout = '5s'
@@ -166,9 +178,16 @@ primary_region = 'sjc'
 # can be extended (`flyctl volumes extend`) and cannot be shrunk, so too small is an outage found
 # mid-refresh and too large is a few cents a month on a per-GB bill.
 #
-# `initial_size` is what `flyctl deploy` would use if it had to create the volume itself. The
-# orchestrator creates it explicitly instead — this line is here so the size is stated in the file
-# rather than living only in whichever shell command created the volume.
+# **`initial_size` is NOT a fallback that creates this volume on the first deploy**, and an earlier
+# version of this comment said it was. flyctl's `validateVolumeConfig` returns an error for a
+# process group with no machines — which is exactly the first deploy of `cypress-web` — telling you
+# to run `fly volume create`; the value is assigned and traced and never consumed to create
+# anything there. The README's sentence is the accurate one: **the volume must exist before the
+# first deploy.**
+#
+# It is kept because it states the size IN THIS FILE rather than only in whichever shell command
+# created the volume, which is the whole reason the arithmetic above is written down. Do not read
+# it as insurance.
 [mounts]
   source = 'cypress_packs'
   destination = '/data/packs'

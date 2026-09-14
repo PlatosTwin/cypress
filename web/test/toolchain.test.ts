@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { PACK_DIRECTORY_VARIABLE } from '../src/lib/packLibrary.ts';
@@ -12,6 +12,7 @@ import {
   engineRange,
   flyTomlStrings,
   nvmrcVersion,
+  routeFileCandidates,
   runningNodeVersion,
 } from '../src/lib/toolchain.ts';
 
@@ -235,6 +236,72 @@ describe('where the packs are, which fly.toml says twice', () => {
         + `are at ${String(packDirectory)}. Nothing at runtime notices: the volume attaches, the `
         + 'machine passes its health check, and every tree URL 404s or 500s with the data sitting '
         + 'on disk a directory away.',
+    );
+  });
+});
+
+describe('the health check names a path this app actually answers', () => {
+  // The same class of guard again, and the third copy of one fact in this round:
+  // `[[http_service.checks]] path` in fly.toml, and the file that answers it. A check pointed at a
+  // path no route serves 404s every 30 s, the machine never goes healthy, and the release rolls
+  // back — with nothing in the repository having gone red first. An adversarial reviewer set the
+  // real file's path to `/healthz` and watched all 497 tests stay green; this is that hole.
+
+  it('maps a URL path onto the files Astro could answer it from', () => {
+    // Specimens first, answers known before the function saw them.
+    assert.deepEqual(routeFileCandidates('/health'), [
+      'src/pages/health.ts',
+      'src/pages/health.js',
+      'src/pages/health.astro',
+      'src/pages/health/index.astro',
+    ]);
+    assert.deepEqual(routeFileCandidates('/'), ['src/pages/index.astro']);
+    // And everything it does not model is refused rather than guessed at.
+    assert.throws(() => routeFileCandidates('health'), /must be absolute/);
+    assert.throws(() => routeFileCandidates('/a/b'), /single plain segment/);
+    assert.throws(() => routeFileCandidates('/[idSpace]'), /single plain segment/);
+  });
+
+  it('the path in fly.toml is answered by exactly one route, which exports the check’s verb', async () => {
+    const checks = flyTomlStrings(read('fly.toml'), 'http_service.checks');
+    const path = checks.get('path');
+    // The controls. Both of these passing vacuously is how this guard would join the one it was
+    // written to replace.
+    assert.ok(
+      path !== undefined,
+      'web/fly.toml declares no [[http_service.checks]] path — either the check was removed, or '
+        + 'this is reading the wrong table and asserting nothing.',
+    );
+    const verb = checks.get('method') ?? 'GET';
+
+    const present = routeFileCandidates(path)
+      .filter((candidate) => existsSync(fileURLToPath(new URL(candidate, webRoot))));
+    assert.deepEqual(
+      present,
+      ['src/pages/health.ts'],
+      `web/fly.toml points its health check at ${path}, and web/ holds ${present.length} route(s) `
+        + `that could answer it (${present.join(', ') || 'none'}). None means Fly will 404 the `
+        + 'check every 30 s, the machine will never become healthy, and the release will roll back '
+        + 'with nothing here having said so. More than one means two files claim the same URL.',
+    );
+
+    // Existing is not answering. The check sends a `method`, and a module that exports no such
+    // verb is a 404 from Astro exactly as a missing file is.
+    const route = await import(new URL(present[0] ?? '', webRoot).href) as Record<string, unknown>;
+    assert.equal(
+      typeof route[verb],
+      'function',
+      `${present[0]} exports no ${verb}, and the health check in fly.toml sends ${verb}`,
+    );
+
+    // The calibration, run against this checkout rather than a specimen: a path nothing answers
+    // must resolve to nothing. Without it, an `existsSync` that always said true — or a candidate
+    // list that happened to name a real file — would satisfy everything above.
+    assert.deepEqual(
+      routeFileCandidates('/healthz')
+        .filter((candidate) => existsSync(fileURLToPath(new URL(candidate, webRoot)))),
+      [],
+      'the membership test says this app answers a path it does not answer',
     );
   });
 });

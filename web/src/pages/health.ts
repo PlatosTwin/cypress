@@ -15,33 +15,60 @@
  *
  * ── 200, always. Even `ready: false`. ────────────────────────────────────────────────────────
  *
- * The tempting answer is 503 while no pack is open, and it is wrong here for three reasons, in
- * descending order of how badly it bites:
+ * **There are three options here and not two**, which is the correction adversarial review made to
+ * this paragraph: fail the check on every unready state, fail it on none, or fail it on the two
+ * that are genuine deploy faults (`unconfigured`, `unreadable`) while tolerating the one that is
+ * expected (`empty`). The middle one is the serious option and the first version of this comment
+ * never named it, having argued only against the first.
  *
- *  1. **The first deploy could never go healthy.** A Fly `[[http_service.checks]]` gates the
- *     release: `flyctl deploy` waits for it and rolls back a machine that never passes. The volume
- *     this app mounts is EMPTY the moment it is created, and it is filled by a sync that needs the
- *     machine to exist first. A check that failed on "no packs yet" would make the deploy that
- *     creates the machine impossible, and the failure would present as a rollback rather than as
- *     anything naming a volume.
- *  2. **There is no second machine to fail over to.** `min_machines_running = 0` with
- *     `auto_start_machines`: this is one machine. Marking it unhealthy does not route a reader
- *     somewhere better, it routes them to Fly's own error page — replacing the app's explanation
- *     with a proxy's, and taking `x-cypress-refusal` and this body with it.
- *  3. **Per-request refusals already carry the distinction, and carry it in the right place.**
- *     `resolveTreePage` returns `noPacks` and `[uuid].astro` and `og.png.ts` answer 503 with
- *     `x-cypress-refusal: noPacks`. A reader asking for a tree on an unfilled machine is correctly
- *     told the server cannot answer *that*. Machine-level health is a different question from
- *     request-level availability, and this endpoint answers the first one.
+ * **What rules out failing on `empty`, and only on `empty`:** a Fly `[[http_service.checks]]` gates
+ * the release. `flyctl deploy` waits for it and rolls back a machine that never passes. The volume
+ * is EMPTY the moment it is created and is filled by a sync that needs the machine to exist first,
+ * so a check that failed on `empty` would make the deploy that creates the machine impossible, and
+ * the failure would present as a rollback rather than as anything naming a volume. That argument
+ * is decisive and it is about `empty` alone — it says nothing about the other two, because on a
+ * first deploy neither of them happens: `CYPRESS_PACK_DIR` is set in `fly.toml` from the start, and
+ * Fly attaches the volume before the machine boots, so the state a first deploy passes through is
+ * `empty`.
  *
- * So the status code says "this process is up and serving HTTP" — which is the only thing a
- * process can honestly assert about itself with a number — and the BODY says whether it is holding
- * packs. `ready` is the field a deploy script greps; `state` and `detail` are what a human reads.
- * A monitor that wants paging on an unfilled volume reads `.ready`, which is one `jq` away and is
- * not ambiguous the way a 503 shared with six other causes would be.
+ * **So why not the middle option?** Three reasons, and none of them is "a health check should never
+ * fail":
  *
- * **If someone later points a check at this and wants it to fail on `ready: false`, reason 1 is
- * the thing to confront first.** It is not a preference.
+ *  1. **Both faults are already caught earlier, cheaper, and before merge.**
+ *     `web/test/toolchain.test.ts` refuses a `fly.toml` with no `[env] CYPRESS_PACK_DIR` and
+ *     refuses one whose value disagrees with `[mounts] destination`. `unconfigured` in production
+ *     means someone shipped an image from a `fly.toml` CI had already refused. A check would be a
+ *     second detector, firing later and costing a rollback, for something the suite finds first.
+ *  2. **What is left of `unreadable` is improbable, and its reachability has already moved once.**
+ *     Fly attaches the volume before the machine starts; a failed attach is a machine that does not
+ *     boot, and there is nothing to health-check. More to the point: until the fix that accompanies
+ *     this comment, `unreadable` was ALSO produced by a single unstattable entry — a dangling
+ *     symlink, or a file pruned between the listing and the look, which is a routine refresh — so a
+ *     check that failed on it would have rolled the machine back in the middle of a normal publish.
+ *     That was not visible from here, and it is the argument against binding a status code to a
+ *     state whose reachability can change underneath it.
+ *  3. **The cost lands exactly where it hurts.** `min_machines_running = 0` and one machine: a
+ *     failing check takes that machine out of the proxy, and takes `/health` with it. The page that
+ *     says which of the four states you are in becomes unreachable at the moment somebody needs to
+ *     read it. `flyctl checks list` keeps the last output so it is not a total loss, but the live
+ *     surface is gone, and it is replaced by Fly's error page rather than by this body and by
+ *     `x-cypress-refusal`.
+ *
+ * **Decided: 200 in every state.** The status code says "this process is up and serving HTTP" —
+ * the only thing a process can honestly assert about itself with a number — and the BODY says
+ * whether it is holding packs. `ready` is the field a deploy script greps; `state` and `detail` are
+ * what a human reads. A monitor that wants paging on an unfilled volume reads `.ready`, which is
+ * one `jq` away and is not ambiguous the way a 503 shared with six other causes would be. And the
+ * per-request distinction already exists where it belongs: `resolveTreePage` returns `noPacks` and
+ * `[uuid].astro` and `og.png.ts` answer 503 with `x-cypress-refusal: noPacks`, so a reader asking
+ * for a tree on an unfilled machine is correctly told the server cannot answer *that*.
+ *
+ * **What would change the answer**, stated so the next person has a test rather than a re-argument:
+ * if this app ever runs more than one machine, reason 3 weakens — there is then somewhere to fail
+ * over to — and the middle option deserves re-deciding. If `unconfigured` or `unreadable` ever
+ * becomes reachable in a way CI cannot catch, so does reason 1. The accepted cost meanwhile is
+ * real and is named here rather than hidden: a deploy can go green over a machine that answers 500
+ * on every tree URL, and the thing that catches it is a human or a monitor reading `.ready`.
  *
  * ── no-store ─────────────────────────────────────────────────────────────────────────────────
  *

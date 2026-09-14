@@ -30,7 +30,7 @@ surface and a privacy ruling, and is therefore larger than "a public read surfac
 `cypress-sync` server-to-server. **CORS is not required for v1** and should not be built speculatively.
 
 **2. The public site is `cypressatlas.org`.** *(2026-09-13, superseding the 2026-09-10 ruling
-below, which named `cypressgrove.app`.)*
+quoted below, which named `cypressgrove.app`.)*
 
 **The amendment, taken 2026-09-13 while W-E was writing the deployment.** The owner ruled the
 domain is **`cypressatlas.org`**, and added that the site "won't land there live for a bit" — so the
@@ -38,33 +38,33 @@ name is what to build toward and there is no cutover in the web round: **no cert
 and the site answers on its `.fly.dev` hostname. `web/fly.toml` and `web/README.md` name
 `cypressatlas.org` and declare no `[[certificates]]`, which is that ruling written down.
 
-The 2026-09-10 reasoning is kept below rather than replaced, because the finding that forced the
-question is unchanged and is the part that matters; only the name it settled on has moved. **The
-`My Grove` collision the orchestrator flagged is retired along with the name** — `cypressatlas.org`
-does not collide with screen 08 — and the next person to look for that collision should find this
-sentence rather than re-raise it.
+**The owner also restated, plainly and more than once, that `cypress.app` is NOT theirs** — settled
+fact, not an open question. The ruling as taken words this as "registered to a third party", which
+says the same thing from the outside; the plainer phrasing is recorded here rather than edited into
+the quote, because the quote is what was said on the day.
 
-*The ruling as taken on 2026-09-10, superseded in its choice of name and standing in everything
-else:*
+**The `My Grove` collision the orchestrator flagged is retired along with the name.**
+`cypressatlas.org` does not collide with screen 08, so the next person to look for that collision
+should find this sentence rather than re-raise it.
 
-> **The public site is `cypressgrove.app`.**
+*The ruling as taken on 2026-09-10 — verbatim, and superseded in its choice of name alone:*
+
+> **2. The public site is `cypressgrove.app`.**
 >
-> `cypress.app` — the domain `ShareCopy.publicURLPrefix` has always pointed at — **is not the
-> owner's**, and expires 2026-11-03. Measured by RDAP on 2026-09-10, calibrated against a
-> known-registered and a known-unregistered control: registered 2024-11-03, registrar Spaceship,
-> status `client transfer prohibited`, parked nameservers, no A record, registrant redacted. The
-> owner has stated repeatedly and plainly that it is not theirs; it is settled fact, not an open
-> question.
+> `cypress.app` — the domain `ShareCopy.publicURLPrefix` has always pointed at — **is registered to a
+> third party** and expires 2026-11-03. Measured by RDAP on 2026-09-10, calibrated against a
+> known-registered and a known-unregistered control: registered 2024-11-03, registrar Spaceship, status
+> `client transfer prohibited`, parked nameservers, no A record, registrant redacted.
 >
-> **This is worse than a dead link and should be read as a finding, not a footnote.** Every share
-> card the iOS app has ever produced points at a hostname somebody else controls. It is dead today;
-> it is not guaranteed to stay dead.
+> **This is worse than a dead link and should be read as a finding, not a footnote.** Every share card
+> the iOS app has ever produced points at a hostname somebody else controls. It is dead today; it is not
+> guaranteed to stay dead.
 >
 > `cypressgrove.app` was chosen from four available candidates. **The orchestrator flagged, and the
-> owner accepted, that the name collides with `My Grove`** — screen 08, an existing product surface
-> — so a reader may reasonably expect `cypressgrove.app` to be about their grove rather than about
-> the city's trees. Recorded here because the next person to notice the collision should find the
-> decision rather than the idea.
+> owner accepted, that the name collides with `My Grove`** — screen 08, an existing product surface —
+> so a reader may reasonably expect `cypressgrove.app` to be about their grove rather than about the
+> city's trees. Recorded here because the next person to notice the collision should find the decision
+> rather than the idea.
 
 *Consequence, unchanged by the amendment:* `ShareCopy.publicURLPrefix` must move, which is **shipped
 iOS copy** and therefore a Swift round with its own review, not a web change. Until it moves, the

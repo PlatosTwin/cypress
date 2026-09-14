@@ -174,3 +174,46 @@ export function flyTomlStrings(flyToml: string, table: string): ReadonlyMap<stri
   }
   return values;
 }
+
+/**
+ * The files an Astro `output: 'server'` app could answer a single-segment URL path from.
+ *
+ * **A third copy of one fact, and the reason this exists is that the first guard's own argument
+ * applies to it.** `flyTomlStrings` was written because `[env] CYPRESS_PACK_DIR` and `[mounts]
+ * destination` are one fact written twice with nothing noticing a disagreement; the same diff
+ * added `[[http_service.checks]] path` and a file that answers it, which is another. The failure
+ * is worse than the first one's, in fact: a check pointed at a path no route answers 404s every
+ * 30 s, so the machine never becomes healthy and the release rolls back — and nothing in the
+ * repository would have gone red first. Verified by an adversarial reviewer, who set the path to
+ * `/healthz` and watched the whole suite stay green.
+ *
+ * Candidates rather than one answer, because Astro maps several filenames onto one URL. The caller
+ * checks which of them exist; **more than one existing is as much a defect as none**, and the
+ * caller is the thing that can say so.
+ *
+ * Deliberately narrow: one segment, no dynamic `[param]` route, nothing nested. Everything wider
+ * throws rather than guessing, because the guess would be this function asserting an Astro routing
+ * rule nobody checked. A future check path that needs more teaches this function, in the change
+ * that adds it.
+ */
+export function routeFileCandidates(urlPath: string): readonly string[] {
+  if (!urlPath.startsWith('/')) {
+    throw new Error(`a health check path must be absolute; got "${urlPath}"`);
+  }
+  const segments = urlPath.slice(1).split('/').filter((segment) => segment.length > 0);
+  if (segments.length === 0) return ['src/pages/index.astro'];
+  const name = segments[0];
+  if (segments.length > 1 || name === undefined || !/^[A-Za-z0-9_.-]+$/.test(name)) {
+    throw new Error(
+      `"${urlPath}" is not a single plain segment. This models only that shape on purpose — a `
+        + 'nested or dynamic route resolves by rules this function would be guessing at. Teach it '
+        + 'in the change that needs it.',
+    );
+  }
+  return [
+    `src/pages/${name}.ts`,
+    `src/pages/${name}.js`,
+    `src/pages/${name}.astro`,
+    `src/pages/${name}/index.astro`,
+  ];
+}
