@@ -16,7 +16,8 @@
     "tokens": "node scripts/export-tokens.mjs",
     "tokens:check": "node scripts/export-tokens.mjs --check",
     "fonts": "node scripts/export-card-fonts.mjs",
-    "fonts:check": "node scripts/export-card-fonts.mjs --check"
+    "fonts:check": "node scripts/export-card-fonts.mjs --check",
+    "packs": "node scripts/sync-packs.mjs"
   },
   "dependencies": {
     "@astrojs/node": "11.1.5",
