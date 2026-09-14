@@ -203,7 +203,7 @@ growth loop" — terminate at the moment of sharing. W1 is the page those links 
 | **W-B** | The three portable assets | ~~Design tokens exported from the Swift declarations to CSS custom properties, with a test that the export still matches its source; the domain rules (vitality rubric, `Quantity`, the 25 m grid, growth-charting eligibility, ID spaces) re-derived in TypeScript against ported Swift test cases; a read layer that opens a published city pack through the same schema the phone uses.~~ **ALL THREE SHIPPED.** Tokens by `web/tokens-css` (`web/src/styles/tokens.css`, generated and byte-checked against its source). Read layer by `web/pack-read` (`web/src/lib/pack/`, on `node:sqlite`, no new dependency — it introspects a pack's shape rather than trusting a version integer, refuses a generation newer than it reads, and never writes). Domain rules by `web/domain-rules` (`web/src/lib/`, each checked against its original parsed at run time rather than against a transcription; the ID-space registry has no Swift declaration and lives only in `Tools/inventory_contract.py`). Two findings came out of the rules third: the 25 m grid is not idempotent and the read path applies it twice, and `Quantity` had no dedicated suite until now. |
 | ~~**W-C**~~ | ~~W1 · Public tree page~~ | ~~The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients.~~ **SHIPPED** by `web/w1-tree-page`, and completed by the two rounds merged into it. Server-rendered from a mounted pack; verified against the pinned seed (sha256 and `count(*)` both checked) on a San Francisco tree, a San Jose vacant site, and on a synthetic `us-ny-nyc` pack. **Seven of §W1's eleven elements were omitted rather than stubbed** — height, the taped DBH reading, the foliage strip, its photo caption, the recent-visits panel, `Sign in` (owner decision 7) and `Open in the app` (no host resolves) — and four labels say less than the mock does; the element-by-element account and the four deviations are in `docs/errata-pending/web-w1-tree-page.md`. ~~**The OpenGraph image is an SVG**, which the major social platforms do not render: making it a PNG needs a rasterizer, which is a dependency decision with an owner — chip backlog 24.~~ **The owner ruled and `web/og-raster` shipped it**: `og:image` is a PNG, rasterized from the same SVG by `@resvg/resvg-js`, and the page now declares the card's type, width and height. New York's disclaimer now follows its data onto the page (R36 consequence (b), R78 rulings 2 and 3). **The community half landed too**, by `web/w1-live-facts`: the owner ruled on 2026-09-11 that this row stays open until W1 draws what W-G publishes, and it now does — §W1's `Height`, the live trunk DBH in place of the city bucket, and a `Beloved` row (chip backlog **26**, struck). **The endpoint is not deployed** — measured, `cypress-sync` answers `404 page not found` for the route while `/health` is 200 — so the page's ordinary state is still the city record alone, and it says so rather than implying nothing has been measured. **The two rounds were merged and the merged tree was run**, which is where the one coupling neither branch could see was checked: the card is built by `resolveTreePage`, which requests no community half, so the `immutable` year-long cache on `og.png` and the page's 60-second `max-age` are consistent rather than in conflict — the card holds no contributed value to take back (chip backlog **27** is where that would change). Open for the owner in `docs/rulings-pending/w1-authored-copy.md`: **four** authored strings now, and three conservative calls named there (a vacant site draws no reading; `unavailable` and `unconfigured` read alike to a reader; the page sends `max-age=60`). |
 | **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — ~~designed under the W-3 exception~~ **designed**, in `docs/rulings-pending/web-nav-destinations.md` (unnumbered; §7a carries the orchestrator's answers to its open questions), then ruled, then built. |
-| **W-E** | It is on the internet | Deployed to Fly against a volume holding the published packs; the share link resolves. |
+| **W-E** | It is on the internet | Deployed to Fly against a volume holding the published packs; the share link resolves. **PARTLY LANDED, and still open.** #177 and #178 shipped everything the deploy needs: `fly.toml` gained the `[mounts]` block, `CYPRESS_PACK_DIR`, and a health check pointed at a new `/health` that distinguishes `unconfigured` / `unreadable` / `empty` / `serving`; `web/scripts/sync-packs.mjs` fills the volume from the public catalog, verifying `bytes` and `sha256` per pack and renaming into place only after. **The whole chain was rehearsed locally against the real bucket, not mocked**: all seven packs synced (713,605,120 bytes, every sha256 verified), a second run skipped six and resumed the seventh, `/health` reported `serving` with 3 id spaces, and tree pages answered 200 for San Francisco and for **two different NYC boroughs through the one `us-ny-nyc` id space** — the multi-pack walk, exercised rather than argued — with `og.png` 200 at 1200×630 read from its IHDR and an unknown uuid answering 404 rather than 500. **What is left is the Fly half alone**: the `cypress-web` app exists and is empty, and the volume, the deploy and the first live fetch are blocked on a permission the orchestrator does not hold. No certificate and no DNS this round, per the owner. |
 
 ### Decided in the proposal, not open
 
@@ -257,14 +257,21 @@ against the manifest, `count(*)` matching the manifest's tree count as the contr
 
 ### Open, and named as open
 
-1. **`cypress.app` is registered, and it expires 2026-11-03.** Measured by RDAP on 2026-09-10,
-   calibrated against controls (a known-registered `.app` returns 200, an unregistered one 404):
-   registered 2024-11-03 through **2026-11-03**, registrar Spaceship, status
-   `client transfer prohibited`, nameservers `launch1/launch2.spaceship.net` plus a
-   `verify.hn` verification record, **no A record and nothing served**. Registrant is redacted, so
-   whether it is the owner's is not answerable from outside. W-E cannot finish without knowing, and
-   the expiry is eight weeks out. Until then the site lives at its `.fly.dev` hostname and
-   `ShareCopy.publicURLPrefix` does not move.
+1. ~~**Is `cypress.app` registered?**~~ **ANSWERED by the owner, 2026-09-13, and it is not an
+   open question — it is a settled fact that had been re-raised too many times.** `cypress.app` is
+   **not the owner's.** The RDAP measurement of 2026-09-10 (registered through 2026-11-03,
+   registrar Spaceship, no A record, registrant redacted) described a third party's domain, and the
+   redaction is why it could not be settled from outside. It is settled from inside.
+
+   **The site's domain is `cypressatlas.org`** — the owner's ruling of the same day, superseding the
+   `cypressgrove.app` of 2026-09-10 (decision 2 of the web round's owner decisions, amended in place
+   under `docs/rulings-pending/` with both dates). RDAP on 2026-09-13 returns **404 for
+   `cypressatlas.org`** against a 200 control on `cypressatlas.com`, which a third party holds: the
+   `.org` is unregistered and is the owner's to take. **No agent registers a domain.**
+
+   **Nothing lands there live this round**, and that is the owner's framing rather than a
+   limitation — "we won't land there live for a bit". No certificate, no DNS; the site answers on
+   its `.fly.dev` hostname. `ShareCopy.publicURLPrefix` does not move, for the reason chip 39 gives.
 2. **What a withdrawn or moderated record does to an indexed public page. STILL OPEN — answered for
    what ships, not as a general rule.**
 
@@ -1167,8 +1174,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `Cypress/Features/Share/SharePresentation.swift:245` is `https://cypress.app/sf/tree/`, and
     the RDAP measurement in "Open, and named as open" item 1 says that name is registered to a
     redacted holder through 2026-11-03 with nothing served on it. Every share the beta has
-    produced carries that prefix. Moving it — to the `cypressgrove.app` the web round proposed, or
-    to whatever host W-E resolves — is shipped iOS copy, so it is a Swift round with its own
+    produced carries that prefix. Moving it — to `cypressatlas.org`, the owner's ruling of 2026-09-13, or
+    to whatever host W-E actually resolves on — is shipped iOS copy, so it is a Swift round with its own
     review and its own build, and the builds already in testers' hands cannot be recalled: links
     already sent stay pointed where they point whatever is decided. Sequence it with W-E rather
     than after it, because the first deployed host is the one the copy should already name.
@@ -1240,6 +1247,51 @@ into this section in the round that finds it, and nowhere else. Each item stands
     transcriptions of one typographic decision, on two platforms, with no guard between them.
     Decide where line-height lives — a figure in the Swift the export can read, or a rule the web
     owns explicitly — and guard whichever it is.
+
+46. **`sync-packs.mjs` has no `--only <id>`, so a 713 MB volume is filled or refilled whole.**
+    The local rehearsal made the cost concrete: Queens (199 MB) stalled past the 30 s per-chunk
+    window and the run exited `FAILED`, correctly leaving nothing partial — but recovering meant
+    re-running the whole catalog, which skipped the six already-verified packs and re-fetched only
+    Queens. That worked, and it worked because skipping is cheap. A `--only` would still be worth
+    having for re-verifying one pack, or for filling a volume borough by borough on a slow link.
+
+47. **A refreshed volume is not served until the machine restarts.** `packLibrary` opens packs on
+    first use and keeps them for the life of the process (`immutable=1`, deliberately — a published
+    pack lives at an immutable versioned path). So a sync that replaces bytes under a running server
+    changes nothing a reader sees. Either write the restart into the deploy runbook as a required
+    step, or give the server a reload path. Today it is a sentence in `web/README.md` and nothing
+    enforces it.
+
+48. **Orphaned `.part-` temporaries accumulate and only `--prune` clears them.** Two interrupted
+    runs leave two orphans, each up to 199 MB on Queens, and `--prune` is off by default. The
+    reporting is correct — a plain run names them — but nothing reclaims the space on a volume sized
+    with 1.4 GB of headroom. Consider clearing a temporary whose pid is dead and whose mtime is well
+    outside the stall window, without requiring the flag.
+
+49. **Generalize the `fly.toml`-check-path guard into a rule.** #177 added a guard that resolves
+    `[[http_service.checks]] path` to a file under `src/pages/` and imports it to confirm the verb
+    — because adversarial review set that line to `/healthz` and watched the whole suite stay green
+    while the deployed check would have 404'd every 30 s and rolled the machine back. The guard is
+    specific to that one pair. The general shape — *every path in `fly.toml` that names something in
+    this repository must resolve to it* — is the rule worth having.
+
+50. **Measure the 512 MB.** `web/fly.toml`'s `[[vm]] memory` is a guess made before any pack was
+    mounted, and the file says so in its own words rather than implying anyone checked. The
+    measurement needs a machine with the volume attached and a few tree pages served, and it should
+    replace that paragraph with a number and the date it was taken.
+
+51. **`node:sqlite`'s experimental warning prints on every `sync-packs.mjs` run**, because the
+    script imports `PACK_DIRECTORY_VARIABLE` from `packLibrary.ts`, which opens the database module.
+    Moving that constant and `packDirectoryFromEnvironment` into a small module of their own would
+    silence it without a second copy of the name — and a second copy of the name is the thing not to
+    do, since one definition is why the server and the sync cannot disagree about it.
+
+52. **`docker build web` has never been run.** Neither the reviewer's Docker daemon nor the
+    orchestrator's could pull `node:24.13.1-slim` from the registry, and neither guessed at the
+    result. The substitute was a good one — the runtime stage's exact file set plus
+    `npm ci --omit=dev` assembled in a clean directory, with `sync-packs.mjs` running from it and no
+    `Cannot find module`, proving the COPY list sufficient — but the image itself is unbuilt. The
+    first `flyctl deploy` builds it remotely and will be the first real answer.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
