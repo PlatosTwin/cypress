@@ -4,8 +4,9 @@ Unnumbered, per CLAUDE.md "Numbering and shared files". The orchestrator splices
 numbers at merge. Nothing in `Cypress/`, `CypressTests/` or `CypressUITests/` cites this filename;
 the web sources carry the reasoning in their own headers and cite no pending number.
 
-Three decisions the W-E sync made that are not visible from any one file, written down because each
-one is the kind of thing a later change would undo without noticing it was a decision.
+Four decisions the W-E sync made that are not visible from any one file, written down because each
+one is the kind of thing a later change would undo without noticing it was a decision. The fourth
+came out of the adversarial review of #178.
 
 ---
 
@@ -50,3 +51,16 @@ cannot disagree — and `dist/` is Astro's bundle, which holds none of those in 
 A script in the image whose imports are not is a script that fails at `fly ssh console` time, so
 `test/sync-packs.test.ts` asserts both directories arrive and that every relative import the script
 makes resolves under one of them.
+
+### R??? — A catalog that would put two entries in one file is refused, not reconciled
+
+**Date:** 2026-09-13. **Decided by:** author, W-E, after review of #178. **Status:** decided.
+
+The destination filename is the pack id (see the first entry above), so two catalog entries sharing
+an id — or differing only in case, which is one file on a developer's Mac and two on the volume —
+map to one path. The arithmetic bug the reviewer found was cosmetic (`bytes-in-place` counted both
+entries for the one file that survived), and fixing the arithmetic would have been the wrong repair:
+one entry silently overwriting another is a catalog that is wrong about something upstream, and the
+volume would end up holding one city under a name claiming to be two. The run refuses the catalog
+whole, before a byte moves, and exits nonzero — the treatment an unknown envelope format already
+gets. Nothing the publisher emits today can produce either case.

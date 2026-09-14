@@ -470,6 +470,14 @@ bucket has a bad minute. The image carries the script — `Dockerfile`'s runtime
   transfer has stopped moving" rather than "this transfer is taking a while".
 - **A catalog `path` or `id` that is not a plain relative name.** The catalog is a remote object;
   it does not get to choose where its reader writes.
+- **A catalog whose entries would land on one file** — two entries with one id, or two ids that
+  differ only in case. One would overwrite the other and the summary would count both, so the whole
+  catalog is refused before a byte moves, the same way an unknown format is.
+- **A destination it cannot write to.** EACCES, EROFS and ENOTDIR are found by opening the
+  temporary file *before* the request is made, so an unwritable volume costs no transfer; they are
+  reported as an ordinary refusal with a summary line after it, and they are not retried, because
+  asking again writes the same error again. `ENOSPC` mid-transfer is treated the same way rather
+  than retried into a disk that is already full.
 
 **A refresh is the same command.** A pack already present at the right size and hash is skipped and
 said to be skipped, so the second run is fast and legible:
@@ -488,11 +496,18 @@ by running the sync and reading what it skipped, not by looking at the names.
 
 **A city that leaves the catalog is left alone unless you say `--prune`.** A refresh that silently
 deletes a city is worse than one that leaves a stale file, so an unlisted pack is reported and kept;
-`--prune` removes it, and each removal is printed. Pruning only ever touches plain files this script
-could itself have written — an unlisted `*.sqlite` and a temporary file from an interrupted run.
-Anything else in the directory is not its business. **Do not run two syncs against one directory at
-once**: the second one's temporary file looks exactly like an interrupted run's to the first one's
-`--prune`.
+`--prune` removes it, and each removal is printed.
+
+**What it deletes and what it merely reports are two different sets, and the output says which.**
+`--prune` only ever deletes a plain file this script could itself have written: an unlisted
+`<id>.sqlite`, or a leftover temporary whose process has exited and whose last write is outside the
+stall window. A temporary belonging to a live pid, or written moments ago, is kept and named — two
+syncs against one directory no longer end with one deleting the other's transfer, though there is
+still no reason to run them that way. Everything else it will not touch. But `packLibrary`'s reader
+opens **every** name ending in `.sqlite`, does not skip dot-files, and follows symlinks, so
+`.hidden.sqlite` and a symlink pointing outside the volume are files the server would serve and
+`--prune` will not remove. Those are reported too, marked `--prune does NOT remove it`, so a
+directory somebody has poked at stops looking clean.
 
 The server holds its packs open for the life of the process (`packLibrary.ts`), so after a refresh
 that actually replaced something, restart the machine before expecting the new bytes to be served.
