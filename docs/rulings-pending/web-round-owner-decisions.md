@@ -3,6 +3,11 @@
 # decisions taken across two question rounds that day, plus one taken by the orchestrator under the
 # autonomy grant. `docs/rulings-pending/web-version-round.md` carries the four that opened the round;
 # these are the ones that followed, each taken with the evidence in front of it.
+#
+# **Decision 2 was amended by the owner on 2026-09-13** (the domain is `cypressatlas.org`, not
+# `cypressgrove.app`). The amendment is written into decision 2 with the original quoted beneath it,
+# rather than edited over the top of it: a ruling that changed is a different thing from a ruling
+# that was always this, and the splice should carry both dates.
 
 ### The web round's second and third decision rounds (owner-ratified, 2026-09-10)
 
@@ -24,26 +29,47 @@ surface and a privacy ruling, and is therefore larger than "a public read surfac
 *Note for the round that builds it:* because the web app is **server-side rendered on Fly**, it calls
 `cypress-sync` server-to-server. **CORS is not required for v1** and should not be built speculatively.
 
-**2. The public site is `cypressgrove.app`.**
+**2. The public site is `cypressatlas.org`.** *(2026-09-13, superseding the 2026-09-10 ruling
+quoted below, which named `cypressgrove.app`.)*
 
-`cypress.app` — the domain `ShareCopy.publicURLPrefix` has always pointed at — **is registered to a
-third party** and expires 2026-11-03. Measured by RDAP on 2026-09-10, calibrated against a
-known-registered and a known-unregistered control: registered 2024-11-03, registrar Spaceship, status
-`client transfer prohibited`, parked nameservers, no A record, registrant redacted.
+**The amendment, taken 2026-09-13 while W-E was writing the deployment.** The owner ruled the
+domain is **`cypressatlas.org`**, and added that the site "won't land there live for a bit" — so the
+name is what to build toward and there is no cutover in the web round: **no certificate and no DNS**,
+and the site answers on its `.fly.dev` hostname. `web/fly.toml` and `web/README.md` name
+`cypressatlas.org` and declare no `[[certificates]]`, which is that ruling written down.
 
-**This is worse than a dead link and should be read as a finding, not a footnote.** Every share card
-the iOS app has ever produced points at a hostname somebody else controls. It is dead today; it is not
-guaranteed to stay dead.
+**The owner also restated, plainly and more than once, that `cypress.app` is NOT theirs** — settled
+fact, not an open question. The ruling as taken words this as "registered to a third party", which
+says the same thing from the outside; the plainer phrasing is recorded here rather than edited into
+the quote, because the quote is what was said on the day.
 
-`cypressgrove.app` was chosen from four available candidates. **The orchestrator flagged, and the
-owner accepted, that the name collides with `My Grove`** — screen 08, an existing product surface —
-so a reader may reasonably expect `cypressgrove.app` to be about their grove rather than about the
-city's trees. Recorded here because the next person to notice the collision should find the decision
-rather than the idea.
+**The `My Grove` collision the orchestrator flagged is retired along with the name.**
+`cypressatlas.org` does not collide with screen 08, so the next person to look for that collision
+should find this sentence rather than re-raise it.
 
-*Consequence:* `ShareCopy.publicURLPrefix` must move, which is **shipped iOS copy** and therefore a
-Swift round with its own review, not a web change. Until it moves, the site answers on its `.fly.dev`
-hostname and no link in the wild resolves.
+*The ruling as taken on 2026-09-10 — verbatim, and superseded in its choice of name alone:*
+
+> **2. The public site is `cypressgrove.app`.**
+>
+> `cypress.app` — the domain `ShareCopy.publicURLPrefix` has always pointed at — **is registered to a
+> third party** and expires 2026-11-03. Measured by RDAP on 2026-09-10, calibrated against a
+> known-registered and a known-unregistered control: registered 2024-11-03, registrar Spaceship, status
+> `client transfer prohibited`, parked nameservers, no A record, registrant redacted.
+>
+> **This is worse than a dead link and should be read as a finding, not a footnote.** Every share card
+> the iOS app has ever produced points at a hostname somebody else controls. It is dead today; it is not
+> guaranteed to stay dead.
+>
+> `cypressgrove.app` was chosen from four available candidates. **The orchestrator flagged, and the
+> owner accepted, that the name collides with `My Grove`** — screen 08, an existing product surface —
+> so a reader may reasonably expect `cypressgrove.app` to be about their grove rather than about the
+> city's trees. Recorded here because the next person to notice the collision should find the decision
+> rather than the idea.
+
+*Consequence, unchanged by the amendment:* `ShareCopy.publicURLPrefix` must move, which is **shipped
+iOS copy** and therefore a Swift round with its own review, not a web change. Until it moves, the
+site answers on its `.fly.dev` hostname and no link in the wild resolves. `docs/ROADMAP.md` tracks
+the move; it still names the superseded domain, and the orchestrator owns that file.
 
 **3. Neighborhood polygons are sourced for San Jose and New York.**
 
