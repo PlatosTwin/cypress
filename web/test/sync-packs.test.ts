@@ -419,9 +419,17 @@ describe('what a refresh does to files the catalog no longer lists', () => {
     const run = await runSync(['--dir', into, '--base-url', baseURL, '--prune']);
 
     assert.equal(run.code, 0, run.stderr);
-    assert.deepEqual(packsIn(into), ['sf.sqlite'], 'the unlisted pack survived --prune');
+    assert.deepEqual(
+      packsIn(into),
+      ['sf.sqlite'],
+      '--prune left something other than exactly the packs the catalog lists',
+    );
     assert.equal(existsSync(join(into, '.sf.sqlite.part-999-deadbeef')), false);
     // The file that is not a pack and not a temporary: --prune must never be a directory wipe.
+    assert.ok(
+      existsSync(join(into, 'README.txt')),
+      '--prune deleted a file this script would never have written',
+    );
     assert.deepEqual(readFileSync(join(into, 'README.txt'), 'utf8'), 'left here by an operator');
     assert.match(run.stdout, /pruned retired-city\.sqlite/);
     assert.match(run.stdout, /pruned=2/);
