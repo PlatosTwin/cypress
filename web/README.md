@@ -30,8 +30,8 @@ As of W-C. Everything below was read from this directory, not remembered.
 | Runtime | Node `24.13.1`, pinned in `package.json` `engines`, `.nvmrc` and both `Dockerfile` stages |
 | Test runner | `node --test`, TAP reporter, no test framework dependency |
 | React | none, deliberately (W-8) |
-| Fly app | `cypress-web` — **declared in `fly.toml`, not created.** W-E deploys |
-| Volume | none yet; W-E creates the one the city packs are read from |
+| Fly app | `cypress-web` — **created, and empty**: no machines, no volume, nothing deployed. See *Deploying it* |
+| Volume | declared in `fly.toml` (`cypress_packs`, 3 GB, at `/data/packs`) and **not yet created** |
 | Pages | `/` (placeholder) and **`/‹id-space›/tree/‹uuid›`** — W1, server-rendered from a mounted pack (W-C) |
 | OG cards | `/‹id-space›/tree/‹uuid›/og.png` — 1200×630 raster, what `og:image` points at. `og.svg` is still served and is the drawing it is made of |
 | Packs | read from the directory `CYPRESS_PACK_DIR` names. No default path: unset means the page says so, in a 503 |
@@ -136,27 +136,130 @@ out at the assignment.
 
 ## Deploying it
 
-**Not yet.** `fly.toml` describes the deployment and no `cypress-web` app exists. W-E creates the
-app and the volume the published city packs are mounted from.
+**Nothing is deployed as this is written.** What changed in W-E is that the repository now
+*describes* a deployment somebody can run: `fly.toml` declares the volume, the pack directory and a
+health check, and `/health` answers the question a deploy needs answered. The Fly app `cypress-web`
+**does now exist** — created while this round was open — and it is empty: no machines, no volume,
+nothing deployed to it, answering on no hostname. Creating the volume and running `flyctl deploy`
+are still a human's, and neither has happened.
 
-**The site is `cypressgrove.app`**, ruled by the owner on 2026-09-10, decision 2 of the web
-round's owner decisions. That ruling is unnumbered while this branch is open and lives under
-`docs/rulings-pending/`; the orchestrator splices it into **`docs/RULINGS.md`** under its real
-number at merge, so look for it there by date — this paragraph deliberately does not name the
-pending file, because a citation by pending filename dangles the moment the splice happens and
-`PendingCitationGuard` scans Swift only, so nothing here would have caught it.
-Not `cypress.app`: that domain is **registered to a
-third party**, expiring 2026-11-03, parked with no A record — which means every share card the iOS
-app has ever produced points at a hostname somebody else controls. It is dead today and is not
-guaranteed to stay dead. Moving `ShareCopy.publicURLPrefix` is shipped iOS copy and therefore a
-Swift round with its own review, not a web change; until it moves, no link in the wild resolves
-and the site answers on its `.fly.dev` hostname.
+**The site is `cypressatlas.org`** — the owner's ruling of **2026-09-13**, superseding the
+2026-09-10 ruling that named `cypressgrove.app`. Both are recorded, with their dates, in the web
+round's owner-decisions entry under `docs/rulings-pending/`; the orchestrator splices it into
+**`docs/RULINGS.md`** under its real number at merge, so look for it there by date. This paragraph
+deliberately does not name the pending file, because a citation by pending filename dangles the
+moment the splice happens and `PendingCitationGuard` scans Swift only, so nothing here would catch
+it.
 
-The Fly app keeps the name `cypress-web` — a machine, not a brand. It is deliberately not renamed
-to match the domain, because the domain can move and a Fly app name cannot.
+**There is no cutover in this round, and that is the ruling and not an omission.** The owner's words
+were that the site "won't land there live for a bit": the name is what to build toward. So
+`fly.toml` declares no `[[certificates]]`, nothing touches DNS, and the site answers on its
+`.fly.dev` hostname. Not `cypress.app`: that domain — the one `ShareCopy.publicURLPrefix` has always
+pointed at, registered to somebody else and expiring 2026-11-03, parked with no A record — **is not
+the owner's**, which is settled rather than open. Moving `ShareCopy.publicURLPrefix` is shipped iOS
+copy and therefore a Swift round with its own review, not a web change; until it moves, no link in
+the wild resolves.
 
-`fly.toml` deliberately declares **no `[mounts]`**. A mount naming a volume that does not exist
-fails a deploy halfway through creating the app.
+The Fly app keeps the name `cypress-web` — a machine, not a brand. It is deliberately not renamed to
+match the domain, because the domain can move and a Fly app name cannot.
+
+### The volume
+
+`fly.toml` declares a `[mounts]` on the volume **`cypress_packs`** at **`/data/packs`**, and
+`[env] CYPRESS_PACK_DIR` is that same path. The two must agree and they are asserted to:
+`web/test/toolchain.test.ts` compares them, in the same shape as the port guard beside it. Nothing
+at runtime would notice them disagreeing — the volume attaches, the machine is healthy, and every
+tree URL answers nothing with the data sitting on disk a directory away.
+
+`CYPRESS_PACK_DIR` is the mount destination itself rather than a path inside it, so that a freshly
+created volume — which is empty — is a directory that exists and is empty rather than one that is
+absent. `openPackLibrary` refuses an absent directory outright, which is correct and which would
+mean **every tree route 500s** until the packs arrive; an empty one is the state the read path
+already handles. Measured against the built server rather than reasoned about, because the first
+draft of that sentence said "every page": with an absent pack directory, `/` renders and answers
+200 and `/health` answers 200 saying `unreadable` — it is `/‹id-space›/tree/‹uuid›` and its
+`og.png` that 500.
+
+**Size: 3 GB**, and `fly.toml` carries the arithmetic rather than the conclusion. In short: seven
+packs at 713.6 MB re-measured against the live manifest on 2026-09-13, a refresh that writes a new
+set beside the old one before pruning, therefore a peak around 1.43 GB, therefore 3 GB so the corpus
+can roughly double before a refresh no longer fits. One more gigabyte than the design proposal
+named, because a volume extends and never shrinks: too small is an outage found mid-refresh, too
+large is cents.
+
+**The volume has to exist before the first deploy.** A `[mounts]` naming a volume that is not
+there fails a deploy at the point where the app is already half-created — which is why W-A left the
+block out until this round. `fly.toml` carries an `initial_size = '3gb'`, and that is **not**
+insurance against forgetting: flyctl refuses to create a volume for a process group with no
+machines, which is exactly a first deploy, and tells you to run `fly volume create`. The key is
+there to state the size in the file rather than only in whichever shell command created the volume.
+
+Filling it is a separate step with its own section in this file. Two properties of the read path it
+has to live with, stated here because they belong to the reader and not to whatever does the
+filling:
+
+- **`openPackLibrary` opens every `*.sqlite` directly in `/data/packs`**, so a partially written
+  download must not sit there under that name while it is being written.
+- **An entry the walk cannot inspect is that entry's problem, not the volume's.** A refresh that
+  writes a new set beside the old one and prunes afterwards will, for the width of the prune, offer
+  names that vanish before they can be stat'd. Those land on `/health`'s `problems` and the packs
+  beside them go on serving. They used to take the whole library down and report an unmounted
+  volume; that was a real defect, found in adversarial review of this round, and `packFiles` in
+  `src/lib/packLibrary.ts` carries the note.
+
+### `GET /health`
+
+`web/src/pages/health.ts`. The path is `cypress-sync`'s, which has answered on `/health` since it
+shipped; two Fly apps in one project answering the same operator question on two different paths is
+a fact somebody would have to remember. `fly.toml`'s check path and the file that answers it are a
+third copy-of-one-fact pair, and guarded like the other two: `web/test/toolchain.test.ts` resolves
+the path to a file under `src/pages/`, requires exactly one, and imports it to confirm it exports
+the verb the check sends.
+
+It answers **200 in every state**, and puts the answer in the body:
+
+| `state` | what happened | the repair |
+|---|---|---|
+| `unconfigured` | `CYPRESS_PACK_DIR` is unset | the image was deployed without its environment |
+| `unreadable` | the **directory** could not be read | not mounted, not there, not a directory, or not readable |
+| `empty` | readable, holding no pack this build can open | the volume is mounted and not filled |
+| `serving` | packs are open; `idSpaces` says which URLs answer | — |
+
+plus `ready`, `packs`, and `problems` — files in the directory that refused to open, by basename,
+with the reason. A pack that refused is a whole city missing and is invisible in a count that went
+up, so it is reported in every state, `serving` included. **A fault with one file is never one of
+the four states**: `unreadable` is a directory-level answer only.
+
+    curl -s https://<host>/health | jq '{ready, state, idSpaces, packs, problems}'
+
+**The 200 is deliberate and it is not a shrug.** `fly.toml` points an `[[http_service.checks]]` at
+this path, and a check gates the release: a 503 while the volume is empty would make the *first*
+deploy impossible, because the volume is empty by construction until a sync that needs the machine
+to exist. It would present as a rollback naming nothing. Machine health and request availability are
+different questions — a reader asking for a tree on an unfilled machine already gets a 503 with
+`x-cypress-refusal: noPacks` from the route itself. The full argument is in the route's header;
+read it before reaching for 503.
+
+The body is anonymous and unauthenticated, so it prints no absolute path and no environment value.
+The unredacted error goes to the machine's log, where `flyctl logs` reaches it and a crawler does
+not.
+
+### Running it, in order
+
+1. Create the volume — `cypress_packs`, 3 GB, in `sjc`. The app already exists. The volume must
+   exist before the first deploy: a `[mounts]` naming a volume that is not there fails a deploy at
+   the point where the app is already half-created, which is why W-A left the block out until this
+   round. `initial_size` in `fly.toml` will not do this for you — flyctl refuses to create a volume
+   for a process group with no machines.
+2. `flyctl deploy`. The machine boots holding no packs. That is expected: `/health` says
+   `state: empty`, and tree URLs answer 503.
+3. Fill the volume.
+4. `curl .../health` and read `ready` and `idSpaces`. The packs are opened once for the life of the
+   process, so a volume filled after the machine started needs the machine restarted.
+
+**Still unmeasured after all of this: the 512 MB in `[[vm]]`.** It was W-A's estimate and W-E could
+not improve on it, because measuring it needs a running machine with a pack mounted. Whoever deploys
+should measure it and write the number into `fly.toml` in place of the paragraph that says this.
 
 ## Design tokens (W-B)
 
