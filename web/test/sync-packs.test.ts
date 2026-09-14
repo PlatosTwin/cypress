@@ -2,7 +2,17 @@ import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -168,6 +178,25 @@ function runSync(args: readonly string[], environment: Record<string, string> = 
     child.on('error', reject);
     child.on('close', (code) => resolve({ code, stdout, stderr }));
   });
+}
+
+/**
+ * The pid of a process that has certainly exited, for the temporary-file cases.
+ *
+ * A literal like `999` is not the same thing and was the wrong specimen: low pids belong to real
+ * daemons on macOS, so the "stale temporary" case was asserting against a pid that was alive. This
+ * starts a process that does nothing, waits for it to go, and hands back its number.
+ */
+async function deadPid(): Promise<number> {
+  const child = spawn(process.execPath, ['-e', '']);
+  await new Promise<void>((resolve) => child.on('close', () => resolve()));
+  return child.pid ?? 0;
+}
+
+/** Backdates a file past the stall window, so the "written moments ago" rule stops applying. */
+function backdate(path: string): void {
+  const longAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  utimesSync(path, longAgo, longAgo);
 }
 
 /** The `*.sqlite` files in a directory, sorted — what `packLibrary.openPackLibrary` would open. */
@@ -337,6 +366,58 @@ describe('bytes that are not the bytes the catalog described', () => {
     );
   });
 
+  it('leaves a SYNC-PACKS line when the destination cannot be written to, instead of crashing', async () => {
+    /**
+     * The invariant the script states about itself: *a failed run has to leave a line the same
+     * grep finds, or it looks like a run that never happened.* It did not hold for an `open(2)`
+     * failure. `createWriteStream` opens on a later tick, and with nothing listening yet the
+     * `'error'` event was thrown from a tick nothing could catch: a stack trace, **zero**
+     * `SYNC-PACKS:` lines, and exit 1 — the same exit code an ordinary refusal gives, so even
+     * that could not tell them apart.
+     *
+     * The case is also the retry rule: a destination that cannot be written to is not a flaky
+     * socket, and asking twice writes the same EACCES twice.
+     */
+    const sf = entry('sf', SF);
+    const served = await bucket(catalogOf([sf]), objectsFor([[sf, SF]]));
+    const into = directory();
+    chmodSync(into, 0o555);
+    try {
+      const run = await runSync(['--dir', into, '--base-url', served.baseURL]);
+
+      const summary = `${run.stdout}\n${run.stderr}`
+        .split('\n')
+        .filter((line) => line.startsWith('SYNC-PACKS:'));
+      assert.equal(
+        summary.length,
+        1,
+        `a run that could not write printed ${summary.length} SYNC-PACKS lines:\n${run.stderr}`,
+      );
+      assert.match(summary[0] ?? '', /^SYNC-PACKS: FAILED .*refused=1/);
+      assert.equal(
+        run.stderr.includes("Unhandled 'error' event"),
+        false,
+        `the open failure escaped as an unhandled event:\n${run.stderr}`,
+      );
+      assert.notEqual(run.code, 0);
+      // Zero, not one: the temporary file is opened before the request is made, so a destination
+      // that cannot be written to costs no transfer at all. And the retry rule is visible in what
+      // is absent — a local disk failure prints no `attempt N/3 failed` notice, because asking
+      // again would only write the same EACCES again.
+      const attempts = served.requests.filter((path) => path !== MANIFEST_OBJECT).length;
+      assert.equal(attempts, 0, `an unwritable destination still fetched ${attempts} time(s)`);
+      assert.doesNotMatch(
+        run.stderr,
+        /attempt \d+\/\d+ failed/,
+        'a local disk failure was retried like a flaky socket',
+      );
+    } finally {
+      // Or the temporary directory cannot be removed, and every later run of this suite inherits
+      // a directory it cannot clean.
+      chmodSync(into, 0o755);
+    }
+  });
+
   it('retries a transport failure and then succeeds', async () => {
     const sf = entry('sf', SF);
     const served = await bucket(
@@ -398,6 +479,38 @@ describe('catalogs this build will not act on', () => {
     );
   });
 
+  it('refuses a catalog whose entries would land on one file, before anything is downloaded', async () => {
+    // Two entries with one id. Whichever came second would overwrite the first, and the summary
+    // counted both — `bytes-in-place` was 82 for one 41-byte file. Refused whole rather than
+    // corrected, because a catalog that says this is wrong about something upstream.
+    const first = entry('sf', SF);
+    const second = entry('sf', SJ);
+    const served = await bucket(catalogOf([first, second]), objectsFor([[first, SF]]));
+    const into = directory();
+
+    const run = await runSync(['--dir', into, '--base-url', served.baseURL]);
+
+    assert.notEqual(run.code, 0);
+    assert.match(run.stderr, /the same file on disk/);
+    assert.deepEqual(everythingIn(into), [], 'a refused catalog wrote something');
+    assert.deepEqual(served.requests.filter((path) => path !== MANIFEST_OBJECT), []);
+  });
+
+  it('refuses two pack ids that differ only in case', async () => {
+    // Two files on the case-sensitive volume and one file on a developer's Mac. Refused so the
+    // behavior does not depend on which machine is running it.
+    const lower = entry('sf', SF);
+    const upper = entry('SF', SJ);
+    const served = await bucket(catalogOf([lower, upper]), objectsFor([[lower, SF], [upper, SJ]]));
+    const into = directory();
+
+    const run = await runSync(['--dir', into, '--base-url', served.baseURL]);
+
+    assert.notEqual(run.code, 0);
+    assert.match(run.stderr, /differ only in case/);
+    assert.deepEqual(everythingIn(into), []);
+  });
+
   it('refuses a catalog path that could address something other than an object under the base URL', async () => {
     // The catalog is a remote object. `bucket.ts` refuses a path with a scheme, a leading slash or
     // a `..` segment; this is that rule reaching the program, with the traversal actually attempted.
@@ -419,15 +532,22 @@ describe('catalogs this build will not act on', () => {
 describe('what a refresh does to files the catalog no longer lists', () => {
   const unlisted = Buffer.from('a city that was published once');
 
+  /** The name of the stale temporary, which must carry a pid that is really gone. */
+  let stale = '';
+
   async function setUp(): Promise<{ into: string; baseURL: string }> {
     const sf = entry('sf', SF);
     const served = await bucket(catalogOf([sf]), objectsFor([[sf, SF]]));
     const into = directory();
     writeFileSync(join(into, 'retired-city.sqlite'), unlisted);
-    // Two files the prune must NOT touch: a note beside the packs, and a stale temporary name
-    // from an interrupted run (which it must, with --prune, remove — asserted below).
+    // A note beside the packs, which --prune must never touch, and a temporary file from a run
+    // that is genuinely over: its process has exited and it was last written two hours ago. Both
+    // halves matter — a temporary whose pid is alive, or which was touched moments ago, is kept,
+    // and there are cases below for each.
     writeFileSync(join(into, 'README.txt'), 'left here by an operator');
-    writeFileSync(join(into, '.sf.sqlite.part-999-deadbeef'), Buffer.from('half a download'));
+    stale = `.sf.sqlite.part-${await deadPid()}-deadbeef`;
+    writeFileSync(join(into, stale), Buffer.from('half a download'));
+    backdate(join(into, stale));
     return { into, baseURL: served.baseURL };
   }
 
@@ -439,9 +559,69 @@ describe('what a refresh does to files the catalog no longer lists', () => {
     assert.equal(run.code, 0, run.stderr);
     assert.deepEqual(packsIn(into), ['retired-city.sqlite', 'sf.sqlite']);
     assert.deepEqual(readFileSync(join(into, 'retired-city.sqlite')), unlisted);
-    assert.ok(existsSync(join(into, '.sf.sqlite.part-999-deadbeef')));
+    assert.ok(existsSync(join(into, stale)));
     assert.match(run.stdout, /unlisted retired-city\.sqlite .*--prune removes it/);
     assert.match(run.stdout, /pruned=0/);
+  });
+
+  it('names a file the server would open even when --prune will not remove it', async () => {
+    /**
+     * The reporting gap. `packLibrary.packFiles` takes every name ending in `.sqlite` and stats
+     * it: **it does not skip dot-files and it follows symlinks.** `--prune` does neither — by
+     * design, it must not delete what it did not write — so a `.hidden.sqlite` and a symlink
+     * pointing clean out of the destination were files the server would serve, `--prune` would
+     * not touch, and nothing mentioned at all. The run said `OK` over a directory that was not.
+     *
+     * The fix is reporting, not deletion: both are named, both survive `--prune`, and the line
+     * says which it is.
+     */
+    const { into, baseURL } = await setUp();
+    const outside = join(directory(), 'somewhere-else.sqlite');
+    writeFileSync(outside, Buffer.from('a pack the operator put outside the volume'));
+    symlinkSync(outside, join(into, 'link-to-outside.sqlite'));
+    writeFileSync(join(into, '.hidden.sqlite'), Buffer.from('a pack in a dot-file'));
+
+    const run = await runSync(['--dir', into, '--base-url', baseURL, '--prune']);
+
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /unlisted link-to-outside\.sqlite .*symlink.*--prune does NOT remove it/);
+    assert.match(run.stdout, /unlisted \.hidden\.sqlite .*dot-file.*--prune does NOT remove it/);
+    // Reported and still there — and the file the symlink points at is untouched, which is the
+    // reason --prune does not follow one.
+    assert.ok(existsSync(join(into, 'link-to-outside.sqlite')));
+    assert.ok(existsSync(join(into, '.hidden.sqlite')));
+    assert.ok(existsSync(outside));
+  });
+
+  it('keeps a temporary file whose process is still running, and says whose it is', async () => {
+    // Reproduced by the reviewer with two concurrent runs: the pruning one deleted the
+    // downloading one's temporary file, printed `a temporary file from an interrupted run` — which
+    // it had not checked and which was false — and exited OK, while the other run died on
+    // `rename` after transferring its bytes. `process.pid` here is a process that is certainly
+    // alive: this one.
+    const { into, baseURL } = await setUp();
+    const live = `.us-ca-sj.sqlite.part-${process.pid}-abcd1234`;
+    writeFileSync(join(into, live), Buffer.from('a download in flight'));
+
+    const run = await runSync(['--dir', into, '--base-url', baseURL, '--prune']);
+
+    assert.equal(run.code, 0, run.stderr);
+    assert.ok(existsSync(join(into, live)), 'a live download\'s temporary file was deleted');
+    assert.match(run.stdout, new RegExp(`unlisted \\${live} \\(a temporary file belonging to process ${process.pid}, which is still running\\)`));
+  });
+
+  it('keeps a temporary file written moments ago, whatever its pid says', async () => {
+    // The second half of the same guard, for the window where a pid has gone but a file was just
+    // written — and for the case the pid in the name has been reused by something unrelated.
+    const { into, baseURL } = await setUp();
+    const fresh = `.us-ca-sj.sqlite.part-${await deadPid()}-beef0000`;
+    writeFileSync(join(into, fresh), Buffer.from('written just now'));
+
+    const run = await runSync(['--dir', into, '--base-url', baseURL, '--prune']);
+
+    assert.equal(run.code, 0, run.stderr);
+    assert.ok(existsSync(join(into, fresh)));
+    assert.match(run.stdout, /written moments ago/);
   });
 
   it('removes it with --prune, along with an interrupted download, and nothing else', async () => {
@@ -455,7 +635,7 @@ describe('what a refresh does to files the catalog no longer lists', () => {
       ['sf.sqlite'],
       '--prune left something other than exactly the packs the catalog lists',
     );
-    assert.equal(existsSync(join(into, '.sf.sqlite.part-999-deadbeef')), false);
+    assert.equal(existsSync(join(into, stale)), false);
     // The file that is not a pack and not a temporary: --prune must never be a directory wipe.
     assert.ok(
       existsSync(join(into, 'README.txt')),

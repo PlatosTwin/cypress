@@ -128,13 +128,44 @@ const RETRY_DELAY_MS = 500;
 /** How long a transfer may go without delivering a chunk before it is treated as hung. */
 const STALL_MS = 30_000;
 
+/**
+ * An error that asking again cannot fix. `withRetries` rethrows one immediately.
+ *
+ * The distinction is the whole of the retry policy: a refused connection is worth another go and
+ * a wrong answer is not.
+ */
+class TerminalError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'TerminalError';
+  }
+}
+
 /** A body that arrived whole and is not what the catalog described. Never retried. */
-class VerificationError extends Error {
+class VerificationError extends TerminalError {
   /** @param {string} message */
   constructor(message) {
     super(message);
     this.name = 'VerificationError';
   }
+}
+
+/**
+ * Local filesystem conditions that a retry can only repeat, more slowly and with more bytes.
+ *
+ * `ENOSPC` is the one that matters on a 713 MB fill into a sized volume: retried like a flaky
+ * socket it would write the disk full three times over. The other four are the destination being
+ * unwritable — permissions, a read-only mount, a path component that is not a directory — none of
+ * which a second attempt changes.
+ */
+const LOCAL_DISK_CODES = new Set(['ENOSPC', 'EACCES', 'EROFS', 'ENOTDIR', 'EPERM', 'EDQUOT']);
+
+/** @param {unknown} error @returns {boolean} */
+function isLocalDiskError(error) {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = /** @type {{ code?: unknown }} */ (error).code;
+  return typeof code === 'string' && LOCAL_DISK_CODES.has(code);
 }
 
 /** @returns {string} */
@@ -281,7 +312,8 @@ async function withRetries(what, attempt) {
     try {
       return await attempt();
     } catch (error) {
-      if (error instanceof VerificationError) throw error;
+      // Terminal, and a local disk failure is terminal too: see `LOCAL_DISK_CODES`.
+      if (error instanceof TerminalError || isLocalDiskError(error)) throw error;
       last = error;
       if (number === ATTEMPTS) break;
       console.error(
@@ -351,7 +383,21 @@ async function downloadToTemporary(url, temporaryPath) {
   // `wx` — refuse a temporary path that already exists rather than truncating a file some other
   // run is writing. With the random suffix, a collision is a bug and not a race.
   const file = createWriteStream(temporaryPath, { flags: 'wx' });
+  // **The open is awaited, and that is a bug fix rather than tidiness.** `createWriteStream` opens
+  // on a later tick; until something is listening, an `open(2)` failure — EACCES on a read-only
+  // destination, EROFS, ENOTDIR — is emitted as an `'error'` event with no listener attached,
+  // which Node throws from a tick this function's callers cannot catch. The process then died
+  // with a stack trace and printed NO `SYNC-PACKS:` line at all, which is the one invariant this
+  // script promises: a failed run has to leave a line the same grep finds. `events.once` attaches
+  // the `'error'` listener synchronously, so the failure arrives here as a rejection and becomes
+  // an ordinary refusal with a summary line after it. (A write failure *during* the transfer was
+  // always handled, because `once(file, 'drain')` attaches one too — the hole was the open and
+  // only the open.)
+  const opened = once(file, 'open');
+  let isOpen = false;
   try {
+    await opened;
+    isOpen = true;
     await fetchWithStallTimeout(url, async (chunk) => {
       hash.update(chunk);
       bytes += chunk.length;
@@ -364,27 +410,77 @@ async function downloadToTemporary(url, temporaryPath) {
       if (!file.write(chunk)) await once(file, 'drain');
     });
   } finally {
-    await new Promise((resolve, reject) => {
-      file.on('error', reject);
-      file.end(() => resolve(undefined));
-    });
+    // Nothing to close if it never opened, and `end()` on a stream that failed to open is a wait
+    // with nothing to wake it. A flush failure — ENOSPC on the last write — still rejects here,
+    // which is where a run into a full volume is supposed to hear about it.
+    if (isOpen) {
+      await new Promise((resolve, reject) => {
+        file.on('error', reject);
+        file.end(() => resolve(undefined));
+      });
+    } else {
+      file.destroy();
+    }
   }
   return { bytes, sha256: hash.digest('hex') };
 }
 
+/** The pid and the random tail of a temporary name this script writes. */
+const TEMPORARY_NAME = /\.sqlite\.part-(\d+)-[0-9a-f]+$/;
+
 /**
- * `*.sqlite` files the catalog does not list, and temporary files an earlier run left behind.
+ * Whether a process id is one the operating system still knows about.
  *
- * Never a directory, never a symlink, never anything but a plain file this script could itself
- * have written: `--prune` deletes what this returns, so it must not be able to name something it
- * did not put there.
+ * `kill(pid, 0)` sends no signal and only asks. `EPERM` means it exists and is not ours, which is
+ * still "alive" for this question; only `ESRCH` means nobody is there. Pid reuse can make this
+ * answer "alive" about a different process, and that is the safe direction — the consequence is a
+ * temporary file kept one run longer.
+ *
+ * @param {number} pid @returns {boolean}
+ */
+function processIsAlive(pid) {
+  // A pid this cannot reason about is treated as alive, because the consequence of guessing
+  // "alive" is one kept file and the consequence of guessing "dead" is somebody's transfer. `0`
+  // is not a process, it is the caller's process group, and it is not asked about.
+  if (!Number.isInteger(pid) || pid <= 0) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null
+      ? /** @type {{ code?: unknown }} */ (error).code
+      : undefined;
+    // `ESRCH` is the only answer that means nobody is there. `EPERM` means it exists and belongs
+    // to somebody else, which is still a running process.
+    return code !== 'ESRCH';
+  }
+}
+
+/**
+ * Everything in the destination that is not a pack the catalog lists — what `--prune` may delete,
+ * and, separately, what it may not delete but an operator should still be told about.
+ *
+ * **Two sets, and they differ on purpose.**
+ *
+ * *Deletable* is the narrow one: a plain file, never a symlink and never a directory, that this
+ * script could itself have written — an unlisted `<id>.sqlite`, or a leftover temporary. `--prune`
+ * removes exactly this, and the narrowness is the point: it must not be able to delete something
+ * it did not put there.
+ *
+ * *Reportable* is the wider one, and it exists because the narrow set is not what the SERVER
+ * opens. `packLibrary.packFiles` takes every name ending in `.sqlite` and stats it — **it does not
+ * skip dot-files and it follows symlinks** — so a `.hidden.sqlite`, or a `link.sqlite` pointing
+ * clean out of the destination, is a file the reader will serve and a file `--prune` will not
+ * touch. Before this, it was also a file nothing mentioned, and the run said `OK`. Nothing this
+ * script writes can produce either one, so this is about a directory somebody has poked at
+ * looking clean when it is not.
  *
  * @param {string} directory
  * @param {ReadonlySet<string>} expected
- * @returns {{ entry: string, path: string, reason: string }[]}
+ * @returns {{ entry: string, path: string, reason: string, deletable: boolean }[]}
  */
 function unlistedEntries(directory, expected) {
-  /** @type {{ entry: string, path: string, reason: string }[]} */
+  /** @type {{ entry: string, path: string, reason: string, deletable: boolean }[]} */
   const found = [];
   for (const entry of readdirSync(directory).sort()) {
     const path = join(directory, entry);
@@ -394,14 +490,70 @@ function unlistedEntries(directory, expected) {
     } catch {
       continue;
     }
-    if (!info.isFile()) continue;
-    if (entry.startsWith('.') && entry.includes('.sqlite.part-')) {
-      found.push({ entry, path, reason: 'a temporary file from an interrupted run' });
+    const temporary = TEMPORARY_NAME.exec(entry);
+    if (info.isFile() && entry.startsWith('.') && temporary !== null) {
+      // **A temporary file may belong to a run that is still going.** Deleting a live download's
+      // file makes that run die on `rename` after transferring up to 199 MB, and the old message
+      // asserted it had found an interrupted run, which it had not checked. Two cheap questions
+      // answer it: is the pid in the name still a process, and was the file touched inside the
+      // stall window? Either one means hands off.
+      const pid = Number(temporary[1]);
+      if (processIsAlive(pid)) {
+        found.push({
+          entry,
+          path,
+          reason: `a temporary file belonging to process ${pid}, which is still running`,
+          deletable: false,
+        });
+        continue;
+      }
+      if (Date.now() - info.mtimeMs < STALL_MS) {
+        found.push({
+          entry,
+          path,
+          reason: 'a temporary file written moments ago; a run may still be holding it',
+          deletable: false,
+        });
+        continue;
+      }
+      found.push({
+        entry,
+        path,
+        reason: `a temporary file from process ${pid}, which is no longer running`,
+        deletable: true,
+      });
       continue;
     }
-    if (entry.startsWith('.') || !entry.endsWith('.sqlite')) continue;
+    if (!entry.endsWith('.sqlite')) continue;
     if (expected.has(entry)) continue;
-    found.push({ entry, path, reason: 'the catalog does not list it' });
+    if (info.isFile() && !entry.startsWith('.')) {
+      found.push({ entry, path, reason: 'the catalog does not list it', deletable: true });
+      continue;
+    }
+    // Not deletable. Report it anyway if the server would open it, or trip over it.
+    let target;
+    try {
+      target = statSync(path);
+    } catch {
+      found.push({
+        entry,
+        path,
+        reason: 'the catalog does not list it and it cannot be resolved; the server reports a '
+          + 'name ending in .sqlite that it cannot stat as a problem',
+        deletable: false,
+      });
+      continue;
+    }
+    if (!target.isFile()) continue;
+    found.push({
+      entry,
+      path,
+      reason: info.isSymbolicLink()
+        ? 'the catalog does not list it and it is a symlink; the server follows symlinks and '
+          + 'would serve whatever it points at'
+        : 'the catalog does not list it and it is a dot-file; the server does not skip those',
+      deletable: false,
+    });
   }
   return found;
 }
@@ -460,6 +612,43 @@ async function main() {
   );
 
   /** @type {Set<string>} */
+  // **Two entries that would land on one file is a catalog this run refuses to act on.**
+  // Not an arithmetic problem to paper over: whichever entry came second would overwrite the
+  // first, the summary would count both — `bytes-in-place` genuinely double-counted, and the
+  // README calls that line the one to read — and the volume would end up holding one city under a
+  // name that claims to be two. Refused whole, before a byte moves, the same way an unknown
+  // envelope format is. The comparison is case-insensitive as well as exact: the Fly volume is
+  // case-sensitive, so `SF` and `sf` are two files there and one file on a developer's Mac, and
+  // no catalog has ever published a pair that differs only in case.
+  /** @type {Map<string, { id: string, name: string }[]>} */
+  const byFileName = new Map();
+  for (const city of manifest.cities) {
+    let name;
+    try {
+      name = packFileName(city.id);
+    } catch {
+      // An id this build will not turn into a filename is declined per-pack below, with its own
+      // message. It cannot collide with anything, because nothing is ever written for it.
+      continue;
+    }
+    const key = name.toLowerCase();
+    byFileName.set(key, [...(byFileName.get(key) ?? []), { id: city.id, name }]);
+  }
+  for (const [, entries] of byFileName) {
+    if (entries.length < 2) continue;
+    const ids = entries.map((each) => each.id).join(', ');
+    const identical = entries.every((each) => each.name === entries[0]?.name);
+    fail(
+      identical
+        ? `the catalog lists ${entries.length} entries whose pack ids are the same file on disk `
+          + `(${ids} all become ${entries[0]?.name}). One of them would silently overwrite the `
+          + 'other and the summary would count both, so nothing is synced from this catalog.'
+        : `the catalog lists ${entries.length} pack ids that differ only in case (${ids}). They `
+          + 'are two files on the volume and one file on a case-insensitive filesystem, so this '
+          + 'refuses rather than behaving differently depending on where it runs.',
+    );
+  }
+
   const expected = new Set();
   let downloaded = 0;
   let skipped = 0;
@@ -565,6 +754,12 @@ async function main() {
   }
 
   for (const candidate of unlistedEntries(directory, expected)) {
+    if (!candidate.deletable) {
+      console.log(
+        `sync-packs: unlisted ${candidate.entry} (${candidate.reason}); --prune does NOT remove it`,
+      );
+      continue;
+    }
     if (options.prune) {
       rmSync(candidate.path, { force: true });
       pruned += 1;
