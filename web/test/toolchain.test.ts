@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { PACK_DIRECTORY_VARIABLE } from '../src/lib/packLibrary.ts';
 import {
   atLeast,
   declaredPorts,
   dockerfileNodeVersions,
   engineFloor,
   engineRange,
+  flyTomlStrings,
   nvmrcVersion,
   runningNodeVersion,
 } from '../src/lib/toolchain.ts';
@@ -147,5 +149,92 @@ describe('this checkout pins one Node version everywhere', () => {
           + 'rather than as anything that looks like a port problem.',
       );
     }
+  });
+});
+
+describe('where the packs are, which fly.toml says twice', () => {
+  // The same class of guard as the port check above, one table over: `[env] CYPRESS_PACK_DIR` is
+  // what the process reads and `[mounts] destination` is where Fly attaches the volume, and the
+  // two disagreeing is a machine that boots, passes its health check, mounts its volume, and
+  // answers nothing.
+
+  it('reads a table, and does not read the tables beside it', () => {
+    // Specimen first, answers known before the parser saw it, carrying every trap that would make
+    // a plausible parser wrong about the real file: a decoy in a comment before any table, a
+    // trailing comment on the entry that matters, the SAME key set in another table, a
+    // `[[double]]` header between the two tables that matter, and an unquoted value.
+    const specimen = [
+      "# CYPRESS_PACK_DIR = '/decoy-in-a-comment'",
+      "app = 'cypress-web'",
+      '[env]',
+      "  HOST = '0.0.0.0'",
+      "  CYPRESS_PACK_DIR = '/data/packs'   # and a comment after the entry",
+      '[http_service]',
+      '  internal_port = 8080',
+      "  destination = '/not-the-mount'",
+      '[[http_service.checks]]',
+      "  path = '/health'",
+      '[mounts]',
+      "  source = 'cypress_packs'",
+      "  destination = '/data/packs'",
+    ].join('\n');
+
+    assert.equal(flyTomlStrings(specimen, 'env').get('CYPRESS_PACK_DIR'), '/data/packs');
+    assert.equal(flyTomlStrings(specimen, 'env').get('HOST'), '0.0.0.0');
+    assert.equal(flyTomlStrings(specimen, 'mounts').get('destination'), '/data/packs');
+    assert.equal(flyTomlStrings(specimen, 'mounts').get('source'), 'cypress_packs');
+    // The trap a grep would fall into: the same key, a different table, a different answer.
+    assert.equal(flyTomlStrings(specimen, 'http_service').get('destination'), '/not-the-mount');
+    // The `[[double]]` header opens a table of its own rather than running into `[mounts]`.
+    assert.equal(flyTomlStrings(specimen, 'http_service.checks').get('path'), '/health');
+    assert.equal(flyTomlStrings(specimen, 'http_service.checks').has('source'), false);
+    // An unquoted value is not a string, and a key before any table belongs to no table.
+    assert.equal(flyTomlStrings(specimen, 'http_service').has('internal_port'), false);
+    assert.equal(flyTomlStrings(specimen, 'env').has('app'), false);
+    // And a table nobody wrote is empty rather than an error.
+    assert.equal(flyTomlStrings(specimen, 'nothing').size, 0);
+  });
+
+  it('refuses a key set twice in one table rather than picking one', () => {
+    assert.throws(
+      () => flyTomlStrings(["[env]", "  A = 'x'", "  A = 'y'"].join('\n'), 'env'),
+      /more than once/,
+    );
+  });
+
+  it('the mount destination and CYPRESS_PACK_DIR are the same path', () => {
+    const fly = read('fly.toml');
+    const environment = flyTomlStrings(fly, 'env');
+    const mounts = flyTomlStrings(fly, 'mounts');
+    const packDirectory = environment.get(PACK_DIRECTORY_VARIABLE);
+    const destination = mounts.get('destination');
+
+    // The controls, all three, because every one of them is a way for the assertion below to pass
+    // while asserting nothing. `PACK_DIRECTORY_VARIABLE` comes from `src/lib/packLibrary.ts`
+    // rather than being spelled again here, so renaming the variable in the code goes red in this
+    // file instead of shipping a deployment that sets a name nothing reads.
+    assert.ok(
+      packDirectory !== undefined,
+      `web/fly.toml [env] sets no ${PACK_DIRECTORY_VARIABLE}, so the deployed process is handed no `
+        + 'pack directory at all — or this is reading the wrong table and asserting nothing.',
+    );
+    assert.ok(
+      destination !== undefined,
+      'web/fly.toml declares no [mounts] destination, so no volume is attached — or this is '
+        + 'reading the wrong table and asserting nothing.',
+    );
+    assert.ok(
+      mounts.get('source') !== undefined,
+      'web/fly.toml [mounts] names no source volume',
+    );
+
+    assert.equal(
+      packDirectory,
+      destination,
+      `web/fly.toml mounts the volume at ${String(destination)} and tells the process the packs `
+        + `are at ${String(packDirectory)}. Nothing at runtime notices: the volume attaches, the `
+        + 'machine passes its health check, and every tree URL 404s or 500s with the data sitting '
+        + 'on disk a directory away.',
+    );
   });
 });

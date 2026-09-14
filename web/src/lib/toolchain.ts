@@ -122,3 +122,55 @@ export function atLeast(version: string, floor: string): boolean {
   }
   return true;
 }
+
+/**
+ * Every `key = 'value'` in one `fly.toml` table, as a map. Single-quoted strings only.
+ *
+ * It exists for the same reason `declaredPorts` does, one table over: **where the packs are is
+ * written down twice** — `[env] CYPRESS_PACK_DIR` is what the process reads, `[mounts]
+ * destination` is where Fly attaches the volume — and nothing at runtime notices them disagreeing.
+ * The volume mounts, the machine is healthy, and `openPackLibrary` refuses a directory that is not
+ * there or finds an empty one; the symptom is a site that answers nothing with the volume
+ * correctly attached. Two copies of one fact is the shape this repository has been bitten by three
+ * times now, and the fix has been the same every time: derive nothing, assert that the copies
+ * agree.
+ *
+ * **Section-aware, and the sections are the point.** `destination` is a plausible key in more than
+ * one table; a parser that grepped the file for it would answer with whichever came first and
+ * would be right by luck. `[[double]]` headers open a table too — `[[http_service.checks]]` sits
+ * between `[env]` and `[mounts]` in this file — and a parser that did not recognize them would run
+ * one table's keys into the next.
+ *
+ * Comments are stripped before anything is matched, the same as `declaredPorts` and for the same
+ * reason: `fly.toml`'s prose discusses both of these keys by name, at length, and a matcher that
+ * read comments would agree with the prose rather than with the file.
+ *
+ * Unquoted values (`internal_port = 8080`, `cpus = 1`) are deliberately not captured. This answers
+ * "what string does this table set", and the numbers already have a reader.
+ *
+ * A key set twice in one table throws rather than resolving to either value: TOML says the second
+ * is an error, `flyctl` says the second wins, and a guard that quietly picked one would certify a
+ * file whose meaning depends on which of them is reading it.
+ */
+export function flyTomlStrings(flyToml: string, table: string): ReadonlyMap<string, string> {
+  const values = new Map<string, string>();
+  let section: string | null = null;
+  for (const raw of flyToml.split('\n')) {
+    const line = raw.replace(/#.*$/, '');
+    const header = /^\s*\[\[?\s*([A-Za-z0-9_.-]+)\s*\]\]?\s*$/.exec(line);
+    if (header?.[1] !== undefined) {
+      section = header[1];
+      continue;
+    }
+    if (section !== table) continue;
+    const pair = /^\s*([A-Za-z0-9_]+)\s*=\s*'([^']*)'\s*$/.exec(line);
+    const key = pair?.[1];
+    const value = pair?.[2];
+    if (key === undefined || value === undefined) continue;
+    if (values.has(key)) {
+      throw new Error(`fly.toml sets [${table}] ${key} more than once, so its value depends on who is reading`);
+    }
+    values.set(key, value);
+  }
+  return values;
+}

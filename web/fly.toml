@@ -1,15 +1,26 @@
-# The public web surface (W-A). NOT YET DEPLOYED — the app `cypress-web` does not exist on Fly
-# as of this file's commit, and creating it is W-E. This file is the deployment written down so
-# that W-E is a `flyctl deploy` and a volume, not a design session.
+# The public web surface. **W-A wrote this file as the deployment written down and never ran it;
+# W-E is the round that runs it** — so what changed here is tense and facts, not shape. The app
+# `cypress-web` still does not exist on Fly as this file is committed: the orchestrator creates it,
+# creates the volume named below, and deploys. Nothing in this round talks to Fly from an agent.
 #
 # Shaped after `server/fly.toml`, which runs `cypress-sync`: one small machine in `sjc`, scaling
 # to zero when idle. The differences from that file are all downstream of one fact — this process
-# answers anonymous public reads, where the sync service answers authenticated ones.
+# answers anonymous public reads, where the sync service answers authenticated ones — and now of a
+# second one: this process reads 713.6 MB of published city packs off a volume, and that service
+# reads a Postgres.
 #
-# **The site's domain is `cypressgrove.app`** (owner ruling, 2026-09-10). The Fly app keeps the
-# machine-shaped name below and is deliberately not renamed to match: a domain can move and a Fly
-# app name cannot. No `[[certificates]]` here, for the same reason there is no `[mounts]` — W-E
-# attaches the certificate against a real app.
+# **The site's domain is `cypressatlas.org`** (owner ruling, 2026-09-13). That SUPERSEDES the
+# 2026-09-10 ruling, which named `cypressgrove.app`; both are recorded, with their dates, in the
+# web round's owner-decisions entry under `docs/rulings-pending/` until the orchestrator splices it
+# into `docs/RULINGS.md` under a real number. `cypress.app` — the domain
+# `ShareCopy.publicURLPrefix` has always pointed at — is **not the owner's**, and that is settled
+# rather than open.
+#
+# **No `[[certificates]]` and no DNS in this round**, and that is the owner's own framing: "we
+# won't land there live for a bit". The name is what to build toward; the site answers on its
+# `.fly.dev` hostname until someone decides to cut over. The Fly app keeps the machine-shaped name
+# below and is deliberately not renamed to match a domain: a domain can move and a Fly app name
+# cannot.
 app = 'cypress-web'
 primary_region = 'sjc'
 
@@ -17,9 +28,9 @@ primary_region = 'sjc'
   dockerfile = 'Dockerfile'
 
 [env]
-  # Both are also set in the Dockerfile, deliberately, because they govern different things:
-  # there they make the image correct when run by hand or by any other host, here they make the
-  # deployment self-describing next to `internal_port`. They must agree, and `web/test/
+  # HOST and PORT are also set in the Dockerfile, deliberately, because they govern different
+  # things: there they make the image correct when run by hand or by any other host, here they make
+  # the deployment self-describing next to `internal_port`. They must agree, and `web/test/
   # toolchain.test.ts` asserts that they do: `every declared port agrees, across all four
   # directives` reads `ENV PORT` and `EXPOSE` from the Dockerfile and `PORT` and `internal_port`
   # from here, and refuses if it does not find exactly four.
@@ -33,30 +44,132 @@ primary_region = 'sjc'
   HOST = '0.0.0.0'
   PORT = '8080'
 
+  # **This must be the same string as `[mounts] destination` below, and a test says so.** They are
+  # two halves of one fact — where the packs are — and nothing at runtime would notice them
+  # disagreeing: the volume would mount at one path and `openPackLibrary` would refuse another, and
+  # the symptom is a site that 404s every tree with the volume correctly attached. `web/test/
+  # toolchain.test.ts` compares them, in the same shape as the port guard beside it and for the
+  # same reason.
+  #
+  # It is the mount destination ITSELF rather than a subdirectory of it, and that is the choice
+  # that makes a fresh volume behave. A volume is empty when Fly creates it, so a `CYPRESS_PACK_DIR`
+  # pointing INTO it at a path nothing has made yet would not exist on first boot —
+  # `openPackLibrary` refuses a missing directory outright (correctly: "a missing one is a
+  # deployment that did not finish") and every page would 500 until the sync ran. Pointed at the
+  # mount itself, the directory always exists and is merely empty, which is the state the read path
+  # already handles: `/health` reports `state: empty` and a tree URL answers 503 `noPacks`.
+  #
+  # **A note for whatever fills this volume:** `openPackLibrary` opens every `*.sqlite` directly in
+  # this directory. A partially written download must not sit here under that name while it is
+  # being written — stage it elsewhere on the volume, or under a name that does not end `.sqlite`,
+  # and move it into place. A half-copied file is not a silent failure (it lands on `/health`'s
+  # `problems`), but it is a city missing until someone reads that field.
+  CYPRESS_PACK_DIR = '/data/packs'
+
 [http_service]
   internal_port = 8080
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
   # Zero, the same as the sync service. A cold start on a scaled-to-zero machine costs a second
-  # or so, and v1 has no traffic to keep a machine warm for. W-E re-decides this against a real
-  # share link, not against this comment.
+  # or so, and v1 has no traffic to keep a machine warm for. Still to be re-decided against a real
+  # share link rather than against this comment — and it cannot be, until a link in the wild
+  # resolves, which is not this round.
   min_machines_running = 0
 
+# **W-E adds this block; there was no health check of any kind before it.** Fly was checking that
+# something accepted a TCP connection on the port, which a Node process that has thrown in every
+# request handler still does.
+#
+# `/health` is `web/src/pages/health.ts`, and the path is `cypress-sync`'s: that app has answered
+# operator questions on `/health` since it shipped, and two Fly apps in one project answering the
+# same question on two different paths is a fact somebody has to remember.
+#
+# **It cannot fail on "no packs", and that is deliberate rather than an oversight.** The endpoint
+# answers 200 in every state and puts `ready` in the body. A check that went red on an unfilled
+# volume would make the FIRST deploy impossible: this volume is empty the moment it is created, and
+# it is filled by a sync that needs the machine to exist — so the release would roll back, and it
+# would present as a rollback naming nothing. The route's own header argues this at length; read it
+# before changing this block, because "surely an unready machine should fail its health check" is
+# the reasonable-sounding version of breaking the deploy.
+#
+# What this check is therefore worth: it proves the process is serving HTTP and routing a request
+# through Astro, which is strictly more than a TCP accept proved. Whether the volume arrived is a
+# question for `curl https://<host>/health | jq .ready`, and for the operator running the deploy.
+[[http_service.checks]]
+  interval = '30s'
+  timeout = '5s'
+  grace_period = '10s'
+  method = 'GET'
+  path = '/health'
+
 # 512 MB rather than the sync service's 256 MB, and the reason is the read path rather than
-# caution: W-B/W-C open published city packs with `node:sqlite`, and SQLite's page cache plus a
-# Node heap does not fit comfortably in 256. It is a number to re-measure under W-E with a pack
-# actually mounted, not a number to trust from here.
+# caution: the web opens published city packs with `node:sqlite`, and SQLite's page cache plus a
+# Node heap does not fit comfortably in 256.
+#
+# **Still unmeasured, and this comment is not going to imply otherwise.** W-A said it was "a number
+# to re-measure under W-E with a pack actually mounted"; W-E wrote the mount and could not do the
+# measuring, because measuring it needs a machine and this round creates none from an agent. The
+# packs are opened `immutable=1` and read-only, so the resident cost is SQLite's page cache against
+# 713.6 MB of file rather than the file itself — but that is an argument, not a reading.
+# **The orchestrator should measure it after the deploy** (`flyctl machine status`, or `fly ssh
+# console` while a few tree pages are served) and write the number here, replacing this paragraph
+# with a measurement and the date it was taken.
 [[vm]]
   size = 'shared-cpu-1x'
   memory = '512mb'
   cpus = 1
   cpu_kind = 'shared'
 
-# **No `[mounts]` yet, and its absence is deliberate.** The design has this machine reading the
-# published city packs from a read-only Fly volume (W-5 in the proposal, measured at 713.6 MB
-# across seven packs on 2026-09-10, with 2 GB named as the size that holds one refresh's
-# overlap). Writing a mount here now would declare a volume that does not exist, and a
-# `flyctl deploy` against a declared-but-absent volume fails at the point where the app is
-# already half-created. W-E creates the volume and adds the four lines, having re-measured the
-# corpus rather than trusting that paragraph.
+# **The mount W-A deliberately left out, now that W-E creates the volume it names.**
+#
+# W-A's reasoning for the absence was correct and is kept here rather than deleted: a mount naming
+# a volume that does not exist fails a `flyctl deploy` at the point where the app is already
+# half-created. The condition it was waiting on is the one this round satisfies — the volume is
+# created before the first deploy, not by it.
+#
+# ── The size, and the arithmetic it comes from ──────────────────────────────────────────────────
+#
+# Re-measured against the live manifest on **2026-09-13**, rather than carried over from the
+# proposal: seven packs, and adding them up
+#
+#     sf                       82.8 MB
+#     us-ca-sj                 29.4 MB
+#     us-ny-nyc-manhattan      66.9 MB
+#     us-ny-nyc-brooklyn      159.1 MB
+#     us-ny-nyc-queens        199.2 MB
+#     us-ny-nyc-bronx          92.1 MB
+#     us-ny-nyc-staten-island  84.2 MB
+#     ─────────────────────────────────
+#                             713.7 MB   (the manifest's own total reads 713.6; the 0.1 is the
+#                                         rounding in the seven figures above, not a missing file)
+#
+# A refresh writes a new set BESIDE the old one and prunes afterwards, so the number to size
+# against is not 713.6 but the peak:
+#
+#     peak  ≈ 2 × 713.6 MB  ≈ 1.43 GB
+#
+# and the volume has to hold the peak with room left, because a volume that fills mid-refresh
+# leaves a half-written set next to the live one — exactly the state the note under
+# `CYPRESS_PACK_DIR` is about.
+#
+#     a 2 GB volume:  ext4 overhead and reserved blocks take roughly 5%, so ~1.9 GB usable.
+#                     1.43 GB peak leaves ~0.47 GB — the corpus can grow about 33% before a
+#                     refresh no longer fits.
+#     a 3 GB volume:  ~2.85 GB usable. The peak is half of it: the corpus can roughly DOUBLE,
+#                     to ~1.4 GB, before a refresh no longer fits.
+#
+# **3 GB, which is one more than the proposal's 2.** The proposal's figure was arithmetic on the
+# same corpus and it is not wrong; what decides it is that the corpus is known to be about to grow
+# — decision 3 of the same owner ruling sources neighborhood polygons for San Jose and New York,
+# which adds rows to six of the seven packs — and that the two errors are not symmetric. A volume
+# can be extended (`flyctl volumes extend`) and cannot be shrunk, so too small is an outage found
+# mid-refresh and too large is a few cents a month on a per-GB bill.
+#
+# `initial_size` is what `flyctl deploy` would use if it had to create the volume itself. The
+# orchestrator creates it explicitly instead — this line is here so the size is stated in the file
+# rather than living only in whichever shell command created the volume.
+[mounts]
+  source = 'cypress_packs'
+  destination = '/data/packs'
+  initial_size = '3gb'
