@@ -439,8 +439,20 @@ describe('what a refresh does to files the catalog no longer lists', () => {
 // ── The destination, which has no default ────────────────────────────────────────────────────
 
 describe('where the packs go', () => {
+  /**
+   * A base URL that cannot connect, passed to every case here that refuses before it fetches.
+   *
+   * **Not decoration.** Red-proving the case below — by making the script `mkdir -p` its
+   * destination instead of refusing it — did not just turn the test red: the child then fell
+   * through to its default base URL and began pulling 713 MB out of the live bucket, which is how
+   * a suite that "never touches the network" touches the network. The refusals are what these
+   * cases assert; the port is what makes a regression in them a failed connection instead of a
+   * download.
+   */
+  const UNREACHABLE = 'http://127.0.0.1:9';
+
   it(`fails without --dir and without ${PACK_DIRECTORY_VARIABLE}, rather than defaulting anywhere`, async () => {
-    const run = await runSync([]);
+    const run = await runSync(['--base-url', UNREACHABLE]);
 
     assert.notEqual(run.code, 0, 'a run with no destination must not succeed');
     assert.match(run.stderr, new RegExp(PACK_DIRECTORY_VARIABLE));
@@ -451,7 +463,7 @@ describe('where the packs go', () => {
     // `mkdir -p` on a mount point that is not mounted is how 713 MB lands on the root disk while
     // the volume sits empty beside it.
     const missing = join(directory(), 'not-mounted');
-    const run = await runSync(['--dir', missing]);
+    const run = await runSync(['--dir', missing, '--base-url', UNREACHABLE]);
 
     assert.notEqual(run.code, 0);
     assert.equal(existsSync(missing), false, 'the destination was created');
@@ -459,7 +471,7 @@ describe('where the packs go', () => {
   });
 
   it('refuses an argument it does not recognize', async () => {
-    const run = await runSync(['--dir', directory(), '--prume']);
+    const run = await runSync(['--dir', directory(), '--base-url', UNREACHABLE, '--prume']);
     assert.notEqual(run.code, 0, 'a misspelled --prune that silently does nothing is worse');
     assert.match(run.stderr, /unknown argument/);
   });
