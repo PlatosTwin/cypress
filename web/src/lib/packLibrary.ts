@@ -78,7 +78,14 @@ export interface PackLibrary {
   readonly packs: readonly Pack[];
   /** id space → the packs carrying rows keyed in it, in path order. */
   readonly byIdSpace: ReadonlyMap<string, readonly Pack[]>;
-  /** Files that did not open, or opened and could name no id space. Never silently dropped. */
+  /**
+   * Every `*.sqlite` in the directory that did not become a servable pack, and why.
+   *
+   * Three kinds, and none of them is silently dropped: an entry that could not be inspected at all
+   * (a dangling symlink, or a file removed between the listing and the look), an entry that is not
+   * a regular file, and a file that opened as something other than a pack this build can serve —
+   * including one that opened and could name no id space.
+   */
   readonly problems: readonly PackProblem[];
 }
 
@@ -88,13 +95,62 @@ export interface TreeLocation {
   readonly tree: TreeFactsRow;
 }
 
-/** `.sqlite` files in a directory, sorted, so a walk over them is deterministic. */
-function packFiles(directory: string): readonly string[] {
-  return readdirSync(directory)
+/**
+ * The `.sqlite` files in a directory, sorted so a walk over them is deterministic — and the
+ * entries that could not be looked at, which are a different thing from the directory being
+ * unreadable.
+ *
+ * **The split is the whole point of this signature, and it was a defect before it was a
+ * parameter.** This used to be a chain ending `.filter((path) => statSync(path).isFile())`, and a
+ * `statSync` that threw took the entire library with it: `openPackLibrary` threw, the caller
+ * reported "the pack directory could not be read", and packs that were sitting right there and
+ * would have opened were never tried.
+ *
+ * `readdirSync` returns a name and `statSync` then asks the filesystem about it, and **those are
+ * two different moments**. Anything that removes the entry in between makes the second one throw
+ * `ENOENT` about a directory that is mounted and fine. A dangling symlink does it permanently; a
+ * publish that writes a new set of packs beside the old one and prunes afterwards does it for the
+ * width of the prune, to every process that opens the library in that window. The symptom was a
+ * whole site answering nothing and an operator sent to `flyctl volumes` to look at a volume with
+ * no fault in it — the exact mis-routing the header of this file says the design exists to
+ * prevent, arrived at from inside.
+ *
+ * So: a failure to read the DIRECTORY still throws, because that is a real directory-level fault
+ * and the caller has to hear about it. A failure on one ENTRY is that entry's problem, recorded
+ * with its reason, and the rest of the walk continues.
+ *
+ * An entry that exists and is not a regular file is recorded too rather than silently skipped.
+ * It cannot be opened, and every `*.sqlite` in this directory either opens or is named — that is
+ * the invariant this returns, and one silent exception is enough to make it not worth stating.
+ */
+function packFiles(directory: string): {
+  readonly paths: readonly string[];
+  readonly problems: readonly PackProblem[];
+} {
+  const paths: string[] = [];
+  const problems: PackProblem[] = [];
+  const entries = readdirSync(directory)
     .filter((entry) => entry.endsWith('.sqlite'))
     .sort()
-    .map((entry) => join(directory, entry))
-    .filter((path) => statSync(path).isFile());
+    .map((entry) => join(directory, entry));
+
+  for (const path of entries) {
+    let isFile: boolean;
+    try {
+      isFile = statSync(path).isFile();
+    } catch (error) {
+      problems.push({
+        path,
+        reason: `the directory lists this entry and it could not be inspected — a dangling symlink, `
+          + `or a file removed between the listing and the look: `
+          + `${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+    if (isFile) paths.push(path);
+    else problems.push({ path, reason: 'not a regular file, so it cannot be opened as a pack' });
+  }
+  return { paths, problems };
 }
 
 /**
@@ -112,11 +168,24 @@ export function openPackLibrary(directory: string): PackLibrary {
         + `did not finish, so this refuses rather than reporting the first as the second.`,
     );
   }
+  // A path that exists and is not a directory used to reach `readdirSync` and come back as a bare
+  // `ENOTDIR: not a directory, scandir …`, which a caller then reported as "that path does not
+  // exist" — about a path that does. It is its own mistake (a `CYPRESS_PACK_DIR` pointing at one
+  // pack instead of at the directory holding them) and it gets its own sentence.
+  if (!statSync(directory).isDirectory()) {
+    throw new Error(
+      `${PACK_DIRECTORY_VARIABLE} names ${directory}, which exists and is not a directory. It must `
+        + `name the directory the packs are mounted in, not one of the packs.`,
+    );
+  }
   const packs: Pack[] = [];
-  const problems: PackProblem[] = [];
   const byIdSpace = new Map<string, Pack[]>();
+  // Seeded with the entries the walk could not look at. They are problems in exactly the sense
+  // this field already means: a file in the directory that did not become a servable pack.
+  const listing = packFiles(directory);
+  const problems: PackProblem[] = [...listing.problems];
 
-  for (const path of packFiles(directory)) {
+  for (const path of listing.paths) {
     let pack: Pack;
     try {
       pack = openPack(path);

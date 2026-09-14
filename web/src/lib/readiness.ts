@@ -5,12 +5,17 @@
  * into each other, and its header says why:
  *
  *   * `CYPRESS_PACK_DIR` unset — the caller is handed `null`. A deployment that did not finish.
- *   * the directory named and not readable — no volume mounted, or a path inside it that is not
- *     there. Also a deployment that did not finish, and a DIFFERENT repair.
+ *   * the directory named and not readable — no volume mounted, no such path, a path that is not a
+ *     directory, no permission. Also a deployment that did not finish, and a DIFFERENT repair.
  *   * the directory readable and holding no pack this build can open — a volume mounted and not
  *     yet filled. The sync has not run, or it ran and wrote nothing.
  *
  * and then the state a reader wants: packs open, for these id spaces, with these refusals.
+ *
+ * **A fault with one FILE in the directory is none of the four.** It belongs on `problems`, with
+ * the packs beside it still open and still serving — see `packFiles`, which learned that the hard
+ * way: a dangling symlink, or a file pruned between the listing and the look, used to be reported
+ * here as an unmounted volume.
  *
  * Four states rather than three, because the middle one is two repairs wearing one name: a missing
  * mount is `flyctl volumes`, an empty one is running the sync. A human curling this has to be able
@@ -29,6 +34,14 @@
  *
  * `redactDirectory` is that sweep, and it is exported so a test can calibrate it against a string
  * whose answer is known rather than against whatever `node:sqlite` happens to say today.
+ *
+ * **The sweep has three known blind spots, documented rather than fixed, because `/data/packs`
+ * triggers none of them and a fix nobody can exercise is a fix nobody can trust.** `openPack`
+ * hands `node:sqlite` a percent-encoded `file://` URI, so a pack directory whose path contained a
+ * space would appear in any error that echoed that URI in a spelling this sweep does not match. A
+ * `CYPRESS_PACK_DIR` of `/` or `.` would match nearly everything and shred unrelated text. And a
+ * relative pack directory would not match the absolute paths the messages carry. The day that
+ * variable stops being a plain absolute container path, this paragraph is the thing to re-read.
  */
 import { basename } from 'node:path';
 
@@ -45,7 +58,11 @@ export const SERVICE = 'cypress-web';
 export type ReadinessState =
   /** `CYPRESS_PACK_DIR` is unset. The image was deployed without the environment it needs. */
   | 'unconfigured'
-  /** The variable is set and the directory it names could not be read. No volume, or no path. */
+  /**
+   * The variable is set and the DIRECTORY could not be read: no volume, no such path, a path that
+   * is not a directory, or no permission. Never a fault with one file inside it — those are on
+   * `problems`, and the packs beside them still serve.
+   */
   | 'unreadable'
   /** The directory read, and holds no pack this build can open. A volume nobody has filled. */
   | 'empty'
@@ -118,16 +135,27 @@ export function readinessReport(
   try {
     library = packLibrary(environment);
   } catch (error) {
-    // The path is in the error and the error is not in the response. An operator reads it with
-    // `flyctl logs`; a crawler gets the sentence below.
-    console.error(`/health: ${PACK_DIRECTORY_VARIABLE} could not be read`, error);
+    // **This branch is now reached only by a DIRECTORY-level fault**, and the sentence below can
+    // only be honest because of it. It used to catch a per-entry `statSync` failure too — a
+    // dangling symlink, or a file pruned between the listing and the look — and answer "the volume
+    // is not mounted" about a volume that was mounted, with packs in it that would have opened,
+    // and with `problems` empty. `packFiles` now records those against the entry and carries on;
+    // read its note before narrowing this again.
+    //
+    // The message, not the error object: this is polled every 30 s by the health check for as long
+    // as a misconfiguration lasts, and a stack trace repeated 2,880 times a day buries the line
+    // that says what is wrong. The message carries the path, which is the part an operator needs.
+    console.error(
+      `/health: ${PACK_DIRECTORY_VARIABLE} could not be read: `
+        + `${error instanceof Error ? error.message : String(error)}`,
+    );
     return {
       service: SERVICE,
       ready: false,
       state: 'unreadable',
-      detail: `the directory ${PACK_DIRECTORY_VARIABLE} names could not be read — the volume is `
-        + 'not mounted, or that path inside it does not exist. The error, with the path, is in '
-        + "this machine's log.",
+      detail: `the pack directory itself could not be read — it is not mounted, is not there, is `
+        + 'not a directory, or this process cannot read it. Which one is in this machine\'s log, '
+        + 'with the path.',
       ...nothing,
     };
   }

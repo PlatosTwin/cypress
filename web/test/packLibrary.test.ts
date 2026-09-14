@@ -1,7 +1,7 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -138,6 +138,50 @@ describe('opening a directory of packs', () => {
     assert.equal(library.packs.length, 0);
     assert.equal(library.problems.length, 1);
     assert.match(library.problems[0]?.reason ?? '', /names no id space/);
+  });
+
+  it('records an entry it cannot even stat, and keeps serving the packs beside it', () => {
+    // **The regression.** `readdirSync` returns a name and `statSync` then asks about it, and those
+    // are two different moments. A dangling symlink makes the second throw `ENOENT` permanently; a
+    // publish that writes a new set of packs beside the old one and prunes afterwards makes it
+    // throw for the width of the prune. This used to take the WHOLE library with it — the caller
+    // saw a thrown `openPackLibrary` and reported an unmounted volume, about a mounted directory
+    // with a good pack sitting in it.
+    const into = directory();
+    place(buildPack(17), into, 'sf.sqlite');
+    symlinkSync(join(into, 'pruned-already.sqlite'), join(into, 'ny.sqlite'));
+
+    const library = openPackLibrary(into);
+    assert.equal(library.packs.length, 1, 'the good pack was taken down by a broken neighbor');
+    assert.deepEqual([...library.byIdSpace.keys()], ['sf']);
+    assert.equal(library.problems.length, 1);
+    assert.ok(library.problems[0]?.path.endsWith('ny.sqlite'));
+    assert.match(library.problems[0]?.reason ?? '', /could not be inspected/);
+  });
+
+  it('records an entry that is not a regular file rather than skipping it in silence', () => {
+    // The other half of the invariant `packFiles` states: every `*.sqlite` in the directory either
+    // opens or is named. A directory called `staging.sqlite` cannot open, so it is named.
+    const into = directory();
+    place(buildPack(17), into, 'sf.sqlite');
+    mkdirSync(join(into, 'staging.sqlite'));
+
+    const library = openPackLibrary(into);
+    assert.equal(library.packs.length, 1);
+    assert.equal(library.problems.length, 1);
+    assert.match(library.problems[0]?.reason ?? '', /not a regular file/);
+  });
+
+  it('refuses a pack directory that exists and is not a directory, in its own words', () => {
+    // `CYPRESS_PACK_DIR` pointing at one pack instead of at the directory holding them. It used to
+    // arrive as a bare `ENOTDIR … scandir`, which a caller reported as "that path does not exist"
+    // about a path that plainly does.
+    const into = directory();
+    place(buildPack(17), into, 'sf.sqlite');
+    // Matched on the half of the sentence `ENOTDIR` does NOT contain. `ENOTDIR: not a directory,
+    // scandir …` is one word away from `/is not a directory/`, so that regex distinguished the two
+    // by luck; this one cannot.
+    assert.throws(() => openPackLibrary(join(into, 'sf.sqlite')), /not one of the packs/);
   });
 
   it('ignores files that are not packs by extension', () => {

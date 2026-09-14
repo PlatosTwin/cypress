@@ -1,6 +1,6 @@
 import { after, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -78,6 +78,21 @@ async function health(): Promise<Answer> {
   };
 }
 
+/**
+ * `console.error` collected rather than printed, for the tests that assert on what is logged.
+ *
+ * The unredacted detail is meant to reach the machine's log and nowhere else, so for those tests
+ * the log is half the assertion rather than noise to be silenced.
+ */
+function captureErrors(): { readonly lines: string[]; restore(): void } {
+  const lines: string[] = [];
+  const real = console.error;
+  console.error = (...parts: unknown[]): void => {
+    lines.push(parts.map((part) => (part instanceof Error ? part.message : String(part))).join(' '));
+  };
+  return { lines, restore: () => { console.error = real; } };
+}
+
 describe('the redaction', () => {
   // Specimen first, answer known before the sweep saw it. A redaction asserted only against
   // whatever `node:sqlite` says today agrees with whatever `node:sqlite` says today.
@@ -113,25 +128,19 @@ describe('GET /health tells the deployment failures apart', () => {
     const missing = join(tmpdir(), 'cypress-readiness-no-such-directory-7c21');
     process.env[PACK_DIRECTORY_VARIABLE] = missing;
 
-    // The unredacted error is meant to reach the machine's log and nowhere else, so the log is the
-    // other half of this assertion rather than noise to be silenced.
-    const logged: string[] = [];
-    const realError = console.error;
-    console.error = (...parts: unknown[]): void => {
-      logged.push(parts.map((part) => (part instanceof Error ? part.message : String(part))).join(' '));
-    };
+    const logged = captureErrors();
     let answer: Answer;
     try {
       answer = await health();
     } finally {
-      console.error = realError;
+      logged.restore();
     }
 
     assert.equal(answer.report.state, 'unreadable');
     assert.equal(answer.report.ready, false);
     assert.ok(
-      logged.some((line) => line.includes(missing)),
-      `the path was not written to the log; console.error saw ${JSON.stringify(logged)}`,
+      logged.lines.some((line) => line.includes(missing)),
+      `the path was not written to the log; console.error saw ${JSON.stringify(logged.lines)}`,
     );
   });
 
@@ -175,6 +184,50 @@ describe('GET /health tells the deployment failures apart', () => {
     assert.match(answer.report.detail, /did not open/);
   });
 
+  it('a pack pruned between the listing and the look is a problem, not an unmounted volume', async () => {
+    // **The regression, at the endpoint.** A dangling symlink reproduces permanently what a
+    // publish does transiently: `readdirSync` returns the name, `statSync` throws `ENOENT` about
+    // it. This used to answer `state: unreadable`, `packs: 0`, `problems: []` — a mounted volume
+    // reported as a missing one, with a good pack in it, sending the operator to `flyctl volumes`
+    // to look at a volume with no fault in it.
+    const into = directory();
+    placePack(into, 'sf.sqlite');
+    symlinkSync(join(into, 'pruned-already.sqlite'), join(into, 'ny.sqlite'));
+    process.env[PACK_DIRECTORY_VARIABLE] = into;
+
+    const answer = await health();
+    assert.equal(answer.report.state, 'serving', 'a broken entry took down the whole library');
+    assert.equal(answer.report.ready, true);
+    assert.equal(answer.report.packs, 1);
+    assert.deepEqual(answer.report.idSpaces, ['sf']);
+    assert.equal(answer.report.problems.length, 1);
+    assert.equal(answer.report.problems[0]?.file, 'ny.sqlite');
+    assert.match(answer.report.problems[0]?.reason ?? '', /could not be inspected/);
+  });
+
+  it('says `unreadable` when CYPRESS_PACK_DIR names a file rather than a directory', async () => {
+    // The milder variant: the path exists, so "that path does not exist" was the wrong sentence.
+    const into = directory();
+    placePack(into, 'sf.sqlite');
+    process.env[PACK_DIRECTORY_VARIABLE] = join(into, 'sf.sqlite');
+
+    const logged = captureErrors();
+    let answer: Answer;
+    try {
+      answer = await health();
+    } finally {
+      logged.restore();
+    }
+    assert.equal(answer.report.state, 'unreadable');
+    assert.equal(answer.report.ready, false);
+    // The distinctive half of the sentence, not the half `ENOTDIR: not a directory, scandir …`
+    // already says. Matching the shared words would pass on the raw errno this replaced.
+    assert.ok(
+      logged.lines.some((line) => line.includes('not one of the packs')),
+      `the log does not say which directory-level fault it was: ${JSON.stringify(logged.lines)}`,
+    );
+  });
+
   it('an unfilled volume holding only junk is `empty` AND names the junk', async () => {
     // The pair to the test above, and the reason `problems` is not folded into `ready`: this
     // machine is unready and the reason is on the disk, not missing from it.
@@ -200,12 +253,11 @@ describe('GET /health tells the deployment failures apart', () => {
 
     resetPackLibraryCache();
     process.env[PACK_DIRECTORY_VARIABLE] = join(tmpdir(), 'cypress-readiness-no-such-directory-7c21');
-    const realError = console.error;
-    console.error = (): void => {};
+    const quiet = captureErrors();
     try {
       states.push((await health()).report.state);
     } finally {
-      console.error = realError;
+      quiet.restore();
     }
 
     resetPackLibraryCache();
@@ -237,12 +289,35 @@ describe('what GET /health is allowed to say to an anonymous reader', () => {
       false,
       `the body names the pack directory:\n${answer.text}`,
     );
-    // And the calibration, because the assertion above passes for free if `into` is somehow not in
-    // any message to begin with. The unredacted reason DOES carry the path in the shape this
-    // endpoint reports it — basename plus a swept reason — so proving the sweep fired means
-    // proving the endpoint's own `file` field is a basename and not the path it came from.
+    // And the calibration, because the assertion above passes for free if the path was never in
+    // any message to begin with — which for THIS specimen is exactly what happens. Measured:
+    // `node:sqlite` says `file is not a database`, with no path in it, so the only thing the
+    // assertion above can be proving here is that `file` is a basename rather than the path it
+    // came from. It is asserted as that, and not as evidence about the sweep. The test below is
+    // where the sweep is genuinely load-bearing.
     assert.equal(answer.report.problems[0]?.file, 'half-copied.sqlite');
     assert.equal(answer.report.problems[0]?.file.includes('/'), false);
+    assert.match(answer.report.problems[0]?.reason ?? '', /not a database/);
+    assert.equal(answer.report.problems[0]?.reason.includes(into), false);
+  });
+
+  it('sweeps the directory out of a reason that really does carry it', async () => {
+    // The specimen the test above could not be: `statSync`'s `ENOENT` names the full path, so this
+    // is a real message, from the real walk, that contains the real directory — and the sweep is
+    // the only reason it does not reach the body. Without it this reason would read
+    // `ENOENT: no such file or directory, stat '/data/packs/ny.sqlite'`.
+    const into = directory();
+    placePack(into, 'sf.sqlite');
+    symlinkSync(join(into, 'pruned-already.sqlite'), join(into, 'ny.sqlite'));
+    process.env[PACK_DIRECTORY_VARIABLE] = into;
+
+    const answer = await health();
+    const reason = answer.report.problems[0]?.reason ?? '';
+    // The control FIRST: this reason has to contain the directory before redaction, or the
+    // assertion after it proves nothing. The unswept text is reconstructed from the placeholder.
+    assert.match(reason, /<pack-dir>/, `the reason carries no swept path, so this proves nothing: ${reason}`);
+    assert.equal(reason.includes(into), false, `the directory survived the sweep: ${reason}`);
+    assert.equal(answer.text.includes(into), false);
   });
 
   it('answers 200 in every state, including the unready ones', async () => {
