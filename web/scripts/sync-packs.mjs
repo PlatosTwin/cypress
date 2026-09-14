@@ -85,6 +85,7 @@
 
 
 import { createHash, randomBytes } from 'node:crypto';
+import { once } from 'node:events';
 import {
   createReadStream,
   createWriteStream,
@@ -354,12 +355,13 @@ async function downloadToTemporary(url, temporaryPath) {
     await fetchWithStallTimeout(url, async (chunk) => {
       hash.update(chunk);
       bytes += chunk.length;
-      if (!file.write(chunk)) {
-        await new Promise((resolve, reject) => {
-          file.once('drain', () => resolve(undefined));
-          file.once('error', reject);
-        });
-      }
+      // `events.once` and not a hand-rolled pair of `file.once(...)` listeners: the hand-rolled
+      // version removed its `drain` listener and left its `error` listener attached, so a pack big
+      // enough to need back pressure retained one per drain — `MaxListenersExceededWarning` at 11,
+      // and thousands by the end of a 199 MB download. Found by running this against the real
+      // bucket; `test/sync-packs.test.ts` now streams 4 MB through it so a suite of small
+      // specimens cannot hide it again. `once` removes both listeners however the wait ends.
+      if (!file.write(chunk)) await once(file, 'drain');
     });
   } finally {
     await new Promise((resolve, reject) => {

@@ -306,6 +306,37 @@ describe('bytes that are not the bytes the catalog described', () => {
     assert.equal(attempts, 1, `the pack was fetched ${attempts} times; verification is terminal`);
   });
 
+  it('streams a pack bigger than one write buffer without leaking listeners', async () => {
+    /**
+     * Found by running the script against the real bucket, not by reading it.
+     *
+     * A 29 MB published pack synced correctly and printed
+     * `MaxListenersExceededWarning: 11 error listeners added to [WriteStream]` while doing it: the
+     * back-pressure wait attached an `error` listener per `drain` and only ever removed the
+     * `drain` one, so a 199 MB pack would have retained thousands. Every fake pack in this file is
+     * a few dozen bytes and writes in one go, so no case here had ever waited on a drain — which
+     * is exactly the kind of hole a suite of small specimens leaves. This one is 4 MB for no
+     * reason except to be larger than a write buffer.
+     */
+    const large = Buffer.alloc(4 * 1024 * 1024, 'cypress');
+    const sf = entry('sf', large);
+    const served = await bucket(catalogOf([sf]), objectsFor([[sf, large]]));
+    const into = directory();
+
+    const run = await runSync(['--dir', into, '--base-url', served.baseURL]);
+
+    assert.equal(run.code, 0, run.stderr);
+    assert.equal(
+      createHash('sha256').update(readFileSync(join(into, 'sf.sqlite'))).digest('hex'),
+      String(sf['sha256']),
+    );
+    assert.equal(
+      run.stderr.includes('MaxListenersExceededWarning'),
+      false,
+      `the download leaked event listeners:\n${run.stderr}`,
+    );
+  });
+
   it('retries a transport failure and then succeeds', async () => {
     const sf = entry('sf', SF);
     const served = await bucket(
