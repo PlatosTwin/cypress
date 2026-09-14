@@ -531,3 +531,86 @@ to 4,800 in each of the four text bands.
 **W1 is light-only on purpose.** Three of §W1's surfaces map to `lightOnly` tokens while the generic
 page tokens beside them are `dynamic`, so a dark rendering would be half of one palette over the
 other — a state no mock draws. `src/styles/w1.css` carries the same note at the top of the file.
+
+## Filling the volume (W-E)
+
+The server reads packs out of `CYPRESS_PACK_DIR` and **nothing puts them there**. That step is
+`scripts/sync-packs.mjs`, run *on the machine*, against the same public catalog the phone installs
+cities from:
+
+```
+fly ssh console -a cypress-web
+cd /app && node scripts/sync-packs.mjs --dir /data/packs
+```
+
+Locally it is `npm run packs` with `CYPRESS_PACK_DIR` set, or `-- --dir <path>`. Seven packs,
+713,605,120 bytes as this is written, so the first fill is not quick.
+
+**It is not run at boot and must not be.** 713 MB over a cold network is not something a health
+check can wait for, and a server that fetches its own data at startup fails to start on the day the
+bucket has a bad minute. The image carries the script — `Dockerfile`'s runtime stage copies
+`scripts/` and, because the script imports the catalog decoder and the pack generation from
+`src/lib/`, `src/` with it — so filling the volume is a thing an operator does to a running machine.
+
+**What it refuses, and why each refusal is worth having:**
+
+- **No destination.** No `--dir`, no `CYPRESS_PACK_DIR`, no default — `packLibrary.ts`'s rule, one
+  step earlier. A default would write the packs somewhere that is not the volume and leave the
+  volume looking mounted and empty.
+- **A destination that does not exist.** It never creates one. A mount point that is not mounted is
+  an ordinary empty directory, and `mkdir -p` is delighted to fill it on the root disk.
+- **An envelope format this build does not read**, before it looks at a single city — `manifest.ts`
+  owns that, and the sync just does not catch it.
+- **A pack published past `NEWEST_KNOWN_PACK_SCHEMA_VERSION`.** Downloading it would produce a file
+  the server then declines to open. The rest of the catalog still syncs; the run exits nonzero.
+- **Bytes that are not the bytes the catalog names.** Every pack streams to
+  `.<id>.sqlite.part-<pid>-<random>` in the destination directory, is hashed as it streams, and is
+  compared against both `bytes` and `sha256` before `rename()` puts it in place. Nothing is ever
+  written to the final path directly, and the temporary name deliberately does not end in
+  `.sqlite`, because the running server opens every `*.sqlite` it finds. A failed verification
+  leaves nothing behind and is **not** retried — the object either matches the catalog or it does
+  not. A failed *connection* is retried, a few times, with a stall timeout that measures "this
+  transfer has stopped moving" rather than "this transfer is taking a while".
+- **A catalog `path` or `id` that is not a plain relative name.** The catalog is a remote object;
+  it does not get to choose where its reader writes.
+- **A catalog whose entries would land on one file** — two entries with one id, or two ids that
+  differ only in case. One would overwrite the other and the summary would count both, so the whole
+  catalog is refused before a byte moves, the same way an unknown format is.
+- **A destination it cannot write to.** EACCES, EROFS and ENOTDIR are found by opening the
+  temporary file *before* the request is made, so an unwritable volume costs no transfer; they are
+  reported as an ordinary refusal with a summary line after it, and they are not retried, because
+  asking again writes the same error again. `ENOSPC` mid-transfer is treated the same way rather
+  than retried into a disk that is already full.
+
+**A refresh is the same command.** A pack already present at the right size and hash is skipped and
+said to be skipped, so the second run is fast and legible:
+
+```
+sync-packs: skipped sf (s17-r2026-08-22.02-ac7b1ccc, 82796544 bytes, sha256 matches)
+sync-packs: downloaded us-ny-nyc-queens (s17-r2026-08-22.02-ac7b1ccc, 199163904 bytes, sha256 verified)
+SYNC-PACKS: OK downloaded=1 skipped=6 pruned=0 refused=0 bytes-downloaded=199163904 …
+```
+
+That last line is the one to read — a human and a grep can both use it, and the exit code is 1 if
+anything was refused. **The layout is flat and the version is not in the filename** (`<id>.sqlite`,
+one per pack id), because the library opens every `*.sqlite` in the directory and two versions of
+one city would both answer for the same id space. So "which publish is on the volume?" is answered
+by running the sync and reading what it skipped, not by looking at the names.
+
+**A city that leaves the catalog is left alone unless you say `--prune`.** A refresh that silently
+deletes a city is worse than one that leaves a stale file, so an unlisted pack is reported and kept;
+`--prune` removes it, and each removal is printed.
+
+**What it deletes and what it merely reports are two different sets, and the output says which.**
+`--prune` only ever deletes a plain file this script could itself have written: an unlisted
+`<id>.sqlite`, or a leftover temporary whose process has exited and whose last write is outside the
+stall window. A temporary belonging to a live pid, or written moments ago, is kept and named — two
+syncs against one directory no longer end with one deleting the other's transfer, though there is
+still no reason to run them that way. Everything else it will not touch. But `packLibrary`'s reader
+opens **every** name ending in `.sqlite`, does not skip dot-files, and follows symlinks, so
+`.hidden.sqlite` and a symlink pointing outside the volume are files the server would serve and
+`--prune` will not remove. Those are reported too, marked `--prune does NOT remove it`, so a
+directory somebody has poked at stops looking clean.
+
+The server holds its packs open for the life of the process (`packLibrary.ts`), so after a refresh
+that actually replaced something, restart the machine before expecting the new bytes to be served.

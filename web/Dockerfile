@@ -44,6 +44,11 @@ COPY src ./src
 # COPY looks like, and `MissingCardFonts` is what turns it into a 500 instead.
 COPY fonts ./fonts
 
+# `scripts/sync-packs.mjs` — the step that puts the published packs on the mounted volume, run on
+# the machine and not at boot. It is COPYed here rather than only into the runtime stage so the
+# image is one `COPY --from` below, the same bargain `fonts` takes.
+COPY scripts ./scripts
+
 RUN npm run build
 
 # `npm prune --omit=dev` rather than a second `npm ci --omit=dev` in the runtime stage: the tree
@@ -67,6 +72,22 @@ COPY --from=build /app/package.json ./package.json
 # `/app/fonts`, and `WORKDIR /app` above is what makes that the `<cwd>/fonts` that
 # `cardFontDir()` resolves to. Moving either one without the other serves cards with no text.
 COPY --from=build /app/fonts ./fonts
+
+# The volume is filled by running `node scripts/sync-packs.mjs` IN this container — `fly ssh
+# console`, then that — so the script has to be in the image. It is not run at boot and must not
+# be: 713 MB over a cold network is not something a health check can wait for, and a server that
+# fetches its own data at startup fails to start on the day the bucket has a bad minute.
+#
+# **`src` comes with it, and that is the whole reason this is two COPY lines instead of one.** The
+# script imports `src/lib/pack/manifest.ts`, `bucket.ts`, `versions.ts` and `packLibrary.ts` rather
+# than carrying its own copy of the catalog decoder, the pack generation it will accept, or the
+# name of `CYPRESS_PACK_DIR` — one definition each, which is why the server and the sync can never
+# disagree about them. `dist/` is the bundle Astro emitted and does not contain those modules in a
+# form anything can import, so `src` is what the script reads. It is TypeScript source for a public
+# read surface, not a secret, and `test/sync-packs.test.ts` asserts both directories arrive: a
+# script in the image whose imports are not is a script that fails on the one night it is needed.
+COPY --from=build /app/src ./src
+COPY --from=build /app/scripts ./scripts
 
 # The `node` user exists in the official image. v1 is a read surface with no writes and no
 # credentials, so this buys little today; it costs nothing and it is the wrong thing to add
