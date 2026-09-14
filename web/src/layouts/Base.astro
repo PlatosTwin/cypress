@@ -80,9 +80,12 @@ const {
 
 // Absolute URLs, resolved against the URL this request actually arrived on. There is no `site`
 // configured in `astro.config.mjs` and there deliberately is not one yet: the public hostname is
-// `cypressgrove.app` by the web round's second owner decision, and nothing answers on it until
-// W-E. Resolving against `Astro.url` means the tags are right on `localhost:4321` and right on the
-// `.fly.dev` hostname without either being written down twice.
+// `cypressatlas.org` by the owner's ruling of 2026-09-13 (superseding `cypressgrove.app`, the web
+// round's second owner decision of 2026-09-10), and **nothing answers on it** — W-E deploys, and
+// deliberately attaches no certificate and no DNS, because the owner's framing is that the site
+// will not land there live for a while yet. Resolving against `Astro.url` means the tags are right
+// on `localhost:4321` and right on the `.fly.dev` hostname the site actually answers on, without
+// either being written down twice — and right on the day someone does cut the name over.
 const absolute = (path: string): string => new URL(path, Astro.url).href;
 ---
 
