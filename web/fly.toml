@@ -119,14 +119,21 @@ primary_region = 'sjc'
 # caution: the web opens published city packs with `node:sqlite`, and SQLite's page cache plus a
 # Node heap does not fit comfortably in 256.
 #
-# **Still unmeasured, and this comment is not going to imply otherwise.** W-A said it was "a number
-# to re-measure under W-E with a pack actually mounted"; W-E wrote the mount and could not do the
-# measuring, because measuring it needs a machine and this round creates none from an agent. The
-# packs are opened `immutable=1` and read-only, so the resident cost is SQLite's page cache against
-# 713.6 MB of file rather than the file itself — but that is an argument, not a reading.
-# **The orchestrator should measure it after the deploy** (`flyctl machine status`, or `fly ssh
-# console` while a few tree pages are served) and write the number here, replacing this paragraph
-# with a measurement and the date it was taken.
+# **Measured 2026-09-13, on this machine, and 512 MB stands.** W-A called it "a number to
+# re-measure under W-E with a pack actually mounted", and W-E mounted one. After sixteen requests —
+# eight NYC tree pages and eight PNG card rasterizations, so both the pack reads and resvg were
+# exercised — `/sys/fs/cgroup/memory.current` read **184,729,600 bytes (176 MB)** against a
+# `MemTotal` of 469,892 kB, `MemAvailable` 358,456 kB. Roughly a third of the budget, with all seven
+# packs open.
+#
+# The earlier draft's *argument* was right and is kept because it explains the shape of the number:
+# the packs are opened `immutable=1` and read-only, so the resident cost is SQLite's page cache
+# against 713.6 MB of file rather than the file itself. It is now a reading as well as an argument.
+#
+# **256 MB would probably hold, and taking it is not worth the risk.** The headroom is there for the
+# page cache under concurrency and for the rasterizer, and neither has been measured under load —
+# sixteen sequential curls are a warm-up, not a load test. Re-measure against real traffic before
+# shrinking this, not against this comment.
 [[vm]]
   size = 'shared-cpu-1x'
   memory = '512mb'
