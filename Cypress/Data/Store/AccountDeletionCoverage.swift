@@ -123,10 +123,11 @@ extension AccountDeletion {
                 (leaving, erasing) = (.anonymized, .anonymized)
 
             // Written with the account's id by `LocalAPI.addTree`, `claimSpecies` and
-            // `correctSpecies` (`SpeciesAssertionStore.insert`), and named by neither door. Found by
-            // this guard's first run. It is recorded as what the code does, not as a ruling: the
-            // day either door reaches the table, `AccountDeletionCoverageTests` goes red here and
-            // this arm has to change with it.
+            // `correctSpecies` (`SpeciesAssertionStore.insert`), and named by neither door. Found
+            // while this guard was being written, and measured by it: after either door the claim
+            // still carries the deleted account's id. It is recorded as what the code does, not as
+            // a ruling — the fix is its own change — and the day either door reaches the table,
+            // `AccountDeletionCoverageTests` goes red here and this arm has to change with it.
             case .speciesAssertions:
                 (leaving, erasing) = (
                     .notReached(defect: "neither door names species_assertions; the claim keeps the account's id"),

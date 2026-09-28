@@ -1481,7 +1481,7 @@ Still open after part 1, each its own scheduled PR and none of them started:
   disputes: part 1 leaves `flagWrongSpecies` / `flagNeverExisted` untouched, and "location and
   species only" is a narrowing of that flow rather than an addition beside it.
 
-**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
+~~**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
 three times.** Twice on the outbox kind list, and once on a whole table: `AppSchema` v22 added
 `tree_data_disputes` with a `raised_by` column and neither account-deletion door could see it, which
 PR #165's review measured and PR #165 fixed. Every one of the three failed **silently**, because a
@@ -1491,7 +1491,16 @@ compiler asks the question when a case is added; the table half has no equivalen
 test that reads the live schema for columns named `user_id` / `raised_by` / `given_by` / `set_by`
 and requires each to be named by one door or explicitly exempted is the obvious shape, and it is the
 shape that would have caught this. **A fourth hand-audit is not the fix.** Unscheduled; the badge
-round is the natural slot, because it is the next round to touch this table.
+round is the natural slot, because it is the next round to touch this table.~~
+**DONE** by `test/account-deletion-table-guard`. `AccountDeletion.OwnedTable` classifies every table
+that names a person or installation, with an exhaustive `fate(under:)` per door, and
+`AccountDeletionCoverageTests` derives the set from the live migrated schema (`pragma_table_info`), not
+from a list: every column name must be filed as identity or ordinary, so a new spelling cannot slip
+past; the derived tables and columns must equal the classified ones both ways; and under each door an
+owned row must end as classified while a stranger's is unchanged. **Writing it found a fourth
+instance, which it now measures:** `species_assertions.user_id` is named by neither door, so a species claim keeps the
+deleted account's id after either one. It is classified `.notReached` (what the code does, not a
+ruling) and the fix is unscheduled; the day a door reaches it the guard goes red and the arm changes.
 
 **Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
