@@ -46,23 +46,31 @@ struct ScreenHeader<Trailing: View>: View {
         // on every screen that has one (`under a minute` on 05, `Outer Sunset` on 12, the tree's
         // name on 11 and 13, `3 waiting · offline` on 17) and the title is what the screen is. At
         // a size where both cannot fit across, the honest layout is one under the other.
+        //
+        // **The rule is about width, not about type size, and the first version of this keyed it
+        // on type size** (F29). It switched to two rows only at `isAccessibilitySize`, so at the
+        // default size a long pill still won: on the pin-set map, where the title is a record's
+        // name, `Indian Laurel Fig Tree 'Green Gem'` beside `Financial District/South Beach` on a
+        // 390 pt phone rendered six lines deep, one word per line. The same state is reachable on
+        // every header whose pill is a variable name (Measure, Growth, Activity, the Almanac).
+        //
+        // So below the accessibility sizes the layout asks the question directly. `ViewThatFits`
+        // offers the one-row layout first and keeps it whenever the title fits on one line beside
+        // the pill — which is every pair the mocks draw, so their layout does not change — and
+        // falls back to two rows otherwise. At the accessibility sizes it stays two rows
+        // unconditionally: there the pill gives up `.fixedSize` and wraps, so a one-row candidate
+        // would "fit" by folding the pill instead.
         // ══════════════════════════════════════════════════════════════════════════════════════
         Group {
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: CypressSpacing.Component.headerSpacing) {
-                    HStack(spacing: CypressSpacing.Component.headerSpacing) {
-                        backButton
-                        titleText
-                        Spacer(minLength: 0)
-                    }
-                    trailing
-                }
+                twoRows
+            } else if Trailing.self == EmptyView.self {
+                // Nothing to share the row with, so there is no second row to fall back to.
+                oneRow
             } else {
-                HStack(spacing: CypressSpacing.Component.headerSpacing) {
-                    backButton
-                    titleText
-                    Spacer(minLength: 0)
-                    trailing
+                ViewThatFits(in: .horizontal) {
+                    oneRow
+                    twoRows
                 }
             }
         }
@@ -70,6 +78,28 @@ struct ScreenHeader<Trailing: View>: View {
         .padding(.top, CypressSpacing.headerPaddingTop)
         .padding(.horizontal, CypressSpacing.headerPaddingHorizontal)
         .padding(.bottom, bottomInset.value)
+    }
+
+    /// §2 C1 as drawn: `[back circle] [title] [pill]`.
+    private var oneRow: some View {
+        HStack(spacing: CypressSpacing.Component.headerSpacing) {
+            backButton
+            titleText
+            Spacer(minLength: 0)
+            trailing
+        }
+    }
+
+    /// The title keeps the back circle's row and the pill takes the line below it.
+    private var twoRows: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.Component.headerSpacing) {
+            HStack(spacing: CypressSpacing.Component.headerSpacing) {
+                backButton
+                titleText
+                Spacer(minLength: 0)
+            }
+            trailing
+        }
     }
 
     @ViewBuilder
