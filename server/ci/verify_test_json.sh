@@ -35,6 +35,11 @@
 #
 # A package-level `skip` is `[no test files]` and is NOT refused: `server` (main) and `migrations`
 # have none. They are listed, so a package that loses its tests shows up here as a new name.
+#
+# A limit, not a bug: a test excluded by `go test -run` or hidden behind a build tag emits no
+# JSON event at all — not a pass, not a skip — so this script cannot see that it vanished; a
+# narrower `-run` or an extra build tag makes a test disappear cleanly, with nothing here to catch
+# it. The workflow's own invocation uses neither, so this does not apply to what CI runs today.
 set -uo pipefail
 
 log="${1:-}"
