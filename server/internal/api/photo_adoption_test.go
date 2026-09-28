@@ -16,7 +16,8 @@ import (
 // 15 promises that an account "lets them join each tree's public timeline", and the claim that runs
 // at sign-in is what has to keep that promise for photographs the service already holds. Until the
 // owner's 2026-09-28 ruling it did not: `ClaimDevice` moved the row onto the account and left it
-// `pending`, and nothing else ever revisited it.
+// `pending`, and nothing else in the service ever approved it (the only other writer of its state,
+// the operator's `RejectPhoto`, only takes photographs down).
 //
 // **Every assertion that carries the promise is made as a different caller, through the handler.**
 // The promise is "somebody else can see it", and `moderation_state` is not the thing a stranger is

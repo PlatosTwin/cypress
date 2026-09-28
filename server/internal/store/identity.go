@@ -243,8 +243,9 @@ func (s *Store) CreateDeviceToken(ctx context.Context, deviceID uuid.UUID, hash 
 // whose WHERE clauses stop matching once they have run. Nothing inserts, the one DELETE removes only
 // a device favorite the account already holds a row for (`claimFavorites`), and rows belonging to a
 // different account are not touched — which is what makes the client safe to re-invoke it after
-// every batch that applied anything (spec §6.2), and what makes running it twice cost one indexed
-// scan and no writes.
+// every batch that applied anything (spec §6.2). Running it twice adopts nothing the first run did
+// not, but it is not free of writes: the closing `UPDATE devices` has no guard, so every call
+// rewrites the device row's `updated_at` (and its `user_id`, to the value it already holds).
 //
 // The photograph approval is the one thing here the client's `claimDevice` does not mirror, because
 // the client has no moderation state to move: it learns "public" only from `GET /trees/{id}`'s
@@ -306,10 +307,11 @@ func (s *Store) ClaimDevice(ctx context.Context, deviceUUID uuid.UUID, caller uu
 		//
 		// `BeginPhoto` approves at upload only for a signed-in account (R72 ruling 5), so a
 		// photograph this device began anonymously arrives here `pending`. Before the owner's
-		// 2026-09-28 ruling this statement moved it onto the account and left it `pending`, and
-		// nothing else in the service ever revisits a row's moderation state — so a photograph taken
-		// signed out stayed private for good, while screen 15 promised an account "lets them join
-		// each tree's public timeline". Now it is what it would have been had the account begun it:
+		// 2026-09-28 ruling this statement moved it onto the account and left it `pending`, and the
+		// only other statement that wrote `moderation_state` after the begin was the operator's
+		// `RejectPhoto`, which never approves — so a photograph taken signed out stayed private for
+		// good, while screen 15 promised an account "lets them join each tree's public timeline".
+		// Now it is what it would have been had the account begun it:
 		// `approved`, for the same reason and under the same name, `auto_approved_launch` — a
 		// first-party photograph, published unscreened and unblurred, from a signed-in account.
 		//
@@ -320,8 +322,11 @@ func (s *Store) ClaimDevice(ctx context.Context, deviceUUID uuid.UUID, caller uu
 		//   - a withdrawn row (`deleted_at` set) is adopted and stays `pending`. It is not served to
 		//     anybody either way; approving it would record an approval of something its contributor
 		//     took back.
-		//   - an anonymized row never reaches this statement — the WHERE excludes it, and
-		//     anonymization clears `device_id` besides.
+		//   - an anonymized row is never adopted: the WHERE excludes it. Through the code no
+		//     anonymized photograph carries a `device_id` anyway, but not because anonymization
+		//     clears it — the two anonymization statements in `sync.go` set `user_id = NULL` and do
+		//     not touch `device_id`. They only ever match account-owned rows, and `photos_owner`
+		//     forbids an account-owned row from also naming a device, so there was none to clear.
 		//
 		// `SET` expressions read the row as it was before this statement, so both arms test the
 		// original state, and the approval lands in the same statement as the adoption — which
