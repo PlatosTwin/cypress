@@ -80,3 +80,75 @@ service is kind-scoped — three of the four are, and this one is not — so a n
 checked against all of them before it is minted. That is a contract the client keeps, not a gate:
 the payload decode is lenient by design, so nothing in the handler could refuse the key even if it
 wanted to.
+
+---
+
+### Fixed (server, 2026-09-28, branch `server/grove-species-known-scope`)
+
+**Reproduced first, through the handler, on main at `bb4d08f`** against a throwaway Postgres 16.14:
+one `GET /me/grove/species` answered `200` with the three right species, and after a row carrying
+`{"speciesID":"not-a-uuid"}` was written beneath them, the next read answered
+`500 {"error":{"code":"server_error",…}}`.
+
+**What the read now does.** `store.GroveSpeciesKnown` never casts in SQL. It selects
+`lower(payload->>'speciesID')` where `jsonb_typeof(payload->'speciesID') = 'string'`, groups on that
+text, and parses each group in Go with `uuid.Parse`, skipping what does not parse. Nothing in that
+SQL can error on a value it reads — `->`, `->>` and `jsonb_typeof` answer NULL for an absent key or
+a non-object payload, and `lower` is total — so **rows already poisoned in production are harmless
+whatever their kind**, with no migration and no deletion. That claim does not rest on the kind
+filter below: with the filter removed, the poisoned-row test still passes (measured, arm 2 below).
+
+**Which kinds it reads, and the premise this corrected.** It is scoped to `store.MetSpeciesKinds` =
+`visit`, `observation`, `measurement`, `care_event` — the four kinds the client's own Species tab
+unions (`GroveQueries.ownContributions`). Two facts decided that, both read from the client rather
+than assumed:
+
+1. **The kinds that really carry a `speciesID` are `add_tree`, `species_claim` and
+   `species_correction`, and all three are a person *naming* a community tree's species.** The
+   client refuses exactly those by rule: `GroveQueries.knownSpecies` reads city-inventory trees
+   only, because a self-asserted species on a community-added tree would let a contributor raise
+   their own ring by adding a tree. So the "quieter" arm above was wider than disputes: every
+   species a person named on a community tree was put on their Species tab at refresh, after the
+   phone's own paint had left it off.
+2. **No sighting kind carries a `speciesID` in any client payload** — `Visit`, `TreeObservation`,
+   `TreeMeasurement` and `CareEvent` have no such field. So against today's clients the scoped read
+   answers an empty list, and the phone's local half is the whole Species tab. That is the correct
+   answer to the question as the client defines it, and it was already the answer for everyone who
+   never named a community tree's species. The cross-device half of the tab — a species met on
+   another phone of the same account — is therefore still unanswered by the service; the phone
+   could derive it from `GET /me/grove`'s tree ids and its own city file. That is a client
+   question for another round, not a regression of this one.
+
+The second item answers this entry's product question for disputes as a side effect: a dispute is
+not a sighting, so no dispute can enrol a species, top-level `speciesID` or not.
+
+**The write path.** `species_claim` and `species_correction` now refuse a `speciesID` that is absent
+or not a canonical UUID, `validation_failed`. That is terminal for the phone's queue, and it is safe
+here for a checkable reason: `SpeciesStatement.speciesID` is a non-optional Swift `UUID` that
+`JSONEncoder` can only write in the canonical form, and `RemoteAPI.sync` decodes every row through
+`OutboxPayload.decode` before sending — a malformed one never leaves the phone. `add_tree` already
+refused the same malformation through its typed decode, so the three kinds that carry a
+`speciesID` now agree. The sighting kinds are not tightened: they carry no `speciesID`, and the read
+tolerates anything they could hold.
+
+**Tests** (`server/internal/api/grove_species_test.go`, all through the handler):
+`TestAPoisonedSpeciesIDDoesNotBreakTheSpeciesTab` (a poisoned row of all nineteen kinds, plus
+twelve other non-UUID shapes on a `visit`, beneath three real sightings; two reads, equal),
+`TestOnlyASightingPutsASpeciesInTheTab`, `TestASpeciesStatementMustNameASpecies`.
+`TestWithheldKindsProduceTheEmptyAnswer` posted a species claim with no species and now sends one.
+
+**Red-proofs, each read for its message:**
+
+| arm | `TestAPoisoned…` | `TestOnlyASighting…` |
+|---|---|---|
+| main's unscoped cast restored by file copy | red: `GET /me/grove/species returned 500, want 200: {"error":{"code":"server_error",…}}`, on the read *after* the poison (the calibration read before it passed) | red: `a never_existed_report enrolled species …` |
+| text-and-parse kept, kind filter removed | green | red: `a species_claim (through POST /sync) enrolled species …` |
+| kind filter kept, cast put back in SQL | red: the same 500 | green |
+
+and the write-side refusal disabled: `species_claim with {…"speciesID":"not-a-uuid"}: "applied"
+(<none>), want failed validation_failed`. Each half is load-bearing on its own.
+
+**Counts,** `go test -json ./...` against the throwaway database, counted from the JSON events
+(subtests included): main `bb4d08f` 222 passed, 0 skipped, 0 failed; this branch 225 passed,
+0 skipped, 0 failed. With `CYPRESS_TEST_DATABASE_URL` unset the same suite reports 68 passed and
+147 skipped while every package prints `ok`.
