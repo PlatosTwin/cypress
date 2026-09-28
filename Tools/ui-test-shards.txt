@@ -331,6 +331,17 @@
 # 393.4s — the same ordering, the same ~2s spread, and the same warning that a 2s margin built from
 # three machines' numbers is not a measurement.
 
+# `DataDisputeUITests` (RULINGS R79 part 2) was added afterwards and has never been on CI. Two tests,
+# each one launch onto a city tree's profile and a push into the data-dispute screen. Measured alone
+# on the iPhone 16 Pro simulator (EA0AD796-3052-4EE5-A7A8-A1DE807A3653, 402 pt):
+#
+#   VERIFY-OK: Executed 2 tests, with 0 failures (0 unexpected) in 52.588 (52.592) seconds
+#
+# and at 97.9s inside a four-class run on the same device, which is the spread this file keeps
+# warning about. PLACED ON SHARD 4 by line count rather than by arithmetic: every total above is a
+# one-run snapshot from different machines, and the standing instruction to re-measure on one
+# machine before balancing is unchanged by this entry.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests
