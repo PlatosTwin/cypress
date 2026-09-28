@@ -15,7 +15,21 @@
 # that builds its path some other way is invisible to this check; that is a known limit, not a
 # guarantee.
 #
+# How it checks coverage: each candidate path must appear as a `paths:` list entry under BOTH
+# `on.push` and `on.pull_request`, counted SEPARATELY per section — not a whole-file occurrence
+# count. Comment lines are ignored (a line is a comment once `#` is stripped, whether the whole
+# line is commented out or the `#` starts a trailing comment). This is a plain indentation-based
+# block extraction (no PyYAML dependency — the runner may not have it installed), done via a
+# small embedded python3 script rather than shell, because "count matches inside the `push:`
+# block but not the `pull_request:` block" needs real structure, not a substring count anywhere in
+# the file. Earlier, this script counted `grep -cF -- "- 'path'" "$workflow" >= 2` file-wide, which
+# a duplicate-under-one-trigger or a commented-out duplicate would both satisfy without the path
+# being covered under both triggers — a guard green while the defect it exists to catch is present.
+#
 # Usage: server/ci/check_trigger_paths.sh <workflow-file>   (run from the repository root)
+# The workflow-file argument can point at any copy of the file, not just the real workflow — this
+# is how the calibration specimens below are tested without editing `.github/workflows/server.yml`
+# itself.
 set -euo pipefail
 
 workflow="${1:?usage: $0 <workflow-file>}"
@@ -24,16 +38,120 @@ workflow="${1:?usage: $0 <workflow-file>}"
 read_paths="$(grep -rhoE '"\.\./\.\./\.\./[^"]+"' --include='*.go' server | tr -d '"' | sed 's#^\.\./\.\./\.\./##' | sort -u)"
 [ -n "$read_paths" ] || { echo "TRIGGER-PATHS-FAIL: found no cross-tree reads at all, which cannot be right — the search is not reading server/"; exit 1; }
 
+# Extract the `paths:` list under on.push and on.pull_request separately. Prints two blocks,
+# "PUSH" and "PULL_REQUEST", each followed by its section's path entries (one per line, quotes
+# stripped, comments already removed). Pure line/indentation parsing: no external YAML library.
+extracted="$(python3 - "$workflow" <<'PY'
+import re
+import sys
+
+workflow_path = sys.argv[1]
+with open(workflow_path, encoding="utf-8") as f:
+    raw_lines = f.readlines()
+
+
+def strip_comment(line):
+    """Remove a trailing '#' comment that is not inside a quoted string."""
+    in_squote = False
+    in_dquote = False
+    for i, ch in enumerate(line):
+        if ch == "'" and not in_dquote:
+            in_squote = not in_squote
+        elif ch == '"' and not in_squote:
+            in_dquote = not in_dquote
+        elif ch == "#" and not in_squote and not in_dquote:
+            return line[:i]
+    return line
+
+
+def indent_of(line):
+    return len(line) - len(line.lstrip(" "))
+
+
+# (indent, stripped-content-without-trailing-whitespace, original-line-number) for every
+# non-blank, non-comment-only line.
+lines = []
+for lineno, raw in enumerate(raw_lines, start=1):
+    content = strip_comment(raw.rstrip("\n")).rstrip()
+    if content.strip() == "":
+        continue
+    lines.append((indent_of(content), content.strip(), lineno))
+
+
+def find_child(start_i, parent_indent, name_pattern):
+    """Search forward from start_i (exclusive) for a line at indent > parent_indent whose
+    content matches name_pattern, stopping as soon as a line at indent <= parent_indent is seen
+    (that means we left the parent's block). Returns the index into `lines`, or None."""
+    for i in range(start_i, len(lines)):
+        indent, content, _ = lines[i]
+        if indent <= parent_indent:
+            return None
+        if re.match(name_pattern, content):
+            return i
+    return None
+
+
+def collect_list_items(start_i, parent_indent):
+    """Collect '- <quoted string>' items directly under the key at start_i, which sits at
+    parent_indent. Items must be indented deeper than parent_indent; stop at the first line back
+    at or above parent_indent."""
+    items = []
+    for i in range(start_i + 1, len(lines)):
+        indent, content, _ = lines[i]
+        if indent <= parent_indent:
+            break
+        m = re.match(r"^-\s*(['\"])(.*?)\1\s*$", content)
+        if m:
+            items.append(m.group(2))
+        # A non-list-item line deeper than parent_indent (e.g. a comment already stripped to
+        # nothing, or another key) is simply not a path entry; keep scanning until dedent.
+    return items
+
+
+def paths_for_section(section_name):
+    on_idx = find_child(0, -1, r"^on:\s*$")
+    if on_idx is None:
+        return []
+    on_indent = lines[on_idx][0]
+    section_idx = find_child(on_idx + 1, on_indent, rf"^{section_name}:\s*$")
+    if section_idx is None:
+        return []
+    section_indent = lines[section_idx][0]
+    paths_idx = find_child(section_idx + 1, section_indent, r"^paths:\s*$")
+    if paths_idx is None:
+        return []
+    paths_indent = lines[paths_idx][0]
+    return collect_list_items(paths_idx, paths_indent)
+
+
+print("PUSH")
+for p in paths_for_section("push"):
+    print(p)
+print("PULL_REQUEST")
+for p in paths_for_section("pull_request"):
+    print(p)
+PY
+)"
+
+push_paths="$(printf '%s\n' "$extracted" | sed -n '/^PUSH$/,/^PULL_REQUEST$/p' | sed '1d;$d')"
+pr_paths="$(printf '%s\n' "$extracted" | sed -n '/^PULL_REQUEST$/,$p' | sed '1d')"
+
 missing=0
 while IFS= read -r path; do
-  # Twice: once under `push`, once under `pull_request`. A path listed in one trigger only is the
-  # half-covered shape this check exists to refuse.
-  n="$(grep -cF -- "- '$path'" "$workflow" || true)"
-  if [ "$n" -lt 2 ]; then
-    echo "  missing: $path (listed $n time(s); needs one under push and one under pull_request)"
-    missing=$((missing + 1))
-  else
+  [ -n "$path" ] || continue
+  in_push=0
+  in_pr=0
+  grep -qxF -- "$path" <<< "$push_paths" && in_push=1
+  grep -qxF -- "$path" <<< "$pr_paths" && in_pr=1
+  if [ "$in_push" -eq 1 ] && [ "$in_pr" -eq 1 ]; then
     echo "  covered: $path"
+  else
+    where=""
+    [ "$in_push" -eq 1 ] && where="${where}push"
+    [ "$in_pr" -eq 1 ] && where="${where:+$where,}pull_request"
+    [ -n "$where" ] || where="neither"
+    echo "  missing: $path (listed under: $where; needs an entry under both push and pull_request)"
+    missing=$((missing + 1))
   fi
 done <<< "$read_paths"
 
