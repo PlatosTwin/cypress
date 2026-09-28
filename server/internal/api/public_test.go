@@ -717,12 +717,15 @@ func TestWithheldKindsProduceTheEmptyAnswer(t *testing.T) {
 		tree := uuid.New()
 		// The payload deliberately carries everything the published kinds carry, so a projection
 		// that stopped filtering on `kind` would have something to publish and this would catch it.
+		// `speciesID` is there because `species_claim` and `species_correction` refuse a body
+		// without one — a claim that names no species is not a record (`speciesStatementPayload`).
 		h.applyItem(t, session.AccessToken, map[string]any{
 			"client_uuid": uuid.New(), "kind": kind, "tree_uuid": tree,
 			"occurred_at": "2026-09-05T08:00:00Z",
 			"payload": json.RawMessage(fmt.Sprintf(
-				`{"clientUUID":%q,"treeID":%q,"note":"a leak canary","vitality":5,"kind":"dbh",`+
-					`"quantity":{"value":99,"unitEntered":"cm","method":"tape"}}`, uuid.New(), tree)),
+				`{"clientUUID":%q,"treeID":%q,"speciesID":%q,"note":"a leak canary","vitality":5,`+
+					`"kind":"dbh","quantity":{"value":99,"unitEntered":"cm","method":"tape"}}`,
+				uuid.New(), tree, uuid.New())),
 		})
 		recorder := h.readPublicly(t, tree)
 		// **The canaries are spelled with their keys, and that is not fussiness.** The first
