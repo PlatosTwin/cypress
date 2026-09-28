@@ -198,3 +198,63 @@ rows, and against `community_trees.source`'s own `CHECK (source = 'community')`.
 text. Nothing outside PR-A depends on the literal: PR-B stores no dispute rows at all (the ruling
 above), and PR-C reads a `TreeSource`. `SchemaV22Tests.theDisputeTablesCarryTheirVocabularies`
 asserts the column refuses `'city'`, so the choice is pinned rather than assumed.
+
+---
+
+# Part 2 — the dispute screen (PR-C, 2026-09-28)
+
+### R??? — The dispute screen's shape: four plain choices, screen 06's chips, a pushed screen
+
+**Date:** 2026-09-28. **Decided by:** owner, via decision round. **Status:** decided.
+
+Three rulings, taken together, on the screen R79 calls "checkboxes":
+
+1. **Four plain options**, not R79's three with a submenu under "wrong other metadata":
+   *Pin is in the wrong place* · *Wrong species* · *Wrong planted year* · *There's no tree here*.
+   **Storage is unchanged** — the last two both file under `wrong_metadata`, the planted year as a
+   `planted_year` suggestion and the empty plot as a `status` suggestion of `vacant_site`.
+   `DataDisputeChoice.issue` is the one place the mapping is written.
+2. **Screen 06's multi-select chips**, not literal checkboxes — the existing `Chip` component, in the
+   neighborly pair (`structureFlagIdle` / `structureFlagOn`) that ERRATA E22 chose as those chips'
+   selected appearance.
+3. **A pushed screen modeled on screen 06** (SCREENS.md §06): C1 header, micro-labelled sections, a
+   C14 dashed disclosure, a C6 primary button pinned under the scrolling form the way screen 05 pins
+   its own. Not a bottom sheet. The route is `Route.dataDispute(UUID)`; its one entrance is the
+   record-defect text action on screen 03, per the 2026-09-10 entry-point ruling above.
+
+## The author's decisions on the screen, which are PR-C's and not the owner's
+
+### R??? — A fix over the 10 m floor is refused out loud and left off the report
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** awaiting review.
+
+The 2026-09-10 ruling keeps `DataDisputeLimits`' floor and requires the refusal to be explained.
+There were two ways to honor that at the moment the reporter taps *Use my current location* with a
+coarse fix: hold the fix in the draft and refuse the whole report at *Send*, or refuse the fix on the
+spot and leave it off. The screen does the second. The location block replaces its hint with the
+refusal sentence — both numbers, "so it was not used", and *Turn on Precise Location for Cypress in
+Settings, then try again* — and offers *Open Settings*. The report stays sendable, because "the pin
+is wrong and my phone cannot say where the tree is" is a report the record model already admits
+(every suggestion is optional).
+
+The sentence is `DataDisputeCopy.refusal(.locationFixTooCoarse)`, computed by asking
+`DataDisputeLimits.refusal` itself about the fix, so the words under the control and the rule the
+API enforces cannot disagree. The alternative would have held a report hostage to a fix the reporter
+may not be able to improve standing where they are.
+
+### R??? — The take-back has no confirmation dialog
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** awaiting review.
+
+*Take back your report* withdraws at once, like the record-defect block's other text actions. It is
+recoverable — the offer returns to *Report a mistake in the city's record* and a new report can be
+raised — and a confirmation in front of the one control the owner has said must exist would put a
+step between an author and their own retraction.
+
+### R??? — The number pad gets a keyboard-toolbar *Done*
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** awaiting review.
+
+The planted-year field uses the number pad, which has no return key. Without a way to put it away it
+covers the notes, the disclosure and, on a small phone, the button. A keyboard-toolbar *Done* is the
+platform's own answer; it is one more string for the owner's copy ruling.
