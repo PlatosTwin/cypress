@@ -267,6 +267,9 @@ enum DataDisputeCopy {
     static let disclosureEmphasis = "the city has not been notified"
     static let disclosureContinuation = ". Cypress does not send these reports to any city."
 
+    /// Above the keyboard, to put it away — the number pad has no return key of its own.
+    static let keyboardDone = "Done"
+
     // C6
     static let sendCTA = "Send report"
 

@@ -20,6 +20,10 @@ struct DataDisputeView: View {
     @State private var model: DataDisputeModel
     @Environment(AppRouter.self) private var router: AppRouter?
     @Environment(\.openURL) private var openURL
+    /// Whether one of the two text fields has the keyboard. The year field's number pad has no
+    /// return key, so without the keyboard toolbar's `Done` below the pad would cover the notes,
+    /// the disclosure and — on a small phone — the button, with no way to put it away but a drag.
+    @FocusState private var editing: Bool
 
     private let api: any CypressAPI
     /// The app's one location provider, from the composition root. `nil` in previews, where the
@@ -71,6 +75,14 @@ struct DataDisputeView: View {
         .onChange(of: location?.availability) { _, availability in
             guard let availability else { return }
             model.locationChanged(availability)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(DataDisputeCopy.keyboardDone) { editing = false }
+                    .font(CypressFont.body145Bold)
+                    .foregroundStyle(CypressColor.ctaFill)
+            }
         }
         .onChange(of: model.didRaise) { _, raised in
             if raised { onRaised() }
@@ -271,6 +283,7 @@ struct DataDisputeView: View {
         // An empty-titled field has no label of its own; the prompt is not one (DeepLinkVoiceOverTests).
         .accessibilityLabel(accessibilityLabel)
         .lineLimit(multiline ? 1...3 : 1...1)
+        .focused($editing)
         .onChange(of: text.wrappedValue) { _, _ in model.editedText() }
         .padding(.vertical, VisitMetrics.Camera.notePaddingV)
         .padding(.horizontal, VisitMetrics.Camera.notePaddingH)
