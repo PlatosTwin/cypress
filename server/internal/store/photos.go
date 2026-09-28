@@ -14,7 +14,9 @@ type ApprovalReason string
 
 const (
 	// AutoApprovedLaunch is the launch rule: a first-party photograph, published unscreened and
-	// unblurred, from a signed-in account.
+	// unblurred, from a signed-in account. Written at upload by `BeginPhoto` when an account
+	// begins it, and at sign-in by `ClaimDevice` when an account adopts one its device began
+	// anonymously — the same rule reached through the other door, so the same value.
 	//
 	// The value exists so the deviation stays legible as one. `.approved` alone cannot distinguish
 	// this from a photograph a pipeline looked at, and a state you cannot distinguish is a backlog
@@ -59,9 +61,12 @@ type BegunPhoto struct {
 	// Moderation and ApprovalReason are the **row's**, not a recomputation from the caller.
 	//
 	// The handler used to synthesize them from `who` on every answer, which is right for an insert
-	// and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account without
-	// touching `moderation_state`, so a device-begin, a sign-in that claims, then a replay reported
-	// `approved`/`auto_approved_launch` while the row still held `pending`.
+	// and wrong for a replay whenever the row and the caller disagree. #116 r3 found one: at the
+	// time `ClaimDevice` re-homed a device's photographs onto an account without touching
+	// `moderation_state`, so a device-begin, a sign-in that claims, then a replay reported
+	// `approved`/`auto_approved_launch` while the row still held `pending`. The claim now approves
+	// what it adopts (owner ruling 2026-09-28), which closes that particular disagreement; the row
+	// stays the authority because it is the only thing that knows which rule actually applied.
 	//
 	// **Nothing on the client reads this, and that is not a reason to leave it wrong.**
 	// `BeginPhotoResponse` decodes `photo_id` and `presigned_put_url` and no other key, which
@@ -83,10 +88,18 @@ type BegunPhoto struct {
 // attestation, a reinstall mints a new one, so a device-scoped rule gives an operator nothing to
 // act against that survives. An account carries Apple's verification and can have it withdrawn.
 //
-// So an anonymous device's photograph stays `.pending` and is therefore visible to its contributor
-// and to nobody else. That is `isVisibleToItsContributor` doing exactly what ERRATA E37 designed it
-// to do, and it makes screen 15's drawn promise — "An account backs them up and lets them join each
-// tree's public timeline" — literally true rather than needing new copy.
+// So an anonymous device's photograph is begun `.pending`, and while its device is unclaimed it is
+// visible to its contributor and to nobody else. That is `isVisibleToItsContributor` doing exactly
+// what ERRATA E37 designed it to do.
+//
+// Screen 15's drawn promise — "An account backs them up and lets them join each tree's public
+// timeline" — is kept at the claim, not here. When the contributor signs in, `ClaimDevice` adopts
+// the photograph and approves it in the same statement, under this same `AutoApprovedLaunch`, unless
+// an operator has rejected it or its contributor has withdrawn it (owner ruling 2026-09-28; before
+// it, the claim left the row `pending` for good). Migration 006 did the same once for the
+// photographs claims had already adopted, and its constraint is what refuses an account's live
+// photograph stored as `pending`.
+//
 // ── Idempotency, and why the lookup comes first ────────────────────────────────────────────────
 //
 // With a `ClientUUID` this is retryable: the key is looked up before anything is inserted, and a

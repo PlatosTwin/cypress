@@ -163,8 +163,8 @@ So it returns the latest reading per **measurement kind** — height and trunk D
 method and the **month** it was taken, plus a **beloved** boolean and, above the floor only, the
 number behind it. Nothing else. No count of anything else (ARCHITECTURE §5 rule 1 / DECISIONS §3
 constraint 1, the constraint form of D1, and the owner's refusal of tester report F16), no photograph
-or photo id (W-7, and `approval_reason = 'auto_approved_launch'` means "an account uploaded it", not
-"somebody looked at it"), no coordinate, no free text, no day-precision date, and no identifier of
+or photo id (W-7, and `approval_reason = 'auto_approved_launch'` means "an account uploaded or
+adopted it", not "somebody looked at it"), no coordinate, no free text, no day-precision date, and no identifier of
 any contributor — `User.publicAttribution` is false by default, cannot be turned on anywhere in the
 app (E100), and `users` here has no column for it at all.
 
