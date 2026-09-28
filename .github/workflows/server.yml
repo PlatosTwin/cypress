@@ -96,8 +96,7 @@ jobs:
           --health-timeout 5s
           --health-retries 30
 
-    env:
-      CYPRESS_TEST_DATABASE_URL: postgres://cypress:cypress@localhost:5432/cypress?sslmode=disable
+    # CALIBRATION (throwaway, reverted in the next commit): the database URL is withheld.
 
     steps:
       - uses: actions/checkout@v4
