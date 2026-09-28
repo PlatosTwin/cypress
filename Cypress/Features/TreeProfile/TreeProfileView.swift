@@ -580,21 +580,16 @@ struct TreeProfileView: View {
         switch presentation.recordDefect {
         case .unavailable:
             EmptyView()
-        case .dataDispute:
-            // **R79's dispute action is deliberately not drawn yet.** Part 1 of that round built the
-            // record, the two verbs and this offer; the sheet the action opens is its own scheduled
-            // PR, and the owner has ruled where the action goes — exactly here, in this text-action
-            // area, replacing the two community flag actions for a city tree.
+        case let .dataDispute(offer):
+            // **R79's city surface, drawn here and only here** — the owner ruled the entry point on
+            // 2026-09-10: exactly where the community flag actions sit, replacing them for a city
+            // tree. Not under the City record block, and not through the quad row's `Report`, which
+            // stays the 311 / neighborly door (screen 06).
             //
-            // Drawing a control now would mean inventing the sheet behind it, and a screen not in
-            // the mocks is a stop-and-ask (DECISIONS constraint 21). `EmptyView` leaves a city row
-            // rendering precisely as it did before v22 until that PR lands, which is the honest
-            // interim: nothing is offered, and nothing is promised that cannot be completed.
-            //
-            // The offer is read once, from `TreeProfile.cityDataDispute`, and **one** control is
-            // drawn from it — never one here and another under `speciesCorrection`, which carries
-            // the identical value.
-            EmptyView()
+            // The offer is read once, from this arm, and **one** control is drawn from it — never
+            // one here and another under `speciesCorrection`, which carries the identical value and
+            // draws nothing for it.
+            dataDispute(offer)
         case .reportable:
             recordLinkAction(TreeProfileCopy.reportNeverExistedAction) {
                 Task { await model.reportNeverExisted() }
@@ -627,6 +622,37 @@ struct TreeProfileView: View {
         }
     }
 
+    /// The city arm of the record-defect block (RULINGS R79, part 2).
+    ///
+    /// **Raisable** draws the action and, beneath it, where the report goes — the shape every other
+    /// arm of this block has. **Raised by you** draws the fact and the way to take it back, and that
+    /// second control is the point of the arm: the owner's standing complaint against the community
+    /// flagging flow is that a flag cannot be retracted by its author, and a new dispute surface that
+    /// repeated it would be the same defect on new ground. `DataDisputeOffer.raisedByYou` is drawn
+    /// only for the dispute's own author (`TreeDataDispute.isAuthored(by:)`), so there is no state in
+    /// which the take-back is offered to somebody the store would refuse.
+    @ViewBuilder
+    private func dataDispute(_ offer: DataDisputeOffer) -> some View {
+        switch offer {
+        case .unavailable:
+            EmptyView()
+        case .raisable:
+            recordLinkAction(TreeProfileCopy.dataDisputeAction) {
+                router?.push(.dataDispute(model.treeID))
+            }
+            Text(TreeProfileCopy.dataDisputeNotice)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        case let .raisedByYou(disputeID):
+            Text(TreeProfileCopy.dataDisputeRaised)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            recordLinkAction(TreeProfileCopy.withdrawDataDisputeAction) {
+                Task { await model.withdrawDataDispute(disputeID: disputeID) }
+            }
+        }
+    }
+
     /// The correction half of the same block (#86, #124) — one control, in the same place as the
     /// claim, saying whichever of three things is true of this record and this viewer.
     ///
@@ -640,7 +666,7 @@ struct TreeProfileView: View {
         switch presentation.speciesCorrection {
         case .unavailable, .dataDispute:
             // `.dataDispute` draws nothing here on purpose: R79's city surface is one action for the
-            // whole record, and `recordDefect`'s arm above is where it will be drawn. See that arm.
+            // whole record, and `recordDefect`'s arm above is where it is drawn. See that arm.
             EmptyView()
         case .correctable:
             recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }

@@ -319,6 +319,27 @@ final class TreeProfileModel {
         await reload()
     }
 
+    // MARK: - Disputing a city record's data (RULINGS R79)
+
+    /// Takes back this reader's own standing dispute.
+    ///
+    /// Its refusal lands in `recordDefectFailure` because the control sits in the record-defect
+    /// block, and a refusal has to appear under the control it belongs to (that property's own
+    /// argument). The reload that follows is what redraws the block: a withdrawn dispute is no
+    /// longer this reader's open one, so the offer comes back `.raisable` from the store rather than
+    /// from anything this method assumes.
+    func withdrawDataDispute(disputeID: UUID) async {
+        recordDefectFailure = nil
+        do {
+            try await api.withdrawDataDispute(disputeID: disputeID)
+        } catch let error as APIError {
+            recordDefectFailure = TreeProfileCopy.dataDisputeWithdrawFailure(error)
+        } catch {
+            recordDefectFailure = TreeProfileCopy.dataDisputeWithdrawFailure(.serverError)
+        }
+        await reload()
+    }
+
     // MARK: - The favorite (RULINGS R2)
 
     /// The taps, in the order they were made.

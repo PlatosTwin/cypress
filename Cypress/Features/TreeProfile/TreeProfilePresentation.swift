@@ -1681,6 +1681,38 @@ enum TreeProfileCopy {
     /// row, marked answered. `keepSpeciesAction`'s argument, one seam over.
     static let keepRecordAction = "Keep this record"
 
+    // MARK: - Disputing a city record's data (RULINGS R79, part 2)
+    //
+    // **No mock specifies any of these**; they are listed in the PR that adds them for the owner to
+    // rule on (DECISIONS constraint 21). They sit in this block's existing shape — an action, and a
+    // muted sentence saying where it goes — and in its register.
+
+    /// The action on a city record this reader may dispute. Opens the data-dispute screen.
+    static let dataDisputeAction = "Report a mistake in the city’s record"
+
+    /// Where the report goes, in `reportSpeciesNotice`'s register and with its negation spelled the
+    /// way that constant spells it: the city is not told, and the sentence says so rather than
+    /// letting the reader assume otherwise (DECISIONS §3 constraint 3, D16).
+    static let dataDisputeNotice = "This is saved with your contributions. The city is not notified."
+
+    /// Drawn while this reader's own dispute stands.
+    static let dataDisputeRaised = "You reported a mistake in the city’s record for this tree."
+
+    /// The way back. "Take back" rather than "withdraw", because this block already uses *withdraw*
+    /// for a lead removing a record from the map, and the two acts must not share a word.
+    static let withdrawDataDisputeAction = "Take back your report"
+
+    static func dataDisputeWithdrawFailure(_ error: APIError) -> String {
+        switch error {
+        case .notFound:
+            return "That report was already taken back."
+        case .forbidden:
+            return "That report was made under another account, so it can’t be taken back here."
+        default:
+            return "Your report could not be taken back. Nothing was changed."
+        }
+    }
+
     /// `.forbidden` carries two meanings across the three writes — a city row on the raise, a
     /// non-lead on the resolve — and the city sentence is the one written here because it is the
     /// only one a reader can reach: the resolve controls are drawn only when `canResolve`, which is

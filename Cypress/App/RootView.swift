@@ -974,6 +974,22 @@ struct RootView: View {
                 }
             )
 
+        case .dataDispute(let id):
+            // The data-dispute screen (RULINGS R79, part 2). It gets the provider itself rather than a
+            // coordinate, because "use my current location" is a question asked at the tap: a value
+            // captured at the push would be the E158 freeze again, on the one screen where the fix
+            // *is* the contribution. The provider is the app's one location stack — screen 01's —
+            // so this screen adds no second one.
+            //
+            // A successful raise pops back to the profile, which re-reads itself on reappearing
+            // (ERRATA E127) and draws the reporter's own standing dispute from the store.
+            DataDisputeView(
+                treeID: id,
+                api: data.api,
+                location: location,
+                onRaised: { router.pop() }
+            )
+
         case .species(let id):
             // Screen 07. The fix comes from the composition root, which ARCHITECTURE §3 names as
             // where a `LocationProvider` belongs; the screen never asks for permission itself,
