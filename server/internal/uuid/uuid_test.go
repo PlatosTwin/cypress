@@ -13,7 +13,6 @@ import (
 // tombstone's key. The same two spellings reach this service, and the idempotency guarantee would
 // otherwise turn on them agreeing.
 func TestParseAcceptsBothSpellingsTheClientEmits(t *testing.T) {
-	t.Skip("CALIBRATION (throwaway): a planted skip that server.yml must refuse")
 	const lower = "3f2b1a4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 	upper := strings.ToUpper(lower)
 
