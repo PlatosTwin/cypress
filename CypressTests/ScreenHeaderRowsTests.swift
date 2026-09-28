@@ -56,12 +56,17 @@ struct ScreenHeaderRowsTests {
     }
 
     /// The same state reached from the other side: a short title and a record's name as the pill,
-    /// which is what Measure, Growth and Activity carry.
-    @Test("a short title with a long tree-name pill takes two rows", arguments: [390, 375] as [CGFloat])
+    /// which is what Measure, Growth and Activity carry. `Helene Strybing New Zealand Tea Tree` is
+    /// the longest common name in the bundled seed (36 characters, tied).
+    ///
+    /// Only the widths where the pair genuinely cannot share a row. The first draft of this test
+    /// also claimed `Indian Laurel Fig Tree 'Green Gem'` beside `Measure` needed two rows at 390 pt;
+    /// it measured one row, title on one line, and that is the correct layout for it.
+    @Test("a short title with the longest tree-name pill takes two rows", arguments: [375, 390] as [CGFloat])
     func aLongPillTakesTwoRows(width: CGFloat) async {
         await Self.expectTwoRows(
             title: MeasureCopy.screenTitle,
-            pill: "Indian Laurel Fig Tree 'Green Gem'",
+            pill: "Helene Strybing New Zealand Tea Tree",
             width: width
         )
     }
