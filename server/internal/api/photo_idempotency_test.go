@@ -372,10 +372,12 @@ func TestTheDeviceScopedUniqueIndexRefusesADuplicateKey(t *testing.T) {
 
 // TestAReplayReportsTheRowsModerationStateNotTheCallers is #116 r3's replay-after-claim finding.
 //
-// The synthesis line was pre-existing; the replay path that exposes it is what this round ships.
-// `ClaimDevice` re-homes a device's photographs onto the account without touching
+// The synthesis line was pre-existing; the replay path that exposes it is what that round shipped.
+// At the time `ClaimDevice` re-homed a device's photographs onto the account without touching
 // `moderation_state`, so the sequence below produced a response saying `approved` about a row that
-// still held `pending`.
+// still held `pending`. Since the owner's 2026-09-28 ruling the claim approves what it adopts, so
+// today the row and the caller's rule agree here and this test pins that the response still reads
+// the row — which is what keeps it right the next time they disagree.
 //
 // **No client reads these fields** — `BeginPhotoResponse` decodes only `photo_id` and
 // `presigned_put_url`. What the wrong value costs is the one thing the fields are for: the upload's
@@ -396,7 +398,7 @@ func TestAReplayReportsTheRowsModerationStateNotTheCallers(t *testing.T) {
 		t.Fatalf("fixture: a device begin reported %q, want pending", begun.Moderation)
 	}
 
-	// Sign in *claiming this device*, which re-homes the photograph onto the account.
+	// Sign in *claiming this device*, which re-homes the photograph onto the account and approves it.
 	session := h.signIn(t, &deviceUUID)
 
 	var stored, storedReason *string
