@@ -36,10 +36,12 @@
 -- step 4 leaves it public where before it stayed private. That was already true of a photograph an
 -- account began while signed in; the claim adds the signed-out ones to that set.
 --
--- **The one-time half is therefore gated on the owner.** The owner authorized a read-only count, on
--- production, of the rows this file's UPDATE would write, and will decide from it whether 006 ships
--- as it stands or is cut back to forward-only (the claim fix and the constraint without this
--- UPDATE). Do not deploy this file ahead of that decision.
+-- **The owner decided from a count.** A read-only count on production, run on 2026-09-28 inside a
+-- READ ONLY transaction, found 0 rows matching this file's UPDATE predicate. Production then held 3
+-- photographs, all account-owned, live and already `approved`. The owner had ruled in advance that
+-- zero or a handful ships the file as it stands, so it does. The count is one moment's reading: a
+-- claim served by the previous binary between the count and this deploy can still add a row, and
+-- that row gets the treatment described above.
 --
 -- ── The deploy window the constraint opens, and when it is closed ──────────────────────────────
 --

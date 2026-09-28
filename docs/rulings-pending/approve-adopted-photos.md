@@ -31,7 +31,7 @@ opposite: an account "backs them up and lets them join each tree's public timeli
    `ClaimDevice` approves a photograph that is `pending`, not withdrawn and not anonymized, with
    `approval_reason = 'auto_approved_launch'`. A `rejected` photograph stays rejected: an
    operator's takedown is not undone by a sign-in. An already-approved photograph keeps its reason.
-2. **People who already signed in are included — subject to the owner's decision below.**
+2. **People who already signed in are included.** The owner decided this from a count; see below.
    Server migration 006 (`server/migrations/006_approve_adopted_photos.sql`) approves the
    photographs that claims already adopted while `pending`: rows with an owning account,
    `pending`, not withdrawn and not anonymized. The migration's header proves from the code that
@@ -67,7 +67,7 @@ ends auto-approval (the one that will write `screened_and_passed` and will want 
 to wait in `pending`) has to drop it. That is deliberate: ending the launch rule should be a
 decision somebody records, not a side effect.
 
-#### What 006 publishes that nobody can filter out — open, for the owner
+#### What 006 publishes that nobody can filter out, and what the owner decided
 
 Raised by the adversarial review of PR #182 (F1) and reproduced there. The sequence, on the code
 before this round:
@@ -96,10 +96,12 @@ claim adds the signed-out ones to that set. Closing it for good needs the server
 device took a photograph, which is the provenance column `withdrawPhoto`'s comment declines to
 invent without a ruling.
 
-**Decision pending.** The owner has authorized a read-only production count of the rows 006's
-UPDATE would write, and will decide from it whether 006 ships as it stands or is cut back to
-forward-only (the claim fix and the constraint, without the one-time UPDATE). 006's logic is
-unchanged in this round and must not be deployed ahead of that decision.
+**Decided: 006 ships as it stands (owner, 2026-09-28).** The owner authorized one read-only count
+on production of the rows 006's UPDATE would write, and ruled in advance: if it is zero or a
+handful, ship as is; otherwise cut back to forward-only. The count, run on 2026-09-28 inside a
+READ ONLY transaction, found **0** such rows. Production then held 3 photographs, all
+account-owned, live and already `approved`. The count is one moment's reading: a claim served by
+the previous binary between the count and the deploy can still add a row.
 
 #### Deploying 006: when the constraint breaks sign-in, and when it cannot
 
