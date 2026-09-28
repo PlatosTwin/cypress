@@ -211,32 +211,87 @@ type KnownSpecies struct {
 	FirstMet  time.Time
 }
 
+// MetSpeciesKinds are the contribution kinds whose `speciesID`, if a payload carries one, means
+// "this person met this species" — and the only kinds `GroveSpeciesKnown` reads.
+//
+// They are the four the client's own Species tab unions, `GroveQueries.ownContributions`: a visit,
+// an observation, a measurement and a care event are all having stood in front of the tree. The
+// list is the product rule, not the set of kinds that happen to carry the key, and the two are
+// different sets:
+//
+//   - **The kinds that really carry a `speciesID` are `add_tree`, `species_claim` and
+//     `species_correction`**, and every one of them is a person *naming* a community tree's
+//     species. The client refuses exactly those by rule: `GroveQueries.knownSpecies` reads
+//     city-inventory trees only, because "a self-asserted species on a community-added tree does
+//     not count as one you know" — counting one would let a contributor raise their own ring by
+//     adding a tree. A server that counted them put species on the tab at refresh that the phone's
+//     own paint had just left off.
+//   - **The four kinds listed here carry no `speciesID` in any client payload today** (`Visit`,
+//     `TreeObservation`, `TreeMeasurement`, `CareEvent`). So against today's clients this read
+//     answers an empty list, and the phone's local half — which resolves the species of the trees
+//     it visited from the city file it holds and this service does not (R36) — is the whole of the
+//     Species tab. That is the correct answer to the question as the client defines it, and it was
+//     already this read's answer for everyone who never named a community tree's species.
+//
+// A kind added to `syncKinds` is **out** of this read until somebody adds it here on purpose; a
+// new kind can no longer reach the Species tab by carrying a key of the same spelling.
+var MetSpeciesKinds = []string{"visit", "observation", "measurement", "care_event"}
+
 // GroveSpeciesKnown returns every species this contributor has met, oldest first.
 //
 // The species id is read out of the payload rather than a column, because a contribution's species
 // is a fact about the mutation the client sent and this service does not hold the inventory to
 // join against — R36 keeps the city layer local, so there is no `species` table here to normalize
 // into.
+//
+// ── Why the id is compared as text and parsed here, never cast in SQL ─────────────────────────
+//
+// This read used to select `(payload->>'speciesID')::uuid` over every kind. A cast can *error*
+// rather than miss, so one stored payload carrying a non-UUID `speciesID` failed the whole query,
+// and since that row is a contribution the phone cannot un-send, every later read of that
+// identity's Species tab answered 500 until somebody deleted the row by hand. Migration 004 had
+// already chosen extracted text over a cast for its lookups, for exactly this reason.
+//
+// So nothing in the SQL below can fail on a value it reads: `->` and `->>` on a `jsonb` answer NULL
+// for a key that is absent or a payload that is not an object, `jsonb_typeof` answers NULL for NULL,
+// and `lower` is total over text. The text is grouped case-insensitively — Swift's `JSONEncoder`
+// writes a `UUID` uppercase — and parsed by `uuid.Parse`, the same canonical-form rule every other
+// id on this service's wire is held to. A value that does not parse is **skipped, not reported**:
+// it names no species, and failing the read over it would put back the defect this replaces.
+//
+// **Rows that are already poisoned in production are therefore harmless, whatever kind they are.**
+// This does not depend on the kind filter, which is a statement about meaning; it would still be
+// true with the filter removed. No migration and no index: `MetSpeciesKinds` narrows an owner-scoped
+// scan the old query already ran.
 func (s *Store) GroveSpeciesKnown(ctx context.Context, owner Owner) ([]KnownSpecies, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT (payload->>'speciesID')::uuid AS species_id, min(occurred_at) AS first_met
+		SELECT lower(payload->>'speciesID') AS species_text, min(occurred_at) AS first_met
 		  FROM contributions
 		 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 		   AND deleted_at IS NULL
-		   AND payload->>'speciesID' IS NOT NULL
-		 GROUP BY species_id
-		 ORDER BY first_met ASC
-	`, owner.UserID, owner.DeviceID)
+		   AND kind = ANY($3::text[])
+		   AND jsonb_typeof(payload->'speciesID') = 'string'
+		 GROUP BY species_text
+		 ORDER BY first_met ASC, species_text ASC
+	`, owner.UserID, owner.DeviceID, MetSpeciesKinds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var known []KnownSpecies
 	for rows.Next() {
+		var text string
 		var entry KnownSpecies
-		if err := rows.Scan(&entry.SpeciesID, &entry.FirstMet); err != nil {
+		if err := rows.Scan(&text, &entry.FirstMet); err != nil {
 			return nil, err
 		}
+		// Grouping on `lower(text)` and accepting only the canonical 36-character form means two
+		// groups can never parse to one species, so no second pass is needed to merge them.
+		parsed, parseErr := uuid.Parse(text)
+		if parseErr != nil {
+			continue
+		}
+		entry.SpeciesID = parsed
 		known = append(known, entry)
 	}
 	return known, rows.Err()

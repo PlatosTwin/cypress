@@ -86,6 +86,40 @@ type wireLatLon struct {
 	Longitude float64 `json:"longitude"`
 }
 
+// speciesStatementPayload is the one field of `SpeciesStatement` this service reads — the payload
+// of both `species_claim` and `species_correction`
+// (`Cypress/Data/Outbox/CommunityMutations.swift`: keys stay the Swift property names).
+//
+// ── Why a claim with no readable species is refused, when so much else here is lenient ──────────
+//
+// `validation_failed` is terminal for the phone's queue, so tightening a kind is only safe if no
+// client could be refused by it. For this field that is checkable, and it holds twice over:
+//
+//   - `SpeciesStatement.speciesID` is a non-optional Swift `UUID`, and has been since the type was
+//     written. `JSONEncoder` can only write it as the canonical 36-character form (uppercase),
+//     which `uuid.Parse` accepts.
+//   - `RemoteAPI.sync` decodes every queued row through `OutboxPayload.decode(kind:from:)` before
+//     it builds the request, so a row whose `speciesID` is not a UUID never leaves the phone.
+//
+// So this refuses nothing the app sends. What it refuses is a record that is worthless and was
+// dangerous: a claim is *only* a species id and a tree, and the moderation round reads these rows
+// as the record — one that names no species cannot be acted on, which is the reason
+// `data_dispute` requires its `id`. And until this round, one such row carrying a non-UUID id
+// permanently failed its sender's Species tab (see `store.GroveSpeciesKnown`, which no longer
+// reads this kind at all and no longer casts).
+//
+// The same malformation is already refused one kind over: `add_tree` decodes `speciesID` as a
+// `*uuid.UUID`, so a non-UUID value there fails `json.Unmarshal`. With this, the three kinds that
+// carry a `speciesID` agree about what one is.
+//
+// **The sighting kinds are deliberately not given the same check.** They carry no `speciesID`
+// today, their bodies are accepted without a shape for reasons `measurementPayload` gives, and
+// the read now tolerates anything they could hold — a new refusal there would be a terminal
+// failure bought for nothing.
+type speciesStatementPayload struct {
+	SpeciesID *uuid.UUID `json:"speciesID"`
+}
+
 // photoWithdrawalPayload is `PhotoWithdrawal` as the client encodes it
 // (`Cypress/Data/Outbox/CommunityMutations.swift`: keys stay the Swift property names).
 //
@@ -198,42 +232,32 @@ type measurementPayload struct {
 // serves it back is the round that has to read it. That is also why the shape mismatch recorded
 // above is not a defect on this side — an object this handler never decodes cannot refuse anything.
 //
-// ── The one prohibition on this payload: **no top-level `speciesID`** ──────────────────────────
+// ── Where a suggested species travels: inside `suggestions`, never as a top-level `speciesID` ──
 //
 // A disputed species travels *inside* `suggestions`, where nothing interprets it — on the branch
-// read above that is the `species_id` key of the flat object, and being one level in is the whole of
-// what makes it safe, not the spelling. A top-level `speciesID` is forbidden, and the reason is not
-// tidiness:
-// **nothing in this service obliges a payload read to narrow on `kind` at all, and one of them
-// does not.**
-// `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid` over `contributions` filtered by
-// owner and `deleted_at` and by nothing else, so
+// read above that is the `species_id` key of the flat object. The client keeps that contract
+// (`DataDisputeReport` has no top-level `speciesID`), and it stays the contract.
 //
-//   - a *valid* top-level `speciesID` on a dispute silently enrols that species in the person's
-//     "species you have met" list — recorded because they complained about it;
-//   - an *invalid* one makes their Species tab a permanent 500. The cast errors, the whole query
-//     fails, and the row cannot be un-sent.
-//
-// Both arms were reproduced against a throwaway Postgres for this round. The defect is **not this
-// round's** — a `species_claim` carrying a non-UUID `speciesID` does the same thing today, and it
-// is written up in `docs/errata-pending/grove-species-known-unscoped-cast.md` — but `wrong_species`
-// is one of three issue kinds here, which makes a suggested species the most natural thing for v22
-// to send, and `speciesID` the obvious key to send it under. Nothing in this file could refuse it
-// either: the payload decode is lenient by design, so this is a contract the client keeps — and on
-// `feat/r79-city-disputes` as read it does keep it, `DataDisputeReport` having no top-level
-// `speciesID`.
+// **It is no longer what stands between a dispute and the Species tab.** This paragraph used to
+// forbid the key because `store.GroveSpeciesKnown` ran `(payload->>'speciesID')::uuid` over every
+// kind, so a valid one on a dispute enrolled that species in "species you know" and an invalid one
+// made the sender's Species tab a permanent 500. That read now interprets `speciesID` only on
+// `store.MetSpeciesKinds` — the sighting kinds, of which a dispute is not one — and compares it as
+// text, parsing in Go and skipping what does not parse. A top-level `speciesID` on a dispute is
+// therefore neither counted nor able to fail anything. The contract is kept because a second
+// spelling of one suggestion is a second place for it to be wrong, not because anything breaks.
 //
 // The general rule, for whoever adds the next key: before putting a name at the top level of a
 // payload, grep `internal/store` for `payload ->>` and check whether an existing read already
 // interprets that name. Four functions in `internal/store` do: `withdrawMeasurement` and
 // `disputeIsThisIdentitys` read `payload ->> 'id'`, `measurementWasWithdrawn` reads
-// `payload ->> 'measurementID'`, and `GroveSpeciesKnown` reads `payload ->> 'speciesID'`. The first
-// three cannot fail on a value they were not meant to read, and the reason is not that they narrow
-// on `kind`, though all three do: it is that they **compare the extracted text** under `upper()`
-// and never cast it, so a payload of any kind carrying a non-UUID value simply misses. Do not lean
-// on the `kind` qual as the safe-making part — `store.disputeIsThisIdentitys` records exactly what
-// is and is not known about that. `GroveSpeciesKnown` both casts *and* reads every kind, and one
-// is enough.
+// `payload ->> 'measurementID'`, and `GroveSpeciesKnown` reads `payload ->> 'speciesID'`. None of
+// the four can fail on a value it was not meant to read, and the reason is not that they narrow on
+// `kind`, though all four do: it is that they **compare the extracted text** and never cast it in
+// SQL, so a payload of any kind carrying a non-UUID value simply misses. Do not lean on the `kind`
+// qual as the safe-making part — `store.disputeIsThisIdentitys` records exactly what is and is not
+// known about that. A new read that casts a payload value to `uuid` in SQL puts back the defect
+// `GroveSpeciesKnown` was fixed for.
 type dataDisputePayload struct {
 	ID         uuid.UUID `json:"id"`
 	TreeID     uuid.UUID `json:"treeID"`
@@ -634,6 +658,19 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 			SpeciesID:   payload.SpeciesID,
 			Placement:   placement,
 			LandContext: payload.LandContext,
+		}
+	}
+
+	// ── `species_claim` and `species_correction` must name a species ──────────────────────────
+	//
+	// See `speciesStatementPayload` for why this refusal is safe and why it is here.
+	if item.Kind == "species_claim" || item.Kind == "species_correction" {
+		var payload speciesStatementPayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.SpeciesID == nil {
+			return failed(apierr.ValidationFailed, "That item named no species.")
 		}
 	}
 
