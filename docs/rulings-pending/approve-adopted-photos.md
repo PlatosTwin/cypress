@@ -19,9 +19,9 @@ A photograph an anonymous device uploads is `pending`: shown to its contributor 
 
 When that person signs in, `store.ClaimDevice` adopts the photograph onto the account. Until this
 ruling it did not approve it. The only writers of `moderation_state` were that begin-time approval
-and the operator's reject, so nothing ever revisited the row: **a photograph taken signed out
-stayed private for good, even after sign-in**. Screen 15 promises the opposite: an account "backs
-them up and lets them join each tree's public timeline".
+and the operator's reject, and the reject never approves, so nothing ever approved the row: **a
+photograph taken signed out stayed private for good, even after sign-in**. Screen 15 promises the
+opposite: an account "backs them up and lets them join each tree's public timeline".
 
 #### Ruling
 
@@ -31,11 +31,12 @@ them up and lets them join each tree's public timeline".
    `ClaimDevice` approves a photograph that is `pending`, not withdrawn and not anonymized, with
    `approval_reason = 'auto_approved_launch'`. A `rejected` photograph stays rejected: an
    operator's takedown is not undone by a sign-in. An already-approved photograph keeps its reason.
-2. **People who already signed in are included.** Server migration 006
-   (`server/migrations/006_approve_adopted_photos.sql`) approves the photographs that claims
-   already adopted while `pending`: rows with an owning account, `pending`, not withdrawn and not
-   anonymized. The migration's header proves from the code that this predicate selects exactly
-   that set.
+2. **People who already signed in are included — subject to the owner's decision below.**
+   Server migration 006 (`server/migrations/006_approve_adopted_photos.sql`) approves the
+   photographs that claims already adopted while `pending`: rows with an owning account,
+   `pending`, not withdrawn and not anonymized. The migration's header proves from the code that
+   this predicate selects exactly that set. "Not withdrawn" means not withdrawn *on the server*,
+   which is not the same thing; see "What 006 publishes that nobody can filter out".
 3. **The invariant is enforced by the database.** 006 adds
    `photos_owned_live_photograph_is_not_pending`: a live photograph an account owns cannot be
    stored `pending`. A future adoption path that forgets to approve is then refused outright,
@@ -65,3 +66,61 @@ If such a consumer ever appears, adding the value is the round that owns it.
 ends auto-approval (the one that will write `screened_and_passed` and will want an account's upload
 to wait in `pending`) has to drop it. That is deliberate: ending the launch rule should be a
 decision somebody records, not a side effect.
+
+#### What 006 publishes that nobody can filter out — open, for the owner
+
+Raised by the adversarial review of PR #182 (F1) and reproduced there. The sequence, on the code
+before this round:
+
+1. The phone begins a photograph while signed out: device-owned, `pending`.
+2. The contributor signs in, and the claim adopts it onto the account, still `pending`.
+3. The contributor signs out and deletes the photograph on the phone. RULINGS R82 lets the phone do
+   that for a photograph this installation took, whatever account holds it, and the phone sends a
+   `photo_withdrawal` under its device token.
+4. The server refuses it. `withdrawPhoto` knows only the row's `user_id` and `device_id`, the row
+   is the account's and the caller is the device, so the answer is `ErrNotOwned` (`forbidden`).
+   `withdrawPhoto`'s own comment calls this divergence real and reachable.
+5. The row stays live, account-owned and `pending`, and 006 approves it. A photograph its
+   contributor deleted becomes visible to everyone.
+
+**006's predicate cannot exclude these rows, and no predicate could.** The server keeps no record
+of a refused withdrawal: the refusal is an error inside `Store.Apply`'s transaction, which rolls
+back the `photo_withdrawal` contribution row that would have recorded the attempt, and `photos` is
+not written. On the server such a row looks exactly like an adopted photograph its contributor
+still wants.
+
+The forward half widens the same divergence. From this deploy on, a signed-out photograph adopted
+by a claim is approved at step 2, so a withdrawal refused at step 4 leaves it public where before it
+stayed private. That was already the case for a photograph an account began while signed in; the
+claim adds the signed-out ones to that set. Closing it for good needs the server to know which
+device took a photograph, which is the provenance column `withdrawPhoto`'s comment declines to
+invent without a ruling.
+
+**Decision pending.** The owner has authorized a read-only production count of the rows 006's
+UPDATE would write, and will decide from it whether 006 ships as it stands or is cut back to
+forward-only (the claim fix and the constraint, without the one-time UPDATE). 006's logic is
+unchanged in this round and must not be deployed ahead of that decision.
+
+#### Deploying 006: when the constraint breaks sign-in, and when it cannot
+
+With `photos_owned_live_photograph_is_not_pending` in place, a binary from before this round fails
+any claim for a device holding a live `pending` photograph: its adoption leaves the row `pending`,
+Postgres refuses the row, and the request answers 500. That includes `POST /auth/oidc` with a
+`device_uuid`, which is the sign-in itself, as well as `POST /devices/claim`. An old binary cannot
+*boot* against a database at 006 (`Migrate` refuses a rollback onto a newer schema), so the window
+exists only while an old binary that is already running shares the database with a new one that
+has applied 006.
+
+- **Where it is closed: `cypress-sync` as configured today.** One machine; `server/fly.toml` has no
+  `[deploy]` strategy and no `release_command`; the migration runs in `store.Open` when the new
+  binary boots. The old and new binaries never serve at the same time.
+- **Where it opens:** scaling the app to two or more machines, or deploying with a canary or
+  bluegreen strategy. An old machine keeps serving, and failing sign-ins, until it is replaced.
+  Deploy 006 only on one machine with the default strategy.
+
+#### Out of scope here, recorded for the roadmap
+
+The same review (F3) found that the claim asks for no proof that the caller holds the device:
+an account that knows a device UUID can claim it, and since this ruling the claim also publishes
+that device's `pending` photographs, under the claiming account. The #174 guard protects only a
+device that is already claimed. Proof of possession at claim is not built in this round.
