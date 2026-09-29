@@ -1425,6 +1425,27 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the command add a `notes` entry when the field comes back empty instead of writing `""`.
     Calibrate against a submission whose tester is known. Keep the zero-`@` check as the guard
     (it held on this run: 0 `@` in the JSON). Small.
+54. **`add_tree`'s `speciesID` write check matches the key case-insensitively, same as
+    `species_claim`/`species_correction` did before PR #184's fix round.** Found by that PR's
+    adversarial review (finding 2) and deliberately left alone there — the ruling was fix the two
+    kinds that name a species as their whole record, and file `add_tree` separately since it is a
+    larger payload with more fields the same class of bug could touch. `addTreePayload.SpeciesID`
+    is a struct field decoded with plain `json.Unmarshal`, so `{"speciesid":"<uuid>"}` or
+    `{"SPECIESID":"<uuid>"}` sets it exactly as `{"speciesID":"<uuid>"}` would, while
+    `store.GroveSpeciesKnown` and every other `payload ->>` read key on the exact spelling. Fix:
+    decode `addTreePayload` the same way `speciesStatementSpeciesID`
+    (`server/internal/api/sync.go`) now does — a raw map, exact key lookup — or otherwise require
+    the literal `"speciesID"` key. Calibrate the same way: red-proof with a case-insensitive
+    decode restored, confirm `{"speciesid":…}` and `{"SPECIESID":…}` are refused.
+55. **`internal/uuid/uuid.go`'s header and `migrations/004_measurement_withdrawal_kind.sql`'s
+    comment say Swift's `JSONEncoder` writes a `UUID` lowercase.** It writes it uppercase. Found
+    during PR #184's fix round (review finding 5): the PR's own comments in
+    `server/internal/api/sync.go` state the uppercase fact correctly (`SpeciesStatement`'s
+    encoder), which means the tree now contradicts itself across two files. `004`'s phrase "the
+    cast `GroveSpeciesKnown` uses" is also stale — that cast was removed by PR #184.
+    Documentation-only: read both files, verify the encoder's actual case empirically (a real
+    `JSONEncoder` round-trip, not another comment), and correct both in one pass so they agree
+    with each other and with `sync.go`.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
