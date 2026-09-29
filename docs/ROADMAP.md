@@ -975,8 +975,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
    lock keyed on the reading id (`pg_advisory_xact_lock(hashtextextended(upper($1), 0))`) taken at
    the top of **both** `withdrawMeasurement` and `measurementWasWithdrawn`, which serialises only
    same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
-   recipe, and red-prove the race itself first so the fix has a witness. `server/` has no CI, so
-   whatever lands here needs its own throwaway-Postgres run with stated pass/skip/fail counts.
+   recipe, and red-prove the race itself first so the fix has a witness. `server.yml` now runs the
+   suite against Postgres and refuses a skip, but it is not a required check: read its run.
 10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
     readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
     to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
@@ -1026,7 +1026,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     before removing anything. `visit_count` is `TreeCommunityHalf`'s second query;
     `photo_count` is `len(photos)` after the visibility filter, and screen 15's promise may rest on
     one of them.
-14. **`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.** The
+14. ~~**`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.**~~ The
     proposal's §7 records the gap; W-A's `web.yml` is for `web/`, not for this. A `server.yml` on
     `ubuntu-latest` with a `postgres:16` service container and `CYPRESS_TEST_DATABASE_URL` set would
     run the whole suite in about a minute, and — this is the part that matters here — it must
@@ -1035,7 +1035,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     / 0 skip with one.~~ **Those no-database numbers were the baseline tree's, mislabelled**; at
     W-G's head after its review fixes, it is **67 pass / 131 skip / 0 fail** with no database and
     **198 pass / 0 skip / 0 fail** with one (66 / 125 and 191 / 0 at the PR head before them). `testflight.yml` already excludes `server/`
-    from the archive, so a server-only workflow cannot mint a build.
+    from the archive, so a server-only workflow cannot mint a build. **SHIPPED** by
+    `ci/server-zero-skips`: `.github/workflows/server.yml` runs the suite on `ubuntu-latest` against
+    a Postgres service container with `CYPRESS_TEST_DATABASE_URL` set, under `go test -json`, and
+    `server/ci/verify_test_json.sh` refuses any `skip` event (subtests included), any failure, zero
+    passes, a package that passed having run nothing, and a cut-short stream; `gofmt -l` and
+    `go vet` run too. **Postgres 18, not the 16 sketched above** — production is
+    `flyio/postgres-flex:18.1` (`fly image show --app cypress-sync-db`, 2026-09-28). Measured at
+    `bb4d08f`: **68 pass / 147 skip** with no database, **222 pass / 0 skip** against 18. The
+    trigger list also names the four Swift files Go tests parse, and
+    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. **Not a required
+    check** — that is the owner's ruleset call, and if it is made one the `paths:` filters must come
+    off in the same change (E225).
 
 15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
     whether an estimate may supersede a measurement when a single number has to be chosen. D7,

@@ -1,0 +1,170 @@
+# The sync service's CI (`server/`, Go). Ubuntu, a real Postgres, no simulator, no signing.
+#
+# ROADMAP chip backlog 14. Before this file, nothing ran the server's tests: every server change
+# was certified by someone standing up a throwaway Postgres and counting skips by hand.
+#
+# **The one thing this workflow is for: a skipped test is a red run.** `go test ./...` prints `ok`
+# for a package whose every test called `t.Skip`, and exits 0. With `CYPRESS_TEST_DATABASE_URL`
+# unset the SQL half of this suite skips itself — measured on 2026-09-28 at `bb4d08f`: 68 pass /
+# 147 skip / 0 fail with no database, 222 / 0 / 0 against Postgres 18 — and the human output of the
+# first reads exactly like the second. So the suite runs with `-json`, and
+# `server/ci/verify_test_json.sh` counts `"Action":"skip"` events, subtests included, and refuses
+# any. It also refuses zero passes, a package that passed having run nothing, a cut-short stream,
+# and any failure. It reads JSON rather than `-v` text because Go indents a subtest's `--- SKIP`
+# line, so an anchored grep counts top-level tests only (210 of 222 passes on that same run).
+#
+# **Not a required check.** Making it one is an owner/admin action on the ruleset. Until then a
+# red here does not block a merge by itself — read this workflow's run for any PR touching
+# `server/`. If it is made required, the `paths:` filters below must come off in the same change,
+# for the reason `web.yml` gives (E225): a required check that never starts is a PR nobody can
+# merge and no red anywhere saying why.
+name: Server
+
+on:
+  push:
+    branches: [main]
+    # An ALLOW-list, as in `web.yml`: the cost of not running is not running a suite, so the list
+    # names every file the suite reads and nothing else. `server/**` is the module itself; the
+    # workflow file proves itself by running.
+    #
+    # **The four Swift files are here because Go tests OPEN them.** `internal/api` and
+    # `internal/apierr` parse the client's enums and property lists at run time to prove the wire
+    # vocabulary still agrees with the app. Renaming a `TreePlacement` case touches no `server/`
+    # path, and without these lines the guard written to catch that rename would not run on it.
+    # `server/ci/check_trigger_paths.sh` (the first step below) greps every `"../../../…"` read
+    # out of the Go sources and fails if one is not listed here under BOTH triggers, so a fifth
+    # reader added later cannot be left without a trigger.
+    paths:
+      - 'server/**'
+      - '.github/workflows/server.yml'
+      - 'Cypress/Core/APIError.swift'
+      - 'Cypress/Core/Models/CityRecord.swift'
+      - 'Cypress/Core/Models/Tree.swift'
+      - 'Cypress/Core/Units/Quantity.swift'
+  pull_request:
+    branches: [main, 'release/**']
+    paths:
+      - 'server/**'
+      - '.github/workflows/server.yml'
+      - 'Cypress/Core/APIError.swift'
+      - 'Cypress/Core/Models/CityRecord.swift'
+      - 'Cypress/Core/Models/Tree.swift'
+      - 'Cypress/Core/Units/Quantity.swift'
+  # The escape hatch `web.yml` and `testflight.yml` both keep: a run by hand when something outside
+  # these paths (a Go toolchain bump, a Postgres image update) needs the suite run.
+  workflow_dispatch:
+
+concurrency:
+  group: server-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    # **Postgres 18, because that is what production runs.** Read from the deployed database
+    # machine on 2026-09-28 (`fly image show --app cypress-sync-db`): `flyio/postgres-flex:18.1`.
+    # The README's throwaway-container recipe and chip 14's sketch both say 16, and the suite has
+    # been hand-certified on 16 until now; that was the local habit, not the target. Pinned to the
+    # MAJOR only: a minor is a bug-fix release, and following it is what production does too.
+    #
+    # Credentials are throwaway and live only inside this job's network. The superuser is needed:
+    # each test binary creates its own database (see `server/README.md`, Tests), so packages
+    # running in parallel do not deadlock each other.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: cypress
+          POSTGRES_PASSWORD: cypress
+          POSTGRES_DB: cypress
+        ports:
+          - 5432:5432
+        # Health over TCP rather than the socket: the image's entrypoint runs a temporary server
+        # during init with TCP disabled, so only a TCP probe is certain to be answered by the
+        # server the tests will actually reach.
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U cypress -d cypress"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      CYPRESS_TEST_DATABASE_URL: postgres://cypress:cypress@localhost:5432/cypress?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cheap, and first: it needs neither Go nor the database, and a red here is about this
+      # file's trigger list rather than about the code.
+      - name: Every file a Go test reads starts this workflow
+        run: server/ci/check_trigger_paths.sh .github/workflows/server.yml
+
+      # `go-version-file`, so the version lives in `go.mod` and nowhere else — the Dockerfile's
+      # `golang:1.25-alpine` is the other place, and `go.mod`'s directive is what the build obeys.
+      # No module cache, for `web.yml`'s reason: the run should certify that the module graph
+      # resolves from `go.sum`, not that a restored cache does. Seven modules; seconds.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache: false
+
+      # Provenance, so a reader of this log knows which Go and which Postgres produced the verdict
+      # below — the same reason `run_tests.sh` stamps `CYPRESS-RUN:` lines.
+      - name: Provenance
+        run: |
+          set -euo pipefail
+          echo "SERVER-RUN: head $(git rev-parse --short HEAD) ($GITHUB_EVENT_NAME, $GITHUB_REF)"
+          echo "SERVER-RUN: $(go version)"
+          echo "SERVER-RUN: postgres $(docker exec '${{ job.services.postgres.id }}' psql -U cypress -d cypress -Atc 'show server_version')"
+          if [ -n "${CYPRESS_TEST_DATABASE_URL:-}" ]; then
+            echo "SERVER-RUN: CYPRESS_TEST_DATABASE_URL is set"
+          else
+            echo "SERVER-RUN: CYPRESS_TEST_DATABASE_URL is UNSET — every SQL test will skip, and the judge below will refuse the run"
+          fi
+
+      - name: gofmt
+        working-directory: server
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would rewrite these files:"; echo "$unformatted"
+            exit 1
+          fi
+          echo "gofmt: every file is formatted"
+
+      - name: go vet
+        working-directory: server
+        run: go vet ./...
+
+      # The exit code is recorded and then deliberately NOT trusted on its own: it is 0 for an
+      # all-skipped run, which is the case this workflow exists to catch. The judge reads the
+      # stream; the job fails if EITHER says so. `-count=1` so a result is never a cache replay.
+      - name: Run the suite against Postgres, and judge the stream rather than the exit code
+        working-directory: server
+        run: |
+          set -uo pipefail
+          go test -json -count=1 ./... > "$RUNNER_TEMP/server-test.json"
+          status=$?
+          echo "go test exited $status (recorded, not believed)"
+          ci/verify_test_json.sh "$RUNNER_TEMP/server-test.json"
+          verdict=$?
+          [ "$status" -eq 0 ] && [ "$verdict" -eq 0 ]
+
+      # Thirty days, as with the iOS and web logs: an errata entry cites the run it came from.
+      - name: Keep the test stream, whatever happened
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-json
+          path: ${{ runner.temp }}/server-test.json
+          if-no-files-found: warn
+          retention-days: 30
