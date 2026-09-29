@@ -48,9 +48,16 @@ type CommunityTreeRecord struct {
 	SpeciesID   *uuid.UUID
 	Placement   string
 	LandContext *string
+	// CreatedAt is **when this viewer may say the tree was added** (the orchestrator's V1 ruling
+	// on decision 13): the tree's own `created_at` for its adder, and `published_at` for everybody
+	// else, including the tile, which has no viewer. A tree added in March and published in
+	// September was, to a stranger, added in September; the private months are the adder's. The
+	// history's `added` event says the same day, so the two cannot disagree on one screen.
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	Published   bool
+	// PublishedAt is when the tree went live; nil while it is private.
+	PublishedAt *time.Time
 	// AddedByViewer is §4's rule (`treeRow.isAddedBy`) for the viewer who asked: never true for an
 	// anonymized tree, and never true for the public read, which has no viewer.
 	AddedByViewer bool
@@ -62,15 +69,16 @@ type CommunityTreeRecord struct {
 // published, live tree is visible.
 func communityTreeFor(ctx context.Context, q querier, id uuid.UUID, viewer Owner) (TreeVisibility, *CommunityTreeRecord, error) {
 	var (
-		tree      CommunityTreeRecord
-		authority treeRow
+		tree        CommunityTreeRecord
+		authority   treeRow
+		publishedAt *time.Time
 	)
 	err := q.QueryRow(ctx, `
 		SELECT lat, lon, address, species_id, placement, land_context, created_at, updated_at,
-		       published_at IS NOT NULL, user_id, device_id, anonymized_at, deleted_at
+		       published_at, user_id, device_id, anonymized_at, deleted_at
 		  FROM community_trees WHERE id = $1
 	`, id).Scan(&tree.Lat, &tree.Lon, &tree.Address, &tree.SpeciesID, &tree.Placement,
-		&tree.LandContext, &tree.CreatedAt, &tree.UpdatedAt, &tree.Published,
+		&tree.LandContext, &tree.CreatedAt, &tree.UpdatedAt, &publishedAt,
 		&authority.UserID, &authority.DeviceID, &authority.AnonymizedAt, &authority.DeletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// The erase door hard-deletes and leaves only the tombstone (decision 6). An erased tree is
@@ -96,11 +104,41 @@ func communityTreeFor(ctx context.Context, q querier, id uuid.UUID, viewer Owner
 		// included (decision 8 — "withdraw a tree for everyone").
 		return CommunityTreeHidden, nil, nil
 	}
+	tree.Published = publishedAt != nil
+	tree.PublishedAt = publishedAt
 	tree.AddedByViewer = authority.isAddedBy(viewer)
 	if !tree.Published && !tree.AddedByViewer {
 		return CommunityTreeHidden, nil, nil
 	}
+	if !tree.AddedByViewer {
+		// Visible and not the adder's, so published: the stranger's "added" is going live.
+		tree.CreatedAt = *publishedAt
+	}
 	return CommunityTreeVisible, &tree, nil
+}
+
+// treeHiddenFromViewerSQL is `communityTreeFor`'s "hidden" answer as a SQL predicate, for a read
+// that has to decide it for many trees in one query (the grove's hero). `tree` is the SQL
+// expression naming the tree's id; `$1` and `$2` must be the viewer's user and device ids, as they
+// are in every per-owner query in this package.
+//
+// It is a second spelling of one rule, so it is checked against the first:
+// `TestTheGroveHeroPassesThePhotographGate` builds every hidden state and the visible ones, and
+// asserts that the grove draws a hero exactly where `TreeIsHiddenFrom` says the tree is visible.
+// The clauses, in `communityTreeFor`'s order: tombstoned; withdrawn or taken down; unpublished and
+// not added by this viewer, where "added by" is `treeRow.isAddedBy` (never an anonymized tree; the
+// account when the caller has one, the device only when it does not). `coalesce(…, false)` because
+// `user_id = $1` is NULL for a device-owned tree, and a NULL here would read as "visible".
+func treeHiddenFromViewerSQL(tree string) string {
+	return `(EXISTS (SELECT 1 FROM withdrawn_community_trees w WHERE w.id = ` + tree + `)
+	      OR EXISTS (SELECT 1 FROM community_trees c
+	                  WHERE c.id = ` + tree + `
+	                    AND (c.deleted_at IS NOT NULL
+	                         OR (c.published_at IS NULL
+	                             AND NOT (c.anonymized_at IS NULL
+	                                      AND CASE WHEN $1::uuid IS NOT NULL THEN coalesce(c.user_id = $1, false)
+	                                               ELSE coalesce($2::uuid IS NOT NULL AND c.device_id = $2, false)
+	                                          END)))))`
 }
 
 // TreeIsHiddenFrom reports whether an id names a community tree this viewer may not see. The
@@ -265,7 +303,7 @@ const tileDeltaQuery = `
 	WITH` + tileInTile + `,
 	changed AS (
 	    SELECT t.id, t.updated_at AS at, t.lat, t.lon, t.species_id, t.placement, t.land_context,
-	           t.created_at, t.deleted_at IS NULL AS live
+	           t.published_at AS created_at, t.deleted_at IS NULL AS live
 	      FROM community_trees t JOIN in_tile ON in_tile.id = t.id
 	     WHERE t.published_at IS NOT NULL
 	       AND (t.updated_at, t.id) > ($1::timestamptz, $2::uuid)
@@ -292,7 +330,7 @@ const tileSnapshotQuery = `
 	WITH` + tileInTile + `,
 	changed AS (
 	    SELECT t.id, t.updated_at AS at, t.lat, t.lon, t.species_id, t.placement, t.land_context,
-	           t.created_at, t.deleted_at IS NULL AS live
+	           t.published_at AS created_at, t.deleted_at IS NULL AS live
 	      FROM community_trees t JOIN in_tile ON in_tile.id = t.id
 	     WHERE t.published_at IS NOT NULL
 	       AND (t.updated_at, t.id) > ($1::timestamptz, $2::uuid)
@@ -353,20 +391,29 @@ var ErrHistoryNotFound = errors.New("no community tree history for this viewer")
 // not where it arrived), then `recorded_at`, then the id, so two events on one day keep a stable
 // order on the wire even though the wire's dates are truncated to the day.
 func (s *Store) CommunityTreeHistory(ctx context.Context, id uuid.UUID, viewer Owner, kinds []string, limit int) ([]HistoryEvent, bool, error) {
-	visibility, _, err := communityTreeFor(ctx, s.pool, id, viewer)
+	visibility, tree, err := communityTreeFor(ctx, s.pool, id, viewer)
 	if err != nil {
 		return nil, false, err
 	}
 	if visibility != CommunityTreeVisible {
 		return nil, false, ErrHistoryNotFound
 	}
+	// **No public event is dated before the tree went live** (the orchestrator's L1 ruling on
+	// decision 13). An act the adder made while the tree was private — a move queued on a phone
+	// that was signed out or declining — can arrive after publication, and S1 then records it as
+	// public, because the pin really did move in public. Its `occurred_at` is still the private
+	// day, which would put a day of the tree's private life on the public record, below its own
+	// "added". So the served date is `GREATEST(occurred_at, published_at)`, and the order is by the
+	// served date too: the late act sits above "added", tied on the instant and broken by
+	// `recorded_at`, which is when the public learned of it. `GREATEST` ignores a NULL, so a tree
+	// that is not published (the adder's own, which has no public events anyway) is unchanged.
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, kind, occurred_at, before, after
+		SELECT id, kind, GREATEST(occurred_at, $4::timestamptz) AS served_at, before, after
 		  FROM community_tree_events
 		 WHERE tree_id = $1 AND in_public_history AND kind = ANY ($2::text[])
-		 ORDER BY occurred_at DESC, recorded_at DESC, id DESC
+		 ORDER BY served_at DESC, recorded_at DESC, id DESC
 		 LIMIT $3
-	`, id, kinds, limit+1)
+	`, id, kinds, limit+1, tree.PublishedAt)
 	if err != nil {
 		return nil, false, err
 	}
