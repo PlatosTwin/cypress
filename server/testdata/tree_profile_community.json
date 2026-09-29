@@ -1,0 +1,44 @@
+{
+  "added_by_you": false,
+  "community_tree": {
+    "id": "5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d01",
+    "externalRef": null,
+    "idSpace": null,
+    "source": "community",
+    "coordinate": {
+      "latitude": 37.7601,
+      "longitude": -122.505
+    },
+    "address": null,
+    "siteType": null,
+    "neighborhoodID": null,
+    "status": "alive",
+    "speciesCurrentID": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c",
+    "plantedYear": null,
+    "dbhCityCmRange": null,
+    "siteLineage": null,
+    "verificationState": "unverified",
+    "placement": "contributor_placed",
+    "cityRecord": null,
+    "statedLandContext": "street",
+    "createdAt": "2026-09-21T00:00:00Z",
+    "updatedAt": "2026-09-21T00:00:00Z",
+    "deletedAt": null
+  },
+  "deletable_photo_ids": [],
+  "is_published": true,
+  "own_photo_ids": [],
+  "photo_count": 1,
+  "photos": [
+    {
+      "captured_at": "2026-09-22T12:00:00Z",
+      "captured_on": "2026-09-22",
+      "is_publicly_visible": true,
+      "photo_id": "8c1cc8a2-ded9-4bd5-ae4f-af2b0174bf01",
+      "shot_type": "full_tree"
+    }
+  ],
+  "tree_uuid": "5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d01",
+  "visit_count": 0
+}
+

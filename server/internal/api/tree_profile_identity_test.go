@@ -37,19 +37,25 @@ var (
 // own approved photo with a key, the caller's own pending photo from a begin that carried none, a
 // stranger's approved photo that **has** a key (so a leak is possible and therefore detectable), and
 // a stranger's pending photo, which nobody but its contributor may see at all.
+//
+// The two approved rows also carry the phone's `captured_on` (decision 14a), so the one file pins
+// where this route's two rules meet: the owner's row is served its exact time **and** its key, the
+// stranger's is served noon UTC of its date and **no** key.
 func fixtureCommunity() store.TreeCommunity {
 	at := time.Date(2026, 9, 24, 19, 12, 5, 481000000, time.UTC)
+	day := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
 	key, stranger := ownApprovedKey, strangerKey
 	caller, other := fixtureCaller, fixtureStranger
 	return store.TreeCommunity{
 		VisitCount: 2,
 		Photos: []store.PhotoRecord{
 			{ID: ownApprovedID, TreeUUID: fixtureTree, UserID: &caller, ShotType: "full_tree",
-				ModerationState: "approved", CapturedAt: at, ClientUUID: &key},
+				ModerationState: "approved", CapturedAt: at, CapturedOn: &day, ClientUUID: &key},
 			{ID: ownPendingID, TreeUUID: fixtureTree, UserID: &caller, ShotType: "leaf",
 				ModerationState: "pending", CapturedAt: at.Add(-time.Hour)},
 			{ID: strangerApprovedID, TreeUUID: fixtureTree, UserID: &other, ShotType: "full_tree",
-				ModerationState: "approved", CapturedAt: at.Add(-2 * time.Hour), ClientUUID: &stranger},
+				ModerationState: "approved", CapturedAt: at.Add(-2 * time.Hour), CapturedOn: &day,
+				ClientUUID: &stranger},
 			{ID: strangerPendingID, TreeUUID: fixtureTree, UserID: &other, ShotType: "trunk",
 				ModerationState: "pending", CapturedAt: at.Add(-3 * time.Hour)},
 		},
@@ -120,6 +126,18 @@ func TestTreeProfileTellsTheContributorTheirOwnKeyAndNobodyElse(t *testing.T) {
 	}
 	if bytes.Contains(fixtureBody(t), []byte(strangerKey.String())) {
 		t.Fatalf("the stranger's key %v appears somewhere in the body", strangerKey)
+	}
+
+	// Decision 14a on the same rows: the owner keeps the exact time the key-and-second link on the
+	// phone (`RoutedAPI.refreshedTreeProfile`) matches against; the stranger is served only the day.
+	if got := own["captured_at"]; got != "2026-09-24T19:12:05Z" {
+		t.Fatalf("the caller's own photograph is served captured_at %v, want its exact time", got)
+	}
+	if got := stranger["captured_at"]; got != "2026-09-24T12:00:00Z" {
+		t.Fatalf("a stranger's photograph is served captured_at %v, want noon UTC of its captured_on", got)
+	}
+	if got := stranger["captured_on"]; got != "2026-09-24" {
+		t.Fatalf("a stranger's photograph is served captured_on %v, want 2026-09-24", got)
 	}
 }
 

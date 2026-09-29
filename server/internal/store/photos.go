@@ -278,6 +278,10 @@ type PhotoRecord struct {
 	ApprovalReason  *string
 	BlurApplied     bool
 	CapturedAt      time.Time
+	// CapturedOn is `captured_on` (decision 14a): the day the phone says the photograph was taken,
+	// at midnight UTC, or nil for a photograph from a build that did not send it. Only its
+	// calendar date means anything; `servedCapturedAt` (api) is the one reader.
+	CapturedOn      *time.Time
 	StorageKey      string
 	BytesReceivedAt *time.Time
 	DeletedAt       *time.Time
@@ -310,11 +314,13 @@ func (s *Store) Photo(ctx context.Context, id uuid.UUID) (PhotoRecord, error) {
 	var photo PhotoRecord
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tree_uuid, user_id, device_id, shot_type, moderation_state, approval_reason,
-		       blur_applied, captured_at, storage_key, bytes_received_at, deleted_at, client_uuid
+		       blur_applied, captured_at, captured_on, storage_key, bytes_received_at, deleted_at,
+		       client_uuid
 		  FROM photos WHERE id = $1
 	`, id).Scan(&photo.ID, &photo.TreeUUID, &photo.UserID, &photo.DeviceID, &photo.ShotType,
 		&photo.ModerationState, &photo.ApprovalReason, &photo.BlurApplied, &photo.CapturedAt,
-		&photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt, &photo.ClientUUID)
+		&photo.CapturedOn, &photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt,
+		&photo.ClientUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PhotoRecord{}, ErrNotFound
 	}
@@ -329,7 +335,8 @@ func (s *Store) Photo(ctx context.Context, id uuid.UUID) (PhotoRecord, error) {
 func (s *Store) PhotosForTree(ctx context.Context, treeUUID uuid.UUID) ([]PhotoRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tree_uuid, user_id, device_id, shot_type, moderation_state, approval_reason,
-		       blur_applied, captured_at, storage_key, bytes_received_at, deleted_at, client_uuid
+		       blur_applied, captured_at, captured_on, storage_key, bytes_received_at, deleted_at,
+		       client_uuid
 		  FROM photos WHERE tree_uuid = $1 ORDER BY captured_at DESC
 	`, treeUUID)
 	if err != nil {
@@ -341,8 +348,8 @@ func (s *Store) PhotosForTree(ctx context.Context, treeUUID uuid.UUID) ([]PhotoR
 		var photo PhotoRecord
 		if err := rows.Scan(&photo.ID, &photo.TreeUUID, &photo.UserID, &photo.DeviceID,
 			&photo.ShotType, &photo.ModerationState, &photo.ApprovalReason, &photo.BlurApplied,
-			&photo.CapturedAt, &photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt,
-			&photo.ClientUUID); err != nil {
+			&photo.CapturedAt, &photo.CapturedOn, &photo.StorageKey, &photo.BytesReceivedAt,
+			&photo.DeletedAt, &photo.ClientUUID); err != nil {
 			return nil, err
 		}
 		photos = append(photos, photo)

@@ -1,8 +1,11 @@
 {
+  "added_by_you": false,
+  "community_tree": null,
   "deletable_photo_ids": [
     "11111111-0000-4000-8000-0000000000a1",
     "22222222-0000-4000-8000-0000000000b2"
   ],
+  "is_published": false,
   "own_photo_ids": [
     "11111111-0000-4000-8000-0000000000a1",
     "22222222-0000-4000-8000-0000000000b2"
@@ -11,6 +14,7 @@
   "photos": [
     {
       "captured_at": "2026-09-24T19:12:05Z",
+      "captured_on": "2026-09-24",
       "client_uuid": "11111111-0000-4000-8000-00000000c1e1",
       "is_publicly_visible": true,
       "photo_id": "11111111-0000-4000-8000-0000000000a1",
@@ -24,7 +28,8 @@
       "shot_type": "leaf"
     },
     {
-      "captured_at": "2026-09-24T17:12:05Z",
+      "captured_at": "2026-09-24T12:00:00Z",
+      "captured_on": "2026-09-24",
       "is_publicly_visible": true,
       "photo_id": "33333333-0000-4000-8000-0000000000c3",
       "shot_type": "full_tree"
