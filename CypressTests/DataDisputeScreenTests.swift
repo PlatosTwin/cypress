@@ -683,6 +683,130 @@ struct DataDisputeScreenTests {
         #expect(model.canSend)
     }
 
+    // MARK: PR #198's review: a `.notAsked` no ask explains, a dropped clock, a give-up re-enabled
+
+    /// A model with the pin chip on, on a clock the test releases by hand.
+    private static func pinModel(_ clock: ManualSleep) async throws -> DataDisputeModel {
+        let store = try await Self.seededStore()
+        let model = DataDisputeModel(
+            treeID: UUID(), api: Self.api(store), currentYear: Self.year,
+            sleep: { try await clock.sleep($0) }
+        )
+        model.toggle(.wrongPlace)
+        return model
+    }
+
+    /// The block after a `.notAsked` nobody's ask explains: back to the hint and the button, Send
+    /// not held, and no clock left to end anything — however long passes.
+    private static func expectBackToNotAsked(
+        _ model: DataDisputeModel, _ clock: ManualSleep, clocksBefore: Int, _ from: String
+    ) async {
+        #expect(model.draft.location == .notAsked,
+                "\(from) → .notAsked with no prompt asked for became \(model.draft.location)")
+        #expect(model.canSend, "\(from) → .notAsked held Send with no prompt on screen")
+        #expect(DataDisputeCopy.location(model.draft.location) == DataDisputeCopy.locationHint)
+        clock.elapse()
+        await Self.letTasksRun()
+        #expect(model.draft.location == .notAsked, "a clock ended a block that was not waiting")
+        #expect(clock.requested.count == clocksBefore, "a clock was armed: \(clock.requested)")
+    }
+
+    /// Authorization reset to undetermined (Allow Once expiring, say) while the granted wait runs.
+    @Test("waiting, then .notAsked with no prompt asked for: back to not asked, Send not held")
+    func anUnexplainedNotAskedEndsAGrantedWait() async throws {
+        let clock = ManualSleep()
+        let model = try await Self.pinModel(clock)
+        model.useLocation(Self.waitingReading())
+        await Self.settle { clock.requested.count == 1 }
+        #expect(clock.requested.count == 1)
+        model.locationChanged(Self.promptReading())
+        await Self.expectBackToNotAsked(model, clock, clocksBefore: 1, "waiting")
+    }
+
+    /// A refused fix, *Open Settings*, and "Ask Next Time" picked there.
+    @Test("refused, then .notAsked with no prompt asked for: back to not asked, Send not held")
+    func anUnexplainedNotAskedReplacesARefusal() async throws {
+        let clock = ManualSleep()
+        let model = try await Self.pinModel(clock)
+        model.useLocation(DataDisputeFixReading(
+            availability: .located(Self.spot, accuracyM: 40), precision: .init(isReduced: true)
+        ))
+        #expect(model.draft.location == .refused(.tooCoarse(accuracyM: 40, requiredM: 10, isReduced: true)))
+        model.locationChanged(Self.promptReading())
+        await Self.expectBackToNotAsked(model, clock, clocksBefore: 0, "refused")
+    }
+
+    /// Don't Allow, then "Ask Next Time" picked in Settings.
+    @Test("off, then .notAsked with no prompt asked for: back to not asked, Send not held")
+    func anUnexplainedNotAskedReplacesLocationOff() async throws {
+        let clock = ManualSleep()
+        let model = try await Self.pinModel(clock)
+        model.useLocation(Self.state(.denied))
+        #expect(model.draft.location == .off(servicesOff: false))
+        model.locationChanged(Self.promptReading())
+        await Self.expectBackToNotAsked(model, clock, clocksBefore: 0, "off")
+    }
+
+    /// The prompt the ask raised was answered; a later `.notAsked` is not that prompt any more.
+    @Test("after Allow, a later .notAsked is not the prompt: back to not asked")
+    func theAnsweredPromptExplainsNothingLater() async throws {
+        let clock = ManualSleep()
+        let model = try await Self.pinModel(clock)
+        model.useLocation(Self.promptReading())
+        model.locationChanged(Self.waitingReading())
+        await Self.settle { clock.requested.count == 1 }
+        #expect(model.draft.location == .waiting)
+        #expect(clock.requested.count == 1, "Allowing did not start the 15 s")
+        model.locationChanged(Self.promptReading())
+        await Self.expectBackToNotAsked(model, clock, clocksBefore: 1, "waiting after Allow")
+    }
+
+    /// `dropTimeout()` retires the dropped clock's generation. `ManualSleep` ignores cancellation,
+    /// which stands in for a sleep that had already returned when it was cancelled.
+    @Test("a clock dropped by asking again at the prompt cannot end the prompt's wait")
+    func aDroppedClockCannotEndALaterWait() async throws {
+        let clock = ManualSleep()
+        let model = try await Self.pinModel(clock)
+        model.useLocation(Self.waitingReading())
+        await Self.settle { clock.requested.count == 1 }
+        // Asked again with authorization undetermined: the prompt is up, and no clock runs.
+        model.useLocation(Self.promptReading())
+        #expect(model.draft.location == .waiting)
+        clock.elapse()
+        await Self.letTasksRun()
+        #expect(model.draft.location == .waiting,
+                "the dropped clock's sleep ended the prompt's wait: \(model.draft.location)")
+        #expect(!model.canSend)
+        #expect(clock.requested.count == 1, "a clock was armed while the prompt was up")
+    }
+
+    /// The owner's answer of 2026-09-29, "Keep it": Location coming back on after a give-up is a
+    /// new wait with a new 15 s, without a tap. And a `.notAsked` does not replace the give-up,
+    /// whose sentence already says to ask again.
+    @Test("Location back on after a give-up waits again with a new 15 s, without a tap")
+    func locationBackOnAfterAGiveUpWaitsAgain() async throws {
+        let clock = ManualSleep()
+        let model = try await Self.pinModel(clock)
+        model.useLocation(Self.waitingReading())
+        await Self.settle { clock.requested.count == 1 }
+        clock.elapse()
+        await Self.settle { model.draft.location != .waiting }
+        #expect(model.draft.location == .unavailable)
+
+        model.locationChanged(Self.promptReading())
+        #expect(model.draft.location == .unavailable,
+                "a .notAsked replaced the give-up's sentence: \(model.draft.location)")
+
+        model.locationChanged(Self.state(.denied))
+        #expect(model.draft.location == .off(servicesOff: false))
+        model.locationChanged(Self.waitingReading())
+        #expect(model.draft.location == .waiting,
+                "Location back on after a give-up did not wait again: \(model.draft.location)")
+        #expect(!model.canSend)
+        await Self.settle { clock.requested.count == 2 }
+        #expect(clock.requested.count == 2, "Location back on did not start a new 15 s")
+    }
+
     @Test("the provider counts didFailWithError, through the real delegate")
     func theProviderCountsLocationErrors() {
         let manager = StubManager()
