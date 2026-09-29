@@ -941,6 +941,63 @@ struct AccountDeletionTests {
         #expect(try await api.treeProfile(id: fixture.tree.id).tree.id == fixture.tree.id)
     }
 
+    /// The `app_state` keys that mark a photograph whose send was refused for good
+    /// (`OutboxStore.recordRefusedPhoto`). Each names one photograph by id, in a key rather than a
+    /// column, so neither the photo `DELETE` nor `AccountDeletionCoverage` can see it. Erasing
+    /// promises no residue: the account's key goes with its photograph, and so does a key whose
+    /// photograph is already gone. A stranger's photograph survives, so its key does too.
+    @Test("the destructive door removes the refusal keys of the photographs it erases")
+    func theDestructiveDoorRemovesRefusalKeys() async throws {
+        let (store, api) = try await Self.signedIn(photoDirectory: Self.photoDirectory())
+        let fixture = try await Self.everything(api: api, store: store)
+        let strangersPhoto = UUID()
+        let alreadyGone = UUID()
+
+        try await store.queue.write { connection in
+            try connection.execute("""
+                INSERT INTO photos (id, tree_uuid, shot_type, captured_at, created_at, updated_at, user_id)
+                VALUES ('\(strangersPhoto.uuidString)', '\(fixture.tree.id.uuidString)', 'trunk',
+                        '2027-01-15T08:00:00Z', '2027-01-15T08:00:00Z', '2027-01-15T08:00:00Z',
+                        '\(Self.strangerID.uuidString)')
+                """)
+            // Written by the drain's own writer, so the key's spelling is the one production writes.
+            for photo in [fixture.photo.id, strangersPhoto, alreadyGone] {
+                try OutboxStore().recordRefusedPhoto(
+                    OutboxStore.PhotoRow(
+                        id: UUID(), outboxID: UUID(), path: nil, shotType: .fullTree, photoID: photo,
+                        containerPath: nil, isApplied: true, isSendable: true, failCount: 1
+                    ),
+                    code: .notFound,
+                    connection: connection
+                )
+            }
+        }
+        func key(_ photo: UUID) async throws -> Int {
+            try await Self.scalar(
+                "SELECT COUNT(*) AS n FROM app_state WHERE key = '\(OutboxStore.refusedPhotoKeyPrefix)\(photo.uuidString)'",
+                in: store
+            )
+        }
+        #expect(try await key(fixture.photo.id) == 1, "fixture: the account's photograph has no refusal key")
+        #expect(try await key(strangersPhoto) == 1, "fixture: the stranger's photograph has no refusal key")
+        #expect(try await key(alreadyGone) == 1, "fixture: the orphaned refusal key was not written")
+
+        _ = try await api.deleteAccount(.eraseEverything)
+
+        #expect(
+            try await key(fixture.photo.id) == 0,
+            "the refusal key of an erased photograph \(fixture.photo.id) survived erasure — residue naming a photograph that is gone"
+        )
+        #expect(
+            try await key(alreadyGone) == 0,
+            "a refusal key whose photograph \(alreadyGone) no longer exists survived erasure"
+        )
+        #expect(
+            try await key(strangersPhoto) == 1,
+            "erasing one account removed the refusal key of a stranger's photograph \(strangersPhoto), which is still on the phone"
+        )
+    }
+
     /// **The hole ERRATA E136 pinned, closed and pinned from the other side.**
     ///
     /// This test used to assert the opposite, and its own note said why: `LocalAPI.addTree` writes a

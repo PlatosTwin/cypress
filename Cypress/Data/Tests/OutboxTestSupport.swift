@@ -152,8 +152,11 @@ public enum OutboxTestSupport {
         public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
             if script == .photosFail { throw URLError(.networkConnectionLost) }
             uploadedPhotos.append(photo)
-            // A distinct id per call, because `LocalAPI.beginPhotoUpload` mints one per call.
-            // Returning a single constant would let a test pass while the drain filed every binary
+            // A fresh id per call, deliberately **not** the binary's own. The real apply mints the
+            // row under the binary's id since report F30's fix (`PhotoUploadRequest
+            // .idempotencyKey`), but a double that did the same would make `appliedPhotoIDs` below
+            // equal to the staged ids, and a drain that filed the staged id where the applied one
+            // belongs would pass unseen. Returning a single constant would let a test pass while the drain filed every binary
             // against one `photos` row — the duplicate `AppSchema` v18 exists to prevent, hidden by
             // the double rather than caught by it.
             //
