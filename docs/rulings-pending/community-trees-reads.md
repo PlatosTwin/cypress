@@ -242,3 +242,26 @@ since it was written (`git log -S` on `AccountLinkRecord.swift` finds one value)
 version is expected in production. Still, S1 may want the backfill to say `= 'odbl-1.0'` before
 007 ships.
 
+### R??? — Decision 14a's served form: noon UTC of the phone's date, to everybody but the owner
+
+**Decided by:** PR S2 round 4, pinning the form decision 14a left to S2 ("noon UTC of it, or a
+date-only field").
+
+`captured_at` on `GET /trees/{id}` and `GET /photos/{id}` is:
+- **the exact time**, for the photograph's owner;
+- **noon UTC of `captured_on`**, for everybody else, when the phone sent it;
+- **the exact time**, for everybody, when it did not. Decision 14a keeps today's behavior for
+  photographs from older builds.
+
+**Why noon UTC and not a date-only field.** The shipped client decodes `captured_at` with
+`.iso8601`, and a bare `2026-03-14` would fail that decoder and with it the whole profile. Every
+surface formats the instant date-only in the reader's zone. Noon UTC is the phone's calendar date
+for every reader from UTC−11 to UTC+11, which was measured through the client's own decoder and
+formatters (the decision-14 erratum). Midnight would be the day before across the Americas.
+
+The residue is readers at UTC+12 and beyond, who see the next day. New clients close it by
+formatting other people's photograph dates with a UTC calendar (the testdata README).
+`TestOthersSeeAPhotographsDateAndItsOwnerTheTime` covers both routes, owner and stranger, the
+morning, the evening, the month end and a photograph with no date. `tree_profile_community.json`
+pins the evening case.
+

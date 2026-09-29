@@ -104,7 +104,12 @@ merge. None was live.
 
 ### E??? — Decision 14 (photo capture date only) cannot be served correctly by the service alone to the shipped client
 
-**Not implemented; needs a decision.** The owner's decision 14 says other people see a photograph's
+**Resolved by the owner's decision 14a (client-assisted), implemented in S2 round 4.** The phone
+sends `captured_on`, its local date (S1's column and begin field). Other people are served noon UTC
+of that date on both routes, and the owner keeps the exact time (`servedCapturedAt`). The table below
+the options is the served form, measured the same way. What follows is the finding that led there.
+
+**Originally: not implemented, needs a decision.** The owner's decision 14 says other people see a photograph's
 capture **date**, never its time. `captured_at` reaches another person on two routes:
 - `GET /trees/{id}`'s `photos[]`. The shipped client decodes it (`TreeCommunityHalfResponse`, `.iso8601`).
 - `GET /photos/{id}`. The shipped client does not decode this one's `captured_at`.
@@ -152,6 +157,21 @@ of midnight.
 
 The evidence is the scratchpad's `d14/render.swift` and `d14/render-evidence.tsv`: the client's
 decode and format calls, run per zone. It is outside the tree, like the other reproductions.
+
+**The served form (round 4)**, as the server serves it, through the same decode and formatters.
+The golden's photo is taken at 19:30 PDT on Sep 22, which is already the 23rd in UTC, and its
+phone date is the 22nd:
+
+| served to others | phone's day | LA | New York | London | Tokyo |
+|---|---|---|---|---|---|
+| `2026-03-14T12:00:00Z` (SF 10:00 or 19:30 PDT) | Mar 14 | Mar 14 | Mar 14 | Mar 14 | Mar 14 |
+| `2026-03-31T12:00:00Z` (SF 18:00 PDT, already Apr 1 in UTC) | Mar 31 | Mar 31 · Mar 2026 | Mar 31 · Mar 2026 | Mar 31 · Mar 2026 | Mar 31 · Mar 2026 |
+| `2026-09-22T12:00:00Z` (the golden's) | Sep 22 | Sep 22 | Sep 22 | Sep 22 | Sep 22 |
+
+Honolulu shows the phone's day too. **Auckland shows the next day** (Mar 15, Sep 23): noon UTC is
+already tomorrow at UTC+12 and beyond. It is the one residue on the shipped client, and the C2
+contract closes it for new builds (format others' photograph dates with a UTC calendar). The
+measurements are in `d14/render-14a.tsv`.
 
 ### E??? — Proximity candidates still carry another adder's address and to-the-second creation time
 

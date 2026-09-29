@@ -122,10 +122,18 @@ These are contract, not incidental behavior. C1 and C2 build on them.
   `updatedAt`, the history's `occurred_at`). **Format them with a UTC calendar**, as screen 03's
   inventory date does. Formatted in the reader's zone, midnight UTC is the previous day everywhere
   in the Americas. The day is the UTC day of the event.
-- **A photograph's `captured_at` is unchanged: the exact time, for everyone.** Decision 14 (others
-  see the date only) is not implemented, because no server-only form shows the right day on the
-  shipped client. The pending errata file has the evidence and the options. Keep decoding it as an
-  instant.
+- **A photograph's `captured_at` depends on who asks (decisions 14 and 14a).** It is still an
+  instant on the wire, so keep decoding it with `.iso8601`.
+  - **The photograph's owner** (its id is in `own_photo_ids`) gets the exact time.
+  - **Everybody else**, when the phone sent `captured_on`, gets **noon UTC of that local date**,
+    never the time. `tree_profile_community.json` pins it: a photograph taken at 19:30 on the 22nd in
+    San Francisco (`02:30Z` on the 23rd) is served as `2026-09-22T12:00:00Z`.
+  - **A photograph from a build that sent no `captured_on`** keeps the exact time for everyone.
+    `tree_profile_city.json` pins that form (`2026-09-23T10:00:00Z`).
+  - **Rendering.** The shipped client formats the date in the reader's zone, which shows the phone's
+    day for readers from UTC−11 to UTC+11. A reader at UTC+12 or beyond (New Zealand, Fiji, Tonga,
+    Kiribati) sees the next day. A new client closes that: format the date of a photograph **not**
+    in `own_photo_ids` with a UTC calendar, and the value is exactly the phone's date everywhere.
 - **History starts at going live** (decision 13). The oldest event is `added`, at the position and on
   the day the tree was published. A move made while the tree was private is never served, in the
   history or in any tile.
