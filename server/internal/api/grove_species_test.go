@@ -274,3 +274,50 @@ func TestASpeciesStatementMustNameASpecies(t *testing.T) {
 		}
 	}
 }
+
+// TestASpeciesStatementKeyIsMatchedExactly is the case reviewer finding 2 raised: `encoding/json`
+// matches a struct field's tag case-insensitively when no exact match exists, so a struct-based
+// decode of `speciesID` would also accept `speciesid` or `SPECIESID` — keys no real client sends,
+// and keys `store.GroveSpeciesKnown` and `payload ->> 'speciesID'` elsewhere in `internal/store`
+// never read, because `jsonb` matching is exact. A claim keyed that way would pass this refusal
+// as "applied" while storing a payload the read-side treats as having no species at all —
+// `payload->>'speciesID' IS NULL` — which is exactly the worthless, un-actionable record this
+// check exists to keep out.
+//
+// `speciesStatementSpeciesID` is required to decode into a raw map and look up the exact key
+// `"speciesID"` rather than use a case-insensitive struct decode, precisely so these three shapes
+// are refused rather than silently accepted under a name nothing else reads.
+func TestASpeciesStatementKeyIsMatchedExactly(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+	tree := uuid.New()
+
+	for _, kind := range []string{"species_claim", "species_correction"} {
+		for _, payload := range []string{
+			`{"treeID":"` + tree.String() + `","speciesid":"` + uuid.New().String() + `"}`,
+			`{"treeID":"` + tree.String() + `","SPECIESID":"` + uuid.New().String() + `"}`,
+			`{"treeID":"` + tree.String() + `","speciesID":null,"speciesid":"` + uuid.New().String() + `"}`,
+		} {
+			clientUUID := uuid.New()
+			result := h.syncOne(t, deviceToken, map[string]any{
+				"client_uuid": clientUUID, "kind": kind, "tree_uuid": tree,
+				"occurred_at": time.Now().UTC(), "payload": json.RawMessage(payload),
+			})
+			if result.Status != "failed" || result.Error == nil || *result.Error != apierr.ValidationFailed {
+				t.Fatalf("%s with %s: %q (%s), want failed validation_failed",
+					kind, payload, result.Status, codeOf(result.Error))
+			}
+
+			// The item must also never have been written: a refusal that still stores the row
+			// under a key `payload ->> 'speciesID'` cannot see would be no refusal at all.
+			var count int
+			if err := h.store.Pool().QueryRow(context.Background(),
+				`SELECT count(*) FROM contributions WHERE client_uuid = $1`, clientUUID).Scan(&count); err != nil {
+				t.Fatalf("checking whether the refused item was stored: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("%s with %s: refused but stored (%d rows)", kind, payload, count)
+			}
+		}
+	}
+}

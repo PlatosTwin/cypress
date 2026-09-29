@@ -718,7 +718,7 @@ func TestWithheldKindsProduceTheEmptyAnswer(t *testing.T) {
 		// The payload deliberately carries everything the published kinds carry, so a projection
 		// that stopped filtering on `kind` would have something to publish and this would catch it.
 		// `speciesID` is there because `species_claim` and `species_correction` refuse a body
-		// without one — a claim that names no species is not a record (`speciesStatementPayload`).
+		// without one — a claim that names no species is not a record (`speciesStatementSpeciesID`).
 		h.applyItem(t, session.AccessToken, map[string]any{
 			"client_uuid": uuid.New(), "kind": kind, "tree_uuid": tree,
 			"occurred_at": "2026-09-05T08:00:00Z",

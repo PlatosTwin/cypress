@@ -86,8 +86,8 @@ type wireLatLon struct {
 	Longitude float64 `json:"longitude"`
 }
 
-// speciesStatementPayload is the one field of `SpeciesStatement` this service reads — the payload
-// of both `species_claim` and `species_correction`
+// speciesStatementSpeciesID reads the one field of `SpeciesStatement` this service checks — the
+// payload of both `species_claim` and `species_correction`
 // (`Cypress/Data/Outbox/CommunityMutations.swift`: keys stay the Swift property names).
 //
 // ── Why a claim with no readable species is refused, when so much else here is lenient ──────────
@@ -116,8 +116,29 @@ type wireLatLon struct {
 // today, their bodies are accepted without a shape for reasons `measurementPayload` gives, and
 // the read now tolerates anything they could hold — a new refusal there would be a terminal
 // failure bought for nothing.
-type speciesStatementPayload struct {
-	SpeciesID *uuid.UUID `json:"speciesID"`
+//
+// **Decoded into a raw map first, not a struct.** `encoding/json` matches a struct field's tag
+// case-insensitively when no exact match exists, so a struct field tagged `json:"speciesID"`
+// would also accept `speciesid` or `SPECIESID` — keys the client never sends and the SQL side
+// never reads (`store.GroveSpeciesKnown` and the disputed-payload rule in `dataDisputePayload`
+// both key on the exact spelling `speciesID`). A case-folded key would then pass this refusal
+// while storing `payload->>'speciesID' IS NULL`, which is a written record this check exists to
+// prevent. `map[string]json.RawMessage` keys are the literal bytes on the wire, so looking up
+// exactly `"speciesID"` is the same strictness `->>'speciesID'` already has.
+func speciesStatementSpeciesID(raw json.RawMessage) (*uuid.UUID, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	value, ok := fields["speciesID"]
+	if !ok {
+		return nil, nil
+	}
+	var speciesID *uuid.UUID
+	if err := json.Unmarshal(value, &speciesID); err != nil {
+		return nil, err
+	}
+	return speciesID, nil
 }
 
 // photoWithdrawalPayload is `PhotoWithdrawal` as the client encodes it
@@ -242,22 +263,34 @@ type measurementPayload struct {
 // forbid the key because `store.GroveSpeciesKnown` ran `(payload->>'speciesID')::uuid` over every
 // kind, so a valid one on a dispute enrolled that species in "species you know" and an invalid one
 // made the sender's Species tab a permanent 500. That read now interprets `speciesID` only on
-// `store.MetSpeciesKinds` — the sighting kinds, of which a dispute is not one — and compares it as
-// text, parsing in Go and skipping what does not parse. A top-level `speciesID` on a dispute is
+// `store.MetSpeciesKinds` — the sighting kinds, of which a dispute is not one — reading it as text,
+// parsing in Go and skipping what does not parse. A top-level `speciesID` on a dispute is
 // therefore neither counted nor able to fail anything. The contract is kept because a second
 // spelling of one suggestion is a second place for it to be wrong, not because anything breaks.
 //
 // The general rule, for whoever adds the next key: before putting a name at the top level of a
 // payload, grep `internal/store` for `payload ->>` and check whether an existing read already
-// interprets that name. Four functions in `internal/store` do: `withdrawMeasurement` and
+// interprets that name. Five functions in `internal/store` do: `withdrawMeasurement` and
 // `disputeIsThisIdentitys` read `payload ->> 'id'`, `measurementWasWithdrawn` reads
-// `payload ->> 'measurementID'`, and `GroveSpeciesKnown` reads `payload ->> 'speciesID'`. None of
-// the four can fail on a value it was not meant to read, and the reason is not that they narrow on
-// `kind`, though all four do: it is that they **compare the extracted text** and never cast it in
-// SQL, so a payload of any kind carrying a non-UUID value simply misses. Do not lean on the `kind`
-// qual as the safe-making part — `store.disputeIsThisIdentitys` records exactly what is and is not
-// known about that. A new read that casts a payload value to `uuid` in SQL puts back the defect
-// `GroveSpeciesKnown` was fixed for.
+// `payload ->> 'measurementID'`, `GroveSpeciesKnown` reads `payload ->> 'speciesID'`, and
+// `PublicTreeCommunityHalf` (`store/public.go:195-206`) reads the top-level `kind` and `quantity`
+// of a measurement. None of the five can fail on a value it was not meant to read, and the reason
+// is not that they narrow on `kind`, though all five do: none of them ever casts the extracted
+// value to a SQL type. That works out differently for each:
+//
+//   - `withdrawMeasurement`, `disputeIsThisIdentitys` and `measurementWasWithdrawn` **compare the
+//     extracted text** against a caller-supplied id, so a payload of any kind carrying an
+//     unexpected value there simply fails to match.
+//   - `GroveSpeciesKnown` does not compare the text to anything. It groups the extracted text and
+//     parses each group in Go with `uuid.Parse`, so a value that is not a canonical UUID is
+//     skipped rather than failing the query.
+//   - `PublicTreeCommunityHalf` neither compares nor parses: it filters `kind` against a fixed
+//     two-value allow-list and serves the extracted text of `kind` and `quantity` straight back to
+//     the client as opaque strings.
+//
+// Do not lean on the `kind` qual as the safe-making part — `store.disputeIsThisIdentitys` records
+// exactly what is and is not known about that. A new read that casts a payload value to `uuid` in
+// SQL puts back the defect `GroveSpeciesKnown` was fixed for.
 type dataDisputePayload struct {
 	ID         uuid.UUID `json:"id"`
 	TreeID     uuid.UUID `json:"treeID"`
@@ -663,13 +696,14 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 
 	// ── `species_claim` and `species_correction` must name a species ──────────────────────────
 	//
-	// See `speciesStatementPayload` for why this refusal is safe and why it is here.
+	// See `speciesStatementSpeciesID` for why this refusal is safe, why it is here, and why the
+	// key it reads is matched exactly rather than case-folded.
 	if item.Kind == "species_claim" || item.Kind == "species_correction" {
-		var payload speciesStatementPayload
-		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+		speciesID, err := speciesStatementSpeciesID(item.Payload)
+		if err != nil {
 			return failed(apierr.ValidationFailed, "That item's body could not be read.")
 		}
-		if payload.SpeciesID == nil {
+		if speciesID == nil {
 			return failed(apierr.ValidationFailed, "That item named no species.")
 		}
 	}
