@@ -155,15 +155,22 @@ jobs:
       # The exit code is recorded and then deliberately NOT trusted on its own: it is 0 for an
       # all-skipped run, which is the case this workflow exists to catch. The judge reads the
       # stream; the job fails if EITHER says so. `-count=1` so a result is never a cache replay.
+      #
+      # **`|| status=$?`, not `status=$?` on the next line.** GitHub runs this with
+      # `bash -e -o pipefail`, and `set -uo pipefail` does not turn the `-e` off. Written the plain
+      # way, a failing `go test` ended the step on the spot: no "exited" line, no judge, and a red
+      # job whose log never said which test failed. Found by #188's red-proof (run 36504589788),
+      # where `gate`'s error pointed at "its judge prints the reason" and the judge had not run.
+      # The skip calibrations never saw it, because an all-skipped run exits 0.
       - name: Run the suite against Postgres, and judge the stream rather than the exit code
         working-directory: server
         run: |
           set -uo pipefail
-          go test -json -count=1 ./... > "$RUNNER_TEMP/server-test.json"
-          status=$?
+          status=0
+          go test -json -count=1 ./... > "$RUNNER_TEMP/server-test.json" || status=$?
           echo "go test exited $status (recorded, not believed)"
-          ci/verify_test_json.sh "$RUNNER_TEMP/server-test.json"
-          verdict=$?
+          verdict=0
+          ci/verify_test_json.sh "$RUNNER_TEMP/server-test.json" || verdict=$?
           [ "$status" -eq 0 ] && [ "$verdict" -eq 0 ]
 
       # Thirty days, as with the iOS and web logs: an errata entry cites the run it came from.
