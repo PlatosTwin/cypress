@@ -67,18 +67,23 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 		}
 	}
 
-	accepter, decliner, device := uuid.New(), uuid.New(), uuid.New()
-	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'a', 'odbl-1.0', now())`, accepter)
+	// Two accepters on either side of the tree's updated_at: the late one went live at its
+	// acceptance, not before it (review of #187, F2).
+	liveAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	acceptedLater := liveAt.Add(19 * 24 * time.Hour)
+	accepter, lateAccepter, decliner, device := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'a', 'odbl-1.0', $2)`, accepter, liveAt.Add(-48*time.Hour))
+	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'l', 'odbl-1.0', $2)`, lateAccepter, acceptedLater)
 	exec(`INSERT INTO users (id, apple_subject) VALUES ($1, 'd')`, decliner)
 	exec(`INSERT INTO devices (id, device_uuid) VALUES ($1, $2)`, device, uuid.New())
 
-	liveAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	accepted, declined, deviceOwned, orphan := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	accepted, acceptedLate, declined, deviceOwned, orphan := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	insert := func(id uuid.UUID, user, dev *uuid.UUID) {
 		exec(`INSERT INTO community_trees (id, lat, lon, placement, user_id, device_id, created_at, updated_at)
 		      VALUES ($1, 37.76, -122.5, 'gps', $2, $3, $4, $5)`, id, user, dev, liveAt.Add(-time.Hour), liveAt)
 	}
 	insert(accepted, &accepter, nil)
+	insert(acceptedLate, &lateAccepter, nil)
 	insert(declined, &decliner, nil)
 	insert(deviceOwned, nil, &device)
 	insert(orphan, nil, nil)
@@ -97,6 +102,8 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 		Added        int
 		Published    int
 		RootKey      *uuid.UUID
+		EventAt      *time.Time
+		License      *string
 	}
 	read := func(id uuid.UUID) backfilled {
 		t.Helper()
@@ -106,30 +113,40 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 			       (SELECT count(*) FROM community_tree_locations l WHERE l.id = t.id AND l.tree_id = t.id AND l.superseded_by IS NULL),
 			       (SELECT count(*) FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'added' AND e.id = t.id),
 			       (SELECT count(*) FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published'),
-			       (SELECT l.contribution_client_uuid FROM community_tree_locations l WHERE l.id = t.id)
+			       (SELECT l.contribution_client_uuid FROM community_tree_locations l WHERE l.id = t.id),
+			       (SELECT max(e.occurred_at) FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published'),
+			       (SELECT max(e.after ->> 'license_version') FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published')
 			  FROM community_trees t WHERE t.id = $1
-		`, id).Scan(&b.PublishedAt, &b.AnonymizedAt, &b.Root, &b.Added, &b.Published, &b.RootKey); err != nil {
+		`, id).Scan(&b.PublishedAt, &b.AnonymizedAt, &b.Root, &b.Added, &b.Published, &b.RootKey,
+			&b.EventAt, &b.License); err != nil {
 			t.Fatal(err)
 		}
 		return b
 	}
 
 	for name, c := range map[string]struct {
-		id         uuid.UUID
-		published  bool
-		anonymized bool
+		id          uuid.UUID
+		published   bool
+		anonymized  bool
+		publishedAt time.Time
 	}{
-		"an accepting account's tree": {accepted, true, false},
-		"a declining account's tree":  {declined, false, false},
-		"a device's tree":             {deviceOwned, false, false},
-		"a deleted account's orphan":  {orphan, false, true},
+		"an accepting account's tree":            {accepted, true, false, liveAt},
+		"a tree whose account accepted after it": {acceptedLate, true, false, acceptedLater},
+		"a declining account's tree":             {declined, false, false, time.Time{}},
+		"a device's tree":                        {deviceOwned, false, false, time.Time{}},
+		"a deleted account's orphan":             {orphan, false, true, time.Time{}},
 	} {
 		b := read(c.id)
 		if (b.PublishedAt != nil) != c.published {
 			t.Errorf("%s: published_at = %v, want published %v", name, b.PublishedAt, c.published)
 		}
-		if c.published && !b.PublishedAt.Equal(liveAt) {
-			t.Errorf("%s: published at %v, want its updated_at %v", name, b.PublishedAt, liveAt)
+		if c.published && !b.PublishedAt.Equal(c.publishedAt) {
+			t.Errorf("%s: published at %v, want %v — the later of its updated_at and its account's "+
+				"acceptance", name, b.PublishedAt, c.publishedAt)
+		}
+		if c.published && (b.EventAt == nil || !b.EventAt.Equal(*b.PublishedAt) || b.License == nil || *b.License != "odbl-1.0") {
+			t.Errorf("%s: the published event is at %v naming license %v; want it at published_at %v "+
+				"naming odbl-1.0 (decision 10)", name, b.EventAt, b.License, b.PublishedAt)
 		}
 		if (b.AnonymizedAt != nil) != c.anonymized {
 			t.Errorf("%s: anonymized_at = %v, want anonymized %v", name, b.AnonymizedAt, c.anonymized)
@@ -208,5 +225,193 @@ func TestDeletingAnAccountTheCodeForgotIsRefused(t *testing.T) {
 	// And the deletion that does the job first succeeds.
 	if _, err := s.DeleteAccount(ctx, user.ID, LeaveRecords, nil, ""); err != nil {
 		t.Fatalf("DeleteAccount: %v", err)
+	}
+}
+
+// TestMigration007RunsOverEveryKindOfRowProductionHolds is 007 against a database shaped like the
+// one it will meet: every contribution kind 005 admits, a live session, an account deleted before
+// 007 (whose tree the foreign key already left ownerless), and a tree whose account accepted weeks
+// after it was claimed. It checks the backfill against the published-at-acceptance record, and
+// that the post-007 writers work on backfilled rows.
+func TestMigration007RunsOverEveryKindOfRowProductionHolds(t *testing.T) {
+	s := storeAtVersion(t, "cypress_test_realistic_007", 7)
+	ctx := context.Background()
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", strings.Join(strings.Fields(sql)[:3], " "), err)
+		}
+	}
+
+	claimedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	acceptedLater := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	early, late, decliner, deleted := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'early', 'odbl-1.0', $2)`, early, claimedAt.Add(-time.Hour))
+	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'late', 'odbl-1.0', $2)`, late, acceptedLater)
+	exec(`INSERT INTO users (id, apple_subject) VALUES ($1, 'decliner')`, decliner)
+	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'gone', 'odbl-1.0', now())`, deleted)
+	devA, devB := uuid.New(), uuid.New()
+	exec(`INSERT INTO devices (id, device_uuid, user_id) VALUES ($1, $2, $3)`, devA, uuid.New(), early)
+	exec(`INSERT INTO devices (id, device_uuid) VALUES ($1, $2)`, devB, uuid.New())
+	exec(`INSERT INTO sessions (id, user_id, refresh_token_hash, issued_at, expires_at) VALUES ($1, $2, '\x01', now(), now() + interval '1 day')`, uuid.New(), early)
+
+	trees := map[string]uuid.UUID{}
+	insert := func(name string, user, dev *uuid.UUID, placement string) {
+		id := uuid.New()
+		trees[name] = id
+		exec(`INSERT INTO community_trees (id, lat, lon, placement, land_context, user_id, device_id, created_at, updated_at)
+		      VALUES ($1, 37.76, -122.5, $2, 'private_property', $3, $4, $5, $6)`, id, placement, user, dev, claimedAt.Add(-24*time.Hour), claimedAt)
+	}
+	insert("early accepter", &early, nil, "gps")
+	insert("late accepter", &late, nil, "contributor_placed")
+	insert("decliner", &decliner, nil, "gps")
+	insert("device", nil, &devB, "gps")
+	insert("orphan", &deleted, nil, "gps")
+	exec(`DELETE FROM users WHERE id = $1`, deleted) // pre-007: ON DELETE SET NULL leaves both owners NULL
+
+	kinds := []string{"visit", "observation", "measurement", "care_event", "favorite_toggle", "private_reminder",
+		"add_tree", "species_claim", "species_correction", "wrong_species_report", "never_existed_report",
+		"species_review_dismissal", "record_review_dismissal", "photo_vote", "photo_withdrawal", "hazard_redirect",
+		"measurement_withdrawal", "data_dispute", "data_dispute_withdrawal"}
+	for _, kind := range kinds {
+		exec(`INSERT INTO contributions (client_uuid, kind, tree_uuid, device_id, payload, occurred_at) VALUES ($1, $2, $3, $4, '{}', now())`,
+			uuid.New(), kind, trees["device"], devB)
+	}
+
+	if err := s.applyOne(ctx, migrationFileVersion(t, 7)); err != nil {
+		t.Fatalf("007 over realistic rows: %v", err)
+	}
+
+	for name, want := range map[string]struct{ published, anonymized bool }{
+		"early accepter": {true, false}, "late accepter": {true, false}, "decliner": {false, false},
+		"device": {false, false}, "orphan": {false, true},
+	} {
+		var published, anonymized bool
+		var heads, added int
+		if err := s.pool.QueryRow(ctx, `
+			SELECT published_at IS NOT NULL, anonymized_at IS NOT NULL,
+			       (SELECT count(*) FROM community_tree_locations WHERE tree_id = $1 AND superseded_by IS NULL),
+			       (SELECT count(*) FROM community_tree_events WHERE tree_id = $1 AND kind = 'added')
+			  FROM community_trees WHERE id = $1`, trees[name]).Scan(&published, &anonymized, &heads, &added); err != nil {
+			t.Fatal(err)
+		}
+		if published != want.published || anonymized != want.anonymized || heads != 1 || added != 1 {
+			t.Errorf("%s: published=%v anonymized=%v heads=%d added=%d; want %v, %v, 1, 1",
+				name, published, anonymized, heads, added, want.published, want.anonymized)
+		}
+	}
+
+	// Decision 10's record: every published tree has a published event at its published_at naming
+	// the version accepted, and no publication predates its account's acceptance.
+	var unrecorded, early007 int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+		  (SELECT count(*) FROM community_trees t
+		    WHERE t.published_at IS NOT NULL
+		      AND NOT EXISTS (SELECT 1 FROM community_tree_events e
+		                       WHERE e.tree_id = t.id AND e.kind = 'published' AND e.occurred_at = t.published_at
+		                         AND e.after ->> 'license_version' IS NOT NULL)),
+		  (SELECT count(*) FROM community_trees t JOIN users u ON u.id = t.user_id
+		    WHERE t.published_at < u.license_accepted_at)
+	`).Scan(&unrecorded, &early007); err != nil {
+		t.Fatal(err)
+	}
+	if unrecorded != 0 || early007 != 0 {
+		t.Errorf("after the backfill %d published trees have no licensed published event at their "+
+			"published_at, and %d were published before their account accepted", unrecorded, early007)
+	}
+
+	// The post-007 writers work on backfilled rows.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if err := applyLocationCorrection(ctx, tx, LocationCorrection{ID: uuid.New(), TreeID: trees["early accepter"],
+		Lat: 37.7601, Lon: -122.5, Placement: "gps"}, newTreeAct{Owner: UserOwner(early), OccurredAt: time.Now()}, time.Now()); err != nil {
+		t.Errorf("moving a backfilled tree: %v", err)
+	}
+}
+
+// TestAnAcceptanceCannotSlipPastAnOpenInsert drives the interleaving by hand with the production
+// functions: a signed-in insert reads the account's answer ("declined") and stays open; an
+// acceptance arrives on another connection. Without a lock on the users row the acceptance
+// commits first, its publish sweep cannot see the uncommitted tree, and the insert then commits a
+// private tree under an account that has accepted — until some later acceptance. With FOR SHARE
+// the acceptance waits for the insert, and its sweep publishes the tree.
+//
+// The test waits until the acceptance has either returned or is observed waiting on a lock in
+// pg_stat_activity before it commits the insert, so the outcome does not depend on scheduling.
+func TestAnAcceptanceCannotSlipPastAnOpenInsert(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	user := makeUser(t, s, "ct-acceptance-race")
+	if err := s.RecordLicenseConsent(ctx, user.ID, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	insert, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer insert.Rollback(ctx)
+	tree := uuid.New()
+	now := time.Now().UTC()
+	if _, err := insertCommunityTree(ctx, insert, NewCommunityTree{ID: tree, Lat: 37.76, Lon: -122.5, Placement: "gps"},
+		newTreeAct{Owner: UserOwner(user.ID), OccurredAt: now}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	version := "odbl-1.0"
+	done := make(chan error, 1)
+	go func() { done <- s.RecordLicenseConsent(ctx, user.ID, &version, nil) }()
+
+	var acceptErr error
+	returned, waited := false, false
+	for i := 0; i < 600 && !returned && !waited; i++ {
+		select {
+		case acceptErr = <-done:
+			returned = true
+		case <-time.After(100 * time.Millisecond):
+			var waiting int
+			if err := s.pool.QueryRow(ctx, `
+				SELECT count(*) FROM pg_stat_activity
+				 WHERE datname = current_database() AND wait_event_type = 'Lock'
+				   AND query LIKE '%UPDATE users SET license_version%'
+			`).Scan(&waiting); err != nil {
+				t.Fatal(err)
+			}
+			waited = waiting > 0
+		}
+	}
+	if !returned && !waited {
+		t.Fatal("after 60 s the acceptance had neither returned nor been seen waiting on a lock")
+	}
+	if err := insert.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !returned {
+		acceptErr = <-done
+	}
+	if acceptErr != nil {
+		t.Fatal(acceptErr)
+	}
+
+	var published bool
+	var events int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT published_at IS NOT NULL,
+		       (SELECT count(*) FROM community_tree_events WHERE tree_id = $1 AND kind = 'published'
+		           AND after ->> 'license_version' = 'odbl-1.0')
+		  FROM community_trees WHERE id = $1`, tree).Scan(&published, &events); err != nil {
+		t.Fatal(err)
+	}
+	if !published || events != 1 {
+		t.Fatalf("the account accepted and its tree is published=%v with %d licensed published events "+
+			"(the acceptance returned before the insert committed: %v) — the acceptance's sweep ran "+
+			"while the insert was open, and the insert had read the old decline", published, events, returned)
+	}
+	if returned {
+		t.Fatal("the acceptance committed while an insert that read the account's answer was still open")
 	}
 }

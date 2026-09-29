@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -138,13 +140,16 @@ type eventRow struct {
 	ActorDevice *uuid.UUID
 	OccurredAt  time.Time
 	Anonymized  bool
+	// License is `after ->> 'license_version'`: on a `published` event, the version the account
+	// had accepted at that moment (decision 10).
+	License *string
 }
 
 func eventsOf(t *testing.T, h *harness, tree uuid.UUID) []eventRow {
 	t.Helper()
 	rows, err := h.store.Pool().Query(context.Background(), `
 		SELECT id, kind, contribution_client_uuid, actor_user_id, actor_device_id, occurred_at,
-		       anonymized_at IS NOT NULL
+		       anonymized_at IS NOT NULL, after ->> 'license_version'
 		  FROM community_tree_events WHERE tree_id = $1
 		 ORDER BY recorded_at, occurred_at, kind
 	`, tree)
@@ -156,7 +161,7 @@ func eventsOf(t *testing.T, h *harness, tree uuid.UUID) []eventRow {
 	for rows.Next() {
 		var e eventRow
 		if err := rows.Scan(&e.ID, &e.Kind, &e.ClientUUID, &e.ActorUser, &e.ActorDevice,
-			&e.OccurredAt, &e.Anonymized); err != nil {
+			&e.OccurredAt, &e.Anonymized, &e.License); err != nil {
 			t.Fatal(err)
 		}
 		events = append(events, e)
@@ -261,22 +266,37 @@ func mustFail(t *testing.T, result syncResult, code apierr.Code, what string) {
 	}
 }
 
-// assertPublicationInvariant is migration 007's half-two, the half no CHECK can hold: a published
-// tree belongs to an account that has accepted the license, or to nobody (anonymized).
+// assertPublicationInvariant is migration 007's half-two, the half no CHECK can hold, in decision
+// 10's form: a tree is published only at a moment its account had accepted the license. The
+// license is one-way, so the account's *current* answer says nothing about a tree published under
+// an earlier one; what is checked is the record of the moment. Every published tree has a
+// `published` event at exactly its `published_at` that names the version accepted then, and no
+// `published` event anywhere lacks one.
+//
+// That record is written by the same code it vouches for, so this is a consistency check, not an
+// oracle. The oracle is TestEveryPublicationHappenedUnderAnAcceptedLicense's walk, which knows
+// from the outside when the account had accepted and checks every tree's state against that.
 func assertPublicationInvariant(t *testing.T, h *harness) {
 	t.Helper()
-	var violations int
+	var unrecorded, unlicensed int
 	if err := h.store.Pool().QueryRow(context.Background(), `
-		SELECT count(*) FROM community_trees t LEFT JOIN users u ON u.id = t.user_id
-		 WHERE t.published_at IS NOT NULL
-		   AND NOT (t.anonymized_at IS NOT NULL
-		            OR (t.user_id IS NOT NULL AND u.license_version IS NOT NULL))
-	`).Scan(&violations); err != nil {
+		SELECT
+		  (SELECT count(*) FROM community_trees t
+		    WHERE t.published_at IS NOT NULL
+		      AND NOT EXISTS (
+		          SELECT 1 FROM community_tree_events e
+		           WHERE e.tree_id = t.id AND e.kind = 'published'
+		             AND e.occurred_at = t.published_at
+		             AND e.after ->> 'license_version' IS NOT NULL)),
+		  (SELECT count(*) FROM community_tree_events
+		    WHERE kind = 'published' AND after ->> 'license_version' IS NULL)
+	`).Scan(&unrecorded, &unlicensed); err != nil {
 		t.Fatal(err)
 	}
-	if violations != 0 {
-		t.Fatalf("%d published tree(s) belong to an account that has not accepted the license "+
-			"(decision 7) — the invariant 007's header says the code keeps", violations)
+	if unrecorded != 0 || unlicensed != 0 {
+		t.Fatalf("%d published tree(s) have no published event at their published_at naming an "+
+			"accepted license, and %d published event(s) name none (decisions 7 and 10) — the "+
+			"invariant 007's header says the code keeps", unrecorded, unlicensed)
 	}
 }
 
@@ -388,22 +408,27 @@ func TestADeclinedLicenseKeepsTreesOffTheMapUntilItIsAccepted(t *testing.T) {
 		if !stateOf(t, h, tree).Published {
 			t.Fatalf("%s is still unpublished after the account accepted the license", name)
 		}
-		if n := len(eventsOfKind(eventsOf(t, h, tree), "published")); n != 1 {
-			t.Fatalf("%s has %d published events after acceptance, want 1", name, n)
+		published := eventsOfKind(eventsOf(t, h, tree), "published")
+		if len(published) != 1 {
+			t.Fatalf("%s has %d published events after acceptance, want 1", name, len(published))
+		}
+		if published[0].License == nil || *published[0].License != "odbl-1.0" {
+			t.Fatalf("%s's published event records license %v, want the odbl-1.0 just accepted",
+				name, published[0].License)
 		}
 	}
 	assertPublicationInvariant(t, h)
 }
 
-// TestDecliningAfterAcceptingTakesTheTreesBackOff is the direction decision 7 does not spell out and
-// the invariant does: an account that accepted, published, and then signed in again with the box
-// clear no longer holds public trees.
-func TestDecliningAfterAcceptingTakesTheTreesBackOff(t *testing.T) {
+// TestALaterDeclineLeavesPublishedTreesPublished is decision 10: the license is one-way. An account
+// that accepted, published, and then signed in again with the box clear keeps its public trees
+// public; only a tree added after the decline stays private.
+func TestALaterDeclineLeavesPublishedTreesPublished(t *testing.T) {
 	h := newHarness(t)
 	account := signInAs(t, h, "ct.changer", nil, accepted())
-	tree := uuid.New()
-	mustApply(t, h.syncOne(t, account.AccessToken, addTreeAt(tree, ctLat, ctLon, time.Now())), "add")
-	if !stateOf(t, h, tree).Published {
+	before, after := uuid.New(), uuid.New()
+	mustApply(t, h.syncOne(t, account.AccessToken, addTreeAt(before, ctLat, ctLon, time.Now())), "add")
+	if !stateOf(t, h, before).Published {
 		t.Fatal("control: the tree was not published under an accepted license")
 	}
 
@@ -411,11 +436,26 @@ func TestDecliningAfterAcceptingTakesTheTreesBackOff(t *testing.T) {
 	if again.UserID != account.UserID {
 		t.Fatal("fixture: the second sign-in is a different account")
 	}
-	if stateOf(t, h, tree).Published {
-		t.Fatal("the account declined the license and its tree is still published")
+	if !stateOf(t, h, before).Published {
+		t.Fatal("decision 10: a tree published under an accepted license was unpublished by a later decline")
 	}
-	if n := len(eventsOfKind(eventsOf(t, h, tree), "unpublished")); n != 1 {
-		t.Fatalf("%d unpublished events, want 1", n)
+	events := eventsOf(t, h, before)
+	if len(events) != 2 || len(eventsOfKind(events, "added")) != 1 || len(eventsOfKind(events, "published")) != 1 {
+		t.Fatalf("the decline wrote to the published tree's history: %+v", events)
+	}
+	stranger := h.registerDeviceToken(t, uuid.New())
+	if code, candidates := postTree(t, h, stranger, uuid.New(), north(3), ctLon); code != http.StatusConflict ||
+		len(candidates) != 1 || candidates[0] != before {
+		t.Fatalf("after the decline a stranger 3 m away got %d %v; the published tree should still be seen",
+			code, candidates)
+	}
+
+	mustApply(t, h.syncOne(t, again.AccessToken, addTreeAt(after, north(60), ctLon, time.Now())), "add after the decline")
+	if state := stateOf(t, h, after); state.Published || state.UserID == nil || *state.UserID != account.UserID {
+		t.Fatalf("a tree added after the decline is %+v; want it the account's and private", state)
+	}
+	if n := len(eventsOfKind(eventsOf(t, h, after), "published")); n != 0 {
+		t.Fatalf("a tree added after the decline has %d published events", n)
 	}
 	assertPublicationInvariant(t, h)
 }
@@ -643,6 +683,56 @@ func TestALateOlderCorrectionLandsAlreadySuperseded(t *testing.T) {
 	}
 }
 
+// TestConcurrentCorrectionsLeaveOneChain: four corrections of one tree in four concurrent requests
+// leave one head, a chain in (occurred_at, id) order, and a cache that agrees with the head — ten
+// times over, so an interleaving that breaks it has ten chances to show.
+func TestConcurrentCorrectionsLeaveOneChain(t *testing.T) {
+	h := newHarness(t)
+	adder := h.registerDeviceToken(t, uuid.New())
+	for round := 0; round < 10; round++ {
+		tree := uuid.New()
+		base := time.Now().Add(-time.Hour)
+		mustApply(t, h.syncOne(t, adder, addTreeAt(tree, north(float64(round)*100), ctLon, base)), "add")
+		var wg sync.WaitGroup
+		results := make([]syncResult, 4)
+		for i := range results {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				results[i] = h.syncOne(t, adder, correctionItem(tree, uuid.New(),
+					north(float64(round)*100+20+float64(i)*0.5), ctLon, base.Add(time.Duration(i+1)*time.Minute)))
+			}(i)
+		}
+		wg.Wait()
+		for i, r := range results {
+			mustApply(t, r, fmt.Sprintf("round %d, concurrent correction %d", round, i))
+		}
+		var heads, rows, broken int
+		var cacheLat, headLat, newestLat float64
+		if err := h.store.Pool().QueryRow(context.Background(), `
+			WITH ordered AS (
+			  SELECT superseded_by, lead(id) OVER (ORDER BY occurred_at, id) AS next
+			    FROM community_tree_locations WHERE tree_id = $1)
+			SELECT (SELECT count(*) FROM community_tree_locations WHERE tree_id = $1 AND superseded_by IS NULL),
+			       (SELECT count(*) FROM community_tree_locations WHERE tree_id = $1),
+			       (SELECT count(*) FROM ordered WHERE superseded_by IS DISTINCT FROM next),
+			       (SELECT lat FROM community_trees WHERE id = $1),
+			       (SELECT lat FROM community_tree_locations WHERE tree_id = $1 AND superseded_by IS NULL),
+			       (SELECT lat FROM community_tree_locations WHERE tree_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1)
+		`, tree).Scan(&heads, &rows, &broken, &cacheLat, &headLat, &newestLat); err != nil {
+			t.Fatal(err)
+		}
+		if heads != 1 || rows != 5 || broken != 0 {
+			t.Fatalf("round %d: %d heads over %d rows with %d links out of (occurred_at, id) order; "+
+				"want 1 over 5 with none", round, heads, rows, broken)
+		}
+		if cacheLat != headLat || headLat != newestLat {
+			t.Fatalf("round %d: the cache says %v, the head %v, the newest correction %v", round,
+				cacheLat, headLat, newestLat)
+		}
+	}
+}
+
 // TestAMoveOfATreeThisServiceDoesNotHoldIsNotFound is §3A's `not_found`: never received, and
 // withdrawn.
 func TestAMoveOfATreeThisServiceDoesNotHoldIsNotFound(t *testing.T) {
@@ -686,6 +776,7 @@ func TestTheLocationCorrectionRefusals(t *testing.T) {
 	}{
 		{"no correction id", func(p map[string]any) { delete(p, "id") }, "That item named no correction."},
 		{"another tree", func(p map[string]any) { p["treeID"] = uuid.New() }, "That item disagrees with itself about which tree it moves."},
+		{"the tree's own id", func(p map[string]any) { p["id"] = tree }, "That correction's identifier is the tree's; a correction needs its own."},
 		{"no coordinate", func(p map[string]any) { delete(p, "coordinate") }, "That item named no location."},
 		{"off the map", func(p map[string]any) { p["coordinate"] = map[string]any{"latitude": 91.0, "longitude": 0.0} }, "That location is not on the map."},
 		{"no placement", func(p map[string]any) { delete(p, "placement") }, "That placement is not one this service accepts."},
@@ -788,7 +879,7 @@ func TestAWithdrawalAfterSomebodyElseBuiltOnItIsAConflict(t *testing.T) {
 	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(visited, ctLat, ctLon, time.Now())), "add")
 	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(photographed, north(50), ctLon, time.Now())), "add")
 	mustApply(t, h.syncOne(t, stranger, visitItem(visited)), "a stranger's visit")
-	beginPhotoFor(t, h, stranger, photographed)
+	receivedPhotoFor(t, h, stranger, photographed)
 
 	for name, tree := range map[string]uuid.UUID{"a visit": visited, "a photograph": photographed} {
 		result := h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree))
@@ -797,6 +888,213 @@ func TestAWithdrawalAfterSomebodyElseBuiltOnItIsAConflict(t *testing.T) {
 			t.Fatalf("a refused withdrawal changed the tree: %+v", state)
 		}
 	}
+}
+
+// receivedPhotoFor is a photograph the way the client finishes one: begun, and its bytes reported
+// landed. Only such a photograph is work somebody built on (the orchestrator's ruling after #187's
+// review) — beginPhotoFor alone is a reservation.
+func receivedPhotoFor(t *testing.T, h *harness, bearer string, tree uuid.UUID) uuid.UUID {
+	t.Helper()
+	photo := beginPhotoFor(t, h, bearer, tree)
+	recorder := h.do(t, http.MethodPost, Prefix+"/photos/"+photo.String()+"/received", bearer, nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("photos/received: status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	return photo
+}
+
+// TestAPhotographWhoseBytesNeverArrivedIsNotBuiltOn: a begun photograph with no bytes is a
+// reservation nobody can see, and does not keep the adder's tree up. The control is the same
+// photograph once its bytes are reported: then it does.
+func TestAPhotographWhoseBytesNeverArrivedIsNotBuiltOn(t *testing.T) {
+	h := newHarness(t)
+	adder := signInAs(t, h, "ct.byteless", nil, accepted())
+	stranger := h.registerDeviceToken(t, uuid.New())
+	byteless, landed := uuid.New(), uuid.New()
+	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(byteless, ctLat, ctLon, time.Now())), "add")
+	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(landed, north(50), ctLon, time.Now())), "add")
+	beginPhotoFor(t, h, stranger, byteless)
+	receivedPhotoFor(t, h, stranger, landed)
+
+	var pending int
+	if err := h.store.Pool().QueryRow(context.Background(), `
+		SELECT count(*) FROM photos WHERE tree_uuid = $1 AND bytes_received_at IS NULL AND deleted_at IS NULL
+	`, byteless).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending != 1 {
+		t.Fatalf("fixture: %d live byteless photographs on the tree, want 1", pending)
+	}
+
+	mustFail(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(landed)), apierr.Conflict,
+		"control: withdrawing a tree with a stranger's landed photograph")
+	mustApply(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(byteless)),
+		"withdrawing a tree whose only other photograph never arrived")
+	if !stateOf(t, h, byteless).Deleted {
+		t.Fatal("the withdrawal applied and the tree is still up")
+	}
+}
+
+// strangerAct is one thing a stranger can do to a tree, sent under the stranger's own credential.
+type strangerAct struct {
+	name string
+	send func(t *testing.T, h *harness, stranger string, tree uuid.UUID)
+}
+
+// sendKind sends one contribution of `kind` with a payload the client would send, and requires it
+// applied — a refused item would leave nothing on the tree, and the test would be measuring that.
+func sendKind(kind string, item func(tree uuid.UUID) map[string]any) strangerAct {
+	return strangerAct{kind, func(t *testing.T, h *harness, stranger string, tree uuid.UUID) {
+		t.Helper()
+		mustApply(t, h.syncOne(t, stranger, item(tree)), "a stranger's "+kind)
+	}}
+}
+
+// communityKind is one of communityKinds' payloads by name.
+func communityKind(kind string) func(tree uuid.UUID) map[string]any {
+	return func(tree uuid.UUID) map[string]any {
+		for _, k := range communityKinds(tree, uuid.New(), uuid.New()) {
+			if k.Kind == kind {
+				return map[string]any{
+					"client_uuid": uuid.New(), "kind": kind, "tree_uuid": tree,
+					"occurred_at": time.Now().UTC(), "payload": json.RawMessage(k.Payload),
+				}
+			}
+		}
+		panic("no community kind " + kind)
+	}
+}
+
+// unmetActs are everything a stranger can leave on a tree that is not a visit or a photo. None of
+// them is "built on" (the orchestrator's ruling after #187's fix round, on the owner's words "if
+// anyone else has a visit or photo on the tree"). A measurement its taker withdrew is here too:
+// the withdrawal deletes it, and a deleted reading is not a visit.
+func unmetActs() []strangerAct {
+	return []strangerAct{
+		sendKind("favorite_toggle", func(tree uuid.UUID) map[string]any {
+			return favoriteItem(tree, true, stamp8601(time.Now()))
+		}),
+		sendKind("photo_vote", communityKind("photo_vote")),
+		sendKind("private_reminder", func(tree uuid.UUID) map[string]any {
+			return map[string]any{
+				"client_uuid": uuid.New(), "kind": "private_reminder", "tree_uuid": tree,
+				"occurred_at": stamp8601(time.Now()),
+				"payload":     jsonBody(map[string]any{"clientUUID": uuid.New(), "treeID": tree, "note": "water it"}),
+			}
+		}),
+		sendKind("species_claim", communityKind("species_claim")),
+		sendKind("species_correction", communityKind("species_correction")),
+		sendKind("wrong_species_report", communityKind("wrong_species_report")),
+		sendKind("never_existed_report", communityKind("never_existed_report")),
+		sendKind("species_review_dismissal", communityKind("species_review_dismissal")),
+		sendKind("record_review_dismissal", communityKind("record_review_dismissal")),
+		sendKind("hazard_redirect", communityKind("hazard_redirect")),
+		sendKind("data_dispute", func(tree uuid.UUID) map[string]any {
+			return disputeItem(uuid.New(), tree, []string{"wrong_location"})
+		}),
+		{"a withdrawn measurement", func(t *testing.T, h *harness, stranger string, tree uuid.UUID) {
+			t.Helper()
+			reading := uuid.New()
+			mustApply(t, h.syncOne(t, stranger, measurementItem(tree, reading)), "a stranger's measurement")
+			mustApply(t, h.syncOne(t, stranger, withdrawalItem(tree, reading)), "its withdrawal")
+		}},
+	}
+}
+
+// metActs are a stranger meeting the tree: the four met kinds, and a photograph whose bytes landed.
+func metActs() []strangerAct {
+	return []strangerAct{
+		sendKind("visit", visitItem),
+		sendKind("observation", func(tree uuid.UUID) map[string]any {
+			return observationItem(tree, 4, stamp8601(time.Now()))
+		}),
+		sendKind("measurement", func(tree uuid.UUID) map[string]any { return measurementItem(tree, uuid.New()) }),
+		sendKind("care_event", func(tree uuid.UUID) map[string]any {
+			return map[string]any{
+				"client_uuid": uuid.New(), "kind": "care_event", "tree_uuid": tree,
+				"occurred_at": stamp8601(time.Now()), "payload": json.RawMessage(`{}`),
+			}
+		}),
+		{"a photograph", func(t *testing.T, h *harness, stranger string, tree uuid.UUID) {
+			t.Helper()
+			receivedPhotoFor(t, h, stranger, tree)
+		}},
+	}
+}
+
+// TestOnlyAVisitOrAPhotoKeepsATreeFromItsAdder is decision 8 under the orchestrator's ruling: the
+// adder's withdrawal is refused only by another identity's visit-like contribution or photograph.
+// One tree per act, so each act is the only thing on its tree.
+func TestOnlyAVisitOrAPhotoKeepsATreeFromItsAdder(t *testing.T) {
+	h := newHarness(t)
+	adder := signInAs(t, h, "ct.met.adder", nil, accepted())
+	stranger := h.registerDeviceToken(t, uuid.New())
+	at := 0
+	treeWith := func(act strangerAct) uuid.UUID {
+		t.Helper()
+		tree := uuid.New()
+		mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, north(60*float64(at)), ctLon, time.Now())), "add")
+		at++
+		act.send(t, h, stranger, tree)
+		return tree
+	}
+
+	for _, act := range unmetActs() {
+		tree := treeWith(act)
+		result := h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree))
+		if result.Status != "applied" || !stateOf(t, h, tree).Deleted {
+			t.Fatalf("%s alone kept the adder's tree up: withdrawal %q (%s: %s); only a visit or a "+
+				"photo does", act.name, result.Status, codeOf(result.Error), result.Message)
+		}
+	}
+	for _, act := range metActs() {
+		tree := treeWith(act)
+		result := h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree))
+		if result.Status != "failed" || codeOf(result.Error) != string(apierr.Conflict) || stateOf(t, h, tree).Deleted {
+			t.Fatalf("a stranger's %s did not keep the adder's tree up: withdrawal %q (%s: %s)",
+				act.name, result.Status, codeOf(result.Error), result.Message)
+		}
+	}
+}
+
+// TestOnlyAVisitOrAPhotoKeepsAnErasedTree is decision 6 under the same ruling: eraseEverything
+// deletes and tombstones a tree whose only other activity is not a visit or a photo, and keeps,
+// anonymized and still published, a tree a stranger met.
+func TestOnlyAVisitOrAPhotoKeepsAnErasedTree(t *testing.T) {
+	h := newHarness(t)
+	account := signInAs(t, h, "ct.met.eraser", nil, accepted())
+	stranger := h.registerDeviceToken(t, uuid.New())
+	at := 0
+	trees := map[string]uuid.UUID{}
+	plant := func(acts []strangerAct) []string {
+		var names []string
+		for _, act := range acts {
+			tree := uuid.New()
+			mustApply(t, h.syncOne(t, account.AccessToken, addTreeAt(tree, north(60*float64(at)), ctLon, time.Now())), "add")
+			at++
+			act.send(t, h, stranger, tree)
+			trees[act.name] = tree
+			names = append(names, act.name)
+		}
+		return names
+	}
+	unmet, met := plant(unmetActs()), plant(metActs())
+
+	deleteMe(t, h, account.AccessToken, "eraseEverything")
+
+	for _, name := range unmet {
+		if state := stateOf(t, h, trees[name]); state.Exists || !isTombstoned(t, h, trees[name]) {
+			t.Fatalf("eraseEverything kept a tree whose only other activity was %s (%+v, tombstoned %v); "+
+				"only a visit or a photo keeps it", name, state, isTombstoned(t, h, trees[name]))
+		}
+	}
+	for _, name := range met {
+		state := stateOf(t, h, trees[name])
+		if !state.Exists || !state.Anonymized || !state.Published || state.UserID != nil || isTombstoned(t, h, trees[name]) {
+			t.Fatalf("eraseEverything did not keep, anonymized, a tree a stranger left %s on: %+v", name, state)
+		}
+	}
+	assertPublicationInvariant(t, h)
 }
 
 // TestOnlyTheAdderWithdraws is decision 8's "the adder may".
@@ -811,6 +1109,69 @@ func TestOnlyTheAdderWithdraws(t *testing.T) {
 	if stateOf(t, h, tree).Deleted {
 		t.Fatal("a stranger's refused withdrawal took the tree down")
 	}
+}
+
+// TestAStrangersWithdrawalIsForbiddenWithNothingBuiltOn isolates the authority check. The tree
+// arrives through POST /trees, so there is no add_tree contribution for othersHaveBuiltOn to count
+// as somebody else's work, and nothing but the adder check stands between a stranger and the
+// takedown: without it the stranger's withdrawal applies, where TestOnlyTheAdderWithdraws would
+// still see `conflict` from the adder's own add_tree row.
+func TestAStrangersWithdrawalIsForbiddenWithNothingBuiltOn(t *testing.T) {
+	h := newHarness(t)
+	adder := signInAs(t, h, "ct.isolated.adder", nil, accepted())
+	tree := uuid.New()
+	if code, _ := postTree(t, h, adder.AccessToken, tree, ctLat, ctLon); code != http.StatusOK {
+		t.Fatalf("POST /trees answered %d", code)
+	}
+	if !stateOf(t, h, tree).Published {
+		t.Fatal("control: the tree is not published")
+	}
+	var contributions int
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM contributions WHERE tree_uuid = $1`, tree).Scan(&contributions); err != nil {
+		t.Fatal(err)
+	}
+	if contributions != 0 {
+		t.Fatalf("fixture: %d contributions on the tree; the isolation needs none", contributions)
+	}
+
+	for _, c := range []struct{ name, bearer string }{
+		{"a stranger's device", h.registerDeviceToken(t, uuid.New())},
+		{"a stranger's account", signInAs(t, h, "ct.isolated.stranger", nil, accepted()).AccessToken},
+	} {
+		mustFail(t, h.syncOne(t, c.bearer, treeWithdrawalItem(tree)), apierr.Forbidden,
+			c.name+" withdrawing a tree added through POST /trees")
+		if stateOf(t, h, tree).Deleted {
+			t.Fatalf("%s took somebody else's tree down", c.name)
+		}
+	}
+	mustApply(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree)), "control: the adder's withdrawal")
+}
+
+// TestAClaimedDevicesOwnCredentialNoLongerActsOnItsTrees is the contract C1 builds on: once a
+// device is claimed, a tree it added signed out is the account's, and the device's own credential
+// — a phone that has since signed out — is a stranger to it. Both acts answer `forbidden`, so the
+// phone must not queue them; they would fail on the spot, not retry.
+func TestAClaimedDevicesOwnCredentialNoLongerActsOnItsTrees(t *testing.T) {
+	h := newHarness(t)
+	device := uuid.New()
+	token := h.registerDeviceToken(t, device)
+	moved, withdrawn := uuid.New(), uuid.New()
+	mustApply(t, h.syncOne(t, token, addTreeAt(moved, ctLat, ctLon, time.Now().Add(-time.Hour))), "signed-out add")
+	mustApply(t, h.syncOne(t, token, addTreeAt(withdrawn, north(60), ctLon, time.Now().Add(-time.Hour))), "signed-out add")
+	account := signInAs(t, h, "ct.claimed.device", &device, accepted())
+
+	mustFail(t, h.syncOne(t, token, correctionItem(moved, uuid.New(), north(30), ctLon, time.Now())),
+		apierr.Forbidden, "the claimed device's credential moving its pre-claim tree")
+	mustFail(t, h.syncOne(t, token, treeWithdrawalItem(withdrawn)),
+		apierr.Forbidden, "the claimed device's credential withdrawing its pre-claim tree")
+	if state := stateOf(t, h, moved); state.Lat != ctLat {
+		t.Fatalf("the refused move moved the tree to %v", state.Lat)
+	}
+	// The control: the account that now owns both trees may do both.
+	mustApply(t, h.syncOne(t, account.AccessToken, correctionItem(moved, uuid.New(), north(30), ctLon, time.Now())),
+		"the account's move")
+	mustApply(t, h.syncOne(t, account.AccessToken, treeWithdrawalItem(withdrawn)), "the account's withdrawal")
 }
 
 // TestAWithdrawalThatArrivesBeforeItsTreeIsHonoured is the arrival-order hole: the withdrawal
@@ -1081,47 +1442,68 @@ func TestASignedInActIsRecordedAgainstTheSessionsDevice(t *testing.T) {
 
 // ── The invariant no CHECK can hold ────────────────────────────────────────────────────────────
 
-// TestNoPublishedTreeBelongsToAnAccountThatDeclined walks every path that moves either side of the
+// TestEveryPublicationHappenedUnderAnAcceptedLicense walks every path that moves either side of the
 // invariant — a signed-out add, a claim, a signed-in add, acceptance, decline, a re-acceptance, a
-// deletion — and checks the whole table after each.
-func TestNoPublishedTreeBelongsToAnAccountThatDeclined(t *testing.T) {
+// deletion — and after each step checks the whole table two ways: against the record
+// (assertPublicationInvariant) and against a model the test keeps itself, which knows from the
+// outside whether the account had accepted when each tree arrived. Under decision 10 a tree is
+// published at the first acceptance at or after its arrival and stays published through any later
+// decline; a tree that arrived during a decline waits for the next acceptance.
+func TestEveryPublicationHappenedUnderAnAcceptedLicense(t *testing.T) {
 	h := newHarness(t)
+	var trees []uuid.UUID
+	want := map[uuid.UUID]bool{}
+	check := func(step string) {
+		t.Helper()
+		assertPublicationInvariant(t, h)
+		for i, tree := range trees {
+			if got := stateOf(t, h, tree).Published; got != want[tree] {
+				t.Fatalf("after %s, tree %d is published=%v; the account's history of answers says %v",
+					step, i, got, want[tree])
+			}
+		}
+	}
+	accepting := false
+	add := func(bearer string, signedIn bool, step string) {
+		t.Helper()
+		tree := uuid.New()
+		mustApply(t, h.syncOne(t, bearer, addTreeAt(tree, north(60*float64(len(trees))), ctLon, time.Now())), step)
+		trees = append(trees, tree)
+		want[tree] = signedIn && accepting
+		check(step)
+	}
+
 	device := uuid.New()
-	deviceToken := h.registerDeviceToken(t, device)
-	mustApply(t, h.syncOne(t, deviceToken, addTreeAt(uuid.New(), ctLat, ctLon, time.Now())), "signed-out add")
-	assertPublicationInvariant(t, h)
+	add(h.registerDeviceToken(t, device), false, "signed-out add")
 
 	account := signInAs(t, h, "ct.invariant", &device, nil)
-	assertPublicationInvariant(t, h)
-	mustApply(t, h.syncOne(t, account.AccessToken, addTreeAt(uuid.New(), north(50), ctLon, time.Now())), "declined add")
-	assertPublicationInvariant(t, h)
+	check("a declined claim")
+	add(account.AccessToken, true, "declined add")
 
 	for i, license := range []*string{accepted(), nil, accepted(), nil} {
 		signInAs(t, h, "ct.invariant", &device, license)
-		assertPublicationInvariant(t, h)
-		mustApply(t, h.syncOne(t, account.AccessToken, addTreeAt(uuid.New(), north(100+50*float64(i)), ctLon, time.Now())), "add")
-		assertPublicationInvariant(t, h)
+		accepting = license != nil
+		if accepting {
+			for _, tree := range trees {
+				want[tree] = true
+			}
+		}
+		check(fmt.Sprintf("answer %d (accepted=%v)", i, accepting))
+		add(account.AccessToken, true, fmt.Sprintf("add after answer %d", i))
 	}
 
-	// The control: the walk ended on a decline, so trees are unpublished and none is published. A
-	// walk that published nothing, or unpublished nothing, would have held the invariant vacuously.
-	var published, unpublished int
-	if err := h.store.Pool().QueryRow(context.Background(), `
-		SELECT count(*) FILTER (WHERE published_at IS NOT NULL), count(*) FILTER (WHERE published_at IS NULL)
-		  FROM community_trees
-	`).Scan(&published, &unpublished); err != nil {
-		t.Fatal(err)
+	// The control: the walk published some trees, declined after publishing them, and ended with a
+	// tree added during a decline — so neither side of the model held vacuously.
+	var published, private int
+	for _, tree := range trees {
+		if want[tree] {
+			published++
+		} else {
+			private++
+		}
 	}
-	if published != 0 || unpublished != 6 {
-		t.Fatalf("after the walk %d trees are published and %d unpublished; want 0 and 6", published, unpublished)
-	}
-	var republished int
-	if err := h.store.Pool().QueryRow(context.Background(),
-		`SELECT count(*) FROM community_tree_events WHERE kind = 'unpublished'`).Scan(&republished); err != nil {
-		t.Fatal(err)
-	}
-	if republished == 0 {
-		t.Fatal("control: nothing was ever unpublished, so the decline path was never exercised")
+	if published != 5 || private != 1 {
+		t.Fatalf("control: the model ended with %d published and %d private, want 5 and 1", published, private)
 	}
 
 	deleteMe(t, h, account.AccessToken, "leaveRecords")

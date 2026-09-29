@@ -143,8 +143,8 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 		return apierr.New(apierr.ValidationFailed, "That request could not be read.")
 	}
 
-	// The device is registered before the consent is recorded, so the `published` or
-	// `unpublished` events a consent writes (decision 7) can name the device the sign-in came from,
+	// The device is registered before the consent is recorded, so the `published` events an
+	// acceptance writes (decision 7) can name the device the sign-in came from,
 	// and so the session minted below can be bound to it.
 	var deviceID *uuid.UUID
 	if request.DeviceUUID != nil {

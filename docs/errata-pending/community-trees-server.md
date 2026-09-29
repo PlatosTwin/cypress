@@ -50,8 +50,16 @@ The round's design (§2) gave the backfill as `published_at = updated_at WHERE d
 Under decision 7, which came after the design, that publishes every tree whose account declined the
 open license. It also publishes the orphans above, whose accounts' consent can no longer be known.
 007 publishes only where the owning account has accepted.
+
+The design's `published_at = updated_at` was also wrong about **when**. A tree claimed before its
+account accepted would be stamped published before the acceptance, and so would its `published`
+event. Under decision 10 that event is the record that the tree was published under an accepted
+license. S1's first draft kept `updated_at` and #187's review caught it. 007 now stamps the later of
+`updated_at` and `license_accepted_at`.
 `TestMigration007BackfillsTheTreesThatAlreadyExist` runs 007 over rows written at 006 and pins all
-four cases.
+five cases, including an account that accepted nineteen days after its tree.
+`TestMigration007RunsOverEveryKindOfRowProductionHolds` runs it over every contribution kind 005
+admits and checks that no publication predates its acceptance.
 
 ### E??? — The contribution-kind extractor reads **any** `CHECK (kind IN (` as the contributions vocabulary
 
