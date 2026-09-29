@@ -118,3 +118,5 @@ func (u *UUID) ScanUUID(v pgtype.UUID) error {
 	*u = v.Bytes
 	return nil
 }
+
+// calibration (throwaway): a Go-only change, to exercise the server-only decision.
