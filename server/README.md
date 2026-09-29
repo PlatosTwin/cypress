@@ -163,8 +163,8 @@ So it returns the latest reading per **measurement kind** — height and trunk D
 method and the **month** it was taken, plus a **beloved** boolean and, above the floor only, the
 number behind it. Nothing else. No count of anything else (ARCHITECTURE §5 rule 1 / DECISIONS §3
 constraint 1, the constraint form of D1, and the owner's refusal of tester report F16), no photograph
-or photo id (W-7, and `approval_reason = 'auto_approved_launch'` means "an account uploaded it", not
-"somebody looked at it"), no coordinate, no free text, no day-precision date, and no identifier of
+or photo id (W-7, and `approval_reason = 'auto_approved_launch'` means "an account uploaded or
+adopted it", not "somebody looked at it"), no coordinate, no free text, no day-precision date, and no identifier of
 any contributor — `User.publicAttribution` is false by default, cannot be turned on anywhere in the
 app (E100), and `users` here has no column for it at all.
 
@@ -515,7 +515,10 @@ CYPRESS_TEST_DATABASE_URL='postgres://…' go test -json -count=1 ./... > /tmp/s
 ci/verify_test_json.sh /tmp/server.json   # VERIFY-SERVER-OK, or the reason it is not
 ```
 
-It is not a required check yet, so read its run on any pull request that touches `server/`.
+On a pull request it runs as the `server` job of `.github/workflows/testflight.yml`, and `gate` —
+the required check — refuses to pass unless it succeeded. A pull request that changes only Go
+(anything under `server/` except `server/testdata/`, removing nothing) skips the 34-minute iOS
+suite; its `plan` log says `this diff is server-only`.
 
 > **The no-database figure here was wrong and it is corrected in place.** This paragraph read:
 > *"Measured on 2026-09-10 at commit `5b52b4e` + this round: **60 pass / 108 skip** with no database,

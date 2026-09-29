@@ -2,15 +2,50 @@ package store
 
 import (
 	"context"
-	"math"
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // The Class R reads (spec §3.1): the community layer and the account's own rows, where liveness
 // buys something real. What a local fallback loses for the R-degraded four is *other devices of
 // the same account*, which is exactly what these queries return that the phone cannot.
+
+// TreeMembershipKinds are the contribution kinds that count as meeting a tree — the only ones
+// `Grove`'s `mine` CTE and `MapMembership`'s `yours` arm read.
+//
+// An allow-list, not `syncKinds` minus a name or two, on purpose: the next kind added to
+// `syncKinds` is out of both reads until somebody puts it here deliberately, rather than in by
+// default because nothing excluded it. That is the shape `MetSpeciesKinds`
+// (`GroveSpeciesKnown`) already uses for the same reason, one read over — see the note below on
+// why this list is not that one.
+//
+// It is every kind but three: `private_reminder` (a note to yourself, never public evidence of
+// contact — the exclusion these two reads always had) and `data_dispute` /
+// `data_dispute_withdrawal` (owner ruling, 2026-09-28). A report that the city's record is wrong
+// is not a visit, and the report screen's own copy says so — "Nothing on the map changes." Before
+// this list existed neither read filtered on kind at all beyond `private_reminder`, so raising a
+// dispute put the tree in `GET /me/grove` and in `GET /me/map-membership?kind=yours`, and
+// withdrawing the dispute left it there — the comment beside `syncKinds` in
+// `internal/api/sync.go` already recorded the enrollment before this fixed it.
+//
+// **Not `MetSpeciesKinds`.** That list answers a narrower question — which kinds carry a
+// `speciesID` that means "met this species" — and is deliberately four kinds, excluding
+// `add_tree`, `species_claim` and `species_correction` because naming a species is not meeting
+// one. Meeting a *tree* is a larger set: adding it, caring for it, voting on its photos and
+// reporting or withdrawing a wrong species claim are all real contact with that tree, even though
+// none of them is contact with a species. Sharing one list between the two reads would either
+// starve this one (drop `add_tree` and a self-added tree would not be "yours") or flood that one
+// (add `add_tree` and naming a species on a community tree would count as meeting it, the exact
+// defect `MetSpeciesKinds` exists to close). If PR #184 (`server/grove-species-known-scope`)
+// merges first, the two lists stay independent for this reason — nothing here depends on it.
+var TreeMembershipKinds = []string{
+	"visit", "observation", "measurement", "care_event", "favorite_toggle", "add_tree",
+	"species_claim", "species_correction", "wrong_species_report", "never_existed_report",
+	"species_review_dismissal", "record_review_dismissal", "photo_vote", "photo_withdrawal",
+	"hazard_redirect", "measurement_withdrawal",
+}
 
 // GroveEntry is a row of `GET /me/grove`.
 type GroveEntry struct {
@@ -35,7 +70,7 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		      FROM contributions
 		     WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 		       AND deleted_at IS NULL
-		       AND kind <> 'private_reminder'
+		       AND kind = ANY($3::text[])
 		)
 		, tallied AS (
 		SELECT m.tree_uuid,
@@ -70,7 +105,7 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		       LIMIT 1
 		  ) hero ON true
 		 ORDER BY t.last_visited_at DESC NULLS LAST
-	`, owner.UserID, owner.DeviceID)
+	`, owner.UserID, owner.DeviceID, TreeMembershipKinds)
 	if err != nil {
 		return nil, err
 	}
@@ -118,19 +153,24 @@ func (s *Store) IsFavorite(ctx context.Context, owner Owner, treeUUID uuid.UUID)
 
 // MapMembership answers screen 01's two chips (#116, R23.1).
 //
-// `yours` is trees this identity contributed to — and community-added trees, which the contribution
-// kinds do not cover: a tree you added is the most emphatically yours there is. Photographs are in
-// by their visit rather than on their own, the same rule `DeviceContributions` states.
+// `yours` is trees this identity contributed to, narrowed to `TreeMembershipKinds` — and
+// community-added trees, which the contribution kinds do not cover: a tree you added is the most
+// emphatically yours there is. Photographs are in by their visit rather than on their own, the
+// same rule `DeviceContributions` states. Reporting a mistake in the city's record of a tree
+// (`data_dispute`) or taking that report back (`data_dispute_withdrawal`) is not in
+// `TreeMembershipKinds` and does not enroll the tree here — a report is not meeting the tree
+// (owner ruling, 2026-09-28).
 //
 // `favorites` excludes tombstones: an un-favorited tree is not one anybody would say they have.
 func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]uuid.UUID, error) {
 	var query string
+	args := []any{owner.UserID, owner.DeviceID}
 	switch kind {
 	case "yours":
 		query = `
 			SELECT DISTINCT tree_uuid FROM contributions
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
-			   AND deleted_at IS NULL AND kind <> 'private_reminder'
+			   AND deleted_at IS NULL AND kind = ANY($3::text[])
 			UNION
 			-- community_trees.id IS the client's tree UUID (see the table's own comment in
 			-- server/migrations/001_initial.sql), so this arm and the one above are the same
@@ -139,6 +179,7 @@ func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]
 			SELECT DISTINCT id FROM community_trees
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 			   AND deleted_at IS NULL`
+		args = append(args, TreeMembershipKinds)
 	case "favorites":
 		query = `
 			SELECT tree_uuid FROM favorites
@@ -148,7 +189,7 @@ func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]
 		return nil, ErrNotFound
 	}
 
-	rows, err := s.pool.Query(ctx, query, owner.UserID, owner.DeviceID)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -211,32 +252,87 @@ type KnownSpecies struct {
 	FirstMet  time.Time
 }
 
+// MetSpeciesKinds are the contribution kinds whose `speciesID`, if a payload carries one, means
+// "this person met this species" — and the only kinds `GroveSpeciesKnown` reads.
+//
+// They are the four the client's own Species tab unions, `GroveQueries.ownContributions`: a visit,
+// an observation, a measurement and a care event are all having stood in front of the tree. The
+// list is the product rule, not the set of kinds that happen to carry the key, and the two are
+// different sets:
+//
+//   - **The kinds that really carry a `speciesID` are `add_tree`, `species_claim` and
+//     `species_correction`**, and every one of them is a person *naming* a community tree's
+//     species. The client refuses exactly those by rule: `GroveQueries.knownSpecies` reads
+//     city-inventory trees only, because "a self-asserted species on a community-added tree does
+//     not count as one you know" — counting one would let a contributor raise their own ring by
+//     adding a tree. A server that counted them put species on the tab at refresh that the phone's
+//     own paint had just left off.
+//   - **The four kinds listed here carry no `speciesID` in any client payload today** (`Visit`,
+//     `TreeObservation`, `TreeMeasurement`, `CareEvent`). So against today's clients this read
+//     answers an empty list, and the phone's local half — which resolves the species of the trees
+//     it visited from the city file it holds and this service does not (R36) — is the whole of the
+//     Species tab. That is the correct answer to the question as the client defines it, and it was
+//     already this read's answer for everyone who never named a community tree's species.
+//
+// A kind added to `syncKinds` is **out** of this read until somebody adds it here on purpose; a
+// new kind can no longer reach the Species tab by carrying a key of the same spelling.
+var MetSpeciesKinds = []string{"visit", "observation", "measurement", "care_event"}
+
 // GroveSpeciesKnown returns every species this contributor has met, oldest first.
 //
 // The species id is read out of the payload rather than a column, because a contribution's species
 // is a fact about the mutation the client sent and this service does not hold the inventory to
 // join against — R36 keeps the city layer local, so there is no `species` table here to normalize
 // into.
+//
+// ── Why the id is compared as text and parsed here, never cast in SQL ─────────────────────────
+//
+// This read used to select `(payload->>'speciesID')::uuid` over every kind. A cast can *error*
+// rather than miss, so one stored payload carrying a non-UUID `speciesID` failed the whole query,
+// and since that row is a contribution the phone cannot un-send, every later read of that
+// identity's Species tab answered 500 until somebody deleted the row by hand. Migration 004 had
+// already chosen extracted text over a cast for its lookups, for exactly this reason.
+//
+// So nothing in the SQL below can fail on a value it reads: `->` and `->>` on a `jsonb` answer NULL
+// for a key that is absent or a payload that is not an object, `jsonb_typeof` answers NULL for NULL,
+// and `lower` is total over text. The text is grouped case-insensitively — Swift's `JSONEncoder`
+// writes a `UUID` uppercase — and parsed by `uuid.Parse`, the same canonical-form rule every other
+// id on this service's wire is held to. A value that does not parse is **skipped, not reported**:
+// it names no species, and failing the read over it would put back the defect this replaces.
+//
+// **Rows that are already poisoned in production are therefore harmless, whatever kind they are.**
+// This does not depend on the kind filter, which is a statement about meaning; it would still be
+// true with the filter removed. No migration and no index: `MetSpeciesKinds` narrows an owner-scoped
+// scan the old query already ran.
 func (s *Store) GroveSpeciesKnown(ctx context.Context, owner Owner) ([]KnownSpecies, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT (payload->>'speciesID')::uuid AS species_id, min(occurred_at) AS first_met
+		SELECT lower(payload->>'speciesID') AS species_text, min(occurred_at) AS first_met
 		  FROM contributions
 		 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 		   AND deleted_at IS NULL
-		   AND payload->>'speciesID' IS NOT NULL
-		 GROUP BY species_id
-		 ORDER BY first_met ASC
-	`, owner.UserID, owner.DeviceID)
+		   AND kind = ANY($3::text[])
+		   AND jsonb_typeof(payload->'speciesID') = 'string'
+		 GROUP BY species_text
+		 ORDER BY first_met ASC, species_text ASC
+	`, owner.UserID, owner.DeviceID, MetSpeciesKinds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var known []KnownSpecies
 	for rows.Next() {
+		var text string
 		var entry KnownSpecies
-		if err := rows.Scan(&entry.SpeciesID, &entry.FirstMet); err != nil {
+		if err := rows.Scan(&text, &entry.FirstMet); err != nil {
 			return nil, err
 		}
+		// Grouping on `lower(text)` and accepting only the canonical 36-character form means two
+		// groups can never parse to one species, so no second pass is needed to merge them.
+		parsed, parseErr := uuid.Parse(text)
+		if parseErr != nil {
+			continue
+		}
+		entry.SpeciesID = parsed
 		known = append(known, entry)
 	}
 	return known, rows.Err()
@@ -297,7 +393,8 @@ type NearbyTree struct {
 // ProximityDedupeRadiusM is `TreeDraft.proximityDedupeRadiusM`: 10 m, any species (BUILD-PLAN §6).
 const ProximityDedupeRadiusM = 10.0
 
-// TreesWithin returns community trees within radius metres of a point, nearest first.
+// TreesWithin returns community trees within radius metres of a point, nearest first, that the
+// viewer can see: published ones and the viewer's own (§3F, migration 007).
 //
 // A bounding-box prefilter over `idx_community_trees_position`, then a haversine — no PostGIS,
 // which R72 declines because no server-side spatial query exists under R36's local read path and
@@ -306,49 +403,10 @@ const ProximityDedupeRadiusM = 10.0
 // The latitude term of the box is constant; the longitude term is divided by cos(lat), which is
 // what keeps the box a box rather than a shape that narrows to nothing near the poles. Both cities
 // in the corpus are near 37°N, where the factor is ~1.25 — large enough that omitting it would
-// quietly shrink the search and let a duplicate through.
-func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]NearbyTree, error) {
-	const metresPerDegreeLat = 111_320.0
-	latDelta := radiusM / metresPerDegreeLat
-	cosLat := math.Cos(lat * math.Pi / 180)
-	if cosLat < 0.01 {
-		cosLat = 0.01
-	}
-	lonDelta := radiusM / (metresPerDegreeLat * cosLat)
-
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, lat, lon, address, species_id, placement, land_context,
-		       created_at, updated_at,
-		       6371000 * 2 * asin(sqrt(
-		           power(sin(radians(lat - $1) / 2), 2) +
-		           cos(radians($1)) * cos(radians(lat)) *
-		           power(sin(radians(lon - $2) / 2), 2)
-		       )) AS distance_m
-		  FROM community_trees
-		 WHERE deleted_at IS NULL
-		   AND lat BETWEEN $1 - $3 AND $1 + $3
-		   AND lon BETWEEN $2 - $4 AND $2 + $4
-		 ORDER BY distance_m ASC
-	`, lat, lon, latDelta, lonDelta)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var candidates []NearbyTree
-	for rows.Next() {
-		var tree NearbyTree
-		if err := rows.Scan(&tree.ID, &tree.Lat, &tree.Lon, &tree.Address, &tree.SpeciesID,
-			&tree.Placement, &tree.LandContext, &tree.CreatedAt, &tree.UpdatedAt,
-			&tree.DistanceM); err != nil {
-			return nil, err
-		}
-		// The box is a prefilter and admits corners beyond the radius; the haversine is the answer.
-		if tree.DistanceM <= radiusM {
-			candidates = append(candidates, tree)
-		}
-	}
-	return candidates, rows.Err()
+// quietly shrink the search and let a duplicate through. The query is `treesWithin`, shared with
+// the transaction that moves a pin.
+func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64, viewer Owner) ([]NearbyTree, error) {
+	return treesWithin(ctx, s.pool, lat, lon, radiusM, viewer, nil)
 }
 
 // CommunityTreeExists reports whether this exact tree has already been recorded.
@@ -358,10 +416,15 @@ func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]N
 // created moments ago, matches itself at zero metres, and comes back `conflict`. That code is
 // non-retryable, so the item fails terminally and the contributor is offered a resolution sheet
 // listing their own submission.
+//
+// A tree the erase door deleted counts as recorded: its id is in `withdrawn_community_trees`, and a
+// replay of its add is a duplicate, not a second life.
 func (s *Store) CommunityTreeExists(ctx context.Context, id uuid.UUID) (bool, error) {
 	var found bool
-	err := s.pool.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM community_trees WHERE id = $1)`, id).Scan(&found)
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM community_trees WHERE id = $1)
+		    OR EXISTS (SELECT 1 FROM withdrawn_community_trees WHERE id = $1)
+	`, id).Scan(&found)
 	return found, err
 }
 
@@ -381,24 +444,25 @@ type NewCommunityTree struct {
 	SpeciesID   *uuid.UUID
 	Placement   string
 	LandContext *string
+	// LocationAccuracyM is the fix's accuracy (D6), optional: nil is "the phone did not say".
+	LocationAccuracyM *float64
 }
 
-// AddTree inserts a community tree under the client's own id.
-func (s *Store) AddTree(ctx context.Context, tree NewCommunityTree, owner Owner) (ApplyOutcome, error) {
-	now := s.now()
-	tag, err := s.pool.Exec(ctx, `
-		INSERT INTO community_trees
-		    (id, lat, lon, address, species_id, placement, land_context,
-		     user_id, device_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
-		ON CONFLICT (id) DO NOTHING
-	`, tree.ID, tree.Lat, tree.Lon, tree.Address, tree.SpeciesID, tree.Placement, tree.LandContext,
-		owner.UserID, owner.DeviceID, now)
-	if err != nil {
-		return Applied, err
-	}
-	if tag.RowsAffected() == 0 {
-		return Duplicate, nil
-	}
-	return Applied, nil
+// AddTree inserts a community tree under the client's own id, for `POST /trees`.
+//
+// It is `insertCommunityTree` in a transaction of its own — the same publication rule, root
+// location and events as the sync path, with no contribution to carry the act's key.
+func (s *Store) AddTree(ctx context.Context, tree NewCommunityTree, owner Owner, actor Actor) (ApplyOutcome, error) {
+	outcome := Duplicate
+	err := s.Tx(ctx, func(tx pgx.Tx) error {
+		now := s.now()
+		inserted, err := insertCommunityTree(ctx, tx, tree, newTreeAct{
+			Owner: owner, Actor: actor, OccurredAt: now,
+		}, now)
+		if inserted {
+			outcome = Applied
+		}
+		return err
+	})
+	return outcome, err
 }

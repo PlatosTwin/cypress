@@ -34,6 +34,33 @@ type beginPhotoRequest struct {
 	// idempotency, and behaves exactly as it did. A begin with no key is not an error, it is the old
 	// contract.
 	ClientUUID *uuid.UUID `json:"client_uuid"`
+	// CapturedOn is the photograph's **local** capture date, `YYYY-MM-DD` (decision 14a): what
+	// other people are shown instead of `captured_at`'s time (decision 14). Optional — a build that
+	// predates it sends nothing and keeps today's behaviour. The wire name is pinned by
+	// `server/testdata/photos_begin.json`.
+	CapturedOn *string `json:"captured_on"`
+}
+
+// capturedOnLayout is `captured_on`'s one accepted spelling.
+const capturedOnLayout = "2006-01-02"
+
+// validCapturedOn is decision 14a's check: a real calendar date in exactly `YYYY-MM-DD`, at most
+// one day from the UTC date of `capturedAt`. A phone's local date can differ from the UTC date of
+// the same instant by one day either way and never more, so a date further off is not this
+// photograph's day, and storing it would show strangers a date the photograph was not taken on.
+func validCapturedOn(capturedOn string, capturedAt time.Time) bool {
+	// `time.Parse` with this layout is already exact: it wants four-digit years and two-digit months
+	// and days, refuses anything around them, and refuses a day the month does not have (the
+	// validation test's "2026-9-29", " 2026-09-29" and "2026-09-31"). A round-trip comparison here
+	// was tried and red-proofed as dead code.
+	day, err := time.Parse(capturedOnLayout, capturedOn)
+	if err != nil {
+		return false
+	}
+	utc := capturedAt.UTC()
+	utcDay := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+	gap := day.Sub(utcDay)
+	return gap >= -24*time.Hour && gap <= 24*time.Hour
 }
 
 // beginPhotoResponse is `PhotoUploadTicket`: `{photo_id, presigned_put_url}` (BUILD-PLAN §6).
@@ -67,6 +94,10 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 	if request.CapturedAt.IsZero() {
 		return apierr.New(apierr.ValidationFailed, "That photo had no capture time.")
 	}
+	if request.CapturedOn != nil && !validCapturedOn(*request.CapturedOn, request.CapturedAt) {
+		return apierr.New(apierr.ValidationFailed,
+			"That photo's capture date is not a date within a day of its capture time.")
+	}
 
 	photoID := uuid.New()
 	// The key is the id, so nothing about a contributor, a tree's real position or a filename from
@@ -91,6 +122,7 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 		PublicLon:       request.PublicLon,
 		StorageKey:      storageKey,
 		ClientUUID:      request.ClientUUID,
+		CapturedOn:      request.CapturedOn,
 	}, who.owner())
 	if errors.Is(err, store.ErrPhotoWithdrawn) {
 		// Non-retryable, so a client still holding this upload stops asking rather than spending
@@ -110,9 +142,11 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 	}
 
 	// **The row's verdict, not a recomputation from the caller.** Synthesizing it here was right for
-	// an insert and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account
-	// without touching `moderation_state`, so device-begin → sign-in-with-claim → replay answered
-	// `approved` about a row still holding `pending`.
+	// an insert and wrong for a replay whenever the row and the caller disagree. #116 r3's case: at
+	// the time `ClaimDevice` re-homed a device's photographs onto an account without touching
+	// `moderation_state`, so device-begin → sign-in-with-claim → replay answered `approved` about a
+	// row still holding `pending`. The claim now approves what it adopts, so that case agrees; the
+	// row is still the only authority on which rule published it.
 	//
 	// The client does not read these — see the two fields' own comment above — so the cost is to the
 	// purpose they exist for: the upload's log would name the rule that applied to the *caller*

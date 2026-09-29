@@ -102,6 +102,9 @@ func (s *Server) Handler() http.Handler {
 	// R72 ruling 5's non-negotiable half: "Auto-approve without a takedown is the version of this
 	// rule that must not ship."
 	mux.Handle("POST "+Prefix+"/operator/photos/{id}/reject", s.operator(s.rejectPhoto))
+	// The same rule for the community layer this round publishes: a tree somebody else has built on
+	// can no longer be withdrawn by its adder (decision 8), so this is the only way it comes down.
+	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/take-down", s.operator(s.takeDownCommunityTree))
 
 	return withTimeout(s.recoverPanics(mux))
 }
@@ -133,6 +136,22 @@ type caller struct {
 	// `ClaimDevice` do this translation with `WHERE device_uuid = $1`; this field is the same
 	// translation, done once per request on the credential rather than once per item.
 	DeviceUUID *uuid.UUID
+	// SessionDeviceID is, for a signed-in caller, the device its session was bound to at
+	// `POST /auth/oidc` (`sessions.device_id`, `devices.id` vocabulary), nil when the sign-in named
+	// none. It is **not** an owner and authorizes nothing: `owner()` ignores it. It exists for the
+	// audit log of community trees, which records the device a signed-in act came from — the
+	// device the session proved, not the one an item claims (the orchestrator's ruling of
+	// 2026-09-28).
+	SessionDeviceID *uuid.UUID
+}
+
+// actor is who performed an act, for `community_tree_events`: the owner, plus the session's bound
+// device for an account.
+func (c caller) actor() store.Actor {
+	if c.UserID != nil {
+		return store.Actor{UserID: c.UserID, DeviceID: c.SessionDeviceID}
+	}
+	return store.Actor{DeviceID: c.DeviceID}
 }
 
 func (c caller) owner() store.Owner {
@@ -254,14 +273,14 @@ func (s *Server) resolveCaller(r *http.Request) (caller, error) {
 			if sessionErr != nil {
 				return caller{}, errNoSession
 			}
-			live, lookupErr := s.Store.SessionIsLive(r.Context(), sessionID)
+			live, sessionDevice, lookupErr := s.Store.SessionIsLive(r.Context(), sessionID)
 			if lookupErr != nil {
 				return caller{}, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", lookupErr)
 			}
 			if !live {
 				return caller{}, errNoSession
 			}
-			return caller{UserID: &id}, nil
+			return caller{UserID: &id, SessionDeviceID: sessionDevice}, nil
 		case tokens.SubjectDevice:
 			// **No `DeviceUUID`, and that is deliberate rather than an omission.** Nothing mints a
 			// signed device token — `registerDevice` issues an opaque one and this branch is

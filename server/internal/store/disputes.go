@@ -119,10 +119,11 @@ var ErrDisputeNotOwned = errors.New("dispute belongs to another contributor")
 // to lean on. What is not in doubt is that comparing text cannot error at all, which is why the design
 // stands on the spelling argument above and takes this one as a bonus.
 //
-// `docs/errata-pending/grove-species-known-unscoped-cast.md` is **not** an instance of this hazard,
-// and calling it one is a category slip worth not repeating: `GroveSpeciesKnown` carries no `kind`
-// qual at all, so its cast reaches every kind's payload by construction rather than by any choice a
-// planner makes.
+// The Species tab's 500 — `GroveSpeciesKnown` failing on one stored non-UUID `speciesID` — was
+// **not** an instance of this hazard, and calling it one is a category slip worth not repeating:
+// that read carried no `kind` qual at all, so its cast reached every kind's payload by construction
+// rather than by any choice a planner makes. It was fixed the way this function was designed: it
+// now compares extracted text and parses in Go, and never casts in SQL.
 //
 // The expression is written identically to `contributions_disputed_record_id` in
 // `005_data_dispute_kinds.sql`; an index whose expression differs from the query's is dead weight
