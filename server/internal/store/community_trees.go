@@ -57,9 +57,10 @@ var (
 	// ErrTooCloseToAnotherTree is a pin moved to within 10 m of another tree the caller can see.
 	// `conflict`.
 	ErrTooCloseToAnotherTree = errors.New("another tree is recorded within the dedupe radius")
-	// ErrOthersBuiltOnTree is an adder's withdrawal of a tree somebody else has a live contribution
-	// or photograph on (decision 8). `conflict`: only an operator takedown removes it now.
-	ErrOthersBuiltOnTree = errors.New("another identity has a live contribution or photo on this tree")
+	// ErrOthersBuiltOnTree is an adder's withdrawal of a tree somebody else has met — a live visit,
+	// observation, measurement or care event, or a photograph (decision 8, `othersHaveBuiltOn`).
+	// `conflict`: only an operator takedown removes it now.
+	ErrOthersBuiltOnTree = errors.New("another identity has a visit or photo on this tree")
 	// ErrCorrectionIDReused is a correction id already used for a different tree. `validation_failed`.
 	ErrCorrectionIDReused = errors.New("that correction id already names another tree's location")
 )
@@ -374,48 +375,45 @@ func treesWithin(ctx context.Context, q querier, lat, lon, radiusM float64, view
 	return candidates, rows.Err()
 }
 
-// othersHaveBuiltOn reports whether any identity other than `self` has a live contribution or
-// photograph on the tree. It is decision 8's condition (the adder may withdraw only while this is
-// false) and decision 6's (the erase door anonymizes rather than deletes while it is true).
+// builtOnKinds are the contribution kinds that mean somebody met the tree: a visit, an
+// observation, a measurement or a care event. They are the only contributions that count as
+// "built on" (below). The set is the same as `MetSpeciesKinds` in `store/reads.go` on #184, which
+// is unmerged; the two should become one constant when #184 and this PR are both on main.
+var builtOnKinds = []string{"visit", "observation", "measurement", "care_event"}
+
+// othersHaveBuiltOn reports whether any identity other than `self` has met the tree: a live
+// contribution of one of `builtOnKinds`, or a live photograph. It is decision 8's condition (the
+// adder may withdraw only while this is false) and decision 6's (the erase door anonymizes rather
+// than deletes while it is true).
 //
-// "Live" means not deleted, and not a removal: a withdrawal of a photograph, a reading, a dispute or
-// a tree is somebody taking their own work back, not work anchored to this tree. A photograph an
-// operator rejected is not live either, and neither is one whose bytes never arrived. A dispute its
-// raiser withdrew does not count. An anonymized row is somebody's work with the name taken off, so
-// it counts.
+// The owner's own words for both decisions were "if anyone else has a visit or photo on the
+// tree", and the orchestrator's ruling after #187's fix round holds the code to them. Favorites,
+// photo votes, private reminders, species statements, reports, disputes and review flags are not
+// a visit or a photo, and do not count.
+//
+// "Live" means not deleted. A withdrawn measurement is deleted by its withdrawal, so it does not
+// count. A photograph an operator rejected is not live, and neither is one whose bytes never
+// arrived: that is a reservation nobody can see. An anonymized row is somebody's work with the
+// name taken off, so it counts.
 func othersHaveBuiltOn(ctx context.Context, q querier, treeID uuid.UUID, self Owner) (bool, error) {
 	var found bool
 	err := q.QueryRow(ctx, `
 		SELECT EXISTS (
 		    SELECT 1 FROM contributions c
 		     WHERE c.tree_uuid = $1 AND c.deleted_at IS NULL
-		       AND c.kind NOT IN ('photo_withdrawal', 'measurement_withdrawal',
-		                          'data_dispute_withdrawal', 'tree_withdrawal')
+		       AND c.kind = ANY($4::text[])
 		       -- coalesce, because a NULL owner column compares NULL and NOT NULL is NULL, which
 		       -- would drop exactly the anonymized rows this must count.
 		       AND NOT coalesce(($2::uuid IS NOT NULL AND c.user_id = $2)
 		                     OR ($3::uuid IS NOT NULL AND c.device_id = $3), false)
-		       -- A dispute its raiser took back. data_dispute_withdrawal tombstones nothing -- the
-		       -- dispute row stays live (005) -- so the pair is matched here instead: same dispute id,
-		       -- same tree, same owner (review of #187, F4). A photograph's and a reading's
-		       -- withdrawals set the target's deleted_at, which the two filters here already read.
-		       AND NOT (c.kind = 'data_dispute' AND EXISTS (
-		           SELECT 1 FROM contributions w
-		            WHERE w.kind = 'data_dispute_withdrawal' AND w.deleted_at IS NULL
-		              AND w.tree_uuid = c.tree_uuid
-		              AND upper(w.payload ->> 'disputeID') = upper(c.payload ->> 'id')
-		              AND w.user_id IS NOT DISTINCT FROM c.user_id
-		              AND w.device_id IS NOT DISTINCT FROM c.device_id))
 		) OR EXISTS (
 		    SELECT 1 FROM photos p
 		     WHERE p.tree_uuid = $1 AND p.deleted_at IS NULL AND p.moderation_state <> 'rejected'
-		       -- A photograph whose bytes never arrived is a reservation nobody can see, not work
-		       -- (the orchestrator's ruling after #187's review, F5).
 		       AND p.bytes_received_at IS NOT NULL
 		       AND NOT coalesce(($2::uuid IS NOT NULL AND p.user_id = $2)
 		                     OR ($3::uuid IS NOT NULL AND p.device_id = $3), false)
 		)
-	`, treeID, self.UserID, self.DeviceID).Scan(&found)
+	`, treeID, self.UserID, self.DeviceID, builtOnKinds).Scan(&found)
 	return found, err
 }
 
@@ -757,7 +755,8 @@ func (s *Store) TakeDownCommunityTree(ctx context.Context, id uuid.UUID) error {
 //   - A published tree under `leaveRecords` is anonymized: ownerless, still published, and nobody
 //     may move or withdraw it afterwards.
 //   - A published tree under `eraseEverything` is deleted and tombstoned — unless another identity
-//     has a live contribution or photograph on it, when it is anonymized instead (decision 6:
+//     has met it (`othersHaveBuiltOn`: a visit-like contribution or a photograph), when it is
+//     anonymized instead (decision 6:
 //     "a tree the erasing account added stays, anonymized, if anyone else has a live visit/
 //     contribution or photo on it"). This runs after the account's own contributions and photos
 //     are gone, so what remains is other people's.

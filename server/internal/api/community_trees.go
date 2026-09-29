@@ -11,8 +11,8 @@ import (
 // takeDownCommunityTree is the operator takedown for a community tree.
 //
 // R72 ruling 5, "the way down ships with the way up", applied to the layer the community-trees round
-// makes public: once somebody other than the adder has a live contribution or photograph on a tree,
-// its adder can no longer withdraw it (decision 8), and this route is what remains. A route, not a
+// makes public: once somebody other than the adder has a visit (or observation, measurement or care
+// event) or a photograph on a tree, its adder can no longer withdraw it (decision 8), and this route is what remains. A route, not a
 // screen — operator surfaces are a web deliverable (ARCHITECTURE §8).
 //
 // Authentication is `rejectPhoto`'s, by construction rather than by copy: both are mounted behind

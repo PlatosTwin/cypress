@@ -935,75 +935,166 @@ func TestAPhotographWhoseBytesNeverArrivedIsNotBuiltOn(t *testing.T) {
 	}
 }
 
-// TestAWithdrawnDisputeIsNotBuiltOn: a stranger's dispute keeps the tree up until the stranger takes
-// it back — through either door that asks (the adder's withdrawal, and eraseEverything). A
-// data_dispute_withdrawal tombstones nothing, so the pair has to be matched.
-func TestAWithdrawnDisputeIsNotBuiltOn(t *testing.T) {
-	h := newHarness(t)
-	adder := signInAs(t, h, "ct.disputed.adder", nil, accepted())
-	stranger := h.registerDeviceToken(t, uuid.New())
-	tree := uuid.New()
-	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, ctLat, ctLon, time.Now())), "add")
-	dispute := uuid.New()
-	mustApply(t, h.syncOne(t, stranger, disputeItem(dispute, tree, []string{"wrong_location"})), "a stranger's dispute")
+// strangerAct is one thing a stranger can do to a tree, sent under the stranger's own credential.
+type strangerAct struct {
+	name string
+	send func(t *testing.T, h *harness, stranger string, tree uuid.UUID)
+}
 
-	mustFail(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree)), apierr.Conflict,
-		"control: withdrawing a tree under a stranger's live dispute")
+// sendKind sends one contribution of `kind` with a payload the client would send, and requires it
+// applied — a refused item would leave nothing on the tree, and the test would be measuring that.
+func sendKind(kind string, item func(tree uuid.UUID) map[string]any) strangerAct {
+	return strangerAct{kind, func(t *testing.T, h *harness, stranger string, tree uuid.UUID) {
+		t.Helper()
+		mustApply(t, h.syncOne(t, stranger, item(tree)), "a stranger's "+kind)
+	}}
+}
 
-	mustApply(t, h.syncOne(t, stranger, disputeWithdrawalItem(dispute, tree)), "the stranger withdraws it")
-	mustApply(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree)),
-		"withdrawing a tree whose only other contribution is a withdrawn dispute")
-	if !stateOf(t, h, tree).Deleted {
-		t.Fatal("the withdrawal applied and the tree is still up")
-	}
-
-	// The erase door asks the same question.
-	eraser := signInAs(t, h, "ct.disputed.eraser", nil, accepted())
-	erased := uuid.New()
-	mustApply(t, h.syncOne(t, eraser.AccessToken, addTreeAt(erased, north(80), ctLon, time.Now())), "add")
-	second := uuid.New()
-	mustApply(t, h.syncOne(t, stranger, disputeItem(second, erased, []string{"wrong_location"})), "dispute")
-	mustApply(t, h.syncOne(t, stranger, disputeWithdrawalItem(second, erased)), "withdraw dispute")
-	deleteMe(t, h, eraser.AccessToken, "eraseEverything")
-	if state := stateOf(t, h, erased); state.Exists {
-		t.Fatalf("eraseEverything kept the tree (%+v) for a dispute its author withdrew", state)
+// communityKind is one of communityKinds' payloads by name.
+func communityKind(kind string) func(tree uuid.UUID) map[string]any {
+	return func(tree uuid.UUID) map[string]any {
+		for _, k := range communityKinds(tree, uuid.New(), uuid.New()) {
+			if k.Kind == kind {
+				return map[string]any{
+					"client_uuid": uuid.New(), "kind": kind, "tree_uuid": tree,
+					"occurred_at": time.Now().UTC(), "payload": json.RawMessage(k.Payload),
+				}
+			}
+		}
+		panic("no community kind " + kind)
 	}
 }
 
-// TestOnlyTheDisputesOwnWithdrawalCancelsIt: a withdrawal cancels a dispute only when the same
-// identity filed both. The adder cannot clear a stranger's dispute by withdrawing it under the
-// adder's own identity — reachable through the twin-raise route disputes.go documents (raise a
-// dispute carrying the stranger's dispute id, and the ownership gate then admits the withdrawal).
-func TestOnlyTheDisputesOwnWithdrawalCancelsIt(t *testing.T) {
+// unmetActs are everything a stranger can leave on a tree that is not a visit or a photo. None of
+// them is "built on" (the orchestrator's ruling after #187's fix round, on the owner's words "if
+// anyone else has a visit or photo on the tree"). A measurement its taker withdrew is here too:
+// the withdrawal deletes it, and a deleted reading is not a visit.
+func unmetActs() []strangerAct {
+	return []strangerAct{
+		sendKind("favorite_toggle", func(tree uuid.UUID) map[string]any {
+			return favoriteItem(tree, true, stamp8601(time.Now()))
+		}),
+		sendKind("photo_vote", communityKind("photo_vote")),
+		sendKind("private_reminder", func(tree uuid.UUID) map[string]any {
+			return map[string]any{
+				"client_uuid": uuid.New(), "kind": "private_reminder", "tree_uuid": tree,
+				"occurred_at": stamp8601(time.Now()),
+				"payload":     jsonBody(map[string]any{"clientUUID": uuid.New(), "treeID": tree, "note": "water it"}),
+			}
+		}),
+		sendKind("species_claim", communityKind("species_claim")),
+		sendKind("species_correction", communityKind("species_correction")),
+		sendKind("wrong_species_report", communityKind("wrong_species_report")),
+		sendKind("never_existed_report", communityKind("never_existed_report")),
+		sendKind("species_review_dismissal", communityKind("species_review_dismissal")),
+		sendKind("record_review_dismissal", communityKind("record_review_dismissal")),
+		sendKind("hazard_redirect", communityKind("hazard_redirect")),
+		sendKind("data_dispute", func(tree uuid.UUID) map[string]any {
+			return disputeItem(uuid.New(), tree, []string{"wrong_location"})
+		}),
+		{"a withdrawn measurement", func(t *testing.T, h *harness, stranger string, tree uuid.UUID) {
+			t.Helper()
+			reading := uuid.New()
+			mustApply(t, h.syncOne(t, stranger, measurementItem(tree, reading)), "a stranger's measurement")
+			mustApply(t, h.syncOne(t, stranger, withdrawalItem(tree, reading)), "its withdrawal")
+		}},
+	}
+}
+
+// metActs are a stranger meeting the tree: the four met kinds, and a photograph whose bytes landed.
+func metActs() []strangerAct {
+	return []strangerAct{
+		sendKind("visit", visitItem),
+		sendKind("observation", func(tree uuid.UUID) map[string]any {
+			return observationItem(tree, 4, stamp8601(time.Now()))
+		}),
+		sendKind("measurement", func(tree uuid.UUID) map[string]any { return measurementItem(tree, uuid.New()) }),
+		sendKind("care_event", func(tree uuid.UUID) map[string]any {
+			return map[string]any{
+				"client_uuid": uuid.New(), "kind": "care_event", "tree_uuid": tree,
+				"occurred_at": stamp8601(time.Now()), "payload": json.RawMessage(`{}`),
+			}
+		}),
+		{"a photograph", func(t *testing.T, h *harness, stranger string, tree uuid.UUID) {
+			t.Helper()
+			receivedPhotoFor(t, h, stranger, tree)
+		}},
+	}
+}
+
+// TestOnlyAVisitOrAPhotoKeepsATreeFromItsAdder is decision 8 under the orchestrator's ruling: the
+// adder's withdrawal is refused only by another identity's visit-like contribution or photograph.
+// One tree per act, so each act is the only thing on its tree.
+func TestOnlyAVisitOrAPhotoKeepsATreeFromItsAdder(t *testing.T) {
 	h := newHarness(t)
-	adder := signInAs(t, h, "ct.dispute.clearer", nil, accepted())
+	adder := signInAs(t, h, "ct.met.adder", nil, accepted())
 	stranger := h.registerDeviceToken(t, uuid.New())
-	tree := uuid.New()
-	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, ctLat, ctLon, time.Now())), "add")
-	dispute := uuid.New()
-	mustApply(t, h.syncOne(t, stranger, disputeItem(dispute, tree, []string{"wrong_location"})), "a stranger's dispute")
-
-	mustApply(t, h.syncOne(t, adder.AccessToken, disputeItem(dispute, tree, []string{"wrong_location"})),
-		"the adder's twin raise under the stranger's dispute id")
-	mustApply(t, h.syncOne(t, adder.AccessToken, disputeWithdrawalItem(dispute, tree)),
-		"the adder's withdrawal, admitted by the twin")
-	var pairs int
-	if err := h.store.Pool().QueryRow(context.Background(), `
-		SELECT count(*) FROM contributions
-		 WHERE tree_uuid = $1 AND kind = 'data_dispute_withdrawal' AND deleted_at IS NULL
-		   AND upper(payload ->> 'disputeID') = upper($2)
-	`, tree, dispute.String()).Scan(&pairs); err != nil {
-		t.Fatal(err)
-	}
-	if pairs != 1 {
-		t.Fatalf("fixture: %d stored withdrawals name the dispute, want the adder's 1", pairs)
+	at := 0
+	treeWith := func(act strangerAct) uuid.UUID {
+		t.Helper()
+		tree := uuid.New()
+		mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, north(60*float64(at)), ctLon, time.Now())), "add")
+		at++
+		act.send(t, h, stranger, tree)
+		return tree
 	}
 
-	mustFail(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree)), apierr.Conflict,
-		"withdrawing a tree under a stranger's dispute the adder 'withdrew'")
-	if stateOf(t, h, tree).Deleted {
-		t.Fatal("the adder cleared a stranger's dispute by withdrawing it themselves")
+	for _, act := range unmetActs() {
+		tree := treeWith(act)
+		result := h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree))
+		if result.Status != "applied" || !stateOf(t, h, tree).Deleted {
+			t.Fatalf("%s alone kept the adder's tree up: withdrawal %q (%s: %s); only a visit or a "+
+				"photo does", act.name, result.Status, codeOf(result.Error), result.Message)
+		}
 	}
+	for _, act := range metActs() {
+		tree := treeWith(act)
+		result := h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree))
+		if result.Status != "failed" || codeOf(result.Error) != string(apierr.Conflict) || stateOf(t, h, tree).Deleted {
+			t.Fatalf("a stranger's %s did not keep the adder's tree up: withdrawal %q (%s: %s)",
+				act.name, result.Status, codeOf(result.Error), result.Message)
+		}
+	}
+}
+
+// TestOnlyAVisitOrAPhotoKeepsAnErasedTree is decision 6 under the same ruling: eraseEverything
+// deletes and tombstones a tree whose only other activity is not a visit or a photo, and keeps,
+// anonymized and still published, a tree a stranger met.
+func TestOnlyAVisitOrAPhotoKeepsAnErasedTree(t *testing.T) {
+	h := newHarness(t)
+	account := signInAs(t, h, "ct.met.eraser", nil, accepted())
+	stranger := h.registerDeviceToken(t, uuid.New())
+	at := 0
+	trees := map[string]uuid.UUID{}
+	plant := func(acts []strangerAct) []string {
+		var names []string
+		for _, act := range acts {
+			tree := uuid.New()
+			mustApply(t, h.syncOne(t, account.AccessToken, addTreeAt(tree, north(60*float64(at)), ctLon, time.Now())), "add")
+			at++
+			act.send(t, h, stranger, tree)
+			trees[act.name] = tree
+			names = append(names, act.name)
+		}
+		return names
+	}
+	unmet, met := plant(unmetActs()), plant(metActs())
+
+	deleteMe(t, h, account.AccessToken, "eraseEverything")
+
+	for _, name := range unmet {
+		if state := stateOf(t, h, trees[name]); state.Exists || !isTombstoned(t, h, trees[name]) {
+			t.Fatalf("eraseEverything kept a tree whose only other activity was %s (%+v, tombstoned %v); "+
+				"only a visit or a photo keeps it", name, state, isTombstoned(t, h, trees[name]))
+		}
+	}
+	for _, name := range met {
+		state := stateOf(t, h, trees[name])
+		if !state.Exists || !state.Anonymized || !state.Published || state.UserID != nil || isTombstoned(t, h, trees[name]) {
+			t.Fatalf("eraseEverything did not keep, anonymized, a tree a stranger left %s on: %+v", name, state)
+		}
+	}
+	assertPublicationInvariant(t, h)
 }
 
 // TestOnlyTheAdderWithdraws is decision 8's "the adder may".
