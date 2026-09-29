@@ -2186,6 +2186,16 @@ public actor LocalAPI: CypressAPI {
     /// has it taken out of its list, or the next drain would upload a photograph that had been
     /// deleted.
     public func deletePhoto(id: UUID) async throws -> PhotoDeletion {
+        try await deletePhoto(id: id, servicePhotoID: nil)
+    }
+
+    /// `deletePhoto(id:)`, with the queued withdrawal naming `servicePhotoID` — the service's own id
+    /// for this photograph — when the caller knows it.
+    ///
+    /// Everything on the phone is keyed on `id` exactly as before; only the id the withdrawal
+    /// carries to the service changes. `RoutedAPI.deletePhoto(id:)` is the caller, for a photograph
+    /// sent by build 77 or earlier, whose local id the service has never heard of (report F30).
+    public func deletePhoto(id: UUID, servicePhotoID: UUID?) async throws -> PhotoDeletion {
         let moment = now()
         let who = attribution
 
@@ -2249,7 +2259,7 @@ public actor LocalAPI: CypressAPI {
                 .photoWithdrawal(
                     PhotoWithdrawal(
                         clientUUID: UUID(),
-                        photoID: id,
+                        photoID: servicePhotoID ?? id,
                         treeID: subject.treeID,
                         attribution: who,
                         occurredAt: moment

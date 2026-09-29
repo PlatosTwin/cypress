@@ -97,7 +97,8 @@ struct PhotoIdentityTests {
         transport: ScriptedTransport,
         tree: Tree,
         serverID: UUID,
-        beginSucceeds: Bool = true
+        beginSucceeds: Bool = true,
+        shotType: ShotType = .fullTree
     ) async throws -> SentBegin? {
         let staged = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("cypress-photo-identity-\(UUID().uuidString).jpg")
@@ -110,7 +111,7 @@ struct PhotoIdentityTests {
         )
         _ = try await data.outbox.enqueue(
             .visit(visit),
-            photos: [OutboxPhoto(path: staged.path, shotType: .fullTree)]
+            photos: [OutboxPhoto(path: staged.path, shotType: shotType)]
         )
         transport.answer(
             "POST /sync",
@@ -468,5 +469,141 @@ struct PhotoIdentityTests {
             "screen 03's pill reads \(pill); screen 20 lists \(browser.photos.count)"
         )
         #expect(browser.photos.count == 3, "the add-a-tree photograph, the visit's, and the stranger's")
+    }
+
+    // MARK: - 9. A withdrawal names the photograph the way the service can find it
+
+    /// The photograph the queued `photo_withdrawal` names, read off the queue the drain will send.
+    private static func withdrawalNames(_ data: DataLayer) async throws -> UUID {
+        let records = try await data.outbox.records()
+        let withdrawals = try records.compactMap { record -> PhotoWithdrawal? in
+            guard record.item.kind == .photoWithdrawal else { return nil }
+            guard case let .photoWithdrawal(value) = try OutboxPayload.decode(
+                kind: record.item.kind, from: record.item.payload
+            ) else { return nil }
+            return value
+        }
+        #expect(withdrawals.count == 1, "fixture: expected exactly one queued withdrawal, found \(withdrawals.count)")
+        return try #require(withdrawals.first).photoID
+    }
+
+    /// A photograph sent by build 77 or earlier: its local id is unknown to the service and its key
+    /// is gone from the phone, so a withdrawal by the local id matched nothing and it stayed public.
+    /// Once a refresh has paired it, the withdrawal names the service's row.
+    @Test("withdrawing an earlier build's photograph names the service's row for it")
+    @MainActor
+    func withdrawingAnEarlierBuildsPhotographNamesTheServiceRow() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+        let serverID = UUID()
+
+        // `trunk`, so the tree's own add-a-tree photograph (`full_tree`, taken a moment earlier) is
+        // not a second candidate for the pairing and the pair is unambiguous by construction.
+        let sent = try #require(try await Self.takeAndSendPhoto(
+            data, transport: transport, tree: tree, serverID: serverID, shotType: .trunk
+        ))
+        #expect(sent.shotType == "trunk")
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [Self.row(serverID, shotType: sent.shotType, capturedAt: sent.capturedAt, clientUUID: UUID())],
+            own: [serverID]
+        )
+        _ = try await Self.refreshed(data, tree: tree)
+
+        _ = try await data.api.deletePhoto(id: sent.clientUUID)
+
+        let named = try await Self.withdrawalNames(data)
+        #expect(
+            named == serverID,
+            """
+            the withdrawal names \(named), not the service's \(serverID) — the service has never heard \
+            of this photograph's local id, so it would withdraw nothing and the photograph stays public
+            """
+        )
+        let onThePhone = try await Self.localPhotoIDs(data, tree: tree)
+        #expect(!onThePhone.contains(sent.clientUUID), "the photograph was not withdrawn on the phone")
+    }
+
+    /// With no refresh this process, nothing is known, and the withdrawal names the phone's id —
+    /// which for a photograph sent since F30's fix is the key the service withdraws by.
+    @Test("with no refresh, a withdrawal names the phone's id, which is the begin's key")
+    @MainActor
+    func withNoRefreshAWithdrawalNamesThePhonesID() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+
+        let sent = try #require(try await Self.takeAndSendPhoto(data, transport: transport, tree: tree, serverID: UUID()))
+        _ = try await data.api.deletePhoto(id: sent.clientUUID)
+
+        #expect(try await Self.withdrawalNames(data) == sent.clientUUID)
+    }
+
+    /// Two photographs from one visit with the same framing share a capture second, so their service
+    /// copies pair either way round. Naming one would risk withdrawing the photograph the person
+    /// kept, so neither is named: the withdrawal carries the phone's id.
+    @Test("an ambiguous pair is folded for display but never named in a withdrawal")
+    @MainActor
+    func anAmbiguousPairIsNeverNamed() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+
+        let first = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("pids-a-\(UUID().uuidString).jpg")
+        let second = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("pids-b-\(UUID().uuidString).jpg")
+        try Self.jpeg().write(to: first)
+        try Self.jpeg().write(to: second)
+        let visit = Visit(treeID: tree.id, attribution: Attribution.anonymous(deviceID: data.deviceID), capturedAt: Date())
+        _ = try await data.outbox.enqueue(
+            .visit(visit),
+            photos: [OutboxPhoto(path: first.path, shotType: .trunk), OutboxPhoto(path: second.path, shotType: .trunk)]
+        )
+        transport.answer("POST /sync", with: #"{"results":[{"client_uuid":"\#(visit.clientUUID.uuidString)","status":"applied"}]}"#)
+        // The begin is refused, so both photographs are applied on the phone and the scripted
+        // profile below stands in for what an earlier build sent.
+        transport.answer("POST /photos/begin", throwing: APIError.serverError)
+        _ = try await data.outbox.drain(photoUploadsAllowed: true)
+
+        let local = try await data.local.treeProfile(id: tree.id).photos.items.filter { $0.visitID == visit.id }
+        #expect(local.count == 2, "fixture: two photographs on one visit")
+        let capturedAt = ISO8601DateFormatter().string(from: try #require(local.first).capturedAt)
+        #expect(Set(local.map(\.capturedAt)).count == 1, "fixture: the pair must share a capture time")
+
+        let copies = [UUID(), UUID()]
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: copies.map { Self.row($0, shotType: "trunk", capturedAt: capturedAt, clientUUID: UUID()) },
+            own: copies
+        )
+        let profile = try await Self.refreshed(data, tree: tree)
+        #expect(Set(profile.visiblePhotos.items.map(\.id)).isDisjoint(with: copies), "the pair was not folded for display")
+
+        let withdrawn = try #require(local.first)
+        _ = try await data.api.deletePhoto(id: withdrawn.id)
+        let named = try await Self.withdrawalNames(data)
+        #expect(!copies.contains(named), "an ambiguous pair's service row was named: \(named)")
+        #expect(named == withdrawn.id)
+    }
+
+    /// The pairing rule for naming, on its own: unique pairs are named, a shared capture second is not.
+    @Test("only unambiguous earlier-build pairs are named")
+    func onlyUnambiguousPairsAreNamed() throws {
+        let tree = UUID()
+        let at = Date(timeIntervalSince1970: 1_790_000_000)
+        let alone = Photo(treeID: tree, shotType: .leaf, capturedAt: at.addingTimeInterval(-600))
+        let twinA = Photo(treeID: tree, shotType: .fullTree, capturedAt: at)
+        let twinB = Photo(treeID: tree, shotType: .fullTree, capturedAt: at)
+        let aloneCopy = Photo(treeID: tree, shotType: .leaf, moderationState: .approved, capturedAt: alone.capturedAt)
+        let twinCopies = (0..<2).map { _ in Photo(treeID: tree, shotType: .fullTree, moderationState: .approved, capturedAt: at) }
+        let rows = [aloneCopy] + twinCopies
+        let delta = RemoteAPI.TreeCommunityDelta(
+            treeID: tree, photos: rows,
+            ownPhotoIDs: Set(rows.map(\.id)), deletablePhotoIDs: Set(rows.map(\.id)),
+            clientUUIDs: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, UUID()) })
+        )
+        let matched = RoutedAPI.photoIdentityMatch(delta, onThisPhone: [alone, twinA, twinB])
+        #expect(matched.added.isEmpty, "every copy should fold for display")
+        #expect(matched.serviceIDs == [alone.id: aloneCopy.id], "named: \(matched.serviceIDs)")
     }
 }

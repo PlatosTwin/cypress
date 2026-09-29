@@ -306,6 +306,15 @@ public struct RoutedAPI: CypressAPI {
     /// `DataLayer.boot` wires `LocalAPI.photoIdentities(treeID:)`.
     public let resolveLocalPhotos: (@Sendable (UUID) async -> [Photo])?
 
+    /// The phone's photographs whose service `photo_id` a refresh has established, by local id.
+    /// Written by `refreshedTreeProfile(id:)`, read by `deletePhoto(id:)`. See `PhotoIdentityLedger`.
+    public let photoIdentities: PhotoIdentityLedger
+
+    /// Withdraws a photograph on the phone and has its queued withdrawal name the service's id for
+    /// it, or nil to withdraw by the phone's id alone. `DataLayer.boot` wires
+    /// `LocalAPI.deletePhoto(id:servicePhotoID:)`.
+    public let deletePhotoNamingServiceRow: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)?
+
     public init(
         local: any CypressAPI,
         remote: RemoteAPI,
@@ -313,7 +322,9 @@ public struct RoutedAPI: CypressAPI {
         signedInUserID: (@Sendable () async -> UUID?)? = nil,
         resolveGroveRows: (@Sendable ([UUID]) async -> CityFileRows)? = nil,
         resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])? = nil,
-        resolveLocalPhotos: (@Sendable (UUID) async -> [Photo])? = nil
+        resolveLocalPhotos: (@Sendable (UUID) async -> [Photo])? = nil,
+        photoIdentities: PhotoIdentityLedger = PhotoIdentityLedger(),
+        deletePhotoNamingServiceRow: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil
     ) {
         self.local = local
         self.remote = remote
@@ -322,6 +333,8 @@ public struct RoutedAPI: CypressAPI {
         self.resolveGroveRows = resolveGroveRows
         self.resolveSpecies = resolveSpecies
         self.resolveLocalPhotos = resolveLocalPhotos
+        self.photoIdentities = photoIdentities
+        self.deletePhotoNamingServiceRow = deletePhotoNamingServiceRow
     }
 
     // MARK: - Class L — the city layer, and no remote failure mode
@@ -427,8 +440,29 @@ public struct RoutedAPI: CypressAPI {
         try await local.setPhotoVote(photoID: photoID, vote: vote)
     }
 
+    /// Local, like every contribution write — with the service's id for the photograph when a
+    /// refresh has established it.
+    ///
+    /// The queued `photo_withdrawal` names the photograph for the service. For anything sent since
+    /// report F30's fix the phone's own id is enough: it is the begin's `client_uuid`, and the
+    /// service withdraws by it. A photograph sent by build 77 or earlier has a local id the service
+    /// never heard of and a key the phone no longer holds, so a withdrawal naming the local id
+    /// matched nothing there and the photograph stayed public. When `refreshedTreeProfile(id:)` has
+    /// paired it with its service row unambiguously, the withdrawal names that row instead.
+    ///
+    /// **What this cannot reach, stated rather than discovered:** a photograph whose tree has not
+    /// been refreshed in this process (the ledger is memory, not a table — a table is a migration),
+    /// and a photograph that shares its framing and capture second with another of this phone's on
+    /// the same tree. Both are withdrawn on the phone and by the phone's id, as before.
+    ///
+    /// Nothing here uploads or re-enqueues anything (RULINGS R77): the one queued row is the
+    /// withdrawal this call has always queued.
     public func deletePhoto(id: UUID) async throws -> PhotoDeletion {
-        try await local.deletePhoto(id: id)
+        if let naming = deletePhotoNamingServiceRow,
+           let serviceID = await photoIdentities.serviceID(for: id) {
+            return try await naming(id, serviceID)
+        }
+        return try await local.deletePhoto(id: id)
     }
 
     /// Local, like every other contribution write: the reading is on this phone, and the account's
@@ -995,10 +1029,11 @@ public struct RoutedAPI: CypressAPI {
 
         var photos = mine.photos.items
         let heldHere = await resolveLocalPhotos?(id) ?? []
-        photos.append(contentsOf: Self.communityPhotosNotOnThisPhone(
-            community,
-            onThisPhone: mine.photos.items + heldHere
-        ))
+        let matched = Self.photoIdentityMatch(community, onThisPhone: mine.photos.items + heldHere)
+        photos.append(contentsOf: matched.added)
+        // Remembered so a withdrawal of one of these can name the row the service holds — see
+        // `deletePhoto(id:)`.
+        await photoIdentities.remember(matched.serviceIDs)
 
         await log.record(.treeProfile, .live)
         return TreeProfile(
@@ -1075,6 +1110,23 @@ public struct RoutedAPI: CypressAPI {
         _ community: RemoteAPI.TreeCommunityDelta,
         onThisPhone local: [Photo]
     ) -> [Photo] {
+        photoIdentityMatch(community, onThisPhone: local).added
+    }
+
+    /// `communityPhotosNotOnThisPhone`, and the service id of every phone photograph it could name
+    /// **without guessing** — the id a withdrawal of that photograph must carry (`deletePhoto(id:)`).
+    ///
+    /// `serviceIDs` maps a local `photos.id` to the service's `photo_id` for link 2, which is exact,
+    /// and for a link-3 pair only when the pair is **unambiguous**: the service row had exactly one
+    /// local candidate and that local row was a candidate for exactly one service row. Two
+    /// photographs from one visit with the same framing share a capture time, so their copies could
+    /// be paired either way round. That is harmless for a count and not for a deletion, where naming
+    /// the wrong copy would withdraw the photograph the person kept and leave the one they withdrew
+    /// public. So those are folded for display and never named.
+    static func photoIdentityMatch(
+        _ community: RemoteAPI.TreeCommunityDelta,
+        onThisPhone local: [Photo]
+    ) -> (added: [Photo], serviceIDs: [UUID: UUID]) {
         // One entry per local photograph: the caller passes the profile's live rows together with
         // the withdrawn-inclusive read, and a row listed twice could be paired twice below.
         var seen: Set<UUID> = []
@@ -1084,6 +1136,7 @@ public struct RoutedAPI: CypressAPI {
         // Links 1 and 2.
         var unmatched: [Photo] = []
         var claimed: Set<UUID> = []
+        var serviceIDs: [UUID: UUID] = [:]
         for photo in community.photos {
             if localIDs.contains(photo.id) {
                 claimed.insert(photo.id)
@@ -1091,13 +1144,30 @@ public struct RoutedAPI: CypressAPI {
             }
             if let key = community.clientUUIDs[photo.id], localIDs.contains(key) {
                 claimed.insert(key)
+                serviceIDs[key] = photo.id
                 continue
             }
             unmatched.append(photo)
         }
 
         // Link 3, for keyed rows only.
-        var candidates = local.filter { !claimed.contains($0.id) }
+        let unclaimed = local.filter { !claimed.contains($0.id) }
+        let isTwin = { (localPhoto: Photo, servicePhoto: Photo) in
+            localPhoto.shotType == servicePhoto.shotType
+                && abs(localPhoto.capturedAt.timeIntervalSince(servicePhoto.capturedAt)) < 1
+        }
+        let keyedUnmatched = unmatched.filter { community.clientUUIDs[$0.id] != nil }
+
+        // Which pairs are unambiguous is decided over the whole set, before any row is taken: a
+        // service row that is "the only one left" after its twin paired first is not thereby known.
+        for servicePhoto in keyedUnmatched {
+            let twins = unclaimed.filter { isTwin($0, servicePhoto) }
+            guard twins.count == 1, let only = twins.first else { continue }
+            let rivals = keyedUnmatched.filter { isTwin(only, $0) }
+            if rivals.count == 1 { serviceIDs[only.id] = servicePhoto.id }
+        }
+
+        var candidates = unclaimed
         var added: [Photo] = []
         for photo in unmatched {
             guard community.clientUUIDs[photo.id] != nil else {
@@ -1114,7 +1184,7 @@ public struct RoutedAPI: CypressAPI {
                 added.append(photo)
             }
         }
-        return added
+        return (added, serviceIDs)
     }
 
     /// The bytes of a photograph, from the phone when it has them and from the service when it
@@ -1231,5 +1301,28 @@ extension RoutedAPI {
             found[speciesID] = species
         }
         return found
+    }
+}
+
+// MARK: - Which service row is this phone's photograph
+
+/// The service's `photo_id` for each of the phone's photographs that a profile refresh has matched
+/// to one (report F30), by the phone's `photos.id`.
+///
+/// **Memory, deliberately.** A persistent map is a column or a table, and a table is a migration
+/// this round does not hold. It is read at exactly one moment — a person withdrawing a photograph,
+/// from a screen that refreshed the tree it is on — so what a launch forgets, the next refresh of
+/// that tree relearns.
+public actor PhotoIdentityLedger {
+    private var byLocalID: [UUID: UUID] = [:]
+
+    public init() {}
+
+    func remember(_ pairs: [UUID: UUID]) {
+        byLocalID.merge(pairs) { _, newer in newer }
+    }
+
+    func serviceID(for localID: UUID) -> UUID? {
+        byLocalID[localID]
     }
 }

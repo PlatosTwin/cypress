@@ -393,7 +393,12 @@ public struct DataLayer: Sendable {
             resolveSpecies: { ids in await local.species(ids: ids) },
             // Withdrawn rows included, so a service copy of a photograph this phone took and then
             // withdrew does not come back onto its contributor's profile (report F30).
-            resolveLocalPhotos: { id in await local.photoIdentities(treeID: id) }
+            resolveLocalPhotos: { id in await local.photoIdentities(treeID: id) },
+            // So a withdrawal of a photograph sent by an earlier build names the row the service
+            // holds, which is the only id it can withdraw that photograph by (report F30).
+            deletePhotoNamingServiceRow: { id, serviceID in
+                try await local.deletePhoto(id: id, servicePhotoID: serviceID)
+            }
         )
 
         // ── The background half of the grove's two reads (the owner's ruling of 2026-09-01) ─────
