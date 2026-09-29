@@ -14,12 +14,17 @@
 --
 --   1. `published_at IS NOT NULL` implies `device_id IS NULL` — a CHECK, below. A tree added signed
 --      out stays on the adder's phone until sign-in (decision 1).
---   2. A published tree's owning account has accepted the license, or the tree is anonymized.
---      This spans two tables, so no CHECK can state it. After this file's own backfill it is kept
---      by the four writers of `published_at` in `internal/store/community_trees.go` —
---      `publicationStamp` (a signed-in insert), `claimCommunityTrees` (the claim), and
---      `publishAccountTrees` / `unpublishAccountTrees` (`RecordLicenseConsent` accepting and
---      declining) — and pinned by `TestNoPublishedTreeBelongsToAnAccountThatDeclined`, which checks
+--   2. A tree is published only at a moment its owning account had accepted the license
+--      (decisions 7 and 10). **The license is one-way** (decision 10): a later decline does not
+--      unpublish anything, it only keeps trees added after it private — so this is a fact about the
+--      moment of publication, not about the account's current answer, and `users` keeps only the
+--      current answer. Every publication therefore writes a `published` event whose `after` carries
+--      `license_version`, the version accepted at that moment, and `published_at` equals that
+--      event's `occurred_at`. No CHECK can state it. After this file's own backfill it is kept by
+--      the three writers of `published_at` in `internal/store/community_trees.go` —
+--      `publicationStamp` (a signed-in insert), `claimCommunityTrees` (the claim) and
+--      `publishAccountTrees` (`RecordLicenseConsent` accepting), each reading the answer under
+--      `FOR SHARE` — and pinned by `TestEveryPublicationHappenedUnderAnAcceptedLicense`, which checks
 --      the whole table after every path that can move either side.
 --
 -- `users.license_version` is the record of acceptance: NULL is a *declined* consent (001's
@@ -38,9 +43,12 @@
 --     answer for it) and left **unpublished**: its account is gone, whether that account accepted
 --     the license cannot be known, and it may have chosen to erase everything. Publishing it now
 --     would decide both questions for somebody who can no longer be asked.
---   * An account-owned tree is published at `updated_at` — the moment of its insert or its claim,
---     the only two writers of that column — if its account has accepted the license, and left
---     unpublished otherwise, which is decision 7 applied to rows that already exist.
+--   * An account-owned tree is published if its account has accepted the license, and left
+--     unpublished otherwise, which is decision 7 applied to rows that already exist. It is published
+--     at `updated_at` — the moment of its insert or its claim, the only two writers of that column —
+--     **or at the acceptance, whichever is later**: a tree claimed on 1 September by an account that
+--     accepted on 20 September went live on the 20th, not the 1st (review of #187, F2). The event
+--     records the version accepted, as every `published` event does.
 --   * A device-owned tree stays unpublished (decision 1).
 --
 -- One root location per tree (id = the tree's id, the rule both halves share) and an `added`
@@ -69,7 +77,7 @@ UPDATE community_trees
  WHERE user_id IS NULL AND device_id IS NULL;
 
 UPDATE community_trees AS t
-   SET published_at = t.updated_at
+   SET published_at = GREATEST(t.updated_at, u.license_accepted_at)
   FROM users AS u
  WHERE t.user_id = u.id
    AND t.device_id IS NULL
@@ -151,7 +159,7 @@ CREATE TABLE community_tree_events (
     -- `contributions.kind`'s vocabulary out of every migration by matching `CHECK (kind IN (`, and
     -- this column is a different vocabulary that happens to share the name.
     kind                     TEXT NOT NULL CONSTRAINT community_tree_events_kind_is_known CHECK (kind = ANY (ARRAY[
-                                 'added', 'published', 'unpublished', 'location_corrected',
+                                 'added', 'published', 'location_corrected',
                                  'species_named', 'species_corrected', 'withdrawn', 'taken_down'])),
     contribution_client_uuid UUID,
     actor_user_id            UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -179,9 +187,11 @@ SELECT l.id, l.tree_id, 'added', l.contribution_client_uuid, l.actor_user_id, l.
   JOIN community_trees t ON t.id = l.tree_id;
 
 INSERT INTO community_tree_events
-    (id, tree_id, kind, actor_user_id, occurred_at, recorded_at)
-SELECT gen_random_uuid(), t.id, 'published', t.user_id, t.published_at, t.published_at
+    (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after)
+SELECT gen_random_uuid(), t.id, 'published', t.user_id, t.published_at, t.published_at,
+       jsonb_build_object('license_version', u.license_version)
   FROM community_trees t
+  JOIN users u ON u.id = t.user_id
  WHERE t.published_at IS NOT NULL;
 
 -- ── The erase door's tombstone ─────────────────────────────────────────────────────────────────

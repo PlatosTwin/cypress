@@ -66,36 +66,58 @@ var (
 
 // ── Publication ─────────────────────────────────────────────────────────────────────────────────
 
-// accountAcceptsLicense reads `users.license_version`, whose NULL is a declined consent (001).
-func accountAcceptsLicense(ctx context.Context, q querier, userID uuid.UUID) (bool, error) {
-	var accepted bool
-	err := q.QueryRow(ctx, `SELECT license_version IS NOT NULL FROM users WHERE id = $1`, userID).
-		Scan(&accepted)
+// accountLicense reads `users.license_version`, whose NULL is a declined consent (001), and takes a
+// share lock on the row for the rest of the caller's transaction.
+//
+// **`FOR SHARE` is what makes "published only while accepted" true under concurrency.** Without it,
+// a signed-in add that read "declined" could commit after a concurrent acceptance whose publish
+// sweep ran while the add was still uncommitted and invisible to it — leaving the tree unpublished
+// under an account that has accepted, until some later acceptance (review of #187, F6). With it,
+// `RecordLicenseConsent`'s `UPDATE users` waits for the add to commit, so its sweep sees the tree;
+// or the add waits for the consent to commit, and reads the answer it recorded. The lock is on one
+// row the transaction already references through a foreign key, and nothing else in the service
+// updates `users` inside a transaction that also writes a community tree, so it adds a wait and no
+// deadlock.
+func accountLicense(ctx context.Context, q querier, userID uuid.UUID) (*string, error) {
+	var version *string
+	err := q.QueryRow(ctx, `SELECT license_version FROM users WHERE id = $1 FOR SHARE`, userID).Scan(&version)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	return accepted, err
-}
-
-// publicationStamp is `published_at` for a tree this owner is inserting: now for an account that has
-// accepted the license (decision 1: "visible to everyone … instantly"), nil for an account that
-// declined it (decision 7) and for a device (decision 1: "stays on the adder's phone until they sign
-// in"). This is one of the four writers of `published_at`; 007's header names the other three.
-func publicationStamp(ctx context.Context, q querier, owner Owner, now time.Time) (*time.Time, error) {
-	if owner.UserID == nil {
 		return nil, nil
 	}
-	accepted, err := accountAcceptsLicense(ctx, q, *owner.UserID)
-	if err != nil || !accepted {
-		return nil, err
+	return version, err
+}
+
+// publicationStamp is `published_at` for a tree this owner is inserting, and the license version it
+// is published under: now for an account that has accepted the license (decision 1: "visible to
+// everyone … instantly"), nil for an account that has declined it (decision 7) and for a device
+// (decision 1: "stays on the adder's phone until they sign in"). This is one of the three writers of
+// `published_at` outside 007's backfill; 007's header names the other two.
+func publicationStamp(ctx context.Context, q querier, owner Owner, now time.Time) (*time.Time, *string, error) {
+	if owner.UserID == nil {
+		return nil, nil, nil
 	}
-	return &now, nil
+	version, err := accountLicense(ctx, q, *owner.UserID)
+	if err != nil || version == nil {
+		return nil, nil, err
+	}
+	return &now, version, nil
+}
+
+// publishedEvent is the `published` event every publication writes. Its `after` carries the license
+// version the account had accepted at that moment — decision 10 makes the license one-way, so
+// "accepted at publication" is the invariant, and `users` keeps only the current answer. The event
+// is where the answer at the time is kept.
+func publishedEvent(tree uuid.UUID, version string, actor Actor, at time.Time) event {
+	return event{TreeID: tree, Kind: "published", Actor: actor, OccurredAt: at, After: position{LicenseVersion: &version}}
 }
 
 // publishAccountTrees publishes every live, unpublished tree an account owns, and writes a
 // `published` event for each. It runs when the account accepts the license (decision 7: "they go
 // live if/when the account later accepts").
-func publishAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, actor Actor, now time.Time) error {
+//
+// There is no inverse. Decision 10: the license is one-way — a later decline does not unpublish
+// anything; it only keeps trees added after it private.
+func publishAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, version string, actor Actor, now time.Time) error {
 	ids, err := collectIDs(tx.Query(ctx, `
 		UPDATE community_trees
 		   SET published_at = $2, updated_at = $2
@@ -106,29 +128,7 @@ func publishAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, actor
 		return err
 	}
 	for _, id := range ids {
-		if err := writeEvent(ctx, tx, event{TreeID: id, Kind: "published", Actor: actor, OccurredAt: now}, now); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// unpublishAccountTrees takes an account's trees back off the public layer when it declines the
-// license after having accepted it — the other direction of the invariant, which would otherwise be
-// false the moment somebody signed in again and left the checkbox clear. Anonymized trees have no
-// account and are untouched.
-func unpublishAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, actor Actor, now time.Time) error {
-	ids, err := collectIDs(tx.Query(ctx, `
-		UPDATE community_trees
-		   SET published_at = NULL, updated_at = $2
-		 WHERE user_id = $1 AND published_at IS NOT NULL
-		RETURNING id
-	`, userID, now))
-	if err != nil {
-		return err
-	}
-	for _, id := range ids {
-		if err := writeEvent(ctx, tx, event{TreeID: id, Kind: "unpublished", Actor: actor, OccurredAt: now}, now); err != nil {
+		if err := writeEvent(ctx, tx, publishedEvent(id, version, actor, now), now); err != nil {
 			return err
 		}
 	}
@@ -139,10 +139,11 @@ func unpublishAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, act
 // if the account has accepted the license, go live in the same statement (decision 1: "then it goes
 // live for everyone at once"). The actor is the account and the device being claimed.
 func claimCommunityTrees(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.UUID, now time.Time) error {
-	accepted, err := accountAcceptsLicense(ctx, tx, userID)
+	version, err := accountLicense(ctx, tx, userID)
 	if err != nil {
 		return err
 	}
+	accepted := version != nil
 	rows, err := tx.Query(ctx, `
 		UPDATE community_trees
 		   SET user_id = $1, device_id = NULL, updated_at = $2,
@@ -171,7 +172,7 @@ func claimCommunityTrees(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.U
 	}
 	actor := Actor{UserID: &userID, DeviceID: &deviceID}
 	for _, id := range published {
-		if err := writeEvent(ctx, tx, event{TreeID: id, Kind: "published", Actor: actor, OccurredAt: now}, now); err != nil {
+		if err := writeEvent(ctx, tx, publishedEvent(id, *version, actor, now), now); err != nil {
 			return err
 		}
 	}
@@ -207,7 +208,7 @@ func insertCommunityTree(ctx context.Context, tx pgx.Tx, tree NewCommunityTree, 
 		return false, nil
 	}
 
-	publishedAt, err := publicationStamp(ctx, tx, act.Owner, now)
+	publishedAt, licenseVersion, err := publicationStamp(ctx, tx, act.Owner, now)
 	if err != nil {
 		return false, err
 	}
@@ -248,7 +249,7 @@ func insertCommunityTree(ctx context.Context, tx pgx.Tx, tree NewCommunityTree, 
 		return false, err
 	}
 	if publishedAt != nil {
-		if err := writeEvent(ctx, tx, event{TreeID: tree.ID, Kind: "published", Actor: actor, OccurredAt: now}, now); err != nil {
+		if err := writeEvent(ctx, tx, publishedEvent(tree.ID, *licenseVersion, actor, now), now); err != nil {
 			return false, err
 		}
 	}
@@ -379,8 +380,9 @@ func treesWithin(ctx context.Context, q querier, lat, lon, radiusM float64, view
 //
 // "Live" means not deleted, and not a removal: a withdrawal of a photograph, a reading, a dispute or
 // a tree is somebody taking their own work back, not work anchored to this tree. A photograph an
-// operator rejected is not live either. An anonymized row is somebody's work with the name taken
-// off, so it counts.
+// operator rejected is not live either, and neither is one whose bytes never arrived. A dispute its
+// raiser withdrew does not count. An anonymized row is somebody's work with the name taken off, so
+// it counts.
 func othersHaveBuiltOn(ctx context.Context, q querier, treeID uuid.UUID, self Owner) (bool, error) {
 	var found bool
 	err := q.QueryRow(ctx, `
@@ -393,9 +395,23 @@ func othersHaveBuiltOn(ctx context.Context, q querier, treeID uuid.UUID, self Ow
 		       -- would drop exactly the anonymized rows this must count.
 		       AND NOT coalesce(($2::uuid IS NOT NULL AND c.user_id = $2)
 		                     OR ($3::uuid IS NOT NULL AND c.device_id = $3), false)
+		       -- A dispute its raiser took back. data_dispute_withdrawal tombstones nothing -- the
+		       -- dispute row stays live (005) -- so the pair is matched here instead: same dispute id,
+		       -- same tree, same owner (review of #187, F4). A photograph's and a reading's
+		       -- withdrawals set the target's deleted_at, which the two filters here already read.
+		       AND NOT (c.kind = 'data_dispute' AND EXISTS (
+		           SELECT 1 FROM contributions w
+		            WHERE w.kind = 'data_dispute_withdrawal' AND w.deleted_at IS NULL
+		              AND w.tree_uuid = c.tree_uuid
+		              AND upper(w.payload ->> 'disputeID') = upper(c.payload ->> 'id')
+		              AND w.user_id IS NOT DISTINCT FROM c.user_id
+		              AND w.device_id IS NOT DISTINCT FROM c.device_id))
 		) OR EXISTS (
 		    SELECT 1 FROM photos p
 		     WHERE p.tree_uuid = $1 AND p.deleted_at IS NULL AND p.moderation_state <> 'rejected'
+		       -- A photograph whose bytes never arrived is a reservation nobody can see, not work
+		       -- (the orchestrator's ruling after #187's review, F5).
+		       AND p.bytes_received_at IS NOT NULL
 		       AND NOT coalesce(($2::uuid IS NOT NULL AND p.user_id = $2)
 		                     OR ($3::uuid IS NOT NULL AND p.device_id = $3), false)
 		)
@@ -834,6 +850,9 @@ type position struct {
 	Placement string     `json:"placement,omitempty"`
 	AccuracyM *float64   `json:"location_accuracy_m,omitempty"`
 	SpeciesID *uuid.UUID `json:"species_id,omitempty"`
+	// LicenseVersion is set only on a `published` event's `after`: the license the account had
+	// accepted at the moment of publication (decision 10). 007's backfill writes the same key.
+	LicenseVersion *string `json:"license_version,omitempty"`
 }
 
 // at is a position with a place in it. Pointers rather than values so a tree on the equator or the
@@ -843,7 +862,8 @@ func at(lat, lon float64, placement string, accuracyM *float64) position {
 }
 
 func (p position) isZero() bool {
-	return p.Lat == nil && p.Lon == nil && p.Placement == "" && p.AccuracyM == nil && p.SpeciesID == nil
+	return p.Lat == nil && p.Lon == nil && p.Placement == "" && p.AccuracyM == nil && p.SpeciesID == nil &&
+		p.LicenseVersion == nil
 }
 
 type event struct {

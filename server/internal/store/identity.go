@@ -438,15 +438,14 @@ func claimFavorites(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.UUID, 
 // the wire rather than an omitted field, because `acceptsLicense` is derived from nil precisely so
 // a Bool and a version string cannot disagree, and that property has to survive the wire (§5.6).
 //
-// ── And it moves the account's trees with it (decision 7) ───────────────────────────────────────
+// ── And an acceptance publishes the account's trees (decisions 7 and 10) ───────────────────────
 //
 // An accepted license publishes every live tree the account owns that is not yet published — "they
-// go live if/when the account later accepts the license". A declined one takes the account's
-// published trees back off the public layer, because a published tree must belong to an account
-// that has accepted the license or to nobody (migration 007's invariant), and an account that
-// accepted and later declined would otherwise hold public trees under a consent it withdrew. Both
-// happen in the transaction that records the answer, so the two tables never disagree. `actor` is
-// who is recorded as having done it: the account and, when known, the device it signed in on.
+// go live if/when the account later accepts the license" — in the transaction that records the
+// answer, with the version accepted written on each `published` event. **A decline changes no
+// tree.** Decision 10: the license is one-way; a tree published while the account had accepted stays
+// published, and a decline keeps private only the trees added after it (`publicationStamp` reads
+// the answer at each insert). `actorDevice` is who is recorded as having done it, beside the account.
 func (s *Store) RecordLicenseConsent(ctx context.Context, userID uuid.UUID, version *string, actorDevice *uuid.UUID) error {
 	return s.Tx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
@@ -459,10 +458,9 @@ func (s *Store) RecordLicenseConsent(ctx context.Context, userID uuid.UUID, vers
 		`, userID, version, acceptedAt, now); err != nil {
 			return err
 		}
-		actor := Actor{UserID: &userID, DeviceID: actorDevice}
-		if version != nil {
-			return publishAccountTrees(ctx, tx, userID, actor, now)
+		if version == nil {
+			return nil
 		}
-		return unpublishAccountTrees(ctx, tx, userID, actor, now)
+		return publishAccountTrees(ctx, tx, userID, *version, Actor{UserID: &userID, DeviceID: actorDevice}, now)
 	})
 }
