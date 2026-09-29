@@ -506,6 +506,20 @@ CYPRESS_TEST_DATABASE_URL='postgres://…/postgres' go test ./...
 exits 0 whether or not the SQL half ran, which is this project's signature failure mode in its Go
 dialect.
 
+**CI does the counting now, and you can run the same judge locally.** `.github/workflows/server.yml`
+runs the suite against a Postgres 18 service container (production is `postgres-flex:18.1`) and
+fails on any skipped test, subtests included:
+
+```sh
+CYPRESS_TEST_DATABASE_URL='postgres://…' go test -json -count=1 ./... > /tmp/server.json
+ci/verify_test_json.sh /tmp/server.json   # VERIFY-SERVER-OK, or the reason it is not
+```
+
+On a pull request it runs as the `server` job of `.github/workflows/testflight.yml`, and `gate` —
+the required check — refuses to pass unless it succeeded. A pull request that changes only Go
+(anything under `server/` except `server/testdata/`, removing nothing) skips the 34-minute iOS
+suite; its `plan` log says `this diff is server-only`.
+
 > **The no-database figure here was wrong and it is corrected in place.** This paragraph read:
 > *"Measured on 2026-09-10 at commit `5b52b4e` + this round: **60 pass / 108 skip** with no database,
 > **191 pass / 0 skip** with one."* The second half reproduces exactly. **The first half is the
