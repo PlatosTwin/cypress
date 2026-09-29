@@ -720,6 +720,14 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 			return failed(apierr.ValidationFailed,
 				"That item disagrees with itself about which tree it moves.")
 		}
+		// A correction's `id` names the correction, and the chain's root row already carries the
+		// tree's id. A payload that sends the tree's id as its own is the drift §3A warns against
+		// (the tree pointer spelled `id`); it would collide with the root and be read as a replay,
+		// answering `applied` for a move that never happened (review of #187, F3).
+		if payload.ID == payload.TreeID {
+			return failed(apierr.ValidationFailed,
+				"That correction's identifier is the tree's; a correction needs its own.")
+		}
 		if payload.Coordinate == nil {
 			return failed(apierr.ValidationFailed, "That item named no location.")
 		}
