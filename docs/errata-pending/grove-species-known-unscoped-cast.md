@@ -122,6 +122,17 @@ than assumed:
 The second item answers this entry's product question for disputes as a side effect: a dispute is
 not a sighting, so no dispute can enrol a species, top-level `speciesID` or not.
 
+**This is a tester-visible change, accepted by the owner (2026-09-28), not a change "nothing a
+tester sees."** Item 1 above is a fact about the *past*: what item 2 says is true only of a tester
+who never named a community tree's species. Anyone who did — through `add_tree`, `species_claim`
+or `species_correction` — had that species added to their Species tab on the next refresh, before
+this round. After this round's deploy, the next refresh drops it, because the read now answers an
+empty list for those three kinds. A species that a tester's own refreshed tab was showing
+yesterday can be gone today, and the ring's numerator can drop by the same species. Saying the
+species "the phone's own tab already left off" are the ones affected is true only of the very
+first paint, before any refresh ever ran — the release note in `docs/whats-new/` states the effect
+a tester will actually notice, and is not `internal:` for that reason.
+
 **The write path.** `species_claim` and `species_correction` now refuse a `speciesID` that is absent
 or not a canonical UUID, `validation_failed`. That is terminal for the phone's queue, and it is safe
 here for a checkable reason: `SpeciesStatement.speciesID` is a non-optional Swift `UUID` that
@@ -134,7 +145,9 @@ tolerates anything they could hold.
 **Tests** (`server/internal/api/grove_species_test.go`, all through the handler):
 `TestAPoisonedSpeciesIDDoesNotBreakTheSpeciesTab` (a poisoned row of all nineteen kinds, plus
 twelve other non-UUID shapes on a `visit`, beneath three real sightings; two reads, equal),
-`TestOnlyASightingPutsASpeciesInTheTab`, `TestASpeciesStatementMustNameASpecies`.
+`TestOnlyASightingPutsASpeciesInTheTab`, `TestASpeciesStatementMustNameASpecies`,
+`TestASpeciesStatementKeyIsMatchedExactly` (the three case-folded-key shapes, both kinds, and a
+check that the refused item was never stored).
 `TestWithheldKindsProduceTheEmptyAnswer` posted a species claim with no species and now sends one.
 
 **Red-proofs, each read for its message:**
@@ -148,7 +161,26 @@ twelve other non-UUID shapes on a `visit`, beneath three real sightings; two rea
 and the write-side refusal disabled: `species_claim with {…"speciesID":"not-a-uuid"}: "applied"
 (<none>), want failed validation_failed`. Each half is load-bearing on its own.
 
-**Counts,** `go test -json ./...` against the throwaway database, counted from the JSON events
-(subtests included): main `bb4d08f` 222 passed, 0 skipped, 0 failed; this branch 225 passed,
-0 skipped, 0 failed. With `CYPRESS_TEST_DATABASE_URL` unset the same suite reports 68 passed and
-147 skipped while every package prints `ok`.
+**The write-side refusal matched the key case-insensitively, and that has been tightened.**
+`encoding/json` matches a struct field's tag case-insensitively when no exact match exists, so a
+struct decode of `speciesID` also accepted `speciesid` and `SPECIESID` — keys no real client sends
+and `store.GroveSpeciesKnown`'s `payload ->> 'speciesID'` never reads, because `jsonb` matching is
+exact. Each of `{"speciesid":"<uuid>"}`, `{"SPECIESID":"<uuid>"}` and
+`{"speciesID":null,"speciesid":"<uuid>"}` was answered `applied` and stored a row with
+`payload->>'speciesID' IS NULL` — the exact worthless, un-actionable record this refusal exists to
+keep out, just reached by a spelling the check didn't compare against. Fixed by decoding into
+`map[string]json.RawMessage` and looking up the exact key `"speciesID"`, in
+`speciesStatementSpeciesID` (`server/internal/api/sync.go`). Red-proofed by reverting to a
+case-insensitive struct decode: `TestASpeciesStatementKeyIsMatchedExactly` went red on
+`species_claim with {"treeID":"…","speciesid":"…"}: "applied" (<none>), want failed
+validation_failed`, restored by copying the file back and reconfirmed green.
+
+**Counts,** `go test -json ./...` against a throwaway Postgres 18, counted from the JSON events
+(subtests included): main `bb4d08f` 222 passed, 0 skipped, 0 failed; this branch, after both the
+scope fix and the key-matching fix, 226 passed, 0 skipped, 0 failed. With
+`CYPRESS_TEST_DATABASE_URL` unset, main reports 68 passed and 147 skipped; this branch reports
+68 passed and 151 skipped — both while every package prints `ok`. The two no-database figures are
+different trees' counts, not the same reading stated twice: this branch's four new tests
+(`TestAPoisonedSpeciesIDDoesNotBreakTheSpeciesTab`, `TestOnlyASightingPutsASpeciesInTheTab`,
+`TestASpeciesStatementMustNameASpecies`, `TestASpeciesStatementKeyIsMatchedExactly`) all need the
+database, so they move from "doesn't exist" to "skipped" rather than to "passed" when it is absent.
