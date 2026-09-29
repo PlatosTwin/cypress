@@ -19,10 +19,12 @@ import Testing
 /// of a fact is a false green waiting for someone to edit one of them. There the matrix is derived;
 /// here it cannot be, so the agreement is asserted instead.
 ///
-/// **The `scope` step now has FOUR predicates, and this test derives the ones that matter rather
-/// than naming them.** `DOC_ONLY` (prose), `WEB_ONLY` (tested, on ubuntu, by `web.yml`),
-/// `GIT_METADATA` (root git metadata, runs but never ships) and `NO_ARCHIVE` (the union that
-/// decides `ships`). Adversarial review on #162 found that this file read `DOC_ONLY` alone while
+/// **The `scope` step now has FIVE predicates and one carve-back, and this test derives the ones
+/// that matter rather than naming them.** `DOC_ONLY` (prose), `WEB_ONLY` (tested, on ubuntu, by
+/// `web.yml`), `SERVER_ONLY` (tested, on ubuntu, by `server.yml` — the fourth decision, owner
+/// ruling 2026-09-28), `GIT_METADATA` (root git metadata, runs but never ships) and `NO_ARCHIVE`
+/// (the union that decides `ships`); plus `SERVER_IOS_READS`, the part of `server/` the iOS suite
+/// opens, added BACK to the testable list after `SERVER_ONLY` takes the directory away. Adversarial review on #162 found that this file read `DOC_ONLY` alone while
 /// the step subtracted `$WEB_ONLY|$DOC_ONLY`, so one alternative added to `WEB_ONLY` could move a
 /// must-RUN path into the run-nothing set and this suite still reported
 /// `Test run with 2 tests in 1 suite passed`. Green, with the defect present — this project's
@@ -98,10 +100,71 @@ struct DeployPathsAgreeTests {
     /// line that uses it, and every name in it is then checked. Adding a predicate to `testable`
     /// without an assignment this can find turns the suite red, which is the intended cost.
     static func runNothingPredicateNames(root: URL) throws -> [String] {
+        predicateNames(inFirstAlternationOf: try testableLine(root: root))
+    }
+
+    /// The first line of the `scope` step that assigns `testable=`, trimmed; empty if none.
+    static func testableLine(root: URL) throws -> String {
         let text = try String(contentsOf: root.appendingPathComponent(workflow), encoding: .utf8)
         guard let line = text.split(separator: "\n").first(where: {
             $0.trimmingCharacters(in: .whitespaces).hasPrefix("testable=")
-        }) else { return [] }
+        }) else { return "" }
+        return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// **The predicates the `testable=` line adds BACK, per input.** Since the fourth decision the
+    /// line is not only a subtraction: `SERVER_ONLY` takes `server/` away, and two pipelines put
+    /// the parts of it the iOS suite depends on back —
+    ///
+    ///     printf '%s\n' "$changed" | grep -E "^($SERVER_IOS_READS)"    content the suite opens
+    ///     printf '%s\n' "$removed" | grep -E "^($SERVER_ONLY)"         existence the suite checks
+    ///
+    /// This returns the `$NAME`s in the alternation of every `grep -E` (never `-vE`) segment fed by
+    /// `input` (`"$changed"` or `"$removed"`). Segments are split on `;`, the separator the line
+    /// uses inside its `{ …; }` group.
+    static func carveBackNames(in line: String, input: String) -> [String] {
+        var names: [String] = []
+        for segment in line.split(separator: ";") where segment.contains("\"\(input)\"") {
+            guard segment.contains("grep -E \"^("), !segment.contains("grep -vE") else { continue }
+            for name in predicateNames(inFirstAlternationOf: String(segment)) where !names.contains(name) {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    /// **Every `"server/…"` path literal in the two test targets** — the iOS suite's reads into the
+    /// Go tree, found rather than listed, the way `server/ci/check_trigger_paths.sh` finds the Go
+    /// suite's reads into this one. Today that is `GoldenWireFixtureTests`' `"server/testdata"`
+    /// and the two fixture names in its messages.
+    ///
+    /// This file is excluded because its own token table spells `"server/"`. A reader that builds
+    /// its path without a `"server/` literal is invisible here; that is a known limit, the same one
+    /// the Go-side script records, not a guarantee.
+    static func iOSSuiteReadsIntoServer(root: URL) -> [String] {
+        let pattern = try! NSRegularExpression(pattern: #""(server/[A-Za-z0-9_./-]*)"#)
+        var reads: [String] = []
+        for target in ["CypressTests", "CypressUITests"] {
+            let directory = root.appendingPathComponent(target).resolvingSymlinksInPath()
+            guard let walker = FileManager.default.enumerator(
+                at: directory, includingPropertiesForKeys: nil
+            ) else { continue }
+            for case let url as URL in walker
+            where url.pathExtension == "swift" && url.lastPathComponent != "DeployPathsAgreeTests.swift" {
+                guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                let range = NSRange(text.startIndex..., in: text)
+                for match in pattern.matches(in: text, range: range) {
+                    guard let found = Range(match.range(at: 1), in: text) else { continue }
+                    let path = String(text[found])
+                    if !reads.contains(path) { reads.append(path) }
+                }
+            }
+        }
+        return reads.sorted()
+    }
+
+    /// The `$NAME`s inside the first `^(…)` alternation of `line`, in order, deduplicated.
+    static func predicateNames(inFirstAlternationOf line: String) -> [String] {
         // **Only the anchored alternation is read, not the whole line.** The line also names
         // `$changed`, which is the input rather than a predicate; a first version of this scanner
         // collected it and the suite went red naming `$changed` — the control working, one edit
@@ -146,6 +209,82 @@ struct DeployPathsAgreeTests {
             return head.isEmpty ? String(glob[glob.index(after: star)...]) : head
         }
         return glob
+    }
+
+    /// **Which run-nothing predicates may take `server/` away, and the proof that each one
+    /// gives back what the iOS suite needs.** Returns the names that pass; `#expect`s every
+    /// shortfall with its reason, so a predicate that mentions `server/` without its carve-backs
+    /// fails here by name AND in the absence check afterwards.
+    ///
+    /// Two dependencies of the iOS suite live under `server/`, and the owner's premise ("only
+    /// `server/testdata/` feeds the iOS tests") is true of the first alone:
+    ///
+    /// 1. **Content** — `GoldenWireFixtureTests` decodes `server/testdata/*.json`. Every `"server/…"`
+    ///    literal the two test targets contain must be matched by a carve-back fed from
+    ///    `"$changed"`. Found by `iOSSuiteReadsIntoServer`, not listed, so a second reader added
+    ///    under a different directory goes red here instead of going unrun.
+    /// 2. **Existence** — `DocumentCitationGuardTests` fails when a document under `docs/` cites a
+    ///    file that is gone, and `docs/` cites `server/README.md` sixteen times. So a REMOVAL under
+    ///    the predicate must be carved back, fed from `"$removed"`.
+    ///
+    /// Alternatives are compared as literal prefixes, which is what they are today
+    /// (`server/testdata/`). One carrying regex syntax would fail the comparison and go red, the
+    /// safe direction for a check whose job is to refuse skipping.
+    static func serverCarveBacks(root: URL, runNothing: [String]) throws -> [String] {
+        let line = try testableLine(root: root)
+        let contentCarveBacks = carveBackNames(in: line, input: "$changed")
+        let removalCarveBacks = carveBackNames(in: line, input: "$removed")
+        let reads = iOSSuiteReadsIntoServer(root: root)
+        var alternatives: [String] = []
+        for name in contentCarveBacks {
+            alternatives += try assignment(name, root: root).split(separator: "|").map(String.init)
+        }
+
+        // The control, and it is a known positive: `GoldenWireFixtureTests` opens
+        // `server/testdata`. If the scan does not find it, every coverage check below is vacuous.
+        #expect(
+            reads.contains { $0.hasPrefix("server/testdata") },
+            """
+            found no "server/testdata…" literal in CypressTests/ or CypressUITests/ (found \(reads)). \
+            GoldenWireFixtureTests reads server/testdata/*.json, so the scan is not reading the \
+            test targets and the coverage check below passes without checking anything. Fix the \
+            scan, not the assertion.
+            """
+        )
+
+        var carved: [String] = []
+        for name in runNothing {
+            let value = try assignment(name, root: root)
+            guard value.contains("server/") else { continue }
+            let uncovered = reads.filter { read in
+                !alternatives.contains { (read + "/").hasPrefix($0) }
+            }
+            #expect(
+                uncovered.isEmpty && !reads.isEmpty,
+                """
+                `testable=` subtracts $\(name), which takes `server/` out of the iOS suite, but \
+                these paths the iOS suite opens are not added back by a `grep -E` fed from \
+                "$changed" on that line: \(uncovered). A pull request that regenerates one would \
+                skip the suite that decodes it, and `gate` would report success having tested \
+                nothing. Carve-backs found: \(contentCarveBacks) = \(alternatives).
+                """
+            )
+            #expect(
+                removalCarveBacks.contains(name),
+                """
+                `testable=` subtracts $\(name), which takes `server/` out of the iOS suite, but \
+                does not add a REMOVED path under it back (a `grep -E "^($\(name))"` fed from \
+                "$removed"; found \(removalCarveBacks)). DocumentCitationGuardTests fails when a \
+                file cited from docs/ is gone, and docs/ cites server/README.md sixteen times: \
+                deleting or renaming it would skip the suite that notices, and the next unrelated \
+                pull request would go red for it.
+                """
+            )
+            if uncovered.isEmpty, !reads.isEmpty, removalCarveBacks.contains(name) {
+                carved.append(name)
+            }
+        }
+        return carved
     }
 
     @Test("every ignored path is also a path that mints no build")
@@ -331,6 +470,14 @@ struct DeployPathsAgreeTests {
         // is equally true of every file that DOES ship, because that file names no sources at all
         // (#157's reviewer calibrated this: `APIError.swift` → 0 hits). Nothing yet asserts the
         // synchronized-group list; until something does, this bullet is the weakest of the four.
+        //
+        // **`server/` is the one token that MAY now appear in a run-nothing predicate** — owner
+        // ruling 2026-09-28, the fourth decision — and only on terms. `SERVER_ONLY` takes the
+        // whole directory out of the suite; the absence check below lets that through for a
+        // predicate only if `testable=` puts back both things the iOS suite depends on (see
+        // `serverCarveBacks`). Any other predicate that mentions `server/` — `WEB_ONLY`, say — is
+        // still refused exactly as before.
+        let serverCarved = try Self.serverCarveBacks(root: root, runNothing: runNothing)
         for (token, ticket, change) in [
             ("\\.github/", "#212", "a pipeline-only change"),
             ("CypressTests/", "#215", "a unit-test-only change"),
@@ -369,6 +516,7 @@ struct DeployPathsAgreeTests {
             // token buried inside a longer alternative (`\.github/workflows/web\.yml$` containing
             // `\.github/`) still fires.
             for name in runNothing {
+                if token == "server/", serverCarved.contains(name) { continue }
                 let value = runNothingValues[name] ?? ""
                 #expect(
                     !value.contains(token),
