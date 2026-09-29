@@ -447,6 +447,12 @@ func claimFavorites(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.UUID, 
 // published, and a decline keeps private only the trees added after it (`publicationStamp` reads
 // the answer at each insert). `actorDevice` is who is recorded as having done it, beside the account.
 func (s *Store) RecordLicenseConsent(ctx context.Context, userID uuid.UUID, version *string, actorDevice *uuid.UUID) error {
+	if version != nil && !IsKnownLicenseVersion(*version) {
+		// Not an acceptance (the #187 verification's L2, `knownLicenseVersions`). Recorded as a
+		// decline, which fails closed: the account's trees stay private until it accepts a version
+		// this service knows. A decline publishes nothing and unpublishes nothing (decision 10).
+		version = nil
+	}
 	return s.Tx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
 		var acceptedAt *time.Time

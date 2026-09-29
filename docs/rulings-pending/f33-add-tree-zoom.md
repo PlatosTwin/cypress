@@ -10,8 +10,10 @@ under a real number at merge. No code comment cites this filename. The comments 
 
 **Date:** 2026-09-28. **Ruled by:** the owner, confirming the question `docs/ROADMAP.md` F33 put to
 them. **Source:** the owner's answer to the orchestrator in the orchestrator's session of
-2026-09-28, verbatim: *"F33 yes (same R80 ruling)"*. It was relayed to the authoring agent in its
-brief, and it is not recorded anywhere else in the repository. **Status:** ruled.
+2026-09-28, verbatim: *"F33 yes"*, answering a question that put F33 as the same gesture R80 item 5
+ruled in on screen 04. The parenthetical "(same R80 ruling)" that the authoring agent's brief carried
+was the orchestrator's gloss, not the owner's words. It is not recorded anywhere else in the
+repository. **Status:** ruled.
 
 **The ruling.** RULINGS R80 item 5 ruled in pinch zoom on screen 04's viewfinder. The owner rules
 that it **covers add-a-tree's viewfinder too**. Add-a-tree gets the same gesture on the same

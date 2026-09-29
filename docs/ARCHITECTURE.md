@@ -29,9 +29,11 @@ written reason." This is the written reason.
 | Local store: expo-sqlite | **SQLite via GRDB** | Same engine, same outbox design, idiomatic Swift. |
 | Fastify + Postgres/PostGIS backend (what the *service* is written in) | **Go + Postgres**, one machine on `cypress-sync` | The service is small JSON writes plus one OIDC verification. `coreos/go-oidc` does Apple's rotation and full claim set as well as Node's equivalent, so the auth argument that favored Fastify is a wash; what remains — two direct dependencies, no runtime to patch, a static binary, and the machine already running — favors Go for one maintainer holding the client to zero external dependencies. PostGIS is not adopted: no server-side spatial query exists under R36's local read path. Ratified as RULINGS **R72**; the argument is `docs/design-proposals/2026-08-09-task158-live-layer.md` §8. |
 
-Everything else in BUILD-PLAN — the data model in §4, the API contract in §6, the ingest spec in §7,
-the privacy spec in §10, the ambiguity resolutions in §11, and the "what a coding agent should not
-do" list in §15 — is **unchanged and binding**.
+| BUILD-PLAN §6's route list (the API contract), which has no read of other people's community trees | **Two added routes:** `GET /api/v1/community-trees?tile=14/{x}/{y}&cursor=&limit=` (the community layer for one map tile, a snapshot or a delta) and `GET /api/v1/trees/{id}/history` (a community tree's anonymous audit log); `GET /trees/{id}` gains three additive keys | The community-trees round (2026-09-28) makes an added tree visible to everyone (owner decision 1), and R36 had already anticipated "contributions in this viewport since my last sync". The server's `server/testdata/README.md` pins the shapes, and `docs/rulings-pending/community-trees-reads.md` rules on what each route serves. This is the first §6 deviation this table records; the routes added before it (`/me/map-membership`, `/me/grove/species`, `/public/trees/{id}`) were not entered here. |
+
+Everything else in BUILD-PLAN — the data model in §4, the API contract in §6 except the row above,
+the ingest spec in §7, the privacy spec in §10, the ambiguity resolutions in §11, and the "what a
+coding agent should not do" list in §15 — is **unchanged and binding**.
 
 ## 2. Project layout
 

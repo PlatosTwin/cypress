@@ -94,14 +94,33 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		  -- The hero (#176). Visible means the same two rules the profile applies: publicly visible,
 		  -- or this contributor's own and not deleted (ERRATA E37, E215). A row that drew a
 		  -- stranger's unmoderated photograph as its hero is the disagreement E215 exists to stop.
+		  --
+		  -- And the gate GET /photos/{id} applies before either (the #190 verification's V2): no
+		  -- photograph of a community tree hidden from this viewer is a hero. Without it, a stranger
+		  -- who sent a withdrawal for an id (answered 'applied', like any unknown id) found the
+		  -- hidden tree's photograph id in their grove, and anybody with a favorite on a withdrawn
+		  -- or taken-down tree went on receiving its photograph's id. A photograph whose bytes never
+		  -- arrived is not a hero either: there is nothing to draw.
 		  LEFT JOIN LATERAL (
 		      SELECT p.id FROM photos p
 		       WHERE p.tree_uuid = t.tree_uuid
 		         AND p.deleted_at IS NULL
+		         AND p.bytes_received_at IS NOT NULL
 		         AND (p.moderation_state = 'approved'
 		              OR ($1::uuid IS NOT NULL AND p.user_id = $1)
 		              OR ($2::uuid IS NOT NULL AND p.device_id = $2))
-		       ORDER BY p.captured_at DESC
+		         AND NOT `+treeHiddenFromViewerSQL("t.tree_uuid")+`
+		       -- Newest by what this caller is served, then the id (the #190 verification's N1): the
+		       -- caller's own photographs by their exact time, everybody else's by noon UTC of the
+		       -- phone's date where it sent one (decision 14a, the api's servedCapturedAt). Ordered by
+		       -- the stored time, which any caller chooses for their own photographs at begin, the
+		       -- hero was an oracle for another person's capture time: begin one at T, see whether
+		       -- it becomes the hero, bisect.
+		       ORDER BY CASE WHEN ($1::uuid IS NOT NULL AND p.user_id = $1)
+		                       OR ($2::uuid IS NOT NULL AND p.device_id = $2)
+		                     THEN p.captured_at
+		                     ELSE coalesce((p.captured_on + time '12:00') AT TIME ZONE 'UTC', p.captured_at)
+		                END DESC, p.id DESC
 		       LIMIT 1
 		  ) hero ON true
 		 ORDER BY t.last_visited_at DESC NULLS LAST
@@ -349,10 +368,28 @@ func (s *Store) GroveSpeciesKnown(ctx context.Context, owner Owner) ([]KnownSpec
 type TreeCommunity struct {
 	Photos     []PhotoRecord
 	VisitCount int
+	// Tree is the community tree itself, when the id names one this viewer may see (S2, §3D). Nil
+	// for a city tree, an id nobody sent, and a community tree hidden from this viewer — three
+	// cases this read answers identically.
+	Tree *CommunityTreeRecord
 }
 
-// TreeCommunityHalf reads it.
-func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (TreeCommunity, error) {
+// TreeCommunityHalf reads it, for one viewer.
+//
+// **A community tree hidden from the viewer answers the zero value, with nothing else read**:
+// somebody else's unpublished tree, a withdrawn one, a taken-down one, an erased one. Before S2
+// this read never consulted `community_trees`, so it served the photographs and the visit count of
+// a tree its adder had withdrawn, or had never published, to anybody who asked by id. The zero
+// value is exactly what an id this service has never heard of produces, so the answer is not an
+// oracle for the hidden tree's existence (`communityTreeFor`).
+func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID, viewer Owner) (TreeCommunity, error) {
+	visibility, tree, err := communityTreeFor(ctx, s.pool, treeUUID, viewer)
+	if err != nil {
+		return TreeCommunity{}, err
+	}
+	if visibility == CommunityTreeHidden {
+		return TreeCommunity{}, nil
+	}
 	photos, err := s.PhotosForTree(ctx, treeUUID)
 	if err != nil {
 		return TreeCommunity{}, err
@@ -365,7 +402,7 @@ func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (Tree
 	if err != nil {
 		return TreeCommunity{}, err
 	}
-	return TreeCommunity{Photos: photos, VisitCount: visits}, nil
+	return TreeCommunity{Photos: photos, VisitCount: visits, Tree: tree}, nil
 }
 
 // ── `POST /trees` and the 10 m proximity dedupe ────────────────────────────────────────────────
