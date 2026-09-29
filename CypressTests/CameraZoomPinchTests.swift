@@ -3,7 +3,8 @@
 //  CypressTests
 //
 //  F33: add-a-tree's viewfinder gets screen 04's pinch zoom (RULINGS R80 item 5, extended by the
-//  owner on 2026-09-28).
+//  owner on 2026-09-28). The camera check-in (05) and care log (09) open gets the same pinch (owner
+//  ruling, 2026-09-29).
 //
 //  ── What this can decide, and what it cannot ──────────────────────────────────────────────
 //  `ZoomTests` states the house position: a pinch cannot be synthesized in the unit suite, and the
@@ -25,6 +26,9 @@
 //
 //  What stays on the physical phone: that two fingers on the well move the lens, and that the pinch
 //  and the composer's `ScrollView` do not fight over the same touches.
+//
+//  05 and 09's `ContributionCameraView` is checked the same way, by its wiring test below: the
+//  pinch is on its viewfinder, on that view's own controller, and armed.
 //
 
 #if DEBUG
@@ -139,6 +143,34 @@ struct CameraZoomPinchTests {
         )
     }
 
+    /// 05 and 09's camera has no still to wire: every frame goes to `onCapture` and the viewfinder
+    /// stays live for the next one, so screen 04's rule ("a live frame to aim") is always met and the
+    /// view passes `isAiming: true`. What this can still get wrong is whether the pinch is there at
+    /// all, whether it is armed, and whether it drives *this* view's controller rather than another.
+    /// The first two are `[true]`; the third is the identity check, which a pinch handed a fresh
+    /// `VisitCameraController()` would fail.
+    ///
+    /// Walked from `body`: the viewfinder is a `ZStack` inside a `VStack`, with no `GeometryReader`
+    /// or other closure between them.
+    @Test("05 and 09's camera hands the pinch its own controller, armed")
+    func contributionCameraWiresItsAimToThePinch() throws {
+        let view = ContributionCameraView(onCapture: { _ in }, onDone: {})
+        let camera: VisitCameraController = try #require(
+            Self.stateModel(of: view, label: "_camera"),
+            "no camera controller in the view"
+        )
+
+        let pinches = Self.pinches(in: view.body)
+        #expect(
+            pinches.map(\.isAiming) == [true],
+            "05 and 09's viewfinder does not carry exactly one armed pinch"
+        )
+        #expect(
+            pinches.allSatisfy { $0.camera === camera },
+            "05 and 09's pinch drives a controller that is not the one the viewfinder shows"
+        )
+    }
+
     @Test("screen 04 hands the pinch false over a photograph and true after a retake")
     func screen04WiresItsAimToThePinch() throws {
         let view = VisitPreviewFixtures.camera()
@@ -168,8 +200,9 @@ struct CameraZoomPinchTests {
     // MARK: - The walk
 
     /// The model a view holds in `@State`, read the way the view reads it when it is not installed.
-    private static func stateModel<Model: AnyObject>(of view: some View) -> Model? {
-        for child in Mirror(reflecting: view).children where child.label == "_model" {
+    /// `label` is the property's storage name, the property's name with a leading underscore.
+    private static func stateModel<Model: AnyObject>(of view: some View, label: String = "_model") -> Model? {
+        for child in Mirror(reflecting: view).children where child.label == label {
             for inner in Mirror(reflecting: child.value).children {
                 if let model = inner.value as? Model { return model }
             }
