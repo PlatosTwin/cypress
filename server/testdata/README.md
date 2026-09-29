@@ -80,11 +80,14 @@ These are contract, not incidental behavior. C1 and C2 build on them.
 - **`community_tree: null` does not mean deleted.** It means "not a community tree this caller may
   see": a city tree, an unknown id, **or** a hidden one. The adder's own tree answers null to
   everybody else until it is published, including when the adder declined the open license (the
-  claim then leaves it unpublished). **Never evict a local row on a null.** A cached community tree
+  claim then leaves it unpublished). And one phone can get both answers for one tree: after a
+  device signs in and its trees are claimed by an account that declined, the account's credential
+  sees the tree (`added_by_you: true`) while the device's own credential gets the unknown-id body.
+  **Never evict a local row on a null.** A cached community tree
   leaves the cache only through `withdrawn_tree_ids`.
 - **`withdrawn_tree_ids` can name ids from anywhere in the world.** Erase-door tombstones carry no
-  position, so every tile's delta reports every once-public tombstone after its cursor. Drop the ids
-  you hold and ignore the rest; do not treat an unknown id as an error or as belonging to this tile.
+  position, so every tile's delta reports every once-public tombstone after its cursor. Drop each id
+  from the **whole** cache, whichever tile it came through, and ignore the ones you never held; do not treat an unknown id as an error or as belonging to this tile.
 - **A tree in `trees` can lie outside the tile** it came from (a pin moved out of it after going
   live). Key the cache on `id`.
 - **A first fetch (no cursor) can report removals** from the last 25 seconds: a tree withdrawn while
