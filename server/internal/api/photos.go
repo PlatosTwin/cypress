@@ -255,13 +255,12 @@ func (s *Server) photoData(w http.ResponseWriter, r *http.Request, who caller) e
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
-	writeJSON(w, s.Log, http.StatusOK, map[string]any{
-		"photo_id":    photo.ID,
-		"url":         source,
-		"expires_in":  int(presignLifetime.Seconds()),
-		"shot_type":   photo.ShotType,
-		"captured_at": servedCapturedAt(photo, own),
-	})
+	writeJSON(w, s.Log, http.StatusOK, servedPhotoFields(photo, servedCapturedAt(photo, own), map[string]any{
+		"photo_id":   photo.ID,
+		"url":        source,
+		"expires_in": int(presignLifetime.Seconds()),
+		"shot_type":  photo.ShotType,
+	}))
 	return nil
 }
 
@@ -333,6 +332,31 @@ func servedCapturedAt(photo store.PhotoRecord, own bool) Timestamp {
 	}
 	day := photo.CapturedOn.UTC()
 	return stamp(time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, time.UTC))
+}
+
+// servedPhotoFields adds a photograph's two date keys to a response body: `captured_at` as this
+// caller is served it (`servedCapturedAt`), and `captured_on`, the phone's own local date, whenever
+// the phone sent one (the orchestrator's ruling on the #190 verification's N2).
+//
+// **Why `captured_on` travels as well.** `captured_at` has two forms for a non-owner, the exact
+// time (a photograph from a build that sent no date) and noon UTC of the phone's date, and a client
+// cannot tell them apart. Formatted in the reader's zone (the shipped client), noon UTC is the
+// phone's day from UTC−11 to UTC+11; formatted in UTC, it is the phone's day everywhere, but an exact
+// time is then the UTC day, a day off for an evening in the Americas. A date-only field says which
+// form this is: a client that knows it renders `captured_on` as a calendar date, and falls back to
+// `captured_at` in the reader's zone when it is absent. The shipped client ignores a key it does not
+// name, so the addition changes nothing for it.
+//
+// **Served to everybody, the owner included, and omitted — never null — when there is none.** For
+// the owner it adds nothing they lack: it is the date their own phone recorded and sent. One rule
+// for every caller is one less branch for the client to get wrong, and "absent" has one meaning:
+// the phone did not send it.
+func servedPhotoFields(photo store.PhotoRecord, at Timestamp, body map[string]any) map[string]any {
+	body["captured_at"] = at
+	if photo.CapturedOn != nil {
+		body["captured_on"] = photo.CapturedOn.UTC().Format(time.DateOnly)
+	}
+	return body
 }
 
 func ownsPhoto(photo store.PhotoRecord, who caller) bool {

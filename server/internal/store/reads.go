@@ -110,7 +110,17 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		              OR ($1::uuid IS NOT NULL AND p.user_id = $1)
 		              OR ($2::uuid IS NOT NULL AND p.device_id = $2))
 		         AND NOT `+treeHiddenFromViewerSQL("t.tree_uuid")+`
-		       ORDER BY p.captured_at DESC
+		       -- Newest by what this caller is served, then the id (the #190 verification's N1): the
+		       -- caller's own photographs by their exact time, everybody else's by noon UTC of the
+		       -- phone's date where it sent one (decision 14a, the api's servedCapturedAt). Ordered by
+		       -- the stored time, which any caller chooses for their own photographs at begin, the
+		       -- hero was an oracle for another person's capture time: begin one at T, see whether
+		       -- it becomes the hero, bisect.
+		       ORDER BY CASE WHEN ($1::uuid IS NOT NULL AND p.user_id = $1)
+		                       OR ($2::uuid IS NOT NULL AND p.device_id = $2)
+		                     THEN p.captured_at
+		                     ELSE coalesce((p.captured_on + time '12:00') AT TIME ZONE 'UTC', p.captured_at)
+		                END DESC, p.id DESC
 		       LIMIT 1
 		  ) hero ON true
 		 ORDER BY t.last_visited_at DESC NULLS LAST

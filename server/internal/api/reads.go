@@ -1,13 +1,16 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/apierr"
+	"github.com/PlatosTwin/cypress/server/internal/store"
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
 )
 
@@ -183,10 +186,12 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", storeErr)
 	}
 
-	photos := make([]map[string]any, 0, len(community.Photos))
-	ownPhotoIDs := make([]uuid.UUID, 0)
-	deletablePhotoIDs := make([]uuid.UUID, 0)
-
+	type shown struct {
+		photo store.PhotoRecord
+		own   bool
+		at    Timestamp
+	}
+	visible := make([]shown, 0, len(community.Photos))
 	for _, photo := range community.Photos {
 		own := ownsPhoto(photo, who)
 		// The single predicate, server side: publicly visible to anyone, or visible to its own
@@ -194,19 +199,38 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 		if !photo.IsPubliclyVisible() && !(own && photo.IsVisibleToItsContributor()) {
 			continue
 		}
-		photos = append(photos, map[string]any{
-			"photo_id":    photo.ID,
-			"shot_type":   photo.ShotType,
-			"captured_at": servedCapturedAt(photo, own),
+		visible = append(visible, shown{photo: photo, own: own, at: servedCapturedAt(photo, own)})
+	}
+	// **Listed by what this caller is served, not by the stored time** (the #190 verification's N1).
+	// The store reads the photographs in `captured_at` order, and `captured_at` is a value any caller
+	// chooses for their own photographs at begin. Listed in that order, a stranger who is served only
+	// a date could place their own photographs at chosen times and read, from which side of each one
+	// another person's photograph fell, the time the served value hides — to the minute in eleven
+	// begins. Sorted by the served value, then the id, the order says nothing the values do not.
+	sort.SliceStable(visible, func(i, j int) bool {
+		a, b := time.Time(visible[i].at), time.Time(visible[j].at)
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return bytes.Compare(visible[i].photo.ID[:], visible[j].photo.ID[:]) > 0
+	})
+
+	photos := make([]map[string]any, 0, len(visible))
+	ownPhotoIDs := make([]uuid.UUID, 0)
+	deletablePhotoIDs := make([]uuid.UUID, 0)
+	for _, row := range visible {
+		photos = append(photos, servedPhotoFields(row.photo, row.at, map[string]any{
+			"photo_id":  row.photo.ID,
+			"shot_type": row.photo.ShotType,
 			// Sent so the client can tell "everyone sees this" from "only you do" without
 			// re-deriving it — which is what makes screen 15's promise legible on screen.
-			"is_publicly_visible": photo.IsPubliclyVisible(),
-		})
-		if own {
-			ownPhotoIDs = append(ownPhotoIDs, photo.ID)
+			"is_publicly_visible": row.photo.IsPubliclyVisible(),
+		}))
+		if row.own {
+			ownPhotoIDs = append(ownPhotoIDs, row.photo.ID)
 			// `deletePhoto` must be reachable wherever a photograph is shown (R72 ruling 5), so the
 			// set that drives that affordance ships with the photographs rather than after them.
-			deletablePhotoIDs = append(deletablePhotoIDs, photo.ID)
+			deletablePhotoIDs = append(deletablePhotoIDs, row.photo.ID)
 		}
 	}
 

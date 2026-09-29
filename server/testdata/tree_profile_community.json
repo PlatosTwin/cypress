@@ -32,6 +32,7 @@
   "photos": [
     {
       "captured_at": "2026-09-22T12:00:00Z",
+      "captured_on": "2026-09-22",
       "is_publicly_visible": true,
       "photo_id": "8c1cc8a2-ded9-4bd5-ae4f-af2b0174bf01",
       "shot_type": "full_tree"
