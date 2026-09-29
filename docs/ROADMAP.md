@@ -1426,6 +1426,24 @@ into this section in the round that finds it, and nowhere else. Each item stands
     Calibrate against a submission whose tester is known. Keep the zero-`@` check as the guard
     (it held on this run: 0 `@` in the JSON). Small.
 
+54. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+    `claimSpecies` and `correctSpecies` write the signed-in account's id into
+    `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
+    `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
+    trigger, and its only foreign key is its own `superseded_by`. So after `.leaveRecords` or
+    `.eraseEverything` the claim still carries the deleted account's id. `AccountDeletionCoverageTests`
+    (#186) measures this under both doors and classifies it `.notReached` in
+    `AccountDeletion.OwnedTable.fate(under:)`. That is what the code does, not a ruling. The fix
+    follows R3's contribution pattern: the leaving door anonymizes (nulls `user_id`) and the erasing
+    door deletes. **The tombstone question is open.** The table has no `client_uuid`, so v13's
+    `anonymized_contributions` key is not available, and `claimDevice` does not adopt the table
+    today. Decide whether an anonymized claim needs a tombstone at all, and key one if it does. The
+    erasing door also has to handle the chain. `superseded_by` is a deferred foreign key, so deleting
+    a claim that an older row's `superseded_by` points at fails at commit unless that pointer is
+    dealt with first. When a door reaches the table,
+    the guard goes red and the arm changes with it. **Slated by the orchestrator for the
+    community-trees C1 round.**
+
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full
@@ -1500,7 +1518,7 @@ past; the derived tables and columns must equal the classified ones both ways; a
 owned row must end as classified while a stranger's is unchanged. **Writing it found a fourth
 instance, which it now measures:** `species_assertions.user_id` is named by neither door, so a species claim keeps the
 deleted account's id after either one. It is classified `.notReached` (what the code does, not a
-ruling) and the fix is unscheduled; the day a door reaches it the guard goes red and the arm changes.
+ruling), and the open item is chip backlog **54**.
 
 **Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
