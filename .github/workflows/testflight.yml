@@ -248,6 +248,72 @@ jobs:
       # always implies `tests=true` and the release job can never be reached by a run whose suite
       # did not execute. Two separate literals is exactly the shape that drifted within a day and
       # produced #215.
+      # ── Moved out of the script below, deliberately ─────────────────────────────────
+      # GitHub refuses a `run:` block longer than 21,000 characters when it holds an expression,
+      # and it refuses it as a WORKFLOW FILE ISSUE: the whole file fails validation, no job runs and
+      # no check appears, so a required `gate` waits forever. #188 did it: the script reached 21,909
+      # characters and run 36510395253 reported "(Line: 252, Col: 14): Exceeded max expression
+      # length 21000". YAML comments out here are not part of the string, so the longer
+      # explanations for the fourth decision live here and the script points at them. The script
+      # was 18,256 characters after the move; measure it before adding to it.
+      #
+      # `SERVER_ONLY` is the Go sync service, and it is the FOURTH decision (owner ruling,
+      # 2026-09-28): a pull request that changes only the Go server stops paying 34 minutes
+      # of macOS for a suite that cannot see it. It mirrors `WEB_ONLY` exactly — must not
+      # SHIP (see `server/` above), must not RUN the Xcode suite, is NOT prose, and IS tested:
+      # by `.github/workflows/server.yml`, which this workflow calls as its `server` job and
+      # which `gate` refuses to pass without. That last clause is where it goes further than
+      # the web did, and the reason is written at the `server` job below.
+      #
+      # **Two things under `server/` DO reach the iOS suite, and `testable=` carves both back
+      # in by name.** A regex cannot say "server/ except server/testdata/" — ERE has no
+      # lookahead — so `SERVER_ONLY` is the whole directory and the exceptions are added back
+      # to the testable list afterwards, on the same line, where `DeployPathsAgreeTests` reads
+      # them:
+      #
+      #   * `SERVER_IOS_READS` — CONTENT the iOS suite opens.
+      #     `CypressTests/GoldenWireFixtureTests` decodes `server/testdata/grove.json` and
+      #     `proximity_conflict.json`, so regenerating a Go-side fixture can turn the iOS unit
+      #     suite red. Checked 2026-09-28: that is the only `"server/…"` path literal in
+      #     `CypressTests/` or `CypressUITests/`, and `DeployPathsAgreeTests` now finds those
+      #     literals itself and fails if one is not covered here.
+      #   * a REMOVED path under `server/` — EXISTENCE the iOS suite checks.
+      #     `CypressTests/DocumentCitationGuardTests` fails when a document under `docs/` cites
+      #     a file that is not on disk, and `docs/` cites `server/README.md` sixteen times and
+      #     both `server/ci/` scripts once each. The owner's premise was that only
+      #     `server/testdata/` feeds the iOS tests; this is the one way it is not quite true.
+      #     Adding or editing a file cannot make a citation dangle, so only a deletion runs the
+      #     suite — including the old half of a rename, which is why `changed` below is read
+      #     with `--no-renames`.
+      #
+      # Anchored with `^(…)` like the others. `server/` with its slash, so a root file named
+      # `server.md` or a directory `serverless/` is not swept up.
+      #
+      # `--no-renames`, and it matters in both directions. With rename detection on — git's
+      # default for `git diff` since 2.9 — a rename is listed under its NEW name only, so the
+      # path it left is invisible here. Moving `Cypress/Foo.swift` to `docs/foo.md` would then
+      # read as prose-only; renaming `server/README.md` would hide the removal that
+      # `SERVER_ONLY`'s carve-back exists to see. Without renames, a move is a deletion plus an
+      # addition and both paths are judged.
+      #
+      # **`-c core.quotePath=false`**, because git's default quotes any path with a byte above
+      # 0x7F: a new `server/café.go` is listed as `"server/caf\303\251.go"`, in quotes, and
+      # then matches no predicate — `^(server/)` included — here or in the `server` step. #188's
+      # review reproduced it: the iOS suite ran (conservative) but the Go suite was not owed and
+      # `gate` passed with the Go change untested. With quoting off the path arrives as written.
+      # A name with a double quote, a backslash or a control character is STILL quoted; see
+      # `quoted` below for what happens to one.
+      #
+      # `DeployPathsAgreeTests` reads these two assignments and fails if either loses
+      # `--no-renames` or `core.quotePath=false`, or if `removed=` loses `--diff-filter=D`.
+      #
+      # **A path git still had to quote runs everything.** With `core.quotePath=false` that is only
+      # a name holding a double quote, a backslash or a control character, and it arrives as
+      # `"…"` with escapes — which no predicate can judge. Such a line already lands in
+      # `testable` (it matches no subtraction), so this is not what makes it run; it is what
+      # makes that deliberate rather than an accident of the predicates, and what says so in the
+      # log. The `server` step applies the same rule to the Go suite.
+      #
       - id: scope
         run: |
           set -euo pipefail
@@ -321,37 +387,7 @@ jobs:
           # rather than as `Tools/web_*`: a blanket prefix is how `Tools/fetch_seed.sh`, a
           # genuine build input, would eventually be swept up by a sibling named to match.
           WEB_ONLY='web/|Tools/run_web_tests\.sh$|Tools/verify_web_test_log\.sh$'
-          # `SERVER_ONLY` is the Go sync service, and it is the FOURTH decision (owner ruling,
-          # 2026-09-28): a pull request that changes only the Go server stops paying 34 minutes
-          # of macOS for a suite that cannot see it. It mirrors `WEB_ONLY` exactly — must not
-          # SHIP (see `server/` above), must not RUN the Xcode suite, is NOT prose, and IS tested:
-          # by `.github/workflows/server.yml`, which this workflow calls as its `server` job and
-          # which `gate` refuses to pass without. That last clause is where it goes further than
-          # the web did, and the reason is written at the `server` job below.
-          #
-          # **Two things under `server/` DO reach the iOS suite, and `testable=` carves both back
-          # in by name.** A regex cannot say "server/ except server/testdata/" — ERE has no
-          # lookahead — so `SERVER_ONLY` is the whole directory and the exceptions are added back
-          # to the testable list afterwards, on the same line, where `DeployPathsAgreeTests` reads
-          # them:
-          #
-          #   * `SERVER_IOS_READS` — CONTENT the iOS suite opens.
-          #     `CypressTests/GoldenWireFixtureTests` decodes `server/testdata/grove.json` and
-          #     `proximity_conflict.json`, so regenerating a Go-side fixture can turn the iOS unit
-          #     suite red. Checked 2026-09-28: that is the only `"server/…"` path literal in
-          #     `CypressTests/` or `CypressUITests/`, and `DeployPathsAgreeTests` now finds those
-          #     literals itself and fails if one is not covered here.
-          #   * a REMOVED path under `server/` — EXISTENCE the iOS suite checks.
-          #     `CypressTests/DocumentCitationGuardTests` fails when a document under `docs/` cites
-          #     a file that is not on disk, and `docs/` cites `server/README.md` sixteen times and
-          #     both `server/ci/` scripts once each. The owner's premise was that only
-          #     `server/testdata/` feeds the iOS tests; this is the one way it is not quite true.
-          #     Adding or editing a file cannot make a citation dangle, so only a deletion runs the
-          #     suite — including the old half of a rename, which is why `changed` below is read
-          #     with `--no-renames`.
-          #
-          # Anchored with `^(…)` like the others. `server/` with its slash, so a root file named
-          # `server.md` or a directory `serverless/` is not swept up.
+          # SERVER_ONLY and its two carve-backs: see this step's header, above `- id: scope`.
           SERVER_ONLY='server/'
           SERVER_IOS_READS='server/testdata/'
           # The two root git-metadata files, added to the run-but-do-not-ship set by the round
@@ -428,23 +464,7 @@ jobs:
             exit 0
           fi
 
-          # `--no-renames`, and it matters in both directions. With rename detection on — git's
-          # default for `git diff` since 2.9 — a rename is listed under its NEW name only, so the
-          # path it left is invisible here. Moving `Cypress/Foo.swift` to `docs/foo.md` would then
-          # read as prose-only; renaming `server/README.md` would hide the removal that
-          # `SERVER_ONLY`'s carve-back exists to see. Without renames, a move is a deletion plus an
-          # addition and both paths are judged.
-          #
-          # **`-c core.quotePath=false`**, because git's default quotes any path with a byte above
-          # 0x7F: a new `server/café.go` is listed as `"server/caf\303\251.go"`, in quotes, and
-          # then matches no predicate — `^(server/)` included — here or in the `server` step. #188's
-          # review reproduced it: the iOS suite ran (conservative) but the Go suite was not owed and
-          # `gate` passed with the Go change untested. With quoting off the path arrives as written.
-          # A name with a double quote, a backslash or a control character is STILL quoted; see
-          # `quoted` below for what happens to one.
-          #
-          # `DeployPathsAgreeTests` reads these two assignments and fails if either loses
-          # `--no-renames` or `core.quotePath=false`, or if `removed=` loses `--diff-filter=D`.
+          # --no-renames, core.quotePath=false, and the test that pins them: see this step's header.
           changed="$(git -c core.quotePath=false diff --no-renames --name-only "$before" "${{ github.sha }}")"
           removed="$(git -c core.quotePath=false diff --no-renames --diff-filter=D --name-only "$before" "${{ github.sha }}")"
           echo "changed paths:"; echo "$changed" | sed 's/^/  /'
@@ -480,12 +500,7 @@ jobs:
             fi
           fi
 
-          # **A path git still had to quote runs everything.** With `core.quotePath=false` that is only
-          # a name holding a double quote, a backslash or a control character, and it arrives as
-          # `"…"` with escapes — which no predicate can judge. Such a line already lands in
-          # `testable` (it matches no subtraction), so this is not what makes it run; it is what
-          # makes that deliberate rather than an accident of the predicates, and what says so in the
-          # log. The `server` step applies the same rule to the Go suite.
+          # A path git still quotes runs the suite: see this step's header.
           quoted="$(printf '%s\n' "$changed" | grep '^"' || true)"
           if [ -n "$quoted" ]; then
             echo "paths git could not print unquoted, so no predicate can judge them — the suite runs:"; echo "$quoted" | sed 's/^/  /'
