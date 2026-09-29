@@ -70,17 +70,28 @@ struct AccountDeletionCoverageTests {
     /// Whether a column name reads like it names somebody. Deliberately broad; the exceptions above
     /// are where a false positive is answered.
     static func looksLikeIdentity(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        // Whole words, for the short or ambiguous ones: `by` and `uid` inside another word mean
+        // nothing (`uuid` would match `uid`).
         let words: Set<String> = [
             "user", "users", "device", "owner", "author", "account", "person", "people", "member",
             "creator", "actor", "installation", "reporter", "editor", "moderator", "voter", "namer",
-            "by", "who", "uid"
+            "contributor", "uploader", "submitter", "sender", "by", "who", "uid"
         ]
-        return name.lowercased().split(separator: "_").contains { words.contains(String($0)) }
+        if lowered.split(separator: "_").contains(where: { words.contains(String($0)) }) { return true }
+        // Anywhere in the name, for the ones no ordinary column contains and that are also written
+        // run together: `userid`, `deviceid`, `ownerid`, `email`.
+        let stems = ["user", "device", "owner", "author", "account", "email", "contributor", "uploader", "submitter"]
+        return stems.contains { lowered.contains($0) }
     }
 
     // MARK: - Reading the schema
 
     /// Table name to its column names, for every table in `main` that is not SQLite's own.
+    ///
+    /// Read through `pragma_table_xinfo`, not `pragma_table_info`: the latter omits generated and
+    /// hidden columns, so a `user_id … GENERATED ALWAYS AS (json_extract(payload, '$.userID'))`
+    /// would be invisible to every check below.
     struct Schema: Sendable {
         var columns: [String: [String]]
 
@@ -109,7 +120,7 @@ struct AccountDeletionCoverageTests {
     static func readSchema(_ connection: SQLiteConnection) throws -> Schema {
         let statement = try connection.prepare("""
             SELECT m.name AS table_name, p.name AS column_name
-              FROM main.sqlite_master AS m, pragma_table_info(m.name) AS p
+              FROM main.sqlite_master AS m, pragma_table_xinfo(m.name) AS p
              WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
              ORDER BY m.name, p.cid
             """)
@@ -280,13 +291,37 @@ struct AccountDeletionCoverageTests {
         ])
     }
 
-    @Test("the identity-shaped check catches a person-naming column filed as ordinary")
-    func theShapeCheckCatchesAMisfiling() {
-        #expect(Self.looksLikeIdentity("reported_by"))
-        #expect(Self.looksLikeIdentity("owner_id"))
-        #expect(Self.looksLikeIdentity("taken_on_device"))
+    @Test("the instrument sees a generated column that names a person")
+    func theInstrumentSeesAGeneratedColumn() async throws {
+        let schema = try await Self.migratedSchema(specimen: """
+            CREATE TABLE specimen_gen (
+                id      TEXT PRIMARY KEY,
+                payload TEXT,
+                user_id TEXT GENERATED ALWAYS AS (json_extract(payload, '$.userID')) STORED
+            )
+            """)
+        #expect(schema.columns["specimen_gen"] == ["id", "payload", "user_id"], "\(schema.columns["specimen_gen"] ?? [])")
+        #expect(Self.coverageFailures(schema) == [.unclassified(table: "specimen_gen", columns: ["user_id"])])
+    }
+
+    @Test(
+        "the identity-shaped check reads these as naming somebody",
+        arguments: [
+            "reported_by", "owner_id", "taken_on_device", "userid", "contributor_id", "uploader",
+            "email", "submitter_uuid", "deviceid"
+        ]
+    )
+    func theShapeCheckCatchesAMisfiling(name: String) {
+        #expect(Self.looksLikeIdentity(name))
+    }
+
+    @Test("the identity-shaped check leaves every ordinary name but its stated exceptions alone")
+    func theShapeCheckIsNotEverything() {
         #expect(!Self.looksLikeIdentity("moderation_state"))
         #expect(!Self.looksLikeIdentity("tree_uuid"))
+        #expect(!Self.looksLikeIdentity("client_uuid"))
+        let flagged = Set(Self.ordinarySpellings.filter(Self.looksLikeIdentity))
+        #expect(flagged == Set(Self.identityShapedButOrdinary.keys), "\(flagged.sorted())")
     }
 
     // MARK: - 3. What each door does
@@ -299,8 +334,7 @@ struct AccountDeletionCoverageTests {
 
     /// The values of one row of `table`, owned by `account`. The exhaustive `switch` is the third
     /// place a new case has to be answered: a table cannot be classified without being seedable.
-    private static func row(for table: OwnedTable, account: UUID) -> [String: String?] {
-        let who = account.uuidString
+    private static func row(for table: OwnedTable, account who: String) -> [String: String?] {
         let device = deviceID.uuidString
         let tree = UUID().uuidString
         let fresh = { UUID().uuidString }
@@ -365,8 +399,9 @@ struct AccountDeletionCoverageTests {
         try statement.run()
     }
 
-    /// Inserts one row of `table` owned by `account` and returns its primary key.
-    private static func seed(_ table: OwnedTable, account: UUID, on connection: SQLiteConnection) throws -> String {
+    /// Inserts one row of `table` whose account column holds `account`, spelled exactly as given, and
+    /// returns its primary key.
+    private static func seed(_ table: OwnedTable, account: String, on connection: SQLiteConnection) throws -> String {
         var values = row(for: table, account: account)
         if table == .photoVotes {
             let photo = UUID().uuidString
@@ -392,7 +427,10 @@ struct AccountDeletionCoverageTests {
     /// column nobody thought to look at. Nil when the row does not exist.
     private static func snapshot(_ table: String, key: String, on connection: SQLiteConnection) throws -> String? {
         let pk = try primaryKey(of: table, on: connection)
-        let columns = try connection.columnNames(ofTable: table)
+        let names = try connection.prepare("SELECT name FROM pragma_table_xinfo(:table)")
+        _ = try names.bind([":table": table])
+        let columns = try names.fetchAll { try $0.string("name") }
+        names.finalize()
         let statement = try connection.prepare("""
             SELECT \(columns.map { "quote(\($0))" }.joined(separator: " || '|' || ")) AS r
               FROM \(table) WHERE \(pk) = :key
@@ -416,6 +454,8 @@ struct AccountDeletionCoverageTests {
 
     struct Observed: Sendable {
         var table: OwnedTable
+        /// The account id exactly as the owned row stores it.
+        var spelling: String
         var ownedBefore: String??
         var ownedAfter: String??
         var strangerOwnerBefore: String??
@@ -432,17 +472,26 @@ struct AccountDeletionCoverageTests {
         let (observed, outcome) = try await queue.withConnection { connection -> ([Observed], AccountDeletion.Outcome) in
             try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
 
-            var seeded: [(table: OwnedTable, owned: String, stranger: String)] = []
+            // Two owned rows per table: the account id in `uuidString`'s uppercase, which is what the
+            // door binds, and in lowercase, which is `JSONEncoder`'s spelling and the other route a
+            // UUID reaches this database by (`AppSchema` v13's comment on `anonymized_contributions`).
+            // Only the second can tell a door that matches `COLLATE NOCASE` from one that does not.
+            let spellings = [Self.userID.uuidString, Self.userID.uuidString.lowercased()]
+            var seeded: [(table: OwnedTable, spelling: String, owned: String, stranger: String)] = []
             for table in OwnedTable.allCases {
-                seeded.append((
-                    table,
-                    try Self.seed(table, account: Self.userID, on: connection),
-                    try Self.seed(table, account: Self.strangerID, on: connection)
-                ))
+                for spelling in spellings {
+                    seeded.append((
+                        table,
+                        spelling,
+                        try Self.seed(table, account: spelling, on: connection),
+                        try Self.seed(table, account: Self.strangerID.uuidString, on: connection)
+                    ))
+                }
             }
             var observed = try seeded.map { entry in
                 Observed(
                     table: entry.table,
+                    spelling: entry.spelling,
                     ownedBefore: try Self.owner(of: entry.table, key: entry.owned, on: connection),
                     ownedAfter: nil,
                     strangerOwnerBefore: try Self.owner(of: entry.table, key: entry.stranger, on: connection),
@@ -464,17 +513,18 @@ struct AccountDeletionCoverageTests {
 
         // Calibration: the harness looked at every classified table, each seed landed where the
         // classification says the account is named, and the door reported doing something.
-        #expect(observed.count == OwnedTable.allCases.count)
+        #expect(observed.count == OwnedTable.allCases.count * 2)
         #expect(observed.count > 0)
+        #expect(Self.userID.uuidString != Self.userID.uuidString.lowercased(), "fixture: the two spellings must differ")
         for row in observed {
             let table = row.table.tableName
-            #expect(row.ownedBefore == .some(Self.userID.uuidString), "fixture: \(table)'s owned row does not name the account")
+            #expect(row.ownedBefore == .some(row.spelling), "fixture: \(table)'s owned row does not hold \(row.spelling)")
             #expect(row.strangerOwnerBefore == .some(Self.strangerID.uuidString), "fixture: \(table)'s stranger row")
             #expect(row.strangerBefore != nil, "fixture: \(table)'s stranger row was not written")
         }
         // A known-good table, stated on its own: `review_flags` has been reached by both doors since
         // before the doors were two. If this fails the harness is broken, not the classification.
-        let flags = try #require(observed.first { $0.table == .reviewFlags })
+        let flags = try #require(observed.first { $0.table == .reviewFlags && $0.spelling == Self.userID.uuidString })
         switch choice {
         case .leaveRecords:
             #expect(flags.ownedAfter == .some(nil), "calibration: review_flags was not anonymized")
@@ -487,6 +537,7 @@ struct AccountDeletionCoverageTests {
         for row in observed {
             let table = row.table.tableName
             let fate = row.table.fate(under: choice)
+            let which = row.spelling == Self.userID.uuidString ? "" : " (account id stored in lowercase)"
             #expect(
                 row.strangerAfter == row.strangerBefore,
                 "\(choice): a stranger's \(table) row changed — before \(row.strangerBefore ?? "nil"), after \(row.strangerAfter ?? "nil")"
@@ -495,18 +546,18 @@ struct AccountDeletionCoverageTests {
             case .anonymized:
                 #expect(
                     row.ownedAfter == .some(nil),
-                    "\(choice): \(table) is classified anonymized, and its row \(Self.describe(row.ownedAfter))"
+                    "\(choice): \(table) is classified anonymized, and its row\(which) \(Self.describe(row.ownedAfter))"
                 )
             case .deleted:
                 #expect(
                     row.ownedAfter == nil,
-                    "\(choice): \(table) is classified deleted, and its row \(Self.describe(row.ownedAfter))"
+                    "\(choice): \(table) is classified deleted, and its row\(which) \(Self.describe(row.ownedAfter))"
                 )
             case .leftAttributed, .notReached:
                 #expect(
-                    row.ownedAfter == .some(Self.userID.uuidString),
+                    row.ownedAfter == .some(row.spelling),
                     """
-                    \(choice): \(table) is classified \(fate), and its row \(Self.describe(row.ownedAfter)). \
+                    \(choice): \(table) is classified \(fate), and its row\(which) \(Self.describe(row.ownedAfter)). \
                     If a door now reaches this table, change its arm in `OwnedTable.fate(under:)`
                     """
                 )
