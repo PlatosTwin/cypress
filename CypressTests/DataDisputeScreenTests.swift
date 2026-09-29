@@ -707,7 +707,8 @@ struct DataDisputeScreenTests {
         #expect(DataDisputeCopy.location(model.draft.location) == DataDisputeCopy.locationHint)
         clock.elapse()
         await Self.letTasksRun()
-        #expect(model.draft.location == .notAsked, "a clock ended a block that was not waiting")
+        #expect(model.draft.location == .notAsked,
+                "\(from) → .notAsked: once the time passed the block read \(model.draft.location)")
         #expect(clock.requested.count == clocksBefore, "a clock was armed: \(clock.requested)")
     }
 
