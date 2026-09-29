@@ -298,6 +298,48 @@ func assertPublicationInvariant(t *testing.T, h *harness) {
 			"accepted license, and %d published event(s) name none (decisions 7 and 10) — the "+
 			"invariant 007's header says the code keeps", unrecorded, unlicensed)
 	}
+	assertPublicRecordInvariant(t, h)
+}
+
+// assertPublicRecordInvariant is decision 13 over the whole database: history starts at going live.
+// What is public is exactly the head at publication, every position that became the head while the
+// tree was published, and the events that say so.
+func assertPublicRecordInvariant(t *testing.T, h *harness) {
+	t.Helper()
+	var hiddenHead, leakedPrivate, unplacedPublication, publicAdd, strayMove int
+	if err := h.store.Pool().QueryRow(context.Background(), `
+		SELECT
+		  (SELECT count(*) FROM community_trees t
+		     JOIN community_tree_locations l ON l.tree_id = t.id AND l.superseded_by IS NULL
+		    WHERE t.published_at IS NOT NULL AND NOT l.was_public),
+		  (SELECT count(*) FROM community_trees t
+		    WHERE t.published_at IS NULL
+		      AND (EXISTS (SELECT 1 FROM community_tree_locations l WHERE l.tree_id = t.id AND l.was_public)
+		           OR EXISTS (SELECT 1 FROM community_tree_events e WHERE e.tree_id = t.id AND e.in_public_history))),
+		  (SELECT count(*) FROM community_tree_events e
+		    WHERE e.kind = 'published'
+		      AND NOT (e.in_public_history AND EXISTS (
+		          SELECT 1 FROM community_tree_locations l
+		           WHERE l.tree_id = e.tree_id AND l.was_public
+		             AND l.lat = (e.after ->> 'lat')::float8 AND l.lon = (e.after ->> 'lon')::float8))),
+		  (SELECT count(*) FROM community_tree_events WHERE kind = 'added' AND in_public_history),
+		  (SELECT count(*) FROM community_tree_events e
+		    WHERE e.kind = 'location_corrected' AND e.in_public_history
+		      AND NOT (EXISTS (SELECT 1 FROM community_tree_locations l WHERE l.id = e.id AND l.was_public)
+		               AND EXISTS (SELECT 1 FROM community_tree_locations l
+		                            WHERE l.tree_id = e.tree_id AND l.was_public
+		                              AND l.lat = (e.before ->> 'lat')::float8
+		                              AND l.lon = (e.before ->> 'lon')::float8)))
+	`).Scan(&hiddenHead, &leakedPrivate, &unplacedPublication, &publicAdd, &strayMove); err != nil {
+		t.Fatal(err)
+	}
+	if hiddenHead+leakedPrivate+unplacedPublication+publicAdd+strayMove != 0 {
+		t.Fatalf("decision 13 (history starts at going live) does not hold: %d published tree(s) whose "+
+			"head is not public, %d never-published tree(s) with a public row or event, %d published "+
+			"event(s) not public or not at a public position, %d public added event(s), %d public "+
+			"move(s) from or to a position the public never saw",
+			hiddenHead, leakedPrivate, unplacedPublication, publicAdd, strayMove)
+	}
 }
 
 // ── Publication ────────────────────────────────────────────────────────────────────────────────
@@ -599,9 +641,12 @@ func TestTheLocationCorrectionFixtureIsCalibrated(t *testing.T) {
 // ── location_correction ────────────────────────────────────────────────────────────────────────
 
 // TestOnlyTheAdderMovesThePin is decision 5.
+//
+// The tree is published, so strangers may know it exists and are told `forbidden`. A tree hidden
+// from them answers as an unknown id does (TestAHiddenTreeAnswersAStrangerAsAnUnknownIdDoes).
 func TestOnlyTheAdderMovesThePin(t *testing.T) {
 	h := newHarness(t)
-	adder := h.registerDeviceToken(t, uuid.New())
+	adder := signInAs(t, h, "ct.pin.adder", nil, accepted()).AccessToken
 	tree := uuid.New()
 	mustApply(t, h.syncOne(t, adder, addTreeAt(tree, ctLat, ctLon, time.Now().Add(-time.Hour))), "add")
 
@@ -1191,6 +1236,312 @@ func TestAWithdrawalThatArrivesBeforeItsTreeIsHonoured(t *testing.T) {
 	stranger := h.registerDeviceToken(t, uuid.New())
 	if code, _ := postTree(t, h, stranger, uuid.New(), north(2), ctLon); code != http.StatusOK {
 		t.Fatalf("a tree withdrawn before it arrived refuses a stranger's add: %d", code)
+	}
+	// It was never visible to anybody, so nothing may say it was ever public (review of #190, F3):
+	// no published_at (the soft-removal half of "once public"), no published event, and nothing in
+	// its chain or history marked public.
+	events := eventsOf(t, h, tree)
+	if stateOf(t, h, tree).Published || len(eventsOfKind(events, "published")) != 0 {
+		t.Fatalf("a tree born withdrawn was published: %+v, events %+v", stateOf(t, h, tree), events)
+	}
+	if len(eventsOfKind(events, "withdrawn")) != 1 {
+		t.Fatalf("control: the born-withdrawn tree has events %+v, want one withdrawn", events)
+	}
+	assertPublicationInvariant(t, h)
+}
+
+// ── What the public may know (decision 13 and the #190 review) ─────────────────────────────────
+
+// publicRow is one chain row: its position and whether the public saw it.
+type publicRow struct {
+	ID        uuid.UUID
+	Lat       float64
+	WasPublic bool
+}
+
+// chainRowsOf is a tree's location chain in chain order.
+func chainRowsOf(t *testing.T, h *harness, tree uuid.UUID) []publicRow {
+	t.Helper()
+	rows, err := h.store.Pool().Query(context.Background(), `
+		SELECT id, lat, was_public FROM community_tree_locations WHERE tree_id = $1 ORDER BY occurred_at, id
+	`, tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var chain []publicRow
+	for rows.Next() {
+		var r publicRow
+		if err := rows.Scan(&r.ID, &r.Lat, &r.WasPublic); err != nil {
+			t.Fatal(err)
+		}
+		chain = append(chain, r)
+	}
+	return chain
+}
+
+// publicEvent is one audit-log row as decision 13 reads it: kind, the latitude each side carries,
+// and whether it is in the public history.
+type publicEvent struct {
+	Kind            string
+	AfterLat        *float64
+	BeforeLat       *float64
+	InPublicHistory bool
+}
+
+// publicHistoryOf is every event of the tree, oldest first.
+func publicHistoryOf(t *testing.T, h *harness, tree uuid.UUID) (all []publicEvent) {
+	t.Helper()
+	rows, err := h.store.Pool().Query(context.Background(), `
+		SELECT kind, (after ->> 'lat')::float8, (before ->> 'lat')::float8, in_public_history
+		  FROM community_tree_events WHERE tree_id = $1 ORDER BY recorded_at, occurred_at, kind
+	`, tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e publicEvent
+		if err := rows.Scan(&e.Kind, &e.AfterLat, &e.BeforeLat, &e.InPublicHistory); err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, e)
+	}
+	return all
+}
+
+func publicEventKinds(events []publicEvent) []string {
+	var kinds []string
+	for _, e := range events {
+		if e.InPublicHistory {
+			kinds = append(kinds, e.Kind)
+		}
+	}
+	return kinds
+}
+
+// TestHistoryStartsAtGoingLive is the owner's decision 13, through each of the three ways a tree
+// goes public. Others see the tree as added where it stood when it went public; positions it held
+// and moves and names made while it was private stay private; moves after it is public are public.
+// The chain itself is never rewritten: every private row is still there, at its own position, for
+// the adder.
+func TestHistoryStartsAtGoingLive(t *testing.T) {
+	h := newHarness(t)
+	private := north(-2200) // another tile
+	moved := ctLat
+
+	// The claim: a device adds, moves and names the tree signed out, then signs in and accepts.
+	deviceUUID := uuid.New()
+	device := h.registerDeviceToken(t, deviceUUID)
+	claimed := uuid.New()
+	mustApply(t, h.syncOne(t, device, addTreeAt(claimed, private, ctLon, time.Now().Add(-3*time.Hour))), "signed-out add")
+	mustApply(t, h.syncOne(t, device, correctionItem(claimed, uuid.New(), moved, ctLon, time.Now().Add(-2*time.Hour))), "a private move")
+	mustApply(t, h.syncOne(t, device, map[string]any{
+		"client_uuid": uuid.New(), "kind": "species_claim", "tree_uuid": claimed,
+		"occurred_at": stamp8601(time.Now().Add(-110 * time.Minute)),
+		"payload":     jsonBody(map[string]any{"clientUUID": uuid.New(), "treeID": claimed, "speciesID": uuid.New()}),
+	}), "a private name")
+	account := signInAs(t, h, "ct.golive.claim", &deviceUUID, accepted())
+
+	chain := chainRowsOf(t, h, claimed)
+	if len(chain) != 2 || chain[0].Lat != private || chain[1].Lat != moved {
+		t.Fatalf("publication rewrote the adder's chain: %+v", chain)
+	}
+	if chain[0].WasPublic || !chain[1].WasPublic {
+		t.Fatalf("after the claim the chain's public rows are %+v; want only the head at publication", chain)
+	}
+	history := publicHistoryOf(t, h, claimed)
+	if kinds := publicEventKinds(history); len(kinds) != 1 || kinds[0] != "published" {
+		t.Fatalf("the public history before any public act is %v, want only the publication", kinds)
+	}
+	for _, e := range history {
+		if e.Kind == "published" && (e.AfterLat == nil || *e.AfterLat != moved) {
+			t.Fatalf("the publication says the tree stood at %v; it went public at %v", e.AfterLat, moved)
+		}
+	}
+
+	// A public move is public, from where the public saw it.
+	mustApply(t, h.syncOne(t, account.AccessToken, correctionItem(claimed, uuid.New(), north(40), ctLon, time.Now())), "a public move")
+	// A late correction older than that move is spliced in already superseded: it never moved the
+	// pin anybody saw, so it is not public either.
+	mustApply(t, h.syncOne(t, account.AccessToken, correctionItem(claimed, uuid.New(), north(20), ctLon, time.Now().Add(-90*time.Minute))), "a late move")
+	chain = chainRowsOf(t, h, claimed)
+	if len(chain) != 4 {
+		t.Fatalf("the chain is %+v, want four rows", chain)
+	}
+	for i, want := range []bool{false, true, false, true} {
+		if chain[i].WasPublic != want {
+			t.Fatalf("chain row %d (lat %v) was_public=%v, want %v: %+v", i, chain[i].Lat, chain[i].WasPublic, want, chain)
+		}
+	}
+	history = publicHistoryOf(t, h, claimed)
+	if kinds := publicEventKinds(history); len(kinds) != 2 || kinds[0] != "published" || kinds[1] != "location_corrected" {
+		t.Fatalf("the public history is %v, want the publication and the one public move", kinds)
+	}
+	for _, e := range history {
+		if e.Kind == "location_corrected" && e.InPublicHistory && (e.BeforeLat == nil || *e.BeforeLat != moved) {
+			t.Fatalf("the public move says it came from %v; the public saw the tree at %v", e.BeforeLat, moved)
+		}
+	}
+
+	// The acceptance: an account adds and moves a tree while declined, then accepts.
+	accepter := signInAs(t, h, "ct.golive.accept", nil, nil)
+	accepted2 := uuid.New()
+	mustApply(t, h.syncOne(t, accepter.AccessToken, addTreeAt(accepted2, private, ctLon+0.01, time.Now().Add(-2*time.Hour))), "declined add")
+	mustApply(t, h.syncOne(t, accepter.AccessToken, correctionItem(accepted2, uuid.New(), moved, ctLon+0.01, time.Now().Add(-time.Hour))), "a declined move")
+	signInAs(t, h, "ct.golive.accept", nil, accepted())
+	if chain := chainRowsOf(t, h, accepted2); len(chain) != 2 || chain[0].WasPublic || !chain[1].WasPublic {
+		t.Fatalf("after the acceptance the chain is %+v; want only the head at publication public", chain)
+	}
+
+	// The signed-in insert: public from its first position.
+	inserted := uuid.New()
+	mustApply(t, h.syncOne(t, account.AccessToken, addTreeAt(inserted, north(300), ctLon, time.Now())), "signed-in add")
+	if chain := chainRowsOf(t, h, inserted); len(chain) != 1 || !chain[0].WasPublic {
+		t.Fatalf("a tree published as it landed has chain %+v; want its root public", chain)
+	}
+	assertPublicationInvariant(t, h)
+}
+
+// tombstoneOf is a tombstone's was_public, and whether there is one.
+func tombstoneOf(t *testing.T, h *harness, tree uuid.UUID) (exists, wasPublic bool) {
+	t.Helper()
+	err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT was_public FROM withdrawn_community_trees WHERE id = $1`, tree).Scan(&wasPublic)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return true, wasPublic
+}
+
+// TestATombstoneSaysWhetherTheTreeWasEverPublic is the #190 review's F2, at its source: decision 12
+// tombstones a tree nobody but its adder ever saw, and the tombstone must say so, because S2
+// reports only once-public tombstones. Every way a never-public tree reaches a tombstone, under
+// both doors, against the published tree erased beside it.
+func TestATombstoneSaysWhetherTheTreeWasEverPublic(t *testing.T) {
+	for _, door := range []string{"leaveRecords", "eraseEverything"} {
+		t.Run(door, func(t *testing.T) {
+			h := newHarness(t)
+			decliner := signInAs(t, h, "ct.tomb.decliner."+door, nil, nil)
+			declined := uuid.New()
+			mustApply(t, h.syncOne(t, decliner.AccessToken, addTreeAt(declined, ctLat, ctLon, time.Now())), "declined add")
+
+			accepter := signInAs(t, h, "ct.tomb.accepter."+door, nil, accepted())
+			bornWithdrawn, published := uuid.New(), uuid.New()
+			mustApply(t, h.syncOne(t, accepter.AccessToken, treeWithdrawalItem(bornWithdrawn)), "early withdrawal")
+			mustApply(t, h.syncOne(t, accepter.AccessToken, addTreeAt(bornWithdrawn, north(60), ctLon, time.Now())), "late add")
+			mustApply(t, h.syncOne(t, accepter.AccessToken, addTreeAt(published, north(120), ctLon, time.Now())), "published add")
+
+			deleteMe(t, h, decliner.AccessToken, door)
+			deleteMe(t, h, accepter.AccessToken, door)
+
+			for name, tree := range map[string]uuid.UUID{"a declined account's tree": declined, "a tree born withdrawn": bornWithdrawn} {
+				exists, wasPublic := tombstoneOf(t, h, tree)
+				if !exists {
+					t.Fatalf("%s left no tombstone, so nothing guards its id against a late add", name)
+				}
+				if wasPublic {
+					t.Fatalf("%s was never public and its tombstone says it was: S2 would report it "+
+						"to every stranger", name)
+				}
+			}
+			// The control: a published tree the door removed is a once-public tombstone. Under
+			// leaveRecords a published tree is anonymized instead, and has none.
+			exists, wasPublic := tombstoneOf(t, h, published)
+			if door == "eraseEverything" && (!exists || !wasPublic) {
+				t.Fatalf("control: the erased published tree's tombstone is exists=%v was_public=%v", exists, wasPublic)
+			}
+			if door == "leaveRecords" && (exists || !stateOf(t, h, published).Anonymized) {
+				t.Fatal("control: leaveRecords tombstoned a published tree instead of anonymizing it")
+			}
+		})
+	}
+}
+
+// headOrNone is the tree's head row id, or "none" for a tree this service no longer holds.
+func headOrNone(t *testing.T, h *harness, tree uuid.UUID, exists bool) string {
+	t.Helper()
+	if !exists {
+		return "none"
+	}
+	return headOf(t, h, tree).String()
+}
+
+// TestAHiddenTreeAnswersAStrangerAsAnUnknownIdDoes is the #190 review's F6: the sync answers must
+// not be an oracle for a tree the caller may not know exists. For each way a tree is hidden from a
+// stranger, the stranger's move and withdrawal are answered exactly — status, code and message —
+// as the same acts on an id this service never held, and change nothing.
+func TestAHiddenTreeAnswersAStrangerAsAnUnknownIdDoes(t *testing.T) {
+	h := newHarness(t)
+	adder := signInAs(t, h, "ct.oracle.adder", nil, accepted())
+	decliner := signInAs(t, h, "ct.oracle.decliner", nil, nil)
+	eraser := signInAs(t, h, "ct.oracle.eraser", nil, accepted())
+	otherDevice := h.registerDeviceToken(t, uuid.New())
+	withdrawn, takenDown, unpublished, deviceOwned, erased, visible :=
+		uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(withdrawn, ctLat, ctLon, time.Now().Add(-time.Hour))), "add")
+	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(takenDown, north(60), ctLon, time.Now().Add(-time.Hour))), "add")
+	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(visible, north(120), ctLon, time.Now().Add(-time.Hour))), "add")
+	mustApply(t, h.syncOne(t, decliner.AccessToken, addTreeAt(unpublished, north(180), ctLon, time.Now().Add(-time.Hour))), "add")
+	mustApply(t, h.syncOne(t, otherDevice, addTreeAt(deviceOwned, north(240), ctLon, time.Now().Add(-time.Hour))), "add")
+	mustApply(t, h.syncOne(t, eraser.AccessToken, addTreeAt(erased, north(300), ctLon, time.Now().Add(-time.Hour))), "add")
+	mustApply(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(withdrawn)), "withdraw")
+	if recorder := h.do(t, http.MethodPost, Prefix+"/operator/community-trees/"+takenDown.String()+"/take-down",
+		"the-operator-token", nil); recorder.Code != http.StatusOK {
+		t.Fatalf("takedown answered %d", recorder.Code)
+	}
+	deleteMe(t, h, eraser.AccessToken, "eraseEverything")
+	if exists, _ := tombstoneOf(t, h, erased); !exists {
+		t.Fatal("fixture: the erased tree is not tombstoned")
+	}
+
+	type answer struct{ status, code, message string }
+	answerOf := func(r syncResult) answer { return answer{r.Status, codeOf(r.Error), r.Message} }
+	for _, stranger := range []struct{ name, bearer string }{
+		{"a stranger's device", h.registerDeviceToken(t, uuid.New())},
+		{"a stranger's account", signInAs(t, h, "ct.oracle.stranger", nil, accepted()).AccessToken},
+	} {
+		unknown := uuid.New()
+		wantMove := answerOf(h.syncOne(t, stranger.bearer, correctionItem(unknown, uuid.New(), north(900), ctLon, time.Now())))
+		wantPull := answerOf(h.syncOne(t, stranger.bearer, treeWithdrawalItem(uuid.New())))
+		if wantMove.code != string(apierr.NotFound) || wantPull.status != "applied" {
+			t.Fatalf("calibration: an unknown id answers move %+v and withdrawal %+v; want not_found and applied",
+				wantMove, wantPull)
+		}
+		// The control: a tree the stranger may see is refused as somebody else's.
+		mustFail(t, h.syncOne(t, stranger.bearer, correctionItem(visible, uuid.New(), north(900), ctLon, time.Now())),
+			apierr.Forbidden, stranger.name+" moving a visible tree")
+		mustFail(t, h.syncOne(t, stranger.bearer, treeWithdrawalItem(visible)),
+			apierr.Forbidden, stranger.name+" withdrawing a visible tree")
+
+		for _, hidden := range []struct {
+			name string
+			id   uuid.UUID
+		}{
+			{"a withdrawn tree", withdrawn}, {"a taken-down tree", takenDown},
+			{"a declined account's tree", unpublished}, {"another device's tree", deviceOwned},
+			{"an erased tree", erased},
+		} {
+			// Values, not the struct: its owner fields are pointers, and two reads never share one.
+			summary := func() string {
+				st := stateOf(t, h, hidden.id)
+				return fmt.Sprintf("exists=%v lat=%v published=%v deleted=%v anonymized=%v head=%s",
+					st.Exists, st.Lat, st.Published, st.Deleted, st.Anonymized, headOrNone(t, h, hidden.id, st.Exists))
+			}
+			before := summary()
+			if got := answerOf(h.syncOne(t, stranger.bearer, correctionItem(hidden.id, uuid.New(), north(900), ctLon, time.Now()))); got != wantMove {
+				t.Fatalf("%s moving %s was answered %+v; an unknown id is answered %+v", stranger.name, hidden.name, got, wantMove)
+			}
+			if got := answerOf(h.syncOne(t, stranger.bearer, treeWithdrawalItem(hidden.id))); got != wantPull {
+				t.Fatalf("%s withdrawing %s was answered %+v; an unknown id is answered %+v", stranger.name, hidden.name, got, wantPull)
+			}
+			if after := summary(); after != before {
+				t.Fatalf("%s's answered acts changed %s: %s became %s", stranger.name, hidden.name, before, after)
+			}
+		}
 	}
 }
 
