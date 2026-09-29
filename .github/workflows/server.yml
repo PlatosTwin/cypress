@@ -57,6 +57,7 @@ on:
       - '.github/workflows/server.yml'
       - '.github/workflows/testflight.yml'
       - 'Cypress/Core/APIError.swift'
+      - 'Cypress/Core/AccountLinkRecord.swift'
       - 'Cypress/Core/Models/CityRecord.swift'
       - 'Cypress/Core/Models/OutboxItem.swift'
       - 'Cypress/Core/Models/Tree.swift'
