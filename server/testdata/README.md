@@ -99,6 +99,18 @@ These are contract, not incidental behavior. C1 and C2 build on them.
 - **The history's 404 means "no history"**, not an error to surface: a city tree, an unknown id, and
   a hidden tree all answer it alike. The adder's own unpublished tree answers 200 with no events: its
   private life is on the phone, not the server.
+- **`createdAt` is the day the tree went live**, for everyone but its adder (the tile always; the
+  profile unless `added_by_you`). The adder's own profile carries the day they really added it.
+  In `community_trees_tile.json`, tree `…5d01` was added on 2026-09-20 and went live on 2026-09-21,
+  so its `createdAt` is `2026-09-21T00:00:00Z`.
+- **Every community-tree date is a calendar day, sent as midnight UTC** (`createdAt`,
+  `updatedAt`, the history's `occurred_at`). **Format them with a UTC calendar**, as screen 03's
+  inventory date does. Formatted in the reader's zone, midnight UTC is the previous day everywhere
+  in the Americas. The day is the UTC day of the event.
+- **A photograph's `captured_at` is unchanged: the exact time, for everyone.** Decision 14 (others
+  see the date only) is not implemented, because no server-only form shows the right day on the
+  shipped client. The pending errata file has the evidence and the options. Keep decoding it as an
+  instant.
 - **History starts at going live** (decision 13). The oldest event is `added`, at the position and on
   the day the tree was published. A move made while the tree was private is never served, in the
   history or in any tile.

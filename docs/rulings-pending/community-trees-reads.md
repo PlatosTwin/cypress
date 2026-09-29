@@ -4,7 +4,7 @@ Unnumbered, per CLAUDE.md "Numbering and shared files". The orchestrator splices
 numbers at merge. No code comment cites this filename.
 
 These record what **PR S2** (`server/community-trees-reads`) decided where the round's design (§3C,
-§3D, §3E), the owner's decisions 1–13 and the orchestrator's rulings of 2026-09-28 left a choice.
+§3D, §3E), the owner's decisions 1–14 and the orchestrator's rulings of 2026-09-28 left a choice.
 Each is a ruling within delegated authority, logged for review. None reverses an existing ruling.
 The owner should look at the first two.
 
@@ -49,6 +49,17 @@ claim publishes the tree and bumps it. A history that says "a day" beside a tile
 The phone does not need more. The cursor, not `updatedAt`, is how it learns what changed. The
 adder's own trees are authored on the phone and win the merge (§5). **C1 must not use a cached
 community tree's `updatedAt` for ordering or change detection.**
+
+**These are calendar days, and a client must render them as calendar days.** The wire form is
+midnight UTC (`2026-03-20T00:00:00Z`). Formatted in the reader's own zone, as every photo date in
+the shipped app is, midnight UTC is the **previous** day anywhere in the Americas. No shipped client
+decodes any of these fields (the tile, `community_tree` and the history are all new, and
+`TreeCommunityHalfResponse` ignores the keys it does not name), so the rendering is a C1/C2
+contract, not a TestFlight hazard: format them with a UTC calendar, as screen 03's inventory date
+(`TreeProfilePresentation`'s `yMMMMd`, fixed to UTC for exactly this reason) already does. The day
+itself is the **UTC** day of the event. For an evening in the Americas that is the next local day,
+which the history has shown since round 1; making it the local day needs the event's zone, which
+the service does not hold (see the decision-14 erratum for the same limit on photographs).
 
 ### R??? — The tile delta's cursor trails the present by the request timeout
 
@@ -137,6 +148,12 @@ vocabulary out of the migrations and goes red on an unclassified kind.
 - **The adder gets the same history as everyone else.** Their own record of the tree's private life
   is on their phone. A route whose answer depended on who asked would be two contracts under one
   name. So the adder's own **unpublished** tree answers 200 with no events.
+- **No public event is dated before the tree went live** (the orchestrator's L1 ruling). An act the
+  adder made while the tree was private can arrive after publication: a move or a naming queued on
+  a phone that was signed out or declining. S1 records it as public, because the pin did move in
+  public. The history serves it at `GREATEST(occurred_at, published_at)`, and orders by that date,
+  then by `recorded_at`, so it sits above "added" and never below it. Its own earlier day, which
+  would be a day of the tree's private life, is never served.
 
 The client must still decode `kind` and `placement` with an unknown case, so a kind this list
 admits later does not fail the whole response.
@@ -165,3 +182,63 @@ hand out a readable cursor.
 What the cursor cannot hide is the present: a stranger polling a tile every second sees a new tree
 within a second of its arrival. That is an observation anyone could make by looking, not the
 recovery of a stored time.
+
+### R??? — A stranger is told a tree was added the day it went live
+
+**Decided by:** the orchestrator's V1 ruling on decision 13, implemented in PR S2 round 3.
+
+`createdAt` on a community `Tree` is **`published_at`**, at day precision, for everyone but the
+adder: on the tile (which has no viewer and serves only published trees) and on the profile. The
+adder's own profile keeps `created_at`, the day they really added it. So a tree added signed out in
+March and claimed in September was, to a stranger, added in September. The history's "added" says
+the same day, so the two can no longer disagree on one screen. Before this, `createdAt` told every
+stranger how long the tree had sat private, which is how long its adder had been signed out or
+declining.
+
+`updatedAt` is unchanged: publication bumps it, so it is never before `published_at`.
+
+### R??? — The grove's hero passes the photograph's gate, and has bytes
+
+**Decided by:** the orchestrator's V2 ruling, implemented in PR S2 round 3.
+
+`GET /me/grove`'s `hero_photo_id` is chosen only from photographs that `GET /photos/{id}` would
+serve this caller, for a tree that caller may see. So no photograph of a community tree hidden from
+the caller is a hero, whether the tree is somebody else's unpublished tree, withdrawn, taken down or
+erased. A photograph whose bytes never arrived is never a hero either, including the caller's own
+upload still in flight: a hero is something to draw.
+
+Without the gate, a stranger's withdrawal of a hidden id answered `applied`, like any unknown id
+(F6), and their grove then drew the hidden tree's photograph for it. That told the two apart
+afterwards and served a hidden photograph's id. And anybody with a favorite on a tree that was
+later withdrawn or taken down went on receiving its photograph's id.
+
+The grove decides this for many trees in one query, so the rule is spelled a second time in SQL
+(`treeHiddenFromViewerSQL`). `TestTheGroveHeroPassesThePhotographGate` checks that spelling
+against `communityTreeFor` for every hidden state and the visible ones, for an account and for a
+device.
+
+### R??? — Only a known license version is an acceptance
+
+**Decided by:** the orchestrator's L2 ruling. It is S1's code (`store/community_trees.go`,
+`store/identity.go`), fixed in PR S2 round 3.
+
+The service publishes under one license version, `odbl-1.0`, which is the client's
+`LicenseConsent.currentVersion`. A consent naming anything else, `""` included, is recorded as a
+**decline**, and a stored value that is not a known version (written before this rule) does not
+count as acceptance either. Failing closed keeps the account's trees private. It does not unpublish
+anything (decision 10).
+
+An account that had accepted and then sends a non-version is therefore recorded as declining from
+then on. That is the literal reading of the ruling; the alternative, refusing the request, would
+fail a sign-in over a consent field.
+
+`TestTheServerKnowsTheClientsLicenseVersion` reads the client's constant out of
+`AccountLinkRecord.swift`. When legal review moves it, the service must learn the new version in
+the same change, or every new acceptance silently becomes a decline.
+
+**Not changed:** 007's backfill publishes accounts whose `license_version IS NOT NULL`. It is a
+migration, and this PR does not touch migrations. The client's constant has been `odbl-1.0`
+since it was written (`git log -S` on `AccountLinkRecord.swift` finds one value), so no other
+version is expected in production. Still, S1 may want the backfill to say `= 'odbl-1.0'` before
+007 ships.
+

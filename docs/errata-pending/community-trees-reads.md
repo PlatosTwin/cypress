@@ -78,6 +78,81 @@ Found by the adversarial review of #190 and fixed in the same PR, before merge. 
   database as a control, measured 128–660 ms for the snapshot and 159–277 ms for the generic delta,
   with seq scans throughout. So the instrument reproduces the finding.
 
+### E??? — After two review rounds, S2 still dated a tree to its private add and drew hidden photographs as grove heroes
+
+Found by the fresh verification of #190 (and of #187, for L1 and L2), fixed in the same PR, before
+merge. None was live.
+
+- **V1: `createdAt` was the private add.** A stranger's tile and profile dated a tree to the day it
+  was added while private, next to a history that said it was added the day it went live. That
+  told every stranger how long the adder had been signed out or declining. Now it is
+  `published_at` for everyone but the adder (`TestAStrangerIsToldATreeWasAddedTheDayItWentLive`).
+- **V2: the grove's hero had no visibility gate.** A stranger's withdrawal of a hidden id is
+  answered like an unknown id's (F6), but their grove then drew the hidden tree's photograph for it,
+  and a favorite on a withdrawn tree kept receiving its photograph's id. A photograph whose bytes
+  never arrived could also be the hero. Both are gated now
+  (`TestTheGroveHeroPassesThePhotographGate`, `TestAStrangersWithdrawalLeavesTheGroveAsAnUnknownIdWould`).
+- **L1: a public event could be dated before "added".** A move queued while the tree was private
+  and delivered after it went live was served on its private day, below "added". Now it is served
+  at the later of the two (`TestNoPublicEventIsDatedBeforeTheTreeWentLive`).
+- **L2: any string was an acceptance.** `license_version: ""` published an account's trees and
+  wrote `""` into the `published` event as their license
+  (`TestOnlyAKnownLicenseVersionIsAnAcceptance`).
+- **V5: nothing planned the production tile texts.** An edit that made an arm unindexable would
+  have passed every test. `TestTheProductionTileQueriesUseTheirIndexes` now runs
+  `EXPLAIN (GENERIC_PLAN)` on `tileSnapshotQuery` and `tileDeltaQuery` themselves.
+
+### E??? — Decision 14 (photo capture date only) cannot be served correctly by the service alone to the shipped client
+
+**Not implemented; needs a decision.** The owner's decision 14 says other people see a photograph's
+capture **date**, never its time. `captured_at` reaches another person on two routes:
+- `GET /trees/{id}`'s `photos[]`. The shipped client decodes it (`TreeCommunityHalfResponse`, `.iso8601`).
+- `GET /photos/{id}`. The shipped client does not decode this one's `captured_at`.
+
+**Every surface formats the decoded instant in the reader's own time zone, date only:**
+- the photo timeline's caption, `capturedAt.formatted(date: .abbreviated, time: .omitted)`;
+- screen 03's "Best photo · Oct 2025" and months-with-photos;
+- the memorial's hero eyebrow and "First photo" milestone;
+- the activity screen's month counts, first-photo date and week buckets;
+- the share card's months.
+
+None of them shows a time of day, so there is no fake "00:00" to worry about. **The day is the
+problem.** The service does not know where or in which zone a photograph was taken:
+- the client encodes `captured_at` in UTC, so its offset is lost;
+- it never sends `public_lat`/`public_lon` (E42);
+- for a city tree the service does not know where the tree stands.
+
+So it cannot know the capture's local date. Measured through the client's own decoder and
+formatters (`.iso8601`, then the three renderings above) for a photograph an SF owner sees as
+**Mar 14**:
+
+| Form served to others | Taken 10:00 PDT, read in LA / NY | Taken 19:30 PDT, read in LA / NY | Taken 18:00 PDT on Mar 31, read in LA |
+|---|---|---|---|
+| exact time (today) | Mar 14 / Mar 14 | Mar 14 / Mar 14 | Mar 31, Mar 2026 |
+| midnight UTC of the UTC day | **Mar 13** / **Mar 13** | Mar 14 / Mar 14 | Mar 31, Mar 2026 |
+| noon UTC of the UTC day | Mar 14 / Mar 14 | **Mar 15** / **Mar 15** | **Apr 1, Apr 2026** |
+| noon UTC of the *local* date | Mar 14 / Mar 14 | Mar 14 / Mar 14 | Mar 31, Mar 2026 |
+
+Midnight is wrong for every morning photograph read in the Americas. Noon is wrong for every evening
+one, and moves month labels at a month's end. Only noon UTC of the capture's local date is right
+(for readers within ±11 h of UTC). The service cannot compute that date for a city tree, and for a
+community tree it could only estimate the zone from longitude, which is wrong within about an hour
+of midnight.
+
+**Options:**
+1. **Client-assisted.** The client sends the capture's local date (`captured_on`, `YYYY-MM-DD`) with
+   `POST /photos/begin`. Others get `captured_at` at noon UTC of that date, and the owner keeps the
+   exact time. This needs a column (a migration) and a client release. Photographs from builds that
+   do not send it need their own rule: keep the exact time until the build floor passes it, or
+   accept the UTC-day risk for them.
+2. **Server-only, UTC day at noon.** Implementable now, but it shows the wrong day for evening
+   photographs in the Americas. That breaks the hard constraint, so it was not shipped.
+3. **Defer decision 14** until option 1's client ships, keeping the exact time for now. This is
+   what this PR does.
+
+The evidence is the scratchpad's `d14/render.swift` and `d14/render-evidence.tsv`: the client's
+decode and format calls, run per zone. It is outside the tree, like the other reproductions.
+
 ### E??? — Proximity candidates still carry another adder's address and to-the-second creation time
 
 **Not fixed here; for the roadmap.** `candidateFrom` (`server/internal/api/sync.go`) builds the
