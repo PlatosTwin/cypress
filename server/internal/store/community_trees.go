@@ -408,14 +408,8 @@ func treesWithin(ctx context.Context, q querier, lat, lon, radiusM float64, view
 	return candidates, rows.Err()
 }
 
-// builtOnKinds are the contribution kinds that mean somebody met the tree: a visit, an
-// observation, a measurement or a care event. They are the only contributions that count as
-// "built on" (below). The set is the same as `MetSpeciesKinds` in `store/reads.go` on #184, which
-// is unmerged; the two should become one constant when #184 and this PR are both on main.
-var builtOnKinds = []string{"visit", "observation", "measurement", "care_event"}
-
 // othersHaveBuiltOn reports whether any identity other than `self` has met the tree: a live
-// contribution of one of `builtOnKinds`, or a live photograph. It is decision 8's condition (the
+// contribution of one of `MetSpeciesKinds`, or a live photograph. It is decision 8's condition (the
 // adder may withdraw only while this is false) and decision 6's (the erase door anonymizes rather
 // than deletes while it is true).
 //
@@ -423,6 +417,13 @@ var builtOnKinds = []string{"visit", "observation", "measurement", "care_event"}
 // tree", and the orchestrator's ruling after #187's fix round holds the code to them. Favorites,
 // photo votes, private reminders, species statements, reports, disputes and review flags are not
 // a visit or a photo, and do not count.
+//
+// **The kinds are `MetSpeciesKinds` (`store/reads.go`, #184), by the orchestrator's ruling, which
+// names that set: a visit, an observation, a measurement and a care event are all having stood in
+// front of the tree. This PR carried its own copy while #184 was unmerged; they are now one list.
+// The two answer neighbouring questions (met this species; met this tree), so a change to that list
+// changes this rule too — `TestOnlyAVisitOrAPhotoKeepsATreeFromItsAdder` and its erase-door twin
+// name every kind on both sides, and go red if either question's answer moves under the other.
 //
 // "Live" means not deleted. A withdrawn measurement is deleted by its withdrawal, so it does not
 // count. A photograph an operator rejected is not live, and neither is one whose bytes never
@@ -446,7 +447,7 @@ func othersHaveBuiltOn(ctx context.Context, q querier, treeID uuid.UUID, self Ow
 		       AND NOT coalesce(($2::uuid IS NOT NULL AND p.user_id = $2)
 		                     OR ($3::uuid IS NOT NULL AND p.device_id = $3), false)
 		)
-	`, treeID, self.UserID, self.DeviceID, builtOnKinds).Scan(&found)
+	`, treeID, self.UserID, self.DeviceID, MetSpeciesKinds).Scan(&found)
 	return found, err
 }
 

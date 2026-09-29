@@ -100,9 +100,8 @@ decisions 6 and 8 were "if anyone else has a visit or photo on the tree", and th
 to them. A tree counts as built on when another identity has either of these:
 
 - a live contribution of a **met kind**: `visit`, `observation`, `measurement` or `care_event`.
-  This is the set #184 names `MetSpeciesKinds`, and S1 keeps its own copy (`builtOnKinds`) until
-  the two unify at merge. "Live" means not deleted, so a measurement its taker withdrew does not
-  count;
+  This is the set #184 names `MetSpeciesKinds`. Since #184 merged, the code reads that list
+  directly. "Live" means not deleted, so a measurement its taker withdrew does not count;
 - a live photograph: not deleted, not `rejected`, and **its bytes have arrived**
   (`bytes_received_at` set). A begun upload with no bytes is a reservation nobody can see (the
   orchestrator's ruling after #187's review).
