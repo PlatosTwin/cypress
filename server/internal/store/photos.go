@@ -134,6 +134,7 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 	now := s.now()
 
 	var begun BegunPhoto
+	begunWithdrawn := false
 	err := s.Tx(ctx, func(tx pgx.Tx) error {
 		if photo.ClientUUID != nil {
 			var id uuid.UUID
@@ -191,17 +192,50 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 			}
 		}
 
+		// ── A begin that arrives after its own withdrawal ────────────────────────────────────
+		//
+		// `measurementWasWithdrawn`'s argument, one table over. The withdrawal names the phone's
+		// id, which is this begin's key (report F30), and it can be committed first: it answered
+		// `applied` because there was nothing here to take down, and without this the begin would
+		// then create a live row that every reader is served — a photograph its contributor had
+		// already been told was removed. So the row is **born deleted**, in the transaction that
+		// inserts it, and the begin is then refused exactly as a replay after a withdrawal is
+		// (above): no presigned PUT, so no bytes land for a photograph nobody may publish.
+		//
+		// Owner-matched, so a stranger who guessed a key cannot pre-empt somebody else's
+		// photograph; with the scope, the arm exists only where the withdrawal would have been
+		// allowed anyway. The client does not reach this order today (its drain is single-flight
+		// and a local delete discards the unsent upload in the same transaction), so this is the
+		// service not relying on that.
+		var bornDeleted *time.Time
+		if photo.ClientUUID != nil {
+			withdrawn, err := photoWasWithdrawn(ctx, tx, *photo.ClientUUID, owner)
+			if err != nil {
+				return err
+			}
+			if withdrawn {
+				bornDeleted = &now
+			}
+		}
+
 		_, err := tx.Exec(ctx, `
 			INSERT INTO photos
 			    (id, tree_uuid, visit_client_uuid, user_id, device_id, shot_type,
 			     moderation_state, approval_reason, captured_at, width, height,
-			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at, captured_on)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17::date)
+			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at, captured_on,
+			     deleted_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17::date,
+			        $18)
 		`, photo.ID, photo.TreeUUID, photo.VisitClientUUID, owner.UserID, owner.DeviceID,
 			photo.ShotType, state, reason, photo.CapturedAt, photo.Width, photo.Height,
-			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now, photo.CapturedOn)
+			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now, photo.CapturedOn,
+			bornDeleted)
 		if err != nil {
 			return err
+		}
+		if bornDeleted != nil {
+			begunWithdrawn = true
+			return nil
 		}
 		begun = BegunPhoto{
 			ID: photo.ID, StorageKey: photo.StorageKey,
@@ -209,7 +243,28 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 		}
 		return nil
 	})
+	if err == nil && begunWithdrawn {
+		// Committed above — the born-deleted row is the record — and refused here, outside the
+		// transaction, because an error inside it would roll that record back.
+		return BegunPhoto{}, ErrPhotoWithdrawn
+	}
 	return begun, err
+}
+
+// photoWasWithdrawn reports whether this identity has already sent a `photo_withdrawal` naming this
+// begin's key. The payload carries the Swift property name and the phone's uppercase UUID string,
+// so the comparison is case-folded, as `measurementWasWithdrawn`'s is.
+func photoWasWithdrawn(ctx context.Context, tx pgx.Tx, key uuid.UUID, owner Owner) (bool, error) {
+	var withdrawn bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM contributions
+		     WHERE kind = 'photo_withdrawal'
+		       AND upper(payload ->> 'photoID') = upper($1)
+		       AND (($2::uuid IS NOT NULL AND user_id = $2) OR ($3::uuid IS NOT NULL AND device_id = $3))
+		)
+	`, key.String(), owner.UserID, owner.DeviceID).Scan(&withdrawn)
+	return withdrawn, err
 }
 
 // PhotoRecord is a stored photograph, as the read routes need it.
@@ -230,6 +285,16 @@ type PhotoRecord struct {
 	StorageKey      string
 	BytesReceivedAt *time.Time
 	DeletedAt       *time.Time
+	// ClientUUID is the key the contributor's begin carried (`003_photo_idempotency_key.sql`), or
+	// nil for a begin that carried none.
+	//
+	// **It is the contributor's, and only the contributor may be told it.** It is the one id the
+	// phone that took the photograph holds for it — the service's `ID` is minted here and the phone
+	// never keeps it — so `GET /trees/{id}` returns it to the photograph's own contributor, and to
+	// nobody else, as the link that lets that phone recognise its own picture (report F30). Sent to
+	// a stranger it would be a second identifier for somebody else's contribution, and the reason
+	// migration 003 scopes the key per owner applies to reading it as much as to writing it.
+	ClientUUID *uuid.UUID
 }
 
 // IsPubliclyVisible mirrors `Photo.isPubliclyVisible` exactly:
@@ -249,11 +314,13 @@ func (s *Store) Photo(ctx context.Context, id uuid.UUID) (PhotoRecord, error) {
 	var photo PhotoRecord
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tree_uuid, user_id, device_id, shot_type, moderation_state, approval_reason,
-		       blur_applied, captured_at, captured_on, storage_key, bytes_received_at, deleted_at
+		       blur_applied, captured_at, captured_on, storage_key, bytes_received_at, deleted_at,
+		       client_uuid
 		  FROM photos WHERE id = $1
 	`, id).Scan(&photo.ID, &photo.TreeUUID, &photo.UserID, &photo.DeviceID, &photo.ShotType,
 		&photo.ModerationState, &photo.ApprovalReason, &photo.BlurApplied, &photo.CapturedAt,
-		&photo.CapturedOn, &photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt)
+		&photo.CapturedOn, &photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt,
+		&photo.ClientUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PhotoRecord{}, ErrNotFound
 	}
@@ -268,7 +335,8 @@ func (s *Store) Photo(ctx context.Context, id uuid.UUID) (PhotoRecord, error) {
 func (s *Store) PhotosForTree(ctx context.Context, treeUUID uuid.UUID) ([]PhotoRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tree_uuid, user_id, device_id, shot_type, moderation_state, approval_reason,
-		       blur_applied, captured_at, captured_on, storage_key, bytes_received_at, deleted_at
+		       blur_applied, captured_at, captured_on, storage_key, bytes_received_at, deleted_at,
+		       client_uuid
 		  FROM photos WHERE tree_uuid = $1 ORDER BY captured_at DESC
 	`, treeUUID)
 	if err != nil {
@@ -280,7 +348,8 @@ func (s *Store) PhotosForTree(ctx context.Context, treeUUID uuid.UUID) ([]PhotoR
 		var photo PhotoRecord
 		if err := rows.Scan(&photo.ID, &photo.TreeUUID, &photo.UserID, &photo.DeviceID,
 			&photo.ShotType, &photo.ModerationState, &photo.ApprovalReason, &photo.BlurApplied,
-			&photo.CapturedAt, &photo.CapturedOn, &photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt); err != nil {
+			&photo.CapturedAt, &photo.CapturedOn, &photo.StorageKey, &photo.BytesReceivedAt,
+			&photo.DeletedAt, &photo.ClientUUID); err != nil {
 			return nil, err
 		}
 		photos = append(photos, photo)
@@ -358,9 +427,10 @@ var ErrPhotoWithdrawn = errors.New("photo was withdrawn by its contributor")
 // "not yours" into one answer anyway. This one has to tell those apart before it decides, so the
 // row is fetched first and the three cases are separated explicitly:
 //
-//   - **no row** — nothing to withdraw. This is the shipping state ERRATA E264 describes: no
-//     photograph reaches this service, so every withdrawal that arrives today lands here. It is a
-//     success, and the contribution row is still recorded — the record of the act is the point.
+//   - **no row by this id** — the id is then tried as the begin's `client_uuid`, which is the id
+//     the phone holds (withdrawPhotoByClientKey, report F30). Only when that finds nothing either
+//     is there nothing to withdraw: a success, with the contribution row still recorded — the
+//     record of the act is the point.
 //   - **already tombstoned** — success, changing nothing. A drain that replays a withdrawal after a
 //     flap must not fail on the second pass.
 //   - **present and not this identity's** — `ErrNotOwned`, above.
@@ -380,7 +450,8 @@ func withdrawPhoto(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner, no
 		SELECT user_id, device_id, deleted_at FROM photos WHERE id = $1
 	`, id).Scan(&userID, &deviceID, &deletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		// Not this service's id — which is what the phone sends. See withdrawPhotoByClientKey.
+		return withdrawPhotoByClientKey(ctx, tx, id, owner, now)
 	}
 	if err != nil {
 		return err
@@ -389,9 +460,7 @@ func withdrawPhoto(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner, no
 		return nil
 	}
 
-	owned := (owner.UserID != nil && userID != nil && *userID == *owner.UserID) ||
-		(owner.DeviceID != nil && deviceID != nil && *deviceID == *owner.DeviceID)
-	if !owned {
+	if !ownerHolds(owner, userID, deviceID) {
 		return ErrNotOwned
 	}
 
@@ -399,6 +468,90 @@ func withdrawPhoto(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner, no
 		UPDATE photos SET deleted_at = $2, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL
 	`, id, now)
 	return err
+}
+
+// ownerHolds is withdrawPhoto's ownership rule: the two columns this service has, and nothing else
+// (see withdrawPhoto on why that is not the client's R82 rule).
+func ownerHolds(owner Owner, userID, deviceID *uuid.UUID) bool {
+	return (owner.UserID != nil && userID != nil && *userID == *owner.UserID) ||
+		(owner.DeviceID != nil && deviceID != nil && *deviceID == *owner.DeviceID)
+}
+
+// withdrawPhotoByClientKey is withdrawPhoto for the id the phone actually holds.
+//
+// ── The defect this closes ─────────────────────────────────────────────────────────────────────
+//
+// A phone's `photo_withdrawal` names its own `photos.id`. This service mints its own `photos.id` at
+// `POST /photos/begin` and the phone never keeps it, so the lookup by id above matched nothing for
+// every photograph a phone had actually sent — and "no row" is a success. The contributor was told
+// "Photo removed" and the photograph stayed public here: ERRATA E280's failure, reached silently.
+// Since report F30's fix the phone's `photos.id` **is** the begin's `client_uuid`, so the key is
+// the link, and this looks the photograph up by it.
+//
+// ── Ownership, and why the key is not scoped in the query ─────────────────────────────────────
+//
+// Every row carrying the key is read, and the caller's ownership is decided here, on the same two
+// columns and with the same three answers as the lookup by id:
+//
+//   - **the caller holds a live row** — it is tombstoned (every such row: migration 003 notes that
+//     one binary can reach two rows under a device and then an account, and both are the same
+//     photograph);
+//   - **the caller holds only tombstoned rows, or nothing carries the key** — success, changing
+//     nothing, exactly as a replay or an unknown id is;
+//   - **a live row carries the key and the caller holds none** — `ErrNotOwned`. Scoping the query
+//     to the caller would have made this case read as "absent" and answered success while the
+//     photograph stayed served, which is the lie this function exists to stop telling. It is the
+//     case R82's provenance arm reaches: this installation took the photograph and the account
+//     that owns it is no longer the one signed in. The key is minted on one phone and is never
+//     sent to anybody but that photograph's contributor (`treeProfileBody`), so the refusal tells
+//     a caller nothing about a photograph whose key they did not already hold.
+//
+// Another identity's photograph is never withdrawn: a row is tombstoned only if `ownerHolds`.
+func withdrawPhotoByClientKey(ctx context.Context, tx pgx.Tx, key uuid.UUID, owner Owner, now time.Time) error {
+	rows, err := tx.Query(ctx, `
+		SELECT id, user_id, device_id, deleted_at FROM photos WHERE client_uuid = $1
+	`, key)
+	if err != nil {
+		return err
+	}
+	var mine []uuid.UUID
+	somebodyElsesIsLive := false
+	for rows.Next() {
+		var id uuid.UUID
+		var userID, deviceID *uuid.UUID
+		var deletedAt *time.Time
+		if err := rows.Scan(&id, &userID, &deviceID, &deletedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		switch {
+		case ownerHolds(owner, userID, deviceID):
+			if deletedAt == nil {
+				mine = append(mine, id)
+			}
+		case deletedAt == nil:
+			somebodyElsesIsLive = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if len(mine) == 0 {
+		if somebodyElsesIsLive {
+			return ErrNotOwned
+		}
+		return nil
+	}
+	for _, id := range mine {
+		if _, err := tx.Exec(ctx, `
+			UPDATE photos SET deleted_at = $2, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL
+		`, id, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeletePhotoByContributor is `deletePhoto(id:)` — the contributor taking their own photograph back.

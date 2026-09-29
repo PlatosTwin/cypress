@@ -442,12 +442,18 @@ struct TreeCommunityHalfResponse: Decodable {
         let shotType: ShotType
         let capturedAt: Date
         let isPubliclyVisible: Bool
+        /// The key this photograph's begin carried, sent **only to its own contributor** and absent
+        /// on everybody else's rows (`treeProfileBody` in `reads.go`). It is the phone's own
+        /// `photos.id` for anything sent since report F30's fix, which is how the contributor's
+        /// phone recognises a row the service names under an id the phone never kept.
+        let clientUUID: UUID?
 
         enum CodingKeys: String, CodingKey {
             case photoID = "photo_id"
             case shotType = "shot_type"
             case capturedAt = "captured_at"
             case isPubliclyVisible = "is_publicly_visible"
+            case clientUUID = "client_uuid"
         }
     }
 
