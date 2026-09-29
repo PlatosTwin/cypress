@@ -434,8 +434,19 @@ jobs:
           # read as prose-only; renaming `server/README.md` would hide the removal that
           # `SERVER_ONLY`'s carve-back exists to see. Without renames, a move is a deletion plus an
           # addition and both paths are judged.
-          changed="$(git diff --no-renames --name-only "$before" "${{ github.sha }}")"
-          removed="$(git diff --no-renames --diff-filter=D --name-only "$before" "${{ github.sha }}")"
+          #
+          # **`-c core.quotePath=false`**, because git's default quotes any path with a byte above
+          # 0x7F: a new `server/café.go` is listed as `"server/caf\303\251.go"`, in quotes, and
+          # then matches no predicate — `^(server/)` included — here or in the `server` step. #188's
+          # review reproduced it: the iOS suite ran (conservative) but the Go suite was not owed and
+          # `gate` passed with the Go change untested. With quoting off the path arrives as written.
+          # A name with a double quote, a backslash or a control character is STILL quoted; see
+          # `quoted` below for what happens to one.
+          #
+          # `DeployPathsAgreeTests` reads these two assignments and fails if either loses
+          # `--no-renames` or `core.quotePath=false`, or if `removed=` loses `--diff-filter=D`.
+          changed="$(git -c core.quotePath=false diff --no-renames --name-only "$before" "${{ github.sha }}")"
+          removed="$(git -c core.quotePath=false diff --no-renames --diff-filter=D --name-only "$before" "${{ github.sha }}")"
           echo "changed paths:"; echo "$changed" | sed 's/^/  /'
           # Handed to the `server` step below, which asks a different question of the same diff.
           printf '%s\n' "$changed" > "$RUNNER_TEMP/changed-paths.txt"
@@ -467,6 +478,18 @@ jobs:
               echo "web and server paths in one diff: neither the web-only nor the server-only notice would be true of all of it, so the suite runs"
               testable="$non_prose"
             fi
+          fi
+
+          # **A path git still had to quote runs everything.** With `core.quotePath=false` that is only
+          # a name holding a double quote, a backslash or a control character, and it arrives as
+          # `"…"` with escapes — which no predicate can judge. Such a line already lands in
+          # `testable` (it matches no subtraction), so this is not what makes it run; it is what
+          # makes that deliberate rather than an accident of the predicates, and what says so in the
+          # log. The `server` step applies the same rule to the Go suite.
+          quoted="$(printf '%s\n' "$changed" | grep '^"' || true)"
+          if [ -n "$quoted" ]; then
+            echo "paths git could not print unquoted, so no predicate can judge them — the suite runs:"; echo "$quoted" | sed 's/^/  /'
+            testable="$(printf '%s\n%s\n' "$testable" "$quoted" | sed '/^$/d' | sort -u)"
           fi
 
           if [ -z "$changed" ] || [ -z "$testable" ]; then
@@ -501,7 +524,15 @@ jobs:
             elif [ -z "$not_server" ]; then
               echo "decision=server-only" >> "$GITHUB_OUTPUT"
               echo "the server paths in this diff:"; echo "$non_prose" | sed 's/^/  /'
-              echo "::notice::this diff is server-only (server/, outside server/testdata/, adding or editing files but removing none), possibly alongside prose. It is NOT prose and it IS tested — by .github/workflows/server.yml, which this workflow runs as its server job, against Postgres on ubuntu. Nothing here is an input to the iOS app or its tests, so the iOS suite is skipped deliberately and no build is minted; the gate job checks that it was skipped for this reason AND that the server job succeeded. Read the Server run for this commit to know whether the Go service is green."
+              # Two notices for one decision, because what a green `gate` means here depends on the
+              # event (#188 review, finding 3). On a pull request this run calls the Go suite and
+              # `gate` requires it. On a push to main it does neither: `server.yml` starts itself
+              # from its own path list, and `gate` here says nothing about Go.
+              if [ "${{ github.event_name }}" = "pull_request" ]; then
+                echo "::notice::this diff is server-only (server/, outside server/testdata/, adding or editing files but removing none), possibly alongside prose. It is NOT prose and it IS tested — by .github/workflows/server.yml, which this workflow runs as its server / server job, against Postgres on ubuntu. Nothing here is an input to the iOS app or its tests, so the iOS suite is skipped deliberately and no build is minted; the gate job checks that it was skipped for this reason AND that the server / server job succeeded. Open the server / server job of this run to read the Go suite's verdict."
+              else
+                echo "::notice::this diff is server-only (server/, outside server/testdata/, adding or editing files but removing none), possibly alongside prose. It is NOT prose, and on a push this workflow does NOT test it: .github/workflows/server.yml starts itself on this push from its own path list, and runs the Go suite against Postgres there. Nothing here is an input to the iOS app or its tests, so the iOS suite is skipped deliberately and no build is minted; the gate job checks only that it was skipped for this reason. Open the Server workflow's run for this commit to know whether the Go service is green."
+              fi
             else
               # Unreachable by construction: `testable` is empty, so every non-prose path is web or
               # server, and the mix of the two was turned into a suite run above. Reaching here
@@ -589,6 +620,14 @@ jobs:
           PY
           )"
 
+          # A path git still quoted (see `quoted` in `scope`) cannot be matched against a glob, so it
+          # owes the Go suite a run rather than being guessed not to.
+          quoted="$(grep '^"' "$RUNNER_TEMP/changed-paths.txt" || true)"
+          if [ -n "$quoted" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "paths git could not print unquoted, so they cannot be matched — the Go suite runs:"; echo "$quoted" | sed 's/^/  /'
+            exit 0
+          fi
           if grep -q '^server/' "$RUNNER_TEMP/changed-paths.txt" && [ -z "$hits" ]; then
             echo "::error::this diff changes server/ and none of it matched server.yml's path filters, which include server/**. The filter reader is broken; refusing to decide."
             exit 1
@@ -938,7 +977,12 @@ jobs:
           else
             [ "$server" = "skipped" ] \
               || { echo "::error::plan said the Go suite was not owed a run, but the server job is '$server', not 'skipped'"; exit 1; }
-            echo "nothing here is an input to the Go suite: the server job was skipped, and skipped for that reason"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "nothing here is an input to the Go suite: the server job was skipped, and skipped for that reason"
+            else
+              # Not "nothing here is an input": on a push the job is skipped whatever changed.
+              echo "not a pull request, so this workflow does not run the Go suite and says nothing about it: server.yml starts itself on a push to main (read the Server workflow's run for this commit), and workflow_dispatch runs it by hand. The server job was skipped for that reason."
+            fi
           fi
 
           # ── The release note ────────────────────────────────────────────────────────────

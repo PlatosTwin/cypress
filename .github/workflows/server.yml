@@ -37,6 +37,13 @@ on:
     # `testflight.yml`'s `plan` reads it with `yq` and calls this workflow when a changed path
     # matches. Edit it here and both routes follow.
     #
+    # **`testflight.yml` is on it because it is now this suite's caller on pull requests** (#188
+    # review). Its `plan` decides whether the Go suite is owed, its `server` job runs it, and its
+    # `gate` judges the result. A change to that machinery would otherwise exercise none of it:
+    # a `testflight.yml`-only pull request answered `server=false`, so a broken call surfaced as a
+    # red on the NEXT Go pull request, looking like that change's fault. Listed, it proves itself by
+    # running — about a minute on ubuntu — and `check_trigger_paths.sh` refuses the list without it.
+    #
     # **The four Swift files are here because Go tests OPEN them.** `internal/api` and
     # `internal/apierr` parse the client's enums and property lists at run time to prove the wire
     # vocabulary still agrees with the app. Renaming a `TreePlacement` case touches no `server/`
@@ -47,6 +54,7 @@ on:
     paths:
       - 'server/**'
       - '.github/workflows/server.yml'
+      - '.github/workflows/testflight.yml'
       - 'Cypress/Core/APIError.swift'
       - 'Cypress/Core/Models/CityRecord.swift'
       - 'Cypress/Core/Models/Tree.swift'

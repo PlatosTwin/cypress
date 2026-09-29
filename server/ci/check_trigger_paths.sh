@@ -26,7 +26,13 @@
 # `pull_request` trigger coming back is refused here: it would be the suite twice per pull request,
 # the second copy racing the called one for the same concurrency group.
 #
-# Until 2026-09-28 this checked `push` AND `pull_request`, counted separately per section. Comment lines are ignored (a line is a comment once `#` is stripped, whether the whole
+# Until 2026-09-28 this checked `push` AND `pull_request`, counted separately per section.
+#
+# **The caller is on the list too.** Because pull requests reach this suite only through
+# `testflight.yml` (its `plan` decides, its `server` job runs, its `gate` judges), that file is an
+# input to whether the Go suite runs at all, and a change to it must run the suite through it.
+# `.github/workflows/testflight.yml` is therefore required under `on.push.paths` alongside every
+# file a Go test opens (#188 review). Comment lines are ignored (a line is a comment once `#` is stripped, whether the whole
 # line is commented out or the `#` starts a trailing comment). This is a plain indentation-based
 # block extraction (no PyYAML dependency — the runner may not have it installed), done via a
 # small embedded python3 script rather than shell, because "count matches inside the `push:`
@@ -46,6 +52,8 @@ workflow="${1:?usage: $0 <workflow-file>}"
 
 read_paths="$(grep -rhoE '"\.\./\.\./\.\./[^"]+"' --include='*.go' server | tr -d '"' | sed 's#^\.\./\.\./\.\./##' | sort -u)"
 [ -n "$read_paths" ] || { echo "TRIGGER-PATHS-FAIL: found no cross-tree reads at all, which cannot be right — the search is not reading server/"; exit 1; }
+# Not a file a Go test reads, but the workflow that runs this suite on pull requests; see above.
+read_paths="$(printf '%s\n%s\n' "$read_paths" ".github/workflows/testflight.yml")"
 
 # Extract the `paths:` list under on.push and on.pull_request separately. Prints two blocks,
 # "PUSH" and "PULL_REQUEST", each followed by its section's path entries (one per line, quotes
@@ -166,7 +174,7 @@ while IFS= read -r path; do
 done <<< "$read_paths"
 
 if [ "$missing" -ne 0 ]; then
-  echo "TRIGGER-PATHS-FAIL: $missing file(s) a Go test reads would not start this workflow when changed"
+  echo "TRIGGER-PATHS-FAIL: $missing file(s) a Go test reads, or the testflight.yml that calls this workflow, would not start it when changed"
   exit 1
 fi
-echo "TRIGGER-PATHS-OK: every file outside server/ that a Go test reads triggers this workflow"
+echo "TRIGGER-PATHS-OK: every file outside server/ that a Go test reads, and testflight.yml, triggers this workflow"
