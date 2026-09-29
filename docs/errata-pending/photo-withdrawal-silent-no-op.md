@@ -66,6 +66,9 @@ family: the test's input was the thing that differed from production.
     same transaction as the delete (`OutboxStore.recordRefusedPhoto`). `sentPhotoIDs` leaves out any
     photograph that has one. No migration: `app_state` is v1's key/value table. What the person sees
     does not change: the photograph stays on their phone, and screen 17 draws the item as it did.
+    Account deletion's erasing door removes the key along with its photograph, and also removes
+    any key whose photograph is already gone. The key names a photograph, not a person, so
+    `AccountDeletionCoverage`'s column scan cannot see it. `AccountDeletionTests` asserts it instead.
 - *A copy is the second its stamp names (finding 2).* The wire truncates to whole seconds, so a true
   copy is `0 ≤ local − service < 1`. The symmetric window paired the next second's photograph.
 - *A withdrawal that arrives before its begin (finding 5).* The service answered it `applied`, with

@@ -807,9 +807,10 @@ public struct OutboxStore {
     /// fact without a migration, and the row that could have carried it is the one being deleted.
     /// `app_state` is the existing key/value table: one key per refused photograph, written in the
     /// same transaction as the delete, so there is no moment at which the photograph reads as sent.
-    /// Nothing removes the key, and nothing needs to: a refused binary is never offered again, even
-    /// after retry, and `sentPhotoIDs` reads live rows only, so a withdrawn photograph's key is
-    /// inert.
+    /// The key outlives the send, because a refused binary is never offered again, even after
+    /// retry. `sentPhotoIDs` reads live rows only, so a withdrawn photograph's key is inert. Account
+    /// deletion's erasing door removes the key with its photograph (`AccountDeletion`), because that
+    /// door promises no residue.
     public func recordRefusedPhoto(_ photo: PhotoRow, code: APIError, connection: SQLiteConnection) throws {
         if let photoID = photo.photoID {
             let mark = try connection.cachedStatement("""
