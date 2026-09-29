@@ -891,20 +891,21 @@ func TestTheHistoryIsCappedAtTwoHundred(t *testing.T) {
 	}
 }
 
-// TestTheHistoryServesOnlyTheKindsItClassifies: an `unpublished` row — which S1 writes today and
-// decision 10 retires — is a fact about the adder's consent and does not reach the wire.
+// TestTheHistoryServesOnlyTheKindsItClassifies: the allow-list is applied to the rows, not
+// assumed from the not-found rule. A `withdrawn` and a `taken_down` row planted on a tree that is
+// still live — a state no writer produces, which is the point — do not reach the wire.
 func TestTheHistoryServesOnlyTheKindsItClassifies(t *testing.T) {
 	h := newHarness(t)
 	adder := signInAs(t, h, "ct.kinds.adder", nil, accepted())
 	tree := uuid.New()
 	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, ctLat, ctLon, time.Now().Add(-time.Hour))), "add")
-	execSQL(t, h, `INSERT INTO community_tree_events (id, tree_id, kind, occurred_at) VALUES (gen_random_uuid(), $1, 'unpublished', now())`, tree)
-	_, body := readHistory(t, h, h.registerDeviceToken(t, uuid.New()), tree)
-	if slices.Contains(body.kinds(), "unpublished") {
-		t.Fatalf("the history served an `unpublished` event: %v", body.kinds())
+	for kind := range withheldHistoryKinds {
+		execSQL(t, h, `INSERT INTO community_tree_events (id, tree_id, kind, occurred_at) VALUES (gen_random_uuid(), $1, $2, now())`,
+			tree, kind)
 	}
+	_, body := readHistory(t, h, h.registerDeviceToken(t, uuid.New()), tree)
 	if !slices.Equal(body.kinds(), []string{"published", "added"}) {
-		t.Fatalf("kinds = %v, want [published added]", body.kinds())
+		t.Fatalf("kinds = %v, want [published added]: a withheld kind reached the wire", body.kinds())
 	}
 }
 

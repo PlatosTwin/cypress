@@ -256,18 +256,15 @@ var servedHistoryKinds = map[string]bool{
 
 // withheldHistoryKinds is every other event kind, with the reason.
 //
-// Of S1's three kinds beyond the design's five, two can never appear on a history anybody may read:
-// a withdrawn or taken-down tree answers `not_found` (§3E), so its `withdrawn` or `taken_down`
-// event has no response to be in. They are withheld here as well, so that stays true if the
-// not-found rule is ever relaxed. The third is withheld on its own merits.
+// S1's two kinds beyond the design's five can never appear on a history anybody may read: a
+// withdrawn or taken-down tree answers `not_found` (§3E), so its `withdrawn` or `taken_down` event
+// has no response to be in. They are withheld here as well, so that stays true if the not-found
+// rule is ever relaxed. (S1 also wrote an `unpublished` kind until decision 10 made the license
+// one-way; its fix round removed the kind from 007's CHECK, and
+// `TestEveryHistoryEventKindIsClassified` is what said so here.)
 var withheldHistoryKinds = map[string]string{
 	"withdrawn":  "a withdrawn tree's history answers not_found (§3E), so there is no response for it to be in",
 	"taken_down": "a taken-down tree's history answers not_found (§3E), so there is no response for it to be in",
-	// Owner decision 10 (2026-09-28) makes the license one-way: a published tree is never
-	// unpublished by a later decline, so S1's writer of this kind is being removed. Rows written
-	// before that are still in the table. What one says is "the adder declined the open license",
-	// which is a fact about a person's consent, not about the tree.
-	"unpublished": "records the adder's license decline — a fact about a person, not the tree (and decision 10 retires it)",
 }
 
 // historyEventsServed is `servedHistoryKinds` as the query's argument, in a stable order.
