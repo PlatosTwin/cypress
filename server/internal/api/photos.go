@@ -49,8 +49,12 @@ const capturedOnLayout = "2006-01-02"
 // the same instant by one day either way and never more, so a date further off is not this
 // photograph's day, and storing it would show strangers a date the photograph was not taken on.
 func validCapturedOn(capturedOn string, capturedAt time.Time) bool {
+	// `time.Parse` with this layout is already exact: it wants four-digit years and two-digit months
+	// and days, refuses anything around them, and refuses a day the month does not have (the
+	// validation test's "2026-9-29", " 2026-09-29" and "2026-09-31"). A round-trip comparison here
+	// was tried and red-proofed as dead code.
 	day, err := time.Parse(capturedOnLayout, capturedOn)
-	if err != nil || day.Format(capturedOnLayout) != capturedOn {
+	if err != nil {
 		return false
 	}
 	utc := capturedAt.UTC()
