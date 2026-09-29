@@ -472,8 +472,10 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     materialize** (the community-trees round, `007_community_trees.sql`, client `AppSchema` v23).
 //     The first is the adder moving a community tree's pin (decision 5): a new row on the tree's
 //     location chain, and a refusal the client must be able to act on — `forbidden` for anybody but
-//     the adder, `conflict` within 10 m of another tree the caller can see, `not_found` for a tree
-//     this service does not hold. The second is the adder withdrawing the tree for everyone while
+//     the adder on a tree they can see, `conflict` within 10 m of another tree the caller can see,
+//     `not_found` for a tree this service does not hold **or one the caller cannot see** (no
+//     existence oracle: a stranger's act on a withdrawn, taken-down, unpublished or erased tree is
+//     answered as the same act on an unknown id). The second is the adder withdrawing the tree for everyone while
 //     nobody else has built on it (decision 8), `conflict` otherwise. `species_claim` and
 //     `species_correction` also materialize from 007 on, for a community tree's adder only, and
 //     never refuse — see `store.materializeSpecies`.
@@ -950,7 +952,9 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		return failed(apierr.Forbidden, "That dispute belongs to a different contributor.")
 	case errors.Is(err, store.ErrTreeNotFound):
 		// §3A: the tree never reached this service (its `add_tree` went red), or it was withdrawn,
-		// taken down or erased. Non-retryable: nothing the client re-sends will bring it back.
+		// taken down or erased, or it is somebody else's tree the caller cannot see — one message
+		// for all of them, so the answer says nothing about which. Non-retryable: nothing the
+		// client re-sends will bring it back.
 		return failed(apierr.NotFound, "That tree is not on the map any more.")
 	case errors.Is(err, store.ErrNotTheAdder):
 		// Decision 5 and §4: only the adder moves the pin or withdraws the tree, and nobody does
