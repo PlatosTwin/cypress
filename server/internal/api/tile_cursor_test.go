@@ -83,14 +83,27 @@ func TestTheTileCursorCarriesNoReadableTime(t *testing.T) {
 		}
 	}
 
-	// The same position asked for twice is sealed twice, differently, at one length: nothing about
+	// One identical position sealed twice gives two different cursors of one length: nothing about
 	// the stamp is in the length, and two cursors cannot be compared for equality of position.
-	again := readTile(t, h, stranger, tile, "", 1, settled)
-	if *again.NextCursor == *page.NextCursor {
+	position := tileCursor{At: stamped, ID: first}
+	one, err := h.server.sealTileCursor(tile, position)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := h.server.sealTileCursor(tile, position)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one == two {
 		t.Fatal("two seals of one position are byte-identical; the nonce is not fresh")
 	}
-	if len(*again.NextCursor) != len(*page.NextCursor) {
-		t.Fatalf("cursor lengths %d and %d differ for one position", len(*again.NextCursor), len(*page.NextCursor))
+	later, err := h.server.sealTileCursor(tile, tileCursor{At: stamped.Add(123456 * time.Microsecond), ID: maxUUID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one) != len(two) || len(one) != len(later) || len(one) != len(*page.NextCursor) {
+		t.Fatalf("cursor lengths %d, %d, %d and %d differ; the length says something about the position",
+			len(one), len(two), len(later), len(*page.NextCursor))
 	}
 	// The control: the cursor still works — page two is the other tree, and nothing is repeated.
 	second := readTile(t, h, stranger, tile, *page.NextCursor, 1, settled)
