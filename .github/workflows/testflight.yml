@@ -170,6 +170,8 @@ jobs:
       shards: ${{ steps.read.outputs.shards }}
       ships: ${{ steps.scope.outputs.ships }}
       tests: ${{ steps.scope.outputs.tests }}
+      decision: ${{ steps.scope.outputs.decision }}
+      server: ${{ steps.server.outputs.run }}
       notes: ${{ steps.notes.outputs.state }}
     steps:
       # `fetch-depth: 0` because the ships decision below diffs against the previous tip, and a
@@ -287,10 +289,9 @@ jobs:
           # byte-identical, and minting a build for one is the #1 / #215 / #31 harm exactly;
           # found while holding PR #156, which would have minted one.
           #
-          # It must not be doc-only either, and the reason is concrete rather than general:
-          # `CypressTests/GoldenWireFixtureTests` reads `server/testdata/grove.json` and
-          # `proximity_conflict.json` off disk, so regenerating a Go-side fixture can turn the
-          # iOS unit suite red. A `server/` change has to RUN.
+          # Whether it must RUN the iOS suite is a narrower question, and since the owner's ruling of
+          # 2026-09-28 it has a narrower answer — see `SERVER_ONLY` below. Most of `server/` is now
+          # the FOURTH decision: tested, by the Go suite on ubuntu, just not by this one.
           #
           # `WEB_ONLY` is the web version (W-A, docs/design-proposals/2026-09-10-web-version.md).
           # It is a THIRD set, deliberately not folded into either of the two above, because it
@@ -302,7 +303,7 @@ jobs:
           #     archive input and a web-only commit leaves the app byte-identical. Minting a
           #     build for one is #1 / #215 / #31 arriving through a new door.
           #   * it must not RUN the Xcode suite either, which is where it parts company with
-          #     `server/`. `server/` has to run because `CypressTests/GoldenWireFixtureTests`
+          #     `server/testdata/`, which has to run because `CypressTests/GoldenWireFixtureTests`
           #     reads `server/testdata/*.json` off disk, so a Go-side fixture can turn the iOS
           #     suite red. Nothing in `CypressTests` or `CypressUITests` opens a file under
           #     `web/` — the web app is TypeScript over the *published* city packs and shares no
@@ -320,6 +321,39 @@ jobs:
           # rather than as `Tools/web_*`: a blanket prefix is how `Tools/fetch_seed.sh`, a
           # genuine build input, would eventually be swept up by a sibling named to match.
           WEB_ONLY='web/|Tools/run_web_tests\.sh$|Tools/verify_web_test_log\.sh$'
+          # `SERVER_ONLY` is the Go sync service, and it is the FOURTH decision (owner ruling,
+          # 2026-09-28): a pull request that changes only the Go server stops paying 34 minutes
+          # of macOS for a suite that cannot see it. It mirrors `WEB_ONLY` exactly — must not
+          # SHIP (see `server/` above), must not RUN the Xcode suite, is NOT prose, and IS tested:
+          # by `.github/workflows/server.yml`, which this workflow calls as its `server` job and
+          # which `gate` refuses to pass without. That last clause is where it goes further than
+          # the web did, and the reason is written at the `server` job below.
+          #
+          # **Two things under `server/` DO reach the iOS suite, and `testable=` carves both back
+          # in by name.** A regex cannot say "server/ except server/testdata/" — ERE has no
+          # lookahead — so `SERVER_ONLY` is the whole directory and the exceptions are added back
+          # to the testable list afterwards, on the same line, where `DeployPathsAgreeTests` reads
+          # them:
+          #
+          #   * `SERVER_IOS_READS` — CONTENT the iOS suite opens.
+          #     `CypressTests/GoldenWireFixtureTests` decodes `server/testdata/grove.json` and
+          #     `proximity_conflict.json`, so regenerating a Go-side fixture can turn the iOS unit
+          #     suite red. Checked 2026-09-28: that is the only `"server/…"` path literal in
+          #     `CypressTests/` or `CypressUITests/`, and `DeployPathsAgreeTests` now finds those
+          #     literals itself and fails if one is not covered here.
+          #   * a REMOVED path under `server/` — EXISTENCE the iOS suite checks.
+          #     `CypressTests/DocumentCitationGuardTests` fails when a document under `docs/` cites
+          #     a file that is not on disk, and `docs/` cites `server/README.md` sixteen times and
+          #     both `server/ci/` scripts once each. The owner's premise was that only
+          #     `server/testdata/` feeds the iOS tests; this is the one way it is not quite true.
+          #     Adding or editing a file cannot make a citation dangle, so only a deletion runs the
+          #     suite — including the old half of a rename, which is why `changed` below is read
+          #     with `--no-renames`.
+          #
+          # Anchored with `^(…)` like the others. `server/` with its slash, so a root file named
+          # `server.md` or a directory `serverless/` is not swept up.
+          SERVER_ONLY='server/'
+          SERVER_IOS_READS='server/testdata/'
           # The two root git-metadata files, added to the run-but-do-not-ship set by the round
           # that created `web/` — because that round is the one that walked into the gap.
           #
@@ -359,7 +393,7 @@ jobs:
           # that starts with `NO_ARCHIVE=`, and a continuation would leave the tokens below the
           # first line unchecked — a gate passing on half the list. `$DOC_ONLY` is interpolated
           # by name and not re-typed, which that same test asserts.
-          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$GIT_METADATA|$WEB_ONLY|$DOC_ONLY"
+          NO_ARCHIVE="\.github/|CypressTests/|CypressUITests/|server/|Tools/ui-test-shards\.txt$|Tools/run_tests\.sh$|Tools/verify_test_log\.sh$|Tools/test_harness_guards\.sh$|$GIT_METADATA|$SERVER_ONLY|$WEB_ONLY|$DOC_ONLY"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # The escape hatch: a manual run tests everything and ships. This is what makes the
@@ -367,6 +401,7 @@ jobs:
             # prove it (signing, export options, the upload step) is run by hand.
             echo "tests=true" >> "$GITHUB_OUTPUT"
             echo "ships=true" >> "$GITHUB_OUTPUT"
+            echo "decision=suite" >> "$GITHUB_OUTPUT"
             echo "manual run — the suite runs and it ships"
             exit 0
           fi
@@ -388,50 +423,97 @@ jobs:
           if [ -z "$before" ]; then
             echo "tests=true" >> "$GITHUB_OUTPUT"
             echo "ships=true" >> "$GITHUB_OUTPUT"
+            echo "decision=suite" >> "$GITHUB_OUTPUT"
             echo "::notice::could not determine the previous tip — running and shipping rather than guessing"
             exit 0
           fi
 
-          changed="$(git diff --name-only "$before" "${{ github.sha }}")"
+          # `--no-renames`, and it matters in both directions. With rename detection on — git's
+          # default for `git diff` since 2.9 — a rename is listed under its NEW name only, so the
+          # path it left is invisible here. Moving `Cypress/Foo.swift` to `docs/foo.md` would then
+          # read as prose-only; renaming `server/README.md` would hide the removal that
+          # `SERVER_ONLY`'s carve-back exists to see. Without renames, a move is a deletion plus an
+          # addition and both paths are judged.
+          changed="$(git diff --no-renames --name-only "$before" "${{ github.sha }}")"
+          removed="$(git diff --no-renames --diff-filter=D --name-only "$before" "${{ github.sha }}")"
           echo "changed paths:"; echo "$changed" | sed 's/^/  /'
+          # Handed to the `server` step below, which asks a different question of the same diff.
+          printf '%s\n' "$changed" > "$RUNNER_TEMP/changed-paths.txt"
 
-          # The containment that makes `ships=true` imply `tests=true` still holds, and it is
-          # worth restating now that there are three sets rather than two: `NO_ARCHIVE` is built
-          # from `$WEB_ONLY` and `$DOC_ONLY`, which is exactly the union this line subtracts. So
-          # nothing can be buildable without also being testable, and the `release` job can never
-          # be reached by a run whose suite did not execute.
-          testable="$(printf '%s\n' "$changed" | grep -vE "^($WEB_ONLY|$DOC_ONLY)" || true)"
+          # The containment that makes `ships=true` imply `tests=true` still holds with four sets:
+          # `NO_ARCHIVE` interpolates `$SERVER_ONLY`, `$WEB_ONLY` and `$DOC_ONLY`, which is exactly
+          # the union this line subtracts. So nothing can be buildable without also being testable,
+          # and the `release` job can never be reached by a run whose suite did not execute. The two
+          # carve-backs only ever ADD paths to `testable`, so they cannot break that.
+          #
+          # One line, however long, for `DeployPathsAgreeTests`: it reads the FIRST line starting
+          # `testable=`, takes the predicates out of its first `^(…)` alternation, and checks the
+          # carve-backs on the same line. The trailing `sed` drops the blank line an empty input
+          # leaves, so an empty diff is still an empty `testable`.
+          testable="$( { printf '%s\n' "$changed" | grep -vE "^($SERVER_ONLY|$WEB_ONLY|$DOC_ONLY)"; printf '%s\n' "$changed" | grep -E "^($SERVER_IOS_READS)"; printf '%s\n' "$removed" | grep -E "^($SERVER_ONLY)"; } | sort -u | sed '/^$/d' || true)"
           buildable="$(printf '%s\n' "$changed" | grep -vE "^($NO_ARCHIVE)" || true)"
+
+          non_prose="$(printf '%s\n' "$changed" | grep -vE "^($DOC_ONLY)" || true)"
+          if [ -z "$testable" ] && [ -n "$non_prose" ]; then
+            # **Web and server together run the suite.** Each carve-out is tested elsewhere, but
+            # each notice below is a claim about the WHOLE diff — "this diff is web-only", "this
+            # diff is server-only" — and neither is true of a diff that has both. A fifth notice
+            # would be a fifth string for CLAUDE.md to teach. The mix is rare, so it takes the
+            # conservative answer rather than a new sentence: the iOS suite runs, and the Go suite
+            # still runs too (the `server` step decides that independently).
+            web_part="$(printf '%s\n' "$non_prose" | grep -E "^($WEB_ONLY)" || true)"
+            server_part="$(printf '%s\n' "$non_prose" | grep -E "^($SERVER_ONLY)" || true)"
+            if [ -n "$web_part" ] && [ -n "$server_part" ]; then
+              echo "web and server paths in one diff: neither the web-only nor the server-only notice would be true of all of it, so the suite runs"
+              testable="$non_prose"
+            fi
+          fi
 
           if [ -z "$changed" ] || [ -z "$testable" ]; then
             echo "tests=false" >> "$GITHUB_OUTPUT"
             echo "ships=false" >> "$GITHUB_OUTPUT"
-            # TWO notices, not one widened notice, and the reason is that a notice is a CLAIM.
-            # There are now two different ways to reach this branch and they are not the same
-            # fact about the diff: prose has nothing to test anywhere, while a web-only change is
-            # tested — on ubuntu, by web.yml — just not here. One sentence covering both would
-            # have to say something vague enough to be true of each, and the reader of a skipped
-            # required check is exactly the reader who cannot afford a vague sentence.
+            # THREE notices, not one widened notice, and the reason is that a notice is a CLAIM.
+            # There are three different ways to reach this branch and they are not the same fact
+            # about the diff: prose has nothing to test anywhere, while a web-only or a
+            # server-only change is tested — on ubuntu, by web.yml or by server.yml — just not by
+            # this suite. One sentence covering all three would have to say something vague
+            # enough to be true of each, and the reader of a skipped required check is exactly
+            # the reader who cannot afford a vague sentence.
             #
-            # Keeping the prose wording byte-identical is deliberate too: CLAUDE.md tells a
-            # reader to look for these words before citing a green check as evidence, and a
+            # Keeping the prose and web wording byte-identical is deliberate too: CLAUDE.md tells
+            # a reader to look for these words before citing a green check as evidence, and a
             # quoted string that quietly stops existing is how that instruction rots.
             #
-            # No backticks in either string, and that is not a style preference. It is a
+            # No backticks in any of these strings, and that is not a style preference. It is a
             # DOUBLE-quoted shell string, so `word` is command substitution: written with them,
             # the shell ran `gate` as a command, got nothing, and silently deleted the word from
             # the notice a reader sees. Harmless with that word; arbitrary execution with a
             # different one.
-            non_prose="$(printf '%s\n' "$changed" | grep -vE "^($DOC_ONLY)" || true)"
+            not_web="$(printf '%s\n' "$non_prose" | grep -vE "^($WEB_ONLY)" || true)"
+            not_server="$(printf '%s\n' "$non_prose" | grep -vE "^($SERVER_ONLY)" || true)"
             if [ -z "$non_prose" ]; then
+              echo "decision=prose" >> "$GITHUB_OUTPUT"
               echo "::notice::only prose changed (docs/, graphify-out/ or a root *.md), so no test can exercise it and no build is minted. The suite is skipped deliberately, and the gate job checks that it was skipped for this reason. Run this workflow manually (workflow_dispatch) to force a full run."
-            else
+            elif [ -z "$not_web" ]; then
+              echo "decision=web-only" >> "$GITHUB_OUTPUT"
               echo "the web paths in this diff:"; echo "$non_prose" | sed 's/^/  /'
               echo "::notice::this diff is web-only (web/, Tools/run_web_tests.sh, Tools/verify_web_test_log.sh), possibly alongside prose. It is NOT prose and it IS tested — by .github/workflows/web.yml on ubuntu, which is where the web suite lives. Nothing here is an input to the iOS app or its tests, so this workflow skips its suite deliberately and mints no build; the gate job checks that it was skipped for this reason. Read the web workflow's run for this commit, not this one, to know whether the web is green."
+            elif [ -z "$not_server" ]; then
+              echo "decision=server-only" >> "$GITHUB_OUTPUT"
+              echo "the server paths in this diff:"; echo "$non_prose" | sed 's/^/  /'
+              echo "::notice::this diff is server-only (server/, outside server/testdata/, adding or editing files but removing none), possibly alongside prose. It is NOT prose and it IS tested — by .github/workflows/server.yml, which this workflow runs as its server job, against Postgres on ubuntu. Nothing here is an input to the iOS app or its tests, so the iOS suite is skipped deliberately and no build is minted; the gate job checks that it was skipped for this reason AND that the server job succeeded. Read the Server run for this commit to know whether the Go service is green."
+            else
+              # Unreachable by construction: `testable` is empty, so every non-prose path is web or
+              # server, and the mix of the two was turned into a suite run above. Reaching here
+              # means the predicates and this ladder disagree, and a guess would be a notice that
+              # lies. Fail `plan`, which fails `gate`.
+              echo "::error::plan could not name why the suite is being skipped. Not prose, not web-only, not server-only: $(printf '%s ' $not_web)"
+              exit 1
             fi
             exit 0
           fi
 
+          echo "decision=suite" >> "$GITHUB_OUTPUT"
           echo "tests=true" >> "$GITHUB_OUTPUT"
           echo "the suite runs — these are not prose:"; echo "$testable" | sed 's/^/  /'
 
@@ -441,6 +523,82 @@ jobs:
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
             echo "shipping — these can affect the app:"; echo "$buildable" | sed 's/^/  /'
+          fi
+
+      # ── Does this pull request owe the Go suite a run? ────────────────────────────────
+      # A different question from `tests`, asked of the same diff, and answered from a list this
+      # file does not keep: `server.yml`'s own `on.push.paths`. That list is the one
+      # `server/ci/check_trigger_paths.sh` holds to account — every file a Go test opens,
+      # including the four Swift files the wire-vocabulary tests parse — so reading it here means
+      # there is ONE list of what starts the Go suite, the same rule `read` above follows for the
+      # shard matrix. A second copy written into this step would drift the day a fifth reader
+      # was added, and the Go guard for it would silently stop running on pull requests.
+      #
+      # **Pull requests only.** On a push to main `server.yml` starts itself from that same list,
+      # and running it from here too would be the suite twice for one commit. `gate` requires the
+      # `server` job's result only when this says `run=true`.
+      #
+      # Globs are translated for the three shapes GitHub's filter syntax gives meaning to that
+      # the list uses — `**`, `*` and literal characters. Any other special character (`?`, `[`,
+      # `!`, `+`) stops the step rather than being guessed at: a mistranslated pattern is a Go
+      # guard that stops running with nothing saying so, and a crashed `plan` is a red `gate`.
+      #
+      # The control at the end is the calibration this answer needs every run: any changed path
+      # under `server/` MUST have matched, because `server/**` is on the list. If it did not, the
+      # reader of the list is broken, whatever it printed.
+      - id: server
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "not a pull request — server.yml starts itself on a push to main, and workflow_dispatch runs it by hand"
+            exit 0
+          fi
+          if [ ! -f "$RUNNER_TEMP/changed-paths.txt" ]; then
+            # `scope` could not name the diff and chose "run everything". So does this.
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::the diff could not be determined, so the Go suite runs rather than guessing"
+            exit 0
+          fi
+          patterns="$(yq '.on.push.paths[]' .github/workflows/server.yml)"
+          [ -n "$patterns" ] || { echo "::error::read no on.push.paths from .github/workflows/server.yml — cannot tell whether this diff needs the Go suite"; exit 1; }
+          echo "server.yml runs on:"; echo "$patterns" | sed 's/^/  /'
+
+          hits="$(python3 - "$patterns" "$RUNNER_TEMP/changed-paths.txt" <<'PY'
+          import re
+          import sys
+
+          def translate(glob):
+              if re.search(r"[?\[\]!+]", glob):
+                  sys.exit(f"cannot translate the path filter {glob!r}: only **, * and literals are understood here")
+              out, i = "", 0
+              while i < len(glob):
+                  if glob.startswith("**", i):
+                      out, i = out + ".*", i + 2
+                  elif glob[i] == "*":
+                      out, i = out + "[^/]*", i + 1
+                  else:
+                      out, i = out + re.escape(glob[i]), i + 1
+              return re.compile(out + r"\Z")
+
+          filters = [translate(p) for p in sys.argv[1].splitlines() if p.strip()]
+          with open(sys.argv[2], encoding="utf-8") as f:
+              for path in (line.strip() for line in f):
+                  if path and any(rx.match(path) for rx in filters):
+                      print(path)
+          PY
+          )"
+
+          if grep -q '^server/' "$RUNNER_TEMP/changed-paths.txt" && [ -z "$hits" ]; then
+            echo "::error::this diff changes server/ and none of it matched server.yml's path filters, which include server/**. The filter reader is broken; refusing to decide."
+            exit 1
+          fi
+          if [ -n "$hits" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "the Go suite runs — these are its inputs:"; echo "$hits" | sed 's/^/  /'
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "nothing here is an input to the Go suite"
           fi
 
       # ── Does this pull request carry its release note? ────────────────────────────────
@@ -477,7 +635,8 @@ jobs:
           fi
           if [ "${{ steps.scope.outputs.tests }}" != "true" ]; then
             echo "state=not-required" >> "$GITHUB_OUTPUT"
-            # `tests=false` now covers two shapes, prose and web-only, and neither owes a note.
+            # `tests=false` now covers three shapes, prose, web-only and server-only, and none owes
+            # a note. Server-only follows web-only's reasoning exactly: no build, so no field.
             # For prose that is the ruling's own wording. For web-only it follows from what the
             # note IS: one tester-voice line for TestFlight's What to Test, compiled into a
             # BUILD. A web-only pull request mints no build, so there is no field for its
@@ -485,7 +644,7 @@ jobs:
             # something to announce it will need its own channel; borrowing TestFlight's would
             # put a line about a web page in front of people holding a phone build that does not
             # contain it. Written down because it is a decision, not an oversight.
-            echo "no iOS-testable change (prose, or web-only) — no build is minted, so no release note is required (one is welcome anyway; it waits in docs/whats-new/ for the next build)"
+            echo "no iOS-testable change (prose, web-only or server-only) — no build is minted, so no release note is required (one is welcome anyway; it waits in docs/whats-new/ for the next build)"
             exit 0
           fi
           # A branch name may contain slashes; a note filename must not, or the suggestion would
@@ -639,6 +798,43 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # ── The Go suite, on pull requests, where the required check can see it ───────────────
+  # Owner ruling, 2026-09-28: a server-only pull request skips the iOS suite, and the Go suite
+  # becomes required. The second half has a trap, and this job is how it is avoided.
+  #
+  # **A required check whose workflow is path-filtered never reports on a pull request outside
+  # those paths**, and that pull request then waits forever at "Expected — Waiting for status to be
+  # reported" (E225; it is why `pull_request` above carries no `paths-ignore`). So `server.yml`
+  # could not simply be made required while it kept its `paths:` filter — and taking the filter
+  # off would start a Postgres container on every documentation pull request to test nothing.
+  #
+  # So the Go suite is not a SECOND required check. It is a job of THIS workflow, called from
+  # `server.yml` via `workflow_call`, and `gate` — the one context the ruleset already requires,
+  # which always reports — refuses unless it did what `plan` said:
+  #
+  #   * `plan` says `server=true` (the diff touches something on `server.yml`'s own path list) →
+  #     this job must have SUCCEEDED. Not "did not fail": a cancelled or skipped Go suite is not a
+  #     pass.
+  #   * `plan` says `server=false` → this job must have been SKIPPED.
+  #   * `plan` says `decision=server-only` → `server` must also be `true`, so a server-only diff
+  #     can never pass with the iOS suite skipped AND the Go suite skipped. That is the false green
+  #     the fourth decision would otherwise invite, and it is checked rather than inferred.
+  #
+  # **Every** pull request touching a Go input is held to the Go suite this way, not only the
+  # server-only ones. A mixed Go + Swift pull request used to merge on the iOS suite's green alone
+  # with the Go run advisory; now both must be green, because both are behind `gate`.
+  #
+  # `server.yml` has no `pull_request` trigger for the same reason: it would be the suite twice,
+  # racing this run for the same concurrency group. `check_trigger_paths.sh` refuses one if it
+  # comes back. A push to main still runs `server.yml` by its own `push` trigger — `gate` is not
+  # required there, and nothing is waiting on it.
+  server:
+    needs: plan
+    if: needs.plan.outputs.server == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/server.yml
+
   # ── One stable context for the branch ruleset to require ──────────────────────────────
   # The UI matrix's check contexts are named "ui (1)"…"ui (N)", and N is DERIVED from
   # Tools/ui-test-shards.txt. Requiring those by name would break the day somebody adds a shard
@@ -649,11 +845,13 @@ jobs:
   # does not treat a skipped required check as a failed one — the branch would go mergeable
   # precisely when the suite went red. So it always runs, and reads the results itself.
   #
-  # Since the suite can now be skipped ON PURPOSE for a prose-only or web-only change, this job is the only
-  # thing standing between that optimization and a check that goes green without testing anything.
-  # It does not accept a skip; it accepts a skip that MATCHES plan's decision.
+  # Since the suite can now be skipped ON PURPOSE for a prose-only, web-only or server-only change,
+  # this job is the only thing standing between that optimization and a check that goes green
+  # without testing anything. It does not accept a skip; it accepts a skip that MATCHES plan's
+  # decision. And since the Go suite runs here too (the `server` job above), it holds that job to
+  # plan's `server` answer in the same way.
   gate:
-    needs: [plan, unit, ui]
+    needs: [plan, unit, ui, server]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -664,11 +862,15 @@ jobs:
           plan_result="${{ needs.plan.result }}"
           tests="${{ needs.plan.outputs.tests }}"
           notes="${{ needs.plan.outputs.notes }}"
+          decision="${{ needs.plan.outputs.decision }}"
+          server_needed="${{ needs.plan.outputs.server }}"
           unit="${{ needs.unit.result }}"
           ui="${{ needs.ui.result }}"
-          echo "plan:  $plan_result (tests=${tests:-<none>}, notes=${notes:-<none>})"
-          echo "unit:  $unit"
-          echo "ui:    $ui"
+          server="${{ needs.server.result }}"
+          echo "plan:   $plan_result (decision=${decision:-<none>}, tests=${tests:-<none>}, server=${server_needed:-<none>}, notes=${notes:-<none>})"
+          echo "unit:   $unit"
+          echo "ui:     $ui"
+          echo "server: $server"
 
           # **plan is checked FIRST, and the order is the whole safety argument.** If plan dies,
           # `tests` is the empty string — which is not 'true', so unit and ui skip, and the
@@ -681,6 +883,24 @@ jobs:
             true|false) ;;
             *) echo "::error::plan succeeded but published tests='${tests}' — expected true or false"; exit 1 ;;
           esac
+          # The same guard for the two outputs added with the fourth decision. An empty string is
+          # what a renamed, skipped or crashed step publishes, and it must not read as "no".
+          case "$server_needed" in
+            true|false) ;;
+            *) echo "::error::plan succeeded but published server='${server_needed}' — expected true or false. Nothing here knows whether the Go suite was owed a run."; exit 1 ;;
+          esac
+          case "$decision" in
+            suite|prose|web-only|server-only) ;;
+            *) echo "::error::plan succeeded but published decision='${decision}' — expected suite, prose, web-only or server-only"; exit 1 ;;
+          esac
+          # The decision and the tests flag are two outputs of one step; hold them to each other so
+          # that neither can drift into meaning something the other does not.
+          if [ "$decision" = "suite" ] && [ "$tests" != "true" ]; then
+            echo "::error::plan decided the suite runs but published tests=$tests"; exit 1
+          fi
+          if [ "$decision" != "suite" ] && [ "$tests" != "false" ]; then
+            echo "::error::plan decided $decision but published tests=$tests"; exit 1
+          fi
 
           if [ "$tests" = "true" ]; then
             # Explicit equality, not `!= failure`: a cancelled or skipped dependency is also not a
@@ -697,7 +917,28 @@ jobs:
               || { echo "::error::plan said tests=false but unit is '$unit', not 'skipped'"; exit 1; }
             [ "$ui" = "skipped" ] \
               || { echo "::error::plan said tests=false but ui is '$ui', not 'skipped'"; exit 1; }
-            echo "plan said nothing here is exercisable by the iOS suite — prose, or web-only (see plan's notice for which): the suite was skipped, and skipped for that reason"
+            echo "plan said nothing here is exercisable by the iOS suite ($decision — see plan's notice): the suite was skipped, and skipped for that reason"
+          fi
+
+          # ── The Go suite ────────────────────────────────────────────────────────────────
+          # **A server-only diff must have been tested by SOMETHING.** The iOS suite was skipped
+          # for it just above; this refuses the case where the Go suite was not owed a run either,
+          # which is the only way the fourth decision could go green with nothing having run.
+          # Only on a pull request: on a push to main `server.yml` runs by its own trigger and
+          # `plan` says `server=false` on purpose, and this job is not required there.
+          if [ "$decision" = "server-only" ] && [ "${{ github.event_name }}" = "pull_request" ] \
+             && [ "$server_needed" != "true" ]; then
+            echo "::error::plan decided server-only but did not ask for the Go suite (server=$server_needed) — this diff would merge having been tested by nothing"
+            exit 1
+          fi
+          if [ "$server_needed" = "true" ]; then
+            [ "$server" = "success" ] \
+              || { echo "::error::this diff touches the Go service's inputs and the Server suite did not succeed ($server) — read the server job's log above; its judge prints the reason"; exit 1; }
+            echo "the Server suite ran against Postgres and succeeded"
+          else
+            [ "$server" = "skipped" ] \
+              || { echo "::error::plan said the Go suite was not owed a run, but the server job is '$server', not 'skipped'"; exit 1; }
+            echo "nothing here is an input to the Go suite: the server job was skipped, and skipped for that reason"
           fi
 
           # ── The release note ────────────────────────────────────────────────────────────
