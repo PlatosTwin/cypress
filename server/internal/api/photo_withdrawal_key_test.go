@@ -167,3 +167,99 @@ func TestAStrangerNamingSomebodyElsesClientKeyChangesNothing(t *testing.T) {
 		t.Fatal("a refused withdrawal stopped the photograph being served")
 	}
 }
+
+// withdrawAsThePhoneSpells posts `photo_withdrawal` with the key as Swift encodes a UUID —
+// uppercase — which is what the arrival-order guard below has to match.
+func withdrawAsThePhoneSpells(t *testing.T, h *harness, bearer string, tree, key uuid.UUID) syncResult {
+	t.Helper()
+	return h.syncOne(t, bearer, map[string]any{
+		"client_uuid": uuid.New(), "kind": "photo_withdrawal", "tree_uuid": tree,
+		"occurred_at": time.Now().UTC(),
+		"payload": json.RawMessage(`{"treeID":"` + strings.ToUpper(tree.String()) +
+			`","photoID":"` + strings.ToUpper(key.String()) + `"}`),
+	})
+}
+
+// rowsCarrying reads every row this key made, with its tombstone, straight from the table.
+func rowsCarrying(t *testing.T, h *harness, key uuid.UUID) map[uuid.UUID]*time.Time {
+	t.Helper()
+	rows, err := h.store.Pool().Query(context.Background(),
+		`SELECT id, deleted_at FROM photos WHERE client_uuid = $1`, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	found := map[uuid.UUID]*time.Time{}
+	for rows.Next() {
+		var id uuid.UUID
+		var at *time.Time
+		if err := rows.Scan(&id, &at); err != nil {
+			t.Fatal(err)
+		}
+		found[id] = at
+	}
+	return found
+}
+
+// TestABeginAfterItsOwnWithdrawalIsBornDeleted is review finding 5 of #194: the withdrawal is
+// committed before the begin it takes back. It answers `applied`, because there is nothing to take
+// down yet — and the begin that arrives afterwards must not then publish the photograph.
+func TestABeginAfterItsOwnWithdrawalIsBornDeleted(t *testing.T) {
+	h := newHarness(t)
+	owner := h.signIn(t, nil)
+	reader := h.registerDeviceToken(t, uuid.New())
+	tree, key := uuid.New(), uuid.New()
+
+	if result := withdrawAsThePhoneSpells(t, h, owner.AccessToken, tree, key); result.Status != "applied" {
+		t.Fatalf("status = %q (%s), want applied — a withdrawal of nothing yet is a success",
+			result.Status, codeOf(result.Error))
+	}
+
+	_, status := beginAllowingFailure(t, h, owner.AccessToken, tree, &key)
+	if status != http.StatusNotFound {
+		t.Errorf("begin after its own withdrawal answered %d, want 404 — anything else hands the "+
+			"phone a presigned PUT for a photograph its contributor already removed", status)
+	}
+
+	rows := rowsCarrying(t, h, key)
+	if len(rows) != 1 {
+		t.Fatalf("the begin left %d rows under its key, want exactly 1 (born deleted)", len(rows))
+	}
+	for photo, at := range rows {
+		if at == nil {
+			t.Errorf("the begin after its withdrawal created a LIVE row %v — the contributor was "+
+				"told \"Photo removed\" and the photograph is public", photo)
+		}
+		if onTheProfile(t, h, reader, tree, photo) || photoIsServed(t, h, reader, photo) {
+			t.Errorf("photograph %v, begun after its own withdrawal, is served to another device", photo)
+		}
+	}
+
+	// A replay of the same begin gets the same answer, from the row this time.
+	if _, again := beginAllowingFailure(t, h, owner.AccessToken, tree, &key); again != http.StatusNotFound {
+		t.Errorf("a replayed begin answered %d, want 404", again)
+	}
+}
+
+// TestAStrangersEarlierWithdrawalDoesNotPreemptABegin is the scope of the guard above: somebody
+// else's withdrawal naming this key arms nothing, so a stranger who guessed a key cannot silence a
+// photograph before it arrives.
+func TestAStrangersEarlierWithdrawalDoesNotPreemptABegin(t *testing.T) {
+	h := newHarness(t)
+	owner := h.signIn(t, nil)
+	stranger := h.registerDeviceToken(t, uuid.New())
+	reader := h.registerDeviceToken(t, uuid.New())
+	tree, key := uuid.New(), uuid.New()
+
+	if result := withdrawAsThePhoneSpells(t, h, stranger, tree, key); result.Status != "applied" {
+		t.Fatalf("precondition: the stranger's withdrawal of nothing answered %q (%s)",
+			result.Status, codeOf(result.Error))
+	}
+	photo := beginSigned(t, h, owner.AccessToken, tree, key)
+	if deletedAt(t, h, photo) != nil {
+		t.Fatal("a stranger's earlier withdrawal made somebody else's photograph arrive deleted")
+	}
+	if !photoIsServed(t, h, reader, photo) || !onTheProfile(t, h, reader, tree, photo) {
+		t.Fatal("the owner's photograph is not served after a stranger's pre-emptive withdrawal")
+	}
+}

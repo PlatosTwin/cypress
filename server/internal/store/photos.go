@@ -134,6 +134,7 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 	now := s.now()
 
 	var begun BegunPhoto
+	begunWithdrawn := false
 	err := s.Tx(ctx, func(tx pgx.Tx) error {
 		if photo.ClientUUID != nil {
 			var id uuid.UUID
@@ -191,17 +192,50 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 			}
 		}
 
+		// ── A begin that arrives after its own withdrawal ────────────────────────────────────
+		//
+		// `measurementWasWithdrawn`'s argument, one table over. The withdrawal names the phone's
+		// id, which is this begin's key (report F30), and it can be committed first: it answered
+		// `applied` because there was nothing here to take down, and without this the begin would
+		// then create a live row that every reader is served — a photograph its contributor had
+		// already been told was removed. So the row is **born deleted**, in the transaction that
+		// inserts it, and the begin is then refused exactly as a replay after a withdrawal is
+		// (above): no presigned PUT, so no bytes land for a photograph nobody may publish.
+		//
+		// Owner-matched, so a stranger who guessed a key cannot pre-empt somebody else's
+		// photograph; with the scope, the arm exists only where the withdrawal would have been
+		// allowed anyway. The client does not reach this order today (its drain is single-flight
+		// and a local delete discards the unsent upload in the same transaction), so this is the
+		// service not relying on that.
+		var bornDeleted *time.Time
+		if photo.ClientUUID != nil {
+			withdrawn, err := photoWasWithdrawn(ctx, tx, *photo.ClientUUID, owner)
+			if err != nil {
+				return err
+			}
+			if withdrawn {
+				bornDeleted = &now
+			}
+		}
+
 		_, err := tx.Exec(ctx, `
 			INSERT INTO photos
 			    (id, tree_uuid, visit_client_uuid, user_id, device_id, shot_type,
 			     moderation_state, approval_reason, captured_at, width, height,
-			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at, captured_on)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17::date)
+			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at, captured_on,
+			     deleted_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17::date,
+			        $18)
 		`, photo.ID, photo.TreeUUID, photo.VisitClientUUID, owner.UserID, owner.DeviceID,
 			photo.ShotType, state, reason, photo.CapturedAt, photo.Width, photo.Height,
-			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now, photo.CapturedOn)
+			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now, photo.CapturedOn,
+			bornDeleted)
 		if err != nil {
 			return err
+		}
+		if bornDeleted != nil {
+			begunWithdrawn = true
+			return nil
 		}
 		begun = BegunPhoto{
 			ID: photo.ID, StorageKey: photo.StorageKey,
@@ -209,7 +243,28 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 		}
 		return nil
 	})
+	if err == nil && begunWithdrawn {
+		// Committed above — the born-deleted row is the record — and refused here, outside the
+		// transaction, because an error inside it would roll that record back.
+		return BegunPhoto{}, ErrPhotoWithdrawn
+	}
 	return begun, err
+}
+
+// photoWasWithdrawn reports whether this identity has already sent a `photo_withdrawal` naming this
+// begin's key. The payload carries the Swift property name and the phone's uppercase UUID string,
+// so the comparison is case-folded, as `measurementWasWithdrawn`'s is.
+func photoWasWithdrawn(ctx context.Context, tx pgx.Tx, key uuid.UUID, owner Owner) (bool, error) {
+	var withdrawn bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM contributions
+		     WHERE kind = 'photo_withdrawal'
+		       AND upper(payload ->> 'photoID') = upper($1)
+		       AND (($2::uuid IS NOT NULL AND user_id = $2) OR ($3::uuid IS NOT NULL AND device_id = $3))
+		)
+	`, key.String(), owner.UserID, owner.DeviceID).Scan(&withdrawn)
+	return withdrawn, err
 }
 
 // PhotoRecord is a stored photograph, as the read routes need it.
