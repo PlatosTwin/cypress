@@ -321,6 +321,17 @@ final class TreeProfileModel {
 
     // MARK: - Disputing a city record's data (RULINGS R79)
 
+    /// The dispute the reader asked to take back, while "Take back your report?" is up. The
+    /// confirmation dialog on `TreeProfileView` is driven by it; nothing is withdrawn until the
+    /// reader answers.
+    var pendingDataDisputeWithdrawal: UUID?
+
+    /// While a take-back is in flight. A second call returns at once rather than reaching the API,
+    /// whose answer to it would be `notFound` — "That report was already taken back." drawn beside
+    /// the restored *Report* action, a failure sentence about the reader's own success (PR #185's
+    /// review, finding 6; orchestrator ruling 10).
+    private(set) var isWithdrawingDataDispute = false
+
     /// Takes back this reader's own standing dispute.
     ///
     /// Its refusal lands in `recordDefectFailure` because the control sits in the record-defect
@@ -328,7 +339,13 @@ final class TreeProfileModel {
     /// argument). The reload that follows is what redraws the block: a withdrawn dispute is no
     /// longer this reader's open one, so the offer comes back `.raisable` from the store rather than
     /// from anything this method assumes.
+    ///
+    /// The in-flight guard covers the reload too, so the block has been redrawn from the store
+    /// before a second take-back can be asked for.
     func withdrawDataDispute(disputeID: UUID) async {
+        guard !isWithdrawingDataDispute else { return }
+        isWithdrawingDataDispute = true
+        defer { isWithdrawingDataDispute = false }
         recordDefectFailure = nil
         do {
             try await api.withdrawDataDispute(disputeID: disputeID)

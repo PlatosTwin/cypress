@@ -19,13 +19,30 @@
 //  of its own below, because the brief for this screen is that no refusal collapses into a generic
 //  error, reachable or not.
 //
-//  ── The 10 m floor refuses out loud ─────────────────────────────────────────────────────────
+//  ── The 10 m floor refuses out loud, and the refusal is true ─────────────────────────────────
 //  The owner's ruling of 2026-09-10 kept `DataDisputeLimits`' floor and required the refusal to be
 //  explained. A fix too coarse to place the tree is therefore never attached silently and never
-//  dropped silently: the location block says, with both numbers, that it was not used and what to
-//  turn on. The sentence is `DataDisputeCopy.refusal(_:)` for `.locationFixTooCoarse`, asked of the
-//  same pure function the API enforces with, so the words under the control and the rule that binds
-//  cannot disagree.
+//  dropped silently: the location block says, with the numbers it has, that it was not used and
+//  what would help. Whether the fix is too coarse is asked of `DataDisputeLimits.refusal` — the
+//  same pure function the API enforces with — so the block and the rule that binds cannot disagree.
+//
+//  **What would help is not always Settings** (PR #185's orchestrator rulings 6 and 9). Precise
+//  Location off is the one cause Settings can fix, and only then does the sentence send the reader
+//  there. A 20 m fix among buildings with Precise Location on is told to try in the open or wait,
+//  and a fix CoreLocation stated no radius for is refused without quoting the 25 m the provider
+//  substitutes for it — that number is the app's, not the phone's (`MapLocationProvider.Precision`).
+//  The block keeps listening while the screen is open, so a later, better fix replaces a refused one
+//  (ruling 7); and while a fix is still pending under the pin chip, *Send report* waits for it rather
+//  than sending "the pin is wrong" without the position the reporter asked to attach (ruling 8).
+//
+//  ── "There's no tree here" stands alone ─────────────────────────────────────────────────────
+//  The owner's ruling of 2026-09-28: choosing it clears the other three chips and disables them,
+//  and un-choosing it enables them again. An empty plot has no position, species or planted year to
+//  correct, and a report saying both would be two claims that contradict each other.
+//
+//  ── What the city has ───────────────────────────────────────────────────────────────────────
+//  Under each opened section, one quiet line quoting the record's own value (owner, 2026-09-28).
+//  `DataDisputeOnFile` has what it reads and why a missing value draws no line at all.
 //
 
 import Foundation
@@ -51,31 +68,61 @@ enum DataDisputeChoice: String, CaseIterable, Hashable, Sendable {
 
 // MARK: - Where the reporter is standing
 
+/// Everything the location block reads off the app's one provider at one moment.
+///
+/// The availability and `MapLocationProvider.Precision`, together, because the block's sentence
+/// needs both and they arrive from different callbacks: a reader who turns Precise Location on in
+/// Settings changes `precision` without necessarily changing the fix. One value, so the view can
+/// hand the model every change to either (`DataDisputeView`'s `onChange`).
+struct DataDisputeFixReading: Equatable, Sendable {
+    var availability: MapLocationProvider.Availability
+    var precision: MapLocationProvider.Precision = .ordinary
+}
+
+/// Why the block did not use a fix. Each arm has its own sentence (`DataDisputeCopy.locationRefusal`).
+enum DataDisputeLocationRefusal: Hashable, Sendable {
+    /// The fix states a radius over the floor. `isReduced` is whether Precise Location is off for
+    /// Cypress — the only case where Settings is the answer.
+    case tooCoarse(accuracyM: Double, requiredM: Double, isReduced: Bool)
+    /// CoreLocation stated no radius at all. Refused rather than taken on trust (ruling 9), and the
+    /// sentence quotes only the floor: the one number the reader could be shown here, 25 m, is the
+    /// provider's pessimistic substitute and nothing the phone said.
+    case accuracyUnknown(requiredM: Double, isReduced: Bool)
+
+    var isReduced: Bool {
+        switch self {
+        case let .tooCoarse(_, _, isReduced), let .accuracyUnknown(_, isReduced): return isReduced
+        }
+    }
+}
+
 /// What the location block knows, after the reporter has (or has not) asked for their position.
 ///
-/// Built from `MapLocationProvider.Availability` — the app's one location stack — and never from a
-/// second `CLLocationManager`. The provider is the same object screen 01 asks with, so a grant made
-/// here reports fixes everywhere, and a fix the map already holds is available here at once.
+/// Built from `MapLocationProvider` — the app's one location stack — and never from a second
+/// `CLLocationManager`. The provider is the same object screen 01 asks with, so a grant made here
+/// reports fixes everywhere, and a fix the map already holds is available here at once.
 enum DataDisputeLocation: Hashable, Sendable {
     /// Nobody has asked yet.
     case notAsked
-    /// Asked; the provider has no fix to give yet.
+    /// Asked; the provider has no fix to give yet. *Send report* waits while the pin chip is on.
     case waiting
     /// The phone will not say where it is — the reader refused (`servicesOff == false`) or Location
     /// Services are off for the whole device.
     case off(servicesOff: Bool)
     /// A fix good enough to place the tree, attached as the suggested position.
     case captured(TreeDataDispute.SuggestedLocation)
-    /// A fix the floor refused. It is **not** attached; the refusal is what the block says instead.
-    case refused(DataDisputeLimits.Refusal)
+    /// A fix that was not used. It is **not** attached; the refusal is what the block says instead.
+    case refused(DataDisputeLocationRefusal)
 
     /// The block's answer to the provider's current state.
     ///
-    /// A located fix is tested with `DataDisputeLimits.refusal` itself — the rule the API enforces —
-    /// asked about a dispute that raises only the location issue, so the only refusal it can return
-    /// is the one about the fix.
-    static func reading(_ availability: MapLocationProvider.Availability) -> DataDisputeLocation {
-        switch availability {
+    /// A fix with a stated radius is tested with `DataDisputeLimits.refusal` itself — the rule the
+    /// API enforces — asked about a dispute that raises only the location issue, so the only refusal
+    /// it can return is the one about the fix. A fix with no stated radius is refused here, before
+    /// the rule sees the substitute (`DataDisputeLocationRefusal.accuracyUnknown`).
+    static func reading(_ reading: DataDisputeFixReading) -> DataDisputeLocation {
+        let isReduced = reading.precision.isReduced
+        switch reading.availability {
         case .notAsked, .waitingForFix:
             return .waiting
         case .denied:
@@ -83,22 +130,103 @@ enum DataDisputeLocation: Hashable, Sendable {
         case .servicesOff:
             return .off(servicesOff: true)
         case let .located(coordinate, accuracyM):
+            guard reading.precision.accuracyIsKnown else {
+                return .refused(.accuracyUnknown(
+                    requiredM: DataDisputeLimits.positionResolutionRadiusM, isReduced: isReduced
+                ))
+            }
             let fix = TreeDataDispute.SuggestedLocation(coordinate: coordinate, accuracyM: accuracyM)
-            if let refusal = DataDisputeLimits.refusal(
+            if case let .locationFixTooCoarse(accuracyM, requiredM) = DataDisputeLimits.refusal(
                 issues: [.wrongLocation],
                 suggestions: TreeDataDispute.Suggestions(location: fix)
             ) {
-                return .refused(refusal)
+                return .refused(.tooCoarse(accuracyM: accuracyM, requiredM: requiredM, isReduced: isReduced))
             }
             return .captured(fix)
         }
     }
 
-    /// Whether the block should offer the way to Settings — the two states only Settings can fix.
+    /// Whether the block should offer the way to Settings — only for the states Settings can fix:
+    /// location off, and a fix refused **because Precise Location is off**. A fix refused with
+    /// Precise Location on is not helped by Settings, and offering it there sends the reader to a
+    /// switch that is already on (PR #185's review, finding 2).
     var offersSettings: Bool {
         switch self {
-        case .off, .refused: return true
+        case .off: return true
+        case let .refused(refusal): return refusal.isReduced
         case .notAsked, .waiting, .captured: return false
+        }
+    }
+
+    /// Whether a new reading from the provider replaces this one while the screen is open.
+    ///
+    /// Everything the reporter asked for and did not get follows the provider: a pending fix, a
+    /// refused one (ruling 7 — the first fix after `start()` is often coarse, and the next is often
+    /// fine), and location off (the reader went to Settings and came back). A **captured** fix does
+    /// not: it is the position the reporter was standing at when they accepted it, and a later one
+    /// quietly replacing it would move their report. `notAsked` does not either: nobody asked.
+    var followsTheProvider: Bool {
+        switch self {
+        case .waiting, .refused, .off: return true
+        case .notAsked, .captured: return false
+        }
+    }
+}
+
+// MARK: - What the city has
+
+/// The record's own values, for the one quiet line under each opened section (owner, 2026-09-28).
+///
+/// **Only what the record holds, and nothing when it holds nothing.** A missing value draws no line
+/// rather than "The city has no planted year": `nil` here means the copy of the inventory on this
+/// phone carries none, which is not the same statement as the city having none — a seed built
+/// before a column existed, or an adapter that does not read it, answers `nil` for a city that
+/// publishes the value (DECISIONS constraint 15: no civic content invented).
+struct DataDisputeOnFile: Hashable, Sendable {
+    /// The species as the profile names it: the common name, else the scientific one. A row whose
+    /// scientific name the ingest never read (RULINGS R54) is quoted in the city's own wording, or
+    /// not at all — the raw `:: …` string is not a name.
+    let species: String?
+    let plantedYear: Int?
+    /// The record's street address, else its coordinate. The address is the city's own column and
+    /// the thing a person standing on the block can compare; the coordinate is what the pin *is*,
+    /// and it is what is left when the record has no address.
+    let position: String?
+
+    init(species: String?, plantedYear: Int?, position: String?) {
+        self.species = species
+        self.plantedYear = plantedYear
+        self.position = position
+    }
+
+    init(_ profile: TreeProfile) {
+        if let species = profile.species {
+            if species.scientificNameIsUnread {
+                self.species = species.cityWordingForUnreadName
+            } else {
+                self.species = SpeciesPickCopy.chosen(species)
+            }
+        } else {
+            self.species = nil
+        }
+        self.plantedYear = profile.tree.plantedYear
+        if let address = profile.tree.address?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !address.isEmpty {
+            self.position = address
+        } else {
+            let coordinate = profile.tree.coordinate
+            self.position = String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
+        }
+    }
+
+    /// The value for one opened section, or `nil` when there is nothing to quote. "There's no tree
+    /// here" has no section of its own, and so no line.
+    func value(for choice: DataDisputeChoice) -> String? {
+        switch choice {
+        case .wrongPlace: return position
+        case .wrongSpecies: return species
+        case .wrongPlantedYear: return plantedYear.map(String.init)
+        case .noTree: return nil
         }
     }
 }
@@ -118,6 +246,37 @@ struct DataDisputeDraft: Hashable, Sendable {
 
     /// The stored issues these choices raise.
     var issues: Set<TreeDataDispute.IssueKind> { Set(choices.map(\.issue)) }
+
+    /// Turns a chip on or off, under the owner's rule that "There's no tree here" stands alone.
+    ///
+    /// Choosing it clears the other three; while it is on they cannot be chosen, and a tap on one is
+    /// ignored rather than quietly turning "no tree" off. Un-choosing it enables them again, unticked
+    /// — the values typed under them are still held, and come back if their chips are chosen again.
+    mutating func toggle(_ choice: DataDisputeChoice) {
+        if choices.contains(choice) {
+            choices.remove(choice)
+        } else if choice == .noTree {
+            choices = [.noTree]
+        } else if !isDisabled(choice) {
+            choices.insert(choice)
+        }
+    }
+
+    /// Whether a chip can be chosen right now. Only "There's no tree here" disables anything.
+    func isDisabled(_ choice: DataDisputeChoice) -> Bool {
+        choice != .noTree && choices.contains(.noTree)
+    }
+
+    /// The pin chip is on and the position the reporter asked for has not arrived yet.
+    ///
+    /// *Send report* waits while this is true (ruling 8). Sending now would file "the pin is wrong"
+    /// without the position — which the reporter asked for and the block is still promising — and
+    /// the fix would then land in a screen nobody is reading (PR #185's review, finding 3). A fix
+    /// that resolves as refused ends the wait: the block has said why, out loud, and "the pin is
+    /// wrong and my phone cannot say where the tree is" is a report the record admits.
+    var isAwaitingFix: Bool {
+        choices.contains(.wrongPlace) && location == .waiting
+    }
 
     /// The suggested values, each read only under its own choice. See the file header.
     func suggestions(currentYear: Int) -> TreeDataDispute.Suggestions {
@@ -237,9 +396,37 @@ enum DataDisputeCopy {
         case .waiting: return locationWaiting
         case let .off(servicesOff): return servicesOff ? locationServicesOff : locationDenied
         case let .captured(fix): return locationCaptured(accuracyM: fix.accuracyM)
-        case let .refused(refusal): return self.refusal(refusal)
+        case let .refused(refusal): return locationRefusal(refusal)
         }
     }
+
+    /// Why a fix was not used, and what would help — **true in each case** (rulings 6 and 9).
+    ///
+    /// Three parts. What the phone said about its accuracy: a stated radius, rounded up; or, when
+    /// CoreLocation stated none, that it could not say — never the 25 m substituted for it. Then the
+    /// floor and "so it was not used". Then the remedy, and only one of them is Settings: Precise
+    /// Location off is the one cause the reader can change there. With it on, the honest advice is
+    /// the sky and a moment, and the block does keep listening (ruling 7), so waiting is real advice.
+    static func locationRefusal(_ refusal: DataDisputeLocationRefusal) -> String {
+        let opening: String
+        let requiredM: Double
+        switch refusal {
+        case let .tooCoarse(accuracyM, required, _):
+            opening = "Your location is only good to within \(meters(accuracyM)) m"
+            requiredM = required
+        case let .accuracyUnknown(required, _):
+            opening = "Your phone couldn’t say how accurate your location is"
+            requiredM = required
+        }
+        let remedy = refusal.isReduced
+            ? "Turn on Precise Location for Cypress in Settings, then try again."
+            : "Try again in the open, or wait a moment."
+        return opening + ", and a new position has to be good to within \(meters(requiredM)) m, "
+            + "so it was not used. " + remedy
+    }
+
+    // What the city has on file, under each opened section (owner, 2026-09-28).
+    static func cityHas(_ value: String) -> String { "The city has: \(value)" }
 
     // Wrong species
     static let speciesLabel = "The right species"
@@ -281,9 +468,12 @@ enum DataDisputeCopy {
         case .suggestionOutsideCheckedIssues:
             return "A suggestion was attached to something you didn’t choose, so nothing was sent."
         case let .locationFixTooCoarse(accuracyM, requiredM):
+            // Unreachable from this screen: a coarse fix never enters `suggestions`, so the location
+            // block's own sentence (`locationRefusal`) is the one a reader sees. This one has no
+            // Precise Location in it because the rule's refusal does not know whether it is off,
+            // and a sentence that does not know must not send anybody to Settings (ruling 6).
             return "Your location is only good to within \(meters(accuracyM)) m, and a new position "
-                + "has to be good to within \(meters(requiredM)) m, so it was not used. Turn on "
-                + "Precise Location for Cypress in Settings, then try again."
+                + "has to be good to within \(meters(requiredM)) m, so nothing was sent."
         case .unsupportedStatusSuggestion:
             return "Cypress can only record that there’s no tree here, so nothing was sent."
         }

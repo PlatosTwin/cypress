@@ -982,7 +982,7 @@ enum DebugDeepLink {
     /// same argument `Standalone` makes for the pin screen and `DeepLinkHarness.pin` makes for the
     /// map — a harness that depends on device state inherits whatever the last launch left.
     private static func strandedHeroSubject(_ api: LocalAPI) async throws -> (species: UUID, tree: UUID) {
-        guard case .pinned(.located) = DebugLocationOverride.requested() else {
+        guard case .pinned(.located, _) = DebugLocationOverride.requested() else {
             throw Failure(
                 screen: "strandedPhotoHero",
                 reason: "this case needs a pinned fix — 07 §6 draws the two nearest trees of the "

@@ -1702,6 +1702,14 @@ enum TreeProfileCopy {
     /// for a lead removing a record from the map, and the two acts must not share a word.
     static let withdrawDataDisputeAction = "Take back your report"
 
+    /// The question in front of the take-back (owner, 2026-09-28). The dialog's action repeats
+    /// `withdrawDataDisputeAction`, so the button says exactly what the link said.
+    static let withdrawDataDisputeConfirmTitle = "Take back your report?"
+
+    /// `GrowthHistoryCopy.withdrawCancel`'s words for the same choice: the button that does nothing
+    /// says what nothing means here.
+    static let withdrawDataDisputeCancel = "Keep it"
+
     static func dataDisputeWithdrawFailure(_ error: APIError) -> String {
         switch error {
         case .notFound:

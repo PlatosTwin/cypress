@@ -72,10 +72,14 @@ struct DataDisputeView: View {
         .background(CypressColor.surfaceScreen)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .onChange(of: location?.availability) { _, availability in
-            guard let availability else { return }
-            model.locationChanged(availability)
+        // Every change to the fix **or** to Precise Location, while the screen is open. A refused
+        // fix is replaced by a later, better one (ruling 7), and a reader who turns Precise Location
+        // on in Settings and comes back is read again rather than left looking at the old sentence.
+        .onChange(of: fixReading) { _, reading in
+            guard let reading else { return }
+            model.locationChanged(reading)
         }
+        .task { await model.loadOnFile() }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -101,6 +105,12 @@ struct DataDisputeView: View {
         }
     }
 
+    /// The provider's state as the location block reads it, or `nil` in previews.
+    private var fixReading: DataDisputeFixReading? {
+        guard let location else { return nil }
+        return DataDisputeFixReading(availability: location.availability, precision: location.precision)
+    }
+
     // MARK: - The choices
 
     private var choices: some View {
@@ -113,6 +123,11 @@ struct DataDisputeView: View {
                     ) {
                         model.toggle(choice)
                     }
+                    // "There's no tree here" stands alone (owner, 2026-09-28): while it is on, the
+                    // other three are cleared and cannot be chosen. `.disabled` rather than a new
+                    // chip style — SCREENS.md §5 gap 2 leaves disabled styling unspecified, and the
+                    // platform's own dimming plus VoiceOver's "dimmed" is the least invented answer.
+                    .disabled(model.draft.isDisabled(choice))
                 }
             }
         }
@@ -123,6 +138,7 @@ struct DataDisputeView: View {
     private var locationSection: some View {
         section(label: DataDisputeCopy.locationLabel) {
             VStack(alignment: .leading, spacing: DataDisputeMetrics.insideSection) {
+                cityHas(.wrongPlace)
                 Text(DataDisputeCopy.location(model.draft.location))
                     .cypressBody135(color: CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -130,8 +146,8 @@ struct DataDisputeView: View {
 
                 SecondaryOutlineButton(DataDisputeCopy.useLocation, style: .compact) {
                     location?.start()
-                    if let availability = location?.availability {
-                        model.useLocation(availability)
+                    if let fixReading {
+                        model.useLocation(fixReading)
                     }
                 }
 
@@ -147,6 +163,7 @@ struct DataDisputeView: View {
     private var speciesSection: some View {
         section(label: DataDisputeCopy.speciesLabel) {
             VStack(alignment: .leading, spacing: DataDisputeMetrics.insideSection) {
+                cityHas(.wrongSpecies)
                 if let species = model.draft.species {
                     Text(SpeciesPickCopy.chosen(species))
                         .font(CypressFont.body145)
@@ -170,6 +187,7 @@ struct DataDisputeView: View {
         @Bindable var model = model
         return section(label: DataDisputeCopy.plantedYearLabel) {
             VStack(alignment: .leading, spacing: DataDisputeMetrics.insideSection) {
+                cityHas(.wrongPlantedYear)
                 field(
                     text: $model.draft.plantedYearText,
                     prompt: DataDisputeCopy.plantedYearPrompt,
@@ -225,7 +243,9 @@ struct DataDisputeView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            PrimaryButton(DataDisputeCopy.sendCTA) {
+            // Disabled while the position the reporter asked for is still arriving (ruling 8); the
+            // location block says "Finding your location…" above it for as long as that lasts.
+            PrimaryButton(DataDisputeCopy.sendCTA, isEnabled: !model.draft.isAwaitingFix) {
                 Task { await model.raise() }
             }
         }
@@ -235,6 +255,20 @@ struct DataDisputeView: View {
     }
 
     // MARK: - Pieces
+
+    /// "The city has: …", the record's own value, under the section that corrects it (owner,
+    /// 2026-09-28). In the quiet register screen 03's *What the city has on file* uses for its
+    /// notes — `body135` in `textMuted` — and drawn only when the record holds a value
+    /// (`DataDisputeOnFile`).
+    @ViewBuilder
+    private func cityHas(_ choice: DataDisputeChoice) -> some View {
+        if let value = model.onFile?.value(for: choice) {
+            Text(DataDisputeCopy.cityHas(value))
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("dataDispute.cityHas")
+        }
+    }
 
     /// `padding:14px 18px 0` — §1.6's rhythm for a block headed by an uppercase micro-label, which is
     /// `ReportView.section`'s exactly.

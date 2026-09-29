@@ -154,6 +154,27 @@ struct TreeProfileView: View {
                     onBack: { model.cancelNamingSpecies() }
                 )
             }
+            // "Take back your report?" before a city-record dispute is withdrawn (owner, 2026-09-28).
+            // `GrowthHistoryView`'s arrangement exactly — one dialog driven by the model's pending
+            // value, a destructive action and a "Keep it" — because that is the app's existing
+            // question in front of a take-back, and one act should not be asked about two ways.
+            .confirmationDialog(
+                TreeProfileCopy.withdrawDataDisputeConfirmTitle,
+                isPresented: Binding(
+                    get: { model.pendingDataDisputeWithdrawal != nil },
+                    set: { if !$0 { model.pendingDataDisputeWithdrawal = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: model.pendingDataDisputeWithdrawal
+            ) { disputeID in
+                Button(TreeProfileCopy.withdrawDataDisputeAction, role: .destructive) {
+                    model.pendingDataDisputeWithdrawal = nil
+                    Task { await model.withdrawDataDispute(disputeID: disputeID) }
+                }
+                Button(TreeProfileCopy.withdrawDataDisputeCancel, role: .cancel) {
+                    model.pendingDataDisputeWithdrawal = nil
+                }
+            }
     }
 
     @ViewBuilder
@@ -647,8 +668,9 @@ struct TreeProfileView: View {
             Text(TreeProfileCopy.dataDisputeRaised)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
+            // Asks first — the dialog on `body` is what withdraws.
             recordLinkAction(TreeProfileCopy.withdrawDataDisputeAction) {
-                Task { await model.withdrawDataDispute(disputeID: disputeID) }
+                model.pendingDataDisputeWithdrawal = disputeID
             }
         }
     }
