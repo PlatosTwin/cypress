@@ -204,6 +204,16 @@ type PhotoRecord struct {
 	StorageKey      string
 	BytesReceivedAt *time.Time
 	DeletedAt       *time.Time
+	// ClientUUID is the key the contributor's begin carried (`003_photo_idempotency_key.sql`), or
+	// nil for a begin that carried none.
+	//
+	// **It is the contributor's, and only the contributor may be told it.** It is the one id the
+	// phone that took the photograph holds for it — the service's `ID` is minted here and the phone
+	// never keeps it — so `GET /trees/{id}` returns it to the photograph's own contributor, and to
+	// nobody else, as the link that lets that phone recognise its own picture (report F30). Sent to
+	// a stranger it would be a second identifier for somebody else's contribution, and the reason
+	// migration 003 scopes the key per owner applies to reading it as much as to writing it.
+	ClientUUID *uuid.UUID
 }
 
 // IsPubliclyVisible mirrors `Photo.isPubliclyVisible` exactly:
@@ -223,11 +233,11 @@ func (s *Store) Photo(ctx context.Context, id uuid.UUID) (PhotoRecord, error) {
 	var photo PhotoRecord
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tree_uuid, user_id, device_id, shot_type, moderation_state, approval_reason,
-		       blur_applied, captured_at, storage_key, bytes_received_at, deleted_at
+		       blur_applied, captured_at, storage_key, bytes_received_at, deleted_at, client_uuid
 		  FROM photos WHERE id = $1
 	`, id).Scan(&photo.ID, &photo.TreeUUID, &photo.UserID, &photo.DeviceID, &photo.ShotType,
 		&photo.ModerationState, &photo.ApprovalReason, &photo.BlurApplied, &photo.CapturedAt,
-		&photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt)
+		&photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt, &photo.ClientUUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PhotoRecord{}, ErrNotFound
 	}
@@ -242,7 +252,7 @@ func (s *Store) Photo(ctx context.Context, id uuid.UUID) (PhotoRecord, error) {
 func (s *Store) PhotosForTree(ctx context.Context, treeUUID uuid.UUID) ([]PhotoRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tree_uuid, user_id, device_id, shot_type, moderation_state, approval_reason,
-		       blur_applied, captured_at, storage_key, bytes_received_at, deleted_at
+		       blur_applied, captured_at, storage_key, bytes_received_at, deleted_at, client_uuid
 		  FROM photos WHERE tree_uuid = $1 ORDER BY captured_at DESC
 	`, treeUUID)
 	if err != nil {
@@ -254,7 +264,8 @@ func (s *Store) PhotosForTree(ctx context.Context, treeUUID uuid.UUID) ([]PhotoR
 		var photo PhotoRecord
 		if err := rows.Scan(&photo.ID, &photo.TreeUUID, &photo.UserID, &photo.DeviceID,
 			&photo.ShotType, &photo.ModerationState, &photo.ApprovalReason, &photo.BlurApplied,
-			&photo.CapturedAt, &photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt); err != nil {
+			&photo.CapturedAt, &photo.StorageKey, &photo.BytesReceivedAt, &photo.DeletedAt,
+			&photo.ClientUUID); err != nil {
 			return nil, err
 		}
 		photos = append(photos, photo)

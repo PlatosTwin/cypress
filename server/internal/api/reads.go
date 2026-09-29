@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/apierr"
+	"github.com/PlatosTwin/cypress/server/internal/store"
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
 )
 
@@ -183,6 +184,31 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", storeErr)
 	}
 
+	writeJSON(w, s.Log, http.StatusOK, treeProfileBody(id, community, who))
+	return nil
+}
+
+// treeProfileBody is `GET /trees/{id}`'s answer, built apart from the handler so that the golden
+// fixture (`server/testdata/tree_profile.json`) is written by this function and not by a test's
+// transcription of it — the two cross-half breaks this contract has already had were each invisible
+// to a test that restated the shape.
+//
+// ── `client_uuid`, and who is told it ──────────────────────────────────────────────────────────
+//
+// A photograph its contributor took has three ids: the phone's own `photos.id`, the begin's
+// `client_uuid`, and the `photo_id` this service mints. The phone never keeps the third, so a
+// profile that answered its contributor with `photo_id` alone was answering in an id the phone could
+// not match — and the phone, merging this half with its own, drew the one photograph twice (report
+// F30). The key is the link: the phone's `photos.id` is the key it sends (`LocalAPI.beginPhotoUpload`
+// mints the local row under it), so the contributor can recognise its own row. A phone that sent a
+// photograph before that change holds a different local id and matches it another way — see
+// `RoutedAPI.refreshedTreeProfile`.
+//
+// It is sent **only on the caller's own rows** — the `own` predicate the two id sets below already
+// use — and on everybody else's the key is **absent**, not null. A stranger's `client_uuid` is a
+// second identifier for somebody else's contribution, and nothing a stranger's phone could do with
+// it is legitimate. `null` on an own row means the begin carried no key.
+func treeProfileBody(id uuid.UUID, community store.TreeCommunity, who caller) map[string]any {
 	photos := make([]map[string]any, 0, len(community.Photos))
 	ownPhotoIDs := make([]uuid.UUID, 0)
 	deletablePhotoIDs := make([]uuid.UUID, 0)
@@ -194,29 +220,30 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 		if !photo.IsPubliclyVisible() && !(own && photo.IsVisibleToItsContributor()) {
 			continue
 		}
-		photos = append(photos, map[string]any{
+		row := map[string]any{
 			"photo_id":    photo.ID,
 			"shot_type":   photo.ShotType,
 			"captured_at": stamp(photo.CapturedAt),
 			// Sent so the client can tell "everyone sees this" from "only you do" without
 			// re-deriving it — which is what makes screen 15's promise legible on screen.
 			"is_publicly_visible": photo.IsPubliclyVisible(),
-		})
+		}
 		if own {
+			row["client_uuid"] = photo.ClientUUID
 			ownPhotoIDs = append(ownPhotoIDs, photo.ID)
 			// `deletePhoto` must be reachable wherever a photograph is shown (R72 ruling 5), so the
 			// set that drives that affordance ships with the photographs rather than after them.
 			deletablePhotoIDs = append(deletablePhotoIDs, photo.ID)
 		}
+		photos = append(photos, row)
 	}
 
-	writeJSON(w, s.Log, http.StatusOK, map[string]any{
+	return map[string]any{
 		"tree_uuid":           id,
 		"photos":              photos,
 		"photo_count":         len(photos),
 		"visit_count":         community.VisitCount,
 		"own_photo_ids":       ownPhotoIDs,
 		"deletable_photo_ids": deletablePhotoIDs,
-	})
-	return nil
+	}
 }
