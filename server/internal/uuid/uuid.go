@@ -118,5 +118,3 @@ func (u *UUID) ScanUUID(v pgtype.UUID) error {
 	*u = v.Bytes
 	return nil
 }
-
-// calibration (throwaway): the Go half of a mixed Go + Cypress/ change.
