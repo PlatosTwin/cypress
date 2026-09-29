@@ -963,7 +963,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
    the top of **both** `withdrawMeasurement` and `measurementWasWithdrawn`, which serialises only
    same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
    recipe, and red-prove the race itself first so the fix has a witness. `server.yml` now runs the
-   suite against Postgres and refuses a skip, but it is not a required check: read its run.
+   suite against Postgres and refuses a skip, and since `ci/server-only-skips-ios` it is required on
+   pull requests through `gate` (TestFlight's `server / server` job); on main's push commit, read
+   the `Server` workflow's own run.
 10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
     readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
     to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
@@ -1031,9 +1033,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `flyio/postgres-flex:18.1` (`fly image show --app cypress-sync-db`, 2026-09-28). Measured at
     `bb4d08f`: **68 pass / 147 skip** with no database, **222 pass / 0 skip** against 18. The
     trigger list also names the four Swift files Go tests parse, and
-    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. **Not a required
+    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. ~~**Not a required
     check** — that is the owner's ruleset call, and if it is made one the `paths:` filters must come
-    off in the same change (E225).
+    off in the same change (E225).~~ **Required through `gate` since `ci/server-only-skips-ios`**
+    (owner ruling 2026-09-28): `testflight.yml` calls `server.yml` as its `server` job whenever a
+    diff touches `server.yml`'s `on.push.paths`, `gate` refuses unless it succeeded, and a
+    server-only diff (`this diff is server-only`) no longer runs the iOS suite. No ruleset change:
+    `gate` was already the required context.
 
 15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
     whether an estimate may supersede a measurement when a single number has to be chosen. D7,
