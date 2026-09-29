@@ -343,9 +343,10 @@ var ErrPhotoWithdrawn = errors.New("photo was withdrawn by its contributor")
 // "not yours" into one answer anyway. This one has to tell those apart before it decides, so the
 // row is fetched first and the three cases are separated explicitly:
 //
-//   - **no row** — nothing to withdraw. This is the shipping state ERRATA E264 describes: no
-//     photograph reaches this service, so every withdrawal that arrives today lands here. It is a
-//     success, and the contribution row is still recorded — the record of the act is the point.
+//   - **no row by this id** — the id is then tried as the begin's `client_uuid`, which is the id
+//     the phone holds (withdrawPhotoByClientKey, report F30). Only when that finds nothing either
+//     is there nothing to withdraw: a success, with the contribution row still recorded — the
+//     record of the act is the point.
 //   - **already tombstoned** — success, changing nothing. A drain that replays a withdrawal after a
 //     flap must not fail on the second pass.
 //   - **present and not this identity's** — `ErrNotOwned`, above.
@@ -365,7 +366,8 @@ func withdrawPhoto(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner, no
 		SELECT user_id, device_id, deleted_at FROM photos WHERE id = $1
 	`, id).Scan(&userID, &deviceID, &deletedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		// Not this service's id — which is what the phone sends. See withdrawPhotoByClientKey.
+		return withdrawPhotoByClientKey(ctx, tx, id, owner, now)
 	}
 	if err != nil {
 		return err
@@ -374,9 +376,7 @@ func withdrawPhoto(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner, no
 		return nil
 	}
 
-	owned := (owner.UserID != nil && userID != nil && *userID == *owner.UserID) ||
-		(owner.DeviceID != nil && deviceID != nil && *deviceID == *owner.DeviceID)
-	if !owned {
+	if !ownerHolds(owner, userID, deviceID) {
 		return ErrNotOwned
 	}
 
@@ -384,6 +384,90 @@ func withdrawPhoto(ctx context.Context, tx pgx.Tx, id uuid.UUID, owner Owner, no
 		UPDATE photos SET deleted_at = $2, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL
 	`, id, now)
 	return err
+}
+
+// ownerHolds is withdrawPhoto's ownership rule: the two columns this service has, and nothing else
+// (see withdrawPhoto on why that is not the client's R82 rule).
+func ownerHolds(owner Owner, userID, deviceID *uuid.UUID) bool {
+	return (owner.UserID != nil && userID != nil && *userID == *owner.UserID) ||
+		(owner.DeviceID != nil && deviceID != nil && *deviceID == *owner.DeviceID)
+}
+
+// withdrawPhotoByClientKey is withdrawPhoto for the id the phone actually holds.
+//
+// ── The defect this closes ─────────────────────────────────────────────────────────────────────
+//
+// A phone's `photo_withdrawal` names its own `photos.id`. This service mints its own `photos.id` at
+// `POST /photos/begin` and the phone never keeps it, so the lookup by id above matched nothing for
+// every photograph a phone had actually sent — and "no row" is a success. The contributor was told
+// "Photo removed" and the photograph stayed public here: ERRATA E280's failure, reached silently.
+// Since report F30's fix the phone's `photos.id` **is** the begin's `client_uuid`, so the key is
+// the link, and this looks the photograph up by it.
+//
+// ── Ownership, and why the key is not scoped in the query ─────────────────────────────────────
+//
+// Every row carrying the key is read, and the caller's ownership is decided here, on the same two
+// columns and with the same three answers as the lookup by id:
+//
+//   - **the caller holds a live row** — it is tombstoned (every such row: migration 003 notes that
+//     one binary can reach two rows under a device and then an account, and both are the same
+//     photograph);
+//   - **the caller holds only tombstoned rows, or nothing carries the key** — success, changing
+//     nothing, exactly as a replay or an unknown id is;
+//   - **a live row carries the key and the caller holds none** — `ErrNotOwned`. Scoping the query
+//     to the caller would have made this case read as "absent" and answered success while the
+//     photograph stayed served, which is the lie this function exists to stop telling. It is the
+//     case R82's provenance arm reaches: this installation took the photograph and the account
+//     that owns it is no longer the one signed in. The key is minted on one phone and is never
+//     sent to anybody but that photograph's contributor (`treeProfileBody`), so the refusal tells
+//     a caller nothing about a photograph whose key they did not already hold.
+//
+// Another identity's photograph is never withdrawn: a row is tombstoned only if `ownerHolds`.
+func withdrawPhotoByClientKey(ctx context.Context, tx pgx.Tx, key uuid.UUID, owner Owner, now time.Time) error {
+	rows, err := tx.Query(ctx, `
+		SELECT id, user_id, device_id, deleted_at FROM photos WHERE client_uuid = $1
+	`, key)
+	if err != nil {
+		return err
+	}
+	var mine []uuid.UUID
+	somebodyElsesIsLive := false
+	for rows.Next() {
+		var id uuid.UUID
+		var userID, deviceID *uuid.UUID
+		var deletedAt *time.Time
+		if err := rows.Scan(&id, &userID, &deviceID, &deletedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		switch {
+		case ownerHolds(owner, userID, deviceID):
+			if deletedAt == nil {
+				mine = append(mine, id)
+			}
+		case deletedAt == nil:
+			somebodyElsesIsLive = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if len(mine) == 0 {
+		if somebodyElsesIsLive {
+			return ErrNotOwned
+		}
+		return nil
+	}
+	for _, id := range mine {
+		if _, err := tx.Exec(ctx, `
+			UPDATE photos SET deleted_at = $2, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL
+		`, id, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeletePhotoByContributor is `deletePhoto(id:)` — the contributor taking their own photograph back.
