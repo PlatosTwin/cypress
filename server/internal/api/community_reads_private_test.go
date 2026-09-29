@@ -255,8 +255,8 @@ func TestTheGroveHeroPassesThePhotographGate(t *testing.T) {
 				t.Errorf("%s: the grove draws photograph %s as the hero of tree %s, which is hidden from "+
 					"this viewer (GET /photos/{id} answers 404 for it)", viewer.name, *hero, tree)
 			case !hidden && (hero == nil || *hero != photo):
-				t.Errorf("%s: control: tree %s is visible to this viewer and its hero is %v, want %s",
-					viewer.name, tree, hero, photo)
+				t.Errorf("%s: tree %s is visible to this viewer and its hero is %v, want %s, its newest "+
+					"photograph whose bytes arrived", viewer.name, tree, hero, photo)
 			}
 			if hidden {
 				hiddenCount++

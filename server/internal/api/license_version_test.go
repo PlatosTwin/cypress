@@ -45,6 +45,19 @@ func TestOnlyAKnownLicenseVersionIsAnAcceptance(t *testing.T) {
 		}
 	}
 
+	// An account that declined and holds a private tree, then sends a non-version: the acceptance
+	// sweep must not run, or it would publish the tree with that string as its license.
+	for i, version := range []string{"", "odbl-9.9"} {
+		subject := "ct.l2.sweep." + itoa(i)
+		decliner := signInAs(t, h, subject, nil, nil)
+		private := uuid.New()
+		mustApply(t, h.syncOne(t, decliner.AccessToken, addTreeAt(private, north(float64(1300+100*i)), ctLon, time.Now())), "declined add")
+		signInAs(t, h, subject, nil, &version)
+		if stateOf(t, h, private).Published {
+			t.Errorf("a declining account's private tree was published by license_version %q", version)
+		}
+	}
+
 	// A value stored before this rule, by the old consent parser.
 	stored := signInAs(t, h, "ct.l2.stored", nil, accepted())
 	execSQL(t, h, `UPDATE users SET license_version = '' WHERE id = $1`, stored.UserID)
