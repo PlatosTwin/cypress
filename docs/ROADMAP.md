@@ -1488,7 +1488,12 @@ species* · *Wrong planted year* · *There's no tree here*), a suggestion under 
 fix with its accuracy and the 10 m floor explained, the app's species picker, a year field, nothing
 for the empty plot), notes, and a disclosure that the city has not been notified. A standing dispute
 draws *You reported a mistake…* and *Take back your report*. The screen's decisions are in
-`docs/rulings-pending/city-inventory-disputes.md`, part 2.
+`docs/rulings-pending/city-inventory-disputes.md`, part 2. PR #185's fix round implemented the
+owner's and orchestrator's rulings 1–10 after review (no-tree stands alone, *The city has: …* under
+each section, a confirmation before the take-back, a refusal sentence that reads Precise Location
+and never quotes a substituted accuracy, a later fix replacing a refused one, and *Send* waiting for
+a pending fix); ruling 5, that a mistake report does not enroll a tree in *Yours*, is a server PR of
+its own.
 
 Still open after part 2, each its own scheduled PR and none of them started:
 - the flag **badge** on flagged trees, on the map and in the list — and it is the piece that needs a
