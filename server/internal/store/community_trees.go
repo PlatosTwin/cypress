@@ -86,8 +86,28 @@ func accountLicense(ctx context.Context, q querier, userID uuid.UUID) (*string, 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	return version, err
+	if err != nil || version == nil || !IsKnownLicenseVersion(*version) {
+		// A stored value that is not a known version is not an acceptance, whenever it was written.
+		return nil, err
+	}
+	return version, nil
 }
+
+// knownLicenseVersions is every license version an acceptance may name (the #187 verification's L2).
+//
+// **Only a real, known version publishes anything.** Before this, `consent` took any string, so a
+// `license_version` of `""` (or a typo, or a client bug) published the account's trees and wrote
+// `""` into the `published` event as the license they went out under — and that event is decision
+// 10's whole record of "accepted at publication". The one version is the client's
+// `LicenseConsent.currentVersion` (`Cypress/Core/AccountLinkRecord.swift`); the api package's
+// `TestTheServerKnowsTheClientsLicenseVersion` reads it out of the Swift source, so a client that
+// moves the constant goes red here instead of every new acceptance silently becoming a decline.
+// When legal review changes the license, the new version is added here in the same change.
+var knownLicenseVersions = map[string]bool{"odbl-1.0": true}
+
+// IsKnownLicenseVersion reports whether a version string names a license this service publishes
+// under.
+func IsKnownLicenseVersion(version string) bool { return knownLicenseVersions[version] }
 
 // publicationStamp is `published_at` for a tree this owner is inserting, and the license version it
 // is published under: now for an account that has accepted the license (decision 1: "visible to
