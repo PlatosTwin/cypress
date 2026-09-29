@@ -31,7 +31,7 @@ import Testing
 import UIKit
 @testable import Cypress
 
-@Suite("Photo identity — one photograph, one row (F30)", .serialized)
+@Suite("Photo identity — one photograph, one row (F30)", .serialized, .timeLimit(.minutes(1)))
 struct PhotoIdentityTests {
 
     // MARK: - Fixtures
@@ -137,11 +137,11 @@ struct PhotoIdentityTests {
 
         let body = try #require(transport.call("POST /photos/begin")?.body)
         let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        return SentBegin(
-            clientUUID: try #require(UUID(uuidString: try #require(json["client_uuid"] as? String))),
-            capturedAt: try #require(json["captured_at"] as? String),
-            shotType: try #require(json["shot_type"] as? String)
-        )
+        let key = try #require(json["client_uuid"] as? String, "the begin carried no idempotency key")
+        let clientUUID = try #require(UUID(uuidString: key))
+        let capturedAt = try #require(json["captured_at"] as? String)
+        let shotType = try #require(json["shot_type"] as? String)
+        return SentBegin(clientUUID: clientUUID, capturedAt: capturedAt, shotType: shotType)
     }
 
     /// One row of `GET /trees/{id}`'s `photos`, in `reads.go`'s shape. `clientUUID` is present only
