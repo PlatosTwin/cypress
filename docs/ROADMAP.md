@@ -1464,6 +1464,24 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `JSONEncoder` round-trip, not another comment), and correct both in one pass so they agree
     with each other and with `sync.go`.
 
+54. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+    `claimSpecies` and `correctSpecies` write the signed-in account's id into
+    `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
+    `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
+    trigger, and its only foreign key is its own `superseded_by`. So after `.leaveRecords` or
+    `.eraseEverything` the claim still carries the deleted account's id. `AccountDeletionCoverageTests`
+    (#186) measures this under both doors and classifies it `.notReached` in
+    `AccountDeletion.OwnedTable.fate(under:)`. That is what the code does, not a ruling. The fix
+    follows R3's contribution pattern: the leaving door anonymizes (nulls `user_id`) and the erasing
+    door deletes. **The tombstone question is open.** The table has no `client_uuid`, so v13's
+    `anonymized_contributions` key is not available, and `claimDevice` does not adopt the table
+    today. Decide whether an anonymized claim needs a tombstone at all, and key one if it does. The
+    erasing door also has to handle the chain. `superseded_by` is a deferred foreign key, so deleting
+    a claim that an older row's `superseded_by` points at fails at commit unless that pointer is
+    dealt with first. When a door reaches the table,
+    the guard goes red and the arm changes with it. **Slated by the orchestrator for the
+    community-trees C1 round.**
+
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full
@@ -1519,7 +1537,7 @@ Still open after part 1, each its own scheduled PR and none of them started:
   disputes: part 1 leaves `flagWrongSpecies` / `flagNeverExisted` untouched, and "location and
   species only" is a narrowing of that flow rather than an addition beside it.
 
-**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
+~~**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
 three times.** Twice on the outbox kind list, and once on a whole table: `AppSchema` v22 added
 `tree_data_disputes` with a `raised_by` column and neither account-deletion door could see it, which
 PR #165's review measured and PR #165 fixed. Every one of the three failed **silently**, because a
@@ -1529,7 +1547,16 @@ compiler asks the question when a case is added; the table half has no equivalen
 test that reads the live schema for columns named `user_id` / `raised_by` / `given_by` / `set_by`
 and requires each to be named by one door or explicitly exempted is the obvious shape, and it is the
 shape that would have caught this. **A fourth hand-audit is not the fix.** Unscheduled; the badge
-round is the natural slot, because it is the next round to touch this table.
+round is the natural slot, because it is the next round to touch this table.~~
+**DONE** by `test/account-deletion-table-guard`. `AccountDeletion.OwnedTable` classifies every table
+that names a person or installation, with an exhaustive `fate(under:)` per door, and
+`AccountDeletionCoverageTests` derives the set from the live migrated schema (`pragma_table_info`), not
+from a list: every column name must be filed as identity or ordinary, so a new spelling cannot slip
+past; the derived tables and columns must equal the classified ones both ways; and under each door an
+owned row must end as classified while a stranger's is unchanged. **Writing it found a fourth
+instance, which it now measures:** `species_assertions.user_id` is named by neither door, so a species claim keeps the
+deleted account's id after either one. It is classified `.notReached` (what the code does, not a
+ruling), and the open item is chip backlog **54**.
 
 **Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
