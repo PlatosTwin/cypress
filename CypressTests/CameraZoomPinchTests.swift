@@ -97,5 +97,104 @@ struct CameraZoomPinchTests {
         model.retake()
         #expect(model.isAimingCamera, "the well is empty again after Retake and is not aiming")
     }
+
+    // MARK: - The wiring: what each screen actually hands the pinch (PR #195 review, finding 1)
+    //
+    // The two tests above prove `mask` and `isAimingCamera` separately, and neither proves the line
+    // between them. The review's mutation showed it: both call sites hard-wired to `isAiming: true`
+    // kept every test in this file green while each screen's pinch stayed armed over a still.
+    //
+    // So these read the `VisitCameraZoomPinch` value each screen builds, with a photograph staged
+    // and again after `retake()`, and assert the `isAiming` it carries. The value is found by walking
+    // the view with `Mirror`, which is how a SwiftUI view's stored modifiers are reachable in-process.
+    // `@State` that is not installed hands back the value it was initialized with, so the model a
+    // test stages a photograph on is the model the view reads. See `stateModel(of:)`.
+    //
+    // **Add-a-tree is walked from its photo well, not from `body`.** The well is inside the
+    // composer's `GeometryReader`, whose content is a closure, and `Mirror` cannot see into a
+    // closure. `VisitAddTreeView.photoWell(widthCeiling:)` is the call site itself, so this still
+    // reads the value the screen passes; `addTreeCarriesThePinch` is what proves the well is in the
+    // body. Screen 04's viewfinder is not behind a `GeometryReader` at the drawn sizes, so it is
+    // walked from `body`.
+
+    @Test("add-a-tree's well hands the pinch false over a photograph and true after a retake")
+    func addTreeWiresItsAimToThePinch() throws {
+        let view = VisitPreviewFixtures.addTree()
+        let model: VisitAddTreeModel = try #require(Self.stateModel(of: view), "no model in the view")
+
+        #expect(Self.pinches(in: view.photoWell(widthCeiling: .infinity)).map(\.isAiming) == [true])
+
+        model.useLibraryImage(VisitPreviewFixtures.onePixelJPEG())
+        let staged = try #require(model.photoPath, "the photograph was not staged")
+        defer { try? FileManager.default.removeItem(atPath: staged) }
+        #expect(
+            Self.pinches(in: view.photoWell(widthCeiling: .infinity)).map(\.isAiming) == [false],
+            "add-a-tree's well has a photograph in it and still hands the pinch isAiming: true"
+        )
+
+        model.retake()
+        #expect(
+            Self.pinches(in: view.photoWell(widthCeiling: .infinity)).map(\.isAiming) == [true],
+            "add-a-tree's well is empty again after Retake and hands the pinch isAiming: false"
+        )
+    }
+
+    @Test("screen 04 hands the pinch false over a photograph and true after a retake")
+    func screen04WiresItsAimToThePinch() throws {
+        let view = VisitPreviewFixtures.camera()
+        let model: VisitCameraModel = try #require(Self.stateModel(of: view), "no model in the view")
+
+        #expect(Self.pinches(in: view.body).map(\.isAiming) == [true])
+
+        model.useLibraryImage(VisitPreviewFixtures.onePixelJPEG())
+        defer {
+            for path in model.draft.photoPaths {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: path))
+            }
+        }
+        #expect(model.hasSnapped, "the photograph was not staged")
+        #expect(
+            Self.pinches(in: view.body).map(\.isAiming) == [false],
+            "screen 04 has a photograph for this framing and still hands the pinch isAiming: true"
+        )
+
+        model.retake()
+        #expect(
+            Self.pinches(in: view.body).map(\.isAiming) == [true],
+            "screen 04's framing is empty again after Retake and hands the pinch isAiming: false"
+        )
+    }
+
+    // MARK: - The walk
+
+    /// The model a view holds in `@State`, read the way the view reads it when it is not installed.
+    private static func stateModel<Model: AnyObject>(of view: some View) -> Model? {
+        for child in Mirror(reflecting: view).children where child.label == "_model" {
+            for inner in Mirror(reflecting: child.value).children {
+                if let model = inner.value as? Model { return model }
+            }
+        }
+        return nil
+    }
+
+    /// Every `VisitCameraZoomPinch` stored anywhere in `root`'s value tree.
+    ///
+    /// Class instances are not entered: the models and the controller are classes, and nothing
+    /// SwiftUI stores a modifier in on the paths walked here is one. The depth cap is a guard against
+    /// an unexpectedly deep tree, not a limit the screens come near.
+    private static func pinches(in root: Any) -> [VisitCameraZoomPinch] {
+        var found: [VisitCameraZoomPinch] = []
+        func walk(_ value: Any, depth: Int) {
+            if let pinch = value as? VisitCameraZoomPinch {
+                found.append(pinch)
+                return
+            }
+            let mirror = Mirror(reflecting: value)
+            guard depth < 200, mirror.displayStyle != .class else { return }
+            for child in mirror.children { walk(child.value, depth: depth + 1) }
+        }
+        walk(root, depth: 0)
+        return found
+    }
 }
 #endif

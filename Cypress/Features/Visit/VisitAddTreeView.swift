@@ -342,7 +342,11 @@ struct VisitAddTreeView: View {
     /// invariant; what the ceiling changes is how much of the column the well is allowed to take
     /// when the viewport is too short to hold it and a form as well. See
     /// `VisitMetrics.AddTree.wellWidthCeiling`.
-    private func photoWell(widthCeiling: CGFloat) -> some View {
+    ///
+    /// Internal rather than private for one reader: `CameraZoomPinchTests` reads the pinch this well
+    /// hands its camera from here, because the well is inside the composer's `GeometryReader` and a
+    /// test cannot reach it through `body`.
+    func photoWell(widthCeiling: CGFloat) -> some View {
         VisitAddTreePhotoWell(widthCeiling: widthCeiling) { wellContents }
             // **Pinch to zoom the lens** (F33): RULINGS R80 item 5, which the owner ruled on
             // 2026-09-28 covers this viewfinder as well as screen 04's. The same gesture on the same
