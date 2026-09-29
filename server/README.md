@@ -515,7 +515,10 @@ CYPRESS_TEST_DATABASE_URL='postgres://…' go test -json -count=1 ./... > /tmp/s
 ci/verify_test_json.sh /tmp/server.json   # VERIFY-SERVER-OK, or the reason it is not
 ```
 
-It is not a required check yet, so read its run on any pull request that touches `server/`.
+On a pull request it runs as the `server` job of `.github/workflows/testflight.yml`, and `gate` —
+the required check — refuses to pass unless it succeeded. A pull request that changes only Go
+(anything under `server/` except `server/testdata/`, removing nothing) skips the 34-minute iOS
+suite; its `plan` log says `this diff is server-only`.
 
 > **The no-database figure here was wrong and it is corrected in place.** This paragraph read:
 > *"Measured on 2026-09-10 at commit `5b52b4e` + this round: **60 pass / 108 skip** with no database,
