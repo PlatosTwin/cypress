@@ -48,6 +48,33 @@ family: the test's input was the thing that differed from production.
    (`RoutedAPI.photoIdentityMatch`), the withdrawal names the service's `photo_id` instead, through
    `RoutedAPI.deletePhoto(id:)` and `LocalAPI.deletePhoto(id:servicePhotoID:)`.
 
+**What the review of #194 changed.**
+
+- *The pairing may only name a photograph that has left the phone (finding 1).* The review proved
+  that pairing by framing and capture second, offered a photograph that had **not** been sent, could
+  name the same account's other phone's photograph. The pair looked unambiguous because the unsent
+  photograph has no copy on the service. Deleting the unsent one would then have withdrawn the other
+  phone's photograph, and the service would have honored it, because the account owns it. The
+  pairing is now offered only rows written by the outbox's apply with no send still owed
+  (`ContributionStore.sentPhotoIDs`). That excludes the add-a-tree photograph, which is never sent.
+- *A copy is the second its stamp names (finding 2).* The wire truncates to whole seconds, so a true
+  copy is `0 ≤ local − service < 1`. The symmetric window paired the next second's photograph.
+- *A withdrawal that arrives before its begin (finding 5).* The service answered it `applied`, with
+  nothing to take down, and the later begin created a live row. A begin now looks for its owner's
+  withdrawal of its key, and if it finds one the row is born deleted and the begin is refused as a
+  replay after a withdrawal is (`photoWasWithdrawn`). The shipping client does not reach this order,
+  so this is the service not relying on that.
+- *A withdrawn photograph's copy is hidden only while its withdrawal is queued (finding 3, ruled by
+  the orchestrator).* While a `photo_withdrawal` naming it is `pending`, its copy is hidden from its
+  contributor, because the withdrawal is on its way. Once the service has answered it, a copy the
+  service still serves **is still public**, and it shows on its contributor's profile again. That is
+  deliberate. For every photograph in the open cases below, seeing it again is the only sign its
+  contributor gets that it is still public. Deleting it again now works: the profile knows the
+  service's id for a row it drew, and `RoutedAPI.deletePhoto(id:)` queues a withdrawal naming that
+  id (`LocalAPI.withdrawServicePhoto`), which the service applies by id if the caller owns it. The
+  same path lets a person delete their own photograph that another of their phones sent. The
+  profile already offered that, through `deletable_photo_ids`, and the tap used to fail.
+
 **What is still open.** These are earlier-build photographs whose withdrawal still names only the
 local id and still withdraws nothing on the service:
 
@@ -62,4 +89,9 @@ local id and still withdraws nothing on the service:
   A `photo_withdrawal` contribution records only the phone's id and the tree, so an operator can
   find an owner who withdrew *a* photograph of a tree on which they still have live ones, but not
   *which* photograph. The capture time that would say which is on the contributor's phone, on the
-  tombstoned row. Any repair needs a ruling before anyone runs it.
+  tombstoned row. Any repair needs a ruling before anyone runs it. What this PR does give these
+  photographs is the finding-3 behavior above: once this build refreshes their tree, each one shows
+  on its contributor's profile again, and deleting it there reaches the service.
+- **A binary staged before the send path existed.** Its queue row was deleted at the apply
+  (`sendable = 0`), so it reads as sent, although RULINGS R77 kept it on the phone, and it can be
+  offered to the pairing. Telling the two apart needs a column.
