@@ -57,6 +57,15 @@ family: the test's input was the thing that differed from production.
   phone's photograph, and the service would have honored it, because the account owns it. The
   pairing is now offered only rows written by the outbox's apply with no send still owed
   (`ContributionStore.sentPhotoIDs`). That excludes the add-a-tree photograph, which is never sent.
+  - *The same, for a send refused for good.* "No send still owed" was read as "no `outbox_photos`
+    row", and the drain deletes that row when the service refuses a send in a way that will not
+    change (a non-retryable code such as `not_found` or `validation_failed`). It has to: holding the
+    row would keep the item from ever settling. So a photograph the service had turned away read as
+    sent, and finding 1's path was open again for it. The drain now also writes one `app_state` key
+    per refused photograph (`photo_send_refused:<photos.id>`, holding the refusal's code), in the
+    same transaction as the delete (`OutboxStore.recordRefusedPhoto`). `sentPhotoIDs` leaves out any
+    photograph that has one. No migration: `app_state` is v1's key/value table. What the person sees
+    does not change: the photograph stays on their phone, and screen 17 draws the item as it did.
 - *A copy is the second its stamp names (finding 2).* The wire truncates to whole seconds, so a true
   copy is `0 ≤ local − service < 1`. The symmetric window paired the next second's photograph.
 - *A withdrawal that arrives before its begin (finding 5).* The service answered it `applied`, with
@@ -95,3 +104,7 @@ local id and still withdraws nothing on the service:
 - **A binary staged before the send path existed.** Its queue row was deleted at the apply
   (`sendable = 0`), so it reads as sent, although RULINGS R77 kept it on the phone, and it can be
   offered to the pairing. Telling the two apart needs a column.
+- **A send refused for good by an earlier build.** Build 77 already gave a refused binary up by
+  deleting its queue row, and wrote no refusal key, because none existed. Such a photograph reads as
+  sent too, and it can be offered to the pairing in the same way. Nothing left on the phone says
+  which photographs these are once the item that carried the refusal has been retried and pruned.
