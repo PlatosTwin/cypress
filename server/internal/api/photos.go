@@ -110,9 +110,11 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 	}
 
 	// **The row's verdict, not a recomputation from the caller.** Synthesizing it here was right for
-	// an insert and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account
-	// without touching `moderation_state`, so device-begin → sign-in-with-claim → replay answered
-	// `approved` about a row still holding `pending`.
+	// an insert and wrong for a replay whenever the row and the caller disagree. #116 r3's case: at
+	// the time `ClaimDevice` re-homed a device's photographs onto an account without touching
+	// `moderation_state`, so device-begin → sign-in-with-claim → replay answered `approved` about a
+	// row still holding `pending`. The claim now approves what it adopts, so that case agrees; the
+	// row is still the only authority on which rule published it.
 	//
 	// The client does not read these — see the two fields' own comment above — so the cost is to the
 	// purpose they exist for: the upload's log would name the rule that applied to the *caller*
