@@ -99,6 +99,21 @@ type Mutation struct {
 	// service accepts today. A reading with no id cannot be matched to a withdrawal — which is the
 	// state every reading was in before this round.
 	RecordedMeasurementID *uuid.UUID
+	// Actor is who performed the act, for `community_tree_events` and the location chain: the owner,
+	// plus the session's bound device for a signed-in act. Zero means "the owner" (`actorOr`).
+	Actor Actor
+	// LocationCorrection is set only for kind `location_correction`: the adder moving the pin
+	// (decision 5). It materializes into `community_tree_locations` in this transaction, and it is
+	// the one community kind that can be refused *after* the payload has been read — the answers
+	// are `applyLocationCorrection`'s.
+	LocationCorrection *LocationCorrection
+	// SpeciesStatement is set for `species_claim` and `species_correction` when the payload names the
+	// item's own tree and a species. It materializes only for a community tree's adder (R45 arm 1)
+	// and never refuses — see `materializeSpecies`.
+	SpeciesStatement *SpeciesStatement
+	// WithdrawnTreeID is set only for kind `tree_withdrawal`: the adder withdrawing a tree for
+	// everyone (decision 8). See `withdrawCommunityTree`.
+	WithdrawnTreeID *uuid.UUID
 }
 
 // ApplyOutcome is what happened to one mutation.
@@ -167,8 +182,24 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		if mutation.Kind == "favorite_toggle" {
 			return upsertFavorite(ctx, tx, mutation, owner, now)
 		}
+		act := newTreeAct{
+			Owner: owner, Actor: mutation.Actor, ClientUUID: &mutation.ClientUUID,
+			OccurredAt: mutation.OccurredAt,
+		}
 		if mutation.CommunityTree != nil {
-			return insertCommunityTree(ctx, tx, *mutation.CommunityTree, owner, now)
+			_, err := insertCommunityTree(ctx, tx, *mutation.CommunityTree, act, now)
+			return err
+		}
+		// The three community-tree acts of 007. Each refusal returns an error, which rolls the
+		// contribution back with it — a refused act leaves no record claiming it happened.
+		if mutation.LocationCorrection != nil {
+			return applyLocationCorrection(ctx, tx, *mutation.LocationCorrection, act, now)
+		}
+		if mutation.SpeciesStatement != nil {
+			return materializeSpecies(ctx, tx, mutation.Kind, *mutation.SpeciesStatement, act, now)
+		}
+		if mutation.WithdrawnTreeID != nil {
+			return withdrawCommunityTree(ctx, tx, *mutation.WithdrawnTreeID, act, now)
 		}
 		// **After the dedupe, deliberately.** A replayed withdrawal returns `Duplicate` above and
 		// never reaches here, which is right: the first pass tombstoned the photograph, and a second
@@ -243,35 +274,6 @@ func upsertFavorite(ctx context.Context, tx pgx.Tx, mutation Mutation, owner Own
 	return err
 }
 
-// insertCommunityTree materializes an `add_tree` item, in the transaction that recorded it.
-//
-// `ON CONFLICT (id) DO NOTHING` and no reported outcome: the contribution insert above has already
-// decided whether this item is new, on the key that decides it everywhere else. A tree that is
-// already here is one this device sent before under a different `client_uuid` — the same act queued
-// twice — and re-inserting it must not fail the item, but must not overwrite it either. Whoever got
-// here first is the row.
-//
-// The statement is `AddTree`'s, run on this transaction's connection rather than the pool's. It is
-// written out instead of calling that method because `AddTree` takes a `*Store` and a context and
-// would open its own connection, which is exactly the second transaction this is here to avoid.
-func insertCommunityTree(
-	ctx context.Context,
-	tx pgx.Tx,
-	tree NewCommunityTree,
-	owner Owner,
-	now time.Time,
-) error {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO community_trees
-		    (id, lat, lon, address, species_id, placement, land_context,
-		     user_id, device_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
-		ON CONFLICT (id) DO NOTHING
-	`, tree.ID, tree.Lat, tree.Lon, tree.Address, tree.SpeciesID, tree.Placement, tree.LandContext,
-		owner.UserID, owner.DeviceID, now)
-	return err
-}
-
 // ── Deletion ───────────────────────────────────────────────────────────────────────────────────
 
 // DeletionChoice is `AccountDeletionChoice`, whose two raw values these are.
@@ -298,6 +300,10 @@ type DeletionReport struct {
 	Contributions int
 	Photos        int
 	Tombstones    int
+	// TreesAnonymized and TreesDeleted are the community trees the account added, by door (decision
+	// 6); see `deleteAccountTrees`.
+	TreesAnonymized int
+	TreesDeleted    int
 }
 
 // UnrevokedAppleToken is a token whose revocation has not yet succeeded.
@@ -423,6 +429,16 @@ func (s *Store) DeleteAccount(
 			return errors.New("unknown deletion choice")
 		}
 		report.Contributions = int(tag.RowsAffected())
+
+		// The trees the account added, and its name off the location chain and the audit log.
+		// After the contributions and photographs above, so the erase door's "anybody else built on
+		// it" sees only other people's work; before the sessions, devices and user rows below, for
+		// the two reasons `deleteAccountTrees` gives.
+		anonymizedTrees, deletedTrees, err := deleteAccountTrees(ctx, tx, userID, choice, now)
+		if err != nil {
+			return err
+		}
+		report.TreesAnonymized, report.TreesDeleted = anonymizedTrees, deletedTrees
 
 		// Sessions and the device link go with the account. `ON DELETE CASCADE` would take the
 		// sessions anyway; it is stated because the row order in a deletion should not depend on a

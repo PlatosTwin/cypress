@@ -94,12 +94,17 @@ func (s *Store) RevokeDeviceTokens(ctx context.Context, deviceID uuid.UUID) erro
 // ── Sessions ───────────────────────────────────────────────────────────────────────────────────
 
 // CreateSession stores a refresh token hash and returns the session id.
-func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, hash []byte, expiresAt time.Time) (uuid.UUID, error) {
+//
+// `deviceID` is `devices.id` of the installation this sign-in registered and claimed, or nil when
+// the sign-in named none. It is bound to the session and carried through every rotation (the
+// orchestrator's ruling of 2026-09-28), so an act performed under this session is recorded against
+// the device that proved itself at sign-in rather than the device an item claims to come from.
+func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, deviceID *uuid.UUID, hash []byte, expiresAt time.Time) (uuid.UUID, error) {
 	id := uuid.New()
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO sessions (id, user_id, refresh_token_hash, issued_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, id, userID, hash, s.now(), expiresAt)
+		INSERT INTO sessions (id, user_id, device_id, refresh_token_hash, issued_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, id, userID, deviceID, hash, s.now(), expiresAt)
 	return id, err
 }
 
@@ -107,6 +112,7 @@ func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, hash []byte
 type Session struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
+	DeviceID  *uuid.UUID
 	ExpiresAt time.Time
 	RotatedAt *time.Time
 	RevokedAt *time.Time
@@ -126,9 +132,10 @@ func (s *Store) RotateSession(ctx context.Context, presentedHash, nextHash []byt
 		// token and both mint a successor — and the loser's successor would be a live session
 		// nobody holds.
 		err := tx.QueryRow(ctx, `
-			SELECT id, user_id, expires_at, rotated_at, revoked_at
+			SELECT id, user_id, device_id, expires_at, rotated_at, revoked_at
 			  FROM sessions WHERE refresh_token_hash = $1 FOR UPDATE
-		`, presentedHash).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.RotatedAt, &session.RevokedAt)
+		`, presentedHash).Scan(&session.ID, &session.UserID, &session.DeviceID, &session.ExpiresAt,
+			&session.RotatedAt, &session.RevokedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -161,10 +168,11 @@ func (s *Store) RotateSession(ctx context.Context, presentedHash, nextHash []byt
 			return err
 		}
 		nextID = uuid.New()
+		// The successor inherits the bound device: a rotation is the same sign-in continuing.
 		_, err = tx.Exec(ctx, `
-			INSERT INTO sessions (id, user_id, refresh_token_hash, issued_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5)
-		`, nextID, session.UserID, nextHash, now, expiresAt)
+			INSERT INTO sessions (id, user_id, device_id, refresh_token_hash, issued_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, nextID, session.UserID, session.DeviceID, nextHash, now, expiresAt)
 		return err
 	})
 	if err == nil && reused {
@@ -193,12 +201,21 @@ var ErrSessionReused = errors.New("session reused after rotation")
 //
 // One indexed lookup on a primary key, on authenticated requests only. That is the price of the
 // access token not being a fifteen-minute lie about whether an account exists.
-func (s *Store) SessionIsLive(ctx context.Context, sessionID uuid.UUID) (bool, error) {
-	var live bool
+//
+// It also returns the session's bound device (`sessions.device_id`), nil when the sign-in named
+// none — the same indexed row, so the audit log's device costs no second lookup.
+func (s *Store) SessionIsLive(ctx context.Context, sessionID uuid.UUID) (bool, *uuid.UUID, error) {
+	var deviceID *uuid.UUID
 	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM sessions WHERE id = $1 AND revoked_at IS NULL AND expires_at > $2)
-	`, sessionID, s.now()).Scan(&live)
-	return live, err
+		SELECT device_id FROM sessions WHERE id = $1 AND revoked_at IS NULL AND expires_at > $2
+	`, sessionID, s.now()).Scan(&deviceID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	return true, deviceID, nil
 }
 
 // DeviceTokenOwner resolves a presented device token hash to its device.
@@ -347,11 +364,10 @@ func (s *Store) ClaimDevice(ctx context.Context, deviceUUID uuid.UUID, caller uu
 			return err
 		}
 
-		if _, err := tx.Exec(ctx, `
-			UPDATE community_trees
-			   SET user_id = $1, device_id = NULL, updated_at = $2
-			 WHERE device_id = $3 AND user_id IS NULL
-		`, caller, now, deviceID); err != nil {
+		// The device's trees, adopted and — if this account accepted the license — published in
+		// the same statement, with a `published` event each (decision 1: a tree added signed out
+		// "goes live for everyone at once" at sign-in; decision 7: not for an account that declined).
+		if err := claimCommunityTrees(ctx, tx, deviceID, caller, now); err != nil {
 			return err
 		}
 
@@ -421,14 +437,30 @@ func claimFavorites(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.UUID, 
 // `version == nil` is a *declined* consent and is stored as one. It arrives as an explicit null on
 // the wire rather than an omitted field, because `acceptsLicense` is derived from nil precisely so
 // a Bool and a version string cannot disagree, and that property has to survive the wire (§5.6).
-func (s *Store) RecordLicenseConsent(ctx context.Context, userID uuid.UUID, version *string) error {
-	now := s.now()
-	var acceptedAt *time.Time
-	if version != nil {
-		acceptedAt = &now
-	}
-	_, err := s.pool.Exec(ctx, `
-		UPDATE users SET license_version = $2, license_accepted_at = $3, updated_at = $4 WHERE id = $1
-	`, userID, version, acceptedAt, now)
-	return err
+//
+// ── And an acceptance publishes the account's trees (decisions 7 and 10) ───────────────────────
+//
+// An accepted license publishes every live tree the account owns that is not yet published — "they
+// go live if/when the account later accepts the license" — in the transaction that records the
+// answer, with the version accepted written on each `published` event. **A decline changes no
+// tree.** Decision 10: the license is one-way; a tree published while the account had accepted stays
+// published, and a decline keeps private only the trees added after it (`publicationStamp` reads
+// the answer at each insert). `actorDevice` is who is recorded as having done it, beside the account.
+func (s *Store) RecordLicenseConsent(ctx context.Context, userID uuid.UUID, version *string, actorDevice *uuid.UUID) error {
+	return s.Tx(ctx, func(tx pgx.Tx) error {
+		now := s.now()
+		var acceptedAt *time.Time
+		if version != nil {
+			acceptedAt = &now
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE users SET license_version = $2, license_accepted_at = $3, updated_at = $4 WHERE id = $1
+		`, userID, version, acceptedAt, now); err != nil {
+			return err
+		}
+		if version == nil {
+			return nil
+		}
+		return publishAccountTrees(ctx, tx, userID, *version, Actor{UserID: &userID, DeviceID: actorDevice}, now)
+	})
 }

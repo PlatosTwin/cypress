@@ -2,10 +2,10 @@ package store
 
 import (
 	"context"
-	"math"
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // The Class R reads (spec §3.1): the community layer and the account's own rows, where liveness
@@ -393,7 +393,8 @@ type NearbyTree struct {
 // ProximityDedupeRadiusM is `TreeDraft.proximityDedupeRadiusM`: 10 m, any species (BUILD-PLAN §6).
 const ProximityDedupeRadiusM = 10.0
 
-// TreesWithin returns community trees within radius metres of a point, nearest first.
+// TreesWithin returns community trees within radius metres of a point, nearest first, that the
+// viewer can see: published ones and the viewer's own (§3F, migration 007).
 //
 // A bounding-box prefilter over `idx_community_trees_position`, then a haversine — no PostGIS,
 // which R72 declines because no server-side spatial query exists under R36's local read path and
@@ -402,49 +403,10 @@ const ProximityDedupeRadiusM = 10.0
 // The latitude term of the box is constant; the longitude term is divided by cos(lat), which is
 // what keeps the box a box rather than a shape that narrows to nothing near the poles. Both cities
 // in the corpus are near 37°N, where the factor is ~1.25 — large enough that omitting it would
-// quietly shrink the search and let a duplicate through.
-func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]NearbyTree, error) {
-	const metresPerDegreeLat = 111_320.0
-	latDelta := radiusM / metresPerDegreeLat
-	cosLat := math.Cos(lat * math.Pi / 180)
-	if cosLat < 0.01 {
-		cosLat = 0.01
-	}
-	lonDelta := radiusM / (metresPerDegreeLat * cosLat)
-
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, lat, lon, address, species_id, placement, land_context,
-		       created_at, updated_at,
-		       6371000 * 2 * asin(sqrt(
-		           power(sin(radians(lat - $1) / 2), 2) +
-		           cos(radians($1)) * cos(radians(lat)) *
-		           power(sin(radians(lon - $2) / 2), 2)
-		       )) AS distance_m
-		  FROM community_trees
-		 WHERE deleted_at IS NULL
-		   AND lat BETWEEN $1 - $3 AND $1 + $3
-		   AND lon BETWEEN $2 - $4 AND $2 + $4
-		 ORDER BY distance_m ASC
-	`, lat, lon, latDelta, lonDelta)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var candidates []NearbyTree
-	for rows.Next() {
-		var tree NearbyTree
-		if err := rows.Scan(&tree.ID, &tree.Lat, &tree.Lon, &tree.Address, &tree.SpeciesID,
-			&tree.Placement, &tree.LandContext, &tree.CreatedAt, &tree.UpdatedAt,
-			&tree.DistanceM); err != nil {
-			return nil, err
-		}
-		// The box is a prefilter and admits corners beyond the radius; the haversine is the answer.
-		if tree.DistanceM <= radiusM {
-			candidates = append(candidates, tree)
-		}
-	}
-	return candidates, rows.Err()
+// quietly shrink the search and let a duplicate through. The query is `treesWithin`, shared with
+// the transaction that moves a pin.
+func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64, viewer Owner) ([]NearbyTree, error) {
+	return treesWithin(ctx, s.pool, lat, lon, radiusM, viewer, nil)
 }
 
 // CommunityTreeExists reports whether this exact tree has already been recorded.
@@ -454,10 +416,15 @@ func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64) ([]N
 // created moments ago, matches itself at zero metres, and comes back `conflict`. That code is
 // non-retryable, so the item fails terminally and the contributor is offered a resolution sheet
 // listing their own submission.
+//
+// A tree the erase door deleted counts as recorded: its id is in `withdrawn_community_trees`, and a
+// replay of its add is a duplicate, not a second life.
 func (s *Store) CommunityTreeExists(ctx context.Context, id uuid.UUID) (bool, error) {
 	var found bool
-	err := s.pool.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM community_trees WHERE id = $1)`, id).Scan(&found)
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM community_trees WHERE id = $1)
+		    OR EXISTS (SELECT 1 FROM withdrawn_community_trees WHERE id = $1)
+	`, id).Scan(&found)
 	return found, err
 }
 
@@ -477,24 +444,25 @@ type NewCommunityTree struct {
 	SpeciesID   *uuid.UUID
 	Placement   string
 	LandContext *string
+	// LocationAccuracyM is the fix's accuracy (D6), optional: nil is "the phone did not say".
+	LocationAccuracyM *float64
 }
 
-// AddTree inserts a community tree under the client's own id.
-func (s *Store) AddTree(ctx context.Context, tree NewCommunityTree, owner Owner) (ApplyOutcome, error) {
-	now := s.now()
-	tag, err := s.pool.Exec(ctx, `
-		INSERT INTO community_trees
-		    (id, lat, lon, address, species_id, placement, land_context,
-		     user_id, device_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
-		ON CONFLICT (id) DO NOTHING
-	`, tree.ID, tree.Lat, tree.Lon, tree.Address, tree.SpeciesID, tree.Placement, tree.LandContext,
-		owner.UserID, owner.DeviceID, now)
-	if err != nil {
-		return Applied, err
-	}
-	if tag.RowsAffected() == 0 {
-		return Duplicate, nil
-	}
-	return Applied, nil
+// AddTree inserts a community tree under the client's own id, for `POST /trees`.
+//
+// It is `insertCommunityTree` in a transaction of its own — the same publication rule, root
+// location and events as the sync path, with no contribution to carry the act's key.
+func (s *Store) AddTree(ctx context.Context, tree NewCommunityTree, owner Owner, actor Actor) (ApplyOutcome, error) {
+	outcome := Duplicate
+	err := s.Tx(ctx, func(tx pgx.Tx) error {
+		now := s.now()
+		inserted, err := insertCommunityTree(ctx, tx, tree, newTreeAct{
+			Owner: owner, Actor: actor, OccurredAt: now,
+		}, now)
+		if inserted {
+			outcome = Applied
+		}
+		return err
+	})
+	return outcome, err
 }

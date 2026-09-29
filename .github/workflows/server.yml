@@ -44,21 +44,24 @@ on:
     # red on the NEXT Go pull request, looking like that change's fault. Listed, it proves itself by
     # running — about a minute on ubuntu — and `check_trigger_paths.sh` refuses the list without it.
     #
-    # **The four Swift files are here because Go tests OPEN them.** `internal/api` and
+    # **The Swift files are here because Go tests OPEN them.** `internal/api` and
     # `internal/apierr` parse the client's enums and property lists at run time to prove the wire
     # vocabulary still agrees with the app. Renaming a `TreePlacement` case touches no `server/`
     # path, and without these lines the guard written to catch that rename would not run on it.
     # `server/ci/check_trigger_paths.sh` (the first step below) greps every `"../../../…"` read
-    # out of the Go sources and fails if one is not listed here, so a fifth reader added later
-    # cannot be left without a trigger.
+    # out of the Go sources and fails if one is not listed here, so a reader added later cannot be
+    # left without a trigger. `OutboxItem.swift` and `CypressAPI.swift` came with 007's vocabulary
+    # tests (the outbox kinds and the dedupe radius).
     paths:
       - 'server/**'
       - '.github/workflows/server.yml'
       - '.github/workflows/testflight.yml'
       - 'Cypress/Core/APIError.swift'
       - 'Cypress/Core/Models/CityRecord.swift'
+      - 'Cypress/Core/Models/OutboxItem.swift'
       - 'Cypress/Core/Models/Tree.swift'
       - 'Cypress/Core/Units/Quantity.swift'
+      - 'Cypress/Data/API/CypressAPI.swift'
   # **No `pull_request` trigger, deliberately** — see the header. Pull requests (to `main` and to
   # `release/**`, the same two bases `testflight.yml` covers) reach this file through the call
   # below. A `pull_request` trigger here would run the suite twice per pull request, the second
