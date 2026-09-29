@@ -10,11 +10,16 @@ import SwiftUI
 
 /// The pinch that drives a `VisitCameraController`'s `AVCaptureDevice.videoZoomFactor`.
 ///
-/// **One gesture, used by both viewfinders that own a controller:** screen 04 (`VisitCameraView`)
-/// and add-a-tree (`VisitAddTreeView`, F33). It was written inline on screen 04 first. Add-a-tree
-/// owns its own `VisitCameraController` (`VisitAddTreeModel.camera`) and had no zoom, so the gesture
-/// moved here rather than being copied. A second copy would have been a second set of rules for
-/// the same lens: where a pinch starts, how it multiplies, and when it is off.
+/// **One gesture, used by two of the three viewfinders that own a controller:** screen 04
+/// (`VisitCameraView`) and add-a-tree (`VisitAddTreeView`, F33). It was written inline on screen 04
+/// first. Add-a-tree owns its own `VisitCameraController` (`VisitAddTreeModel.camera`) and had no
+/// zoom, so the gesture moved here rather than being copied. A second copy would have been a second
+/// set of rules for the same lens: where a pinch starts, how it multiplies, and when it is off.
+///
+/// **The third does not apply it.** `ContributionCameraView`, the camera check-in (05) and care log
+/// (09) open, owns a `VisitCameraController` too and has no pinch. R80 item 5 and the F33 ruling
+/// name screen 04 and add-a-tree, and nothing has ruled on 05 and 09's camera, so it is an open item
+/// in `docs/ROADMAP.md`'s chip backlog rather than something this file decided.
 ///
 /// See `VisitCameraController.setZoom` for why this moves the *device* and not the preview, and
 /// `VisitCameraZoom` for the arithmetic, which is where the testable part of a pinch lives.
