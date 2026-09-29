@@ -43,6 +43,41 @@ disappears from the old tile's delta without being reported. A phone that fetche
 tile keeps drawing it where it was, indefinitely. S2 serves such a tree in the tile it left, with
 its new coordinate (`TestAPinMovedOutOfATileIsReportedInTheTileItLeft`).
 
+### E??? — S2's first draft leaked stamps through its cursor, reported private trees, and scanned every tree per tile
+
+Found by the adversarial review of #190 and fixed in the same PR, before merge. None was live.
+
+- **The cursor gave away exact times (F1).** It was base64 JSON of `(updated_at, id)`, and the
+  server accepted any well-formed one. A cursor forged at `T − 1µs` served a tree and one at `T` did
+  not, so a binary search recovered each tree's exact stamp: when an adder stood at it, when they
+  signed in, when an account was erased. That undid the day-precision ruling. The cursor is now
+  sealed (the rulings file). `TestTheReviewersBinarySearchFindsNothing` runs the review's attack,
+  and `TestATamperedMovedOrForeignCursorIsRefused` covers the other forgeries.
+- **A never-public tree was reported (F2, F3).** Every erase-door tombstone went into every
+  stranger's delta, including a declining account's unpublished tree in another city. A tree born
+  withdrawn was inferred public from the event log. The tile now reads S1's `was_public` columns
+  (`TestANeverPublishedTreeIsNeverReportedWhenItsAccountGoes`, `TestATreeBornWithdrawnIsNeverReported`).
+- **A position held while private was served (decision 13).** The tile placed a tree in every tile
+  of its location chain, and the history served its first position, including positions from
+  before it went live. Both now read only public rows (`TestPositionsHeldWhilePrivateStayPrivate`).
+- **Each tile request cost O(all community trees) (F5).** One query text with `($1 IS NULL OR …)`
+  arms cannot use an index in a generic plan. Now there are two texts on S1's partial indexes.
+  Measured with `EXPLAIN ANALYZE` on Postgres 18 in local Docker, 100,000 trees (10,000 of them
+  moved once), 1,000 tombstones, a 45-tree tile:
+
+  | query | warm | cold | review's measure of the old text |
+  |---|---|---|---|
+  | snapshot, custom plan | 0.28–0.41 ms (2.6 ms on the first execution) | 2.9 ms | 320–480 ms warm, 2.1 s cold |
+  | snapshot, generic plan | 0.27–0.44 ms | 3.2–4.2 ms | (the same seq scans) |
+  | delta, custom plan (cursor 5 min / 1 h / 1 day old) | 0.20–0.43 ms (1.3 ms on one first execution) | — | 8 ms |
+  | delta, generic plan | 0.22–0.33 ms | 1.6 ms | 403 ms, seq scans |
+
+  pgx's default mode (`auto`) measured 0.25–0.37 ms for the snapshot and 0.20–0.49 ms for the delta. No
+  sequential scan in any plan. "Cold" is the first execution after a server restart: shared
+  buffers empty, the Docker VM's page cache not dropped. The review's text, run on the same
+  database as a control, measured 128–660 ms for the snapshot and 159–277 ms for the generic delta,
+  with seq scans throughout. So the instrument reproduces the finding.
+
 ### E??? — Proximity candidates still carry another adder's address and to-the-second creation time
 
 **Not fixed here; for the roadmap.** `candidateFrom` (`server/internal/api/sync.go`) builds the
