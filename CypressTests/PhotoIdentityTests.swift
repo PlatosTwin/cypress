@@ -214,6 +214,10 @@ struct PhotoIdentityTests {
         let sent = try #require(try await Self.takeAndSendPhoto(data, transport: transport, tree: tree, serverID: serverID))
         let onThePhone = try await Self.localPhotoIDs(data, tree: tree)
         #expect(onThePhone.count == 2, "fixture: the add-a-tree photograph and the visit's")
+        #expect(
+            onThePhone.contains(sent.clientUUID),
+            "the begin's key \(sent.clientUUID) is not the phone's photos.id — the link the fix rests on is missing"
+        )
 
         // What the service answers its own contributor, key and all (`reads.go`).
         Self.answerProfile(
@@ -296,5 +300,131 @@ struct PhotoIdentityTests {
 
         #expect(shown.isSuperset(of: onThePhone), "a photograph only this phone holds was dropped: \(shown)")
         #expect(shown == onThePhone.union([strangers]))
+    }
+
+    // MARK: - 4. Pending: visible to its contributor only, and still one row
+
+    @Test("an uploader's own pending photograph counts once too")
+    @MainActor
+    func anUploadersOwnPendingPhotographCountsOnce() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+        let serverID = UUID()
+
+        let sent = try #require(try await Self.takeAndSendPhoto(data, transport: transport, tree: tree, serverID: serverID))
+        let onThePhone = try await Self.localPhotoIDs(data, tree: tree)
+
+        // An anonymous device's photograph is `pending` on the service and reaches only its own
+        // contributor, which is the one reader who also holds the phone's copy.
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [Self.row(serverID, shotType: sent.shotType, capturedAt: sent.capturedAt,
+                            isPubliclyVisible: false, clientUUID: sent.clientUUID)],
+            own: [serverID]
+        )
+        let profile = try await Self.refreshed(data, tree: tree)
+        #expect(Set(profile.visiblePhotos.items.map(\.id)) == onThePhone)
+    }
+
+    // MARK: - 5. Withdrawn here, still on the service
+
+    /// The contributor withdrew the photograph on this phone; the service's copy is still live
+    /// (the withdrawal is queued, or never reached it). It must not come back onto their profile.
+    @Test("a photograph withdrawn on the phone does not come back from the service")
+    @MainActor
+    func aWithdrawnPhotographDoesNotComeBack() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+        let serverID = UUID()
+
+        let sent = try #require(try await Self.takeAndSendPhoto(data, transport: transport, tree: tree, serverID: serverID))
+        _ = try await data.api.deletePhoto(id: sent.clientUUID)
+        let onThePhone = try await Self.localPhotoIDs(data, tree: tree)
+        #expect(!onThePhone.contains(sent.clientUUID), "fixture: the withdrawal did not take on the phone")
+
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [Self.row(serverID, shotType: sent.shotType, capturedAt: sent.capturedAt, clientUUID: sent.clientUUID)],
+            own: [serverID]
+        )
+        let profile = try await Self.refreshed(data, tree: tree)
+        let shown = Set(profile.visiblePhotos.items.map(\.id))
+        #expect(!shown.contains(serverID), "the service's copy of a withdrawn photograph came back: \(shown)")
+        #expect(shown == onThePhone)
+    }
+
+    // MARK: - 6. A photograph sent by an earlier build
+
+    /// Sent before the phone's id was the begin's key: the service echoes a key the phone no longer
+    /// holds (`outbox_photos.id`, deleted when the send completed). This is the tester's own tree in
+    /// F30 after they update — the row must still fold, and an own row that is **not** this
+    /// photograph (the same account's other phone, an hour earlier) must still show.
+    @Test("a photograph sent by an earlier build counts once, and a different own photograph still shows")
+    @MainActor
+    func aPhotographSentByAnEarlierBuildCountsOnce() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+        let serverID = UUID()
+        let otherPhone = UUID()
+
+        let sent = try #require(try await Self.takeAndSendPhoto(data, transport: transport, tree: tree, serverID: serverID))
+        let onThePhone = try await Self.localPhotoIDs(data, tree: tree)
+
+        let formatter = ISO8601DateFormatter()
+        let captured = try #require(formatter.date(from: sent.capturedAt))
+        let anHourEarlier = formatter.string(from: captured.addingTimeInterval(-3600))
+
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [
+                Self.row(serverID, shotType: sent.shotType, capturedAt: sent.capturedAt, clientUUID: UUID()),
+                Self.row(otherPhone, shotType: sent.shotType, capturedAt: anHourEarlier, clientUUID: UUID()),
+            ],
+            own: [serverID, otherPhone]
+        )
+        let profile = try await Self.refreshed(data, tree: tree)
+        let shown = Set(profile.visiblePhotos.items.map(\.id))
+
+        #expect(!shown.contains(serverID), "the earlier build's photograph was drawn twice: \(shown)")
+        #expect(shown.contains(otherPhone), "a different photograph of the same account's was folded away")
+        #expect(shown == onThePhone.union([otherPhone]))
+    }
+
+    // MARK: - 7. The pairing rule itself
+
+    /// Two photographs from one visit share a capture time — they share an item — so the earlier
+    /// build's pairing has to be one-to-one or the second service copy would fold into the first
+    /// local row and the pair would read as one (or one would survive as a double).
+    @Test("an earlier build's copies pair one-to-one with the phone's rows")
+    func earlierBuildCopiesPairOneToOne() throws {
+        let tree = UUID()
+        let at = Date(timeIntervalSince1970: 1_790_000_000)
+        let first = Photo(treeID: tree, shotType: .fullTree, capturedAt: at.addingTimeInterval(0.4))
+        let second = Photo(treeID: tree, shotType: .fullTree, capturedAt: at.addingTimeInterval(0.4))
+        let copies = (0..<3).map { _ in Photo(treeID: tree, shotType: .fullTree, moderationState: .approved, capturedAt: at) }
+
+        func delta(_ rows: [Photo]) -> RemoteAPI.TreeCommunityDelta {
+            RemoteAPI.TreeCommunityDelta(
+                treeID: tree,
+                photos: rows,
+                ownPhotoIDs: Set(rows.map(\.id)),
+                deletablePhotoIDs: Set(rows.map(\.id)),
+                clientUUIDs: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, UUID()) })
+            )
+        }
+
+        let both = RoutedAPI.communityPhotosNotOnThisPhone(delta(Array(copies.prefix(2))), onThisPhone: [first, second])
+        #expect(both.isEmpty, "two copies of two photographs left \(both.count) behind")
+
+        let three = RoutedAPI.communityPhotosNotOnThisPhone(delta(copies), onThisPhone: [first, second, first])
+        #expect(three.count == 1, "three service rows for two phone rows (one listed twice) left \(three.count)")
+
+        // And the framing is part of the match: a leaf is not the full-tree photograph.
+        let leaf = Photo(treeID: tree, shotType: .leaf, moderationState: .approved, capturedAt: at)
+        let unmatched = RoutedAPI.communityPhotosNotOnThisPhone(delta([leaf]), onThisPhone: [first])
+        #expect(unmatched.map(\.id) == [leaf.id])
     }
 }
