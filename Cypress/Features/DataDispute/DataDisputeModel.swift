@@ -49,11 +49,12 @@ final class DataDisputeModel {
 
     /// The error count the provider had when the block last started waiting. Only an error *after*
     /// that ends the wait — an old one must not answer a new request (`MapLocationProvider
-    /// .failureCount`).
+    /// .failureCount`). Taken again whenever the block starts a new wait, not only at the ask
+    /// (`locationChanged`).
     @ObservationIgnored
     private var failuresWhenAsked = 0
-    /// Which wait the pending timeout belongs to. Every new wait bumps it, so a timeout left over
-    /// from an earlier request cannot end a later one.
+    /// Which wait the pending timeout belongs to. Every new timeout and every dropped one bumps it,
+    /// so a timeout left over from an earlier request cannot end a later one.
     @ObservationIgnored
     private var waitGeneration = 0
     @ObservationIgnored
@@ -104,13 +105,13 @@ final class DataDisputeModel {
     /// when the provider publishes. The view starts the provider — the model has none.
     ///
     /// Also the retry after `.unavailable` (owner ruling 11): it starts a fresh wait, with a fresh
-    /// timeout and a fresh baseline for errors.
+    /// timeout and a fresh baseline for errors. The timeout does not start while iOS's permission
+    /// prompt is still up — see `armTimeoutIfWaiting`.
     func useLocation(_ reading: DataDisputeFixReading) {
         failuresWhenAsked = reading.failureCount
-        timeout?.cancel()
-        timeout = nil
+        dropTimeout()
         draft.location = .reading(reading)
-        armTimeoutIfWaiting()
+        armTimeoutIfWaiting(reading)
         problem = nil
     }
 
@@ -122,31 +123,47 @@ final class DataDisputeModel {
     /// cannot quietly replace the position they were standing at when they tapped.
     ///
     /// Owner ruling 11: while the block is waiting, an error CoreLocation reported *since the
-    /// reporter asked* ends the wait as `.unavailable`. And an `.unavailable` block is not put back
-    /// to waiting by a reading with no fix in it — only a fix, or location going off, replaces it;
-    /// asking again is the reporter's to do.
+    /// block started waiting* ends the wait as `.unavailable`. And an `.unavailable` block is not
+    /// put back to waiting by a reading with no fix in it — only a fix, or location going off,
+    /// replaces it; asking again is the reporter's to do.
+    ///
+    /// The error baseline is taken again whenever the block starts a new wait from a state that was
+    /// not waiting — Location turned off and back on, say. Turning it off may make CoreLocation
+    /// report an error to the running update (`kCLErrorDenied`; not yet seen on a phone), and
+    /// measured from the original ask that error would end the new wait the moment it began (PR
+    /// #185's verifier, finding 2). While iOS's permission prompt is up (`.notAsked`) the block
+    /// waits and judges no error either: the reporter has not answered, and the wait that can fail
+    /// starts at the grant (the owner's ruling of 2026-09-29).
     func locationChanged(_ reading: DataDisputeFixReading) {
         guard draft.location.followsTheProvider else { return }
         let next = DataDisputeLocation.reading(reading)
         if next == .waiting {
             if draft.location == .unavailable { return }
-            if reading.failureCount > failuresWhenAsked {
+            if draft.location != .waiting || reading.availability == .notAsked {
+                failuresWhenAsked = reading.failureCount
+            } else if reading.failureCount > failuresWhenAsked {
                 failuresWhenAsked = reading.failureCount
                 endWait(as: .unavailable)
                 return
             }
         }
         draft.location = next
-        armTimeoutIfWaiting()
+        armTimeoutIfWaiting(reading)
     }
 
     // MARK: - The bounded wait (owner ruling 11)
 
     /// Starts the timeout when the block has just begun waiting, and drops it when it has stopped.
-    private func armTimeoutIfWaiting() {
-        guard draft.location == .waiting else {
-            timeout?.cancel()
-            timeout = nil
+    ///
+    /// **The clock starts at the grant, not at the ask** (the owner's ruling of 2026-09-29). While
+    /// iOS's location-permission prompt is on screen the provider reads `.notAsked` (authorization
+    /// `notDetermined`), and the block waits with no clock: a reporter slow to answer the prompt
+    /// must not come back to "couldn't find your location". Allowing moves the provider to
+    /// `.waitingForFix`, and the 15 s start then. Refusing moves it to `.denied`, which the block
+    /// already answers as location off (`DataDisputeLocation.off`), with its way to Settings.
+    private func armTimeoutIfWaiting(_ reading: DataDisputeFixReading) {
+        guard draft.location == .waiting, reading.availability != .notAsked else {
+            dropTimeout()
             return
         }
         guard timeout == nil else { return }
@@ -165,9 +182,16 @@ final class DataDisputeModel {
     }
 
     private func endWait(as location: DataDisputeLocation) {
+        dropTimeout()
+        draft.location = location
+    }
+
+    /// Cancels the pending timeout **and** retires its generation, so a sleep that had already
+    /// returned when it was cancelled cannot end a wait it no longer belongs to.
+    private func dropTimeout() {
         timeout?.cancel()
         timeout = nil
-        draft.location = location
+        waitGeneration += 1
     }
 
     func chooseSpecies(_ species: Species) {

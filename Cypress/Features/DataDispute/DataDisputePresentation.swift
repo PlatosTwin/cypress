@@ -36,7 +36,9 @@
 //  than sending "the pin is wrong" without the position the reporter asked to attach (ruling 8).
 //  The wait is bounded (owner ruling 11): after `DataDisputeLocation.fixTimeout` with no fix, or as
 //  soon as CoreLocation reports an error, the block says it could not find the location and *Send*
-//  works for the other choices; *Use my current location* asks again.
+//  works for the other choices; *Use my current location* asks again. The 15 s start at the grant:
+//  while iOS's permission prompt is up the block waits with no clock (the owner's ruling of
+//  2026-09-29, `DataDisputeModel.armTimeoutIfWaiting`).
 //
 //  ── "There's no tree here" stands alone ─────────────────────────────────────────────────────
 //  The owner's ruling of 2026-09-28: choosing it clears the other three chips and disables them,
@@ -124,6 +126,7 @@ enum DataDisputeLocation: Hashable, Sendable {
     case unavailable
 
     /// How long the block waits for a fix before it says it could not find one (owner ruling 11).
+    /// Counted from the grant, never while the permission prompt is up (the owner's 2026-09-29 ruling).
     static let fixTimeout: Duration = .seconds(15)
 
     /// The block's answer to the provider's current state.
