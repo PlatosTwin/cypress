@@ -43,6 +43,14 @@ type Server struct {
 	// OperatorToken authorizes the takedown route. Operator surfaces are a web deliverable by
 	// ARCHITECTURE §8, so this service exposes the action and not a console.
 	OperatorToken string
+	// CursorKey seals the community tile's `next_cursor` (AES-256-GCM, tile_cursor.go). main.go
+	// derives it from `SESSION_SIGNING_KEY` with `DeriveCursorKey`; a server without one refuses to
+	// hand out a tile cursor at all rather than hand out a readable one.
+	CursorKey []byte
+	// cursorNonces is where a cursor's GCM nonce comes from: nil is `crypto/rand`, always, in
+	// production. Only the golden-fixture tests set it, so the fixture's sealed cursor is the same
+	// bytes on every run. Unexported, so nothing outside this package can weaken it.
+	cursorNonces io.Reader
 
 	limiter *ratelimit.Limiter
 	// readLimiter is the public read's own bucket, at its own budget.

@@ -119,6 +119,10 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cursorKey, err := DeriveCursorKey([]byte("a-test-signing-key-of-at-least-32-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The nonce is required by construction (N10), so the harness carries a real pair: the raw
 	// value the app would keep, and the SHA-256 hex Apple echoes into the identity token.
 	fake := &fakeApple{
@@ -138,6 +142,7 @@ func newHarness(t *testing.T) *harness {
 		Log:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		GitSHA:        "test",
 		OperatorToken: "the-operator-token",
+		CursorKey:     cursorKey,
 	}
 	return &harness{server: server, handler: server.Handler(), apple: fake, store: dataStore}
 }

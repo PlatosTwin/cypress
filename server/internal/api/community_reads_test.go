@@ -1119,8 +1119,20 @@ func goldenTile(t *testing.T) string {
 	return tile
 }
 
+// fixedNonces makes a sealed cursor reproducible, for the fixtures only: an endless run of one
+// byte. Production draws every nonce from crypto/rand (`Server.cursorNonces` is nil there).
+type fixedNonces struct{}
+
+func (fixedNonces) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0x5e
+	}
+	return len(p), nil
+}
+
 func TestCommunityTreesTileGolden(t *testing.T) {
 	h := newHarness(t)
+	h.server.cursorNonces = fixedNonces{}
 	seedGoldenWorld(t, h)
 	stranger := h.registerDeviceToken(t, uuid.New())
 	recorder := requestTile(t, h, stranger, goldenTile(t), "", 0, fixedClock("2026-09-25T12:00:00Z"))
@@ -1132,6 +1144,7 @@ func TestCommunityTreesTileGolden(t *testing.T) {
 
 func TestCommunityTreesTileDeltaGolden(t *testing.T) {
 	h := newHarness(t)
+	h.server.cursorNonces = fixedNonces{}
 	adder := seedGoldenWorld(t, h)
 	stranger := h.registerDeviceToken(t, uuid.New())
 	tile := goldenTile(t)

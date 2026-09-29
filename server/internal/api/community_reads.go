@@ -1,8 +1,6 @@
 package api
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -90,52 +88,19 @@ const communityTileMaxLimit = 100
 // **What the cursor does with it.** Everything committed is served — nothing waits on the settle, so
 // a tree appears at the other phone's next refresh ("instantly", decision 1) — but the returned
 // cursor never moves past `now − settle`. A row newer than that is served again on the next fetch,
-// which the client's upsert-by-id absorbs. Five seconds of margin over the timeout covers the
-// commit round trip itself.
+// which the client's upsert-by-id absorbs. Five seconds of margin over the timeout covers a COMMIT
+// already in flight at the deadline.
+//
+// **The assumption this rests on: one machine, one clock.** The stamp (`updated_at`, a tombstone's
+// `withdrawn_at`) and the horizon are both read from the Go clock of the machine serving the
+// request, and the argument above compares them. `fly.toml` runs exactly one machine today. If
+// `cypress-sync` ever runs two, the worst clock skew between them must be added to this margin, or
+// a row stamped by a machine whose clock runs behind can land behind a cursor another machine
+// already moved past it — the silent drop this constant exists to prevent.
 const communityTileSettle = requestTimeout + 5*time.Second
 
 // maxUUID is the greatest uuid, so `(horizon, maxUUID)` sorts after every row stamped at the horizon.
 var maxUUID = uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
-
-// tileCursor is the opaque `next_cursor`: base64url of this JSON.
-//
-// Opaque for `journalCursor`'s reason (the pagination key is not a promise). `Since` is set only
-// while a snapshot is being paged: removals at or before it are not reported, because a first fetch
-// holds nothing to remove.
-type tileCursor struct {
-	At    time.Time  `json:"t"`
-	ID    uuid.UUID  `json:"i"`
-	Since *time.Time `json:"w,omitempty"`
-}
-
-func (c tileCursor) key() store.TileKey { return store.TileKey{At: c.At, ID: c.ID} }
-
-func encodeTileCursor(c tileCursor) (string, error) {
-	c.At = c.At.UTC()
-	if c.Since != nil {
-		since := c.Since.UTC()
-		c.Since = &since
-	}
-	encoded, err := json.Marshal(c)
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(encoded), nil
-}
-
-var errBadTileCursor = apierr.New(apierr.ValidationFailed, "That page marker is not valid.")
-
-func decodeTileCursor(raw string) (tileCursor, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
-	if err != nil {
-		return tileCursor{}, errBadTileCursor
-	}
-	var cursor tileCursor
-	if err := json.Unmarshal(decoded, &cursor); err != nil {
-		return tileCursor{}, errBadTileCursor
-	}
-	return cursor, nil
-}
 
 // parseTile reads `14/x/y`. The tile scheme is the web map one every basemap uses (OSM "slippy"
 // tiles): at zoom z the world is 2^z columns west to east and 2^z rows north to south, in Web
@@ -214,7 +179,7 @@ func (s *Server) communityTrees(w http.ResponseWriter, r *http.Request, _ caller
 		after *store.TileKey
 	)
 	if raw := query.Get("cursor"); raw != "" {
-		input, err = decodeTileCursor(raw)
+		input, err = s.openTileCursor(tile, raw)
 		if err != nil {
 			return err
 		}
@@ -262,7 +227,7 @@ func (s *Server) communityTrees(w http.ResponseWriter, r *http.Request, _ caller
 	// More is worth asking for only if the cursor moved; if every row on a full page is newer than
 	// the horizon, the next refresh will get them again, and a loop now would get nothing new.
 	body.HasMore = more && input.key().Less(next.key())
-	body.NextCursor, err = encodeTileCursor(next)
+	body.NextCursor, err = s.sealTileCursor(tile, next)
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
