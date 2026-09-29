@@ -302,8 +302,15 @@ DECISIONS constraint 15 forbids inventing civic content.
 confirmation dialog" above.
 
 *Take back your report* opens *Take back your report?* before anything is withdrawn. **As built:**
-the app's existing take-back question, `GrowthHistoryView`'s `confirmationDialog` — a destructive
-action repeating the link's words, and *Keep it*. The owner kept the author's other two calls: a
+first as the app's existing take-back question, `GrowthHistoryView`'s `confirmationDialog` — a
+destructive action repeating the link's words, and *Keep it* — and then, in the same PR, as an
+**alert** with the same words. CI's iPhone 17 Pro on iOS 26.2 drew the dialog's title and left
+*Keep it* out of the accessibility tree in two runs, while the 16 Pro on iOS 18.6 drew it. iOS 26
+presents a confirmation dialog as a popover dismissed by tapping outside it, and nothing in this
+design relied on tapping outside: `GrowthHistoryCopy.withdrawCancel` says the button that does
+nothing should say what nothing means. The alert, which `ReportView` already uses, keeps both
+buttons. The other `confirmationDialog`s in the app (growth history, photos, check-in, moderation,
+account deletion) carry the same latent iOS 26 behavior and are left to the roadmap. The owner kept the author's other two calls: a
 coarse fix blocks only the pin part (refined by rulings 6–9 below), and the number pad's *Done*.
 
 ### R??? — The copy stands as shown (ruling 4)
@@ -374,4 +381,19 @@ A second take-back while one is in flight does nothing, rather than reaching the
 *That report was already taken back.* beside the restored action (review finding 6). **As built:**
 `TreeProfileModel.isWithdrawingDataDispute`, held across the reload. `DataDisputeUITests` scrolls to
 every control before touching it, so it passes at the accessibility text sizes (review finding 7).
+
+### R??? — The wait for a fix is bounded (ruling 11)
+
+**Date:** 2026-09-29. **Decided by:** owner, after the verifier's pass. **Status:** decided.
+
+Ruling 8 held *Send report* while the pin chip's fix was pending, and a fix that never came held it
+forever. After **15 s** with no fix, or as soon as CoreLocation reports an error after the reporter
+asked (`didFailWithError`, which the provider used to ignore), the pin section says *Your phone
+couldn't find your location, so no position was used. Try again in the open, then use your location
+again.* and *Send* works for the other choices; *Use my current location* asks again, with a fresh
+15 s. **As built:** `DataDisputeLocation.unavailable` and `fixTimeout`; the model's timeout runs on an
+injected sleep so the unit tests assert the 15 s without spending it; `MapLocationProvider
+.failureCount` counts errors, and the screen compares it with the count it saw when the reporter
+asked, so an old error never answers a new request. A late fix still replaces `.unavailable` (ruling
+7's rule); a reading with no fix in it does not put the block back to waiting — asking again does.
 
