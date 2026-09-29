@@ -89,8 +89,9 @@ struct PhotoIdentityTests {
     /// Stages one photograph on a visit, drains it through the real queue, and answers the begin
     /// with `serverID` — the id the service mints, which the phone never keeps.
     ///
-    /// `beginSucceeds: false` answers the begin with a retryable failure instead, which leaves the
-    /// photograph applied on the phone and absent from the service.
+    /// `beginSucceeds: false` answers the begin with `beginFailure` instead, which leaves the
+    /// photograph applied on the phone and absent from the service. The default is retryable, so the
+    /// send stays owed; a non-retryable one is refused for good and the send is given up.
     @MainActor
     private static func takeAndSendPhoto(
         _ data: DataLayer,
@@ -98,6 +99,7 @@ struct PhotoIdentityTests {
         tree: Tree,
         serverID: UUID,
         beginSucceeds: Bool = true,
+        beginFailure: APIError = .serverError,
         shotType: ShotType = .fullTree
     ) async throws -> SentBegin? {
         let staged = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -126,7 +128,7 @@ struct PhotoIdentityTests {
             )
             transport.answer("POST /photos/\(serverID.uuidString)/received", with: #"{"received":true}"#)
         } else {
-            transport.answer("POST /photos/begin", throwing: APIError.serverError)
+            transport.answer("POST /photos/begin", throwing: beginFailure)
         }
 
         let report = try await data.outbox.drain(photoUploadsAllowed: true)
@@ -807,6 +809,69 @@ struct PhotoIdentityTests {
         #expect(
             shown.contains(serverID),
             "a photograph still public on the service (\(serverID)) is hidden from its own contributor because it folded into their withdrawn row"
+        )
+    }
+
+    // MARK: - 13. Review of #194: a photograph refused for good has not left the phone either
+
+    /// Finding 1 again, reached through a **non-retryable** refusal. The service refused this phone's
+    /// `trunk` photograph's begin for good (`not_found`), so it has no copy of it. The drain gives
+    /// the binary up and deletes its queue row, and a photograph with no queue row used to read as
+    /// sent. The account's other phone sent a `trunk` of the same tree in the same second. That one
+    /// must be drawn, and withdrawing this phone's must never name it.
+    @Test("another phone's photograph is neither hidden nor named by one whose send was refused for good")
+    @MainActor
+    func aRefusedPhotographNeverPairs() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+
+        _ = try await Self.takeAndSendPhoto(
+            data, transport: transport, tree: tree, serverID: UUID(),
+            beginSucceeds: false, beginFailure: .notFound, shotType: .trunk
+        )
+        let refused = try #require(
+            try await data.local.treeProfile(id: tree.id).photos.items.first { $0.shotType == .trunk },
+            "fixture: the refused trunk photograph is not on the phone"
+        )
+
+        // The premise: the refusal was terminal, and it took the queue row with it. If either is
+        // false this is the retryable case, which `anUnsentPhotographNeverPairs` already covers.
+        let visit = try #require(
+            try await data.outbox.records().first { $0.item.kind == .visit },
+            "fixture: the visit that carried the photograph is not in the queue"
+        )
+        #expect(visit.item.state == .failed, "fixture: the item is \(visit.item.state), so the refusal was not terminal")
+        #expect(visit.item.lastErrorCode == .notFound, "fixture: the item carries \(String(describing: visit.item.lastErrorCode))")
+        let outstanding = try await data.store.queue.read { connection in
+            try OutboxStore().outstandingPhotoCount(for: visit.id, connection: connection)
+        }
+        #expect(outstanding == 0, "fixture: the refused binary is still queued, so its send still reads as owed")
+
+        let stamp = ISO8601DateFormatter()
+        let otherTrunk = UUID()
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [
+                Self.row(otherTrunk, shotType: "trunk", capturedAt: stamp.string(from: refused.capturedAt), clientUUID: UUID()),
+            ],
+            own: [otherTrunk]
+        )
+        let shown = Set(try await Self.refreshed(data, tree: tree).visiblePhotos.items.map(\.id))
+        #expect(
+            shown.contains(otherTrunk),
+            "the account's other phone's photograph \(otherTrunk) was folded into this phone's refused one — hidden"
+        )
+
+        _ = try await data.api.deletePhoto(id: refused.id)
+        let named = try await Self.queuedWithdrawals(data).map(\.photoID)
+        #expect(
+            named == [refused.id],
+            """
+            withdrawing this phone's refused photograph queued withdrawals naming \(named) — a service \
+            id there is the OTHER phone's photograph \(otherTrunk), and it would be deleted \
+            (refused \(refused.id))
+            """
         )
     }
 }
