@@ -505,6 +505,17 @@ struct DataDisputeScreenTests {
         DataDisputeFixReading(availability: .waitingForFix, failureCount: failures)
     }
 
+    /// The provider while iOS's permission prompt is on screen: authorization `notDetermined`.
+    private static func promptReading(failures: Int = 0) -> DataDisputeFixReading {
+        DataDisputeFixReading(availability: .notAsked, failureCount: failures)
+    }
+
+    /// Lets a timeout the model may have just armed reach its sleep, so "no clock" is observed
+    /// rather than assumed from a task that had not run yet.
+    private static func letTasksRun() async {
+        for _ in 0..<50 { await Task.yield() }
+    }
+
     @Test("15 s with no fix ends the wait: the block says so, Send works, and asking again waits again")
     func aFixThatNeverComesStopsHoldingSend() async throws {
         let store = try await Self.seededStore()
@@ -559,6 +570,12 @@ struct DataDisputeScreenTests {
         // The provider had already failed twice before the reporter asked (on the map, say).
         model.useLocation(Self.waitingReading(failures: 2))
         #expect(model.draft.location == .waiting, "an error from before the ask answered it")
+        // The provider's next reading still carries those two. They are not new errors, so the
+        // block keeps waiting — this is the line that needs the count the ask recorded.
+        model.locationChanged(Self.waitingReading(failures: 2))
+        #expect(model.draft.location == .waiting,
+                "an error counted before the ask ended the wait at the next reading after it")
+        #expect(!model.canSend)
 
         model.locationChanged(Self.waitingReading(failures: 3))
         #expect(model.draft.location == .unavailable, "a didFailWithError after the ask was ignored")
@@ -574,6 +591,96 @@ struct DataDisputeScreenTests {
             availability: .located(Self.spot, accuracyM: 5), failureCount: 4
         ))
         #expect(model.draft.location == .captured(.init(coordinate: Self.spot, accuracyM: 5)))
+    }
+
+    /// The owner's ruling of 2026-09-29, "Start at the grant": a reporter slow to answer iOS's
+    /// location prompt must not come back to "couldn't find your location".
+    @Test("the 15 s start at the grant: no clock while the permission prompt is up")
+    func theClockStartsAtTheGrant() async throws {
+        let store = try await Self.seededStore()
+        let clock = ManualSleep()
+        let model = DataDisputeModel(
+            treeID: UUID(), api: Self.api(store), currentYear: Self.year,
+            sleep: { try await clock.sleep($0) }
+        )
+        model.toggle(.wrongPlace)
+        model.useLocation(Self.promptReading())
+        #expect(model.draft.location == .waiting)
+        #expect(!model.canSend, "Send was offered while the reporter was answering the prompt")
+        await Self.letTasksRun()
+        #expect(clock.requested.isEmpty,
+                "the clock started while the permission prompt was up: \(clock.requested)")
+
+        // However long the prompt stays up, nothing ends the wait: no clock, and no error either.
+        clock.elapse()
+        model.locationChanged(Self.promptReading(failures: 1))
+        await Self.letTasksRun()
+        #expect(model.draft.location == .waiting,
+                "the block gave up while the reporter had not answered the prompt: \(model.draft.location)")
+
+        // Allow: the provider waits for a fix, and the 15 s start now.
+        model.locationChanged(Self.waitingReading(failures: 1))
+        #expect(model.draft.location == .waiting,
+                "an error from while the prompt was up ended the wait at the grant")
+        await Self.settle { !clock.requested.isEmpty }
+        #expect(clock.requested == [.seconds(15)], "Allowing did not start the 15 s: \(clock.requested)")
+
+        clock.elapse()
+        await Self.settle { model.draft.location != .waiting }
+        #expect(model.draft.location == .unavailable, "the clock started at the grant did not end the wait")
+        #expect(model.canSend)
+    }
+
+    /// #185 already answers a refusal as location off; the ruling moving the clock keeps that.
+    @Test("Don't Allow at the prompt is location off, with the way to Settings, and never a clock")
+    func aDenialAtThePromptIsLocationOff() async throws {
+        let store = try await Self.seededStore()
+        let clock = ManualSleep()
+        let model = DataDisputeModel(
+            treeID: UUID(), api: Self.api(store), currentYear: Self.year,
+            sleep: { try await clock.sleep($0) }
+        )
+        model.toggle(.wrongPlace)
+        model.useLocation(Self.promptReading())
+        model.locationChanged(Self.state(.denied))
+        #expect(model.draft.location == .off(servicesOff: false))
+        #expect(DataDisputeCopy.location(model.draft.location) == DataDisputeCopy.locationDenied)
+        #expect(model.draft.location.offersSettings)
+        #expect(model.canSend, "Send is held for a position the reporter refused to give")
+        await Self.letTasksRun()
+        #expect(clock.requested.isEmpty, "a refusal started the clock: \(clock.requested)")
+    }
+
+    /// PR #185's verifier, finding 2: turning Location off may make CoreLocation report an error,
+    /// and measured from the original ask that error ended the wait the moment Location came back.
+    @Test("Location off and back on is a new wait, with its own error baseline and its own 15 s")
+    func turningLocationBackOnWaitsAgain() async throws {
+        let store = try await Self.seededStore()
+        let clock = ManualSleep()
+        let model = DataDisputeModel(
+            treeID: UUID(), api: Self.api(store), currentYear: Self.year,
+            sleep: { try await clock.sleep($0) }
+        )
+        model.toggle(.wrongPlace)
+        model.useLocation(Self.waitingReading())
+        await Self.settle { clock.requested.count == 1 }
+        #expect(clock.requested.count == 1)
+
+        model.locationChanged(DataDisputeFixReading(availability: .denied, failureCount: 1))
+        #expect(model.draft.location == .off(servicesOff: false))
+        #expect(model.canSend)
+
+        model.locationChanged(Self.waitingReading(failures: 1))
+        #expect(model.draft.location == .waiting,
+                "turning Location back on was answered by the error turning it off reported: \(model.draft.location)")
+        #expect(!model.canSend)
+        await Self.settle { clock.requested.count == 2 }
+        #expect(clock.requested.count == 2, "the new wait did not get its own 15 s")
+
+        // An error after the new wait began still ends it.
+        model.locationChanged(Self.waitingReading(failures: 2))
+        #expect(model.draft.location == .unavailable, "an error after Location came back was ignored")
+        #expect(model.canSend)
     }
 
     @Test("the provider counts didFailWithError, through the real delegate")
