@@ -437,8 +437,13 @@ that had not yet reached a build). What remains OPEN:
   break it, and nothing converts. The field's own doc comment now records this.
   The copy and its placement are **NOT SPECIFIED** by SCREENS.md and go to the owner under
   DECISIONS constraint 21; see `docs/rulings-pending/measurements-round.md`.
-- **F27 — measurements can be neither edited nor deleted. BLOCKED ON A SCHEMA MIGRATION**, and the
-  premise needs splitting in two.
+- ~~**F27 — measurements can be neither edited nor deleted. BLOCKED ON A SCHEMA MIGRATION**, and the
+  premise needs splitting in two.~~ **SHIPPED.** The withdrawal half is `AppSchema` v21 (PR #154) and
+  the service's `measurement_withdrawal` kind (migration 004, PR #156); the edit half needed
+  nothing. **Only paperwork remains**: the third entry of
+  `docs/rulings-pending/measurements-round.md` was held for this round to land, and can now splice
+  as an outcome (chip 56). What follows is the entry as written while it was blocked, kept because
+  it records the two rejected shortcuts.
   **"Edited" is already answered and needs nothing built.** This app has no edit verb for any
   contributed record, by design: `CypressAPI`'s whole write surface is append-or-withdraw, species
   corrections supersede rather than overwrite (`superseded_by`), and every capture screen carries
@@ -579,13 +584,16 @@ file.
   `Move the pin` during add-a-tree, before it is saved. After that there is no verb for it:
   `CypressAPI` has no relocate method, and the write surface is append-or-withdraw by design (see
   F27), so a relocation is a new mutation and outbox kind (probably a migration seat) plus an
-  unmocked control. (b) *Propagation*: an added tree does reach the service
-  (`POST /api/v1/trees`, `community_trees`), but nothing reads it back down. `treesNear` and
+  unmocked control. (b) *Propagation*: an added tree does reach the service, as an outbox
+  `add_tree` on `POST /sync` (`RoutedAPI.addTree` writes locally and queues it; `RemoteAPI.addTree`,
+  which posts to `POST /api/v1/trees` and would key the tree on `client_uuid`, is not routed), but
+  nothing reads it back down. `treesNear` and
   `mapContent` are Class L in `RoutedAPI` and the service has no read of community trees near a
   place, so another phone never sees them. That is a read route, a client merge into the map
   and a privacy decision: the screenshot's own tree was recorded on private property, and
   DECISIONS constraint 16 keeps community trees out of the city layer until verified. Large.
-  **Owner decision** on both halves before either is built.
+  **Owner decision** on both halves before either is built. **Decided 2026-09-28, and scheduled**:
+  see "Community trees: the client rounds" below.
 
 - **F32 — adding a tree where the app will not let you.** Build 77, 2026-09-26, verbatim:
   *"Need a more complete species list. Tried to add cook pine and it wasn't an option. Also some
@@ -604,8 +612,9 @@ file.
      have a lowercase word after the first (`Swamp mahogany`, `Pittosporum spp`), and 380
      multi-word names are in title case (`Norfolk Island Pine`, `Pine Spp`). The app renders
      names exactly as the record holds them (ERRATA E51), so the fix belongs in the seed build.
-     **Owner decision:** which case is canonical. Small once decided, but it changes published
-     data and so ships with a publish.
+     **Owner ruled 2026-09-28: sentence case.** Small, but it changes published data and so ships
+     with the next seed publish, which needs the owner's go-ahead to create the Fly worker machine
+     (CLAUDE.md, "Publishing the seed").
   3. *The 10 m refusal is a DECISIONS rule, not a bug.* Constraint 16 fixes add-a-tree's 10 m
      any-species proximity dedupe (`TreeDraft.proximityDedupeRadiusM`, `LocalAPI.addTree`). The
      tester is asking for it to be relaxed, for the use of logging trees where no city inventory
@@ -633,6 +642,64 @@ file.
   publisher-side `state` field, because no pack in `manifest-v2.json` carries one. The client must
   not derive it from an id prefix, the class of mistake D7b was. Medium. Schedule it with the first
   expansion publish that pushes the catalog toward twenty.
+
+### Community trees: the client rounds, opened 2026-09-28 (F31)
+
+The owner decided both halves of F31 on 2026-09-28. A tree added while signed in is visible to
+everyone as soon as it reaches the service. A tree added signed out stays on the adder's phone until sign-in and
+then goes live for everyone at once. The adder alone may move its pin, and may withdraw it for
+everyone while nobody else has built on it. Its history is shown on the profile without saying who.
+Trees added before the sync path existed stay local for ever (R77 is kept, and there is no
+backfill). Others see a photograph's capture **date** and never its time; the owner keeps the exact
+time (decision 14, made client-assisted as 14a). The decisions, and what the server rounds ruled
+inside them, are in `docs/rulings-pending/community-trees.md` and
+`docs/rulings-pending/community-trees-reads.md`.
+
+**The server half is on `main` (2026-09-29).** S1 is PR #187 (migration 007: publication, moves,
+withdrawal, and both deletion doors) and S2 is PR #190 (the tile, the profile's additions, and the
+history), behind #182's migration 006. **The gate before any client PR merges is a deploy**:
+TestFlight builds from `main`, and a build must never be able to queue a location correction against
+a service that refuses it. That deploy happened on 2026-09-29: `cypress-sync` booted `4462dbb`
+(#190 merged) at server schema 7. Still check its release before C1 merges, because a later revert
+or redeploy would change that (chip 12: merging server work changes nothing in production).
+
+- **C1 — the core (`feat/community-trees-core`). Open, and next.** The one client migration author
+  of the round: the writable database's next migration (the design proposal names v23; read
+  `AppSchema.migrations`, not this line). It carries the new stores and the merge helper; a
+  location-correction verb with its outbox kind and `accountDeletionTreatment`; `addTree` writing
+  the adder and the root location; `treeProfile`, `treesNear` and `mapContent` reading the cache;
+  the proximity dedupe over the cache; `claimDevice` and both deletion doors adopting and erasing
+  the new rows; and the Swift half of the request fixture. Three things ride with it that are easy
+  to miss. **It sends each photograph's local capture date as `captured_on` (`YYYY-MM-DD`) with
+  `POST /photos/begin`** (decision 14a; the field is optional on the wire, and older builds omit
+  it, so their photographs keep today's behavior). It **neutralizes `RemoteAPI.addTree`**, which
+  would key the tree on `client_uuid`. And it **rewrites the comments R45 made false** — "no
+  author" and "nothing syncs anyone else's rows down" — re-verifying them rather than trusting this
+  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it.
+- **C2 — sync down (`feat/community-trees-sync-down`). Open; no migration; merges after C1.**
+  `RemoteAPI` decoders and tile-delta accessors; `GoldenWireFixtureTests` over the new wire files;
+  the `RoutedAPI` merge (history, `added_by_you`, adopting the adder from the service); the
+  refresher wired in `DataLayer`; and a cap on the community share of the map's pin budget (half was
+  proposed), so a dense community layer cannot starve the city layer. The server rounds set its
+  rendering rules: the dates on a community tree are calendar days and are shown as calendar days,
+  never shifted into the reader's zone; **a photograph's `captured_on`, when the service sends it,
+  is shown as that calendar date, and when it is absent the reader falls back to `captured_at` in
+  their own zone**; the phone's cursor, not a cached tree's `updatedAt`, decides what changed; and
+  the adder's own trees win the merge.
+- **C3 — the UI (`feat/community-trees-ui`). Blocked on the owner's answers; merges last, and
+  strikes F31.** Every surface is unmocked, so each question goes to the owner under DECISIONS
+  constraint 21 before any Swift. *Move the pin*: where the control lives and what it says, how far
+  the pin may move (from where you stand, from the current pin, or no bound), whether a correction
+  may be made offline, the confirmation copy, how the provenance line reads afterwards, and screen
+  17's row copy for the new kind and its four failure codes. *History on the profile*: screen 03 or
+  screen 13, which events show, the date precision, whether the viewer's own acts say "you", how a
+  move is phrased, and the offline and empty states. *The add-a-tree notice*: separate copy for
+  signed in and signed out, whether it names private property, and its behavior at AX5. *Other
+  people's trees*: whether they share the dashed community pin, which controls appear on them, the
+  copy for your own unpublished tree, the late-conflict state, the map notice and screen 02's empty
+  copy for places with no inventory, and a Journal line for the new kind. The UI suite runs with the
+  remote gate off, so this round also needs a DEBUG seam that seeds the cache; a deep link that
+  quietly no-ops is forbidden (ARCHITECTURE §7).
 
 ### Follow-up tickets from the 2026-08-30 rounds
 
@@ -665,6 +732,7 @@ file.
   **One file is deliberately held**: `docs/rulings-pending/measurements-round.md`, whose third
   entry is the withdrawal design the live F27 round is building; it splices when that round lands,
   so the numbered entry records the outcome instead of "proposed, blocked".
+  **That round has landed** (F27, #154 and #156) — the splice is due, and is chip 56.
 
 
 - ~~**Map camera fits the filtered set.**~~ **SHIPPED** (`feat/see-all-camera`). The owner ruled
@@ -822,8 +890,11 @@ Three items queued by the owner, recorded verbatim in intent; none is scheduled 
   nearest-tree resolution is still the default and is now one of two states rather than the only
   one. The design decisions taken under DECISIONS constraint 21 are in
   **RULINGS R85** and are **awaiting the owner's ratification**.
-- **Update the repo README.** The README predates most of what shipped; bring it current with the
-  app as it stands (cumulative inventories, the publish pipeline, the beta process).
+- **Write a repo README.** The entry used to say "update", and its premise was wrong: no root
+  `README.md` has ever existed in this repository's history (checked 2026-09-29 across all
+  branches). Only `server/README.md` and `web/README.md` do. What a first one should cover
+  (cumulative inventories, the publish pipeline, the beta process, and the web) is the owner's to
+  scope.
 
 ### Chip backlog (this file is the only queue — session chips are banned)
 
@@ -847,7 +918,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
 2. **Rebuild `Tools/ui-test-shards.txt` from live CI data.** The shard assignments have drifted
    from the suites' actual durations (shard runtimes are visibly unbalanced in recent runs);
    regenerate from measured per-class times and re-prove `UITestShardCoverageTests` still covers
-   every class.
+   every class. **Flagged stale again on 2026-09-29** (from #185): re-measure rather than trusting
+   the table's own comments.
 3. **Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
    with a calibrated failure case. **Written, and deliberately not merged with the rest of the
@@ -991,7 +1063,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     second kind. Readings are recorded far more often than photographs, which is why the shared
     rule's user-visible cost lands here first. Two halves to answer: whether the service should gain
     an installation arm at all, and — independently — what screen 17 offers for a permanent
-    non-retryable failure on a mutation the phone has already applied locally.
+    non-retryable failure on a mutation the phone has already applied locally. **Raised by #182's
+    review (F1)**: photographs adopted at sign-in now go public, so the same dead end fails the
+    other way there. A photograph withdrawn on the phone while signed out is refused `ErrNotOwned`
+    and left live. That makes this item's priority higher than it was.
 11. **Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
     remote.** Withdrawing the only reading on a tree leaves that tree in `GET /me/grove` with all
     four tallies zero and in `GET /me/map-membership?kind=yours`, and the `measurement_withdrawal`
@@ -1003,16 +1078,21 @@ into this section in the round that finds it, and nowhere else. Each item stands
     journal local — which is exactly why it needs answering on a schedule rather than on a bug
     report. Check against PR #154 what a `measurement_withdrawal` journal row renders as when the
     journal goes remote, and decide whether an emptied tree should leave the grove and the `yours`
-    filter or stay with zeroes.
+    filter or stay with zeroes. **#187 adds a second way in**: a community tree its adder withdrew
+    stays in `MapMembership`'s `yours` through the adder's own contributions, the same shape.
 12. **Prose pass over `server/README.md`'s Deploy section — it is stale in a way that reads as a
     blocker.** It still says the `cypress-sync` machine "needs secrets and a Postgres that do not
     exist yet". Both #156's author and its reviewer checked: `fly secrets list --app cypress-sync`
     returns sixteen secrets, all `Deployed`, including `DATABASE_URL`, `SESSION_SIGNING_KEY`,
     `OPERATOR_TOKEN`, the three `APPLE_*` and the five `PHOTOS_*`. While that section is open, the
     neighbouring facts worth stating correctly: the app is at release v7 with its machine
-    auto-stopped (`min_machines_running = 0`), nothing in `.github/workflows/` touches `server/` or
-    Fly, and so a migration only runs at the next boot of a **redeployed** image — merging server
-    work changes nothing in production. Prose only; no code.
+    auto-stopped (`min_machines_running = 0`), and nothing in `.github/workflows/` deploys to Fly, so
+    a migration only runs at the next boot of a **redeployed** image — merging server work changes
+    nothing in production. (This item used to say no workflow touches `server/` at all. That stopped
+    being true when `server.yml` landed: it tests the service, and only the deploy is still by hand.)
+    **Two more facts found since to state correctly**: production is Postgres 18 (`postgres-flex:18.1`),
+    while the README's throwaway-database recipe still pulls `postgres:16-alpine` (chip 14 already
+    says 18). Prose only; no code.
 13. **`GET /api/v1/trees/{id}` publishes two per-tree counts of user actions to any signed-in
     caller, and nobody has ever tested that against D1.** Found by W-G while ruling on what the
     *public* read may say, so it is filed rather than fixed — the shipped route is not this round's
@@ -1088,6 +1168,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     catches it loudly, because the live schema and the file reader stop agreeing. But
     `TestContributionKindExtractorIsCalibrated`'s specimens cover only `--` prose, so the shape is
     untested, and the round that fixes it should add a `/* … */` specimen rather than only the strip.
+    **A second shape, from #187's review**: the extractor also takes any `CHECK (kind IN (` block as
+    the contributions vocabulary, and nothing anchors it to `contributions`. 007 creates
+    `community_tree_events`, which has its own `kind` column, and spells its check `= ANY (ARRAY[…])`
+    to stay out of the way. A later migration that spelled it `IN (…)` after the contributions
+    constraint would send the guards red about the wrong thing. Anchor the block to the table.
 18. **Delete `kindsAwaitingTheirMigration` when PR #159's `005_data_dispute_kinds.sql` lands.**
     PR #163 classifies `data_dispute` and `data_dispute_withdrawal` before their migration exists,
     so neither PR's merge order breaks the other's guard. The map in `server/internal/api/public.go`
@@ -1099,8 +1184,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
 
     **The trigger has fired**: `server/migrations/005_data_dispute_kinds.sql` is on `main` (PR
     #159 merged), so both entries now excuse nothing, and
-    `TestEveryContributionKindIsClassified`'s `t.Logf` asks for their deletion on every run of a
-    suite item 14 says nothing runs.
+    `TestEveryContributionKindIsClassified`'s `t.Logf` asks for their deletion on every run of the
+    Go suite, which item 14's `server.yml` now runs on every pull request that touches the service.
+    Nothing is left but the deletion.
 19. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
     R27.1 asks for it in as many words — *"count it, do not guess it"* — and PR #163 shipped
     R27.1's inherited ≥3 because the attempt to read the production distribution was refused before
@@ -1136,6 +1222,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     change does not mint. That is correct as far as it goes and it means web changes currently
     ship with no changelog anywhere. Decided by W-A in a comment rather than by anyone with the
     authority to decide it; it wants a ruling once the web is actually deployed (W-E), not before.
+    **The trigger has fired**: W-E shipped on 2026-09-13, so this is now due.
 
 22. **Make `web` a required status check, and drop `web.yml`'s `paths:` in the same change.**
     Raised by #162's adversarial review, and it closes a loop nothing currently tracks. `gate` is
@@ -1216,7 +1303,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     withdrawable contributed value. Nothing about the deployment knows that yet: if W-E puts a CDN or
     Fly cache in front of the web with its own policy, the sixty seconds has to survive it, and a
     `stale-while-revalidate` added for latency would be exactly the thing §8b forbids. Check it with
-    the deployment in front of you.
+    the deployment in front of you. **Re-check at the domain and CDN cutover.** W-E shipped on
+    `cypress-web.fly.dev` with no certificate and no DNS, so there is nothing yet for the sixty
+    seconds to agree with; the check belongs to whichever change puts a cache or a CDN in front of
+    that host.
 
 29. **Reserve the nav slugs beside `ID_SPACES`, in the file that mints the ids.** `explore`,
     `species`, `neighborhoods`, `data` and `site` are the web's top-level paths (§2 of
@@ -1435,8 +1525,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     silence it without a second copy of the name — and a second copy of the name is the thing not to
     do, since one definition is why the server and the sync cannot disagree about it.
 
-52. **`docker build web` has never been run.** Neither the reviewer's Docker daemon nor the
-    orchestrator's could pull `node:24.13.1-slim` from the registry, and neither guessed at the
+52. ~~**`docker build web` has never been run.**~~ **DONE.** `web.yml` builds the image on every run
+    (`docker build --tag cypress-web:ci web`, since 72575a4), and the first `flyctl deploy` of W-E
+    built it remotely and it serves. What follows is the entry as written. Neither the reviewer's
+    Docker daemon nor the orchestrator's could pull `node:24.13.1-slim` from the registry, and neither guessed at the
     result. The substitute was a good one — the runtime stage's exact file set plus
     `npm ci --omit=dev` assembled in a clean directory, with `sync-packs.mjs` running from it and no
     `Cannot find module`, proving the COPY list sufficient — but the image itself is unbuilt. The
@@ -1476,6 +1568,188 @@ into this section in the round that finds it, and nowhere else. Each item stands
     Documentation-only: read both files, verify the encoder's actual case empirically (a real
     `JSONEncoder` round-trip, not another comment), and correct both in one pass so they agree
     with each other and with `sync.go`.
+56. **Splice the pending shelf: 33 files are waiting (orchestrator's alone).** Twenty are in
+    `docs/errata-pending/` and thirteen in `docs/rulings-pending/`, counted on 2026-09-29 against
+    `origin/main` with the two READMEs left out. Two are overdue for a reason of their own.
+    `docs/rulings-pending/measurements-round.md` was held by the 2026-09-09 splice until F27's round
+    landed, and it has (#154 and #156), so its third entry can now record an outcome instead of
+    "proposed, blocked". `docs/errata-pending/measurement-withdrawal-arrival-order.md` is F27's
+    server companion. The rest is everything filed since: the web rounds, the city-disputes round,
+    and the community-trees server rounds. Run it the way the last one ran (gate the cleanup on the
+    script, assert the placeholder counts, and sweep the deleted files' basenames across the whole
+    tree, which is item 1's cheap check), and run `DocumentCitationGuardTests` red and green before
+    merging.
+57. **The Go toolchain is pinned two ways that can drift.** CI installs exactly the version
+    `server/go.mod` names (`go-version-file` in `server.yml`), while `server/Dockerfile` builds on
+    `golang:1.25-alpine`, which floats to the newest 1.25 patch. Once a patch releases, the binary
+    that ships is not the one CI tested. Pin the image to the same patch, or have the workflow
+    follow the image, and say which in `server/README.md`. (From #183.)
+58. **Two things assume `cypress-sync` is one machine on the default deploy strategy.** (a) Migration
+    006's constraint plus a binary older than #182 fails sign-in itself with a 500. That is safe
+    today, because a boot runs the migrations before the new binary serves and the old one never
+    serves beside it (`docs/rulings-pending/approve-adopted-photos.md`), and it opens the day the app
+    runs on two machines or deploys with a canary or bluegreen strategy. (b) The community tile's
+    delta cursor trails the present by the request timeout, which is correct only with one clock;
+    `server/internal/api/community_reads.go` says so in as many words, and with two machines it
+    needs a skew margin. Do both with whichever change first scales the app. (From #182's review, F4,
+    and #190.)
+59. **Two ways into a device's rows ask for no proof that the caller holds the device (security; not
+    blocking).** `POST /devices/claim` and `POST /auth/oidc` with a `device_uuid` accept any device
+    UUID, and the #174 guard protects only a device that is already claimed. A second account that
+    knows an unclaimed device's UUID can claim it, and since #182 that publishes the device's
+    pending photographs under the claiming account. No route, log or export was found that exposes
+    the UUID, and knowing it already mints a device token, which is why this is not blocking.
+    Separately, `/devices/claim` does not bind the device to the session; only `/auth/oidc` does
+    (found in #187's review). Decide whether a claim should have to show something only the phone
+    has. (From #182's review, F3.)
+60. **`add_tree`'s proximity check is not inside the transaction that inserts the tree.** Two adds a
+    few metres apart, sent at the same moment, can both pass it. It predates #187, which scoped what
+    the check can see and did not change when it looks; #187's review found it. Fix with a lock or a
+    constraint the two inserts contend on, and red-prove the interleaving first, as item 9 asks of
+    its own race.
+61. **Photographs and contributions on a withdrawn or taken-down community tree stay stored, and no
+    read reaches them.** #190's reads hide them, which is why nobody sees it. Nothing deletes them,
+    and nothing says how long they stay. Decide a retention rule; R3's erase-door pattern is the
+    nearest precedent.
+62. **A proximity conflict still shows another adder's address and the exact second a tree was
+    added.** `candidateFrom` (`server/internal/api/sync.go`) builds the candidates of `POST /trees`
+    and of a sync `add_tree`, and serves `address` and full-precision `createdAt` and `updatedAt`.
+    #187 scoped the candidates to trees the caller may see, which closed the leak of other people's
+    unpublished trees; what remains is a published tree's adder-supplied address and creation
+    second, which the tile and the profile both withhold. The fix moves
+    `server/testdata/proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
+    which is why #190 left it.
+63. **Does a photograph's presigned `GET` give away its capture time?** A hypothesis, not
+    reproduced. Object storage normally answers with `Last-Modified`, the upload time to the second,
+    and for a photograph uploaded while online that is close to the capture time decision 14 hides
+    from others. `server/internal/storage/presign.go` is what hands the URL out, and the test
+    presigner is fake, so nothing was measured against Tigris. It predates #190. Measure the real
+    header on a real object before deciding anything. (From #190's review, N3.)
+64. **The server's `Yours` and Grove membership is far wider than the phone's, and nobody has ruled
+    which is right.** `TreeMembershipKinds` (`server/internal/store/reads.go`) enrolls a tree on
+    adding it, on species statements, on wrong-species and never-existed reports, on their
+    dismissals, on photo votes, on withdrawals, on hazard redirects, and on favorites. The phone's
+    `Yours` is visits, observations, measurements, care events, and the reader's own community trees
+    (`Cypress/Data/Store/ContributionStore.swift`), and its Grove Trees pill is visits plus
+    favorites. `RoutedAPI` unions the two, so the server's wider set wins. Needs an owner ruling on
+    what `Yours` means; item 11 is its neighbor. (From #192.)
+65. **Nothing ties `TreeMembershipKinds` to `syncKinds`.** A new sync kind is silently left out of
+    `Yours` and the Grove until somebody adds it, and no test says so. Add an exhaustiveness test
+    that mirrors `TestEveryContributionKindIsClassified`. (From #192's review.)
+66. **The Species tab's cross-device half has never worked, and after #184 it says so.**
+    `GET /me/grove/species` could only ever count kinds that carry a `speciesID`, which are
+    `add_tree`, `species_claim` and `species_correction`, kinds that name a species and do not meet
+    one. City-tree visits carry only a tree id, and their species live in the city file, which the
+    service does not hold. So the route now answers empty for every current client, and
+    `RoutedAPI.refreshedGroveSpecies` merges that into the phone's own answer, so no tester sees a
+    regression. The real fix, if wanted, is for the phone to derive cross-device species from
+    `GET /me/grove`'s tree ids and its own city file. Otherwise retire the route. (From #184.)
+67. **A public photograph is approved before its bytes have arrived, and nothing collects the ones
+    that never do.** Approval does not wait for the upload, and `PhotoRecord.IsPubliclyVisible`
+    (`server/internal/store/photos.go`) does not look at `bytes_received_at`, so a begun upload whose
+    bytes never land is still listed publicly. #187 and #190 closed this for the grove hero and for
+    "built on" (a photograph with no bytes is neither), not for the listing. And the garbage
+    collection of a record with no arriving binary after 72 hours, which
+    `server/migrations/001_initial.sql` says happens server-side, has no code behind it: only
+    comments name it. (From #182.)
+68. **Screen 10's first paint is local-only, and its season strip says nothing is public.** The card
+    can show an approved photograph only after the network answers, because the first paint reads
+    the phone. `ShareView.swift` hard-codes "No month has a public photo yet." as the strip's
+    accessibility label, which is already false for any tree whose photographs have been approved.
+    The copy is the owner's under constraint 21. (From #182.)
+69. **Swift comments still say an anonymous photograph stays `pending`, and #182 made that false.**
+    A photograph taken signed out is now approved at sign-in. Read at `4462dbb`:
+    `Cypress/Features/AccountAsk/AccountAskPresentation.swift` (the header and one more),
+    `Cypress/Features/You/AccountSection.swift`, `Cypress/Core/BetaCapability.swift`,
+    `Cypress/Data/API/LocalAPI.swift`, and `Cypress/Features/TreeProfile/TreeProfilePresentation.swift`.
+    Already stale before #182, on "nothing moderates": `Cypress/Core/Models/Photo.swift`,
+    `Cypress/Features/Share/SharePresentation.swift`, and `Cypress/Data/API/CypressAPI.swift`. Two
+    ERRATA entries carry the same sentence (`docs/ERRATA.md`, lines 20095 and 20525 at that
+    commit). A confident comment is where bugs live here, so re-verify each against the code before
+    rewriting it. (From #182.)
+70. **Neither account-deletion door touches `species_assertions`.** The table carries `user_id`, and
+    `Cypress/Data/Store/AccountDeletion.swift` never names it, so an owned row survives leaving and
+    erasing alike and still points at the deleted account. Fix it on R3's contribution pattern
+    (leaving anonymizes, erasing deletes), and decide the tombstone question, since these rows have
+    no `client_uuid`. **Fold it into community trees C1**, which touches the table anyway. (From the
+    community-trees design and #186.)
+71. **`ContributionStore.claimDevice` is another hand-kept table list.** It adopts `visits`,
+    `observations`, `measurements`, `care_events`, reminders, photographs, favorites, and photo
+    votes, and nothing else. `species_assertions` carries a `device_id`, so a species claim made
+    before sign-in is never adopted into the account, and nothing guards the list. (`tree_data_disputes`
+    is not the same case: it has no device column, `raised_by` only, and `DataDisputeStore` documents
+    that a dispute raised before sign-in stays unowned. That is item 10's dead end.) It is a
+    candidate for the same schema-derived guard the account-deletion table paragraph asks for.
+    **PR #186 (still open) adds that guard for deletion, and its review found three gaps to close
+    once it merges**: it does not read generated columns (`pragma_table_xinfo`, not
+    `pragma_table_info`); its `looksLikeIdentity` misses `userid`, `contributor_id`, `uploader`,
+    `email`, and `submitter_uuid`; and installation columns and tombstones are outside it, covered
+    only by the suite. (From #186.)
+72. **A prose-only pull request skips three iOS tests that read `docs/`.** `DocumentCitationGuardTests`,
+    `NYCDisclaimerTests`, and `VitalityRubricTests` open files under `docs/`, and since #188 a
+    prose-only diff runs none of them, so a dangling citation in a document merges green. The
+    comment in `.github/workflows/testflight.yml` that says no test opens a file under `docs/`
+    (checked 2026-08-03) is stale. Either run those three on a diff that touches the documents they
+    read, or scan citations in a job that does not need a simulator. Until then an author of a
+    docs-only change has to run the scan by hand. (From #188.)
+73. **Nothing guards the length of a `run:` block in a workflow.** GitHub refuses a `run:` block
+    longer than 21,000 characters when it holds an expression, and it does so as a workflow file
+    issue: no job runs, no check appears, and a required `gate` waits for ever. #188 did exactly
+    this (run 36510395253, 21,909 characters). Add a check that measures each expression-bearing
+    block and fails with a number, and calibrate it against a block over the limit.
+74. **`Tools/whats_new.py` diffs without `core.quotePath=false`.** A note whose filename contains a
+    non-ASCII character is quoted by git and reads as missing. It fails safe, and it is wrong.
+    (From #188.)
+75. **UI sightings from 2026-09-29, none attributed.** Run 36500821334, `ui (4)` on a server-only
+    diff (#182): the XCUITest runner lost its XPC connection at launch in
+    `MapSuggestionUITests.testTheChipsUnderTheListAreNotCoveredButReachable` ("Connection
+    interrupted", "Restarting after unexpected exit") and the body never ran. And #194's
+    verification saw `MapSearchUITests` and `MapSuggestionUITests` fail with "process main thread
+    busy for 30.0s", with a control at `main` failing the same way, while the host's load average
+    ran between 230 and 510 and the data volume was 99% full; the PR read it as the host and not
+    the diff. Both are flake-watch sightings until one recurs on a quiet machine.
+76. **Two findings from #194's branch, to re-check when it merges.** (a) A signed-out device stops
+    receiving `client_uuid` for photographs adopted into an account, so those photographs can
+    double again there. (b) `withdrawPhotoByClientKey`, on that branch: when the device's own row is
+    already tombstoned and the account's row under the same key is live, a second withdrawal answers
+    failed and forbidden although the removal happened, and its comment says it succeeds. Nothing is
+    wrongly removed; the phone is told a false failure. #194's own remaining finding (a non-retryable
+    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) is being fixed
+    in #194 and is not listed here.
+77. **iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
+    question failed on CI's iOS 26 shard and became an `.alert`). Seven sites still use a
+    `confirmationDialog`: `GrowthHistoryView:45`, `CheckInView:94`, `AccountDeletionSheet:88`,
+    `TreePhotosView:129`, `PhotoViewerView:227`, and `ModerationReviewList:50` and `:61`. On iOS 26
+    each one's cancel action is likely missing and only a tap outside dismisses it; no test taps any
+    of those cancel buttons, so nothing goes red. Needs an iOS 26 runtime to confirm; the fix is
+    #185's (an alert with the same strings) plus a test per site that taps the cancel.
+78. **#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).** (a) A test gap:
+    removing the line in `DataDisputeModel` that records the error count at the ask leaves
+    "…an older one does not" green; a reading that still carries the old count after the ask would
+    catch it (probe kept in the orchestration notes as `v185b-ZZVerify185Tests.swift.keep`). (b) Ask,
+    turn Location off (CoreLocation reports denied), turn it back on: the block says it couldn't find
+    the location at once instead of waiting; reset the error baseline whenever it starts waiting
+    again. Low: the first fix replaces the message. (c) The 15 s clock runs while the system
+    location-permission prompt is up, so a slow answer reads as "couldn't find your location" until
+    a fix arrives. Whether the clock should start at the grant is the owner's call.
+
+54. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+    `claimSpecies` and `correctSpecies` write the signed-in account's id into
+    `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
+    `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
+    trigger, and its only foreign key is its own `superseded_by`. So after `.leaveRecords` or
+    `.eraseEverything` the claim still carries the deleted account's id. `AccountDeletionCoverageTests`
+    (#186) measures this under both doors and classifies it `.notReached` in
+    `AccountDeletion.OwnedTable.fate(under:)`. That is what the code does, not a ruling. The fix
+    follows R3's contribution pattern: the leaving door anonymizes (nulls `user_id`) and the erasing
+    door deletes. **The tombstone question is open.** The table has no `client_uuid`, so v13's
+    `anonymized_contributions` key is not available, and `claimDevice` does not adopt the table
+    today. Decide whether an anonymized claim needs a tombstone at all, and key one if it does. The
+    erasing door also has to handle the chain. `superseded_by` is a deferred foreign key, so deleting
+    a claim that an older row's `superseded_by` points at fails at commit unless that pointer is
+    dealt with first. When a door reaches the table,
+    the guard goes red and the arm changes with it. **Slated by the orchestrator for the
+    community-trees C1 round.**
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
@@ -1532,7 +1806,7 @@ Still open after part 1, each its own scheduled PR and none of them started:
   disputes: part 1 leaves `flagWrongSpecies` / `flagNeverExisted` untouched, and "location and
   species only" is a narrowing of that flow rather than an addition beside it.
 
-**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
+~~**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
 three times.** Twice on the outbox kind list, and once on a whole table: `AppSchema` v22 added
 `tree_data_disputes` with a `raised_by` column and neither account-deletion door could see it, which
 PR #165's review measured and PR #165 fixed. Every one of the three failed **silently**, because a
@@ -1542,9 +1816,24 @@ compiler asks the question when a case is added; the table half has no equivalen
 test that reads the live schema for columns named `user_id` / `raised_by` / `given_by` / `set_by`
 and requires each to be named by one door or explicitly exempted is the obvious shape, and it is the
 shape that would have caught this. **A fourth hand-audit is not the fix.** Unscheduled; the badge
-round is the natural slot, because it is the next round to touch this table.
+round is the natural slot, because it is the next round to touch this table.~~
+**DONE** by `test/account-deletion-table-guard`. `AccountDeletion.OwnedTable` classifies every table
+that names a person or installation, with an exhaustive `fate(under:)` per door, and
+`AccountDeletionCoverageTests` derives the set from the live migrated schema (`pragma_table_info`), not
+from a list: every column name must be filed as identity or ordinary, so a new spelling cannot slip
+past; the derived tables and columns must equal the classified ones both ways; and under each door an
+owned row must end as classified while a stranger's is unchanged. **Writing it found a fourth
+instance, which it now measures:** `species_assertions.user_id` is named by neither door, so a species claim keeps the
+deleted account's id after either one. It is classified `.notReached` (what the code does, not a
+ruling), and the open item is chip backlog **54**.
 
-**Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
+~~**Copy audit: remove demo-era narrative holdovers.**~~ **SHIPPED** as PR #119 (merged 2026-08-25);
+both decision rounds closed on 2026-08-23, and `docs/investigations/copy-audit-2026-08-23.md` is the
+record. **Three questions are still the owner's** (its §9, items 7 to 9): screen 13 no longer says
+its three charts share one scale, and the fact is unstated rather than wrong; `stays yours alone`
+survives once, in screen 06's dashed disclosure; and the seed database's own prose has never been
+screened. **R26 is waived; do not re-flag it.** The entry as first written:
+Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
 itself — "This is that almanac's 'walk the nine' list, one tree at a time" (screen 14) and its
 kin — are holdovers from a demo-era voice and come out. The audit enumerates every candidate line
@@ -1572,9 +1861,10 @@ dependency is kept removable: dropping it costs 11 bloom arrays, 8 fruit arrays 
 array, and should remain a configuration change rather than a refactor. **Needs a human answer
 before launch, not before the next screen.**
 
-**The vitality rubric.** The source documents themselves flag this as the highest-value unresolved
+~~**The vitality rubric.** The source documents themselves flag this as the highest-value unresolved
 question. Screen 05 is built with rubric text as data specifically so that answering it later is a
-content change.
+content change.~~ **RESOLVED.** The owner chose Candidate A (RULINGS **R69**), R70 closes the fork,
+and `CypressTests/VitalityRubricTests.swift` guards the shipped text against the documents.
 
 **The MapKit road-color inversion.** The mock draws streets lighter than blocks; MapKit renders
 roads darker and exposes no way to recolor them independently. `MapCanvas(basemap:overlay:)` is
