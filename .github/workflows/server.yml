@@ -27,20 +27,23 @@ on:
     # names every file the suite reads and nothing else. `server/**` is the module itself; the
     # workflow file proves itself by running.
     #
-    # **The four Swift files are here because Go tests OPEN them.** `internal/api` and
+    # **The Swift files are here because Go tests OPEN them.** `internal/api` and
     # `internal/apierr` parse the client's enums and property lists at run time to prove the wire
     # vocabulary still agrees with the app. Renaming a `TreePlacement` case touches no `server/`
     # path, and without these lines the guard written to catch that rename would not run on it.
     # `server/ci/check_trigger_paths.sh` (the first step below) greps every `"../../../…"` read
-    # out of the Go sources and fails if one is not listed here under BOTH triggers, so a fifth
-    # reader added later cannot be left without a trigger.
+    # out of the Go sources and fails if one is not listed here under BOTH triggers, so a reader
+    # added later cannot be left without a trigger. `OutboxItem.swift` and `CypressAPI.swift` came
+    # with 007's vocabulary tests (the outbox kinds and the dedupe radius).
     paths:
       - 'server/**'
       - '.github/workflows/server.yml'
       - 'Cypress/Core/APIError.swift'
       - 'Cypress/Core/Models/CityRecord.swift'
+      - 'Cypress/Core/Models/OutboxItem.swift'
       - 'Cypress/Core/Models/Tree.swift'
       - 'Cypress/Core/Units/Quantity.swift'
+      - 'Cypress/Data/API/CypressAPI.swift'
   pull_request:
     branches: [main, 'release/**']
     paths:
@@ -48,8 +51,10 @@ on:
       - '.github/workflows/server.yml'
       - 'Cypress/Core/APIError.swift'
       - 'Cypress/Core/Models/CityRecord.swift'
+      - 'Cypress/Core/Models/OutboxItem.swift'
       - 'Cypress/Core/Models/Tree.swift'
       - 'Cypress/Core/Units/Quantity.swift'
+      - 'Cypress/Data/API/CypressAPI.swift'
   # The escape hatch `web.yml` and `testflight.yml` both keep: a run by hand when something outside
   # these paths (a Go toolchain bump, a Postgres image update) needs the suite run.
   workflow_dispatch:
