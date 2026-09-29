@@ -1710,7 +1710,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     each one's cancel action is likely missing and only a tap outside dismisses it; no test taps any
     of those cancel buttons, so nothing goes red. Needs an iOS 26 runtime to confirm; the fix is
     #185's (an alert with the same strings) plus a test per site that taps the cancel.
-78. **#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).** (a) A test gap:
+78. ~~**#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).**~~ **DONE** — `fix/dispute-fix-clock`:
+    (a) tested, (b) fixed and tested, (c) ruled by the owner 2026-09-29 ("Start at the grant") and
+    built; the ruling is pending a number. (a) A test gap:
     removing the line in `DataDisputeModel` that records the error count at the ask leaves
     "…an older one does not" green; a reading that still carries the old count after the ask would
     catch it (probe kept in the orchestration notes as `v185b-ZZVerify185Tests.swift.keep`). (b) Ask,
