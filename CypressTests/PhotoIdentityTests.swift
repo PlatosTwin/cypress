@@ -427,4 +427,46 @@ struct PhotoIdentityTests {
         let unmatched = RoutedAPI.communityPhotosNotOnThisPhone(delta([leaf]), onThisPhone: [first])
         #expect(unmatched.map(\.id) == [leaf.id])
     }
+
+    // MARK: - 8. The pill and the browser agree, through the screens' own models
+
+    /// F30 in the tester's words: "Pill says two photos but when I click in I see only one." The
+    /// pill is screen 03's model and the list is screen 20's, each loading and refreshing itself
+    /// through the closure the composition root hands it — so this asserts the two screens' own
+    /// answers after the refresh lands, not a profile this test assembled.
+    @Test("screen 03's pill and screen 20's list count the same photographs after the refresh")
+    @MainActor
+    func thePillAndTheBrowserAgree() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+        let serverID = UUID()
+        let strangers = UUID()
+
+        let sent = try #require(try await Self.takeAndSendPhoto(data, transport: transport, tree: tree, serverID: serverID))
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [
+                Self.row(serverID, shotType: sent.shotType, capturedAt: sent.capturedAt, clientUUID: sent.clientUUID),
+                Self.row(strangers, capturedAt: "2026-09-24T19:00:00Z"),
+            ],
+            own: [serverID]
+        )
+
+        let profileModel = TreeProfileModel(treeID: tree.id, api: data.api, refreshProfile: data.refreshTreeProfile)
+        await profileModel.load()
+        await profileModel.profileRefresh?.value
+        let pill = try #require(profileModel.presentation?.heroMetaPill, "screen 03 drew no pill")
+
+        let browser = TreePhotosModel(treeID: tree.id, api: data.api, refreshProfile: data.refreshTreeProfile)
+        await browser.load()
+        await browser.profileRefresh?.value
+
+        #expect(browser.photos.map(\.id).contains(strangers), "the refresh never reached screen 20")
+        #expect(
+            pill.hasPrefix("\(browser.photos.count) photos"),
+            "screen 03's pill reads \(pill); screen 20 lists \(browser.photos.count)"
+        )
+        #expect(browser.photos.count == 3, "the add-a-tree photograph, the visit's, and the stranger's")
+    }
 }
