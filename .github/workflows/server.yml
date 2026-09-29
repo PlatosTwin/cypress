@@ -13,11 +13,17 @@
 # and any failure. It reads JSON rather than `-v` text because Go indents a subtest's `--- SKIP`
 # line, so an anchored grep counts top-level tests only (210 of 222 passes on that same run).
 #
-# **Not a required check.** Making it one is an owner/admin action on the ruleset. Until then a
-# red here does not block a merge by itself — read this workflow's run for any PR touching
-# `server/`. If it is made required, the `paths:` filters below must come off in the same change,
-# for the reason `web.yml` gives (E225): a required check that never starts is a PR nobody can
-# merge and no red anywhere saying why.
+# **Required on pull requests — through `gate`, not as a context of its own.** Owner ruling,
+# 2026-09-28: a pull request that changes only the Go server skips the iOS suite (the FOURTH
+# decision in `testflight.yml`'s `plan`), and this suite becomes required. A path-filtered
+# workflow cannot itself be a required check: on a pull request outside its paths it never
+# reports, and the pull request waits forever for it (E225). So on pull requests this file does
+# not start itself. `testflight.yml` calls it (`workflow_call`) as its `server` job whenever the
+# diff touches a path on the `push` list below — read from this file, so there is one list — and
+# `gate`, which is required and always reports, refuses unless that job succeeded. A red here is
+# a red `gate`.
+#
+# On a push to main it still starts itself from the `push` list, as before.
 name: Server
 
 on:
@@ -27,29 +33,38 @@ on:
     # names every file the suite reads and nothing else. `server/**` is the module itself; the
     # workflow file proves itself by running.
     #
+    # **This list is also what pull requests run on**, though no `pull_request` trigger names it:
+    # `testflight.yml`'s `plan` reads it with `yq` and calls this workflow when a changed path
+    # matches. Edit it here and both routes follow.
+    #
+    # **`testflight.yml` is on it because it is now this suite's caller on pull requests** (#188
+    # review). Its `plan` decides whether the Go suite is owed, its `server` job runs it, and its
+    # `gate` judges the result. A change to that machinery would otherwise exercise none of it:
+    # a `testflight.yml`-only pull request answered `server=false`, so a broken call surfaced as a
+    # red on the NEXT Go pull request, looking like that change's fault. Listed, it proves itself by
+    # running — about a minute on ubuntu — and `check_trigger_paths.sh` refuses the list without it.
+    #
     # **The four Swift files are here because Go tests OPEN them.** `internal/api` and
     # `internal/apierr` parse the client's enums and property lists at run time to prove the wire
     # vocabulary still agrees with the app. Renaming a `TreePlacement` case touches no `server/`
     # path, and without these lines the guard written to catch that rename would not run on it.
     # `server/ci/check_trigger_paths.sh` (the first step below) greps every `"../../../…"` read
-    # out of the Go sources and fails if one is not listed here under BOTH triggers, so a fifth
-    # reader added later cannot be left without a trigger.
+    # out of the Go sources and fails if one is not listed here, so a fifth reader added later
+    # cannot be left without a trigger.
     paths:
       - 'server/**'
       - '.github/workflows/server.yml'
+      - '.github/workflows/testflight.yml'
       - 'Cypress/Core/APIError.swift'
       - 'Cypress/Core/Models/CityRecord.swift'
       - 'Cypress/Core/Models/Tree.swift'
       - 'Cypress/Core/Units/Quantity.swift'
-  pull_request:
-    branches: [main, 'release/**']
-    paths:
-      - 'server/**'
-      - '.github/workflows/server.yml'
-      - 'Cypress/Core/APIError.swift'
-      - 'Cypress/Core/Models/CityRecord.swift'
-      - 'Cypress/Core/Models/Tree.swift'
-      - 'Cypress/Core/Units/Quantity.swift'
+  # **No `pull_request` trigger, deliberately** — see the header. Pull requests (to `main` and to
+  # `release/**`, the same two bases `testflight.yml` covers) reach this file through the call
+  # below. A `pull_request` trigger here would run the suite twice per pull request, the second
+  # copy racing the first for the concurrency group below; `server/ci/check_trigger_paths.sh`
+  # refuses one.
+  workflow_call:
   # The escape hatch `web.yml` and `testflight.yml` both keep: a run by hand when something outside
   # these paths (a Go toolchain bump, a Postgres image update) needs the suite run.
   workflow_dispatch:
@@ -148,15 +163,22 @@ jobs:
       # The exit code is recorded and then deliberately NOT trusted on its own: it is 0 for an
       # all-skipped run, which is the case this workflow exists to catch. The judge reads the
       # stream; the job fails if EITHER says so. `-count=1` so a result is never a cache replay.
+      #
+      # **`|| status=$?`, not `status=$?` on the next line.** GitHub runs this with
+      # `bash -e -o pipefail`, and `set -uo pipefail` does not turn the `-e` off. Written the plain
+      # way, a failing `go test` ended the step on the spot: no "exited" line, no judge, and a red
+      # job whose log never said which test failed. Found by #188's red-proof (run 36504589788),
+      # where `gate`'s error pointed at "its judge prints the reason" and the judge had not run.
+      # The skip calibrations never saw it, because an all-skipped run exits 0.
       - name: Run the suite against Postgres, and judge the stream rather than the exit code
         working-directory: server
         run: |
           set -uo pipefail
-          go test -json -count=1 ./... > "$RUNNER_TEMP/server-test.json"
-          status=$?
+          status=0
+          go test -json -count=1 ./... > "$RUNNER_TEMP/server-test.json" || status=$?
           echo "go test exited $status (recorded, not believed)"
-          ci/verify_test_json.sh "$RUNNER_TEMP/server-test.json"
-          verdict=$?
+          verdict=0
+          ci/verify_test_json.sh "$RUNNER_TEMP/server-test.json" || verdict=$?
           [ "$status" -eq 0 ] && [ "$verdict" -eq 0 ]
 
       # Thirty days, as with the iOS and web logs: an errata entry cites the run it came from.

@@ -235,13 +235,21 @@ func (s *Store) CreateDeviceToken(ctx context.Context, deviceID uuid.UUID, hash 
 
 // ── The claim ──────────────────────────────────────────────────────────────────────────────────
 
-// ClaimDevice re-homes a device's unattributed rows onto an account.
+// ClaimDevice re-homes a device's unattributed rows onto an account, and approves the pending
+// photographs among them.
 //
-// This is `POST /devices/claim`, and it mirrors `ContributionStore.claimDevice` deliberately: a
-// sweep keyed on device id whose WHERE clauses stop matching once they have run. Nothing inserts,
-// nothing deletes, and rows belonging to a different account are not touched — which is what makes
-// the client safe to re-invoke it after every batch that applied anything (spec §6.2), and what
-// makes running it twice cost one indexed scan and no writes.
+// This is `POST /devices/claim`, and also the claim `POST /auth/oidc` runs when it is sent a
+// `device_uuid`. It mirrors `ContributionStore.claimDevice` deliberately: a sweep keyed on device id
+// whose WHERE clauses stop matching once they have run. Nothing inserts, the one DELETE removes only
+// a device favorite the account already holds a row for (`claimFavorites`), and rows belonging to a
+// different account are not touched — which is what makes the client safe to re-invoke it after
+// every batch that applied anything (spec §6.2). Running it twice adopts nothing the first run did
+// not, but it is not free of writes: the closing `UPDATE devices` has no guard, so every call
+// rewrites the device row's `updated_at` (and its `user_id`, to the value it already holds).
+//
+// The photograph approval is the one thing here the client's `claimDevice` does not mirror, because
+// the client has no moderation state to move: it learns "public" only from `GET /trees/{id}`'s
+// `is_publicly_visible`. See the statement itself for which rows it approves and which it refuses to.
 //
 // ── The #174 guard ─────────────────────────────────────────────────────────────────────────────
 //
@@ -294,11 +302,48 @@ func (s *Store) ClaimDevice(ctx context.Context, deviceUUID uuid.UUID, caller uu
 		// The photograph, adopted on the reminder's terms rather than the visit's (`AppSchema` v12,
 		// ERRATA E136): the account gains the row and the device link is dropped in the same
 		// statement, so a photograph never says both whose account it is and which phone took it.
+		//
+		// ── And it is approved in that same statement, because adoption is the sign-in ──────────
+		//
+		// `BeginPhoto` approves at upload only for a signed-in account (R72 ruling 5), so a
+		// photograph this device began anonymously arrives here `pending`. Before the owner's
+		// 2026-09-28 ruling this statement moved it onto the account and left it `pending`, and the
+		// only other statement that wrote `moderation_state` after the begin was the operator's
+		// `RejectPhoto`, which never approves — so a photograph taken signed out stayed private for
+		// good, while screen 15 promised an account "lets them join each tree's public timeline".
+		// Now it is what it would have been had the account begun it:
+		// `approved`, for the same reason and under the same name, `auto_approved_launch` — a
+		// first-party photograph, published unscreened and unblurred, from a signed-in account.
+		//
+		// Only a **live pending** row moves, which the two `CASE` arms state together:
+		//
+		//   - `rejected` stays `rejected`. An operator's takedown is not undone by its contributor
+		//     signing in, and its approval reason stays NULL as `RejectPhoto` left it.
+		//   - a withdrawn row (`deleted_at` set) is adopted and stays `pending`. It is not served to
+		//     anybody either way; approving it would record an approval of something its contributor
+		//     took back.
+		//   - an anonymized row is never adopted: the WHERE excludes it. Through the code no
+		//     anonymized photograph carries a `device_id` anyway, but not because anonymization
+		//     clears it — the two anonymization statements in `sync.go` set `user_id = NULL` and do
+		//     not touch `device_id`. They only ever match account-owned rows, and `photos_owner`
+		//     forbids an account-owned row from also naming a device, so there was none to clear.
+		//
+		// `SET` expressions read the row as it was before this statement, so both arms test the
+		// original state, and the approval lands in the same statement as the adoption — which
+		// `photos_owned_live_photograph_is_not_pending` (migration 006) requires: an account's live
+		// photograph is never `pending`, so an adoption that forgot to approve is refused by the
+		// database rather than stored.
 		if _, err := tx.Exec(ctx, `
 			UPDATE photos
-			   SET user_id = $1, device_id = NULL, updated_at = $2
+			   SET user_id = $1, device_id = NULL, updated_at = $2,
+			       moderation_state = CASE
+			           WHEN moderation_state = 'pending' AND deleted_at IS NULL THEN 'approved'
+			           ELSE moderation_state END,
+			       approval_reason = CASE
+			           WHEN moderation_state = 'pending' AND deleted_at IS NULL THEN $4::text
+			           ELSE approval_reason END
 			 WHERE device_id = $3 AND user_id IS NULL AND anonymized_at IS NULL
-		`, caller, now, deviceID); err != nil {
+		`, caller, now, deviceID, string(AutoApprovedLaunch)); err != nil {
 			return err
 		}
 
