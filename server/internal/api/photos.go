@@ -193,6 +193,19 @@ func (s *Server) photoData(w http.ResponseWriter, r *http.Request, who caller) e
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
+	// A photograph of a community tree hidden from this caller is not here, whoever took it and
+	// whatever its moderation state (S2). Without this, the photo ids a stranger read off a tree's
+	// profile before its adder withdrew it, or before an operator took it down, went on fetching the
+	// photographs by id — the takedown would have removed the tree and left its pictures standing.
+	// `not_found` for this route's own reason: a refusal would confirm the row exists.
+	hidden, err := s.Store.TreeIsHiddenFrom(r.Context(), photo.TreeUUID, who.owner())
+	if err != nil {
+		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+	}
+	if hidden {
+		return apierr.New(apierr.NotFound, "That photo is not here.")
+	}
+
 	own := ownsPhoto(photo, who)
 	switch {
 	case photo.IsPubliclyVisible():

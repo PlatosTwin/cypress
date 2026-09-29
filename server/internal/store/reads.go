@@ -253,10 +253,28 @@ func (s *Store) GroveSpeciesKnown(ctx context.Context, owner Owner) ([]KnownSpec
 type TreeCommunity struct {
 	Photos     []PhotoRecord
 	VisitCount int
+	// Tree is the community tree itself, when the id names one this viewer may see (S2, §3D). Nil
+	// for a city tree, an id nobody sent, and a community tree hidden from this viewer — three
+	// cases this read answers identically.
+	Tree *CommunityTreeRecord
 }
 
-// TreeCommunityHalf reads it.
-func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (TreeCommunity, error) {
+// TreeCommunityHalf reads it, for one viewer.
+//
+// **A community tree hidden from the viewer answers the zero value, with nothing else read**:
+// somebody else's unpublished tree, a withdrawn one, a taken-down one, an erased one. Before S2
+// this read never consulted `community_trees`, so it served the photographs and the visit count of
+// a tree its adder had withdrawn, or had never published, to anybody who asked by id. The zero
+// value is exactly what an id this service has never heard of produces, so the answer is not an
+// oracle for the hidden tree's existence (`communityTreeFor`).
+func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID, viewer Owner) (TreeCommunity, error) {
+	visibility, tree, err := communityTreeFor(ctx, s.pool, treeUUID, viewer)
+	if err != nil {
+		return TreeCommunity{}, err
+	}
+	if visibility == CommunityTreeHidden {
+		return TreeCommunity{}, nil
+	}
 	photos, err := s.PhotosForTree(ctx, treeUUID)
 	if err != nil {
 		return TreeCommunity{}, err
@@ -269,7 +287,7 @@ func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (Tree
 	if err != nil {
 		return TreeCommunity{}, err
 	}
-	return TreeCommunity{Photos: photos, VisitCount: visits}, nil
+	return TreeCommunity{Photos: photos, VisitCount: visits, Tree: tree}, nil
 }
 
 // ── `POST /trees` and the 10 m proximity dedupe ────────────────────────────────────────────────

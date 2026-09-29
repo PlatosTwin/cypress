@@ -90,6 +90,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET "+Prefix+"/me/journal", s.authenticated(s.journal))
 	mux.Handle("GET "+Prefix+"/me/map-membership", s.authenticated(s.mapMembership))
 	mux.Handle("GET "+Prefix+"/trees/{id}", s.authenticated(s.treeProfile))
+	// The community layer (S2, §3C and §3E). A device credential is enough for both: a phone that
+	// has never signed in still draws, and opens, everybody's published trees.
+	mux.Handle("GET "+Prefix+"/community-trees", s.authenticated(s.communityTrees))
+	mux.Handle("GET "+Prefix+"/trees/{id}/history", s.authenticated(s.treeHistory))
 	mux.Handle("GET "+Prefix+"/photos/{id}", s.authenticated(s.photoData))
 
 	// ── The public read ────────────────────────────────────────────────────────────────────────

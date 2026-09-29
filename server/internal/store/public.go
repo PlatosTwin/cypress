@@ -73,6 +73,22 @@ type PublicTreeCommunity struct {
 func (s *Store) PublicTreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID) (PublicTreeCommunity, error) {
 	var half PublicTreeCommunity
 
+	// ── A community tree nobody may see publishes nothing (S2) ─────────────────────────────────
+	//
+	// The public read has no viewer, so a community tree is visible here only while it is
+	// published and live (`communityTreeFor` with the zero Owner). Unpublished, withdrawn, taken
+	// down or erased, it answers the zero value — the same bytes as an id this database has never
+	// seen, which is this file's "absent, empty and withdrawn are one answer" rule extended to the
+	// tree itself. Before S2 this read never consulted `community_trees`, and served the readings
+	// and the beloved state of a tree its adder had withdrawn or an operator had taken down.
+	visibility, _, err := communityTreeFor(ctx, s.pool, treeUUID, Owner{})
+	if err != nil {
+		return PublicTreeCommunity{}, err
+	}
+	if visibility == CommunityTreeHidden {
+		return half, nil
+	}
+
 	// ── The vitality rating is not read here, and the reason is a missing route ────────────────
 	//
 	// **This function used to read the latest `observation`'s rating and it no longer does.** The
@@ -131,7 +147,7 @@ func (s *Store) PublicTreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID)
 	// The remaining honest limitation is now the opposite one, and it is smaller: the count is of
 	// **accounts**, so one person with two Apple IDs is two. It can no longer be moved by anybody
 	// without an account.
-	err := s.pool.QueryRow(ctx, `
+	err = s.pool.QueryRow(ctx, `
 		SELECT count(DISTINCT user_id)
 		  FROM favorites
 		 WHERE tree_uuid = $1
