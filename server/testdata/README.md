@@ -65,3 +65,5 @@ match `speciesCurrentID`, and because that property is optional the mismatch dec
 
 Timestamps are RFC3339 at second precision in UTC, because `JSONDecoder`'s `.iso8601` uses
 `.withInternetDateTime` and rejects fractional seconds.
+
+<!-- calibration (throwaway): a server/testdata/ change, which must still run the iOS suite. -->
