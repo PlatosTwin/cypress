@@ -1,1 +1,1 @@
-internal: refines the unreleased mistake-report screen's wait for a location fix (its clock starts once location is allowed); that screen's own note covers it.
+When you report a misplaced pin, taking your time on the location permission prompt no longer makes the screen say it couldn't find your location.
