@@ -1703,6 +1703,22 @@ into this section in the round that finds it, and nowhere else. Each item stands
     wrongly removed; the phone is told a false failure. #194's own remaining finding (a non-retryable
     begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) is being fixed
     in #194 and is not listed here.
+77. **iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
+    question failed on CI's iOS 26 shard and became an `.alert`). Seven sites still use a
+    `confirmationDialog`: `GrowthHistoryView:45`, `CheckInView:94`, `AccountDeletionSheet:88`,
+    `TreePhotosView:129`, `PhotoViewerView:227`, and `ModerationReviewList:50` and `:61`. On iOS 26
+    each one's cancel action is likely missing and only a tap outside dismisses it; no test taps any
+    of those cancel buttons, so nothing goes red. Needs an iOS 26 runtime to confirm; the fix is
+    #185's (an alert with the same strings) plus a test per site that taps the cancel.
+78. **#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).** (a) A test gap:
+    removing the line in `DataDisputeModel` that records the error count at the ask leaves
+    "…an older one does not" green; a reading that still carries the old count after the ask would
+    catch it (probe kept in the orchestration notes as `v185b-ZZVerify185Tests.swift.keep`). (b) Ask,
+    turn Location off (CoreLocation reports denied), turn it back on: the block says it couldn't find
+    the location at once instead of waiting; reset the error baseline whenever it starts waiting
+    again. Low: the first fix replaces the message. (c) The 15 s clock runs while the system
+    location-permission prompt is up, so a slow answer reads as "couldn't find your location" until
+    a fix arrives. Whether the clock should start at the grant is the owner's call.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
