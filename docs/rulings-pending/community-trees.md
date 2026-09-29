@@ -5,53 +5,60 @@ numbers at merge. No code comment cites this filename: the server comments name 
 decisions by number and date ("decision 7", "the orchestrator's ruling of 2026-09-28") and the
 migration by its file.
 
-The owner's decisions 1–9 and the orchestrator's rulings of 2026-09-28 are the round's; this file
+The owner's decisions 1–12 and the orchestrator's rulings of 2026-09-28 are the round's; this file
 records what **PR S1** (`server/community-trees-007`, migration 007) decided in applying them, where
 the decisions and the design left a choice. Each is a ruling within delegated authority and is
-logged for review; none reverses an existing ruling.
+logged for review; none reverses an existing ruling. Decision 10 (the license is one-way) was the
+owner's answer to the question S1's first draft raised here, and the entries below are written to
+it.
 
 ---
 
-### R??? — A published community tree belongs to an account that accepted the license, or to nobody
+### R??? — A community tree is published only at a moment its account had accepted the license
 
-**Decided by:** PR S1, applying decision 7. **Replaces** the design's constraint
+**Decided by:** PR S1, applying decisions 7 and 10. **Replaces** the design's constraint
 `community_trees_live_iff_not_device_owned`, which decision 7 makes false (an account-owned tree can
 now be unpublished).
 
 1. `published_at IS NOT NULL` implies `device_id IS NULL`. A CHECK
    (`community_trees_published_is_not_device_owned`).
-2. A published tree's account has accepted the license (`users.license_version IS NOT NULL`), or
-   the tree is anonymized. It spans two tables, so it is kept in code by the only four writers of
-   `published_at`: a signed-in insert, the claim, license acceptance, and license decline. The test
-   `TestNoPublishedTreeBelongsToAnAccountThatDeclined` walks every path and checks the whole table
-   after each.
+2. A tree is published only at a moment its owning account had accepted the license. Decision 10
+   makes this a fact about the moment of publication, not about the account's current answer, and
+   `users` keeps only the current answer. So **every `published` event records the version
+   accepted at that moment** in `after.license_version`, and `published_at` equals that event's
+   `occurred_at`. It is kept in code by the only three writers of `published_at` (a signed-in
+   insert, the claim, and license acceptance). Each reads the account's answer with `FOR SHARE`, so
+   an acceptance cannot commit between an insert's read of "declined" and its commit: the
+   acceptance waits, and its publish sweep then sees the tree. The test
+   `TestEveryPublicationHappenedUnderAnAcceptedLicense` walks every path. After each step it checks
+   the record, and it checks a model of its own that knows from the outside when the account had
+   accepted.
 3. The owner rule is `contributions_owner`'s: exactly one owner, or none with `anonymized_at` set
    (`community_trees_owner`). This makes a forgotten step in account deletion fail loudly: the
    `users` foreign key's `ON DELETE SET NULL` on a tree nobody anonymized first is refused, and the
    whole deletion rolls back.
 
-### R??? — Declining the license after accepting it takes the account's trees back off the map
+### R??? — A later decline leaves published trees published (decision 10, applied)
 
-**Decided by:** PR S1. Decision 7 says what happens when an account declines, and when it later
-accepts. It does not say what happens when an account that accepted later declines. That is
-reachable: screen 15 sends the license answer on every sign-in, so signing out and back in with the
-box clear records a decline.
+**Decided by:** the owner's decision 10, which answered the question S1's first draft left here.
+The case is reachable: screen 15 sends the license answer on every sign-in, so signing out and back
+in with the box clear records a decline.
 
-**Ruling:** a decline unpublishes every tree the account owns (anonymized trees have no account and
-are untouched) and writes an `unpublished` event for each. A later acceptance publishes them again.
-This is the only reading under which R???'s invariant holds.
-
-**For the owner:** open licenses are usually irrevocable for work already published. If the owner
-reads decision 7 that way, the alternative is to keep published trees published on a later decline
-and to weaken the invariant to "accepted at the time of publication". That is one function
-(`unpublishAccountTrees`) and one test to change.
+**Ruling:** a decline changes no tree. Trees published under the earlier acceptance stay published
+and their history gains nothing. A tree added while the decline stands stays private, and the next
+acceptance publishes it. Nothing ever unpublishes a tree now. So the event kind `unpublished` has
+no writer, and 007 does not admit it (see "Event kinds" below).
 
 ### R??? — What 007 does with trees that already exist
 
-- **An account's tree** is published at its `updated_at` if the account has accepted the license,
-  and is left unpublished otherwise. `updated_at` is the moment it went live: before 007, the only
-  writers of that column were insert and claim. This is decision 7 applied to rows that already
-  exist.
+- **An account's tree** is published if the account has accepted the license, and is left
+  unpublished otherwise. This is decision 7 applied to rows that already exist. It is published at
+  the **later** of its `updated_at` and the account's `license_accepted_at`. `updated_at` is the
+  moment the tree became the account's: before 007, the only writers of that column were insert and
+  claim. A tree claimed on 1 September by an account that accepted on 20 September went live on the
+  20th. `license_accepted_at` is the most recent acceptance, which can only make the stamp later
+  than the true first one, never earlier. Its `published` event carries the account's current
+  version, as every `published` event carries the version accepted.
 - **A device's tree** stays unpublished (decision 1).
 - **An orphan** is a tree whose account was deleted. Before 007, deletion never touched
   `community_trees`, so the foreign key left both owners NULL under **both** doors. An orphan is
@@ -86,7 +93,16 @@ This means another identity has a **live contribution or photograph** on the tre
 - A contribution counts when it is not deleted and is not a removal. The four withdrawal kinds
   (`photo_withdrawal`, `measurement_withdrawal`, `data_dispute_withdrawal`, `tree_withdrawal`) are
   somebody taking their own work back, not work anchored to the tree.
-- A photograph counts when it is not deleted and not `rejected`.
+- A photograph counts when it is not deleted, not `rejected`, and **its bytes have arrived**
+  (`bytes_received_at` set). A begun upload with no bytes is a reservation nobody can see. (The
+  orchestrator's ruling after #187's review.)
+- **A dispute its raiser took back does not count.** `data_dispute_withdrawal` tombstones nothing,
+  so the dispute row stays live. The pair is matched instead: same dispute id (case-insensitive,
+  the same `upper()` the ownership gate uses), same tree, same owner columns. "Same owner" matters.
+  Without it, the adder could clear a stranger's dispute by withdrawing it under the adder's own
+  identity, through the twin-raise route `store/disputes.go` documents. The other paired kinds
+  need no matching: `photo_withdrawal` and `measurement_withdrawal` set the target's `deleted_at`,
+  which the filters already read.
 - An anonymized row counts. It is somebody's work with the name taken off.
 - Every other kind counts, including a stranger's favorite and private reminder.
 
@@ -121,6 +137,14 @@ wrapper as `POST /operator/photos/{id}/reject`, with no new authentication schem
 - A correction whose `id` is already a chain row **on the same tree** is the same act queued twice
   under two item keys. It gets `applied` and nothing changes. The same `id` on a **different** tree
   gets `validation_failed`.
+- A correction whose `id` **is its `treeID`** gets `validation_failed`. The chain's root row
+  carries the tree's id, so without this check it would read as the replay above and answer
+  `applied` for a move that never happened. This is the drift §3A warns against: the tree pointer
+  sent as `id`.
+- **After a claim, the device's own credential is a stranger to the device's trees.** A tree a
+  device added signed out becomes the account's at the claim. A move or a withdrawal of it sent
+  under the device's credential (the phone has since signed out) gets `forbidden`, which does not
+  retry. So C1 must not queue those acts on a signed-out phone for a tree its account owns.
 - A late (older) correction is spliced into the chain between its neighbors, already superseded. Its
   predecessor now points at it, and it points at its successor. It skips the dedupe, and it writes a
   `location_corrected` event whose `before` is its predecessor's position.
@@ -137,7 +161,9 @@ refused.
 
 ### R??? — Event kinds beyond the design's five
 
-`community_tree_events.kind` also admits `unpublished` (R??? above), `withdrawn` and `taken_down`.
+`community_tree_events.kind` also admits `withdrawn` and `taken_down`. The first draft also admitted
+`unpublished`. Decision 10 left it with no writer, so it is gone from the CHECK and no row carries
+it. S2 need not handle it.
 S2's `/history` decodes `kind` tolerantly (design §3E), so an old client meets these as `unknown`.
 Which of them the history list shows is C3's question for the owner.
 
