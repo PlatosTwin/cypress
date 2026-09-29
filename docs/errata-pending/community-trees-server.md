@@ -74,3 +74,23 @@ would chase a classification that does not exist.
 
 007 spells the event CHECK `= ANY (ARRAY[…])` and says why. The extractor is unchanged; anchoring it
 to `contributions` is a roadmap item, not this PR's.
+
+### E??? — The draft 007 recorded no answer to "was this tree ever public"
+
+This was found by #190's review, against S1's draft. It is recorded here because the fix is in 007
+and the draft never shipped.
+
+- **Tombstones.** Decision 12 tombstones an unpublished tree under both deletion doors, and the
+  draft's tombstone held only an id and a time. S2's removal list therefore had nothing to filter
+  on. Every stranger, in every tile, was told the id of a tree nobody but its adder had seen, and
+  roughly when its account went.
+- **Born-withdrawn trees.** A tree whose withdrawal drained before its add was published and then
+  withdrawn in the same transaction. That left a `published` event on a tree nobody ever saw.
+- **The chain and the history.** Neither recorded which positions the public had seen. So under
+  decision 13 there was no way to serve a history that starts at going live.
+
+007 now records the answer where each fact is written: `withdrawn_community_trees.was_public`,
+`community_tree_locations.was_public` and `community_tree_events.in_public_history`. A born-withdrawn
+tree is never published. `TestATombstoneSaysWhetherTheTreeWasEverPublic` and
+`TestHistoryStartsAtGoingLive` pin the fix, and so does the whole-database check in
+`assertPublicationInvariant`.

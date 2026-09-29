@@ -66,8 +66,9 @@ no writer, and 007 does not admit it (see "Event kinds" below).
   license cannot be known. It may also have chosen to erase everything. Publishing it now would
   decide both questions for somebody who can no longer be asked. It is visible to nobody, so it is
   inert. Deleting it instead would be an owner call.
-- Every published tree gets a `published` event, and every tree gets an `added` event and a root
-  location. The design wrote a `published` event only where `published_at > created_at`. This PR
+- Every published tree gets a `published` event, carrying its root's position, and every tree gets
+  an `added` event and a root location. No tree had moved before 007, so the root is the head at
+  publication: it is `was_public` exactly when the tree is published. The design wrote a `published` event only where `published_at > created_at`. This PR
   writes one for every publication, backfilled or live, because decision 4's history should not
   depend on how the publication happened.
 
@@ -117,10 +118,15 @@ Decision 8's new verb travels as outbox kind **`tree_withdrawal`**. Its payload 
   Events cascade from the tree, so a hard delete would remove the record of the withdrawal along
   with the tree. Every existing read of community trees already filters `deleted_at` (the dedupe,
   `MapMembership`). S2's tile delta reports it as withdrawn, the same way it reports a tombstone.
-- **The answers.** The adder, with nobody else's work on the tree, gets `applied`. The adder, with
-  somebody else's work on it, gets `conflict`. Anybody else, or anybody once the tree is
-  anonymized, gets `forbidden`. An erased (tombstoned) tree gets `not_found`. An already withdrawn
-  or taken-down tree gets `applied` and nothing changes.
+- **The answers.** The adder, with nobody else's visit or photo on the tree, gets `applied`. The
+  adder, with somebody else's on it, gets `conflict`. The adder's own already withdrawn or
+  taken-down tree gets `applied` and nothing changes. Anybody else gets `forbidden` for a tree they
+  can see (published and not removed, including an anonymized one). A tree they cannot see gets the
+  answer an unknown id gets (see "No existence oracle" below).
+- **A tree born withdrawn is never published.** When the withdrawal lands first, the late
+  `add_tree` stores the tree with no `published_at`, no `published` event, and nothing public in its
+  chain or history. It was never visible, so nothing may report it as a removal (review of #190,
+  F3).
 - **A tree this service never received** gets `applied` and nothing changes, and its later
   `add_tree` from the same owner arrives already withdrawn. The outbox drains only what is due, so
   a withdrawal can land before an add that is in backoff. This is the ordering
@@ -145,13 +151,108 @@ wrapper as `POST /operator/photos/{id}/reject`, with no new authentication schem
   sent as `id`.
 - **After a claim, the device's own credential is a stranger to the device's trees.** A tree a
   device added signed out becomes the account's at the claim. A move or a withdrawal of it sent
-  under the device's credential (the phone has since signed out) gets `forbidden`, which does not
-  retry. So C1 must not queue those acts on a signed-out phone for a tree its account owns.
+  under the device's credential, because the phone has since signed out, is a stranger's act:
+  - if the account published the tree, it gets `forbidden`, which does not retry;
+  - if the account declined, the tree is hidden from that credential, so the move gets `not_found`
+    and the withdrawal gets `applied` and **changes nothing**.
+
+  So C1 must not queue those acts on a signed-out phone for a tree its account owns.
 - A late (older) correction is spliced into the chain between its neighbors, already superseded. Its
   predecessor now points at it, and it points at its successor. It skips the dedupe, and it writes a
   `location_corrected` event whose `before` is its predecessor's position.
-- Authority is checked before existence for a live tree. The one exception is a withdrawn tree: it
-  is `not_found` to its adder and `forbidden` to everybody else.
+- For the adder, a withdrawn or taken-down tree is `not_found`. For anybody else, see "No existence
+  oracle" below.
+
+### R??? — No existence oracle in the sync answers
+
+**Decided by:** the orchestrator, after #190's review (F6). A stranger may not learn from an answer
+that a tree they cannot see exists. "Cannot see" means: somebody else's tree that is withdrawn,
+taken down, or unpublished (a declined account's, or another device's), or one a deletion door
+tombstoned. Its account is gone, so nobody is its adder.
+
+A stranger's act on such a tree gets exactly the answer the same act gets on an id this service
+never held, with the same status, code and message, and it changes nothing:
+- `location_correction` gets `not_found`;
+- `tree_withdrawal` gets **`applied`**. The brief said `not_found` here, but an unknown id's
+  withdrawal answers `applied`, and it must: that is how a withdrawal that drains before its own
+  add is honoured (the arrival-order rule above). A hidden tree answering `not_found` would itself
+  be the oracle. So the uniform answer is the unknown id's answer, and for a withdrawal that is
+  `applied`.
+
+`add_tree` and the species kinds were already uniform. A tree anybody can see still answers a
+stranger `forbidden`.
+
+### R??? — History starts at going live (decision 13), and how it is stored
+
+The owner ruled after #190's review. Others see the tree as added where it stood when it went
+public. Positions it held and moves made while it was private stay private: they are never in the
+public history, and a tile the tree left while private never reports it. Moves made after it is
+public are public (decision 4).
+
+**Representation.** Three columns, each answering a question once, when the fact happens:
+- `community_tree_locations.was_public`. The row was, at some moment, the tree's public position.
+  That means the head at the moment of publication, or a row that became the head while the tree
+  was published. Rows superseded while private are not, and neither is a late correction spliced in
+  already superseded, which never moved the pin anybody saw.
+- `community_tree_events.in_public_history`. The event is part of the public history.
+  - A `published` event always is. It carries the position at publication (`lat`, `lon`,
+    `placement`, `location_accuracy_m`) beside `license_version`, and **it is the public record's
+    "added"**.
+  - An `added` event never is.
+  - Every other event is public when it was written while the tree was published, except a
+    `location_corrected` that did not move the public pin.
+- `withdrawn_community_trees.was_public`. See the tombstone ruling below.
+
+**Why not collapse the private chain at publication.** Collapsing would delete or rewrite the
+adder's own acts. The chain is the materialization of contributions, which are append-only
+(DECISIONS constraint 7). Under this representation no position, time or actor is ever rewritten,
+and nothing is deleted. The one UPDATE is publication turning `was_public` on for the head it
+publishes, false to true, once. That is the same set-once shape as `superseded_by`. The adder's
+chain stays complete, and the adder's phone keeps its own moves.
+
+**What S2 must serve:**
+- **History.** Only events with `in_public_history`. The `published` event is presented as the
+  tree's "added", at its `after` position and dated by the day of `published_at`. `added` events
+  are never served. Every served `location_corrected` has a `before` and an `after` that were public
+  positions.
+- **Tile.** The chain arm reads only `community_tree_locations` rows with `was_public`. The position
+  arm reads `community_trees` with `published_at IS NOT NULL`: live trees for the snapshot, and
+  soft-removed ones for the delta's removals.
+
+**What the tests pin:** `assertPublicationInvariant` checks all of this over the whole database
+after every step of every publication test. `TestHistoryStartsAtGoingLive` walks the claim, the
+acceptance, the signed-in insert, a public move and a late splice.
+
+### R??? — A tombstone says whether the tree was ever public
+
+**Decided by:** the orchestrator, after #190's review (F2). Decision 12 tombstones an unpublished
+tree under both doors. `withdrawn_community_trees.was_public` is written from the tree's own
+`published_at`. Nothing unpublishes (decision 10), so a set `published_at` means "was ever public".
+
+**S2 reports a tombstone in `withdrawn_tree_ids` only where `was_public`.** An unpublished tree
+removed by either door is never reported to anybody, not even as an id. The tombstone still guards
+the id against a late `add_tree`, whatever `was_public` says. A soft-removed tree (withdrawn or
+taken down) is once-public exactly when its `published_at` is set, and a tree born withdrawn has
+none. The table is new in 007, so there are no rows to backfill. The column has no default, so no
+future writer can leave the question unanswered.
+
+### R??? — The tile's indexes (performance precedence)
+
+007 creates one partial index per arm of S2's tile, each on the predicate that arm must carry:
+
+| Arm | Index | Predicate |
+|---|---|---|
+| Position | `idx_community_trees_public_position` on `community_trees (lat, lon)` | `published_at IS NOT NULL` |
+| Chain | `idx_community_tree_locations_public_position` on `community_tree_locations (lat, lon)` | `was_public` |
+| Removal list | `idx_withdrawn_community_trees_public` on `withdrawn_community_trees (withdrawn_at, id)` | `was_public` |
+
+The removal list's index replaces the earlier unfiltered time index. The delta's keyset stays
+`idx_community_trees_updated (updated_at, id)`. 001's `idx_community_trees_position` stays for the
+10 m dedupe, which also sees the caller's own unpublished trees.
+
+`TestTheTileIndexesServeTheirQueries` checks each index against the **generic** plan
+(`EXPLAIN (GENERIC_PLAN)`) of its arm's query shape. So S2 writes one query text per arm, with the
+arm's predicate spelled literally and no `($n IS NULL OR …)` around the indexed columns.
 
 ### R??? — Species arm 1: what "applies" means on the server
 

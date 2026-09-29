@@ -27,6 +27,33 @@
 --      `FOR SHARE` — and pinned by `TestEveryPublicationHappenedUnderAnAcceptedLicense`, which checks
 --      the whole table after every path that can move either side.
 --
+-- ── What the public may know: history starts at going live (decision 13) ──────────────────────
+--
+-- A tree's life before publication is its adder's. Others see it as added where it stood when it
+-- went public; positions it held and moves made while it was private are never served, and a
+-- tile it left while private never reports it. Three columns carry this, each written once, when
+-- the fact it records happens, and never rewritten from something the public saw back to something
+-- it did not:
+--
+--   * `community_tree_locations.was_public` — this row was, at some moment, the tree's public
+--     position: the head at the moment of publication, or a row that became the head while the tree
+--     was published. A row superseded while private, and a late correction spliced in already
+--     superseded, are not. The only UPDATE is the publication's, false to true on the head it
+--     publishes, the same set-once shape as `superseded_by`; no position, time or actor is ever
+--     rewritten, and nothing is deleted, so the chain stays the adder's complete record (DECISIONS
+--     constraint 7: append-only). Collapsing the private chain at publication was the alternative,
+--     and it would delete the adder's own acts.
+--   * `community_tree_events.in_public_history` — this event is part of the public history. The
+--     `published` event is, and it carries the position at publication; it is the public record's
+--     "added". An `added` event never is. Every other event is when it was written while the tree
+--     was published, except a `location_corrected` that did not move the public pin.
+--   * `withdrawn_community_trees.was_public` — the erased tree had been published. A tree that
+--     never was must never be reported to anybody, not even as an id.
+--
+-- `published_at IS NOT NULL` is the soft-removal half of the same question: a withdrawn or
+-- taken-down tree was once public exactly when it is set (nothing unpublishes, decision 10, and a
+-- tree born withdrawn is never published).
+--
 -- `users.license_version` is the record of acceptance: NULL is a *declined* consent (001's
 -- comment and `users_license_pair`), a string is the version accepted, and
 -- `RecordLicenseConsent` writes it from `POST /auth/oidc` and `POST /devices/claim` only when the
@@ -53,7 +80,9 @@
 --
 -- One root location per tree (id = the tree's id, the rule both halves share) and an `added`
 -- event per tree (id = the tree's id), and a `published` event for every tree this file publishes,
--- because every publication writes one.
+-- because every publication writes one. Before this file no tree had moved, so the root is the head
+-- at publication: it is `was_public` exactly when its tree is published, and the `published` event
+-- carries its position.
 --
 -- ── Why this file fails if it is applied twice ─────────────────────────────────────────────────
 --
@@ -100,6 +129,12 @@ ALTER TABLE community_trees ADD CONSTRAINT community_trees_published_is_not_devi
 -- The keyset S2's tile delta pages over. Created here because S2 carries no migration.
 CREATE INDEX idx_community_trees_updated ON community_trees (updated_at, id);
 
+-- The tile's position arm: trees that are, or were, public, by where they stand now. Live ones are
+-- the snapshot; soft-removed ones are the delta's removals. 001's `idx_community_trees_position`
+-- stays for the 10 m dedupe, which also sees the caller's own unpublished trees.
+CREATE INDEX idx_community_trees_public_position ON community_trees (lat, lon)
+    WHERE published_at IS NOT NULL;
+
 -- ── The location chain ─────────────────────────────────────────────────────────────────────────
 
 -- Append-only, like the client's `species_assertions`: a correction supersedes the head rather than
@@ -126,7 +161,9 @@ CREATE TABLE community_tree_locations (
     -- stop being a head first.
     superseded_by            UUID REFERENCES community_tree_locations(id)
                              DEFERRABLE INITIALLY DEFERRED,
-    anonymized_at            TIMESTAMPTZ
+    anonymized_at            TIMESTAMPTZ,
+    -- Decision 13; see the header. No default: every writer says which.
+    was_public               BOOLEAN NOT NULL
 );
 
 -- One head per tree.
@@ -136,15 +173,20 @@ CREATE INDEX idx_community_tree_locations_order
     ON community_tree_locations (tree_id, occurred_at, id);
 CREATE INDEX idx_community_tree_locations_actor_user ON community_tree_locations (actor_user_id);
 CREATE INDEX idx_community_tree_locations_actor_device ON community_tree_locations (actor_device_id);
+-- The tile's chain arm: a tree that has left a tile is still reported to it, but only from a
+-- position the public saw (decision 13).
+CREATE INDEX idx_community_tree_locations_public_position ON community_tree_locations (lat, lon)
+    WHERE was_public;
 
 INSERT INTO community_tree_locations
     (id, tree_id, lat, lon, placement, location_accuracy_m, contribution_client_uuid,
-     actor_user_id, actor_device_id, occurred_at, recorded_at, anonymized_at)
+     actor_user_id, actor_device_id, occurred_at, recorded_at, anonymized_at, was_public)
 SELECT t.id, t.id, t.lat, t.lon, t.placement, t.location_accuracy_m,
        (SELECT c.client_uuid FROM contributions c
          WHERE c.kind = 'add_tree' AND c.tree_uuid = t.id
          ORDER BY c.occurred_at, c.client_uuid LIMIT 1),
-       t.user_id, t.device_id, t.created_at, t.created_at, t.anonymized_at
+       t.user_id, t.device_id, t.created_at, t.created_at, t.anonymized_at,
+       t.published_at IS NOT NULL
   FROM community_trees t;
 
 -- ── The audit log ──────────────────────────────────────────────────────────────────────────────
@@ -168,7 +210,9 @@ CREATE TABLE community_tree_events (
     recorded_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     before                   JSONB,
     after                    JSONB,
-    anonymized_at            TIMESTAMPTZ
+    anonymized_at            TIMESTAMPTZ,
+    -- Decision 13; see the header. No default: every writer says which.
+    in_public_history        BOOLEAN NOT NULL
 );
 
 CREATE INDEX idx_community_tree_events_tree ON community_tree_events (tree_id, occurred_at DESC, id DESC);
@@ -177,35 +221,49 @@ CREATE INDEX idx_community_tree_events_actor_device ON community_tree_events (ac
 
 INSERT INTO community_tree_events
     (id, tree_id, kind, contribution_client_uuid, actor_user_id, actor_device_id,
-     occurred_at, recorded_at, after, anonymized_at)
+     occurred_at, recorded_at, after, anonymized_at, in_public_history)
 SELECT l.id, l.tree_id, 'added', l.contribution_client_uuid, l.actor_user_id, l.actor_device_id,
        l.occurred_at, l.recorded_at,
        jsonb_build_object('lat', l.lat, 'lon', l.lon, 'placement', l.placement,
                           'species_id', t.species_id),
-       l.anonymized_at
+       l.anonymized_at, false
   FROM community_tree_locations l
   JOIN community_trees t ON t.id = l.tree_id;
 
 INSERT INTO community_tree_events
-    (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after)
+    (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after, in_public_history)
 SELECT gen_random_uuid(), t.id, 'published', t.user_id, t.published_at, t.published_at,
-       jsonb_build_object('license_version', u.license_version)
+       jsonb_strip_nulls(jsonb_build_object(
+           'license_version', u.license_version,
+           'lat', l.lat, 'lon', l.lon, 'placement', l.placement,
+           'location_accuracy_m', l.location_accuracy_m)),
+       true
   FROM community_trees t
   JOIN users u ON u.id = t.user_id
+  JOIN community_tree_locations l ON l.id = t.id
  WHERE t.published_at IS NOT NULL;
 
 -- ── The erase door's tombstone ─────────────────────────────────────────────────────────────────
 
--- A tree `eraseEverything` hard-deleted (decision 6). It mirrors `anonymized_contributions`: an id and
--- a time, nothing that could say whose it was. Caches learn about the deletion from it (S2's
--- `withdrawn_tree_ids`), and a late `add_tree` or `POST /trees` naming the id finds it and does not
--- resurrect the tree. Nothing is ever removed from here.
+-- A tree a deletion door hard-deleted (decisions 6 and 12). It mirrors `anonymized_contributions`: an
+-- id, a time and whether the tree had ever been public — nothing that could say whose it was. A
+-- late `add_tree` or `POST /trees` naming the id finds it and does not resurrect the tree, whatever
+-- `was_public` says. Caches learn about the deletion from it (S2's `withdrawn_tree_ids`), but **only
+-- where `was_public`**: an unpublished tree deleted under decision 12 was never shown to anybody,
+-- and reporting its id would tell every stranger that a private tree existed and when its account
+-- went (review of #190, F2). Nothing is ever removed from here.
+--
+-- The table is new in this file, so there are no rows to backfill; `was_public` has no default so
+-- that no future writer can leave the question unanswered.
 CREATE TABLE withdrawn_community_trees (
     id           UUID PRIMARY KEY,
-    withdrawn_at TIMESTAMPTZ NOT NULL
+    withdrawn_at TIMESTAMPTZ NOT NULL,
+    was_public   BOOLEAN NOT NULL
 );
 
-CREATE INDEX idx_withdrawn_community_trees_time ON withdrawn_community_trees (withdrawn_at, id);
+-- The only read by time is S2's removal list, and it may only ever read once-public rows.
+CREATE INDEX idx_withdrawn_community_trees_public ON withdrawn_community_trees (withdrawn_at, id)
+    WHERE was_public;
 
 -- ── The session's device ───────────────────────────────────────────────────────────────────────
 

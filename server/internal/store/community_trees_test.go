@@ -104,6 +104,13 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 		RootKey      *uuid.UUID
 		EventAt      *time.Time
 		License      *string
+		// Decision 13: the root is the head at publication for every tree 007 publishes, so it is
+		// public exactly when the tree is, the publication carries its position, and no `added`
+		// event is public.
+		RootPublic   bool
+		EventLat     *float64
+		PublicAdded  int
+		PublicEvents int
 	}
 	read := func(id uuid.UUID) backfilled {
 		t.Helper()
@@ -115,10 +122,14 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 			       (SELECT count(*) FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published'),
 			       (SELECT l.contribution_client_uuid FROM community_tree_locations l WHERE l.id = t.id),
 			       (SELECT max(e.occurred_at) FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published'),
-			       (SELECT max(e.after ->> 'license_version') FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published')
+			       (SELECT max(e.after ->> 'license_version') FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published'),
+			       (SELECT l.was_public FROM community_tree_locations l WHERE l.id = t.id),
+			       (SELECT max((e.after ->> 'lat')::float8) FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'published'),
+			       (SELECT count(*) FROM community_tree_events e WHERE e.tree_id = t.id AND e.kind = 'added' AND e.in_public_history),
+			       (SELECT count(*) FROM community_tree_events e WHERE e.tree_id = t.id AND e.in_public_history)
 			  FROM community_trees t WHERE t.id = $1
 		`, id).Scan(&b.PublishedAt, &b.AnonymizedAt, &b.Root, &b.Added, &b.Published, &b.RootKey,
-			&b.EventAt, &b.License); err != nil {
+			&b.EventAt, &b.License, &b.RootPublic, &b.EventLat, &b.PublicAdded, &b.PublicEvents); err != nil {
 			t.Fatal(err)
 		}
 		return b
@@ -147,6 +158,17 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 		if c.published && (b.EventAt == nil || !b.EventAt.Equal(*b.PublishedAt) || b.License == nil || *b.License != "odbl-1.0") {
 			t.Errorf("%s: the published event is at %v naming license %v; want it at published_at %v "+
 				"naming odbl-1.0 (decision 10)", name, b.EventAt, b.License, b.PublishedAt)
+		}
+		if b.RootPublic != c.published || b.PublicAdded != 0 {
+			t.Errorf("%s: root was_public=%v and %d public added events; want the root public exactly "+
+				"when the tree is published, and no added event public (decision 13)", name, b.RootPublic, b.PublicAdded)
+		}
+		if c.published && (b.EventLat == nil || *b.EventLat != 37.76 || b.PublicEvents != 1) {
+			t.Errorf("%s: the publication places the tree at %v with %d public events; want its root "+
+				"(37.76) and the publication alone public", name, b.EventLat, b.PublicEvents)
+		}
+		if !c.published && b.PublicEvents != 0 {
+			t.Errorf("%s: never published and %d events are public", name, b.PublicEvents)
 		}
 		if (b.AnonymizedAt != nil) != c.anonymized {
 			t.Errorf("%s: anonymized_at = %v, want anonymized %v", name, b.AnonymizedAt, c.anonymized)
@@ -413,5 +435,54 @@ func TestAnAcceptanceCannotSlipPastAnOpenInsert(t *testing.T) {
 	}
 	if returned {
 		t.Fatal("the acceptance committed while an insert that read the account's answer was still open")
+	}
+}
+
+// TestTheTileIndexesServeTheirQueries pins the contract 007 offers S2's tile (the #190 review's F5):
+// each arm of the tile has a partial index whose predicate the arm's own WHERE implies, and the
+// planner uses it for a **generic** plan — the one pgx's statement cache can settle on, and the one
+// the review measured degrading to sequential scans. Sequential scans are disabled so an empty
+// test table cannot make the choice for the planner; what is asserted is that the index is usable
+// for the query shape, which is the half of the contract that lives in this migration.
+func TestTheTileIndexesServeTheirQueries(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ arm, index, query string }{
+		{"the position arm (live and soft-removed once-public trees)", "idx_community_trees_public_position", `
+			SELECT id FROM community_trees
+			 WHERE published_at IS NOT NULL
+			   AND lat BETWEEN $1 AND $2 AND lon BETWEEN $3 AND $4`},
+		{"the chain arm (positions the public saw)", "idx_community_tree_locations_public_position", `
+			SELECT DISTINCT tree_id FROM community_tree_locations
+			 WHERE was_public
+			   AND lat BETWEEN $1 AND $2 AND lon BETWEEN $3 AND $4`},
+		{"the removal list (once-public tombstones)", "idx_withdrawn_community_trees_public", `
+			SELECT id FROM withdrawn_community_trees
+			 WHERE was_public AND (withdrawn_at, id) > ($1, $2)
+			 ORDER BY withdrawn_at, id LIMIT $3`},
+	} {
+		// The simple protocol, straight to the connection: EXPLAIN (GENERIC_PLAN) takes the query's
+		// $n placeholders unbound, which pgx's extended protocol would try to bind.
+		results, err := tx.Conn().PgConn().Exec(ctx, `EXPLAIN (GENERIC_PLAN) `+c.query).ReadAll()
+		if err != nil {
+			t.Fatalf("%s: %v", c.arm, err)
+		}
+		var plan []string
+		for _, result := range results {
+			for _, row := range result.Rows {
+				plan = append(plan, string(row[0]))
+			}
+		}
+		if !strings.Contains(strings.Join(plan, "\n"), c.index) {
+			t.Errorf("%s: the generic plan does not use %s:\n%s", c.arm, c.index, strings.Join(plan, "\n"))
+		}
 	}
 }
