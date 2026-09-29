@@ -15,6 +15,14 @@
 //     app's one location provider reports 40 m, and the screen has to say both numbers and name
 //     Precise Location. A floor that refused silently is the defect the owner ruled against.
 //  3. An empty report is refused with its own sentence rather than sent or silently ignored.
+//  4. PR #185's rulings, on the running app: "There's no tree here" clears and disables the other
+//     three; each opened section quotes "The city has: …"; the take-back asks "Take back your
+//     report?" first; a 40 m fix with Precise Location **on** is not sent to Settings, and one with
+//     it **off** is (the fourth `CYPRESS_LOCATION` field pins that); and *Send report* is disabled
+//     while the block is still finding the location.
+//
+//  Every control is scrolled to before it is touched (`reach`), so the file passes at the
+//  accessibility text sizes, where the form runs well below the fold (PR #185's review, finding 7).
 //
 //  Black-box like the rest of this target: nothing imports `Cypress`, and every literal is a copy
 //  constant repeated by hand — `DataDisputeCopy` / `TreeProfileCopy`. If a string is renamed this
@@ -57,12 +65,20 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         static let send = "Send report"
         static let noIssue = "Choose at least one thing that’s wrong."
         static let openSettings = "Open Settings"
+        static let cityHasPrefix = "The city has: "
+        static let confirmTitle = "Take back your report?"
+        static let keepIt = "Keep it"
+        static let waiting = "Finding your location…"
+        static let preciseLocation = "Turn on Precise Location for Cypress in Settings, then try again."
+        static let tryInTheOpen = "Try again in the open, or wait a moment."
     }
 
     /// `MapLayout.defaultCenter`, the deep link's own resolution point, spelled out because a UI
     /// test cannot import the app target. The camera stays inside the seed's coverage (E216).
     private static let goodFix = "37.7596,-122.4269,6"
     private static let coarseFix = "37.7596,-122.4269,40"
+    /// The same 40 m, with Precise Location off for Cypress.
+    private static let reducedFix = "37.7596,-122.4269,40,reduced"
 
     // MARK: - 1 · Raise, see it on the profile, take it back
 
@@ -76,16 +92,25 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         guard arriveOnScreen(app) else { return }
         record(app, named: "02-screen-empty")
 
-        for chip in [Copy.wrongPlace, Copy.wrongSpecies, Copy.wrongYear, Copy.noTree] {
+        // Three chips — not "There's no tree here", which would clear them (the no-tree test below).
+        for chip in [Copy.wrongPlace, Copy.wrongSpecies, Copy.wrongYear] {
             let button = app.buttons[chip]
-            assertReachable(button, "the '\(chip)' chip")
+            reach(button, in: app, "the '\(chip)' chip")
             button.tap()
         }
+
+        // Each opened section quotes the record: three sections, three "The city has:" lines, for
+        // a city tree the deep link pins as having a species, a planted year and an address.
+        let cityHas = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", Copy.cityHasPrefix))
+        XCTAssertTrue(
+            cityHas.firstMatch.waitForExistence(timeout: 10),
+            "no opened section says what the city has on file"
+        )
 
         // The location answer comes from the pinned provider: 6 m is under the floor, so it is
         // attached and the block says so with the number.
         let useLocation = app.buttons[Copy.useLocation]
-        assertReachable(useLocation, "the use-my-location control")
+        reach(useLocation, in: app, "the use-my-location control")
         useLocation.tap()
         XCTAssertTrue(
             app.staticTexts[Copy.captured].waitForExistence(timeout: 10),
@@ -94,7 +119,7 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
 
         // The species comes from the app's own picker, not a second one.
         let choose = app.buttons[Copy.chooseSpecies]
-        assertReachable(choose, "the choose-the-species control")
+        reach(choose, in: app, "the choose-the-species control")
         choose.tap()
         let search = app.textFields.firstMatch
         assertReachable(search, "the species picker's search field")
@@ -109,7 +134,7 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         )
 
         let year = app.textFields[Copy.plantedYear]
-        assertReachable(year, "the planted-year field")
+        reach(year, in: app, "the planted-year field")
         year.tap()
         year.typeText("1998")
         // The number pad has no return key; the keyboard toolbar's Done is the way to put it away,
@@ -140,9 +165,37 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         )
         record(app, named: "04-profile-raised")
 
-        let takeBack = app.buttons[Copy.takeBack]
-        assertReachable(takeBack, "the take-back control")
+        // The take-back asks first (owner, 2026-09-28). "Keep it" leaves the report standing.
+        let takeBack = app.buttons[Copy.takeBack].firstMatch
+        reach(takeBack, in: app, "the take-back control")
         takeBack.tap()
+        let confirm = app.staticTexts[Copy.confirmTitle]
+        XCTAssertTrue(
+            confirm.waitForExistence(timeout: 10),
+            "Take back your report did not ask first — the report was withdrawn without a question"
+        )
+        record(app, named: "04b-profile-take-back-confirm")
+        let keep = app.buttons[Copy.keepIt]
+        assertReachable(keep, "the confirmation's Keep it")
+        keep.tap()
+        XCTAssertTrue(
+            raised.waitForExistence(timeout: 10) && !app.buttons[Copy.action].exists,
+            "Keep it took the report back anyway"
+        )
+
+        reach(takeBack, in: app, "the take-back control, a second time")
+        takeBack.tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "the second take-back did not ask first")
+        // The dialog's action repeats the link's words, and the link is still in the tree under the
+        // modal — so the action is the match that can be pressed.
+        let matches = app.buttons.matching(NSPredicate(format: "label == %@", Copy.takeBack))
+        let screen = app.frame
+        guard let confirmAction = (0..<matches.count).map({ matches.element(boundBy: $0) })
+            .first(where: { $0.isHittableWithoutRaising(onScreen: screen) }) else {
+            XCTFail("the confirmation has no Take back your report that can be pressed")
+            return
+        }
+        confirmAction.tap()
         XCTAssertTrue(
             app.buttons[Copy.action].waitForExistence(timeout: 30),
             "after taking the report back the profile does not offer to report again — the "
@@ -152,9 +205,11 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         record(app, named: "05-profile-taken-back")
     }
 
-    // MARK: - 2 · The floor refuses out loud
+    // MARK: - 2 · The floor refuses out loud, and truthfully
 
-    func testACoarseFixIsRefusedWithBothNumbersAndPreciseLocation() {
+    /// Precise Location **on**, a 40 m fix: refused with both numbers, told to try in the open —
+    /// and not sent to Settings for a switch that is already on (ruling 6).
+    func testACoarseFixWithPreciseLocationOnIsNotSentToSettings() {
         let app = launch(fix: Self.coarseFix)
         let action = app.buttons[Copy.action]
         guard arriveOnProfile(app, action: action) else { return }
@@ -171,9 +226,125 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         )
         XCTAssertTrue(app.staticTexts[Copy.screenTitle].exists, "an empty report left the screen")
 
-        app.buttons[Copy.wrongPlace].tap()
+        let refusal = refuseTheFix(app)
+        XCTAssertTrue(
+            refusal.label.contains(Copy.tryInTheOpen),
+            "a coarse fix with Precise Location on was not told what would help: '\(refusal.label)'"
+        )
+        XCTAssertFalse(
+            refusal.label.contains("Precise Location"),
+            "a coarse fix with Precise Location on was told to turn it on: '\(refusal.label)'"
+        )
+        XCTAssertFalse(
+            app.buttons[Copy.openSettings].exists,
+            "Open Settings is offered for a fix Settings cannot improve"
+        )
+        assertEveryControlIsLabeled(app, screen: "dataDispute (coarse fix, precise)")
+        record(app, named: "06-screen-coarse-fix-precise")
+    }
+
+    /// Precise Location **off**: the one case where Settings is the answer, and the sentence says so.
+    func testACoarseFixWithPreciseLocationOffNamesItAndOffersSettings() {
+        let app = launch(fix: Self.reducedFix)
+        let action = app.buttons[Copy.action]
+        guard arriveOnProfile(app, action: action) else { return }
+        action.tap()
+        guard arriveOnScreen(app) else { return }
+
+        let refusal = refuseTheFix(app)
+        XCTAssertTrue(
+            refusal.label.contains(Copy.preciseLocation),
+            "reduced accuracy was not told to turn on Precise Location: '\(refusal.label)'"
+        )
+        let settings = app.buttons[Copy.openSettings]
+        reach(settings, in: app, "the Open Settings control under the refusal")
+        assertEveryControlIsLabeled(app, screen: "dataDispute (coarse fix, reduced)")
+        record(app, named: "07-screen-coarse-fix-reduced")
+    }
+
+    // MARK: - 3 · "There's no tree here" stands alone
+
+    func testNoTreeClearsAndDisablesTheOtherChips() {
+        let app = launch(fix: Self.goodFix)
+        let action = app.buttons[Copy.action]
+        guard arriveOnProfile(app, action: action) else { return }
+        action.tap()
+        guard arriveOnScreen(app) else { return }
+
+        let others = [Copy.wrongPlace, Copy.wrongSpecies, Copy.wrongYear]
+        for chip in others {
+            let button = app.buttons[chip]
+            reach(button, in: app, "the '\(chip)' chip")
+            button.tap()
+            XCTAssertTrue(button.isSelected, "the '\(chip)' chip did not turn on")
+        }
+
+        let noTree = app.buttons[Copy.noTree]
+        reach(noTree, in: app, "the no-tree chip")
+        noTree.tap()
+        XCTAssertTrue(noTree.isSelected, "the no-tree chip did not turn on")
+        for chip in others {
+            let button = app.buttons[chip]
+            XCTAssertFalse(button.isSelected, "'\(chip)' stayed on beside There’s no tree here")
+            XCTAssertFalse(button.isEnabled, "'\(chip)' can still be chosen beside There’s no tree here")
+        }
+        XCTAssertFalse(
+            app.buttons[Copy.useLocation].exists,
+            "the location section is still open after its chip was cleared"
+        )
+        record(app, named: "08-screen-no-tree")
+
+        noTree.tap()
+        XCTAssertFalse(noTree.isSelected, "the no-tree chip did not turn off")
+        for chip in others {
+            let button = app.buttons[chip]
+            XCTAssertTrue(button.isEnabled, "'\(chip)' stayed disabled after no-tree was unticked")
+            XCTAssertFalse(button.isSelected, "'\(chip)' came back on by itself")
+        }
+    }
+
+    // MARK: - 4 · Send waits for a pending fix
+
+    func testSendIsDisabledWhileTheLocationIsStillBeingFound() {
+        let app = launch(fix: "waitingForFix")
+        let action = app.buttons[Copy.action]
+        guard arriveOnProfile(app, action: action) else { return }
+        action.tap()
+        guard arriveOnScreen(app) else { return }
+
+        let wrongPlace = app.buttons[Copy.wrongPlace]
+        reach(wrongPlace, in: app, "the pin chip")
+        wrongPlace.tap()
         let useLocation = app.buttons[Copy.useLocation]
-        assertReachable(useLocation, "the use-my-location control")
+        reach(useLocation, in: app, "the use-my-location control")
+        useLocation.tap()
+        XCTAssertTrue(
+            app.staticTexts[Copy.waiting].waitForExistence(timeout: 10),
+            "the block does not say it is finding the location"
+        )
+        let send = app.buttons[Copy.send]
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "the Send report button is gone")
+        XCTAssertFalse(
+            send.isEnabled,
+            "Send report can be pressed while the position the reporter asked for is still arriving"
+        )
+        record(app, named: "09-screen-finding-location")
+
+        // Un-choosing the pin chip ends the wait: nothing about a position is promised any more.
+        wrongPlace.tap()
+        XCTAssertTrue(send.isEnabled, "Send report stayed disabled with the pin chip off")
+    }
+
+    // MARK: - Harness
+
+    /// Chooses the pin chip, asks for the location, and returns the refusal the pinned 40 m fix
+    /// draws — asserting both numbers, which every refusal of a stated radius quotes.
+    private func refuseTheFix(_ app: XCUIApplication) -> XCUIElement {
+        let wrongPlace = app.buttons[Copy.wrongPlace]
+        reach(wrongPlace, in: app, "the pin chip")
+        wrongPlace.tap()
+        let useLocation = app.buttons[Copy.useLocation]
+        reach(useLocation, in: app, "the use-my-location control")
         useLocation.tap()
 
         let refusal = app.staticTexts
@@ -187,16 +358,31 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
             refusal.label.contains("within 10 m"),
             "the refusal does not quote the floor it refused against: '\(refusal.label)'"
         )
-        XCTAssertTrue(
-            refusal.label.contains("Precise Location"),
-            "the refusal does not name Precise Location: '\(refusal.label)'"
-        )
-        assertReachable(app.buttons[Copy.openSettings], "the Open Settings control under the refusal")
-        assertEveryControlIsLabeled(app, screen: "dataDispute (coarse fix)")
-        record(app, named: "06-screen-coarse-fix")
+        return refusal
     }
 
-    // MARK: - Harness
+    /// Scrolls until `element` can be pressed, then asserts it can.
+    ///
+    /// Bounded, for `AddReadingReachabilityTests.scrollIntoView`'s reason, and in both directions:
+    /// at the accessibility sizes the form runs well below the fold, and a control the test already
+    /// scrolled past sits above it. `isHittableWithoutRaising` because this is a filter position.
+    private func reach(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        _ description: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        _ = element.waitForExistence(timeout: 10)
+        let screen = app.frame
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: screen) {
+            app.swipeUp()
+        }
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: screen) {
+            app.swipeDown()
+        }
+        assertReachable(element, description, file: file, line: line)
+    }
 
     private func launch(fix: String) -> XCUIApplication {
         let app = XCUIApplication()

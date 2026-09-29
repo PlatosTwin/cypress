@@ -200,7 +200,14 @@ struct DataDisputeOnFile: Hashable, Sendable {
     }
 
     init(_ profile: TreeProfile) {
-        if let species = profile.species {
+        self.init(tree: profile.tree, species: profile.species)
+    }
+
+    /// The record's values. `species` is the profile's — for a city row, the seed's own
+    /// `trees.species_current` (`LocalAPI.resolveSpecies` prefers the record's species), which sits
+    /// in the read-only ATTACHed inventory that no claim on this device writes.
+    init(tree: Tree, species: Species?) {
+        if let species {
             if species.scientificNameIsUnread {
                 self.species = species.cityWordingForUnreadName
             } else {
@@ -209,12 +216,12 @@ struct DataDisputeOnFile: Hashable, Sendable {
         } else {
             self.species = nil
         }
-        self.plantedYear = profile.tree.plantedYear
-        if let address = profile.tree.address?.trimmingCharacters(in: .whitespacesAndNewlines),
+        self.plantedYear = tree.plantedYear
+        if let address = tree.address?.trimmingCharacters(in: .whitespacesAndNewlines),
            !address.isEmpty {
             self.position = address
         } else {
-            let coordinate = profile.tree.coordinate
+            let coordinate = tree.coordinate
             self.position = String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
         }
     }
