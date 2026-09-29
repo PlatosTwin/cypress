@@ -228,6 +228,9 @@ struct HeaderPill: View {
             // Intrinsic width while the pill shares a row with the title, so it never compresses to
             // an ellipsis beside it. Once C1 has moved it onto its own line there is no competition
             // and a long pill may wrap — `3 waiting · offline` at AX5 needs two lines and has one.
+            // Keyed on type size, not on the row: below the accessibility sizes C1's own two-row
+            // fallback (F29) still gets the intrinsic width, because `ViewThatFits` decides the
+            // row by measuring the pill at exactly that width.
             .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: true)
     }
 }
