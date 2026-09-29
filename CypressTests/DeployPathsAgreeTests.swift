@@ -532,6 +532,71 @@ struct DeployPathsAgreeTests {
         }
     }
 
+    /// **The carve-backs are only as good as the diff they read (#188 review, finding 1).**
+    ///
+    /// `testable=` adds back a REMOVED path under `server/`, and that works only if the two diff
+    /// lines above it keep three flags. Each was dropped in the review's harness and each let a
+    /// defect through with `gate` green, while every other assertion in this file stayed green:
+    ///
+    /// * `--no-renames` on `changed=` — without it `--name-only` lists a rename under its NEW path
+    ///   only, so `git mv Cypress/App.swift server/App.swift` read as server-only and the iOS suite
+    ///   never saw an app file vanish;
+    /// * `--no-renames` and `--diff-filter=D` on `removed=` — with `--diff-filter=A`, deleting
+    ///   `server/README.md` read as server-only, and `DocumentCitationGuardTests`, which exists to
+    ///   notice a cited file going missing, was skipped;
+    /// * `core.quotePath=false` on both (finding 2) — git's default prints `server/café.go` as
+    ///   `"server/caf\303\251.go"`, which no predicate matches, so the Go suite was not owed.
+    ///
+    /// Read as text, like everything else here: this checks the flags are on the lines, not that
+    /// git honors them — the real calibration runs recorded on #188 are what show that.
+    @Test("the diff the predicates read lists both halves of a rename and every removal, unquoted")
+    func theDiffKeepsItsFlags() throws {
+        let root = AppSourceLiterals.repositoryRoot()
+        let changed = try Self.assignment("changed", root: root)
+        let removed = try Self.assignment("removed", root: root)
+
+        // Controls: a scanner that found no assignment, or found some other `changed=` line, makes
+        // every absence below a pass. Both must be the `git … diff` that feeds `testable=`.
+        for (name, value) in [("changed", changed), ("removed", removed)] {
+            #expect(
+                value.contains("git ") && value.contains(" diff ") && value.contains("--name-only"),
+                """
+                \(Self.workflow)'s first `\(name)=` line is not a `git diff --name-only` (read: \
+                `\(value)`). Either it moved or was renamed, and the assertions below are passing \
+                without checking anything. Fix the scan, not the assertion.
+                """
+            )
+            #expect(
+                value.contains("--no-renames"),
+                """
+                `\(name)=` lost `--no-renames`. With git's default rename detection a moved file is \
+                listed under its new path only, so the path it left is invisible to every predicate: \
+                a rename out of Cypress/ into server/ reads as server-only, and a rename of a file \
+                docs/ cites reads as an edit. The suite is skipped for a change that removed \
+                something it depends on. Read: `\(value)`
+                """
+            )
+            #expect(
+                value.contains("core.quotePath=false"),
+                """
+                `\(name)=` no longer passes `-c core.quotePath=false`. git then prints any path \
+                with a non-ASCII byte in quotes with octal escapes ("server/caf\\303\\251.go"), \
+                which no predicate matches: the Go suite is not owed for server/café.go and gate \
+                passes with the Go change untested. Read: `\(value)`
+                """
+            )
+        }
+        #expect(
+            removed.contains("--diff-filter=D"),
+            """
+            `removed=` no longer filters for deletions (`--diff-filter=D`). The carve-back that \
+            feeds it exists for DocumentCitationGuardTests, which fails when a file docs/ cites is \
+            gone; with any other filter, deleting server/README.md reads as server-only and that \
+            test is skipped on exactly the change it would catch. Read: `\(removed)`
+            """
+        )
+    }
+
     /// **The premise under two separate exemptions, pinned instead of asserted in prose (#153).**
     ///
     /// Two things in this repository are true because no target shells out during a build:
