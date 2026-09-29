@@ -1031,9 +1031,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `flyio/postgres-flex:18.1` (`fly image show --app cypress-sync-db`, 2026-09-28). Measured at
     `bb4d08f`: **68 pass / 147 skip** with no database, **222 pass / 0 skip** against 18. The
     trigger list also names the four Swift files Go tests parse, and
-    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. **Not a required
+    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. ~~**Not a required
     check** — that is the owner's ruleset call, and if it is made one the `paths:` filters must come
-    off in the same change (E225).
+    off in the same change (E225).~~ **Required through `gate` since `ci/server-only-skips-ios`**
+    (owner ruling 2026-09-28): `testflight.yml` calls `server.yml` as its `server` job whenever a
+    diff touches `server.yml`'s `on.push.paths`, `gate` refuses unless it succeeded, and a
+    server-only diff (`this diff is server-only`) no longer runs the iOS suite. No ruleset change:
+    `gate` was already the required context.
 
 15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
     whether an estimate may supersede a measurement when a single number has to be chosen. D7,

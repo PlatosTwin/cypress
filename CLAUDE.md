@@ -75,8 +75,8 @@ conflicts with convenience, the rule wins.
   it is guarded (`gate` reads `plan` first, so a crashed `plan` cannot masquerade as a prose-only
   run), but it changes what the badge means: **a green check is now evidence about the diff, not
   evidence about the code.** Before citing CI as proof that a change is safe, read `plan`'s
-  decision. **There are now THREE decisions and the run's own log says which**, so look for one of
-  these three strings and treat anything else as a fourth case nobody told you about:
+  decision. **There are now FOUR decisions and the run's own log says which**, so look for one of
+  these four strings and treat anything else as a fifth case nobody told you about:
   - `the suite runs — these are not prose:` — the suite ran; the green means what you think.
   - `only prose changed` — nothing was tested, because there was nothing here to test.
   - `this diff is web-only` — added by the web round. **Not prose and not untested**: `web/` and
@@ -84,6 +84,14 @@ conflicts with convenience, the rule wins.
     workflow skipped its suite because nothing under `web/` is an input to the iOS app or its
     tests. A green `gate` here says nothing about the web — `web` is not a required check yet, so
     **go and read the `web` workflow's run for that commit**, and if it did not run, nothing did.
+  - `this diff is server-only` — added by the owner's ruling of 2026-09-28. **Not prose and not
+    untested**: `server/` outside `server/testdata/` (adding or editing, never removing — a removal
+    runs the suite, because docs cite `server/README.md`) is tested by the Go suite against
+    Postgres, which `testflight.yml` runs as its `server` job and `gate` refuses to pass without.
+    So here a green `gate` **does** say the Go suite passed — but it says nothing about the iOS
+    app, which was not built. **Go and read the `Server` run for that commit** (the `server / server`
+    job on the pull request) before citing it. `server/testdata/` and any server-plus-app mix still
+    get `the suite runs`, as does a diff with both web and server paths.
 
   A one-minute run did not test anything, and it does not claim to.
 
