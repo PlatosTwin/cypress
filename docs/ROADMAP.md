@@ -646,8 +646,9 @@ inside them, are in `docs/rulings-pending/community-trees.md` and
 withdrawal, and both deletion doors) and S2 is PR #190 (the tile, the profile's additions, and the
 history), behind #182's migration 006. **The gate before any client PR merges is a deploy**:
 TestFlight builds from `main`, and a build must never be able to queue a location correction against
-a service that refuses it. This file does not record whether `cypress-sync` has been redeployed;
-check its release before C1 merges (chip 12: merging server work changes nothing in production).
+a service that refuses it. That deploy happened on 2026-09-29: `cypress-sync` booted `4462dbb`
+(#190 merged) at server schema 7. Still check its release before C1 merges, because a later revert
+or redeploy would change that (chip 12: merging server work changes nothing in production).
 
 - **C1 — the core (`feat/community-trees-core`). Open, and next.** The one client migration author
   of the round: the writable database's next migration (the design proposal names v23; read
