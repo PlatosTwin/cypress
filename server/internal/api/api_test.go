@@ -1600,18 +1600,38 @@ func TestGroveCarriesTheHeroPhoto(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recorder := h.do(t, http.MethodGet, Prefix+"/me/grove", session.AccessToken, nil)
-	var grove struct {
+	hero := func() []struct {
+		HeroPhotoID *uuid.UUID `json:"hero_photo_id"`
+	} {
+		recorder := h.do(t, http.MethodGet, Prefix+"/me/grove", session.AccessToken, nil)
+		var grove struct {
+			Entries []struct {
+				HeroPhotoID *uuid.UUID `json:"hero_photo_id"`
+			} `json:"entries"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &grove); err != nil {
+			t.Fatal(err)
+		}
+		if len(grove.Entries) != 1 {
+			t.Fatalf("got %d entries", len(grove.Entries))
+		}
+		return grove.Entries
+	}
+	// Begun is a reservation: until its bytes are reported there is nothing to draw, so it is not
+	// the hero yet (the #190 verification's V2).
+	if early := hero(); early[0].HeroPhotoID != nil {
+		t.Fatalf("hero_photo_id = %v before the photograph's bytes arrived; a hero is something to draw",
+			*early[0].HeroPhotoID)
+	}
+	if received := h.do(t, http.MethodPost, Prefix+"/photos/"+ticket.PhotoID.String()+"/received",
+		session.AccessToken, nil); received.Code != http.StatusOK {
+		t.Fatalf("photos/received: %d %s", received.Code, received.Body.String())
+	}
+	grove := struct {
 		Entries []struct {
 			HeroPhotoID *uuid.UUID `json:"hero_photo_id"`
-		} `json:"entries"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &grove); err != nil {
-		t.Fatal(err)
-	}
-	if len(grove.Entries) != 1 {
-		t.Fatalf("got %d entries", len(grove.Entries))
-	}
+		}
+	}{Entries: hero()}
 	if grove.Entries[0].HeroPhotoID == nil || *grove.Entries[0].HeroPhotoID != ticket.PhotoID {
 		t.Fatalf("hero_photo_id = %v, want %v — #176's hero is a photo fact the phone cannot answer "+
 			"for a photograph it never wrote", grove.Entries[0].HeroPhotoID, ticket.PhotoID)

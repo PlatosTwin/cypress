@@ -2,12 +2,16 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/PlatosTwin/cypress/server/internal/ratelimit"
+	"github.com/PlatosTwin/cypress/server/internal/store"
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
 )
 
@@ -137,5 +141,169 @@ func TestPositionsHeldWhilePrivateStayPrivate(t *testing.T) {
 	}
 	if _, history := readHistory(t, h, stranger, tree); !slices.Equal(history.kinds(), []string{"location_corrected", "added"}) {
 		t.Fatalf("history kinds after a public move = %v, want [location_corrected added]", history.kinds())
+	}
+}
+
+// ── The grove's hero passes the photograph's gate (the #190 verification's V2) ──────────────────
+
+// groveRows is `GET /me/grove`'s entries by tree, raw, and their heroes.
+func groveRows(t *testing.T, h *harness, bearer string) (map[uuid.UUID][]byte, map[uuid.UUID]*uuid.UUID) {
+	t.Helper()
+	recorder := h.do(t, http.MethodGet, Prefix+"/me/grove", bearer, nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET /me/grove: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		Entries []json.RawMessage `json:"entries"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	rows, heroes := map[uuid.UUID][]byte{}, map[uuid.UUID]*uuid.UUID{}
+	for _, raw := range body.Entries {
+		var entry struct {
+			TreeUUID uuid.UUID  `json:"tree_uuid"`
+			Hero     *uuid.UUID `json:"hero_photo_id"`
+		}
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			t.Fatal(err)
+		}
+		rows[entry.TreeUUID], heroes[entry.TreeUUID] = raw, entry.Hero
+	}
+	return rows, heroes
+}
+
+// plantVisit gives an owner a grove row on a tree.
+func plantVisit(t *testing.T, h *harness, tree uuid.UUID, owner store.Owner) {
+	t.Helper()
+	execSQL(t, h, `
+		INSERT INTO contributions (client_uuid, kind, tree_uuid, user_id, device_id, occurred_at, payload)
+		VALUES ($1, 'visit', $2, $3, $4, now(), '{}')
+	`, uuid.New(), tree, owner.UserID, owner.DeviceID)
+}
+
+// TestTheGroveHeroPassesThePhotographGate: a grove draws a tree's photograph as its hero exactly
+// where the photograph read would serve that tree's photographs, for every hidden state and the
+// visible ones, for an account and for a device (the two branches of "added by"). It is also the
+// check that the grove's SQL spelling of the rule (`treeHiddenFromViewerSQL`) agrees with
+// `communityTreeFor`, state by state. And a photograph whose bytes never arrived is no hero, even
+// when it is the newest.
+func TestTheGroveHeroPassesThePhotographGate(t *testing.T) {
+	h := newHarness(t)
+	h.server.limiter = ratelimit.New()
+	ctx := context.Background()
+	cases := hiddenCommunityTrees(t, h)
+	photographer := signInAs(t, h, "ct.v2.photographer", nil, accepted())
+
+	// The viewers: an account that declined (so its own add stays private and visible only to it),
+	// and a device that is signed out (the same, through the device branch).
+	decliner := signInAs(t, h, "ct.v2.decliner", nil, nil)
+	deviceUUID := uuid.New()
+	device := h.registerDeviceToken(t, deviceUUID)
+	deviceRow := deviceRowID(t, h, deviceUUID)
+
+	viewers := []struct {
+		name   string
+		bearer string
+		owner  store.Owner
+	}{
+		{"an account", decliner.AccessToken, store.Owner{UserID: &decliner.UserID}},
+		{"a device", device, store.Owner{DeviceID: &deviceRow}},
+	}
+
+	// Visible to both: a published tree, and a city tree (an id no community tree has).
+	adder := signInAs(t, h, "ct.v2.adder", nil, accepted())
+	published := uuid.New()
+	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(published, north(400), ctLon, time.Now())), "published add")
+	city := uuid.New()
+	// Each viewer's own unpublished tree: visible to that viewer only.
+	ownByAccount, ownByDevice := uuid.New(), uuid.New()
+	mustApply(t, h.syncOne(t, decliner.AccessToken, addTreeAt(ownByAccount, north(500), ctLon, time.Now())), "the account's private add")
+	mustApply(t, h.syncOne(t, device, addTreeAt(ownByDevice, north(600), ctLon, time.Now())), "the device's private add")
+
+	photos := map[uuid.UUID]uuid.UUID{}
+	for _, c := range cases {
+		photos[c.tree] = c.photo
+	}
+	for _, tree := range []uuid.UUID{published, city, ownByAccount, ownByDevice} {
+		photos[tree] = seedApprovedPhoto(t, h, tree, photographer.UserID)
+	}
+	// On the published tree, a newer photograph whose bytes never arrived. It must not be the hero.
+	execSQL(t, h, `
+		INSERT INTO photos (id, tree_uuid, user_id, shot_type, moderation_state, approval_reason,
+		                    captured_at, storage_key)
+		VALUES ($1, $2, $3, 'full_tree', 'approved', 'auto_approved_launch', now() + interval '1 hour', $4)
+	`, uuid.New(), published, photographer.UserID, "photos/no-bytes")
+
+	for _, viewer := range viewers {
+		for tree := range photos {
+			plantVisit(t, h, tree, viewer.owner)
+		}
+		_, heroes := groveRows(t, h, viewer.bearer)
+		hiddenCount, shownCount := 0, 0
+		for tree, photo := range photos {
+			hidden, err := h.store.TreeIsHiddenFrom(ctx, tree, viewer.owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hero, listed := heroes[tree]
+			if !listed {
+				t.Fatalf("%s: fixture: tree %s has no grove row", viewer.name, tree)
+			}
+			switch {
+			case hidden && hero != nil:
+				t.Errorf("%s: the grove draws photograph %s as the hero of tree %s, which is hidden from "+
+					"this viewer (GET /photos/{id} answers 404 for it)", viewer.name, *hero, tree)
+			case !hidden && (hero == nil || *hero != photo):
+				t.Errorf("%s: control: tree %s is visible to this viewer and its hero is %v, want %s",
+					viewer.name, tree, hero, photo)
+			}
+			if hidden {
+				hiddenCount++
+			} else {
+				shownCount++
+			}
+		}
+		// The rule is exercised both ways for each viewer: the four hidden states plus the other
+		// viewer's private tree, and three visible trees including this viewer's own private one.
+		if hiddenCount != 5 || shownCount != 3 {
+			t.Fatalf("%s: fixture: %d hidden and %d visible trees, want 5 and 3", viewer.name, hiddenCount, shownCount)
+		}
+	}
+}
+
+// TestAStrangersWithdrawalLeavesTheGroveAsAnUnknownIdWould is the verification's reproduction. A
+// stranger sends a withdrawal for a declining account's hidden tree, which has a photograph with
+// its bytes, and one for an id nobody sent. Both answer alike (F6). Afterwards the stranger's
+// grove must not tell them apart either: the two rows are the same row under two ids.
+func TestAStrangersWithdrawalLeavesTheGroveAsAnUnknownIdWould(t *testing.T) {
+	h := newHarness(t)
+	decliner := signInAs(t, h, "ct.v2.hidden.adder", nil, nil)
+	hidden := uuid.New()
+	mustApply(t, h.syncOne(t, decliner.AccessToken, addTreeAt(hidden, ctLat, ctLon, time.Now())), "declined add")
+	photo := receivedPhotoFor(t, h, decliner.AccessToken, hidden)
+	unknown := uuid.New()
+
+	stranger := signInAs(t, h, "ct.v2.stranger", nil, accepted())
+	first := h.syncOne(t, stranger.AccessToken, treeWithdrawalItem(hidden))
+	second := h.syncOne(t, stranger.AccessToken, treeWithdrawalItem(unknown))
+	if first.Status != second.Status || codeOf(first.Error) != codeOf(second.Error) {
+		t.Fatalf("fixture: the two withdrawals answered %s/%s and %s/%s", first.Status, codeOf(first.Error),
+			second.Status, codeOf(second.Error))
+	}
+	rows, _ := groveRows(t, h, stranger.AccessToken)
+	if bytes.Contains(rows[hidden], []byte(photo.String())) {
+		t.Fatalf("the stranger's grove names the hidden tree's photograph %s: %s", photo, rows[hidden])
+	}
+	if rows[hidden] == nil || rows[unknown] == nil {
+		t.Fatalf("fixture: the grove has no row for one of the ids: %v", rows)
+	}
+	if want := bytes.ReplaceAll(rows[unknown], []byte(unknown.String()), []byte(hidden.String())); !bytes.Equal(rows[hidden], want) {
+		t.Fatalf("the grove tells a hidden tree from an unknown id:\n hidden  %s\n unknown %s", rows[hidden], rows[unknown])
+	}
+	// The control: the photograph is real, and its adder's own grove would draw it.
+	plantVisit(t, h, hidden, store.Owner{UserID: &decliner.UserID})
+	if _, heroes := groveRows(t, h, decliner.AccessToken); heroes[hidden] == nil || *heroes[hidden] != photo {
+		t.Fatalf("control: the adder's own grove does not draw their photograph: %v", heroes[hidden])
 	}
 }

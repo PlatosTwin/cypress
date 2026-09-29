@@ -59,13 +59,22 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		  -- The hero (#176). Visible means the same two rules the profile applies: publicly visible,
 		  -- or this contributor's own and not deleted (ERRATA E37, E215). A row that drew a
 		  -- stranger's unmoderated photograph as its hero is the disagreement E215 exists to stop.
+		  --
+		  -- And the gate GET /photos/{id} applies before either (the #190 verification's V2): no
+		  -- photograph of a community tree hidden from this viewer is a hero. Without it, a stranger
+		  -- who sent a withdrawal for an id (answered 'applied', like any unknown id) found the
+		  -- hidden tree's photograph id in their grove, and anybody with a favorite on a withdrawn
+		  -- or taken-down tree went on receiving its photograph's id. A photograph whose bytes never
+		  -- arrived is not a hero either: there is nothing to draw.
 		  LEFT JOIN LATERAL (
 		      SELECT p.id FROM photos p
 		       WHERE p.tree_uuid = t.tree_uuid
 		         AND p.deleted_at IS NULL
+		         AND p.bytes_received_at IS NOT NULL
 		         AND (p.moderation_state = 'approved'
 		              OR ($1::uuid IS NOT NULL AND p.user_id = $1)
 		              OR ($2::uuid IS NOT NULL AND p.device_id = $2))
+		         AND NOT `+treeHiddenFromViewerSQL("t.tree_uuid")+`
 		       ORDER BY p.captured_at DESC
 		       LIMIT 1
 		  ) hero ON true
