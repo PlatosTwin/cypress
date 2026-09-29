@@ -265,3 +265,17 @@ formatting other people's photograph dates with a UTC calendar (the testdata REA
 morning, the evening, the month end and a photograph with no date. `tree_profile_community.json`
 pins the evening case.
 
+**Round 5 amendments (the #190 verification's N1 and N2):**
+- **Order follows the served value.** The profile lists photographs newest first by the value this
+  caller is served, then by id descending. The grove's hero is chosen by the same order, in SQL.
+  Listed by the stored time, which any caller chooses for their own photographs at begin, the order
+  was an oracle: eleven begins placed another person's photograph within a minute of its capture
+  time. With the order on the served value, the same probe finds noon.
+- **`captured_on` travels as well** (the orchestrator's ruling). `YYYY-MM-DD` goes beside
+  `captured_at` on both routes whenever the phone sent it, and is omitted, never null, otherwise.
+  It is served to **everybody, the owner included**, because it is the date the owner's own phone
+  recorded, which adds nothing they lack, and one rule for every caller leaves the client one
+  meaning for "absent". C2 renders it as a calendar date when present and falls back to
+  `captured_at` in the reader's zone when it is absent. That replaces round 4's "format with a UTC
+  calendar" note, which gave the wrong day for photographs from builds that send no date.
+

@@ -173,6 +173,30 @@ already tomorrow at UTC+12 and beyond. It is the one residue on the shipped clie
 contract closes it for new builds (format others' photograph dates with a UTC calendar). The
 measurements are in `d14/render-14a.tsv`.
 
+### E??? — Round 4's photograph dates leaked through their order, and its C2 note was wrong for older photographs
+
+Found by the fresh verification of #190 at `0b631ce`, and fixed in round 5 before any client sent
+`captured_on`. Until one does, every photograph is served its exact time, so nothing was live.
+
+- **N1: the order gave away the hidden time.** The profile listed photographs by stored
+  `captured_at`, and the grove's hero was the newest by it. Anybody can begin a photograph at a
+  chosen time, so a prober could place their own photographs around another person's and read which
+  side it fell on. An anonymous device that never uploaded bytes bisected a photograph served as
+  noon to 17:41:43–17:42:25 in eleven begins. Both orders now use the served value, then the id
+  (`TestTheProfilesOrderGivesAStrangerOnlyTheServedDate`, `TestTheGroveHeroGivesAStrangerOnlyTheServedDate`,
+  and `TestPhotographsServedTheSameDateAreOrderedByIDNotByTime` for the tiebreak).
+- **N2: the C2 note turned the UTC+12 residue into a bigger error.** "Format others' photograph
+  dates with a UTC calendar" is wrong for a photograph from a build that sent no `captured_on`,
+  which is served its exact time: an evening in San Francisco would read as the next day. The
+  client could not tell the two forms apart. `captured_on` is now served as its own field
+  (`TestAPhotographCarriesThePhonesDateWhenItSentOne`), and the note renders it when present.
+
+**For the roadmap, not fixed here (N3, a hypothesis, not reproduced):** the presigned `GET` a
+photograph read hands out goes to object storage, which normally answers with `Last-Modified`, the
+upload time to the second. For a photograph uploaded while online that is close to the capture
+time, which decision 14 hides from others. The test presigner is fake, so it was not measured
+against Tigris. It predates this PR.
+
 ### E??? — Proximity candidates still carry another adder's address and to-the-second creation time
 
 **Not fixed here; for the roadmap.** `candidateFrom` (`server/internal/api/sync.go`) builds the

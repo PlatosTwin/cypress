@@ -130,10 +130,20 @@ These are contract, not incidental behavior. C1 and C2 build on them.
     San Francisco (`02:30Z` on the 23rd) is served as `2026-09-22T12:00:00Z`.
   - **A photograph from a build that sent no `captured_on`** keeps the exact time for everyone.
     `tree_profile_city.json` pins that form (`2026-09-23T10:00:00Z`).
-  - **Rendering.** The shipped client formats the date in the reader's zone, which shows the phone's
-    day for readers from UTC−11 to UTC+11. A reader at UTC+12 or beyond (New Zealand, Fiji, Tonga,
-    Kiribati) sees the next day. A new client closes that: format the date of a photograph **not**
-    in `own_photo_ids` with a UTC calendar, and the value is exactly the phone's date everywhere.
+  - **`captured_on`** (`YYYY-MM-DD`) travels beside `captured_at` whenever the phone sent it, to
+    **everybody**, the owner included, on `photos[]` and on `GET /photos/{id}`. It is **absent**,
+    never null, when the phone sent none. `tree_profile_community.json` carries
+    `"captured_on": "2026-09-22"`, and `tree_profile_city.json` pins the absence.
+  - **How C2 renders a photograph's date:** show `captured_on` as a calendar date when it is present,
+    with no time zone involved. When it is absent, format `captured_at` in the reader's zone, as the
+    shipped client does. Do **not** format `captured_at` with a UTC calendar: a photograph without
+    `captured_on` is served its exact time, and its UTC date is a day off for an evening in the
+    Americas or a morning in Asia (the #190 verification's N2).
+  - **The shipped client** ignores `captured_on` and formats `captured_at` in the reader's zone. That
+    shows the phone's day from UTC−11 to UTC+11, and the next day at UTC+12 and beyond.
+  - **Order.** `photos[]` is listed newest first **by the value this caller is served**, then by
+    `photo_id` descending, so the order says nothing the served dates do not (N1). A client that
+    re-sorts by `captured_at` gets the same order.
 - **History starts at going live** (decision 13). The oldest event is `added`, at the position and on
   the day the tree was published. A move made while the tree was private is never served, in the
   history or in any tile.
