@@ -1,0 +1,62 @@
+{
+  "tile": "14/2616/6333",
+  "trees": [
+    {
+      "id": "5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d04",
+      "externalRef": null,
+      "idSpace": null,
+      "source": "community",
+      "coordinate": {
+        "latitude": 37.7603,
+        "longitude": -122.5052
+      },
+      "address": null,
+      "siteType": null,
+      "neighborhoodID": null,
+      "status": "alive",
+      "speciesCurrentID": null,
+      "plantedYear": null,
+      "dbhCityCmRange": null,
+      "siteLineage": null,
+      "verificationState": "unverified",
+      "placement": "gps",
+      "cityRecord": null,
+      "statedLandContext": "city_park",
+      "createdAt": "2026-09-26T00:00:00Z",
+      "updatedAt": "2026-09-26T00:00:00Z",
+      "deletedAt": null
+    },
+    {
+      "id": "5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d01",
+      "externalRef": null,
+      "idSpace": null,
+      "source": "community",
+      "coordinate": {
+        "latitude": 37.76021,
+        "longitude": -122.50497
+      },
+      "address": null,
+      "siteType": null,
+      "neighborhoodID": null,
+      "status": "alive",
+      "speciesCurrentID": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7d",
+      "plantedYear": null,
+      "dbhCityCmRange": null,
+      "siteLineage": null,
+      "verificationState": "unverified",
+      "placement": "contributor_placed",
+      "cityRecord": null,
+      "statedLandContext": "street",
+      "createdAt": "2026-09-21T00:00:00Z",
+      "updatedAt": "2026-09-27T00:00:00Z",
+      "deletedAt": null
+    }
+  ],
+  "withdrawn_tree_ids": [
+    "5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d02",
+    "5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d03"
+  ],
+  "next_cursor": "Xl5eXl5eXl5eXl5eIPawJf-0aadawF9H4PrL-CZXlm-j47Ea6c4ka5U2zKV4hNY_fayVC00cKBzYkPbHdZA",
+  "has_more": false
+}
+

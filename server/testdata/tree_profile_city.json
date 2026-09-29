@@ -1,0 +1,19 @@
+{
+  "added_by_you": false,
+  "community_tree": null,
+  "deletable_photo_ids": [],
+  "is_published": false,
+  "own_photo_ids": [],
+  "photo_count": 1,
+  "photos": [
+    {
+      "captured_at": "2026-09-23T10:00:00Z",
+      "is_publicly_visible": true,
+      "photo_id": "8c1cc8a2-ded9-4bd5-ae4f-af2b0174bf02",
+      "shot_type": "trunk"
+    }
+  ],
+  "tree_uuid": "3c1e7a90-2b4d-4f6e-8a1c-0d9e8f7a6b01",
+  "visit_count": 1
+}
+

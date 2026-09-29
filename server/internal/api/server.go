@@ -43,6 +43,14 @@ type Server struct {
 	// OperatorToken authorizes the takedown route. Operator surfaces are a web deliverable by
 	// ARCHITECTURE §8, so this service exposes the action and not a console.
 	OperatorToken string
+	// CursorKey seals the community tile's `next_cursor` (AES-256-GCM, tile_cursor.go). main.go
+	// derives it from `SESSION_SIGNING_KEY` with `DeriveCursorKey`; a server without one refuses to
+	// hand out a tile cursor at all rather than hand out a readable one.
+	CursorKey []byte
+	// cursorNonces is where a cursor's GCM nonce comes from: nil is `crypto/rand`, always, in
+	// production. Only the golden-fixture tests set it, so the fixture's sealed cursor is the same
+	// bytes on every run. Unexported, so nothing outside this package can weaken it.
+	cursorNonces io.Reader
 
 	limiter *ratelimit.Limiter
 	// readLimiter is the public read's own bucket, at its own budget.
@@ -90,6 +98,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET "+Prefix+"/me/journal", s.authenticated(s.journal))
 	mux.Handle("GET "+Prefix+"/me/map-membership", s.authenticated(s.mapMembership))
 	mux.Handle("GET "+Prefix+"/trees/{id}", s.authenticated(s.treeProfile))
+	// The community layer (S2, §3C and §3E). A device credential is enough for both: a phone that
+	// has never signed in still draws, and opens, everybody's published trees.
+	mux.Handle("GET "+Prefix+"/community-trees", s.authenticated(s.communityTrees))
+	mux.Handle("GET "+Prefix+"/trees/{id}/history", s.authenticated(s.treeHistory))
 	mux.Handle("GET "+Prefix+"/photos/{id}", s.authenticated(s.photoData))
 
 	// ── The public read ────────────────────────────────────────────────────────────────────────
