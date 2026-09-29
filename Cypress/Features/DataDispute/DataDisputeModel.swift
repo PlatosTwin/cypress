@@ -43,14 +43,32 @@ final class DataDisputeModel {
     private let api: any CypressAPI
     private let currentYear: Int
 
+    /// How the model waits out `DataDisputeLocation.fixTimeout`. `Task.sleep` in the app; a test
+    /// hands in one it releases itself, so the 15 s is asserted without being spent.
+    private let sleep: @Sendable (Duration) async throws -> Void
+
+    /// The error count the provider had when the block last started waiting. Only an error *after*
+    /// that ends the wait — an old one must not answer a new request (`MapLocationProvider
+    /// .failureCount`).
+    @ObservationIgnored
+    private var failuresWhenAsked = 0
+    /// Which wait the pending timeout belongs to. Every new wait bumps it, so a timeout left over
+    /// from an earlier request cannot end a later one.
+    @ObservationIgnored
+    private var waitGeneration = 0
+    @ObservationIgnored
+    private var timeout: Task<Void, Never>?
+
     init(
         treeID: UUID,
         api: any CypressAPI,
-        currentYear: Int = Calendar.current.component(.year, from: Date())
+        currentYear: Int = Calendar.current.component(.year, from: Date()),
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.treeID = treeID
         self.api = api
         self.currentYear = currentYear
+        self.sleep = sleep
     }
 
     /// What will be sent, for the view to restate what it holds.
@@ -84,8 +102,15 @@ final class DataDisputeModel {
     ///
     /// Answers the provider's state as it is right now; `waiting` is resolved by `locationChanged`
     /// when the provider publishes. The view starts the provider — the model has none.
+    ///
+    /// Also the retry after `.unavailable` (owner ruling 11): it starts a fresh wait, with a fresh
+    /// timeout and a fresh baseline for errors.
     func useLocation(_ reading: DataDisputeFixReading) {
+        failuresWhenAsked = reading.failureCount
+        timeout?.cancel()
+        timeout = nil
         draft.location = .reading(reading)
+        armTimeoutIfWaiting()
         problem = nil
     }
 
@@ -95,9 +120,54 @@ final class DataDisputeModel {
     /// a later, better fix replaces a refused one while the screen is open (ruling 7). A fix the
     /// reporter already has captured is theirs until they ask again, so a later, different fix
     /// cannot quietly replace the position they were standing at when they tapped.
+    ///
+    /// Owner ruling 11: while the block is waiting, an error CoreLocation reported *since the
+    /// reporter asked* ends the wait as `.unavailable`. And an `.unavailable` block is not put back
+    /// to waiting by a reading with no fix in it — only a fix, or location going off, replaces it;
+    /// asking again is the reporter's to do.
     func locationChanged(_ reading: DataDisputeFixReading) {
         guard draft.location.followsTheProvider else { return }
-        draft.location = .reading(reading)
+        let next = DataDisputeLocation.reading(reading)
+        if next == .waiting {
+            if draft.location == .unavailable { return }
+            if reading.failureCount > failuresWhenAsked {
+                failuresWhenAsked = reading.failureCount
+                endWait(as: .unavailable)
+                return
+            }
+        }
+        draft.location = next
+        armTimeoutIfWaiting()
+    }
+
+    // MARK: - The bounded wait (owner ruling 11)
+
+    /// Starts the timeout when the block has just begun waiting, and drops it when it has stopped.
+    private func armTimeoutIfWaiting() {
+        guard draft.location == .waiting else {
+            timeout?.cancel()
+            timeout = nil
+            return
+        }
+        guard timeout == nil else { return }
+        waitGeneration += 1
+        let generation = waitGeneration
+        let sleep = self.sleep
+        timeout = Task { [weak self] in
+            do { try await sleep(DataDisputeLocation.fixTimeout) } catch { return }
+            self?.timeoutElapsed(generation: generation)
+        }
+    }
+
+    private func timeoutElapsed(generation: Int) {
+        guard generation == waitGeneration, draft.location == .waiting else { return }
+        endWait(as: .unavailable)
+    }
+
+    private func endWait(as location: DataDisputeLocation) {
+        timeout?.cancel()
+        timeout = nil
+        draft.location = location
     }
 
     func chooseSpecies(_ species: Species) {

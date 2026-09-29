@@ -34,6 +34,9 @@
 //  The block keeps listening while the screen is open, so a later, better fix replaces a refused one
 //  (ruling 7); and while a fix is still pending under the pin chip, *Send report* waits for it rather
 //  than sending "the pin is wrong" without the position the reporter asked to attach (ruling 8).
+//  The wait is bounded (owner ruling 11): after `DataDisputeLocation.fixTimeout` with no fix, or as
+//  soon as CoreLocation reports an error, the block says it could not find the location and *Send*
+//  works for the other choices; *Use my current location* asks again.
 //
 //  ── "There's no tree here" stands alone ─────────────────────────────────────────────────────
 //  The owner's ruling of 2026-09-28: choosing it clears the other three chips and disables them,
@@ -77,6 +80,9 @@ enum DataDisputeChoice: String, CaseIterable, Hashable, Sendable {
 struct DataDisputeFixReading: Equatable, Sendable {
     var availability: MapLocationProvider.Availability
     var precision: MapLocationProvider.Precision = .ordinary
+    /// How many times CoreLocation has reported an error (`MapLocationProvider.failureCount`). A
+    /// count rather than a flag, so a second error after a retry is a change the view hands over.
+    var failureCount = 0
 }
 
 /// Why the block did not use a fix. Each arm has its own sentence (`DataDisputeCopy.locationRefusal`).
@@ -113,6 +119,12 @@ enum DataDisputeLocation: Hashable, Sendable {
     case captured(TreeDataDispute.SuggestedLocation)
     /// A fix that was not used. It is **not** attached; the refusal is what the block says instead.
     case refused(DataDisputeLocationRefusal)
+    /// Asked, and no fix came: `fixTimeout` passed, or CoreLocation reported an error (owner ruling
+    /// 11). Nothing is attached, *Send* is not held, and asking again starts over.
+    case unavailable
+
+    /// How long the block waits for a fix before it says it could not find one (owner ruling 11).
+    static let fixTimeout: Duration = .seconds(15)
 
     /// The block's answer to the provider's current state.
     ///
@@ -154,7 +166,7 @@ enum DataDisputeLocation: Hashable, Sendable {
         switch self {
         case .off: return true
         case let .refused(refusal): return refusal.isReduced
-        case .notAsked, .waiting, .captured: return false
+        case .notAsked, .waiting, .captured, .unavailable: return false
         }
     }
 
@@ -167,7 +179,7 @@ enum DataDisputeLocation: Hashable, Sendable {
     /// quietly replacing it would move their report. `notAsked` does not either: nobody asked.
     var followsTheProvider: Bool {
         switch self {
-        case .waiting, .refused, .off: return true
+        case .waiting, .refused, .off, .unavailable: return true
         case .notAsked, .captured: return false
         }
     }
@@ -280,7 +292,8 @@ struct DataDisputeDraft: Hashable, Sendable {
     /// without the position — which the reporter asked for and the block is still promising — and
     /// the fix would then land in a screen nobody is reading (PR #185's review, finding 3). A fix
     /// that resolves as refused ends the wait: the block has said why, out loud, and "the pin is
-    /// wrong and my phone cannot say where the tree is" is a report the record admits.
+    /// wrong and my phone cannot say where the tree is" is a report the record admits. So does a fix
+    /// that never comes (`.unavailable`, owner ruling 11): the wait is bounded, never permanent.
     var isAwaitingFix: Bool {
         choices.contains(.wrongPlace) && location == .waiting
     }
@@ -385,6 +398,12 @@ enum DataDisputeCopy {
     static let locationHint = "Stand next to the tree, then use your location."
     static let useLocation = "Use my current location"
     static let locationWaiting = "Finding your location…"
+    /// No fix in `fixTimeout`, or a CoreLocation error (owner ruling 11). In the refusals' shape —
+    /// what happened, "so … was not used", then what would help — and the help names the button,
+    /// because asking again is the retry the ruling gives.
+    static let locationUnavailable =
+        "Your phone couldn’t find your location, so no position was used. Try again in the open, "
+        + "then use your location again."
     static let locationDenied =
         "Location is off for Cypress. Turn it on in Settings to use where you’re standing."
     static let locationServicesOff =
@@ -404,6 +423,7 @@ enum DataDisputeCopy {
         case let .off(servicesOff): return servicesOff ? locationServicesOff : locationDenied
         case let .captured(fix): return locationCaptured(accuracyM: fix.accuracyM)
         case let .refused(refusal): return locationRefusal(refusal)
+        case .unavailable: return locationUnavailable
         }
     }
 

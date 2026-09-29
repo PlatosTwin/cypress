@@ -69,6 +69,8 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         static let confirmTitle = "Take back your report?"
         static let keepIt = "Keep it"
         static let waiting = "Finding your location…"
+        static let unavailable = "Your phone couldn’t find your location, so no position was used. "
+            + "Try again in the open, then use your location again."
         static let preciseLocation = "Turn on Precise Location for Cypress in Settings, then try again."
         static let tryInTheOpen = "Try again in the open, or wait a moment."
     }
@@ -165,18 +167,22 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         )
         record(app, named: "04-profile-raised")
 
-        // The take-back asks first (owner, 2026-09-28). "Keep it" leaves the report standing.
+        // The take-back asks first (owner, 2026-09-28), in an alert, and "Keep it" leaves the report
+        // standing. Queried inside `app.alerts` — the question's own buttons, never the link under
+        // it that repeats the action's words. An alert rather than a confirmation dialog because on
+        // iOS 26 the dialog left *Keep it* out of the tree entirely (CI, iPhone 17 Pro); these
+        // queries are the same on every runtime, which is the point.
         let takeBack = app.buttons[Copy.takeBack].firstMatch
         reach(takeBack, in: app, "the take-back control")
         takeBack.tap()
-        let confirm = app.staticTexts[Copy.confirmTitle]
+        let question = app.alerts[Copy.confirmTitle]
         XCTAssertTrue(
-            confirm.waitForExistence(timeout: 10),
+            question.waitForExistence(timeout: 10),
             "Take back your report did not ask first — the report was withdrawn without a question"
         )
         record(app, named: "04b-profile-take-back-confirm")
-        let keep = app.buttons[Copy.keepIt]
-        assertReachable(keep, "the confirmation's Keep it")
+        let keep = question.buttons[Copy.keepIt]
+        assertReachable(keep, "the question's Keep it")
         keep.tap()
         XCTAssertTrue(
             raised.waitForExistence(timeout: 10) && !app.buttons[Copy.action].exists,
@@ -185,16 +191,9 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
 
         reach(takeBack, in: app, "the take-back control, a second time")
         takeBack.tap()
-        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "the second take-back did not ask first")
-        // The dialog's action repeats the link's words, and the link is still in the tree under the
-        // modal — so the action is the match that can be pressed.
-        let matches = app.buttons.matching(NSPredicate(format: "label == %@", Copy.takeBack))
-        let screen = app.frame
-        guard let confirmAction = (0..<matches.count).map({ matches.element(boundBy: $0) })
-            .first(where: { $0.isHittableWithoutRaising(onScreen: screen) }) else {
-            XCTFail("the confirmation has no Take back your report that can be pressed")
-            return
-        }
+        XCTAssertTrue(question.waitForExistence(timeout: 10), "the second take-back did not ask first")
+        let confirmAction = question.buttons[Copy.takeBack]
+        assertReachable(confirmAction, "the question's Take back your report")
         confirmAction.tap()
         XCTAssertTrue(
             app.buttons[Copy.action].waitForExistence(timeout: 30),
@@ -333,6 +332,44 @@ final class DataDisputeUITests: XCTestCase, DeepLinkHarness {
         // Un-choosing the pin chip ends the wait: nothing about a position is promised any more.
         wrongPlace.tap()
         XCTAssertTrue(send.isEnabled, "Send report stayed disabled with the pin chip off")
+    }
+
+    // MARK: - 5 · A fix that never comes stops holding Send (owner ruling 11)
+
+    /// `waitingForFix` pins a provider that never publishes a fix — "no fix, ever", which is the case
+    /// the ruling is about. After `DataDisputeLocation.fixTimeout` (15 s) the block says so and *Send*
+    /// works; *Use my current location* asks again and holds *Send* again.
+    func testAFixThatNeverComesStopsHoldingSend() {
+        let app = launch(fix: "waitingForFix")
+        let action = app.buttons[Copy.action]
+        guard arriveOnProfile(app, action: action) else { return }
+        action.tap()
+        guard arriveOnScreen(app) else { return }
+
+        let wrongPlace = app.buttons[Copy.wrongPlace]
+        reach(wrongPlace, in: app, "the pin chip")
+        wrongPlace.tap()
+        let useLocation = app.buttons[Copy.useLocation]
+        reach(useLocation, in: app, "the use-my-location control")
+        useLocation.tap()
+        let send = app.buttons[Copy.send]
+        XCTAssertTrue(app.staticTexts[Copy.waiting].waitForExistence(timeout: 10))
+        XCTAssertFalse(send.isEnabled, "Send was not held while the location was being found")
+
+        XCTAssertTrue(
+            app.staticTexts[Copy.unavailable].waitForExistence(timeout: 40),
+            "15 s with no fix and the block still does not say it could not find the location"
+        )
+        XCTAssertTrue(send.isEnabled, "Send is still held after the block gave up on the location")
+        record(app, named: "10-screen-location-unavailable")
+
+        reach(useLocation, in: app, "the use-my-location control, to try again")
+        useLocation.tap()
+        XCTAssertTrue(
+            app.staticTexts[Copy.waiting].waitForExistence(timeout: 10),
+            "Use my current location did not try again"
+        )
+        XCTAssertFalse(send.isEnabled, "a new request did not hold Send again")
     }
 
     // MARK: - Harness

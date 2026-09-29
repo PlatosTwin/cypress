@@ -108,7 +108,11 @@ struct DataDisputeView: View {
     /// The provider's state as the location block reads it, or `nil` in previews.
     private var fixReading: DataDisputeFixReading? {
         guard let location else { return nil }
-        return DataDisputeFixReading(availability: location.availability, precision: location.precision)
+        return DataDisputeFixReading(
+            availability: location.availability,
+            precision: location.precision,
+            failureCount: location.failureCount
+        )
     }
 
     // MARK: - The choices

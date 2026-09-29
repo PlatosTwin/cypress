@@ -155,24 +155,31 @@ struct TreeProfileView: View {
                 )
             }
             // "Take back your report?" before a city-record dispute is withdrawn (owner, 2026-09-28).
-            // `GrowthHistoryView`'s arrangement exactly — one dialog driven by the model's pending
-            // value, a destructive action and a "Keep it" — because that is the app's existing
-            // question in front of a take-back, and one act should not be asked about two ways.
-            .confirmationDialog(
+            //
+            // **An alert, not the `confirmationDialog` the app's other take-backs use, and the reason
+            // is iOS 26.** On CI's iPhone 17 Pro (iOS 26.2) the dialog's title was in the tree and its
+            // `.cancel` button, *Keep it*, was not — twice, in runs 36517992402 and 36530577356. iOS
+            // 26 presents a confirmation dialog as a popover that is dismissed by tapping outside it,
+            // and leaves the cancel action undrawn; on the 16 Pro's iOS 18.6 the same dialog draws
+            // *Keep it*. Nothing in this design relies on tapping outside: `GrowthHistoryCopy
+            // .withdrawCancel` is explicit that the button that does nothing should say what nothing
+            // means. An alert — the presentation `ReportView` already uses — keeps both buttons, and
+            // `DataDisputeUITests` taps *Keep it* on both runtimes. Same words: the action repeats the
+            // link, and *Keep it*.
+            .alert(
                 TreeProfileCopy.withdrawDataDisputeConfirmTitle,
                 isPresented: Binding(
                     get: { model.pendingDataDisputeWithdrawal != nil },
                     set: { if !$0 { model.pendingDataDisputeWithdrawal = nil } }
                 ),
-                titleVisibility: .visible,
                 presenting: model.pendingDataDisputeWithdrawal
             ) { disputeID in
+                Button(TreeProfileCopy.withdrawDataDisputeCancel, role: .cancel) {
+                    model.pendingDataDisputeWithdrawal = nil
+                }
                 Button(TreeProfileCopy.withdrawDataDisputeAction, role: .destructive) {
                     model.pendingDataDisputeWithdrawal = nil
                     Task { await model.withdrawDataDispute(disputeID: disputeID) }
-                }
-                Button(TreeProfileCopy.withdrawDataDisputeCancel, role: .cancel) {
-                    model.pendingDataDisputeWithdrawal = nil
                 }
             }
     }

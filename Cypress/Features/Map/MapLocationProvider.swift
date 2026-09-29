@@ -83,6 +83,15 @@ final class MapLocationProvider {
     /// `publish(coordinate:accuracyM:accuracyIsKnown:)` (whether the published fix stated a radius).
     private(set) var precision = Precision.ordinary
 
+    /// How many times CoreLocation has answered `didFailWithError` since this provider was built.
+    ///
+    /// **Nothing on the map reads it**, and the map's own answer to an error is still to keep drawing
+    /// without a fix until one arrives. The reader is the data-dispute screen, whose pin section
+    /// holds *Send report* while it waits and must stop waiting when the phone says it cannot answer
+    /// (owner ruling 11 on PR #185). A count, not a flag: the screen compares it with the count it
+    /// saw when the reporter asked, so an old error never cancels a new request.
+    private(set) var failureCount = 0
+
     /// Which way the reader is facing, in degrees clockwise from **true** north, or `nil` for
     /// "nobody knows" (task #155).
     ///
@@ -122,6 +131,9 @@ final class MapLocationProvider {
         }
         delegate.onHeading = { [weak self] heading in
             self?.publish(heading: heading)
+        }
+        delegate.onFailure = { [weak self] in
+            self?.failureCount += 1
         }
         self.delegate = delegate
         manager.delegate = delegate
@@ -370,6 +382,8 @@ final class MapLocationProvider {
         var onLocation: (@MainActor (Coordinate, Double, Bool) -> Void)?
         /// A heading, or `nil` for one that cannot be trusted. See `MapHeading.usable`.
         var onHeading: (@MainActor (Double?) -> Void)?
+        /// CoreLocation could not produce a fix. See `failureCount`.
+        var onFailure: (@MainActor () -> Void)?
 
         func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
             let status = manager.authorizationStatus
@@ -412,7 +426,9 @@ final class MapLocationProvider {
 
         func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
             // A failed fix is not a refusal — it is "map without location" until the next one
-            // arrives, which is the state the map already draws. Nothing to do.
+            // arrives, which is the state the map already draws, so `availability` is untouched.
+            // It is counted for the one screen that waits on a fix it asked for (`failureCount`).
+            MainActor.assumeIsolated { onFailure?() }
         }
     }
 }

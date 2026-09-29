@@ -271,11 +271,12 @@ struct DataDisputeScreenTests {
             .notAsked, .reading(Self.state(.waitingForFix)), .reading(Self.state(.denied)),
             .reading(Self.state(.servicesOff)), .reading(Self.located(6)), .reading(Self.located(40)),
             .reading(Self.located(40, reduced: true)), .reading(Self.located(25, known: false)),
+            .unavailable,
         ]
         #expect(DataDisputeLocation.reading(Self.state(.notAsked)) == .waiting)
         let sentences = states.map(DataDisputeCopy.location)
         #expect(Set(sentences).count == sentences.count, "two location states share a sentence")
-        #expect(states.map(\.offersSettings) == [false, false, true, true, false, false, true, false])
+        #expect(states.map(\.offersSettings) == [false, false, true, true, false, false, true, false, false])
     }
 
     // MARK: - 4. Every refusal and failure, its own sentence
@@ -472,6 +473,120 @@ struct DataDisputeScreenTests {
         }.first
         #expect(stored?.suggestions.location == .init(coordinate: Self.spot, accuracyM: 6),
                 "the fix the reporter waited for was not the one filed")
+    }
+
+    // MARK: - Owner ruling 11: the wait for a fix is bounded
+
+    /// A sleep the test releases by hand, so `fixTimeout` is asserted without being spent.
+    @MainActor
+    private final class ManualSleep {
+        private(set) var requested: [Duration] = []
+        private var waiting: [CheckedContinuation<Void, Error>] = []
+
+        func sleep(_ duration: Duration) async throws {
+            requested.append(duration)
+            try await withCheckedThrowingContinuation { waiting.append($0) }
+        }
+
+        /// Lets every pending sleep return, as if the time had passed.
+        func elapse() {
+            let released = waiting
+            waiting = []
+            released.forEach { $0.resume() }
+        }
+    }
+
+    /// Polls, bounded, for a condition a released sleep settles on the main actor.
+    private static func settle(_ condition: () -> Bool) async {
+        for _ in 0..<200 where !condition() { await Task.yield() }
+    }
+
+    private static func waitingReading(failures: Int = 0) -> DataDisputeFixReading {
+        DataDisputeFixReading(availability: .waitingForFix, failureCount: failures)
+    }
+
+    @Test("15 s with no fix ends the wait: the block says so, Send works, and asking again waits again")
+    func aFixThatNeverComesStopsHoldingSend() async throws {
+        let store = try await Self.seededStore()
+        let clock = ManualSleep()
+        let model = DataDisputeModel(
+            treeID: UUID(), api: Self.api(store), currentYear: Self.year,
+            sleep: { try await clock.sleep($0) }
+        )
+        model.toggle(.wrongPlace)
+        model.toggle(.wrongPlantedYear)
+        model.useLocation(Self.waitingReading())
+        #expect(!model.canSend)
+        await Self.settle { !clock.requested.isEmpty }
+        #expect(clock.requested == [.seconds(15)], "the wait asked for \(clock.requested), not 15 s")
+
+        clock.elapse()
+        await Self.settle { model.draft.location != .waiting }
+        #expect(model.draft.location == .unavailable, "the timeout did not end the wait: \(model.draft.location)")
+        #expect(model.canSend, "Send is still held after the block gave up on the location")
+        #expect(DataDisputeCopy.location(model.draft.location) == DataDisputeCopy.locationUnavailable)
+        #expect(!model.draft.location.offersSettings, "Settings cannot help a phone that found nothing")
+        #expect(model.suggestions.location == nil)
+
+        // A reading with still no fix in it does not put the block back to waiting on its own.
+        model.locationChanged(Self.waitingReading())
+        #expect(model.draft.location == .unavailable)
+
+        // Asking again is the retry: a fresh wait, a fresh 15 s, Send held again.
+        model.useLocation(Self.waitingReading())
+        #expect(model.draft.location == .waiting)
+        #expect(!model.canSend)
+        await Self.settle { clock.requested.count == 2 }
+        #expect(clock.requested.count == 2, "the retry did not start a fresh timeout")
+
+        // A fix that arrives before the timeout wins, and the stale timeout then changes nothing.
+        model.locationChanged(Self.located(6))
+        clock.elapse()
+        for _ in 0..<50 { await Task.yield() }
+        #expect(model.draft.location == .captured(.init(coordinate: Self.spot, accuracyM: 6)),
+                "a timeout overwrote the fix that arrived before it: \(model.draft.location)")
+    }
+
+    @Test("an error CoreLocation reports after the ask ends the wait at once; an older one does not")
+    func aLocationErrorStopsHoldingSend() async throws {
+        let store = try await Self.seededStore()
+        let clock = ManualSleep()
+        let model = DataDisputeModel(
+            treeID: UUID(), api: Self.api(store), currentYear: Self.year,
+            sleep: { try await clock.sleep($0) }
+        )
+        model.toggle(.wrongPlace)
+        // The provider had already failed twice before the reporter asked (on the map, say).
+        model.useLocation(Self.waitingReading(failures: 2))
+        #expect(model.draft.location == .waiting, "an error from before the ask answered it")
+
+        model.locationChanged(Self.waitingReading(failures: 3))
+        #expect(model.draft.location == .unavailable, "a didFailWithError after the ask was ignored")
+        #expect(model.canSend)
+
+        model.useLocation(Self.waitingReading(failures: 3))
+        #expect(model.draft.location == .waiting, "the retry was answered by the error it retried")
+        model.locationChanged(Self.waitingReading(failures: 4))
+        #expect(model.draft.location == .unavailable)
+
+        // A fix after an error still replaces it (ruling 7's rule, carried to the new state).
+        model.locationChanged(DataDisputeFixReading(
+            availability: .located(Self.spot, accuracyM: 5), failureCount: 4
+        ))
+        #expect(model.draft.location == .captured(.init(coordinate: Self.spot, accuracyM: 5)))
+    }
+
+    @Test("the provider counts didFailWithError, through the real delegate")
+    func theProviderCountsLocationErrors() {
+        let manager = StubManager()
+        let provider = MapLocationProvider(manager: manager)
+        #expect(provider.failureCount == 0)
+        let error = CLError(.locationUnknown)
+        manager.delegate?.locationManager?(manager, didFailWithError: error)
+        manager.delegate?.locationManager?(manager, didFailWithError: error)
+        #expect(provider.failureCount == 2, "didFailWithError is still ignored")
+        #expect(provider.availability == .waitingForFix,
+                "an error moved the map's own availability, which it must not")
     }
 
     // MARK: - 7. "There's no tree here" stands alone
