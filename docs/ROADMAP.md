@@ -629,7 +629,8 @@ file.
   move the lens can only be seen on the physical phone, because no simulator has a camera; the phone
   check also covers screen 04's pinch as a regression. **The third camera that owns a controller,
   `ContributionCameraView` (05 and 09), was not given the pinch and is not covered by the ruling:**
-  chip backlog 80.
+  chip backlog 80. The owner ruled it in on 2026-09-29 and `feat/contribution-camera-zoom` shipped
+  it; see chip backlog 80.
 
 - **D6 — search and filter by state on the Cities screen** (re-logged; build 49, 2026-08-23),
   verbatim: *"Eventually we will have 20+ entries here. We need a way to allow search/filtering.
@@ -1749,17 +1750,26 @@ into this section in the round that finds it, and nowhere else. Each item stands
     dealt with first. When a door reaches the table,
     the guard goes red and the arm changes with it. **Slated by the orchestrator for the
     community-trees C1 round.**
-80. **OPEN: decide whether 05 and 09's contribution camera gets pinch-to-zoom.** Found by PR #195's
-    review (F33). `ContributionCameraView`, the camera check-in (05) and care log (09) open to
+80. ~~**OPEN: decide whether 05 and 09's contribution camera gets pinch-to-zoom.**~~ **RULED AND
+    SHIPPED** by `feat/contribution-camera-zoom`. The owner ruled on 2026-09-29, verbatim: *"Yes,
+    same pinch (Recommended)"* (`docs/rulings-pending/contribution-camera-zoom.md`, unnumbered).
+    `ContributionCameraView` now applies `VisitCameraZoomPinch` to its viewfinder with
+    `isAiming: true`, because that viewfinder never shows a still and so always has something to
+    aim; `isZoomable` still gates it. `CameraZoomPinchTests.contributionCameraWiresItsAimToThePinch`
+    proves the pinch is there, armed, and on the view's own controller. The phone check is folded
+    into 81. Found by PR #195's review (F33). `ContributionCameraView`, the camera check-in (05) and care log (09) open to
     attach photographs, owns a `VisitCameraController` like screen 04 and add-a-tree, and has no
     pinch. RULINGS R80 item 5 and the F33 ruling (`docs/rulings-pending/f33-add-tree-zoom.md`)
     name only screen 04 and add-a-tree, so this needs an owner decision, not an inference. If
     ruled in, it is small: apply `VisitCameraZoomPinch` to its preview, with a wiring test in the
     shape of `CameraZoomPinchTests`' two `…WiresItsAimToThePinch` tests.
-81. **The F33 phone check (#195).** On the physical phone: the pinch moves the lens on add-a-tree's
-    photo well and on screen 04, it does not fight the composer's `ScrollView`, and screen 04's pinch
-    still arms once the camera session starts (its `isZoomable` is now read inside the modifier). No
-    simulator has a camera, so #195's verification could not see any of this. OPEN until done.
+81. **The F33 phone check (#195, and `feat/contribution-camera-zoom`).** On the physical phone: the
+    pinch moves the lens on add-a-tree's photo well, on screen 04, and on the camera check-in (05)
+    and care log (09) open; it does not fight the composer's `ScrollView`; screen 04's pinch still
+    arms once the camera session starts (its `isZoomable` is now read inside the modifier); and on
+    05 and 09's camera it still arms after a frame has been taken, since that viewfinder stays live
+    for the next one. No simulator has a camera, so neither branch's verification could see any of
+    this. OPEN until done.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
