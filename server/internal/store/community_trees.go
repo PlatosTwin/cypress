@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -104,12 +105,39 @@ func publicationStamp(ctx context.Context, q querier, owner Owner, now time.Time
 	return &now, version, nil
 }
 
-// publishedEvent is the `published` event every publication writes. Its `after` carries the license
-// version the account had accepted at that moment — decision 10 makes the license one-way, so
-// "accepted at publication" is the invariant, and `users` keeps only the current answer. The event
-// is where the answer at the time is kept.
-func publishedEvent(tree uuid.UUID, version string, actor Actor, at time.Time) event {
-	return event{TreeID: tree, Kind: "published", Actor: actor, OccurredAt: at, After: position{LicenseVersion: &version}}
+// publishTrees is what every publication does after setting `published_at`: it marks each tree's
+// head location `was_public` and writes the `published` event, in the caller's transaction.
+//
+// The event's `after` carries two things. The license version the account had accepted at that
+// moment — decision 10 makes the license one-way, so "accepted at publication" is the invariant,
+// and `users` keeps only the current answer; the event is where the answer at the time is kept.
+// And the position the tree stood at when it went public — decision 13: history starts at going
+// live, so this event, not `added`, is the public record's "added", and it says where.
+//
+// The head is the only row marked: rows it superseded were positions the tree held while private,
+// and they stay the adder's (decision 13). The UPDATE only ever turns `was_public` on, once, the
+// same set-once shape as `superseded_by`; no position is rewritten.
+func publishTrees(ctx context.Context, tx pgx.Tx, ids []uuid.UUID, version string, actor Actor, now time.Time) error {
+	for _, id := range ids {
+		var lat, lon float64
+		var placement string
+		var accuracyM *float64
+		if err := tx.QueryRow(ctx, `
+			UPDATE community_tree_locations SET was_public = true
+			 WHERE tree_id = $1 AND superseded_by IS NULL
+			RETURNING lat, lon, placement, location_accuracy_m
+		`, id).Scan(&lat, &lon, &placement, &accuracyM); err != nil {
+			return fmt.Errorf("publishing %s: its head location: %w", id, err)
+		}
+		after := at(lat, lon, placement, accuracyM)
+		after.LicenseVersion = &version
+		if err := writeEvent(ctx, tx, event{
+			TreeID: id, Kind: "published", Actor: actor, OccurredAt: now, After: after, Public: true,
+		}, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // publishAccountTrees publishes every live, unpublished tree an account owns, and writes a
@@ -128,12 +156,7 @@ func publishAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, versi
 	if err != nil {
 		return err
 	}
-	for _, id := range ids {
-		if err := writeEvent(ctx, tx, publishedEvent(id, version, actor, now), now); err != nil {
-			return err
-		}
-	}
-	return nil
+	return publishTrees(ctx, tx, ids, version, actor, now)
 }
 
 // claimCommunityTrees is `ClaimDevice`'s tree sweep: the device's trees move onto the account and,
@@ -171,13 +194,10 @@ func claimCommunityTrees(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.U
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	actor := Actor{UserID: &userID, DeviceID: &deviceID}
-	for _, id := range published {
-		if err := writeEvent(ctx, tx, publishedEvent(id, *version, actor, now), now); err != nil {
-			return err
-		}
+	if len(published) == 0 {
+		return nil
 	}
-	return nil
+	return publishTrees(ctx, tx, published, *version, Actor{UserID: &userID, DeviceID: &deviceID}, now)
 }
 
 // ── Insert ──────────────────────────────────────────────────────────────────────────────────────
@@ -198,7 +218,9 @@ type newTreeAct struct {
 // the same way, so a late `add_tree` or `POST /trees` cannot bring an erased tree back.
 //
 // A tree whose adder already withdrew it (the withdrawal drained first; the add was in backoff) is
-// born withdrawn — see `treeWasWithdrawnBy`.
+// born withdrawn — see `treeWasWithdrawnBy` — and is **never published**: no `published_at`, no
+// `published` event, nothing public in its chain or history. It was never visible to anybody, so no
+// read may report it as a removal either (review of #190, F3).
 func insertCommunityTree(ctx context.Context, tx pgx.Tx, tree NewCommunityTree, act newTreeAct, now time.Time) (bool, error) {
 	var tombstoned bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM withdrawn_community_trees WHERE id = $1)`,
@@ -209,9 +231,16 @@ func insertCommunityTree(ctx context.Context, tx pgx.Tx, tree NewCommunityTree, 
 		return false, nil
 	}
 
-	publishedAt, licenseVersion, err := publicationStamp(ctx, tx, act.Owner, now)
+	withdrawn, err := treeWasWithdrawnBy(ctx, tx, tree.ID, act.Owner)
 	if err != nil {
 		return false, err
+	}
+	var publishedAt *time.Time
+	var licenseVersion *string
+	if !withdrawn {
+		if publishedAt, licenseVersion, err = publicationStamp(ctx, tx, act.Owner, now); err != nil {
+			return false, err
+		}
 	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO community_trees
@@ -232,8 +261,8 @@ func insertCommunityTree(ctx context.Context, tx pgx.Tx, tree NewCommunityTree, 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO community_tree_locations
 		    (id, tree_id, lat, lon, placement, location_accuracy_m, contribution_client_uuid,
-		     actor_user_id, actor_device_id, occurred_at, recorded_at)
-		VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		     actor_user_id, actor_device_id, occurred_at, recorded_at, was_public)
+		VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false)
 	`, tree.ID, tree.Lat, tree.Lon, tree.Placement, tree.LocationAccuracyM, act.ClientUUID,
 		actor.UserID, actor.DeviceID, act.OccurredAt, now); err != nil {
 		return false, err
@@ -250,17 +279,12 @@ func insertCommunityTree(ctx context.Context, tx pgx.Tx, tree NewCommunityTree, 
 		return false, err
 	}
 	if publishedAt != nil {
-		if err := writeEvent(ctx, tx, publishedEvent(tree.ID, *licenseVersion, actor, now), now); err != nil {
+		if err := publishTrees(ctx, tx, []uuid.UUID{tree.ID}, *licenseVersion, actor, now); err != nil {
 			return false, err
 		}
 	}
-
-	withdrawn, err := treeWasWithdrawnBy(ctx, tx, tree.ID, act.Owner)
-	if err != nil {
-		return false, err
-	}
 	if withdrawn {
-		if err := markTreeDeleted(ctx, tx, tree.ID, "withdrawn", nil, actor, now, now); err != nil {
+		if err := markTreeDeleted(ctx, tx, tree.ID, "withdrawn", nil, actor, now, now, false); err != nil {
 			return false, err
 		}
 	}
@@ -294,6 +318,15 @@ type treeRow struct {
 	SpeciesID    *uuid.UUID
 	AnonymizedAt *time.Time
 	DeletedAt    *time.Time
+	PublishedAt  *time.Time
+}
+
+// hiddenFrom is the reads' rule for who may know the tree exists (review of #190, F6): its adder
+// always; anybody else only while it is published and not removed. An act by somebody it is hidden
+// from is answered exactly as the same act on an id this service never held, so the answer is not
+// an oracle for a withdrawn, taken-down or unpublished tree.
+func (t treeRow) hiddenFrom(owner Owner) bool {
+	return !t.isAddedBy(owner) && (t.DeletedAt != nil || t.PublishedAt == nil)
 }
 
 // isAddedBy is §4's rule: the account that owns it, or — for a caller holding a device credential —
@@ -313,9 +346,9 @@ func (t treeRow) isAddedBy(owner Owner) bool {
 func lockTree(ctx context.Context, tx pgx.Tx, id uuid.UUID) (treeRow, error) {
 	var row treeRow
 	err := tx.QueryRow(ctx, `
-		SELECT user_id, device_id, species_id, anonymized_at, deleted_at
+		SELECT user_id, device_id, species_id, anonymized_at, deleted_at, published_at
 		  FROM community_trees WHERE id = $1 FOR UPDATE
-	`, id).Scan(&row.UserID, &row.DeviceID, &row.SpeciesID, &row.AnonymizedAt, &row.DeletedAt)
+	`, id).Scan(&row.UserID, &row.DeviceID, &row.SpeciesID, &row.AnonymizedAt, &row.DeletedAt, &row.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return treeRow{}, ErrTreeNotFound
 	}
@@ -470,6 +503,9 @@ func applyLocationCorrection(ctx context.Context, tx pgx.Tx, c LocationCorrectio
 	if err != nil {
 		return err
 	}
+	if tree.hiddenFrom(act.Owner) {
+		return ErrTreeNotFound // what an id nobody sent answers
+	}
 	if !tree.isAddedBy(act.Owner) {
 		return ErrNotTheAdder
 	}
@@ -510,6 +546,11 @@ func applyLocationCorrection(ctx context.Context, tx pgx.Tx, c LocationCorrectio
 	isNewHead := act.OccurredAt.After(head.OccurredAt) ||
 		(act.OccurredAt.Equal(head.OccurredAt) && uuidLess(head.ID, c.ID))
 
+	// Decision 13: a row is a public position only if it becomes the head while the tree is
+	// published. A move made while private stays private; so does a late correction spliced in
+	// already superseded, which never moved the pin anybody saw.
+	public := isNewHead && tree.PublishedAt != nil
+
 	var before position
 	if isNewHead {
 		nearby, err := treesWithin(ctx, tx, c.Lat, c.Lon, ProximityDedupeRadiusM, act.Owner, &c.TreeID)
@@ -526,7 +567,7 @@ func applyLocationCorrection(ctx context.Context, tx pgx.Tx, c LocationCorrectio
 		`, head.ID, c.ID); err != nil {
 			return err
 		}
-		if err := insertChainRow(ctx, tx, c, act, actor, nil, now); err != nil {
+		if err := insertChainRow(ctx, tx, c, act, actor, nil, public, now); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -559,7 +600,7 @@ func applyLocationCorrection(ctx context.Context, tx pgx.Tx, c LocationCorrectio
 		if successor == nil {
 			return errors.New("a correction older than the head has nothing after it")
 		}
-		if err := insertChainRow(ctx, tx, c, act, actor, &successor.ID, now); err != nil {
+		if err := insertChainRow(ctx, tx, c, act, actor, &successor.ID, false, now); err != nil {
 			return err
 		}
 		if predecessor != nil {
@@ -575,18 +616,18 @@ func applyLocationCorrection(ctx context.Context, tx pgx.Tx, c LocationCorrectio
 	return writeEvent(ctx, tx, event{
 		ID: &c.ID, TreeID: c.TreeID, Kind: "location_corrected", ClientUUID: act.ClientUUID,
 		Actor: actor, OccurredAt: act.OccurredAt, Before: before,
-		After: at(c.Lat, c.Lon, c.Placement, c.AccuracyM),
+		After: at(c.Lat, c.Lon, c.Placement, c.AccuracyM), Public: public,
 	}, now)
 }
 
-func insertChainRow(ctx context.Context, tx pgx.Tx, c LocationCorrection, act newTreeAct, actor Actor, supersededBy *uuid.UUID, now time.Time) error {
+func insertChainRow(ctx context.Context, tx pgx.Tx, c LocationCorrection, act newTreeAct, actor Actor, supersededBy *uuid.UUID, wasPublic bool, now time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO community_tree_locations
 		    (id, tree_id, lat, lon, placement, location_accuracy_m, contribution_client_uuid,
-		     actor_user_id, actor_device_id, occurred_at, recorded_at, superseded_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		     actor_user_id, actor_device_id, occurred_at, recorded_at, superseded_by, was_public)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`, c.ID, c.TreeID, c.Lat, c.Lon, c.Placement, c.AccuracyM, act.ClientUUID,
-		actor.UserID, actor.DeviceID, act.OccurredAt, now, supersededBy)
+		actor.UserID, actor.DeviceID, act.OccurredAt, now, supersededBy, wasPublic)
 	return err
 }
 
@@ -656,6 +697,9 @@ func materializeSpecies(ctx context.Context, tx pgx.Tx, kind string, s SpeciesSt
 		TreeID: s.TreeID, Kind: eventKind, ClientUUID: act.ClientUUID,
 		Actor: actorOr(act.Actor, act.Owner), OccurredAt: act.OccurredAt,
 		Before: position{SpeciesID: tree.SpeciesID}, After: position{SpeciesID: &s.SpeciesID},
+		// Decision 13: a species named while the tree was private is the adder's history, not the
+		// public's. The species itself is public at publication through the tree's cache.
+		Public: tree.PublishedAt != nil,
 	}, now)
 }
 
@@ -671,25 +715,22 @@ func materializeSpecies(ctx context.Context, tx pgx.Tx, kind string, s SpeciesSt
 // delta reports it as withdrawn exactly as it reports a tombstone.
 //
 // Answers, in order: a tree this service never held is a success that changes nothing (its add
-// may still be in the adder's queue — `treeWasWithdrawnBy` makes that add arrive withdrawn), and a
-// tree the erase door tombstoned is `ErrTreeNotFound`; not the adder is `ErrNotTheAdder`; already
-// withdrawn or taken down is a success that changes nothing; somebody else's live work on it is
-// `ErrOthersBuiltOnTree`.
+// may still be in the adder's queue — `treeWasWithdrawnBy` makes that add arrive withdrawn). A tree
+// the caller may not know exists answers the same (review of #190, F6): one a deletion door
+// tombstoned (its account is gone, so nobody is its adder), and somebody else's withdrawn,
+// taken-down or unpublished tree. Somebody else's visible tree is `ErrNotTheAdder`; the adder's own
+// already withdrawn or taken-down tree is a success that changes nothing; somebody else's visit or
+// photo on it is `ErrOthersBuiltOnTree`.
 func withdrawCommunityTree(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, act newTreeAct, now time.Time) error {
 	tree, err := lockTree(ctx, tx, treeID)
 	if errors.Is(err, ErrTreeNotFound) {
-		var tombstoned bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM withdrawn_community_trees WHERE id = $1)`,
-			treeID).Scan(&tombstoned); err != nil {
-			return err
-		}
-		if tombstoned {
-			return ErrTreeNotFound
-		}
-		return nil
+		return nil // never held, or tombstoned: the same answer
 	}
 	if err != nil {
 		return err
+	}
+	if tree.hiddenFrom(act.Owner) {
+		return nil // what an id nobody sent answers
 	}
 	if !tree.isAddedBy(act.Owner) {
 		return ErrNotTheAdder
@@ -704,10 +745,13 @@ func withdrawCommunityTree(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, act
 	if built {
 		return ErrOthersBuiltOnTree
 	}
-	return markTreeDeleted(ctx, tx, treeID, "withdrawn", act.ClientUUID, actorOr(act.Actor, act.Owner), act.OccurredAt, now)
+	return markTreeDeleted(ctx, tx, treeID, "withdrawn", act.ClientUUID, actorOr(act.Actor, act.Owner), act.OccurredAt, now,
+		tree.PublishedAt != nil)
 }
 
-func markTreeDeleted(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, kind string, clientUUID *uuid.UUID, actor Actor, occurredAt, now time.Time) error {
+// markTreeDeleted soft-removes a tree. `public` is whether the removal belongs to the public
+// history: it does exactly when the tree had been published (decision 13).
+func markTreeDeleted(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, kind string, clientUUID *uuid.UUID, actor Actor, occurredAt, now time.Time, public bool) error {
 	if _, err := tx.Exec(ctx, `
 		UPDATE community_trees SET deleted_at = $2, updated_at = $2 WHERE id = $1
 	`, treeID, now); err != nil {
@@ -715,6 +759,7 @@ func markTreeDeleted(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, kind stri
 	}
 	return writeEvent(ctx, tx, event{
 		TreeID: treeID, Kind: kind, ClientUUID: clientUUID, Actor: actor, OccurredAt: occurredAt,
+		Public: public,
 	}, now)
 }
 
@@ -737,7 +782,7 @@ func (s *Store) TakeDownCommunityTree(ctx context.Context, id uuid.UUID) error {
 			return nil
 		}
 		now := s.now()
-		return markTreeDeleted(ctx, tx, id, "taken_down", nil, Actor{}, now, now)
+		return markTreeDeleted(ctx, tx, id, "taken_down", nil, Actor{}, now, now, tree.PublishedAt != nil)
 	})
 }
 
@@ -810,10 +855,13 @@ func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice
 			anonymized++
 			continue
 		}
+		// `was_public` is the tree's own answer, never a constant: an unpublished tree (decision 12)
+		// must never be reported to anybody (review of #190, F2). Nothing unpublishes (decision
+		// 10), so `published_at IS NOT NULL` is "was ever public".
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO withdrawn_community_trees (id, withdrawn_at) VALUES ($1, $2)
+			INSERT INTO withdrawn_community_trees (id, withdrawn_at, was_public) VALUES ($1, $2, $3)
 			ON CONFLICT (id) DO NOTHING
-		`, tree.ID, now); err != nil {
+		`, tree.ID, now, tree.Published); err != nil {
 			return 0, 0, err
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM community_trees WHERE id = $1`, tree.ID); err != nil {
@@ -876,6 +924,9 @@ type event struct {
 	OccurredAt time.Time
 	Before     position
 	After      position
+	// Public is `in_public_history` (decision 13). The zero value is private, so a writer that
+	// forgets to decide withholds rather than leaks.
+	Public bool
 }
 
 func writeEvent(ctx context.Context, tx pgx.Tx, e event, now time.Time) error {
@@ -898,10 +949,10 @@ func writeEvent(ctx context.Context, tx pgx.Tx, e event, now time.Time) error {
 	_, err = tx.Exec(ctx, `
 		INSERT INTO community_tree_events
 		    (id, tree_id, kind, contribution_client_uuid, actor_user_id, actor_device_id,
-		     occurred_at, recorded_at, before, after)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
+		     occurred_at, recorded_at, before, after, in_public_history)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11)
 	`, id, e.TreeID, e.Kind, e.ClientUUID, e.Actor.UserID, e.Actor.DeviceID, e.OccurredAt, now,
-		nullableJSON(before), nullableJSON(after))
+		nullableJSON(before), nullableJSON(after), e.Public)
 	return err
 }
 
