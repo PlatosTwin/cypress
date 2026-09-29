@@ -53,9 +53,9 @@ type CommunityTreeRecord struct {
 	// else, including the tile, which has no viewer. A tree added in March and published in
 	// September was, to a stranger, added in September; the private months are the adder's. The
 	// history's `added` event says the same day, so the two cannot disagree on one screen.
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	Published   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Published bool
 	// PublishedAt is when the tree went live; nil while it is private.
 	PublishedAt *time.Time
 	// AddedByViewer is §4's rule (`treeRow.isAddedBy`) for the viewer who asked: never true for an
