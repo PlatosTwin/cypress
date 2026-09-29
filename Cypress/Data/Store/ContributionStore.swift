@@ -452,11 +452,16 @@ public struct ContributionStore {
     ///   - **no `outbox_photos` row names it** — the send is not still owed. The row is deleted by
     ///     `OutboxStore.completePhoto` when the send completes; while it exists the photograph is
     ///     waiting for Wi-Fi, or its begin failed, or it has not been tried yet.
+    ///   - **no refusal is recorded for it** — the service did not refuse its send for good. A
+    ///     refusal that will not change deletes the queue row too, so without this a photograph
+    ///     the service turned away read as sent (`OutboxStore.recordRefusedPhoto`).
     ///
-    /// **What this cannot tell apart, stated rather than discovered:** a binary staged before the
-    /// send path existed (`sendable = 0`) has its queue row deleted at the apply, so it reads as
-    /// sent although R77 kept it on the phone. Nothing on this row records the difference, and
-    /// recording it would be a migration.
+    /// **What this cannot tell apart, stated rather than discovered:**
+    ///   - a binary staged before the send path existed (`sendable = 0`) has its queue row deleted
+    ///     at the apply, so it reads as sent although R77 kept it on the phone;
+    ///   - a binary refused for good by a build earlier than the refusal record had its queue row
+    ///     deleted and nothing written, so it reads as sent too.
+    /// Nothing on the row records either difference, and recording it would be a migration.
     public func sentPhotoIDs(treeID: UUID, connection: SQLiteConnection) throws -> Set<UUID> {
         let statement = try connection.cachedStatement("""
             SELECT id FROM photos
@@ -467,8 +472,15 @@ public struct ContributionStore {
                      SELECT 1 FROM outbox_photos
                       WHERE outbox_photos.photo_id = photos.id COLLATE NOCASE
                    )
+               AND NOT EXISTS (
+                     SELECT 1 FROM app_state
+                      WHERE app_state.key = :refused || upper(photos.id)
+                   )
             """)
-        _ = try statement.bind(treeID.uuidString, forName: ":tree")
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":refused": OutboxStore.refusedPhotoKeyPrefix,
+        ])
         return Set(try statement.fetchAll { try $0.uuid("id") })
     }
 

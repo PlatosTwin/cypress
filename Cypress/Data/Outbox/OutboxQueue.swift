@@ -508,9 +508,13 @@ public actor OutboxQueue {
                         // than left with a photograph that silently evaporated: screen 17 draws
                         // `retry`, carrying the reason this binary was refused. Tapping retry
                         // settles the item, because by then there is nothing left owed.
+                        //
+                        // **And it is recorded as refused, not only deleted.** A binary with no
+                        // queue row reads as sent (`ContributionStore.sentPhotoIDs`), and the
+                        // service keeps no copy of this one. See `OutboxStore.recordRefusedPhoto`.
                         if let code, !code.retryable {
                             try await queue.write { connection in
-                                try store.completePhoto(id: photo.id, connection: connection)
+                                try store.recordRefusedPhoto(photo, code: code, connection: connection)
                             }
                             // **Recorded in phase D, not here.** `markRemotelySent` clears
                             // `last_error` and `last_error_code` — correctly, since the note did go

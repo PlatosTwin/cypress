@@ -1126,9 +1126,9 @@ public struct RoutedAPI: CypressAPI {
     /// - **Keyed rows only.** The service sends a key only to that photograph's own contributor, so
     ///   a stranger's photograph can never be folded away however closely it matches.
     /// - **Sent local rows only** (review of #194, finding 1). A photograph that has not been sent —
-    ///   waiting for Wi-Fi, a failed begin, the add-a-tree photograph — has no copy on the service,
-    ///   so an own row that matches it is some other photograph: the same account's other phone,
-    ///   same framing, same second. Pairing them hid that photograph and named it in this one's
+    ///   waiting for Wi-Fi, a failed begin, a begin refused for good, the add-a-tree photograph —
+    ///   has no copy on the service, so an own row that matches it is some other photograph: the
+    ///   same account's other phone, same framing, same second. Pairing them hid that photograph and named it in this one's
     ///   withdrawal, which would have deleted it.
     /// - **The signed gap** (finding 2). The wire keeps whole seconds and truncates — the client's
     ///   `.iso8601` encoder and the service's `Timestamp` both drop the fraction — while the phone's
@@ -1384,7 +1384,8 @@ public actor PhotoIdentityLedger {
 /// `RoutedAPI.photoIdentityMatch` (report F30).
 public struct PhotoIdentityEvidence: Sendable, Equatable {
     /// Live local photographs that have left the phone — applied through the outbox, with no send
-    /// still owed (`ContributionStore.sentPhotoIDs`). The only rows the inexact link may pair.
+    /// still owed and none refused for good (`ContributionStore.sentPhotoIDs`). The only rows the
+    /// inexact link may pair.
     public var sent: Set<UUID>
     /// The ids this phone's **still-queued** `photo_withdrawal`s on the tree name
     /// (`OutboxStore.queuedPhotoWithdrawals`): the phone's id, which is the begin's key, or the
