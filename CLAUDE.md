@@ -87,11 +87,18 @@ conflicts with convenience, the rule wins.
   - `this diff is server-only` — added by the owner's ruling of 2026-09-28. **Not prose and not
     untested**: `server/` outside `server/testdata/` (adding or editing, never removing — a removal
     runs the suite, because docs cite `server/README.md`) is tested by the Go suite against
-    Postgres, which `testflight.yml` runs as its `server` job and `gate` refuses to pass without.
-    So here a green `gate` **does** say the Go suite passed — but it says nothing about the iOS
-    app, which was not built. **Go and read the `Server` run for that commit** (the `server / server`
-    job on the pull request) before citing it. `server/testdata/` and any server-plus-app mix still
-    get `the suite runs`, as does a diff with both web and server paths.
+    Postgres. It says nothing about the iOS app, which was not built. What to open depends on
+    where you are reading, because the Go suite runs in a different place on each:
+    - **on a pull request** there is no separate Server run: the Go suite is the
+      **`server / server` job inside that TestFlight run**, and `gate` refuses to pass without it,
+      so here a green `gate` does say the Go suite passed. Open that job to read its
+      `VERIFY-SERVER-` verdict.
+    - **on main's push commit** TestFlight does not run the Go suite at all and its `gate` says
+      nothing about Go: **go and read the `Server` workflow's run for that commit**, which
+      `server.yml` starts by itself on the push, and if it did not run, nothing did.
+
+    `server/testdata/` and any server-plus-app mix still get `the suite runs`, as does a diff with
+    both web and server paths, or a path git could print only in quotes.
 
   A one-minute run did not test anything, and it does not claim to.
 

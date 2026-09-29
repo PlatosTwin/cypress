@@ -963,7 +963,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
    the top of **both** `withdrawMeasurement` and `measurementWasWithdrawn`, which serialises only
    same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
    recipe, and red-prove the race itself first so the fix has a witness. `server.yml` now runs the
-   suite against Postgres and refuses a skip, but it is not a required check: read its run.
+   suite against Postgres and refuses a skip, and since `ci/server-only-skips-ios` it is required on
+   pull requests through `gate` (TestFlight's `server / server` job); on main's push commit, read
+   the `Server` workflow's own run.
 10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
     readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
     to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
