@@ -1670,3 +1670,5 @@ unchanged.)
 
 *(The "no test target" entry that stood here is resolved: `CypressTests` is a hosted swift-testing
 bundle and has been since M2. It found two shipped bugs on the day it was wired.)*
+
+<!-- calibration (throwaway): a prose-only change. -->
