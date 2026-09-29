@@ -285,6 +285,15 @@ var withheldKinds = map[string]string{
 	// is ERRATA E280's sentence and is exactly what `005`'s own header warns the next round about.
 	"data_dispute":            "an unadjudicated assertion about a record; nothing here adjudicates it",
 	"data_dispute_withdrawal": "a removal; its effect is visible, the act is not",
+
+	// ── The community-trees round's two (007) ───────────────────────────────────────────────────
+	//
+	// A moved pin is `add_tree`'s case: a community tree is in no published pack, so it has no page
+	// here, and the tree's position is served (to the app, by S2) as the tree's own fact rather than
+	// as a record of who moved it. Its history is decision 4's: anonymous on the tree's profile,
+	// full detail on the server only — never on an unauthenticated page.
+	"location_correction": "a community tree is in no published pack; its effect is the tree's position, not a public record",
+	"tree_withdrawal":     "a removal; its effect is visible, the act is not",
 }
 
 // kindsAwaitingTheirMigration are kinds classified above whose `CHECK` value is not in this tree yet.

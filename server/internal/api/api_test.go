@@ -108,7 +108,8 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(dataStore.Close)
 	_, err = dataStore.Pool().Exec(context.Background(), `
 		TRUNCATE anonymized_contributions, favorites, contributions, community_trees, photos,
-		         device_tokens, sessions, devices, users RESTART IDENTITY CASCADE
+		         withdrawn_community_trees, device_tokens, sessions, devices, users
+		         RESTART IDENTITY CASCADE
 	`)
 	if err != nil {
 		t.Fatalf("truncating: %v", err)

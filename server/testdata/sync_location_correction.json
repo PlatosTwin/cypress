@@ -1,0 +1,26 @@
+{
+  "items": [
+    {
+      "client_uuid": "6F0D0C2E-3B1A-4C47-9E0B-7C9A5D2B1E01",
+      "kind": "location_correction",
+      "tree_uuid": "C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7A",
+      "occurred_at": "2026-09-28T17:05:00Z",
+      "payload": {
+        "id": "8B2E4D6F-1A3C-4E5B-9D7F-0C2A4B6D8E10",
+        "clientUUID": "6F0D0C2E-3B1A-4C47-9E0B-7C9A5D2B1E01",
+        "treeID": "C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7A",
+        "coordinate": {
+          "latitude": 37.76015,
+          "longitude": -122.50505
+        },
+        "placement": "contributor_placed",
+        "locationAccuracyM": 4.5,
+        "attribution": {
+          "deviceID": "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F6"
+        },
+        "occurredAt": "2026-09-28T17:05:00Z"
+      },
+      "device_id": "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F6"
+    }
+  ]
+}
