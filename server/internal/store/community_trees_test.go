@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -72,12 +74,17 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 	liveAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	acceptedLater := liveAt.Add(19 * 24 * time.Hour)
 	accepter, lateAccepter, decliner, device := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	// L2: before this round any string was stored as a consent, so a pre-007 row can hold ''. It is
+	// not an acceptance, and its tree must not be published.
+	emptyVersion := uuid.New()
+	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'e', '', $2)`, emptyVersion, liveAt.Add(-48*time.Hour))
 	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'a', 'odbl-1.0', $2)`, accepter, liveAt.Add(-48*time.Hour))
 	exec(`INSERT INTO users (id, apple_subject, license_version, license_accepted_at) VALUES ($1, 'l', 'odbl-1.0', $2)`, lateAccepter, acceptedLater)
 	exec(`INSERT INTO users (id, apple_subject) VALUES ($1, 'd')`, decliner)
 	exec(`INSERT INTO devices (id, device_uuid) VALUES ($1, $2)`, device, uuid.New())
 
 	accepted, acceptedLate, declined, deviceOwned, orphan := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	nonVersion := uuid.New()
 	insert := func(id uuid.UUID, user, dev *uuid.UUID) {
 		exec(`INSERT INTO community_trees (id, lat, lon, placement, user_id, device_id, created_at, updated_at)
 		      VALUES ($1, 37.76, -122.5, 'gps', $2, $3, $4, $5)`, id, user, dev, liveAt.Add(-time.Hour), liveAt)
@@ -85,6 +92,7 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 	insert(accepted, &accepter, nil)
 	insert(acceptedLate, &lateAccepter, nil)
 	insert(declined, &decliner, nil)
+	insert(nonVersion, &emptyVersion, nil)
 	insert(deviceOwned, nil, &device)
 	insert(orphan, nil, nil)
 	addKey := uuid.New()
@@ -144,6 +152,7 @@ func TestMigration007BackfillsTheTreesThatAlreadyExist(t *testing.T) {
 		"an accepting account's tree":            {accepted, true, false, liveAt},
 		"a tree whose account accepted after it": {acceptedLate, true, false, acceptedLater},
 		"a declining account's tree":             {declined, false, false, time.Time{}},
+		"an account holding license_version ''":  {nonVersion, false, false, time.Time{}},
 		"a device's tree":                        {deviceOwned, false, false, time.Time{}},
 		"a deleted account's orphan":             {orphan, false, true, time.Time{}},
 	} {
@@ -483,6 +492,76 @@ func TestTheTileIndexesServeTheirQueries(t *testing.T) {
 		}
 		if !strings.Contains(strings.Join(plan, "\n"), c.index) {
 			t.Errorf("%s: the generic plan does not use %s:\n%s", c.arm, c.index, strings.Join(plan, "\n"))
+		}
+	}
+}
+
+// TestTheBackfillsAcceptedVersionIsOneTheLivePathAccepts ties 007's backfill to the live path. The
+// backfill names the versions it counts as an acceptance as SQL literals, and the live path decides
+// through `accountLicense` (S2's L2 fix adds `knownLicenseVersions` there). The two must agree: a
+// tree the backfill publishes for a version must be one a live acceptance of that version would
+// publish, or a tree published by the migration would be one the service itself would refuse to.
+//
+// It reads the literals out of the migration file, calibrated against the one it must find, and
+// drives each through the production writers.
+func TestTheBackfillsAcceptedVersionIsOneTheLivePathAccepts(t *testing.T) {
+	raw, err := os.ReadFile("../../migrations/007_community_trees.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	literals := regexp.MustCompile(`(?m)^\s+AND u\.license_version = '([^']*)';`).FindAllStringSubmatch(string(raw), -1)
+	if len(literals) != 1 || literals[0][1] != "odbl-1.0" {
+		t.Fatalf("calibration: 007's backfill names %v as accepted versions; this test expects the one "+
+			"it was written against, 'odbl-1.0' — read the migration before changing either", literals)
+	}
+
+	s := testStore(t)
+	ctx := context.Background()
+	for _, literal := range literals {
+		version := literal[1]
+		user := makeUser(t, s, "backfill-agrees-"+version)
+		if err := s.RecordLicenseConsent(ctx, user.ID, &version, nil); err != nil {
+			t.Fatal(err)
+		}
+		tree := uuid.New()
+		if _, err := s.AddTree(ctx, NewCommunityTree{ID: tree, Lat: 37.76, Lon: -122.5, Placement: "gps"}, UserOwner(user.ID), Actor{}); err != nil {
+			t.Fatal(err)
+		}
+		var published bool
+		if err := s.pool.QueryRow(ctx, `SELECT published_at IS NOT NULL FROM community_trees WHERE id = $1`, tree).Scan(&published); err != nil {
+			t.Fatal(err)
+		}
+		if !published {
+			t.Errorf("007's backfill publishes for license_version %q, and a live acceptance of it "+
+				"does not publish: the two paths disagree about what an acceptance is", version)
+		}
+	}
+}
+
+// TestAPhotosCaptureDateIsHeldToItsDay is 007's `photos_captured_on_is_the_captured_day`: the
+// handler's one-day rule restated where no writer can skip it, with the boundary rows as controls.
+func TestAPhotosCaptureDateIsHeldToItsDay(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	_, deviceID := makeDevice(t, s)
+	insert := func(capturedOn string) error {
+		id := uuid.New()
+		_, err := s.pool.Exec(ctx, `
+			INSERT INTO photos (id, tree_uuid, device_id, shot_type, moderation_state, captured_at,
+			                    storage_key, created_at, updated_at, captured_on)
+			VALUES ($1, $2, $3, 'full_tree', 'pending', '2026-09-28T23:30:00Z', $5, now(), now(), $4::date)
+		`, id, uuid.New(), deviceID, capturedOn, "photos/"+id.String()+".jpg")
+		return err
+	}
+	for _, day := range []string{"2026-09-27", "2026-09-28", "2026-09-29"} {
+		if err := insert(day); err != nil {
+			t.Fatalf("control: captured_on %s, within a day of the UTC date, was refused: %v", day, err)
+		}
+	}
+	for _, day := range []string{"2026-09-26", "2026-09-30"} {
+		err := insert(day)
+		if err == nil || !strings.Contains(err.Error(), "photos_captured_on_is_the_captured_day") {
+			t.Errorf("captured_on %s, two days from the UTC date: err = %v, want the CHECK", day, err)
 		}
 	}
 }
