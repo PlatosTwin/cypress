@@ -78,7 +78,7 @@ Decision 6, applied, plus one case it does not name:
 - **`leaveRecords`**: a published tree the account added is anonymized. It stays published, and
   nobody may move or withdraw it afterwards.
 - **`eraseEverything`**: a published tree is deleted and tombstoned (`withdrawn_community_trees`),
-  unless another identity has a live contribution or photograph on it, in which case it is
+  unless another identity has met it (a visit or a photo, as defined below), in which case it is
   anonymized.
 - **An unpublished tree** (its account declined the license) is **deleted and tombstoned under
   both doors.** Nobody but its adder ever saw it. Anonymized, it would be a row that no account
@@ -86,25 +86,27 @@ Decision 6, applied, plus one case it does not name:
 - Actor columns on the location chain and the audit log are nulled for the account **and for
   every device it claimed** before `devices.user_id` is cleared.
 
-### R??? — "Somebody else has built on it" (decisions 6 and 8)
+### R??? — "Somebody else has built on it" means a visit or a photo (decisions 6 and 8)
 
-This means another identity has a **live contribution or photograph** on the tree:
+**Decided by:** the orchestrator, after #187's fix round. It **supersedes** S1's first definition,
+which counted every live contribution except the withdrawal kinds. The owner's own words for
+decisions 6 and 8 were "if anyone else has a visit or photo on the tree", and the code now holds
+to them. A tree counts as built on when another identity has either of these:
 
-- A contribution counts when it is not deleted and is not a removal. The four withdrawal kinds
-  (`photo_withdrawal`, `measurement_withdrawal`, `data_dispute_withdrawal`, `tree_withdrawal`) are
-  somebody taking their own work back, not work anchored to the tree.
-- A photograph counts when it is not deleted, not `rejected`, and **its bytes have arrived**
-  (`bytes_received_at` set). A begun upload with no bytes is a reservation nobody can see. (The
-  orchestrator's ruling after #187's review.)
-- **A dispute its raiser took back does not count.** `data_dispute_withdrawal` tombstones nothing,
-  so the dispute row stays live. The pair is matched instead: same dispute id (case-insensitive,
-  the same `upper()` the ownership gate uses), same tree, same owner columns. "Same owner" matters.
-  Without it, the adder could clear a stranger's dispute by withdrawing it under the adder's own
-  identity, through the twin-raise route `store/disputes.go` documents. The other paired kinds
-  need no matching: `photo_withdrawal` and `measurement_withdrawal` set the target's `deleted_at`,
-  which the filters already read.
-- An anonymized row counts. It is somebody's work with the name taken off.
-- Every other kind counts, including a stranger's favorite and private reminder.
+- a live contribution of a **met kind**: `visit`, `observation`, `measurement` or `care_event`.
+  This is the set #184 names `MetSpeciesKinds`, and S1 keeps its own copy (`builtOnKinds`) until
+  the two unify at merge. "Live" means not deleted, so a measurement its taker withdrew does not
+  count;
+- a live photograph: not deleted, not `rejected`, and **its bytes have arrived**
+  (`bytes_received_at` set). A begun upload with no bytes is a reservation nobody can see (the
+  orchestrator's ruling after #187's review).
+
+Favorites, photo votes, private reminders, species claims and corrections, reports, disputes, and
+review dismissals do **not** count, and neither does a hazard redirect. The first definition
+needed extra rules to pair a dispute with its withdrawal and to handle toggles that had been turned
+off. Those rules go with it.
+
+An anonymized row still counts. It is somebody's visit or photo with the name taken off.
 
 ### R??? — The adder's withdrawal: kind `tree_withdrawal`, soft, and arrival-order safe
 
