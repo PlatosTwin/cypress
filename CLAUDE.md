@@ -55,8 +55,9 @@ conflicts with convenience, the rule wins.
     rather than the run.
   - `git stash pop` with no argument popped a stash from a deleted agent worktree, nine days old.
     A `pop` acts on whatever it finds.
-  - `log show …` in zsh runs the shell's own `log` builtin, prints nothing, and exits quietly, so
-    an empty result looks like "the daemon logged nothing" (2026-09-29). Call `/usr/bin/log`, and
+  - `log show …` in zsh runs the shell's own `log` builtin, which prints `too many arguments` to
+    stderr and exits 1. With stderr discarded (`2>/dev/null`, a pipe into `wc -l`, a command
+    substitution) that reads as "the daemon logged nothing" (2026-09-29). Call `/usr/bin/log`, and
     check that `/usr/bin/log show --last 1m | wc -l` is nonzero before believing a zero.
   This project's tooling is gated — `run_tests.sh`, `verify_test_log.sh`,
   `UITestShardCoverageTests`, `DragGestureGateTests`. **The commands you type to make claims about

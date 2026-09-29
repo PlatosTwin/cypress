@@ -1100,6 +1100,10 @@ OTHER_XCODEBUILDS="$(count_live_xcodebuilds)"
 #
 # Local only: CI has no listener, and there the clamp would only cost time. A timing measurement
 # should opt out with CYPRESS_RUN_TESTS_QOS=default, since a clamped run is slower by design.
+case "${CYPRESS_RUN_TESTS_QOS:-utility}" in
+  utility|default) ;;
+  *) echo "WARNING: CYPRESS_RUN_TESTS_QOS=${CYPRESS_RUN_TESTS_QOS} is not 'utility' or 'default'; running UNCLAMPED." >&2 ;;
+esac
 QOS_PREFIX=()
 QOS_LABEL=default
 if [ -z "${CI:-}" ] && [ "${CYPRESS_RUN_TESTS_QOS:-utility}" = "utility" ] && command -v taskpolicy >/dev/null 2>&1; then
