@@ -1185,3 +1185,75 @@ func TestTreeHistoryGolden(t *testing.T) {
 	}
 	compareGolden(t, "tree_history.json", recorder.Body.Bytes())
 }
+
+// ── The profile's other three shapes (the #190 review's contract gap) ─────────────────────────
+//
+// Nearly every profile a phone opens is not a community tree at all, so the shape with
+// `community_tree: null` is the common one and gets fixtures of its own: a city tree (no community
+// row, but somebody's photograph and visit on it), an id nobody sent, and a community tree hidden
+// from the caller — which must be the unknown id's bytes, under its own id.
+
+var (
+	goldenCityTree   = uuid.MustParse("3c1e7a90-2b4d-4f6e-8a1c-0d9e8f7a6b01")
+	goldenUnknownID  = uuid.MustParse("3c1e7a90-2b4d-4f6e-8a1c-0d9e8f7a6b02")
+	goldenHiddenTree = uuid.MustParse("3c1e7a90-2b4d-4f6e-8a1c-0d9e8f7a6b03")
+	goldenCityPhoto  = uuid.MustParse("8c1cc8a2-ded9-4bd5-ae4f-af2b0174bf02")
+	goldenHidPhoto   = uuid.MustParse("8c1cc8a2-ded9-4bd5-ae4f-af2b0174bf03")
+)
+
+func TestTreeProfileCityGolden(t *testing.T) {
+	h := newHarness(t)
+	photographer := signInAs(t, h, "ct.golden.city", nil, accepted())
+	execSQL(t, h, `
+		INSERT INTO photos (id, tree_uuid, user_id, shot_type, moderation_state, approval_reason,
+		                    captured_at, storage_key, bytes_received_at)
+		VALUES ($1, $2, $3, 'trunk', 'approved', 'auto_approved_launch', '2026-09-23T10:00:00Z',
+		        'photos/golden-city', '2026-09-23T10:00:04Z')
+	`, goldenCityPhoto, goldenCityTree, photographer.UserID)
+	execSQL(t, h, `
+		INSERT INTO contributions (client_uuid, kind, tree_uuid, user_id, occurred_at, payload)
+		VALUES ('3c1e7a90-2b4d-4f6e-8a1c-0d9e8f7a6c01', 'visit', $1, $2, '2026-09-23T10:00:00Z', '{}')
+	`, goldenCityTree, photographer.UserID)
+	body := profileOf(t, h, h.registerDeviceToken(t, uuid.New()), goldenCityTree)
+	if body.CommunityTree != nil || body.VisitCount != 1 || !body.hasPhoto(goldenCityPhoto) {
+		t.Fatalf("fixture: a city tree's profile should carry the photograph and the visit and no tree: %s", body.raw)
+	}
+	compareGolden(t, "tree_profile_city.json", body.raw)
+}
+
+func TestTreeProfileUnknownGolden(t *testing.T) {
+	h := newHarness(t)
+	compareGolden(t, "tree_profile_unknown.json",
+		profileOf(t, h, h.registerDeviceToken(t, uuid.New()), goldenUnknownID).raw)
+}
+
+// TestTreeProfileHiddenGolden is a withdrawn community tree with its adder's photograph and visit
+// on it, asked by a stranger: the file must be the unknown id's file with the id changed.
+func TestTreeProfileHiddenGolden(t *testing.T) {
+	h := newHarness(t)
+	adder := signInAs(t, h, "ct.golden.hidden", nil, accepted())
+	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(goldenHiddenTree, ctLat, ctLon, time.Now())), "add")
+	execSQL(t, h, `
+		INSERT INTO photos (id, tree_uuid, user_id, shot_type, moderation_state, approval_reason,
+		                    captured_at, storage_key, bytes_received_at)
+		VALUES ($1, $2, $3, 'full_tree', 'approved', 'auto_approved_launch', '2026-09-23T11:00:00Z',
+		        'photos/golden-hidden', '2026-09-23T11:00:04Z')
+	`, goldenHidPhoto, goldenHiddenTree, adder.UserID)
+	mustApply(t, h.syncOne(t, adder.AccessToken, visitItem(goldenHiddenTree)), "the adder's visit")
+	mustApply(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(goldenHiddenTree)), "withdrawal")
+
+	got := profileOf(t, h, h.registerDeviceToken(t, uuid.New()), goldenHiddenTree).raw
+	compareGolden(t, "tree_profile_hidden.json", got)
+
+	unknown, err := os.ReadFile(filepath.Join(goldenDir, "tree_profile_unknown.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := os.ReadFile(filepath.Join(goldenDir, "tree_profile_hidden.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := bytes.ReplaceAll(unknown, []byte(goldenUnknownID.String()), []byte(goldenHiddenTree.String())); !bytes.Equal(hidden, want) {
+		t.Fatalf("tree_profile_hidden.json is not tree_profile_unknown.json under another id:\n%s\n---\n%s", hidden, want)
+	}
+}
