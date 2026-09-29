@@ -543,7 +543,7 @@ file.
   decision needed to fix the defect; the header's one-row layout at the lengths the mocks draw
   must not change.
 
-- **F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
+- ~~**F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
   verbatim: *"Pill says two photos but when I click in I see only one. Bug?"* The screenshot is
   screen 03 for a `Ginkgo, Autumn Gold` in SF with `2 photos · since 2026` on the hero pill and one
   `Visit · leaf out` row. **Not reproduced; which tap the tester made is unknown, and the two
@@ -556,7 +556,20 @@ file.
   series (`TreeProfile.visiblePhotos`, E215; `RoutedAPI.refreshedTreeProfile` merges the
   community half by photo id), so the count and the list should not disagree, and the first step
   is to reproduce it on a tree with two photographs from one visit. Small once the reading is
-  known.
+  known.~~
+  **FIXED** by `fix/photo-identity-dedupe`, and the doubling is shown to be its cause. A photograph
+  this phone sent came back from `GET /trees/{id}` under the service's own `photo_id`, which the
+  phone never keeps, and `RoutedAPI.refreshedTreeProfile` deduped by id alone — so the phone's copy
+  and the service's were both counted. Reproduced through the real composition root (one visit,
+  one photograph, sent and read back) as exactly this screenshot: one `Visit` row under
+  `2 photos · since 2026`. The fix makes the phone's `photos.id` the begin's `client_uuid`, has the
+  service echo that key on the caller's own rows only, and folds by id, by key, or — for
+  photographs sent by build 77 and earlier — by framing and capture second on keyed own rows. **It
+  needs a server deploy to take effect.** Which tap the tester made is still unknown; the photo
+  browser also listed the second copy once the refresh landed (in the reproduction it drew as a
+  placeholder tile; whether production's bytes would have filled it was not observed), so "only
+  one" fits either a tap on the photograph (by design, E125) or a browser read before its refresh. The design question of whether anything should point
+  a reader at the pill is not raised by this defect and is not opened here.
 
 - **F31 — move a tree you added, and let other people see it.** Build 77, 2026-09-26, verbatim:
   *"Need to be able to edit location on self-added trees and need self added ones to go to
