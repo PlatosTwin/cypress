@@ -799,9 +799,11 @@ public struct OutboxStore {
     /// rather than a retryable failure).
     ///
     /// A refusal after the begin (the storage `PUT`, or the receipt) is recorded the same way. The
-    /// service's row for it is never marked received and is collected after 72 h
-    /// (`RemoteAPI.uploadPhoto`), and while it lasts it carries this photograph's own key, which
-    /// photo identity's exact link matches without consulting this record.
+    /// service's row for it is never marked received. Nothing on the service collects such a row
+    /// (the 72 h collection `RemoteAPI.uploadPhoto` and migration 001 describe has no code behind
+    /// it; `docs/ROADMAP.md` chip backlog 67), so it stays, listed to strangers. It carries this
+    /// photograph's own key, which photo identity's exact link matches without consulting this
+    /// record.
     ///
     /// **Why `app_state` and not a column.** Nothing on `photos` or `outbox_photos` can carry the
     /// fact without a migration, and the row that could have carried it is the one being deleted.

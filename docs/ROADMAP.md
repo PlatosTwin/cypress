@@ -1651,7 +1651,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     "built on" (a photograph with no bytes is neither), not for the listing. And the garbage
     collection of a record with no arriving binary after 72 hours, which
     `server/migrations/001_initial.sql` says happens server-side, has no code behind it: only
-    comments name it. (From #182.)
+    comments name it. (From #182.) #194 adds a source of these rows: a photograph whose storage
+    `PUT` or receipt is refused for good after its begin succeeded leaves a live, keyed row with no
+    bytes. Its contributor never sees it, because it pairs with their local photograph, so nothing
+    prompts a delete (review of #194 at `07f5b36`, probe R11).
 68. **Screen 10's first paint is local-only, and its season strip says nothing is public.** The card
     can show an approved photograph only after the network answers, because the first paint reads
     the phone. `ShareView.swift` hard-codes "No month has a public photo yet." as the strip's
@@ -1714,8 +1717,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     already tombstoned and the account's row under the same key is live, a second withdrawal answers
     failed and forbidden although the removal happened, and its comment says it succeeds. Nothing is
     wrongly removed; the phone is told a false failure. #194's own remaining finding (a non-retryable
-    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) is being fixed
-    in #194 and is not listed here.
+    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) was fixed in
+    #194. (b) was re-proved by #194's re-review (probe R10, `server/internal/store/photos.go` doc at
+    `:499` against the code at `:542`); make the second withdrawal answer `applied`, since its own
+    removal happened. (c) Also from that re-review, cosmetic and unproved: `RoutedAPI` reads the
+    phone's withdrawal evidence after the remote fetch, so a withdrawal the drain answers during a
+    refresh can leave that copy deletable for one refresh; read the evidence before the fetch.
 77. **iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
     question failed on CI's iOS 26 shard and became an `.alert`). Seven sites still use a
     `confirmationDialog`: `GrowthHistoryView:45`, `CheckInView:94`, `AccountDeletionSheet:88`,
