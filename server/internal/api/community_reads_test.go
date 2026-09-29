@@ -757,7 +757,11 @@ func TestTheHistoryIsAnonymousNewestFirstAndDayPrecise(t *testing.T) {
 	adder := signInAs(t, h, "ct.history.adder", &deviceUUID, accepted())
 	tree, correction, species := uuid.New(), uuid.New(), uuid.New()
 	base := time.Now().UTC().Add(-72 * time.Hour)
+	// The add lands (and so goes live) on a server whose clock reads `base`, so the acts after it
+	// are after publication — the order a real signed-in add, then move, then naming has.
+	h.server.Store = h.store.WithClock(func() time.Time { return base })
 	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, ctLat, ctLon, base)), "add")
+	h.server.Store = h.store
 	mustApply(t, h.syncOne(t, adder.AccessToken, correctionItem(tree, correction, north(12), ctLon, base.Add(24*time.Hour))), "move")
 	mustApply(t, h.syncOne(t, adder.AccessToken, map[string]any{
 		"client_uuid": uuid.New(), "kind": "species_claim", "tree_uuid": tree,
@@ -770,8 +774,9 @@ func TestTheHistoryIsAnonymousNewestFirstAndDayPrecise(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("a stranger's history of a published tree answered %d: %s", code, body.raw)
 	}
-	// `published` is stamped by the server when the add landed (now), so it is the newest.
-	if got := body.kinds(); !slices.Equal(got, []string{"published", "species_named", "location_corrected", "added"}) {
+	// The public record's "added" is the `published` event (decision 13), so `published` never
+	// appears on the wire and the stored `added` is never served.
+	if got := body.kinds(); !slices.Equal(got, []string{"species_named", "location_corrected", "added"}) {
 		t.Fatalf("kinds = %v, want newest first", got)
 	}
 	wantKeys := []string{"from_coordinate", "from_species_id", "id", "kind", "occurred_at", "placement",
@@ -807,7 +812,7 @@ func TestTheHistoryIsAnonymousNewestFirstAndDayPrecise(t *testing.T) {
 		At   string          `json:"occurred_at"`
 		Pl   *string         `json:"placement"`
 	}
-	encoded, _ := json.Marshal(body.Events[2])
+	encoded, _ := json.Marshal(body.Events[1])
 	if err := json.Unmarshal(encoded, &move); err != nil {
 		t.Fatal(err)
 	}
@@ -819,12 +824,25 @@ func TestTheHistoryIsAnonymousNewestFirstAndDayPrecise(t *testing.T) {
 	var named struct {
 		To *uuid.UUID `json:"to_species_id"`
 	}
-	_ = json.Unmarshal(mustJSON(t, body.Events[1]), &named)
+	_ = json.Unmarshal(mustJSON(t, body.Events[0]), &named)
 	if named.To == nil || *named.To != species {
-		t.Fatalf("the naming reads %s", mustJSON(t, body.Events[1]))
+		t.Fatalf("the naming reads %s", mustJSON(t, body.Events[0]))
+	}
+	var wentLive struct {
+		To *wireCoordinate `json:"to_coordinate"`
+		At string          `json:"occurred_at"`
+		Pl *string         `json:"placement"`
+	}
+	_ = json.Unmarshal(mustJSON(t, body.Events[2]), &wentLive)
+	if wentLive.To == nil || wentLive.To.Latitude != ctLat || wentLive.Pl == nil || *wentLive.Pl != "gps" ||
+		wentLive.At != dayOf(base).Format(time.RFC3339) {
+		t.Fatalf("the public \"added\" reads %s; want the position and day it went live", mustJSON(t, body.Events[2]))
+	}
+	if bytes.Contains(body.raw, []byte("license_version")) || bytes.Contains(body.raw, []byte("odbl")) {
+		t.Fatalf("the published event's license version is on the wire: %s", body.raw)
 	}
 	if !*body.Complete {
-		t.Fatal("a four-event history says it is incomplete")
+		t.Fatal("a three-event history says it is incomplete")
 	}
 }
 
@@ -857,7 +875,9 @@ func TestTheHistoryIsNotFoundWhereTheTreeIsNot(t *testing.T) {
 			t.Errorf("%s: the refusal is not not_found: %s", c.name, body.raw)
 		}
 		if c.control != "" {
-			if code, body := readHistory(t, h, c.control, c.tree); code != http.StatusOK || len(body.Events) == 0 {
+			// The adder's own unpublished tree has a history, and it is empty: the history is the
+			// public one, and this tree has not gone live (decision 13).
+			if code, body := readHistory(t, h, c.control, c.tree); code != http.StatusOK || len(body.Events) != 0 {
 				t.Errorf("control, %s: its adder's history answered %d: %s", c.name, code, body.raw)
 			}
 		}
@@ -870,12 +890,12 @@ func TestTheHistoryIsCappedAtTwoHundred(t *testing.T) {
 	adder := signInAs(t, h, "ct.cap.adder", nil, accepted())
 	tree := uuid.New()
 	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, ctLat, ctLon, time.Now().Add(-500*time.Hour))), "add")
-	// Two events already (added, published). 199 more is 201: one over.
+	// One public event already (published; the stored `added` is private). 200 more is 201: one over.
 	execSQL(t, h, `
-		INSERT INTO community_tree_events (id, tree_id, kind, occurred_at, after)
+		INSERT INTO community_tree_events (id, tree_id, kind, occurred_at, after, in_public_history)
 		SELECT gen_random_uuid(), $1, 'location_corrected', now() - make_interval(hours => g),
-		       jsonb_build_object('lat', 37.7601, 'lon', -122.505, 'placement', 'gps')
-		  FROM generate_series(1, 199) AS g
+		       jsonb_build_object('lat', 37.7601, 'lon', -122.505, 'placement', 'gps'), true
+		  FROM generate_series(1, 200) AS g
 	`, tree)
 	stranger := h.registerDeviceToken(t, uuid.New())
 	code, body := readHistory(t, h, stranger, tree)
@@ -892,20 +912,21 @@ func TestTheHistoryIsCappedAtTwoHundred(t *testing.T) {
 }
 
 // TestTheHistoryServesOnlyTheKindsItClassifies: the allow-list is applied to the rows, not
-// assumed from the not-found rule. A `withdrawn` and a `taken_down` row planted on a tree that is
-// still live — a state no writer produces, which is the point — do not reach the wire.
+// assumed from the not-found rule or from `in_public_history`. Every withheld kind, planted on a
+// live tree **and marked public** — a state no writer produces, which is the point — stays off the
+// wire.
 func TestTheHistoryServesOnlyTheKindsItClassifies(t *testing.T) {
 	h := newHarness(t)
 	adder := signInAs(t, h, "ct.kinds.adder", nil, accepted())
 	tree := uuid.New()
 	mustApply(t, h.syncOne(t, adder.AccessToken, addTreeAt(tree, ctLat, ctLon, time.Now().Add(-time.Hour))), "add")
 	for kind := range withheldHistoryKinds {
-		execSQL(t, h, `INSERT INTO community_tree_events (id, tree_id, kind, occurred_at) VALUES (gen_random_uuid(), $1, $2, now())`,
-			tree, kind)
+		execSQL(t, h, `INSERT INTO community_tree_events (id, tree_id, kind, occurred_at, in_public_history)
+		               VALUES (gen_random_uuid(), $1, $2, now(), true)`, tree, kind)
 	}
 	_, body := readHistory(t, h, h.registerDeviceToken(t, uuid.New()), tree)
-	if !slices.Equal(body.kinds(), []string{"published", "added"}) {
-		t.Fatalf("kinds = %v, want [published added]: a withheld kind reached the wire", body.kinds())
+	if !slices.Equal(body.kinds(), []string{"added"}) {
+		t.Fatalf("kinds = %v, want [added] (the published event): a withheld kind reached the wire", body.kinds())
 	}
 }
 
@@ -947,9 +968,10 @@ func TestEveryHistoryEventKindIsClassified(t *testing.T) {
 	declared := eventKindsFromMigrations(t, "../../migrations")
 	for _, kind := range declared {
 		_, withheld := withheldHistoryKinds[kind]
-		if servedHistoryKinds[kind] == withheld {
+		_, served := servedHistoryKinds[kind]
+		if served == withheld {
 			t.Errorf("event kind %q is classified %v served / %v withheld; it must be exactly one",
-				kind, servedHistoryKinds[kind], withheld)
+				kind, served, withheld)
 		}
 	}
 	for kind := range servedHistoryKinds {
@@ -998,6 +1020,10 @@ var (
 	goldenSpeciesTwo = uuid.MustParse("7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7d")
 	goldenPhoto      = uuid.MustParse("8c1cc8a2-ded9-4bd5-ae4f-af2b0174bf01")
 	goldenMove       = uuid.MustParse("a0d4e5f6-1111-4c2d-8e3f-000000000003")
+	// goldenPrivateMove is tree A's move made while it was private (decision 13): in the table,
+	// in no fixture.
+	goldenPrivateMove   = uuid.MustParse("a0d4e5f6-1111-4c2d-8e3f-000000000005")
+	goldenPrivateErased = uuid.MustParse("5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d05")
 )
 
 func goldenTime(text string) time.Time {
@@ -1013,44 +1039,95 @@ func fixedClock(text string) func() time.Time {
 	return func() time.Time { return at }
 }
 
-// seedGoldenWorld is two published trees in one tile, before anything happens to them.
+// seedGoldenWorld is two published trees in one tile, before anything happens to them, written the
+// way 007 records them (decision 13's columns included).
 //
-// Tree A has a species, a stated land context, and deliberately carries seconds in its dates, so
-// the files prove the wire keeps the day only. Tree B has neither species nor land context.
+// Tree A was added signed out at P0, moved privately to P1, and went live at P1 when its phone
+// signed in. So its private `added` event and its private move are in the table and must be in no
+// fixture; the public record starts with the `published` event at P1. Its dates carry seconds, so
+// the files prove the wire keeps the day only. Tree B was added signed in and went live at once.
 func seedGoldenWorld(t *testing.T, h *harness) sessionResponse {
 	t.Helper()
 	adder := signInAs(t, h, "ct.golden.adder", nil, accepted())
-	for _, tree := range []struct {
-		id              uuid.UUID
-		lat, lon        float64
-		species         *uuid.UUID
-		placement, land any
-		at              string
-	}{
-		{goldenTreeA, 37.7601, -122.505, &goldenSpecies, "gps", "street", "2026-09-20T17:04:11Z"},
-		{goldenTreeB, 37.7605, -122.5046, nil, "contributor_placed", nil, "2026-09-21T08:30:00Z"},
-	} {
-		at := goldenTime(tree.at)
-		execSQL(t, h, `
-			INSERT INTO community_trees (id, lat, lon, address, species_id, placement, land_context,
-			                             user_id, published_at, created_at, updated_at)
-			VALUES ($1, $2, $3, '1 Main St', $4, $5, $6, $7, $8, $8, $8)
-		`, tree.id, tree.lat, tree.lon, tree.species, tree.placement, tree.land, adder.UserID, at)
-		execSQL(t, h, `
-			INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at, recorded_at)
-			VALUES ($1, $1, $2, $3, $4, $5, $6, $6)
-		`, tree.id, tree.lat, tree.lon, tree.placement, adder.UserID, at)
-		execSQL(t, h, `
-			INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after)
-			VALUES ($1, $1, 'added', $2, $3, $3, jsonb_build_object('lat', $4::float8, 'lon', $5::float8,
-			        'placement', $6::text, 'species_id', $7::uuid))
-		`, tree.id, adder.UserID, at, tree.lat, tree.lon, tree.placement, tree.species)
-		execSQL(t, h, `
-			INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at)
-			VALUES ($1, $2, 'published', $3, $4::timestamptz, $4::timestamptz + interval '1 second')
-		`, uuid.MustParse("a0d4e5f6-1111-4c2d-8e3f-00000000000"+tree.id.String()[35:]), tree.id, adder.UserID, at)
-	}
+
+	// Tree A.
+	added, privateMove, live := goldenTime("2026-09-20T17:04:11Z"), goldenTime("2026-09-20T18:00:00Z"), goldenTime("2026-09-21T09:00:00Z")
+	execSQL(t, h, `
+		INSERT INTO community_trees (id, lat, lon, address, species_id, placement, land_context,
+		                             user_id, published_at, created_at, updated_at)
+		VALUES ($1, 37.7601, -122.505, '1 Main St', $2, 'contributor_placed', 'street', $3, $4, $5, $4)
+	`, goldenTreeA, goldenSpecies, adder.UserID, live, added)
+	inOneTransaction(t, h, []statement{
+		{`INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at,
+		                                       recorded_at, superseded_by, was_public)
+		  VALUES ($1, $1, 37.7599, -122.5052, 'gps', $2, $3, $3, $4, false)`,
+			[]any{goldenTreeA, adder.UserID, added, goldenPrivateMove}},
+		{`INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at,
+		                                       recorded_at, was_public)
+		  VALUES ($1, $2, 37.7601, -122.505, 'contributor_placed', $3, $4, $4, true)`,
+			[]any{goldenPrivateMove, goldenTreeA, adder.UserID, privateMove}},
+	})
+	execSQL(t, h, `
+		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after, in_public_history)
+		VALUES ($1, $1, 'added', $2, $3, $3,
+		        jsonb_build_object('lat', 37.7599, 'lon', -122.5052, 'placement', 'gps', 'species_id', $4::uuid), false)
+	`, goldenTreeA, adder.UserID, added, goldenSpecies)
+	execSQL(t, h, `
+		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, before, after, in_public_history)
+		VALUES ($1, $2, 'location_corrected', $3, $4, $4,
+		        '{"lat": 37.7599, "lon": -122.5052, "placement": "gps"}',
+		        '{"lat": 37.7601, "lon": -122.505, "placement": "contributor_placed"}', false)
+	`, goldenPrivateMove, goldenTreeA, adder.UserID, privateMove)
+	execSQL(t, h, `
+		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after, in_public_history)
+		VALUES ('a0d4e5f6-1111-4c2d-8e3f-000000000001', $1, 'published', $2, $3, $3,
+		        '{"license_version": "odbl-1.0", "lat": 37.7601, "lon": -122.505, "placement": "contributor_placed"}', true)
+	`, goldenTreeA, adder.UserID, live)
+
+	// Tree B.
+	b := goldenTime("2026-09-21T08:30:00Z")
+	execSQL(t, h, `
+		INSERT INTO community_trees (id, lat, lon, address, placement, user_id, published_at, created_at, updated_at)
+		VALUES ($1, 37.7605, -122.5046, '1 Main St', 'contributor_placed', $2, $3, $3, $3)
+	`, goldenTreeB, adder.UserID, b)
+	execSQL(t, h, `
+		INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at, recorded_at, was_public)
+		VALUES ($1, $1, 37.7605, -122.5046, 'contributor_placed', $2, $3, $3, true)
+	`, goldenTreeB, adder.UserID, b)
+	execSQL(t, h, `
+		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after, in_public_history)
+		VALUES ($1, $1, 'added', $2, $3, $3, '{"lat": 37.7605, "lon": -122.5046, "placement": "contributor_placed"}', false)
+	`, goldenTreeB, adder.UserID, b)
+	execSQL(t, h, `
+		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, after, in_public_history)
+		VALUES ('a0d4e5f6-1111-4c2d-8e3f-000000000002', $1, 'published', $2, $3, $3,
+		        '{"license_version": "odbl-1.0", "lat": 37.7605, "lon": -122.5046, "placement": "contributor_placed"}', true)
+	`, goldenTreeB, adder.UserID, b)
 	return adder
+}
+
+type statement struct {
+	sql  string
+	args []any
+}
+
+// inOneTransaction runs chain writes together: `superseded_by` is deferred for exactly this, and
+// the head index is not, so a new head can only be linked inside one transaction.
+func inOneTransaction(t *testing.T, h *harness, statements []statement) {
+	t.Helper()
+	tx, err := h.store.Pool().Begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	for _, st := range statements {
+		if _, err := tx.Exec(context.Background(), st.sql, st.args...); err != nil {
+			t.Fatalf("%v\n%s", err, st.sql)
+		}
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // seedGoldenChanges is what happens after the first fetch: A is moved and renamed, B is withdrawn,
@@ -1058,40 +1135,24 @@ func seedGoldenWorld(t *testing.T, h *harness) sessionResponse {
 func seedGoldenChanges(t *testing.T, h *harness, adder sessionResponse) {
 	t.Helper()
 	moved := goldenTime("2026-09-26T09:15:27Z")
-	// One transaction: the chain's `superseded_by` is deferred for exactly this, and the head index
-	// is not, so the old head stops being one before the new row exists (`applyLocationCorrection`).
-	tx, err := h.store.Pool().Begin(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, statement := range []struct {
-		sql  string
-		args []any
-	}{
-		{`UPDATE community_tree_locations SET superseded_by = $2 WHERE id = $1`, []any{goldenTreeA, goldenMove}},
+	inOneTransaction(t, h, []statement{
+		{`UPDATE community_tree_locations SET superseded_by = $2 WHERE id = $1`, []any{goldenPrivateMove, goldenMove}},
 		{`INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, location_accuracy_m,
-		                                       actor_user_id, occurred_at, recorded_at)
-		  VALUES ($1, $2, 37.76021, -122.50497, 'contributor_placed', 3, $3, $4, $4)`,
+		                                       actor_user_id, occurred_at, recorded_at, was_public)
+		  VALUES ($1, $2, 37.76021, -122.50497, 'contributor_placed', 3, $3, $4, $4, true)`,
 			[]any{goldenMove, goldenTreeA, adder.UserID, moved}},
-	} {
-		if _, err := tx.Exec(context.Background(), statement.sql, statement.args...); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tx.Commit(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	})
 	execSQL(t, h, `
-		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, before, after)
+		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, before, after, in_public_history)
 		VALUES ($1, $2, 'location_corrected', $3, $4, $4,
-		        '{"lat": 37.7601, "lon": -122.505, "placement": "gps"}',
-		        '{"lat": 37.76021, "lon": -122.50497, "placement": "contributor_placed", "location_accuracy_m": 3}')
+		        '{"lat": 37.7601, "lon": -122.505, "placement": "contributor_placed"}',
+		        '{"lat": 37.76021, "lon": -122.50497, "placement": "contributor_placed", "location_accuracy_m": 3}', true)
 	`, goldenMove, goldenTreeA, adder.UserID, moved)
 	renamed := goldenTime("2026-09-27T08:00:00Z")
 	execSQL(t, h, `
-		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, before, after)
+		INSERT INTO community_tree_events (id, tree_id, kind, actor_user_id, occurred_at, recorded_at, before, after, in_public_history)
 		VALUES ('a0d4e5f6-1111-4c2d-8e3f-000000000004', $1, 'species_corrected', $2, $3, $3,
-		        jsonb_build_object('species_id', $4::uuid), jsonb_build_object('species_id', $5::uuid))
+		        jsonb_build_object('species_id', $4::uuid), jsonb_build_object('species_id', $5::uuid), true)
 	`, goldenTreeA, adder.UserID, renamed, goldenSpecies, goldenSpeciesTwo)
 	execSQL(t, h, `
 		UPDATE community_trees SET lat = 37.76021, lon = -122.50497, placement = 'contributor_placed',
@@ -1100,19 +1161,27 @@ func seedGoldenChanges(t *testing.T, h *harness, adder sessionResponse) {
 
 	execSQL(t, h, `UPDATE community_trees SET deleted_at = $2, updated_at = $2 WHERE id = $1`,
 		goldenTreeB, goldenTime("2026-09-26T10:00:00Z"))
-	execSQL(t, h, `INSERT INTO withdrawn_community_trees (id, withdrawn_at) VALUES ($1, $2)`,
+	execSQL(t, h, `INSERT INTO withdrawn_community_trees (id, withdrawn_at, was_public) VALUES ($1, $2, true)`,
 		goldenErased, goldenTime("2026-09-26T11:00:00Z"))
+	// And a tree that was never public, erased the same hour: its tombstone guards its id and is
+	// in no fixture (F2).
+	execSQL(t, h, `INSERT INTO withdrawn_community_trees (id, withdrawn_at, was_public) VALUES ($1, $2, false)`,
+		goldenPrivateErased, goldenTime("2026-09-26T11:30:00Z"))
 
 	added := goldenTime("2026-09-26T12:00:00Z")
 	execSQL(t, h, `
 		INSERT INTO community_trees (id, lat, lon, placement, land_context, user_id, published_at, created_at, updated_at)
 		VALUES ($1, 37.7603, -122.5052, 'gps', 'city_park', $2, $3, $3, $3)
 	`, goldenTreeC, adder.UserID, added)
+	execSQL(t, h, `
+		INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at, recorded_at, was_public)
+		VALUES ($1, $1, 37.7603, -122.5052, 'gps', $2, $3, $3, true)
+	`, goldenTreeC, adder.UserID, added)
 }
 
 func goldenTile(t *testing.T) string {
 	tile, _, _ := tileOf(37.7601, -122.505)
-	for _, point := range [][2]float64{{37.7605, -122.5046}, {37.76021, -122.50497}, {37.7603, -122.5052}} {
+	for _, point := range [][2]float64{{37.7599, -122.5052}, {37.7605, -122.5046}, {37.76021, -122.50497}, {37.7603, -122.5052}} {
 		if other, _, _ := tileOf(point[0], point[1]); other != tile {
 			t.Fatalf("fixture: %v is in %s, not %s", point, other, tile)
 		}

@@ -240,18 +240,24 @@ func (s *Server) communityTrees(w http.ResponseWriter, r *http.Request, _ caller
 // historyEventLimit is §3E's cap. `complete` says whether the answer is all of it.
 const historyEventLimit = 200
 
-// servedHistoryKinds is the set of `community_tree_events.kind` values this route may serve.
+// servedHistoryKinds maps each `community_tree_events.kind` this route may serve to the kind it
+// is served as.
 //
 // **An allow-list, for `publicKinds`' reason.** The event vocabulary is 007's CHECK and it will
 // widen; under an allow-list a new kind is invisible on the wire until somebody writes down why it
 // should be shown. `TestEveryHistoryEventKindIsClassified` reads the vocabulary out of the
 // migrations and fails when a kind is in neither map.
-var servedHistoryKinds = map[string]bool{
-	"added":              true,
-	"published":          true,
-	"location_corrected": true,
-	"species_named":      true,
-	"species_corrected":  true,
+//
+// **`published` is served as `added`** (decision 13, as 007 represents it). Others see the tree as
+// added where it stood when it went public, so the public record's "added" is the `published`
+// event, which carries the position at publication; the stored `added` event is the adder's
+// private record and is withheld. The wire's vocabulary is therefore `added`,
+// `location_corrected`, `species_named`, `species_corrected`, and never `published`.
+var servedHistoryKinds = map[string]string{
+	"published":          "added",
+	"location_corrected": "location_corrected",
+	"species_named":      "species_named",
+	"species_corrected":  "species_corrected",
 }
 
 // withheldHistoryKinds is every other event kind, with the reason.
@@ -263,6 +269,7 @@ var servedHistoryKinds = map[string]bool{
 // one-way; its fix round removed the kind from 007's CHECK, and
 // `TestEveryHistoryEventKindIsClassified` is what said so here.)
 var withheldHistoryKinds = map[string]string{
+	"added":      "the adder's private record, at the position before any private move (decision 13); the public \"added\" is the published event",
 	"withdrawn":  "a withdrawn tree's history answers not_found (§3E), so there is no response for it to be in",
 	"taken_down": "a taken-down tree's history answers not_found (§3E), so there is no response for it to be in",
 }
@@ -309,7 +316,8 @@ func coordinateOf(p store.HistoryPosition) *wireCoordinate {
 //
 // `not_found` for a city tree (there is no log), for somebody else's unpublished tree, and for a
 // withdrawn, taken-down or erased one — one answer for all of them, so it says nothing about which.
-// The adder reads the history of their own unpublished tree.
+// The adder's own unpublished tree answers 200 with no events: the history is the public one
+// (decision 13), and that tree has not gone live yet.
 //
 // Newest first, capped at 200. Every date is truncated to the UTC day: the wire carries no more
 // than the screen shows. The client must decode `kind` and `placement` tolerantly, with an unknown
@@ -331,7 +339,7 @@ func (s *Server) treeHistory(w http.ResponseWriter, r *http.Request, who caller)
 	for _, event := range events {
 		body.Events = append(body.Events, historyEvent{
 			ID:             event.ID,
-			Kind:           event.Kind,
+			Kind:           servedHistoryKinds[event.Kind],
 			OccurredAt:     stamp(dayOf(event.OccurredAt)),
 			FromCoordinate: coordinateOf(event.Before),
 			ToCoordinate:   coordinateOf(event.After),

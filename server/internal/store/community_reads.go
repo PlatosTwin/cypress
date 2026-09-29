@@ -162,59 +162,53 @@ type TileQuery struct {
 // caller-independent so a phone can cache it (§3C). The adder's own unpublished trees are on the
 // adder's phone already.
 //
-// **What is reported as removed:** a tree that was once public and no longer is — withdrawn by its
-// adder or taken down by an operator (both soft, `deleted_at`), or published once and unpublished
-// since — plus every erase-door tombstone. A tree that was **never** published is never reported,
-// not even as an id to drop: no phone but its adder's ever held it, and a removal list is still a
-// statement that a tree stood in this tile.
+// **What is reported as removed:** a tree that was public and no longer is — withdrawn by its adder
+// or taken down by an operator (both soft, `deleted_at`, and once-public exactly when
+// `published_at` is set: nothing unpublishes, decision 10, and a tree born withdrawn is never
+// published) — plus every erase-door tombstone whose tree had been public
+// (`withdrawn_community_trees.was_public`). A tree that was **never** published is never reported,
+// not even as an id: no phone but its adder's ever held it, and a removal is still a statement that
+// a tree existed (the #190 review's F2 and F3).
 //
 // **Which trees count as "in the tile":** the ones whose head is in it, and the ones any of whose
-// earlier positions (the location chain) were. A pin moved across a tile edge would otherwise
-// leave a stale copy in every cache that fetched only the old tile: the new tile's delta carries
-// the new position, and the old tile's said nothing. So such a tree is served in the old tile too,
-// with its **current** coordinate, which is outside the tile. The client must key its cache on the
-// tree id and never assume a served tree lies inside the tile it came from.
+// earlier **public** positions were (`community_tree_locations.was_public`). A pin moved across a
+// tile edge would otherwise leave a stale copy in every cache that fetched only the old tile, so
+// such a tree is served in the old tile too, with its **current** coordinate, which is outside the
+// tile; the client keys its cache on the tree id. A position the tree held only while private is
+// never a reason to report it anywhere (decision 13: history starts at going live).
 //
 // Tombstones carry no position (the erase door keeps nothing that could say whose it was, and a
 // position is exactly that), so they cannot be scoped to a tile: every delta reports every
-// tombstone after its cursor. A tombstone is an id and a time, and erasures are rare.
+// once-public tombstone after its cursor, wherever in the world the tree stood.
+//
+// ── Two query texts, each shaped for 007's partial indexes (performance precedence) ───────────
+//
+// The first version was one text with `($n IS NULL OR …)` around the keyset and an `OR EXISTS`
+// chain arm. The review measured it at 320–480 ms warm per snapshot over 100k trees and 403 ms for
+// a delta on a generic plan, because neither the OR nor the NULL test can use an index. Now:
+//
+//   - tile membership is a UNION of two arms, each carrying its index's predicate literally —
+//     `published_at IS NOT NULL` on `community_trees (lat, lon)` and `was_public` on
+//     `community_tree_locations (lat, lon)` — so the planner reaches the tile's trees by position,
+//     O(trees in the tile), under a custom plan or a generic one;
+//   - the keyset is always bound (the beginning is the zero time and the nil uuid), so there is no
+//     NULL test for a generic plan to be unable to use;
+//   - the removal list is `idx_withdrawn_community_trees_public`'s own shape, ordered and limited;
+//   - a snapshot and a delta are different texts, so the snapshot's `since` filter is spelled only
+//     where it applies rather than switched off by a NULL.
 //
 // The page is `Limit` entries; the second return is whether more matched beyond it.
 func (s *Store) CommunityTreeTile(ctx context.Context, q TileQuery) ([]TileEntry, bool, error) {
-	var afterAt *time.Time
-	var afterID *uuid.UUID
+	var after TileKey
 	if q.After != nil {
-		afterAt, afterID = &q.After.At, &q.After.ID
+		after = *q.After
 	}
-	rows, err := s.pool.Query(ctx, `
-		WITH candidates AS (
-		    SELECT t.id, t.updated_at AS at,
-		           t.lat, t.lon, t.species_id, t.placement, t.land_context, t.created_at,
-		           (t.published_at IS NOT NULL AND t.deleted_at IS NULL) AS live,
-		           (t.published_at IS NOT NULL
-		            OR EXISTS (SELECT 1 FROM community_tree_events e
-		                        WHERE e.tree_id = t.id AND e.kind = 'published')) AS was_public
-		      FROM community_trees t
-		     WHERE ($1::timestamptz IS NULL OR (t.updated_at, t.id) > ($1::timestamptz, $2::uuid))
-		       AND ((t.lat > $3 AND t.lat <= $4 AND t.lon >= $5 AND t.lon < $6)
-		            OR EXISTS (SELECT 1 FROM community_tree_locations l
-		                        WHERE l.tree_id = t.id
-		                          AND l.lat > $3 AND l.lat <= $4 AND l.lon >= $5 AND l.lon < $6))
-		    UNION ALL
-		    SELECT w.id, w.withdrawn_at,
-		           NULL::double precision, NULL::double precision, NULL::uuid, NULL::text, NULL::text,
-		           NULL::timestamptz,
-		           false, true
-		      FROM withdrawn_community_trees w
-		     WHERE ($1::timestamptz IS NULL OR (w.withdrawn_at, w.id) > ($1::timestamptz, $2::uuid))
-		)
-		SELECT id, at, lat, lon, species_id, placement, land_context, created_at, live
-		  FROM candidates
-		 WHERE live OR (was_public AND ($7::timestamptz IS NULL OR at > $7::timestamptz))
-		 ORDER BY at, id
-		 LIMIT $8
-	`, afterAt, afterID, q.Bounds.South, q.Bounds.North, q.Bounds.West, q.Bounds.East,
-		q.WithdrawnSince, q.Limit+1)
+	query, args := tileDeltaQuery, []any{after.At, after.ID,
+		q.Bounds.South, q.Bounds.North, q.Bounds.West, q.Bounds.East, q.Limit + 1}
+	if q.WithdrawnSince != nil {
+		query, args = tileSnapshotQuery, append(args, *q.WithdrawnSince)
+	}
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -252,6 +246,74 @@ func (s *Store) CommunityTreeTile(ctx context.Context, q TileQuery) ([]TileEntry
 	return entries, false, nil
 }
 
+// tileInTile is the membership arms both texts share. $3..$6 are south, north, west, east; the
+// box is half-open (TileBounds).
+const tileInTile = `
+	in_tile AS (
+	    SELECT id FROM community_trees
+	     WHERE published_at IS NOT NULL
+	       AND lat > $3 AND lat <= $4 AND lon >= $5 AND lon < $6
+	    UNION
+	    SELECT tree_id FROM community_tree_locations
+	     WHERE was_public
+	       AND lat > $3 AND lat <= $4 AND lon >= $5 AND lon < $6
+	)`
+
+// tileDeltaQuery: every change after the cursor — live trees to draw, once-public trees removed
+// since, and once-public tombstones since.
+const tileDeltaQuery = `
+	WITH` + tileInTile + `,
+	changed AS (
+	    SELECT t.id, t.updated_at AS at, t.lat, t.lon, t.species_id, t.placement, t.land_context,
+	           t.created_at, t.deleted_at IS NULL AS live
+	      FROM community_trees t JOIN in_tile ON in_tile.id = t.id
+	     WHERE t.published_at IS NOT NULL
+	       AND (t.updated_at, t.id) > ($1::timestamptz, $2::uuid)
+	     ORDER BY t.updated_at, t.id
+	     LIMIT $7
+	),
+	gone AS (
+	    SELECT id, withdrawn_at AS at FROM withdrawn_community_trees
+	     WHERE was_public AND (withdrawn_at, id) > ($1::timestamptz, $2::uuid)
+	     ORDER BY withdrawn_at, id
+	     LIMIT $7
+	)
+	SELECT id, at, lat, lon, species_id, placement, land_context, created_at, live FROM changed
+	UNION ALL
+	SELECT id, at, NULL::double precision, NULL::double precision, NULL::uuid, NULL::text, NULL::text,
+	       NULL::timestamptz, false FROM gone
+	 ORDER BY at, id
+	 LIMIT $7`
+
+// tileSnapshotQuery is the delta with `since` ($8): a first fetch holds nothing, so a removal is
+// reported only if it happened after the snapshot began — which catches a tree served on page one
+// and withdrawn before page three.
+const tileSnapshotQuery = `
+	WITH` + tileInTile + `,
+	changed AS (
+	    SELECT t.id, t.updated_at AS at, t.lat, t.lon, t.species_id, t.placement, t.land_context,
+	           t.created_at, t.deleted_at IS NULL AS live
+	      FROM community_trees t JOIN in_tile ON in_tile.id = t.id
+	     WHERE t.published_at IS NOT NULL
+	       AND (t.updated_at, t.id) > ($1::timestamptz, $2::uuid)
+	       AND (t.deleted_at IS NULL OR t.updated_at > $8::timestamptz)
+	     ORDER BY t.updated_at, t.id
+	     LIMIT $7
+	),
+	gone AS (
+	    SELECT id, withdrawn_at AS at FROM withdrawn_community_trees
+	     WHERE was_public AND (withdrawn_at, id) > ($1::timestamptz, $2::uuid)
+	       AND withdrawn_at > $8::timestamptz
+	     ORDER BY withdrawn_at, id
+	     LIMIT $7
+	)
+	SELECT id, at, lat, lon, species_id, placement, land_context, created_at, live FROM changed
+	UNION ALL
+	SELECT id, at, NULL::double precision, NULL::double precision, NULL::uuid, NULL::text, NULL::text,
+	       NULL::timestamptz, false FROM gone
+	 ORDER BY at, id
+	 LIMIT $7`
+
 // ── The history ────────────────────────────────────────────────────────────────────────────────
 
 // HistoryEvent is one audit-log row as the history read serves it: **no actor**. Decision 4 keeps
@@ -278,8 +340,14 @@ type HistoryPosition struct {
 // hidden from them. One error for both, so the answer is not an oracle.
 var ErrHistoryNotFound = errors.New("no community tree history for this viewer")
 
-// CommunityTreeHistory returns the tree's audit log for one viewer, newest first, restricted to
-// `kinds` and capped at `limit`; the second return is whether that is all of it.
+// CommunityTreeHistory returns the tree's **public** history for one viewer, newest first,
+// restricted to `kinds` and capped at `limit`; the second return is whether that is all of it.
+//
+// Public is `in_public_history` (decision 13: history starts at going live), spelled in the query so
+// no caller can forget it. The adder gets the same public history as everybody else: their own
+// record of the tree's private life is on their phone, and a route whose answer depended on who
+// asked would be two contracts under one name. So the adder's own **unpublished** tree has a
+// history with no events in it.
 //
 // Newest first is `occurred_at` (the act's own time — a late correction sorts where it happened,
 // not where it arrived), then `recorded_at`, then the id, so two events on one day keep a stable
@@ -295,7 +363,7 @@ func (s *Store) CommunityTreeHistory(ctx context.Context, id uuid.UUID, viewer O
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, kind, occurred_at, before, after
 		  FROM community_tree_events
-		 WHERE tree_id = $1 AND kind = ANY ($2::text[])
+		 WHERE tree_id = $1 AND in_public_history AND kind = ANY ($2::text[])
 		 ORDER BY occurred_at DESC, recorded_at DESC, id DESC
 		 LIMIT $3
 	`, id, kinds, limit+1)
