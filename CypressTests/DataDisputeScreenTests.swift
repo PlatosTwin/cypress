@@ -64,10 +64,11 @@ struct DataDisputeScreenTests {
 
     /// A provider reading: a fix with Precise Location on and a stated radius unless told otherwise.
     private static func located(
-        _ accuracyM: Double, at coordinate: Coordinate = spot, reduced: Bool = false, known: Bool = true
+        _ accuracyM: Double, at coordinate: Coordinate? = nil, reduced: Bool = false, known: Bool = true
     ) -> DataDisputeFixReading {
+        // `nil` rather than `= spot`: a default argument is evaluated outside the suite's actor.
         DataDisputeFixReading(
-            availability: .located(coordinate, accuracyM: accuracyM),
+            availability: .located(coordinate ?? spot, accuracyM: accuracyM),
             precision: .init(isReduced: reduced, accuracyIsKnown: known)
         )
     }
