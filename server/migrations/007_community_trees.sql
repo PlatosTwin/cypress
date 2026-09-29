@@ -55,9 +55,10 @@
 -- tree born withdrawn is never published).
 --
 -- `users.license_version` is the record of acceptance: NULL is a *declined* consent (001's
--- comment and `users_license_pair`), a string is the version accepted, and
+-- comment and `users_license_pair`), a string is the version answered, and
 -- `RecordLicenseConsent` writes it from `POST /auth/oidc` and `POST /devices/claim` only when the
--- request carried the key.
+-- request carried the key. Only a known version is an acceptance (L2): before this round any string
+-- was stored, so a pre-007 row may hold `''`, and this file's backfill does not count it.
 --
 -- ── The backfill ───────────────────────────────────────────────────────────────────────────────
 --
@@ -70,8 +71,10 @@
 --     answer for it) and left **unpublished**: its account is gone, whether that account accepted
 --     the license cannot be known, and it may have chosen to erase everything. Publishing it now
 --     would decide both questions for somebody who can no longer be asked.
---   * An account-owned tree is published if its account has accepted the license, and left
---     unpublished otherwise, which is decision 7 applied to rows that already exist. It is published
+--   * An account-owned tree is published if its account has accepted the license — which means
+--     `license_version = 'odbl-1.0'`, the only version the client has ever sent; a stored `''` or
+--     any other string is not an acceptance (L2) — and left unpublished otherwise, which is
+--     decision 7 applied to rows that already exist. It is published
 --     at `updated_at` — the moment of its insert or its claim, the only two writers of that column —
 --     **or at the acceptance, whichever is later**: a tree claimed on 1 September by an account that
 --     accepted on 20 September went live on the 20th, not the 1st (review of #187, F2). The event
@@ -110,7 +113,10 @@ UPDATE community_trees AS t
   FROM users AS u
  WHERE t.user_id = u.id
    AND t.device_id IS NULL
-   AND u.license_version IS NOT NULL;
+   -- Only a real, known version is an acceptance (the orchestrator's L2 ruling): 'odbl-1.0' is the
+   -- only version the client has ever sent. A stored '' or any other string is not one, and its
+   -- trees stay private until the account accepts a version this service knows.
+   AND u.license_version = 'odbl-1.0';
 
 -- Exactly one owner, or none with the reason stated. This is `contributions_owner` from 001, and it
 -- is what makes a forgotten step in account deletion loud: `users`' `ON DELETE SET NULL` on a tree
@@ -273,6 +279,27 @@ CREATE INDEX idx_withdrawn_community_trees_public ON withdrawn_community_trees (
 -- claim. NULL for a session signed in with no `device_uuid`, and for every session minted before
 -- this file.
 ALTER TABLE sessions ADD COLUMN device_id UUID REFERENCES devices(id) ON DELETE SET NULL;
+
+-- ── photos.captured_on ─────────────────────────────────────────────────────────────────────────
+
+-- The owner's decision 14 (other people see a photograph's capture date, never its time) as 14a
+-- implements it: client-assisted. The phone sends the photograph's **local** capture date with
+-- `POST /photos/begin` (`captured_on`, YYYY-MM-DD), because the server cannot know the phone's
+-- time zone and a UTC date would put an evening photograph on the wrong day. NULL is "the phone did
+-- not say" — every build before the C1 round, and every photograph begun before this file — and
+-- those keep today's behaviour (S2 decides what a NULL serves). The owner still sees
+-- `captured_at`.
+--
+-- The CHECK is the handler's rule restated where no writer can skip it: a local date is at most one
+-- day from the UTC date of the same instant (offsets run from UTC-12 to UTC+14, so a local date is
+-- never more than one calendar day either side of the UTC one), so a date further away is not this
+-- photograph's.
+ALTER TABLE photos
+    ADD COLUMN captured_on DATE
+        CONSTRAINT photos_captured_on_is_the_captured_day
+        CHECK (captured_on IS NULL
+               OR captured_on BETWEEN (captured_at AT TIME ZONE 'UTC')::date - 1
+                                  AND (captured_at AT TIME ZONE 'UTC')::date + 1);
 
 -- ── contributions.kind ─────────────────────────────────────────────────────────────────────────
 

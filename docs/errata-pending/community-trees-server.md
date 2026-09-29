@@ -94,3 +94,15 @@ and the draft never shipped.
 tree is never published. `TestATombstoneSaysWhetherTheTreeWasEverPublic` and
 `TestHistoryStartsAtGoingLive` pin the fix, and so does the whole-database check in
 `assertPublicationInvariant`.
+
+### E??? — The license consent stored any string, and 007's draft backfill counted any string as an acceptance
+
+Before this round, `RecordLicenseConsent` stored whatever `license_version` string a request
+carried, including `''`. The draft 007 backfill published an account's trees on
+`license_version IS NOT NULL`. So a pre-007 account holding `''` would have had its trees published
+by the migration, under a `published` event naming `''` as the license.
+
+- S2 fixes the live path (L2: only a known version is an acceptance, and anything else is recorded
+  as a decline).
+- 007's backfill now counts only `'odbl-1.0'`.
+- `TestMigration007BackfillsTheTreesThatAlreadyExist` pins the fix with a pre-007 `''` account.

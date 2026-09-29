@@ -71,13 +71,6 @@ func treeWithdrawalItem(tree uuid.UUID) map[string]any {
 	}
 }
 
-func visitItem(tree uuid.UUID) map[string]any {
-	return map[string]any{
-		"client_uuid": uuid.New(), "kind": "visit", "tree_uuid": tree,
-		"occurred_at": stamp8601(time.Now()), "payload": json.RawMessage(`{}`),
-	}
-}
-
 // signInAs signs in as a distinct Apple subject, optionally claiming a device, with a license
 // answer: a version string accepts, nil sends the explicit null that records a decline.
 func signInAs(t *testing.T, h *harness, subject string, device *uuid.UUID, license *string) sessionResponse {
@@ -180,16 +173,6 @@ func eventsOfKind(events []eventRow, kind string) []eventRow {
 		}
 	}
 	return matched
-}
-
-func deviceRowID(t *testing.T, h *harness, deviceUUID uuid.UUID) uuid.UUID {
-	t.Helper()
-	var id uuid.UUID
-	if err := h.store.Pool().QueryRow(context.Background(),
-		`SELECT id FROM devices WHERE device_uuid = $1`, deviceUUID).Scan(&id); err != nil {
-		t.Fatal(err)
-	}
-	return id
 }
 
 func isTombstoned(t *testing.T, h *harness, tree uuid.UUID) bool {

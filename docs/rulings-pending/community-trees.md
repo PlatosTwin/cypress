@@ -52,7 +52,12 @@ no writer, and 007 does not admit it (see "Event kinds" below).
 ### R??? — What 007 does with trees that already exist
 
 - **An account's tree** is published if the account has accepted the license, and is left
-  unpublished otherwise. This is decision 7 applied to rows that already exist. It is published at
+  unpublished otherwise. "Accepted" means `license_version = 'odbl-1.0'`, the only version the
+  client has ever sent (the orchestrator's L2 ruling). Before this round any string was stored as a
+  consent, so a pre-007 row may hold `''`, and that is not an acceptance.
+  `TestTheBackfillsAcceptedVersionIsOneTheLivePathAccepts` reads the literal out of the migration
+  and requires a live acceptance of it to publish. So once S2's `knownLicenseVersions` is merged,
+  the backfill and the live path cannot disagree. This is decision 7 applied to rows that already exist. It is published at
   the **later** of its `updated_at` and the account's `license_accepted_at`. `updated_at` is the
   moment the tree became the account's: before 007, the only writers of that column were insert and
   claim. A tree claimed on 1 September by an account that accepted on 20 September went live on the
@@ -95,9 +100,8 @@ decisions 6 and 8 were "if anyone else has a visit or photo on the tree", and th
 to them. A tree counts as built on when another identity has either of these:
 
 - a live contribution of a **met kind**: `visit`, `observation`, `measurement` or `care_event`.
-  This is the set #184 names `MetSpeciesKinds`, and S1 keeps its own copy (`builtOnKinds`) until
-  the two unify at merge. "Live" means not deleted, so a measurement its taker withdrew does not
-  count;
+  This is the set #184 names `MetSpeciesKinds`. Since #184 merged, the code reads that list
+  directly. "Live" means not deleted, so a measurement its taker withdrew does not count;
 - a live photograph: not deleted, not `rejected`, and **its bytes have arrived**
   (`bytes_received_at` set). A begun upload with no bytes is a reservation nobody can see (the
   orchestrator's ruling after #187's review).
@@ -283,3 +287,37 @@ session's device, never the item's `device_id` claim.
 `TreeAddition` may add an optional `locationAccuracyM` (D6). The service stores it on the root
 location and the tree's cache. When it is absent, both are NULL. A negative value gets
 `validation_failed`. Nothing requires C1 to send it.
+
+### R??? — A photograph's local capture date (decision 14a, the server's half)
+
+**Decided by:** the owner, decisions 14 and 14a. Other people see a photograph's capture **date**,
+never its time. The date is client-assisted, because the server cannot know the phone's time zone,
+and the UTC date would put an evening photograph on the wrong day.
+
+- **Column.** 007 adds `photos.captured_on DATE`, nullable.
+- **Request.** `POST /photos/begin` accepts an optional **`captured_on`**: the photograph's
+  **local** date, exactly `YYYY-MM-DD`.
+  - Absent or `null` stores NULL. That is every older build, and it keeps today's behaviour.
+  - Anything else must be a real calendar date **within one day of `captured_at`'s UTC date**. UTC
+    offsets run from -12 to +14 hours, so a local date is never further off than that. Otherwise the
+    answer is `validation_failed`.
+  - On an idempotent replay the first begin's value stands, as for every other column.
+- **Database backstop.** `photos_captured_on_is_the_captured_day` restates the one-day bound, so no
+  writer can skip it.
+- **The fixture.** The wire name is pinned by `server/testdata/photos_begin.json`. The Go test posts
+  that fixture's bytes unchanged. The fixture is the east-of-UTC case: `captured_at` is
+  2026-09-28T23:30:00Z, and `captured_on` is 2026-09-29.
+
+**What C1 must match:**
+- Send `captured_on` in the begin body as the photograph's local calendar date, `YYYY-MM-DD`, with
+  the key spelled exactly that.
+- Encode through production code, and compare against `server/testdata/photos_begin.json`, value
+  included.
+- **Do not ship it before 007 is deployed.** `decodeBody` refuses unknown fields, so a server
+  without this change answers the whole begin `validation_failed`.
+
+**What S2 must match:**
+- Serve non-owners the date from `captured_on` where it is set, in the form S2 pins, and never
+  `captured_at`'s time.
+- Where it is NULL, keep today's behaviour.
+- The owner keeps `captured_at`.
