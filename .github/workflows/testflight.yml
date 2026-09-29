@@ -507,7 +507,7 @@ jobs:
               # server, and the mix of the two was turned into a suite run above. Reaching here
               # means the predicates and this ladder disagree, and a guess would be a notice that
               # lies. Fail `plan`, which fails `gate`.
-              echo "::error::plan could not name why the suite is being skipped. Not prose, not web-only, not server-only: $(printf '%s ' $not_web)"
+              echo "::error::plan could not name why the suite is being skipped. Not prose, not web-only, not server-only: $(printf '%s\n' "$not_web" | tr '\n' ' ')"
               exit 1
             fi
             exit 0
