@@ -55,6 +55,9 @@ conflicts with convenience, the rule wins.
     rather than the run.
   - `git stash pop` with no argument popped a stash from a deleted agent worktree, nine days old.
     A `pop` acts on whatever it finds.
+  - `log show …` in zsh runs the shell's own `log` builtin, prints nothing, and exits quietly, so
+    an empty result looks like "the daemon logged nothing" (2026-09-29). Call `/usr/bin/log`, and
+    check that `/usr/bin/log show --last 1m | wc -l` is nonzero before believing a zero.
   This project's tooling is gated — `run_tests.sh`, `verify_test_log.sh`,
   `UITestShardCoverageTests`, `DragGestureGateTests`. **The commands you type to make claims about
   that tooling are not.** They are the least guarded thing you touch and the easiest to believe.
@@ -142,6 +145,20 @@ conflicts with convenience, the rule wins.
   timer — `grant` kills the running app mid-test.
 - To make a device fixless, revoke the location privacy grant; `simctl location clear` does NOT
   unfix a device.
+- **A booted simulator plays through the owner's speakers, and that is what crackles their
+  audio.** Every booted device opens an `iOSSimulatorAudioDevice` stream on the Mac's real output
+  device, from threads that run unboosted; under build load they miss the I/O deadline and
+  coreaudiod overloads (0/min before a boot on 2026-09-29, 789/min the minute it booted), which the
+  owner hears in every app. Restarting coreaudiod with simulators still attached preceded a hard
+  freeze and a forced power-off the same morning. So:
+  - **Shut your simulator down when your verification is done** (`xcrun simctl shutdown <udid>`),
+    not only at round teardown. `run_tests.sh` boots it again when it needs it.
+  - **Never restart coreaudiod, and never suggest it to the owner, while any simulator is booted.**
+    The owner's fix is `xcrun simctl shutdown all` first; that alone usually stops the crackling.
+  - **Build only through `Tools/run_tests.sh`.** It clamps xcodebuild and every compiler under it to
+    utility QoS on local runs (`CYPRESS-RUN: qos-clamp utility`), so audio keeps its deadline. A bare
+    `xcodebuild` skips the clamp. A timing measurement opts out with `CYPRESS_RUN_TESTS_QOS=default`
+    and says so; CI is never clamped.
 - `SQLITE_IOERR_VNODE` / fd-storm failures on the slowest test mean simulator contention, not
   your change — check `ps aux | grep xcodebuild` before theorizing.
 

@@ -1089,6 +1089,24 @@ take_ps_snapshot
 read_ancestors
 OTHER_XCODEBUILDS="$(count_live_xcodebuilds)"
 
+# The owner's audio crackles, and the Mac has frozen, while this runs. A booted simulator streams
+# to the Mac's real output device, from threads that run unboosted, so when the compile saturates
+# the CPU they miss the I/O deadline and coreaudiod logs `HALS_OverloadMessage` — heard as
+# crackling in every app sharing that device (0 overloads/min before a simulator boot on
+# 2026-09-29, 789 the minute it booted). `taskpolicy -c utility` clamps xcodebuild and every child
+# (SWBBuildService and the compilers under it are its descendants; the clamp was measured to
+# survive both exec and fork, priority 31 → 20) below user-interactive work, audio included. It
+# execs, so `ps` still shows `xcodebuild test …` and the collision guard still sees this run.
+#
+# Local only: CI has no listener, and there the clamp would only cost time. A timing measurement
+# should opt out with CYPRESS_RUN_TESTS_QOS=default, since a clamped run is slower by design.
+QOS_PREFIX=()
+QOS_LABEL=default
+if [ -z "${CI:-}" ] && [ "${CYPRESS_RUN_TESTS_QOS:-utility}" = "utility" ] && command -v taskpolicy >/dev/null 2>&1; then
+  QOS_PREFIX=(taskpolicy -c utility)
+  QOS_LABEL=utility
+fi
+
 {
   echo "CYPRESS-RUN: started $(date '+%Y-%m-%d %H:%M:%S %Z')"
   echo "CYPRESS-RUN: device ${DEVICE_NAME:-unknown} $UDID"
@@ -1120,12 +1138,15 @@ OTHER_XCODEBUILDS="$(count_live_xcodebuilds)"
   # the two apart and quotes this number when it does, so the classification is checkable against
   # the condition that produced it rather than asserted.
   echo "CYPRESS-RUN: concurrent-xcodebuilds ${OTHER_XCODEBUILDS} (besides this run; the cap is 3 machine-wide)"
+  echo "CYPRESS-RUN: qos-clamp ${QOS_LABEL} (utility locally so audio keeps its deadline; CYPRESS_RUN_TESTS_QOS=default for timing runs)"
   echo "CYPRESS-RUN: args $*"
   [ "$SKIP_PREFLIGHT" = "1" ] && echo "CYPRESS-RUN: PREFLIGHT SKIPPED (CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1) — guards did not run"
   echo "CYPRESS-RUN: ---"
 } >"$LOG"
 
-xcodebuild test \
+# The `+` form, not a bare "${QOS_PREFIX[@]}": bash 3.2 under `set -u` treats an empty array as
+# unbound and dies before xcodebuild starts, which is exactly the CI path.
+${QOS_PREFIX[@]+"${QOS_PREFIX[@]}"} xcodebuild test \
   -project "$REPO/Cypress.xcodeproj" \
   -scheme Cypress \
   -destination "platform=iOS Simulator,id=$UDID" \
