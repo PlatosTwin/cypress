@@ -59,6 +59,14 @@ final class DataDisputeModel {
     private var waitGeneration = 0
     @ObservationIgnored
     private var timeout: Task<Void, Never>?
+    /// Whether the reporter's last ask was made while authorization was undetermined — the one
+    /// case where the view's `start()` raises iOS's permission prompt, so a `.notAsked` reading
+    /// means the prompt is on screen. Cleared by any reading that is not `.notAsked` (the prompt
+    /// was answered). A `.notAsked` that no ask explains is authorization reset under a running
+    /// screen, with no prompt up, and must not become a wait nothing bounds (PR #198's review,
+    /// finding 1).
+    @ObservationIgnored
+    private var promptRequested = false
 
     init(
         treeID: UUID,
@@ -109,6 +117,7 @@ final class DataDisputeModel {
     /// prompt is still up — see `armTimeoutIfWaiting`.
     func useLocation(_ reading: DataDisputeFixReading) {
         failuresWhenAsked = reading.failureCount
+        promptRequested = reading.availability == .notAsked
         dropTimeout()
         draft.location = .reading(reading)
         armTimeoutIfWaiting(reading)
@@ -134,8 +143,21 @@ final class DataDisputeModel {
     /// #185's verifier, finding 2). While iOS's permission prompt is up (`.notAsked`) the block
     /// waits and judges no error either: the reporter has not answered, and the wait that can fail
     /// starts at the grant (the owner's ruling of 2026-09-29).
+    ///
+    /// Only a prompt this screen asked for is waited on that way. A `.notAsked` reading that no ask
+    /// explains — authorization reset to undetermined while the screen is open, with nothing on
+    /// screen to answer — puts the block back to `.notAsked`: the hint and the button, and *Send*
+    /// not held. Asking again raises the prompt (PR #198's review, finding 1). An `.unavailable`
+    /// block keeps its sentence, which already tells the reporter to ask again.
     func locationChanged(_ reading: DataDisputeFixReading) {
         guard draft.location.followsTheProvider else { return }
+        if reading.availability != .notAsked {
+            promptRequested = false
+        } else if !promptRequested, draft.location != .unavailable {
+            dropTimeout()
+            draft.location = .notAsked
+            return
+        }
         let next = DataDisputeLocation.reading(reading)
         if next == .waiting {
             if draft.location == .unavailable { return }
@@ -161,6 +183,8 @@ final class DataDisputeModel {
     /// must not come back to "couldn't find your location". Allowing moves the provider to
     /// `.waitingForFix`, and the 15 s start then. Refusing moves it to `.denied`, which the block
     /// already answers as location off (`DataDisputeLocation.off`), with its way to Settings.
+    /// A `.notAsked` reading reaches here only for a prompt the reporter's ask raised
+    /// (`promptRequested`); any other one has already put the block back to `.notAsked`.
     private func armTimeoutIfWaiting(_ reading: DataDisputeFixReading) {
         guard draft.location == .waiting, reading.availability != .notAsked else {
             dropTimeout()
