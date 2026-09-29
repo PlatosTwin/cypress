@@ -142,16 +142,26 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return apierr.New(apierr.ValidationFailed, "That request could not be read.")
 	}
+
+	// The device is registered before the consent is recorded, so the `published` events an
+	// acceptance writes (decision 7) can name the device the sign-in came from,
+	// and so the session minted below can be bound to it.
+	var deviceID *uuid.UUID
+	if request.DeviceUUID != nil {
+		registered, err := s.Store.RegisterDevice(r.Context(), *request.DeviceUUID)
+		if err != nil {
+			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+		}
+		deviceID = &registered
+	}
+
 	if licensePresent {
-		if err := s.Store.RecordLicenseConsent(r.Context(), user.ID, licenseVersion); err != nil {
+		if err := s.Store.RecordLicenseConsent(r.Context(), user.ID, licenseVersion, deviceID); err != nil {
 			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 		}
 	}
 
 	if request.DeviceUUID != nil {
-		if _, err := s.Store.RegisterDevice(r.Context(), *request.DeviceUUID); err != nil {
-			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
-		}
 		// ── This used to swallow ErrClaimedByAnotherAccount and answer 200 anyway ───────────────
 		//
 		// Review of PR #84 (F3) proved what that costs. `ClaimDevice` returns the #174 guard
@@ -180,7 +190,7 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	session, err := s.mintSession(r, user.ID)
+	session, err := s.mintSession(r, user.ID, deviceID)
 	if err != nil {
 		return err
 	}
@@ -188,7 +198,8 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (s *Server) mintSession(r *http.Request, userID uuid.UUID) (sessionResponse, error) {
+// mintSession creates a session bound to `deviceID` (nil when the sign-in named no device).
+func (s *Server) mintSession(r *http.Request, userID uuid.UUID, deviceID *uuid.UUID) (sessionResponse, error) {
 	refreshSecret, refreshHash, err := tokens.NewOpaque()
 	if err != nil {
 		return sessionResponse{}, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
@@ -196,7 +207,7 @@ func (s *Server) mintSession(r *http.Request, userID uuid.UUID) (sessionResponse
 	now := s.Store.Now()
 	refreshExpiry := now.Add(tokens.RefreshTokenLifetime)
 
-	sessionID, err := s.Store.CreateSession(r.Context(), userID, refreshHash, refreshExpiry)
+	sessionID, err := s.Store.CreateSession(r.Context(), userID, deviceID, refreshHash, refreshExpiry)
 	if err != nil {
 		return sessionResponse{}, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
@@ -365,7 +376,7 @@ func (s *Server) claimDevice(w http.ResponseWriter, r *http.Request, who caller)
 	// Only when the key was actually sent. The sweep is idempotent and is re-run for reasons that
 	// have nothing to do with consent; writing on every call made it withdraw one.
 	if licensePresent {
-		if err := s.Store.RecordLicenseConsent(r.Context(), *who.UserID, licenseVersion); err != nil {
+		if err := s.Store.RecordLicenseConsent(r.Context(), *who.UserID, licenseVersion, who.SessionDeviceID); err != nil {
 			return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 		}
 	}

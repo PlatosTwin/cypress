@@ -47,6 +47,10 @@ type NewPhoto struct {
 	// (`003_photo_idempotency_key.sql`). Nil from a client that does not send one — which is every
 	// build before the send path — and such a begin is not idempotent, exactly as it never was.
 	ClientUUID *uuid.UUID
+	// CapturedOn is the photograph's local capture date, YYYY-MM-DD, as the phone sent it (decision
+	// 14a, 007). Nil from a build that does not send it. The handler validates it; 007's
+	// `photos_captured_on_is_the_captured_day` holds it within a day of `CapturedAt`.
+	CapturedOn *string
 }
 
 // BegunPhoto is what a begin settled on: the row, and whether this call is the one that created it.
@@ -191,11 +195,11 @@ func (s *Store) BeginPhoto(ctx context.Context, photo NewPhoto, owner Owner) (Be
 			INSERT INTO photos
 			    (id, tree_uuid, visit_client_uuid, user_id, device_id, shot_type,
 			     moderation_state, approval_reason, captured_at, width, height,
-			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)
+			     public_lat, public_lon, storage_key, client_uuid, created_at, updated_at, captured_on)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17::date)
 		`, photo.ID, photo.TreeUUID, photo.VisitClientUUID, owner.UserID, owner.DeviceID,
 			photo.ShotType, state, reason, photo.CapturedAt, photo.Width, photo.Height,
-			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now)
+			photo.PublicLat, photo.PublicLon, photo.StorageKey, photo.ClientUUID, now, photo.CapturedOn)
 		if err != nil {
 			return err
 		}

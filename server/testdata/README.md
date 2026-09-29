@@ -65,3 +65,18 @@ match `speciesCurrentID`, and because that property is optional the mismatch dec
 
 Timestamps are RFC3339 at second precision in UTC, because `JSONDecoder`'s `.iso8601` uses
 `.withInternetDateTime` and rejects fractional seconds.
+
+## Request fixtures: the direction reversed
+
+Two files are **requests** the client sends, not responses it decodes. The Go test posts each file's
+bytes unchanged to the real handler. The client's half must **encode through production code** and
+compare against the file.
+
+| File | The client encodes | Go test |
+|---|---|---|
+| `sync_location_correction.json` | a `location_correction` outbox item (`SyncItemBody` wrapping `TreeLocationCorrection`) | `TestTheLocationCorrectionFixtureMovesThePin` |
+| `photos_begin.json` | the `POST /photos/begin` body, including decision 14a's `captured_on` | `TestThePhotosBeginFixtureStoresItsLocalCaptureDate` |
+
+`photos_begin.json` is deliberately the east-of-UTC case. `captured_at` is 23:30 UTC on the 28th, and
+`captured_on` is the phone's local date, the 29th. A client that sent the UTC date would still pass a
+shape check, so C1's test must also compare the value.
