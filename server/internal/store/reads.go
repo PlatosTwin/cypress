@@ -12,6 +12,41 @@ import (
 // buys something real. What a local fallback loses for the R-degraded four is *other devices of
 // the same account*, which is exactly what these queries return that the phone cannot.
 
+// TreeMembershipKinds are the contribution kinds that count as meeting a tree — the only ones
+// `Grove`'s `mine` CTE and `MapMembership`'s `yours` arm read.
+//
+// An allow-list, not `syncKinds` minus a name or two, on purpose: the next kind added to
+// `syncKinds` is out of both reads until somebody puts it here deliberately, rather than in by
+// default because nothing excluded it. That is the shape `MetSpeciesKinds`
+// (`GroveSpeciesKnown`) already uses for the same reason, one read over — see the note below on
+// why this list is not that one.
+//
+// It is every kind but three: `private_reminder` (a note to yourself, never public evidence of
+// contact — the exclusion these two reads always had) and `data_dispute` /
+// `data_dispute_withdrawal` (owner ruling, 2026-09-28). A report that the city's record is wrong
+// is not a visit, and the report screen's own copy says so — "Nothing on the map changes." Before
+// this list existed neither read filtered on kind at all beyond `private_reminder`, so raising a
+// dispute put the tree in `GET /me/grove` and in `GET /me/map-membership?kind=yours`, and
+// withdrawing the dispute left it there — the comment beside `syncKinds` in
+// `internal/api/sync.go` already recorded the enrollment before this fixed it.
+//
+// **Not `MetSpeciesKinds`.** That list answers a narrower question — which kinds carry a
+// `speciesID` that means "met this species" — and is deliberately four kinds, excluding
+// `add_tree`, `species_claim` and `species_correction` because naming a species is not meeting
+// one. Meeting a *tree* is a larger set: adding it, caring for it, voting on its photos and
+// reporting or withdrawing a wrong species claim are all real contact with that tree, even though
+// none of them is contact with a species. Sharing one list between the two reads would either
+// starve this one (drop `add_tree` and a self-added tree would not be "yours") or flood that one
+// (add `add_tree` and naming a species on a community tree would count as meeting it, the exact
+// defect `MetSpeciesKinds` exists to close). If PR #184 (`server/grove-species-known-scope`)
+// merges first, the two lists stay independent for this reason — nothing here depends on it.
+var TreeMembershipKinds = []string{
+	"visit", "observation", "measurement", "care_event", "favorite_toggle", "add_tree",
+	"species_claim", "species_correction", "wrong_species_report", "never_existed_report",
+	"species_review_dismissal", "record_review_dismissal", "photo_vote", "photo_withdrawal",
+	"hazard_redirect", "measurement_withdrawal",
+}
+
 // GroveEntry is a row of `GET /me/grove`.
 type GroveEntry struct {
 	TreeUUID      uuid.UUID
@@ -35,7 +70,7 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		      FROM contributions
 		     WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 		       AND deleted_at IS NULL
-		       AND kind <> 'private_reminder'
+		       AND kind = ANY($3::text[])
 		)
 		, tallied AS (
 		SELECT m.tree_uuid,
@@ -70,7 +105,7 @@ func (s *Store) Grove(ctx context.Context, owner Owner) ([]GroveEntry, error) {
 		       LIMIT 1
 		  ) hero ON true
 		 ORDER BY t.last_visited_at DESC NULLS LAST
-	`, owner.UserID, owner.DeviceID)
+	`, owner.UserID, owner.DeviceID, TreeMembershipKinds)
 	if err != nil {
 		return nil, err
 	}
@@ -118,19 +153,24 @@ func (s *Store) IsFavorite(ctx context.Context, owner Owner, treeUUID uuid.UUID)
 
 // MapMembership answers screen 01's two chips (#116, R23.1).
 //
-// `yours` is trees this identity contributed to — and community-added trees, which the contribution
-// kinds do not cover: a tree you added is the most emphatically yours there is. Photographs are in
-// by their visit rather than on their own, the same rule `DeviceContributions` states.
+// `yours` is trees this identity contributed to, narrowed to `TreeMembershipKinds` — and
+// community-added trees, which the contribution kinds do not cover: a tree you added is the most
+// emphatically yours there is. Photographs are in by their visit rather than on their own, the
+// same rule `DeviceContributions` states. Reporting a mistake in the city's record of a tree
+// (`data_dispute`) or taking that report back (`data_dispute_withdrawal`) is not in
+// `TreeMembershipKinds` and does not enroll the tree here — a report is not meeting the tree
+// (owner ruling, 2026-09-28).
 //
 // `favorites` excludes tombstones: an un-favorited tree is not one anybody would say they have.
 func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]uuid.UUID, error) {
 	var query string
+	args := []any{owner.UserID, owner.DeviceID}
 	switch kind {
 	case "yours":
 		query = `
 			SELECT DISTINCT tree_uuid FROM contributions
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
-			   AND deleted_at IS NULL AND kind <> 'private_reminder'
+			   AND deleted_at IS NULL AND kind = ANY($3::text[])
 			UNION
 			-- community_trees.id IS the client's tree UUID (see the table's own comment in
 			-- server/migrations/001_initial.sql), so this arm and the one above are the same
@@ -139,6 +179,7 @@ func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]
 			SELECT DISTINCT id FROM community_trees
 			 WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
 			   AND deleted_at IS NULL`
+		args = append(args, TreeMembershipKinds)
 	case "favorites":
 		query = `
 			SELECT tree_uuid FROM favorites
@@ -148,7 +189,7 @@ func (s *Store) MapMembership(ctx context.Context, owner Owner, kind string) ([]
 		return nil, ErrNotFound
 	}
 
-	rows, err := s.pool.Query(ctx, query, owner.UserID, owner.DeviceID)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

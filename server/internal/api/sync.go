@@ -380,12 +380,24 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     they are different sizes; conflating them is how this comment went wrong before.
 //
 //     The **residue** — the withdrawal's own row surfacing in the journal, and the tree kept in
-//     `GET /me/grove` with zero tallies and in `GET /me/map-membership?kind=yours` — is
-//     `photo_withdrawal`'s and `measurement_withdrawal`'s today, from one root cause: no reader
-//     here filters on kind (`Grove`'s `mine` CTE and `MapMembership` exclude only
-//     `private_reminder`). It is already open and already measured, as `docs/ROADMAP.md`'s chip
-//     backlog item "Answer what a withdrawn-to-empty tree should look like, before
-//     `GET /me/journal` goes remote". A dispute lands in that item unchanged.
+//     `GET /me/grove` with zero tallies and in `GET /me/map-membership?kind=yours` — was
+//     `photo_withdrawal`'s and `measurement_withdrawal`'s, and, until 2026-09-28, a dispute's too,
+//     all from one root cause: no reader filtered on kind beyond `private_reminder`. It is still
+//     open for those first two, and already measured, as `docs/ROADMAP.md`'s chip backlog item
+//     "Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
+//     remote".
+//
+//     **A dispute no longer lands in that item — it left it, rather than joining it.** Owner
+//     ruling, 2026-09-28: reporting a mistake in a tree's record is not meeting the tree, and the
+//     report screen's own copy promises "Nothing on the map changes." `store.TreeMembershipKinds`
+//     (`internal/store/reads.go`) is now an explicit allow-list of the kinds `Grove`'s `mine` CTE
+//     and `MapMembership`'s `yours` arm read, and `data_dispute` / `data_dispute_withdrawal` are
+//     not on it — so a dispute never enrolls the tree in either read in the first place, whether or
+//     not it is later withdrawn. That is a larger fix than closing the residue would have been:
+//     the roadmap item is about what a *withdrawn* contribution leaves behind, and an unwithdrawn
+//     dispute was residue too. `GET /me/journal` is unaffected and unchanged — it is a personal
+//     history and still serves a dispute back, and goes on serving it after the withdrawal applies,
+//     for the reasons below.
 //
 //     What is **larger** for a dispute is that the withdrawn thing itself goes on being served:
 //     those two kinds tombstone what they take back — `photos.deleted_at` and
