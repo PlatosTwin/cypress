@@ -506,6 +506,121 @@ one owner sentence away from being schedulable. The evidence, so that round star
   **The owner's sentence:** is F25 a mock round (draw the screen) or a consistency pass against the
   screens it borrows from?
 
+### Tester feedback, reconciled against main 2026-09-28
+
+Pulled by the recorded route (`.github/workflows/asc-feedback.yml`, ERRATA **E254**): workflow run
+**36494988293**, dispatched 2026-09-28T22:53:21Z on `a6557a1`, artifact `asc-feedback` generated
+22:53:35Z. **33 screenshot submissions, 0 crash submissions, 0 customer reviews, `notes: []`** —
+nothing truncated or forbidden. All 33 are from one device (iPhone17_5, 390 × 844 pt). The first 28
+are the same submissions PR #118 numbered, in the same order, so the numbering below continues
+PR #118's chronological one: **F29–F33 are the five submitted after PR #118's pull**, and nobody
+had logged any of them. The screenshots are in the artifact (named `<submission id>-1.png`); the
+JSON's links expire 2026-10-04.
+
+Every build-77 report below is against current code: nothing under `Cypress/` has changed on
+`main` since build 77 was uploaded (2026-09-11).
+
+**One earlier item had fallen out of the queue and is re-logged here (D6).** Of PR #118's eight
+Cities-screen reports, D3 (resumable download) shipped in `eba00fc` (a background `URLSession`,
+`CityDownloadService.backgroundSessionIdentifier`) and D7d (cumulative `Use`) became RULINGS
+**R84**; D6 was written into RULINGS R43's amendment as "a proposed ticket" and never reached this
+file.
+
+- **F29 — the header squeezes a long title into a column of single words.** Build 60, 2026-08-27,
+  verbatim: *"Really terrible spacing up top"*. The screenshot is the pin-set map ("Show me where
+  this is", ERRATA E144) for `Indian Laurel Fig Tree 'Green Gem'` with the pill
+  `Financial District/South Beach`: the title renders six lines deep, one word per line, between
+  the back circle and the pill. **A defect, still present on `main`.** `ScreenHeader`'s own comment
+  states the rule — *one row at the drawn sizes, two once the title cannot share one* — but the
+  code switches to two rows only when `dynamicTypeSize.isAccessibilitySize`
+  (`Cypress/DesignSystem/Components/ScreenHeader.swift`), and `HeaderPill` is `.fixedSize` at
+  every non-accessibility size, so at the default type size a long pill always wins and the title
+  takes whatever is left. The pin-set map is the screen where the **title** is a record's name
+  and therefore unbounded; the Measure, Growth history, Activity and Outbox headers carry a
+  variable **pill** instead and can reach the same state. Direction: implement the rule the
+  comment already states (two rows whenever the title and pill do not fit on one, e.g. with
+  `ViewThatFits`), and prove it on a 390 pt screen with this tree and this pill. Small. No owner
+  decision needed to fix the defect; the header's one-row layout at the lengths the mocks draw
+  must not change.
+
+- **F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
+  verbatim: *"Pill says two photos but when I click in I see only one. Bug?"* The screenshot is
+  screen 03 for a `Ginkgo, Autumn Gold` in SF with `2 photos · since 2026` on the hero pill and one
+  `Visit · leaf out` row. **Not reproduced; which tap the tester made is unknown, and the two
+  readings are different.** Since ERRATA E125 the hero has two controls
+  (`TreeProfileView.hero`): the **photograph** opens that one photograph whole in
+  `PhotoViewerView`, which by design never pages, and only the **pill** opens the browser
+  (screen 20). If the tester tapped the picture, the screen behaved as built, and the finding is
+  that nothing tells a reader the pill is the way to the rest, which is a design question under
+  constraint 21. If they tapped the pill, it is a defect: the pill and the browser read the same
+  series (`TreeProfile.visiblePhotos`, E215; `RoutedAPI.refreshedTreeProfile` merges the
+  community half by photo id), so the count and the list should not disagree, and the first step
+  is to reproduce it on a tree with two photographs from one visit. Small once the reading is
+  known.
+
+- **F31 — move a tree you added, and let other people see it.** Build 77, 2026-09-26, verbatim:
+  *"Need to be able to edit location on self-added trees and need self added ones to go to
+  everyone not just stay on my phone"*. The screenshot is screen 03 for a community-added tree
+  (`Tree`, *community-added, unverified · position from GPS*, private property). **New, and two
+  separate requests.** (a) *Relocation*: the only place a community tree's position can be set is
+  `Move the pin` during add-a-tree, before it is saved. After that there is no verb for it:
+  `CypressAPI` has no relocate method, and the write surface is append-or-withdraw by design (see
+  F27), so a relocation is a new mutation and outbox kind (probably a migration seat) plus an
+  unmocked control. (b) *Propagation*: an added tree does reach the service
+  (`POST /api/v1/trees`, `community_trees`), but nothing reads it back down. `treesNear` and
+  `mapContent` are Class L in `RoutedAPI` and the service has no read of community trees near a
+  place, so another phone never sees them. That is a read route, a client merge into the map
+  and a privacy decision: the screenshot's own tree was recorded on private property, and
+  DECISIONS constraint 16 keeps community trees out of the city layer until verified. Large.
+  **Owner decision** on both halves before either is built.
+
+- **F32 — adding a tree where the app will not let you.** Build 77, 2026-09-26, verbatim:
+  *"Need a more complete species list. Tried to add cook pine and it wasn't an option. Also some
+  species show lowercase which is bad formatting. Also need to be able to add tree even if less
+  than 6m to known tree. This is using cypress to log areas where there are no databases"*. The
+  screenshot is add-a-tree refusing: `ALREADY ON RECORD — Something is already on record within
+  10 m of here. Nothing was added`, next to an `Unidentified tree` at 6 m, with `Pine Spp`
+  chosen. **Three findings, none of them a code defect:**
+  1. *Cook pine is in the seed under another name.* The pinned bundle
+     (`c9a440b2…`, hash checked) has *Araucaria columnaris* with the common name
+     `Coral reef araucaria`, so a search for "cook pine" cannot find it. The gap is vernacular
+     synonyms: species search matches only the one common name and the scientific name. Any
+     alias list must come from a cited source (DECISIONS constraint 15), which makes this a
+     sourcing round, not a string edit. Medium.
+  2. *Casing is inconsistent in the data.* Of the bundle's 513 species with a common name, 84
+     have a lowercase word after the first (`Swamp mahogany`, `Pittosporum spp`), and 380
+     multi-word names are in title case (`Norfolk Island Pine`, `Pine Spp`). The app renders
+     names exactly as the record holds them (ERRATA E51), so the fix belongs in the seed build.
+     **Owner decision:** which case is canonical. Small once decided, but it changes published
+     data and so ships with a publish.
+  3. *The 10 m refusal is a DECISIONS rule, not a bug.* Constraint 16 fixes add-a-tree's 10 m
+     any-species proximity dedupe (`TreeDraft.proximityDedupeRadiusM`, `LocalAPI.addTree`). The
+     tester is asking for it to be relaxed, for the use of logging trees where no city inventory
+     exists. **Owner decision** (constraint 16). Small to build if relaxed; the size depends on
+     the rule chosen, for example a smaller radius, or an override that states the reader has
+     checked the nearby record.
+
+- **F33 — zoom while taking the photo on add-a-tree.** Build 77, 2026-09-28, verbatim: *"Need
+  ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
+  (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on the one camera
+  surface the first two did not reach.** RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
+  viewer (`PhotoViewerView`, `PhotoZoom`) and on screen 04's viewfinder (`VisitCameraView`'s
+  `zoomPinch`, which drives `VisitCameraController.setZoom`). Add-a-tree owns its own
+  `VisitCameraController` (`VisitAddTreeModel.camera`), but `VisitAddTreeView` has no zoom
+  gesture. Small: the controller already implements the gesture, the lens ceiling
+  (`preferredMaxZoom`) and the "not zoomable" gate. **Owner confirmation** that R80 item 5 covers
+  this viewfinder as well as screen 04's; it is the same gesture on the same controller.
+
+- **D6 — search and filter by state on the Cities screen** (re-logged; build 49, 2026-08-23),
+  verbatim: *"Eventually we will have 20+ entries here. We need a way to allow search/filtering.
+  Filtering should be by state. Search just normal search"*. Not built:
+  `Cypress/Features/Cities/` has no search field or filter. PR #118 deferred it on purpose while the
+  catalog held seven packs, and that is still true. **The trigger is the catalog growing**, which is
+  the seed-expansion item below (Oakland, Los Angeles and twelve more). Filtering by state needs a
+  publisher-side `state` field, because no pack in `manifest-v2.json` carries one. The client must
+  not derive it from an id prefix, the class of mistake D7b was. Medium. Schedule it with the first
+  expansion publish that pushes the catalog toward twenty.
+
 ### Follow-up tickets from the 2026-08-30 rounds
 
 - **`cypressHitArea` overhangs whatever sits above it, everywhere it is used — audit the call
@@ -847,8 +962,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
    lock keyed on the reading id (`pg_advisory_xact_lock(hashtextextended(upper($1), 0))`) taken at
    the top of **both** `withdrawMeasurement` and `measurementWasWithdrawn`, which serialises only
    same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
-   recipe, and red-prove the race itself first so the fix has a witness. `server/` has no CI, so
-   whatever lands here needs its own throwaway-Postgres run with stated pass/skip/fail counts.
+   recipe, and red-prove the race itself first so the fix has a witness. `server.yml` now runs the
+   suite against Postgres and refuses a skip, but it is not a required check: read its run.
 10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
     readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
     to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
@@ -898,7 +1013,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     before removing anything. `visit_count` is `TreeCommunityHalf`'s second query;
     `photo_count` is `len(photos)` after the visibility filter, and screen 15's promise may rest on
     one of them.
-14. **`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.** The
+14. ~~**`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.**~~ The
     proposal's §7 records the gap; W-A's `web.yml` is for `web/`, not for this. A `server.yml` on
     `ubuntu-latest` with a `postgres:16` service container and `CYPRESS_TEST_DATABASE_URL` set would
     run the whole suite in about a minute, and — this is the part that matters here — it must
@@ -907,7 +1022,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     / 0 skip with one.~~ **Those no-database numbers were the baseline tree's, mislabelled**; at
     W-G's head after its review fixes, it is **67 pass / 131 skip / 0 fail** with no database and
     **198 pass / 0 skip / 0 fail** with one (66 / 125 and 191 / 0 at the PR head before them). `testflight.yml` already excludes `server/`
-    from the archive, so a server-only workflow cannot mint a build.
+    from the archive, so a server-only workflow cannot mint a build. **SHIPPED** by
+    `ci/server-zero-skips`: `.github/workflows/server.yml` runs the suite on `ubuntu-latest` against
+    a Postgres service container with `CYPRESS_TEST_DATABASE_URL` set, under `go test -json`, and
+    `server/ci/verify_test_json.sh` refuses any `skip` event (subtests included), any failure, zero
+    passes, a package that passed having run nothing, and a cut-short stream; `gofmt -l` and
+    `go vet` run too. **Postgres 18, not the 16 sketched above** — production is
+    `flyio/postgres-flex:18.1` (`fly image show --app cypress-sync-db`, 2026-09-28). Measured at
+    `bb4d08f`: **68 pass / 147 skip** with no database, **222 pass / 0 skip** against 18. The
+    trigger list also names the four Swift files Go tests parse, and
+    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. **Not a required
+    check** — that is the owner's ruleset call, and if it is made one the `paths:` filters must come
+    off in the same change (E225).
 
 15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
     whether an estimate may supersede a measurement when a single number has to be chosen. D7,
@@ -1296,6 +1422,20 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `npm ci --omit=dev` assembled in a clean directory, with `sync-packs.mjs` running from it and no
     `Cannot find module`, proving the COPY list sufficient — but the image itself is unbuilt. The
     first `flyctl deploy` builds it remotely and will be the first real answer.
+
+53. **The feedback artifact's `testerId` is empty on every submission, so it can no longer tell two
+    testers apart.** Found by the 2026-09-28 tester-feedback pull (run 36494988293): all 33
+    submissions carry `"testerId": ""`. That includes the two build-18 reports E254 counted as
+    coming from one tester id. `Tools/appstore_connect.py`'s `related("tester")` reads
+    `relationships.tester.data.id` and returns `""` when `data` is absent. The request has
+    `include=build` only, deliberately, so that no `betaTesters` resource (which carries `email`)
+    is ever fetched. The comment beside it says the API still returns the id without the include.
+    This run says it does not, or no longer does, and the tool reports the loss as an empty string
+    rather than as a note. So "one tester is one tester" (E254) is now unverifiable from the
+    artifact. Fix: find a way to read the opaque id that still never fetches an address, and have
+    the command add a `notes` entry when the field comes back empty instead of writing `""`.
+    Calibrate against a submission whose tester is known. Keep the zero-`@` check as the guard
+    (it held on this run: 0 `@` in the JSON). Small.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
