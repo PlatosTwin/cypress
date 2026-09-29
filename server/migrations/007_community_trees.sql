@@ -15,11 +15,12 @@
 --   1. `published_at IS NOT NULL` implies `device_id IS NULL` — a CHECK, below. A tree added signed
 --      out stays on the adder's phone until sign-in (decision 1).
 --   2. A published tree's owning account has accepted the license, or the tree is anonymized.
---      This spans two tables, so no CHECK can state it. It is kept by the four writers of
---      `published_at` in `internal/store/community_trees.go` (`publicationStamp`, the claim, and
---      `RecordLicenseConsent` in both directions) and pinned by
---      `TestNoPublishedTreeBelongsToAnAccountThatDeclined`, which checks the whole table after
---      every path that can move either side.
+--      This spans two tables, so no CHECK can state it. After this file's own backfill it is kept
+--      by the four writers of `published_at` in `internal/store/community_trees.go` —
+--      `publicationStamp` (a signed-in insert), `claimCommunityTrees` (the claim), and
+--      `publishAccountTrees` / `unpublishAccountTrees` (`RecordLicenseConsent` accepting and
+--      declining) — and pinned by `TestNoPublishedTreeBelongsToAnAccountThatDeclined`, which checks
+--      the whole table after every path that can move either side.
 --
 -- `users.license_version` is the record of acceptance: NULL is a *declined* consent (001's
 -- comment and `users_license_pair`), a string is the version accepted, and
