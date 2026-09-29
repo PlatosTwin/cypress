@@ -25,6 +25,10 @@ these files, read off disk, so the two halves cannot drift.
 |---|---|---|
 | `proximity_conflict.json` | the whole error body; `detail.candidates` is `[NearbyTree]` | the shape `ProximityConflict` is built from |
 | `grove.json` | `entries[].record` is `GroveRecord` | the rest of the object is server-owned and snake_case |
+| `community_trees_tile.json` | `trees` is `[Tree]` | `GET /community-trees`, a first fetch (no cursor). The envelope (`tile`, `withdrawn_tree_ids`, `next_cursor`, `has_more`) is server-owned and snake_case. The first tree has a species: assert `speciesCurrentID` is **non-nil**, because a key drift decodes it as a silent nil. `address` is null for everyone on this route. `createdAt` and `updatedAt` are midnight UTC, because community-tree dates travel at day precision. |
+| `community_trees_tile_delta.json` | `trees` is `[Tree]`; `withdrawn_tree_ids` is `[UUID]` | the same route, from the first fetch's cursor: one tree moved and renamed, one new, one withdrawn, one erased (a tombstone). Both lists are non-empty. A tree in `trees` can lie outside the tile (a pin moved out of it), so the cache keys on `id`. `next_cursor` is opaque and always present. |
+| `tree_profile_community.json` | `community_tree` is `Tree?` | `GET /trees/{id}` for a published community tree, asked by a stranger. The six keys that existed before, plus `community_tree`, `added_by_you` and `is_published`. Assert `community_tree.speciesCurrentID` non-nil, and that `added_by_you` is false and `is_published` true. |
+| `tree_history.json` | server-owned, snake_case; `from_coordinate` / `to_coordinate` are `Coordinate?` | `GET /trees/{id}/history`, newest first, dates truncated to the day, no actor field. `kind` and `placement` must decode tolerantly (an unknown case), because the vocabulary is an allow-list that can widen. |
 
 ## The two public-read fixtures decode into **nothing Swift**, and that is the point
 
