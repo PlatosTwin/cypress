@@ -962,8 +962,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
    lock keyed on the reading id (`pg_advisory_xact_lock(hashtextextended(upper($1), 0))`) taken at
    the top of **both** `withdrawMeasurement` and `measurementWasWithdrawn`, which serialises only
    same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
-   recipe, and red-prove the race itself first so the fix has a witness. `server/` has no CI, so
-   whatever lands here needs its own throwaway-Postgres run with stated pass/skip/fail counts.
+   recipe, and red-prove the race itself first so the fix has a witness. `server.yml` now runs the
+   suite against Postgres and refuses a skip, and since `ci/server-only-skips-ios` it is required on
+   pull requests through `gate` (TestFlight's `server / server` job); on main's push commit, read
+   the `Server` workflow's own run.
 10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
     readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
     to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
@@ -1013,7 +1015,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     before removing anything. `visit_count` is `TreeCommunityHalf`'s second query;
     `photo_count` is `len(photos)` after the visibility filter, and screen 15's promise may rest on
     one of them.
-14. **`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.** The
+14. ~~**`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.**~~ The
     proposal's §7 records the gap; W-A's `web.yml` is for `web/`, not for this. A `server.yml` on
     `ubuntu-latest` with a `postgres:16` service container and `CYPRESS_TEST_DATABASE_URL` set would
     run the whole suite in about a minute, and — this is the part that matters here — it must
@@ -1022,7 +1024,22 @@ into this section in the round that finds it, and nowhere else. Each item stands
     / 0 skip with one.~~ **Those no-database numbers were the baseline tree's, mislabelled**; at
     W-G's head after its review fixes, it is **67 pass / 131 skip / 0 fail** with no database and
     **198 pass / 0 skip / 0 fail** with one (66 / 125 and 191 / 0 at the PR head before them). `testflight.yml` already excludes `server/`
-    from the archive, so a server-only workflow cannot mint a build.
+    from the archive, so a server-only workflow cannot mint a build. **SHIPPED** by
+    `ci/server-zero-skips`: `.github/workflows/server.yml` runs the suite on `ubuntu-latest` against
+    a Postgres service container with `CYPRESS_TEST_DATABASE_URL` set, under `go test -json`, and
+    `server/ci/verify_test_json.sh` refuses any `skip` event (subtests included), any failure, zero
+    passes, a package that passed having run nothing, and a cut-short stream; `gofmt -l` and
+    `go vet` run too. **Postgres 18, not the 16 sketched above** — production is
+    `flyio/postgres-flex:18.1` (`fly image show --app cypress-sync-db`, 2026-09-28). Measured at
+    `bb4d08f`: **68 pass / 147 skip** with no database, **222 pass / 0 skip** against 18. The
+    trigger list also names the four Swift files Go tests parse, and
+    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. ~~**Not a required
+    check** — that is the owner's ruleset call, and if it is made one the `paths:` filters must come
+    off in the same change (E225).~~ **Required through `gate` since `ci/server-only-skips-ios`**
+    (owner ruling 2026-09-28): `testflight.yml` calls `server.yml` as its `server` job whenever a
+    diff touches `server.yml`'s `on.push.paths`, `gate` refuses unless it succeeded, and a
+    server-only diff (`this diff is server-only`) no longer runs the iOS suite. No ruleset change:
+    `gate` was already the required context.
 
 15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
     whether an estimate may supersede a measurement when a single number has to be chosen. D7,
@@ -1425,6 +1442,27 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the command add a `notes` entry when the field comes back empty instead of writing `""`.
     Calibrate against a submission whose tester is known. Keep the zero-`@` check as the guard
     (it held on this run: 0 `@` in the JSON). Small.
+54. **`add_tree`'s `speciesID` write check matches the key case-insensitively, same as
+    `species_claim`/`species_correction` did before PR #184's fix round.** Found by that PR's
+    adversarial review (finding 2) and deliberately left alone there — the ruling was fix the two
+    kinds that name a species as their whole record, and file `add_tree` separately since it is a
+    larger payload with more fields the same class of bug could touch. `addTreePayload.SpeciesID`
+    is a struct field decoded with plain `json.Unmarshal`, so `{"speciesid":"<uuid>"}` or
+    `{"SPECIESID":"<uuid>"}` sets it exactly as `{"speciesID":"<uuid>"}` would, while
+    `store.GroveSpeciesKnown` and every other `payload ->>` read key on the exact spelling. Fix:
+    decode `addTreePayload` the same way `speciesStatementSpeciesID`
+    (`server/internal/api/sync.go`) now does — a raw map, exact key lookup — or otherwise require
+    the literal `"speciesID"` key. Calibrate the same way: red-proof with a case-insensitive
+    decode restored, confirm `{"speciesid":…}` and `{"SPECIESID":…}` are refused.
+55. **`internal/uuid/uuid.go`'s header and `migrations/004_measurement_withdrawal_kind.sql`'s
+    comment say Swift's `JSONEncoder` writes a `UUID` lowercase.** It writes it uppercase. Found
+    during PR #184's fix round (review finding 5): the PR's own comments in
+    `server/internal/api/sync.go` state the uppercase fact correctly (`SpeciesStatement`'s
+    encoder), which means the tree now contradicts itself across two files. `004`'s phrase "the
+    cast `GroveSpeciesKnown` uses" is also stale — that cast was removed by PR #184.
+    Documentation-only: read both files, verify the encoder's actual case empirically (a real
+    `JSONEncoder` round-trip, not another comment), and correct both in one pass so they agree
+    with each other and with `sync.go`.
 
 54. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
