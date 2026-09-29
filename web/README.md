@@ -614,5 +614,3 @@ directory somebody has poked at stops looking clean.
 
 The server holds its packs open for the life of the process (`packLibrary.ts`), so after a refresh
 that actually replaced something, restart the machine before expecting the new bytes to be served.
-
-<!-- calibration (throwaway): a web-only change. -->
