@@ -260,7 +260,7 @@ func (s *Server) photoData(w http.ResponseWriter, r *http.Request, who caller) e
 		"url":         source,
 		"expires_in":  int(presignLifetime.Seconds()),
 		"shot_type":   photo.ShotType,
-		"captured_at": stamp(photo.CapturedAt),
+		"captured_at": servedCapturedAt(photo, own),
 	})
 	return nil
 }
@@ -310,6 +310,29 @@ func (s *Server) rejectPhoto(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, s.Log, http.StatusOK, map[string]any{"moderation_state": "rejected"})
 	return nil
+}
+
+// servedCapturedAt is a photograph's `captured_at` as one caller may see it (the owner's decision
+// 14, served as decision 14a rules).
+//
+// **The owner gets the exact time.** Everybody else gets the **date** the phone recorded
+// (`captured_on`), sent as **noon UTC** of that date, and never the time. Noon rather than midnight,
+// and not a date-only field, because of what the shipped client does with the value: it decodes an
+// instant (`.iso8601`) and formats it **date-only in the reader's own zone** on every surface that
+// shows a photograph's date. Noon UTC is the same calendar date for every reader from UTC−11 to
+// UTC+11; midnight UTC is the day before anywhere in the Americas; and a date-only string would fail
+// the shipped decoder outright. Measured through that decoder and those formatters in the pending
+// errata file's decision-14a table.
+//
+// A photograph with no `captured_on` (from a build that did not send it) keeps the exact time: the
+// service does not know the local day, and every server-only guess showed a wrong day for some
+// photographs (the decision-14 erratum). Decision 14a keeps today's behavior for them.
+func servedCapturedAt(photo store.PhotoRecord, own bool) Timestamp {
+	if own || photo.CapturedOn == nil {
+		return stamp(photo.CapturedAt)
+	}
+	day := photo.CapturedOn.UTC()
+	return stamp(time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, time.UTC))
 }
 
 func ownsPhoto(photo store.PhotoRecord, who caller) bool {

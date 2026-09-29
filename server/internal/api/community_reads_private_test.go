@@ -272,11 +272,14 @@ func TestTheGroveHeroPassesThePhotographGate(t *testing.T) {
 	}
 }
 
-// TestAStrangersWithdrawalLeavesTheGroveAsAnUnknownIdWould is the verification's reproduction. A
-// stranger sends a withdrawal for a declining account's hidden tree, which has a photograph with
-// its bytes, and one for an id nobody sent. Both answer alike (F6). Afterwards the stranger's
-// grove must not tell them apart either: the two rows are the same row under two ids.
-func TestAStrangersWithdrawalLeavesTheGroveAsAnUnknownIdWould(t *testing.T) {
+// TestAStrangersGroveTellsAHiddenTreeFromNoTree is the verification's V2 reproduction, on the
+// path that still reaches the grove. A declining account's hidden tree has a photograph with its
+// bytes. A stranger sends a withdrawal and a visit for it, and the same two for an id nobody sent.
+// Each pair answers alike (F6 for the withdrawal; any tree id may be visited). Afterwards the
+// stranger's grove must not tell the two apart: one row each, the same row under two ids. (Since
+// the grove enrolls only the kinds of meeting a tree, main's #192, the withdrawal alone no longer
+// makes a row; the visit does, which is where the hero gate is needed.)
+func TestAStrangersGroveTellsAHiddenTreeFromNoTree(t *testing.T) {
 	h := newHarness(t)
 	decliner := signInAs(t, h, "ct.v2.hidden.adder", nil, nil)
 	hidden := uuid.New()
@@ -285,23 +288,25 @@ func TestAStrangersWithdrawalLeavesTheGroveAsAnUnknownIdWould(t *testing.T) {
 	unknown := uuid.New()
 
 	stranger := signInAs(t, h, "ct.v2.stranger", nil, accepted())
-	first := h.syncOne(t, stranger.AccessToken, treeWithdrawalItem(hidden))
-	second := h.syncOne(t, stranger.AccessToken, treeWithdrawalItem(unknown))
-	if first.Status != second.Status || codeOf(first.Error) != codeOf(second.Error) {
-		t.Fatalf("fixture: the two withdrawals answered %s/%s and %s/%s", first.Status, codeOf(first.Error),
-			second.Status, codeOf(second.Error))
+	for _, item := range []func(uuid.UUID) map[string]any{treeWithdrawalItem, visitItem} {
+		first := h.syncOne(t, stranger.AccessToken, item(hidden))
+		second := h.syncOne(t, stranger.AccessToken, item(unknown))
+		if first.Status != second.Status || codeOf(first.Error) != codeOf(second.Error) {
+			t.Fatalf("fixture: the hidden and the unknown id answered %s/%s and %s/%s", first.Status,
+				codeOf(first.Error), second.Status, codeOf(second.Error))
+		}
 	}
 	rows, _ := groveRows(t, h, stranger.AccessToken)
-	if bytes.Contains(rows[hidden], []byte(photo.String())) {
-		t.Fatalf("the stranger's grove names the hidden tree's photograph %s: %s", photo, rows[hidden])
-	}
 	if rows[hidden] == nil || rows[unknown] == nil {
 		t.Fatalf("fixture: the grove has no row for one of the ids: %v", rows)
+	}
+	if bytes.Contains(rows[hidden], []byte(photo.String())) {
+		t.Fatalf("the stranger's grove names the hidden tree's photograph %s: %s", photo, rows[hidden])
 	}
 	if want := bytes.ReplaceAll(rows[unknown], []byte(unknown.String()), []byte(hidden.String())); !bytes.Equal(rows[hidden], want) {
 		t.Fatalf("the grove tells a hidden tree from an unknown id:\n hidden  %s\n unknown %s", rows[hidden], rows[unknown])
 	}
-	// The control: the photograph is real, and its adder's own grove would draw it.
+	// The control: the photograph is real, and its adder's own grove draws it.
 	plantVisit(t, h, hidden, store.Owner{UserID: &decliner.UserID})
 	if _, heroes := groveRows(t, h, decliner.AccessToken); heroes[hidden] == nil || *heroes[hidden] != photo {
 		t.Fatalf("control: the adder's own grove does not draw their photograph: %v", heroes[hidden])

@@ -1233,10 +1233,14 @@ func TestTreeProfileCommunityGolden(t *testing.T) {
 	photographer := signInAs(t, h, "ct.golden.photographer", nil, accepted())
 	execSQL(t, h, `
 		INSERT INTO photos (id, tree_uuid, user_id, shot_type, moderation_state, approval_reason,
-		                    captured_at, storage_key, bytes_received_at)
-		VALUES ($1, $2, $3, 'full_tree', 'approved', 'auto_approved_launch', '2026-09-22T15:00:00Z',
-		        'photos/golden', '2026-09-22T15:00:05Z')
+		                    captured_at, captured_on, storage_key, bytes_received_at)
+		VALUES ($1, $2, $3, 'full_tree', 'approved', 'auto_approved_launch', '2026-09-23T02:30:00Z',
+		        '2026-09-22', 'photos/golden', '2026-09-23T02:30:05Z')
 	`, goldenPhoto, goldenTreeA, photographer.UserID)
+	// Decision 14a: taken at 19:30 on the 22nd in San Francisco, which is 02:30 UTC on the 23rd.
+	// The phone sent its local date, the 22nd, and a stranger is served noon UTC of it — not the
+	// time, and not the UTC date. (The city golden's photograph has no captured_on, so it pins the
+	// other form: the exact time, as before.)
 	recorder := h.do(t, http.MethodGet, Prefix+"/trees/"+goldenTreeA.String(), h.registerDeviceToken(t, uuid.New()), nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())

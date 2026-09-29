@@ -197,7 +197,7 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 		photos = append(photos, map[string]any{
 			"photo_id":    photo.ID,
 			"shot_type":   photo.ShotType,
-			"captured_at": stamp(photo.CapturedAt),
+			"captured_at": servedCapturedAt(photo, own),
 			// Sent so the client can tell "everyone sees this" from "only you do" without
 			// re-deriving it — which is what makes screen 15's promise legible on screen.
 			"is_publicly_visible": photo.IsPubliclyVisible(),
