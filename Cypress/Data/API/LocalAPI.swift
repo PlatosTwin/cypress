@@ -1991,6 +1991,11 @@ public actor LocalAPI: CypressAPI {
     public func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket {
         let moment = now()
         let photo = Photo(
+            // The binary's own id, when it has one — so this row, the begin's `client_uuid` and the
+            // key the service echoes to its contributor are one value (report F30; see
+            // `PhotoUploadRequest.idempotencyKey`). The insert is `ON CONFLICT(id) DO NOTHING`, so an
+            // apply replayed after a crash lands on the row it already wrote.
+            id: request.idempotencyKey ?? UUID(),
             treeID: request.treeID,
             visitID: request.visitID,
             shotType: request.shotType,
@@ -2652,6 +2657,19 @@ public actor LocalAPI: CypressAPI {
             )
         }
         return (entries, rows)
+    }
+
+    /// This tree's photographs as the phone holds them, withdrawn rows included — the phone's side
+    /// of photo identity for `RoutedAPI.refreshedTreeProfile` (report F30).
+    ///
+    /// Not part of `CypressAPI`: it answers a question only the router's merge asks, about rows only
+    /// this phone has, and it is handed to the router as a closure by `DataLayer.boot` the way
+    /// `groveCityFileRows(for:)` is. Empty on a failed read, which leaves the merge with the live
+    /// rows the profile itself carries — the same answer it gave before this existed.
+    public func photoIdentities(treeID: UUID) async -> [Photo] {
+        (try? await store.queue.read { connection in
+            try contributions.photoIdentities(treeID: treeID, connection: connection)
+        }) ?? []
     }
 
     /// Names and positions for a set of trees, for a grove row the **service** named.

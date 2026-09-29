@@ -869,7 +869,11 @@ public struct APIOutboxTransport: OutboxTransport {
                 localPath: photo.path,
                 capturedAt: item.createdAt,
                 width: size?.width,
-                height: size?.height
+                height: size?.height,
+                // The same key the send will carry (`APIOutboxSendSink` below), so the phone's
+                // `photos.id` is the id the service echoes back to this photograph's contributor —
+                // the link that keeps the contributor's own profile from drawing it twice (F30).
+                idempotencyKey: photo.id
             )
         )
         try await api.uploadPhoto(at: photo.path, ticket: ticket)

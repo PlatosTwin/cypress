@@ -390,7 +390,10 @@ public struct DataLayer: Sendable {
             log: readLog,
             signedInUserID: signedInUserID,
             resolveGroveRows: { ids in await local.groveCityFileRows(for: ids) },
-            resolveSpecies: { ids in await local.species(ids: ids) }
+            resolveSpecies: { ids in await local.species(ids: ids) },
+            // Withdrawn rows included, so a service copy of a photograph this phone took and then
+            // withdrew does not come back onto its contributor's profile (report F30).
+            resolveLocalPhotos: { id in await local.photoIdentities(treeID: id) }
         )
 
         // ── The background half of the grove's two reads (the owner's ruling of 2026-09-01) ─────

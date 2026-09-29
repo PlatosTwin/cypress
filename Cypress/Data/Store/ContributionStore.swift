@@ -436,6 +436,23 @@ public struct ContributionStore {
         return Self.series(try statement.fetchAll(Self.decodePhoto), limit: limit)
     }
 
+    /// Every photograph of this tree the phone holds a row for, **withdrawn ones included**, in no
+    /// particular order.
+    ///
+    /// Not a timeline — nothing draws this. It is the phone's side of photo identity for
+    /// `RoutedAPI.refreshedTreeProfile` (report F30): the rows a service copy must fold into rather
+    /// than sit beside. The withdrawn rows are the reason it is not `photos(treeID:)`. A photograph
+    /// this phone took and then withdrew can still be on the service — the withdrawal is queued, or
+    /// has not been applied there — and the service's copy must not reappear on its contributor's
+    /// own profile as though it were somebody else's.
+    public func photoIdentities(treeID: UUID, connection: SQLiteConnection) throws -> [Photo] {
+        let statement = try connection.cachedStatement("""
+            SELECT * FROM photos WHERE tree_uuid = :tree COLLATE NOCASE
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":tree")
+        return try statement.fetchAll(Self.decodePhoto)
+    }
+
     // MARK: - Hero photographs, batched (#176)
 
     /// One photograph id per tree, chosen by `PhotoHero.choose` — the same rule the profile hero

@@ -295,13 +295,25 @@ public struct RoutedAPI: CypressAPI {
     /// the service named that this phone has not met.
     public let resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])?
 
+    /// This tree's photographs as the phone holds them, **withdrawn rows included**, or nil to use
+    /// the live rows the profile itself carries.
+    ///
+    /// `refreshedTreeProfile(id:)`'s side of photo identity (report F30). A service copy of a
+    /// photograph this phone took must fold into the phone's row, and that includes a row the
+    /// contributor has since withdrawn: the withdrawal may not have reached the service, and its
+    /// copy must not come back onto the contributor's own profile looking like a stranger's. The
+    /// profile's own series filters withdrawn rows out, which is why this is a second read.
+    /// `DataLayer.boot` wires `LocalAPI.photoIdentities(treeID:)`.
+    public let resolveLocalPhotos: (@Sendable (UUID) async -> [Photo])?
+
     public init(
         local: any CypressAPI,
         remote: RemoteAPI,
         log: RemoteReadLog = RemoteReadLog(),
         signedInUserID: (@Sendable () async -> UUID?)? = nil,
         resolveGroveRows: (@Sendable ([UUID]) async -> CityFileRows)? = nil,
-        resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])? = nil
+        resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])? = nil,
+        resolveLocalPhotos: (@Sendable (UUID) async -> [Photo])? = nil
     ) {
         self.local = local
         self.remote = remote
@@ -309,6 +321,7 @@ public struct RoutedAPI: CypressAPI {
         self.signedInUserID = signedInUserID
         self.resolveGroveRows = resolveGroveRows
         self.resolveSpecies = resolveSpecies
+        self.resolveLocalPhotos = resolveLocalPhotos
     }
 
     // MARK: - Class L — the city layer, and no remote failure mode
@@ -926,8 +939,12 @@ public struct RoutedAPI: CypressAPI {
     /// position, its species and its inventory row are Class L, and a profile that fetched them
     /// would put the map's own data on the network for no gain.
     ///
-    /// Photographs are merged by id, with the phone's row winning a collision: a photograph this
-    /// device took has a `storageKey` and real pixel dimensions, and the service's row has neither.
+    /// Photographs are merged by identity, with the phone's row winning: a photograph this device
+    /// took has a `storageKey` and real pixel dimensions, and the service's row has neither. **Which
+    /// rows are the same photograph is `communityPhotosNotOnThisPhone`'s question**, and it used to
+    /// be "the same id" alone — which never matched, because the service answers its contributor
+    /// under a `photo_id` it minted and the phone never kept, so every photograph a person sent came
+    /// back as a second one on their own profile (report F30). That function names the three links.
     /// The own and deletable sets are unioned for the same reason they exist as separate sets —
     /// "own" is what this reader may *see* and "deletable" is what they may *unmake*, and the two
     /// differ on exactly the rows an account deletion anonymized.
@@ -977,8 +994,11 @@ public struct RoutedAPI: CypressAPI {
         }
 
         var photos = mine.photos.items
-        let known = Set(photos.map(\.id))
-        photos.append(contentsOf: community.photos.filter { !known.contains($0.id) })
+        let heldHere = await resolveLocalPhotos?(id) ?? []
+        photos.append(contentsOf: Self.communityPhotosNotOnThisPhone(
+            community,
+            onThisPhone: mine.photos.items + heldHere
+        ))
 
         await log.record(.treeProfile, .live)
         return TreeProfile(
@@ -1019,6 +1039,82 @@ public struct RoutedAPI: CypressAPI {
             // merge quietly un-attribute a death this phone's reviewer confirmed.
             statusProvenance: mine.statusProvenance
         )
+    }
+
+    /// The service's photographs that are **not** a copy of one this phone holds — the rows the
+    /// merge may add without drawing any photograph twice (report F30).
+    ///
+    /// ── Three links, tried in order ──────────────────────────────────────────────────────────────
+    ///
+    /// 1. **The same id.** The merge's original rule, kept: nothing on the wire today is named by a
+    ///    phone's id, but a row that is costs nothing to recognise.
+    /// 2. **The begin's key.** `GET /trees/{id}` echoes `client_uuid` on the caller's own rows and on
+    ///    no one else's (`treeProfileBody` in `reads.go`), and since F30's fix the phone mints its
+    ///    `photos.id` from that same key (`PhotoUploadRequest.idempotencyKey`). So an own row whose
+    ///    key is a local id is that local photograph, exactly.
+    /// 3. **A photograph sent before the key was the local id.** Those carry a key the phone no
+    ///    longer holds: it was `outbox_photos.id`, and that row is deleted the moment the send
+    ///    completes. What both copies still share is what the send copied off the phone's row — the
+    ///    framing, and the capture time (`OutboxQueue` stamps both sides from the one item's
+    ///    `createdAt`; the wire keeps whole seconds). So a keyed row that matched nothing is paired
+    ///    with one unclaimed local photograph of the same framing captured within a second of it.
+    ///
+    /// ── Why the third link is bounded the way it is ─────────────────────────────────────────────
+    ///
+    /// It only ever considers a row that **carries a key**, and the service sends a key only to that
+    /// photograph's own contributor, so a stranger's photograph can never be folded away however
+    /// closely it matches. A local row claimed by the key link is not offered to it, and each local
+    /// row is paired at most once, so two photographs from one visit — which share a capture time,
+    /// because they share an item — fold into two local rows rather than one. The remaining false
+    /// match is the same account's other phone sending a photograph of this tree, framed the same
+    /// way, within the same second as one of this phone's.
+    ///
+    /// **Display only.** Nothing here uploads, re-enqueues or rewrites a row (RULINGS R77): a folded
+    /// service row is simply not added to the series this read returns.
+    static func communityPhotosNotOnThisPhone(
+        _ community: RemoteAPI.TreeCommunityDelta,
+        onThisPhone local: [Photo]
+    ) -> [Photo] {
+        // One entry per local photograph: the caller passes the profile's live rows together with
+        // the withdrawn-inclusive read, and a row listed twice could be paired twice below.
+        var seen: Set<UUID> = []
+        let local = local.filter { seen.insert($0.id).inserted }
+        let localIDs = Set(local.map(\.id))
+
+        // Links 1 and 2.
+        var unmatched: [Photo] = []
+        var claimed: Set<UUID> = []
+        for photo in community.photos {
+            if localIDs.contains(photo.id) {
+                claimed.insert(photo.id)
+                continue
+            }
+            if let key = community.clientUUIDs[photo.id], localIDs.contains(key) {
+                claimed.insert(key)
+                continue
+            }
+            unmatched.append(photo)
+        }
+
+        // Link 3, for keyed rows only.
+        var candidates = local.filter { !claimed.contains($0.id) }
+        var added: [Photo] = []
+        for photo in unmatched {
+            guard community.clientUUIDs[photo.id] != nil else {
+                added.append(photo)
+                continue
+            }
+            let gap = { (index: Int) in abs(candidates[index].capturedAt.timeIntervalSince(photo.capturedAt)) }
+            let twin = candidates.indices
+                .filter { candidates[$0].shotType == photo.shotType && gap($0) < 1 }
+                .min { gap($0) < gap($1) }
+            if let twin {
+                candidates.remove(at: twin)
+            } else {
+                added.append(photo)
+            }
+        }
+        return added
     }
 
     /// The bytes of a photograph, from the phone when it has them and from the service when it
