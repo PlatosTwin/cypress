@@ -600,7 +600,7 @@ file.
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record.
 
-- **F33 — zoom while taking the photo on add-a-tree.** Build 77, 2026-09-28, verbatim: *"Need
+- ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
   ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
   (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on the one camera
   surface the first two did not reach.** RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
@@ -610,6 +610,12 @@ file.
   gesture. Small: the controller already implements the gesture, the lens ceiling
   (`preferredMaxZoom`) and the "not zoomable" gate. **Owner confirmation** that R80 item 5 covers
   this viewfinder as well as screen 04's; it is the same gesture on the same controller.
+  **SHIPPED** by `feat/f33-add-tree-zoom`. The owner confirmed on 2026-09-28
+  (`docs/rulings-pending/f33-add-tree-zoom.md`, unnumbered). The gesture moved out of
+  `VisitCameraView` into `VisitCameraZoomPinch`, which screen 04 and add-a-tree's photo well now
+  both apply, armed by screen 04's rule (a lens to move, and no photograph yet).
+  `CypressTests/CameraZoomPinchTests` proves that add-a-tree carries it and when it arms. That the
+  fingers move the lens can only be seen on the physical phone, because no simulator has a camera.
 
 - **D6 — search and filter by state on the Cities screen** (re-logged; build 49, 2026-08-23),
   verbatim: *"Eventually we will have 20+ entries here. We need a way to allow search/filtering.
