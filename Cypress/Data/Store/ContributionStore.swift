@@ -436,21 +436,40 @@ public struct ContributionStore {
         return Self.series(try statement.fetchAll(Self.decodePhoto), limit: limit)
     }
 
-    /// Every photograph of this tree the phone holds a row for, **withdrawn ones included**, in no
-    /// particular order.
+    /// This tree's live photographs that **have left the phone**, by id.
     ///
-    /// Not a timeline — nothing draws this. It is the phone's side of photo identity for
-    /// `RoutedAPI.refreshedTreeProfile` (report F30): the rows a service copy must fold into rather
-    /// than sit beside. The withdrawn rows are the reason it is not `photos(treeID:)`. A photograph
-    /// this phone took and then withdrew can still be on the service — the withdrawal is queued, or
-    /// has not been applied there — and the service's copy must not reappear on its contributor's
-    /// own profile as though it were somebody else's.
-    public func photoIdentities(treeID: UUID, connection: SQLiteConnection) throws -> [Photo] {
+    /// The phone's side of the one inexact link in photo identity (report F30,
+    /// `RoutedAPI.photoIdentityMatch`'s link 3): pairing a service row with a local one by framing
+    /// and capture second. That rule may only ever be offered a photograph whose copy could be on
+    /// the service, because a photograph that has not been sent has no copy there — so any own row
+    /// that happens to match it is some *other* photograph, and pairing the two hides that one and
+    /// names it in this one's withdrawal (review of #194, finding 1). Two conditions, each excluding
+    /// one way a row can still be on the phone alone:
+    ///
+    ///   - **`storage_key IS NOT NULL`** — the row was written by the outbox's apply
+    ///     (`LocalAPI.uploadPhoto` sets it), so a send was queued for it. The add-a-tree photograph
+    ///     keeps `local_path` and never has one: `addTree` queues no binary, and nothing sends it.
+    ///   - **no `outbox_photos` row names it** — the send is not still owed. The row is deleted by
+    ///     `OutboxStore.completePhoto` when the send completes; while it exists the photograph is
+    ///     waiting for Wi-Fi, or its begin failed, or it has not been tried yet.
+    ///
+    /// **What this cannot tell apart, stated rather than discovered:** a binary staged before the
+    /// send path existed (`sendable = 0`) has its queue row deleted at the apply, so it reads as
+    /// sent although R77 kept it on the phone. Nothing on this row records the difference, and
+    /// recording it would be a migration.
+    public func sentPhotoIDs(treeID: UUID, connection: SQLiteConnection) throws -> Set<UUID> {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM photos WHERE tree_uuid = :tree COLLATE NOCASE
+            SELECT id FROM photos
+             WHERE tree_uuid = :tree COLLATE NOCASE
+               AND deleted_at IS NULL
+               AND storage_key IS NOT NULL
+               AND NOT EXISTS (
+                     SELECT 1 FROM outbox_photos
+                      WHERE outbox_photos.photo_id = photos.id COLLATE NOCASE
+                   )
             """)
         _ = try statement.bind(treeID.uuidString, forName: ":tree")
-        return try statement.fetchAll(Self.decodePhoto)
+        return Set(try statement.fetchAll { try $0.uuid("id") })
     }
 
     // MARK: - Hero photographs, batched (#176)

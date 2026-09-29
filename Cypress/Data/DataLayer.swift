@@ -391,13 +391,18 @@ public struct DataLayer: Sendable {
             signedInUserID: signedInUserID,
             resolveGroveRows: { ids in await local.groveCityFileRows(for: ids) },
             resolveSpecies: { ids in await local.species(ids: ids) },
-            // Withdrawn rows included, so a service copy of a photograph this phone took and then
-            // withdrew does not come back onto its contributor's profile (report F30).
-            resolveLocalPhotos: { id in await local.photoIdentities(treeID: id) },
+            // Which photographs were sent, and which a queued withdrawal names, so a service copy
+            // folds into its phone row and nothing else (report F30; review of #194).
+            resolvePhotoEvidence: { id in await local.photoIdentityEvidence(treeID: id) },
             // So a withdrawal of a photograph sent by an earlier build names the row the service
             // holds, which is the only id it can withdraw that photograph by (report F30).
             deletePhotoNamingServiceRow: { id, serviceID in
                 try await local.deletePhoto(id: id, servicePhotoID: serviceID)
+            },
+            // So an own service row the phone holds nothing for can be withdrawn from the profile
+            // that draws it (review of #194, finding 3).
+            withdrawServicePhoto: { id, treeID in
+                try await local.withdrawServicePhoto(id: id, treeID: treeID)
             }
         )
 

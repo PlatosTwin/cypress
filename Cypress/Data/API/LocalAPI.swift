@@ -2295,6 +2295,45 @@ public actor LocalAPI: CypressAPI {
         )
     }
 
+    /// Queues a withdrawal of a photograph the **service** holds and this phone has no row for.
+    ///
+    /// `RoutedAPI.deletePhoto(id:)` calls it for a row the profile drew from the service and the
+    /// service itself listed as this caller's to delete (`deletable_photo_ids`) — which, since the
+    /// ruling on #194's review (finding 3), includes a photograph whose earlier withdrawal the service
+    /// applied as a no-op and which is therefore still public. The service decides ownership on the
+    /// way in (`withdrawPhoto`); nothing on the phone is tombstoned, because nothing on the phone is
+    /// this photograph.
+    ///
+    /// Nothing here uploads or re-enqueues a binary (RULINGS R77): the one queued row is a
+    /// withdrawal.
+    public func withdrawServicePhoto(id: UUID, treeID: UUID) async throws -> PhotoDeletion {
+        let moment = now()
+        let who = attribution
+        try await store.queue.write { connection in
+            try Self.queueAppliedMutation(
+                .photoWithdrawal(
+                    PhotoWithdrawal(
+                        clientUUID: UUID(),
+                        photoID: id,
+                        treeID: treeID,
+                        attribution: who,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
+        return PhotoDeletion(
+            photoID: id,
+            treeID: treeID,
+            removedFiles: 0,
+            deletedVotes: 0,
+            dequeuedBinaries: 0,
+            leftACommunityTreeWithoutAPhotograph: false
+        )
+    }
+
     /// Withdraws one reading this person contributed (report F27, `AppSchema` v21).
     ///
     /// ── One transaction, and the order inside it is the design ────────────────────────────────
@@ -2669,17 +2708,20 @@ public actor LocalAPI: CypressAPI {
         return (entries, rows)
     }
 
-    /// This tree's photographs as the phone holds them, withdrawn rows included — the phone's side
-    /// of photo identity for `RoutedAPI.refreshedTreeProfile` (report F30).
+    /// What the phone knows about this tree's photographs that the service's rows cannot say — the
+    /// phone's side of photo identity for `RoutedAPI.refreshedTreeProfile` (report F30).
     ///
     /// Not part of `CypressAPI`: it answers a question only the router's merge asks, about rows only
     /// this phone has, and it is handed to the router as a closure by `DataLayer.boot` the way
-    /// `groveCityFileRows(for:)` is. Empty on a failed read, which leaves the merge with the live
-    /// rows the profile itself carries — the same answer it gave before this existed.
-    public func photoIdentities(treeID: UUID) async -> [Photo] {
+    /// `groveCityFileRows(for:)` is. Empty on a failed read, which folds only what an id or a key
+    /// proves and never guesses — see `PhotoIdentityEvidence`.
+    public func photoIdentityEvidence(treeID: UUID) async -> PhotoIdentityEvidence {
         (try? await store.queue.read { connection in
-            try contributions.photoIdentities(treeID: treeID, connection: connection)
-        }) ?? []
+            PhotoIdentityEvidence(
+                sent: try contributions.sentPhotoIDs(treeID: treeID, connection: connection),
+                withdrawing: try OutboxStore().queuedPhotoWithdrawals(treeID: treeID, connection: connection)
+            )
+        }) ?? .none
     }
 
     /// Names and positions for a set of trees, for a grove row the **service** named.

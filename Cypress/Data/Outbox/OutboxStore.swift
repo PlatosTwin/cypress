@@ -578,6 +578,26 @@ public struct OutboxStore {
         return try statement.fetchAll(Self.decodePhotoRow)
     }
 
+    /// The photographs this phone's **still-queued** withdrawals on one tree name, as each names it
+    /// — the phone's id, which is the begin's key, or the service's row (`PhotoWithdrawal.photoID`).
+    ///
+    /// `RoutedAPI.photoIdentityMatch` hides a service row named here from its contributor, because
+    /// the withdrawal that will take it down has not reached the service yet. Only while it is
+    /// queued (`pending`, or `uploading` mid-drain): once it has been answered — `done`, or
+    /// `failed` because the service refused it — a copy the service still serves is still public,
+    /// and showing it to its contributor is the only sign of that they get (orchestrator ruling on
+    /// #194's review, finding 3).
+    public func queuedPhotoWithdrawals(treeID: UUID, connection: SQLiteConnection) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT json_extract(payload, '$.photoID') AS photo FROM outbox
+             WHERE kind = 'photo_withdrawal'
+               AND state IN ('pending', 'uploading')
+               AND json_extract(payload, '$.treeID') = :tree COLLATE NOCASE
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":tree")
+        return Set(try statement.fetchAll { try $0.uuidIfPresent("photo") }.compactMap { $0 })
+    }
+
     /// Drops the queue rows of binaries whose photograph has been withdrawn.
     ///
     /// **The drain's own half of the F1 repair, and the half that does not depend on which door the

@@ -417,15 +417,18 @@ struct PhotoIdentityTests {
             )
         }
 
-        let both = RoutedAPI.communityPhotosNotOnThisPhone(delta(Array(copies.prefix(2))), onThisPhone: [first, second])
+        let sent = PhotoIdentityEvidence(sent: [first.id, second.id], withdrawing: [])
+        let both = RoutedAPI.communityPhotosNotOnThisPhone(
+            delta(Array(copies.prefix(2))), onThisPhone: [first, second], evidence: sent
+        )
         #expect(both.isEmpty, "two copies of two photographs left \(both.count) behind")
 
-        let three = RoutedAPI.communityPhotosNotOnThisPhone(delta(copies), onThisPhone: [first, second, first])
+        let three = RoutedAPI.communityPhotosNotOnThisPhone(delta(copies), onThisPhone: [first, second, first], evidence: sent)
         #expect(three.count == 1, "three service rows for two phone rows (one listed twice) left \(three.count)")
 
         // And the framing is part of the match: a leaf is not the full-tree photograph.
         let leaf = Photo(treeID: tree, shotType: .leaf, moderationState: .approved, capturedAt: at)
-        let unmatched = RoutedAPI.communityPhotosNotOnThisPhone(delta([leaf]), onThisPhone: [first])
+        let unmatched = RoutedAPI.communityPhotosNotOnThisPhone(delta([leaf]), onThisPhone: [first], evidence: sent)
         #expect(unmatched.map(\.id) == [leaf.id])
     }
 
@@ -498,8 +501,8 @@ struct PhotoIdentityTests {
         let tree = try await Self.makeTree(data)
         let serverID = UUID()
 
-        // `trunk`, so the tree's own add-a-tree photograph (`full_tree`, taken a moment earlier) is
-        // not a second candidate for the pairing and the pair is unambiguous by construction.
+        // `trunk`, so nothing about the tree's own add-a-tree photograph (`full_tree`, taken a moment
+        // earlier, and never sent) bears on the pairing.
         let sent = try #require(try await Self.takeAndSendPhoto(
             data, transport: transport, tree: tree, serverID: serverID, shotType: .trunk
         ))
@@ -560,10 +563,18 @@ struct PhotoIdentityTests {
             photos: [OutboxPhoto(path: first.path, shotType: .trunk), OutboxPhoto(path: second.path, shotType: .trunk)]
         )
         transport.answer("POST /sync", with: #"{"results":[{"client_uuid":"\#(visit.clientUUID.uuidString)","status":"applied"}]}"#)
-        // The begin is refused, so both photographs are applied on the phone and the scripted
-        // profile below stands in for what an earlier build sent.
-        transport.answer("POST /photos/begin", throwing: APIError.serverError)
-        _ = try await data.outbox.drain(photoUploadsAllowed: true)
+        // Both are sent. The profile below answers with keys this phone never minted, which is what
+        // an earlier build's copies look like: the only link left is the framing and the second.
+        let serverID = UUID()
+        let destination = URL(string: "https://storage.invalid/photos/\(UUID().uuidString).jpg")!
+        StubStorageProtocol.park(destination)
+        transport.answer(
+            "POST /photos/begin",
+            with: #"{"photo_id":"\#(serverID.uuidString)","presigned_put_url":"\#(destination.absoluteString)","moderation_state":"approved"}"#
+        )
+        transport.answer("POST /photos/\(serverID.uuidString)/received", with: #"{"received":true}"#)
+        let report = try await data.outbox.drain(photoUploadsAllowed: true)
+        #expect(report.photosSent == 2, "fixture: both photographs must have left the phone")
 
         let local = try await data.local.treeProfile(id: tree.id).photos.items.filter { $0.visitID == visit.id }
         #expect(local.count == 2, "fixture: two photographs on one visit")
@@ -602,8 +613,200 @@ struct PhotoIdentityTests {
             ownPhotoIDs: Set(rows.map(\.id)), deletablePhotoIDs: Set(rows.map(\.id)),
             clientUUIDs: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, UUID()) })
         )
-        let matched = RoutedAPI.photoIdentityMatch(delta, onThisPhone: [alone, twinA, twinB])
+        let matched = RoutedAPI.photoIdentityMatch(
+            delta, onThisPhone: [alone, twinA, twinB],
+            evidence: PhotoIdentityEvidence(sent: [alone.id, twinA.id, twinB.id], withdrawing: [])
+        )
         #expect(matched.added.isEmpty, "every copy should fold for display")
         #expect(matched.serviceIDs == [alone.id: aloneCopy.id], "named: \(matched.serviceIDs)")
+    }
+
+    // MARK: - 10. Review of #194: only a photograph that has left the phone may be paired
+
+    /// Every queued `photo_withdrawal`, in queue order, as each names its photograph.
+    private static func queuedWithdrawals(_ data: DataLayer) async throws -> [PhotoWithdrawal] {
+        try await data.outbox.records().compactMap { record -> PhotoWithdrawal? in
+            guard record.item.kind == .photoWithdrawal else { return nil }
+            guard case let .photoWithdrawal(value) = try OutboxPayload.decode(
+                kind: record.item.kind, from: record.item.payload
+            ) else { return nil }
+            return value
+        }
+    }
+
+    /// Finding 1, in the reviewer's own shape. This phone's `trunk` photograph has not been sent (its
+    /// begin failed), so the service has no copy of it. The account's other phone sent a `trunk` of
+    /// the same tree in the same second. That one must be drawn, and withdrawing this phone's must
+    /// never name it — the service would take it down, because the account owns it.
+    @Test("another phone's photograph is neither hidden nor named by an unsent one")
+    @MainActor
+    func anUnsentPhotographNeverPairs() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+
+        _ = try await Self.takeAndSendPhoto(
+            data, transport: transport, tree: tree, serverID: UUID(), beginSucceeds: false, shotType: .trunk
+        )
+        let unsent = try #require(
+            try await data.local.treeProfile(id: tree.id).photos.items.first { $0.shotType == .trunk },
+            "fixture: the unsent trunk photograph is not on the phone"
+        )
+        let addATree = try #require(
+            try await data.local.treeProfile(id: tree.id).photos.items.first { $0.shotType == .fullTree },
+            "fixture: the add-a-tree photograph is not on the phone"
+        )
+
+        // The other phone's two rows: one in the unsent photograph's second, one in the add-a-tree
+        // photograph's. Both are this account's, so both carry a key — one this phone never minted.
+        let stamp = ISO8601DateFormatter()
+        let otherTrunk = UUID()
+        let otherFullTree = UUID()
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [
+                Self.row(otherTrunk, shotType: "trunk", capturedAt: stamp.string(from: unsent.capturedAt), clientUUID: UUID()),
+                Self.row(otherFullTree, shotType: "full_tree", capturedAt: stamp.string(from: addATree.capturedAt), clientUUID: UUID()),
+            ],
+            own: [otherTrunk, otherFullTree]
+        )
+        let profile = try await Self.refreshed(data, tree: tree)
+        let shown = Set(profile.visiblePhotos.items.map(\.id))
+        #expect(
+            shown.contains(otherTrunk),
+            "the account's other phone's photograph \(otherTrunk) was folded into this phone's unsent one — hidden"
+        )
+        #expect(
+            shown.contains(otherFullTree),
+            "the account's other phone's photograph \(otherFullTree) was folded into the add-a-tree photograph, which is never sent — hidden"
+        )
+
+        _ = try await data.api.deletePhoto(id: unsent.id)
+        _ = try await data.api.deletePhoto(id: addATree.id)
+        let named = try await Self.queuedWithdrawals(data).map(\.photoID)
+        #expect(
+            named == [unsent.id, addATree.id],
+            """
+            withdrawing this phone's unsent and add-a-tree photographs queued withdrawals naming \
+            \(named) — a service id there is the OTHER phone's photograph, and it would be deleted \
+            (unsent \(unsent.id), add-a-tree \(addATree.id), other phone \(otherTrunk), \(otherFullTree))
+            """
+        )
+    }
+
+    // MARK: - 11. Review of #194: the copy is in the second its stamp names
+
+    /// Finding 2, the reviewer's reproduction. The wire truncates to whole seconds, so a local row at
+    /// `t + 0.999` has its copy stamped `t`. The row stamped `t + 1` is a distinct photograph, 0.001 s
+    /// away, and must be drawn — and the true copy must fold, and be the one named.
+    @Test("a copy is paired in the second its stamp names, never the next one")
+    func theCopyIsInTheSecondItsStampNames() throws {
+        let tree = UUID()
+        let base = Date(timeIntervalSince1970: 1_790_000_000)
+        let local = Photo(treeID: tree, shotType: .trunk, capturedAt: base.addingTimeInterval(0.999))
+        let copy = Photo(treeID: tree, shotType: .trunk, moderationState: .approved, capturedAt: base)
+        let next = Photo(treeID: tree, shotType: .trunk, moderationState: .approved, capturedAt: base.addingTimeInterval(1))
+        func delta(_ rows: [Photo]) -> RemoteAPI.TreeCommunityDelta {
+            RemoteAPI.TreeCommunityDelta(
+                treeID: tree, photos: rows,
+                ownPhotoIDs: Set(rows.map(\.id)), deletablePhotoIDs: Set(rows.map(\.id)),
+                clientUUIDs: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, UUID()) })
+            )
+        }
+        let sent = PhotoIdentityEvidence(sent: [local.id], withdrawing: [])
+
+        let alone = RoutedAPI.photoIdentityMatch(delta([copy]), onThisPhone: [local], evidence: sent)
+        #expect(alone.added.isEmpty, "the truncated-second copy did not fold")
+
+        // `captured_at DESC` is the service's order, so the later row comes first.
+        let both = RoutedAPI.photoIdentityMatch(delta([next, copy]), onThisPhone: [local], evidence: sent)
+        #expect(
+            both.added.map(\.id) == [next.id],
+            """
+            the DISTINCT photograph (next, t+1 s) was folded and the local photograph's own copy was \
+            added as a double: added=\(both.added.map(\.id)) copy=\(copy.id) next=\(next.id)
+            """
+        )
+        #expect(both.serviceIDs == [local.id: copy.id], "named: \(both.serviceIDs) (copy=\(copy.id), next=\(next.id))")
+    }
+
+    // MARK: - 12. Review of #194: hidden only while the withdrawal is on its way
+
+    /// Answers the one queued withdrawal `applied` and drains it, as the service would.
+    private static func drainWithdrawal(_ data: DataLayer, transport: ScriptedTransport) async throws {
+        let withdrawal = try #require(try await Self.queuedWithdrawals(data).last, "fixture: nothing queued")
+        transport.answer(
+            "POST /sync",
+            with: #"{"results":[{"client_uuid":"\#(withdrawal.clientUUID.uuidString)","status":"applied"}]}"#
+        )
+        _ = try await data.outbox.drain(photoUploadsAllowed: true)
+        let pending = try await data.outbox.records().filter {
+            $0.item.kind == .photoWithdrawal && !$0.item.state.isTerminal
+        }
+        #expect(pending.isEmpty, "fixture: the withdrawal is still queued after the drain")
+    }
+
+    /// Finding 3, as ruled. A withdrawal hides the service's copy only while it is queued. Once the
+    /// service has answered it, a copy it still serves is still public — so its contributor sees it,
+    /// and can delete it again, by the service's id.
+    @Test("a copy is hidden only while its withdrawal is queued, and can be withdrawn again after")
+    @MainActor
+    func aCopyIsHiddenOnlyWhileItsWithdrawalIsQueued() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+        let serverID = UUID()
+
+        let sent = try #require(try await Self.takeAndSendPhoto(data, transport: transport, tree: tree, serverID: serverID))
+        _ = try await data.api.deletePhoto(id: sent.clientUUID)
+        let copy = Self.row(serverID, shotType: sent.shotType, capturedAt: sent.capturedAt, clientUUID: sent.clientUUID)
+
+        // Queued: the withdrawal is on its way, so the copy stays hidden.
+        Self.answerProfile(transport, tree: tree, rows: [copy], own: [serverID])
+        let queued = Set(try await Self.refreshed(data, tree: tree).visiblePhotos.items.map(\.id))
+        #expect(!queued.contains(serverID), "the copy of a photograph whose withdrawal is queued came back: \(queued)")
+
+        // Answered, and the service still serves it: it is still public, so it shows.
+        try await Self.drainWithdrawal(data, transport: transport)
+        let answered = Set(try await Self.refreshed(data, tree: tree).visiblePhotos.items.map(\.id))
+        #expect(
+            answered.contains(serverID),
+            "a photograph still public on the service (\(serverID)) is hidden from its own contributor after its withdrawal was answered: \(answered)"
+        )
+
+        // And it can be withdrawn again, by the only id the service has for it.
+        _ = try await data.api.deletePhoto(id: serverID)
+        let again = try #require(try await Self.queuedWithdrawals(data).last)
+        #expect(again.photoID == serverID, "the second withdrawal names \(again.photoID), not the service's \(serverID)")
+        #expect(again.treeID == tree.id)
+        let rehidden = Set(try await Self.refreshed(data, tree: tree).visiblePhotos.items.map(\.id))
+        #expect(!rehidden.contains(serverID), "the copy came back while its second withdrawal is queued")
+    }
+
+    /// The reviewer's case B: a photograph an earlier build sent and this phone withdrew by its own
+    /// id, which the service has never heard of. Nothing is on its way to take the copy down, so it
+    /// shows — even while that withdrawal is still queued.
+    @Test("an earlier build's withdrawn but still public photograph shows to its contributor")
+    @MainActor
+    func anEarlierBuildsStillPublicPhotographShows() async throws {
+        let transport = ScriptedTransport()
+        let data = try await Self.boot(transport)
+        let tree = try await Self.makeTree(data)
+        let serverID = UUID()
+
+        let sent = try #require(try await Self.takeAndSendPhoto(
+            data, transport: transport, tree: tree, serverID: serverID, shotType: .trunk
+        ))
+        _ = try await data.local.deletePhoto(id: sent.clientUUID)
+        Self.answerProfile(
+            transport, tree: tree,
+            rows: [Self.row(serverID, shotType: sent.shotType, capturedAt: sent.capturedAt, clientUUID: UUID())],
+            own: [serverID]
+        )
+        let shown = Set(try await Self.refreshed(data, tree: tree).visiblePhotos.items.map(\.id))
+        #expect(
+            shown.contains(serverID),
+            "a photograph still public on the service (\(serverID)) is hidden from its own contributor because it folded into their withdrawn row"
+        )
     }
 }
