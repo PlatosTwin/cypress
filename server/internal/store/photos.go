@@ -16,7 +16,9 @@ const (
 	// AutoApprovedLaunch is the launch rule: a first-party photograph, published unscreened and
 	// unblurred, from a signed-in account. Written at upload by `BeginPhoto` when an account
 	// begins it, and at sign-in by `ClaimDevice` when an account adopts one its device began
-	// anonymously — the same rule reached through the other door, so the same value.
+	// anonymously — the same rule reached through the other door, so the same value. Migration
+	// 006 wrote it once more, as a one-time pass over the photographs claims had adopted `pending`
+	// before `ClaimDevice` approved them.
 	//
 	// The value exists so the deviation stays legible as one. `.approved` alone cannot distinguish
 	// this from a photograph a pipeline looked at, and a state you cannot distinguish is a backlog
@@ -88,13 +90,16 @@ type BegunPhoto struct {
 // attestation, a reinstall mints a new one, so a device-scoped rule gives an operator nothing to
 // act against that survives. An account carries Apple's verification and can have it withdrawn.
 //
-// So an anonymous device's photograph is begun `.pending`, and while its device is unclaimed it is
+// So an anonymous device's photograph is begun `.pending`, and until a claim adopts it it is
 // visible to its contributor and to nobody else. That is `isVisibleToItsContributor` doing exactly
-// what ERRATA E37 designed it to do.
+// what ERRATA E37 designed it to do. "Until a claim adopts it" is not the same as "while its device
+// is unclaimed": a device an account claimed, and then signed out of, still begins `pending` rows
+// under its device token. They wait for that account's next claim, and wait for good if a
+// different account signs in on the phone instead, because the #174 guard refuses that claim.
 //
 // Screen 15's drawn promise — "An account backs them up and lets them join each tree's public
-// timeline" — is kept at the claim, not here. When the contributor signs in, `ClaimDevice` adopts
-// the photograph and approves it in the same statement, under this same `AutoApprovedLaunch`, unless
+// timeline" — is kept at the claim, not here. When a claim runs, `ClaimDevice` adopts the
+// photograph and approves it in the same statement, under this same `AutoApprovedLaunch`, unless
 // an operator has rejected it or its contributor has withdrawn it (owner ruling 2026-09-28; before
 // it, the claim left the row `pending` for good). Migration 006 did the same once for the
 // photographs claims had already adopted, and its constraint is what refuses an account's live

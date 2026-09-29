@@ -194,10 +194,13 @@ func TestClaimDoesNotApproveAWithdrawnPhotograph(t *testing.T) {
 
 // TestClaimDoesNotApproveAnAnonymizedPhotograph is defense in depth, and says so.
 //
-// Anonymization clears `device_id` in the statement that sets `anonymized_at`, so no code path
-// leaves an anonymized row carrying a device for this sweep to match. The row below is storable
-// (no CHECK on `photos` forbids it) and unreachable, and it is here so that broadening the sweep's
-// WHERE cannot quietly adopt — and now approve — a photograph somebody asked to be unlinked from.
+// No code path leaves an anonymized photograph carrying a device for this sweep to match, but not
+// because anonymization clears `device_id`: the two anonymization statements in `sync.go` set
+// `user_id = NULL` and leave `device_id` alone. They match only account-owned rows, and
+// `photos_owner` forbids an account-owned row from also naming a device, so the rows they
+// anonymize never had one. The row below is storable (no CHECK on `photos` forbids it) and
+// unreachable, and it is here so that broadening the sweep's WHERE cannot quietly adopt — and now
+// approve — a photograph somebody asked to be unlinked from.
 func TestClaimDoesNotApproveAnAnonymizedPhotograph(t *testing.T) {
 	store := testStore(t)
 	user := makeUser(t, store, "apple-sub-anonymized")

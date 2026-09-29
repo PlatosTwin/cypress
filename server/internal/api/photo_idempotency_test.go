@@ -374,18 +374,36 @@ func TestTheDeviceScopedUniqueIndexRefusesADuplicateKey(t *testing.T) {
 //
 // The synthesis line was pre-existing; the replay path that exposes it is what that round shipped.
 // At the time `ClaimDevice` re-homed a device's photographs onto the account without touching
-// `moderation_state`, so the sequence below produced a response saying `approved` about a row that
-// still held `pending`. Since the owner's 2026-09-28 ruling the claim approves what it adopts, so
-// today the row and the caller's rule agree here and this test pins that the response still reads
-// the row — which is what keeps it right the next time they disagree.
+// `moderation_state`, so device-begin → sign-in-with-claim → replay produced a response saying
+// `approved` about a row that still held `pending`.
+//
+// **Since the owner's 2026-09-28 ruling that sequence no longer disagrees**: the claim approves what
+// it adopts, so the row ends up `approved`/`auto_approved_launch`, which is exactly what a
+// synthesis from a signed-in caller would say. Left as it was, this test could not tell reading the
+// row from recomputing it, and the #116 r3 defect reintroduced into `api/photos.go` left it green.
+// So each phase below first makes the row and the caller's rule disagree, the way a later writer
+// would, and asserts that it has done so before it replays:
+//
+//   - **after the claim, a screen's verdict.** The adopted row's reason is set to
+//     `screened_and_passed`, the value the screening round will write. The replay comes from the
+//     account, whose rule says `auto_approved_launch`.
+//   - **a device begin after the claim, then approved by a screen.** A claimed device that signs
+//     out still begins `pending` rows under its own token. That row is set to `approved` /
+//     `screened_and_passed` while still device-owned, and the replay comes from the device, whose
+//     rule says `pending`. This is the phase that disagrees on `moderation_state` itself; the first
+//     one cannot, because an account's live `pending` row is refused by
+//     `photos_owned_live_photograph_is_not_pending` and a `rejected` row's replay is refused.
+//
+// Neither direct write is reachable through the service today; nothing writes `screened_and_passed`
+// yet. They stand in for the future writer this test is guarding against.
 //
 // **No client reads these fields** — `BeginPhotoResponse` decodes only `photo_id` and
 // `presigned_put_url`. What the wrong value costs is the one thing the fields are for: the upload's
 // log would record the rule that applied to the caller rather than the rule that published the
 // photograph, and only ever in the case where those differ.
 //
-// The assertion compares the response to **the row**, rather than to a literal, so it keeps holding
-// if the launch rule's verdict for a fresh begin ever changes.
+// The assertions compare the response to **the row**, rather than to a literal, so they keep
+// holding if the launch rule's verdict for a fresh begin ever changes.
 func TestAReplayReportsTheRowsModerationStateNotTheCallers(t *testing.T) {
 	h := newHarness(t)
 	deviceUUID := uuid.New()
@@ -401,14 +419,17 @@ func TestAReplayReportsTheRowsModerationStateNotTheCallers(t *testing.T) {
 	// Sign in *claiming this device*, which re-homes the photograph onto the account and approves it.
 	session := h.signIn(t, &deviceUUID)
 
-	var stored, storedReason *string
-	if err := h.store.Pool().QueryRow(context.Background(),
-		`SELECT moderation_state, approval_reason FROM photos WHERE id = $1`, begun.PhotoID,
-	).Scan(&stored, &storedReason); err != nil {
+	// ── Phase 1: the account's replay, after a screen rewrote the reason ─────────────────────────
+	if _, err := h.store.Pool().Exec(context.Background(), `
+		UPDATE photos SET approval_reason = 'screened_and_passed' WHERE id = $1
+	`, begun.PhotoID); err != nil {
 		t.Fatal(err)
 	}
-	if stored == nil {
-		t.Fatal("the photograph lost its moderation state")
+	stored, storedReason := readModeration(t, h, begun.PhotoID)
+	if stored != "approved" || storedReason != "screened_and_passed" {
+		t.Fatalf("fixture: the adopted row holds %q / %q, want approved / screened_and_passed — "+
+			"without that the row and the caller's rule agree and this phase proves nothing",
+			stored, storedReason)
 	}
 
 	replay, code := beginAllowingFailure(t, h, session.AccessToken, tree, &key)
@@ -418,17 +439,69 @@ func TestAReplayReportsTheRowsModerationStateNotTheCallers(t *testing.T) {
 	if replay.PhotoID != begun.PhotoID {
 		t.Fatal("fixture: the claim did not re-home the photograph, so no replay happened")
 	}
-	if replay.Moderation != *stored {
+	if replay.Moderation != stored {
 		t.Fatalf("the replay reported %q while the row holds %q — the response names the rule that "+
 			"applied to the caller rather than the one that published this photograph, which is the "+
-			"one thing the field exists to record", replay.Moderation, *stored)
+			"one thing the field exists to record", replay.Moderation, stored)
 	}
-	wantReason := ""
-	if storedReason != nil {
-		wantReason = *storedReason
+	if replay.ApprovalReason != storedReason {
+		t.Fatalf("the account's replay reported approval_reason %q while the row holds %q — the "+
+			"response names the rule that applied to the caller rather than the one that "+
+			"published this photograph", replay.ApprovalReason, storedReason)
 	}
-	if replay.ApprovalReason != wantReason {
-		t.Fatalf("the replay reported approval_reason %q while the row holds %q",
-			replay.ApprovalReason, wantReason)
+
+	// ── Phase 2: the device's replay, on a row a screen approved while the device held it ─────────
+	//
+	// The device token still works after the claim, which is how a claimed device that has signed
+	// out keeps beginning `pending` rows.
+	deviceKey := uuid.New()
+	deviceBegun := beginWithKey(t, h, deviceToken, tree, &deviceKey)
+	if deviceBegun.Moderation != "pending" {
+		t.Fatalf("fixture: a device begin after the claim reported %q, want pending",
+			deviceBegun.Moderation)
 	}
+	if _, err := h.store.Pool().Exec(context.Background(), `
+		UPDATE photos SET moderation_state = 'approved', approval_reason = 'screened_and_passed'
+		 WHERE id = $1
+	`, deviceBegun.PhotoID); err != nil {
+		t.Fatal(err)
+	}
+	deviceStored, deviceStoredReason := readModeration(t, h, deviceBegun.PhotoID)
+	if deviceStored != "approved" {
+		t.Fatalf("fixture: the device's row holds %q, want approved — without that the row and the "+
+			"device's rule agree and this phase proves nothing", deviceStored)
+	}
+
+	deviceReplay, code := beginAllowingFailure(t, h, deviceToken, tree, &deviceKey)
+	if code != http.StatusOK {
+		t.Fatalf("the device's replay was refused: status = %d", code)
+	}
+	if deviceReplay.PhotoID != deviceBegun.PhotoID {
+		t.Fatal("fixture: the device's replay made a second photograph, so no replay happened")
+	}
+	if deviceReplay.Moderation != deviceStored {
+		t.Fatalf("the device's replay reported %q while the row holds %q — the response names the "+
+			"rule that applied to the caller rather than the one that published this photograph",
+			deviceReplay.Moderation, deviceStored)
+	}
+	if deviceReplay.ApprovalReason != deviceStoredReason {
+		t.Fatalf("the device's replay reported approval_reason %q while the row holds %q",
+			deviceReplay.ApprovalReason, deviceStoredReason)
+	}
+}
+
+// readModeration reads a photograph's stored verdict, with a NULL reason as "".
+func readModeration(t *testing.T, h *harness, id uuid.UUID) (string, string) {
+	t.Helper()
+	var state string
+	var reason *string
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT moderation_state, approval_reason FROM photos WHERE id = $1`, id,
+	).Scan(&state, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if reason == nil {
+		return state, ""
+	}
+	return state, *reason
 }

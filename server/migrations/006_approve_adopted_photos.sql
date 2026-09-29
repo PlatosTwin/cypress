@@ -4,8 +4,60 @@
 -- The owner's ruling of 2026-09-28: "Fix the sign-in approval gap now." `store.ClaimDevice` now
 -- approves the pending photographs it adopts, in the statement that adopts them. That reaches every
 -- claim from this deploy on and nobody whose claim has already happened — their photographs were
--- adopted `pending` and nothing in the service ever revisits a row's moderation state. This file is
--- the other half: it gives those rows the state the fixed claim would have given them.
+-- adopted `pending`, and once a row is adopted the only statement in the service that writes its
+-- moderation state is the operator's `RejectPhoto`, which never approves. (The fixed claim cannot
+-- reach it again: its WHERE needs `device_id`, which adoption cleared.) This file is the other
+-- half: it gives those rows the state the fixed claim would have given them.
+--
+-- ── Read this before deploying: what the one-time half publishes that nobody can filter out ────
+--
+-- **This file can publish photographs their contributor deleted on the phone.** The sequence, on
+-- the code at 005:
+--
+--   1. The phone begins a photograph while signed out. The row is device-owned and `pending`.
+--   2. The contributor signs in. The claim adopts the row onto the account and leaves it `pending`.
+--   3. The contributor signs out, and deletes the photograph on the phone. RULINGS R82 lets the
+--      phone do that — a photograph this installation took stays its own to unmake whatever
+--      account holds it — and the phone sends a `photo_withdrawal` under its device token.
+--   4. The server refuses it. `withdrawPhoto` knows only the row's two owner columns, the row is
+--      owned by the account, and the caller is the device, so the answer is `ErrNotOwned`
+--      (`forbidden`). `withdrawPhoto`'s own comment calls this divergence real and reachable.
+--   5. The row stays live, account-owned and `pending`. This file approves it.
+--
+-- **No predicate here can exclude those rows, because the server keeps no record of the refused
+-- withdrawal.** The refusal is an error inside `Store.Apply`'s transaction, so the
+-- `photo_withdrawal` contribution row that would have recorded the attempt is rolled back with it,
+-- and nothing is written to `photos`. On the server, such a row is indistinguishable from an
+-- adopted photograph its contributor still wants. The `deleted_at IS NULL` condition below leaves
+-- alone only the withdrawals the server *accepted*.
+--
+-- The same sequence reaches the forward half too, from this deploy on and with a different order:
+-- a signed-out photograph adopted by a claim is now approved at step 2, so a withdrawal refused at
+-- step 4 leaves it public where before it stayed private. That was already true of a photograph an
+-- account began while signed in; the claim adds the signed-out ones to that set.
+--
+-- **The owner decided from a count.** A read-only count on production, run on 2026-09-28 inside a
+-- READ ONLY transaction, found 0 rows matching this file's UPDATE predicate. Production then held 3
+-- photographs, all account-owned, live and already `approved`. The owner had ruled in advance that
+-- zero or a handful ships the file as it stands, so it does. The count is one moment's reading: a
+-- claim served by the previous binary between the count and this deploy can still add a row, and
+-- that row gets the treatment described above.
+--
+-- ── The deploy window the constraint opens, and when it is closed ──────────────────────────────
+--
+-- With the constraint below in place, a binary from before this round fails any claim for a device
+-- that holds a live `pending` photograph: its adoption leaves the row `pending`, the database
+-- refuses the row, and the request answers 500. That includes `POST /auth/oidc` with a
+-- `device_uuid`, which is the sign-in itself, as well as `POST /devices/claim`. Such a binary
+-- cannot *boot* against a database at 006 (`Migrate` refuses a rollback onto a newer schema), so
+-- the window exists only while an old binary that is already running shares the database with a
+-- new one that has applied this file.
+--
+-- **On `cypress-sync` as configured today that never happens.** It runs one machine, `fly.toml` has
+-- no `[deploy]` strategy and no `release_command`, and the migration runs in `store.Open` when the
+-- new binary boots. **It stops being true** if the app is scaled to two or more machines, or
+-- deployed with a canary or bluegreen strategy: an old machine would keep serving, and failing
+-- sign-ins, until it was replaced.
 --
 -- ── What this does not do, because R77 forbids it ──────────────────────────────────────────────
 --
@@ -28,7 +80,8 @@
 --     write NULL. So a row that is `pending` with an owner got the owner from a claim, and was
 --     `pending` when the claim ran — which is the set.
 --   * `deleted_at IS NULL` leaves withdrawn rows alone: nobody is served one either way, and
---     approving it would record an approval of something its contributor took back.
+--     approving it would record an approval of something its contributor took back. That is every
+--     withdrawal the server accepted, and none of the ones it refused; see the section above.
 --   * `anonymized_at IS NULL` is defense in depth. Anonymization writes `user_id = NULL` in the same
 --     statement, so no anonymized row reaches `user_id IS NOT NULL` through the code.
 --   * `rejected` is not `pending`, so an operator's takedown stands; an `approved` row is not
