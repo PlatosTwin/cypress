@@ -235,6 +235,11 @@ final class VisitAddTreeModel {
 
     var hasPhoto: Bool { photoPath != nil }
 
+    /// Whether the well is a viewfinder rather than a still: there is no photograph yet, so a pinch
+    /// has a lens to aim (F33, `VisitCameraZoomPinch`). Screen 04's `!hasSnapped`, for the one
+    /// framing this screen has.
+    var isAimingCamera: Bool { !hasPhoto }
+
     /// Whether the reader has moved the pin.
     var isReaderPlaced: Bool {
         if case .reader = placement { return true }

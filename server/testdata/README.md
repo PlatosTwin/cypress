@@ -32,6 +32,7 @@ these files, read off disk, so the two halves cannot drift.
 | `tree_profile_city.json` | `community_tree` is `Tree?` | `GET /trees/{id}` for a **city** tree with community data (photos, visits). `community_tree` is **null** and `added_by_you` / `is_published` are false. This is the ordinary case for most ids, not an error. |
 | `tree_profile_unknown.json` | same | `GET /trees/{id}` for an id nobody has ever sent: the empty answer, `community_tree` null. |
 | `tree_profile_hidden.json` | same | `GET /trees/{id}` for a community tree hidden from the caller (somebody else's unpublished tree, withdrawn, taken down or erased). **Byte-for-byte `tree_profile_unknown.json` with the id replaced**; the Go test asserts it, so the answer is not an oracle. |
+| `tree_profile.json` | `TreeCommunityHalfResponse`, through `RemoteAPI.treeCommunityHalf` (`GoldenWireFixtureTests`) | `GET /trees/{id}` asked by a signed-in contributor, written by `treeProfileBody` itself. `client_uuid` is on the caller's **own** rows only (a key on the approved one, `null` on the keyless pending one) and **absent** on the stranger's. Both approved rows carry `captured_on`: the owner's is served its exact `captured_at`, the stranger's noon UTC of that date. Assert the key by value, and that the stranger's row has none. |
 
 ## The two public-read fixtures decode into **nothing Swift**, and that is the point
 

@@ -19,12 +19,6 @@ struct VisitCameraView: View {
     @State private var libraryItem: PhotosPickerItem?
     /// The capture whose flash has already been faded out. See `shutterFlash`.
     @State private var fadedCaptureTick = 0
-    /// Where the lens was when the current pinch began; `nil` between pinches. See `zoomPinch`.
-    ///
-    /// `@GestureState`, so "between pinches" is enforced by the property wrapper rather than by an
-    /// `onEnded` that a cancelled gesture can skip — the same argument `PhotoViewerView` makes for
-    /// its own two, in this same round.
-    @GestureState private var zoomBase: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -227,14 +221,10 @@ struct VisitCameraView: View {
         // The whole thing is off unless there is a lens to move (`camera.isZoomable`, false on
         // every simulator and on a refusal), and off once a frame has been taken, when the
         // viewfinder is a still photograph and there is nothing left to aim.
-        // ══════════════════════════════════════════════════════════════════════════════════════
         //
-        // `including:` rather than iOS 18's `isEnabled:` — this app is iOS 17+. `.subviews` hands
-        // every touch to the children and takes none here, which is what "off" means for a gesture.
-        .gesture(
-            zoomPinch,
-            including: model.camera.isZoomable && !model.hasSnapped ? .all : .subviews
-        )
+        // The gesture itself is `VisitCameraZoomPinch`, shared with add-a-tree's viewfinder (F33).
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        .visitCameraZoomPinch(model.camera, isAiming: !model.hasSnapped)
         .overlay(alignment: .topLeading) { closeButton }
         .overlay(alignment: .top) { guidancePill }
         .overlay { framingCorners }
@@ -244,45 +234,6 @@ struct VisitCameraView: View {
         .overlay(alignment: .bottom) { bottomControls }
         .overlay(alignment: .bottomLeading) { ghostCaption }
         .overlay { shutterFlash }
-    }
-
-    /// The pinch that drives `AVCaptureDevice.videoZoomFactor`. See the call site on `viewfinder`,
-    /// and `VisitCameraController.setZoom` for what it reaches.
-    ///
-    /// `zoomBase` is where the lens was when the fingers landed, asked for once on the first update
-    /// of each pinch. The controller stays the one place that knows where the lens *is*; this
-    /// closure only ever reads it, and only at the start.
-    ///
-    /// **`@GestureState` rather than `@State` and an `onEnded`** (PR #102 review). This was the
-    /// second, and `PhotoViewerView` — added in the same round — had already written down why that
-    /// is the wrong choice: `@GestureState` resets itself when a gesture ends *or is cancelled*, so
-    /// a pinch interrupted by a phone call or by the screen going away under it leaves nothing
-    /// behind, while the `@State` version has a path where the reset never runs. The consequence
-    /// here was mild — a stale base makes the next pinch multiply from where an older one started,
-    /// a jump rather than a wrong state, and `setZoom` re-clamps — but the round argued both sides
-    /// of one question in two files, and this was the side with the extra path.
-    ///
-    /// The `?? model.camera.zoomFactor` is not defensive noise: it is the same value `updating`
-    /// captures, so the first update of a pinch reads the lens correctly whichever of the two
-    /// callbacks SwiftUI runs first.
-    ///
-    /// Untested on the glass, and it cannot be: `isZoomable` is false on every simulator
-    /// (`AVCaptureDevice.default(...)` is nil), so the gesture never arms. See
-    /// `VisitCameraController`'s zoom block for what else on this path is waiting for the phone.
-    private var zoomPinch: some Gesture {
-        MagnifyGesture()
-            .updating($zoomBase) { _, base, _ in
-                if base == nil { base = model.camera.zoomFactor }
-            }
-            .onChanged { value in
-                model.camera.setZoom(
-                    VisitCameraZoom.factor(
-                        base: zoomBase ?? model.camera.zoomFactor,
-                        magnification: value.magnification,
-                        in: model.camera.zoomRange
-                    )
-                )
-            }
     }
 
     /// czFlash — a sheet of white at `.9` alpha falling to nothing over `.35s`, fired when the

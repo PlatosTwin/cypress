@@ -548,7 +548,7 @@ file.
   decision needed to fix the defect; the header's one-row layout at the lengths the mocks draw
   must not change.
 
-- **F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
+- ~~**F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
   verbatim: *"Pill says two photos but when I click in I see only one. Bug?"* The screenshot is
   screen 03 for a `Ginkgo, Autumn Gold` in SF with `2 photos · since 2026` on the hero pill and one
   `Visit · leaf out` row. **Not reproduced; which tap the tester made is unknown, and the two
@@ -561,7 +561,20 @@ file.
   series (`TreeProfile.visiblePhotos`, E215; `RoutedAPI.refreshedTreeProfile` merges the
   community half by photo id), so the count and the list should not disagree, and the first step
   is to reproduce it on a tree with two photographs from one visit. Small once the reading is
-  known.
+  known.~~
+  **FIXED** by `fix/photo-identity-dedupe`, and the doubling is shown to be its cause. A photograph
+  this phone sent came back from `GET /trees/{id}` under the service's own `photo_id`, which the
+  phone never keeps, and `RoutedAPI.refreshedTreeProfile` deduped by id alone — so the phone's copy
+  and the service's were both counted. Reproduced through the real composition root (one visit,
+  one photograph, sent and read back) as exactly this screenshot: one `Visit` row under
+  `2 photos · since 2026`. The fix makes the phone's `photos.id` the begin's `client_uuid`, has the
+  service echo that key on the caller's own rows only, and folds by id, by key, or — for
+  photographs sent by build 77 and earlier — by framing and capture second on keyed own rows. **It
+  needs a server deploy to take effect.** Which tap the tester made is still unknown; the photo
+  browser also listed the second copy once the refresh landed (in the reproduction it drew as a
+  placeholder tile; whether production's bytes would have filled it was not observed), so "only
+  one" fits either a tap on the photograph (by design, E125) or a browser read before its refresh. The design question of whether anything should point
+  a reader at the pill is not raised by this defect and is not opened here.
 
 - **F31 — move a tree you added, and let other people see it.** Build 77, 2026-09-26, verbatim:
   *"Need to be able to edit location on self-added trees and need self added ones to go to
@@ -609,16 +622,27 @@ file.
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record.
 
-- **F33 — zoom while taking the photo on add-a-tree.** Build 77, 2026-09-28, verbatim: *"Need
+- ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
   ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
-  (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on the one camera
-  surface the first two did not reach.** RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
+  (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on a camera
+  surface the first two did not reach.** (Not the only one: check-in 05 and care log 09's
+  `ContributionCameraView` has no pinch either; see chip backlog 80.) RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
   viewer (`PhotoViewerView`, `PhotoZoom`) and on screen 04's viewfinder (`VisitCameraView`'s
   `zoomPinch`, which drives `VisitCameraController.setZoom`). Add-a-tree owns its own
   `VisitCameraController` (`VisitAddTreeModel.camera`), but `VisitAddTreeView` has no zoom
   gesture. Small: the controller already implements the gesture, the lens ceiling
   (`preferredMaxZoom`) and the "not zoomable" gate. **Owner confirmation** that R80 item 5 covers
   this viewfinder as well as screen 04's; it is the same gesture on the same controller.
+  **SHIPPED** by `feat/f33-add-tree-zoom`. The owner confirmed on 2026-09-28
+  (`docs/rulings-pending/f33-add-tree-zoom.md`, unnumbered). The gesture moved out of
+  `VisitCameraView` into `VisitCameraZoomPinch`, which screen 04 and add-a-tree's photo well now
+  both apply, armed by screen 04's rule (a lens to move, and no photograph yet).
+  `CypressTests/CameraZoomPinchTests` proves that add-a-tree carries it, and that each of the two
+  screens hands it `isAiming: false` over a still and `true` again after a retake. That the fingers
+  move the lens can only be seen on the physical phone, because no simulator has a camera; the phone
+  check also covers screen 04's pinch as a regression. **The third camera that owns a controller,
+  `ContributionCameraView` (05 and 09), was not given the pinch and is not covered by the ruling:**
+  chip backlog 80.
 
 - **D6 — search and filter by state on the Cities screen** (re-logged; build 49, 2026-08-23),
   verbatim: *"Eventually we will have 20+ entries here. We need a way to allow search/filtering.
@@ -1638,7 +1662,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     "built on" (a photograph with no bytes is neither), not for the listing. And the garbage
     collection of a record with no arriving binary after 72 hours, which
     `server/migrations/001_initial.sql` says happens server-side, has no code behind it: only
-    comments name it. (From #182.)
+    comments name it. (From #182.) #194 adds a source of these rows: a photograph whose storage
+    `PUT` or receipt is refused for good after its begin succeeded leaves a live, keyed row with no
+    bytes. Its contributor never sees it, because it pairs with their local photograph, so nothing
+    prompts a delete (review of #194 at `07f5b36`, probe R11).
 68. **Screen 10's first paint is local-only, and its season strip says nothing is public.** The card
     can show an approved photograph only after the network answers, because the first paint reads
     the phone. `ShareView.swift` hard-codes "No month has a public photo yet." as the strip's
@@ -1654,7 +1681,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ERRATA entries carry the same sentence (`docs/ERRATA.md`, lines 20095 and 20525 at that
     commit). A confident comment is where bugs live here, so re-verify each against the code before
     rewriting it. (From #182.)
-70. **Neither account-deletion door touches `species_assertions`.** The table carries `user_id`, and
+70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **Duplicate of 79**, which #186
+    wrote with the measurement; track it there. The table carries `user_id`, and
     `Cypress/Data/Store/AccountDeletion.swift` never names it, so an owned row survives leaving and
     erasing alike and still points at the deleted account. Fix it on R3's contribution pattern
     (leaving anonymizes, erasing deletes), and decide the tombstone question, since these rows have
@@ -1701,8 +1729,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     already tombstoned and the account's row under the same key is live, a second withdrawal answers
     failed and forbidden although the removal happened, and its comment says it succeeds. Nothing is
     wrongly removed; the phone is told a false failure. #194's own remaining finding (a non-retryable
-    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) is being fixed
-    in #194 and is not listed here.
+    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) was fixed in
+    #194. (b) was re-proved by #194's re-review (probe R10, `server/internal/store/photos.go` doc at
+    `:499` against the code at `:542`); make the second withdrawal answer `applied`, since its own
+    removal happened. (c) Also from that re-review, cosmetic and unproved: `RoutedAPI` reads the
+    phone's withdrawal evidence after the remote fetch, so a withdrawal the drain answers during a
+    refresh can leave that copy deletable for one refresh; read the evidence before the fetch.
 77. **iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
     question failed on CI's iOS 26 shard and became an `.alert`). Seven sites still use a
     `confirmationDialog`: `GrowthHistoryView:45`, `CheckInView:94`, `AccountDeletionSheet:88`,
@@ -1734,7 +1766,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     on 2026-09-29 that an unanswered prompt gets no ceiling, so the block would wait until the
     reporter asks again or unticks the pin chip.
 
-54. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+79. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
     `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
     `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
@@ -1751,6 +1783,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     dealt with first. When a door reaches the table,
     the guard goes red and the arm changes with it. **Slated by the orchestrator for the
     community-trees C1 round.**
+80. **OPEN: decide whether 05 and 09's contribution camera gets pinch-to-zoom.** Found by PR #195's
+    review (F33). `ContributionCameraView`, the camera check-in (05) and care log (09) open to
+    attach photographs, owns a `VisitCameraController` like screen 04 and add-a-tree, and has no
+    pinch. RULINGS R80 item 5 and the F33 ruling (`docs/rulings-pending/f33-add-tree-zoom.md`)
+    name only screen 04 and add-a-tree, so this needs an owner decision, not an inference. If
+    ruled in, it is small: apply `VisitCameraZoomPinch` to its preview, with a wiring test in the
+    shape of `CameraZoomPinchTests`' two `…WiresItsAimToThePinch` tests.
+81. **The F33 phone check (#195).** On the physical phone: the pinch moves the lens on add-a-tree's
+    photo well and on screen 04, it does not fight the composer's `ScrollView`, and screen 04's pinch
+    still arms once the camera session starts (its `isZoomable` is now read inside the modifier). No
+    simulator has a camera, so #195's verification could not see any of this. OPEN until done.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

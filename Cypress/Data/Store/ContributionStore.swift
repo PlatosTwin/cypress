@@ -436,6 +436,54 @@ public struct ContributionStore {
         return Self.series(try statement.fetchAll(Self.decodePhoto), limit: limit)
     }
 
+    /// This tree's live photographs that **have left the phone**, by id.
+    ///
+    /// The phone's side of the one inexact link in photo identity (report F30,
+    /// `RoutedAPI.photoIdentityMatch`'s link 3): pairing a service row with a local one by framing
+    /// and capture second. That rule may only ever be offered a photograph whose copy could be on
+    /// the service, because a photograph that has not been sent has no copy there — so any own row
+    /// that happens to match it is some *other* photograph, and pairing the two hides that one and
+    /// names it in this one's withdrawal (review of #194, finding 1). Two conditions, each excluding
+    /// one way a row can still be on the phone alone:
+    ///
+    ///   - **`storage_key IS NOT NULL`** — the row was written by the outbox's apply
+    ///     (`LocalAPI.uploadPhoto` sets it), so a send was queued for it. The add-a-tree photograph
+    ///     keeps `local_path` and never has one: `addTree` queues no binary, and nothing sends it.
+    ///   - **no `outbox_photos` row names it** — the send is not still owed. The row is deleted by
+    ///     `OutboxStore.completePhoto` when the send completes; while it exists the photograph is
+    ///     waiting for Wi-Fi, or its begin failed, or it has not been tried yet.
+    ///   - **no refusal is recorded for it** — the service did not refuse its send for good. A
+    ///     refusal that will not change deletes the queue row too, so without this a photograph
+    ///     the service turned away read as sent (`OutboxStore.recordRefusedPhoto`).
+    ///
+    /// **What this cannot tell apart, stated rather than discovered:**
+    ///   - a binary staged before the send path existed (`sendable = 0`) has its queue row deleted
+    ///     at the apply, so it reads as sent although R77 kept it on the phone;
+    ///   - a binary refused for good by a build earlier than the refusal record had its queue row
+    ///     deleted and nothing written, so it reads as sent too.
+    /// Nothing on the row records either difference, and recording it would be a migration.
+    public func sentPhotoIDs(treeID: UUID, connection: SQLiteConnection) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM photos
+             WHERE tree_uuid = :tree COLLATE NOCASE
+               AND deleted_at IS NULL
+               AND storage_key IS NOT NULL
+               AND NOT EXISTS (
+                     SELECT 1 FROM outbox_photos
+                      WHERE outbox_photos.photo_id = photos.id COLLATE NOCASE
+                   )
+               AND NOT EXISTS (
+                     SELECT 1 FROM app_state
+                      WHERE app_state.key = :refused || upper(photos.id)
+                   )
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":refused": OutboxStore.refusedPhotoKeyPrefix,
+        ])
+        return Set(try statement.fetchAll { try $0.uuid("id") })
+    }
+
     // MARK: - Hero photographs, batched (#176)
 
     /// One photograph id per tree, chosen by `PhotoHero.choose` — the same rule the profile hero

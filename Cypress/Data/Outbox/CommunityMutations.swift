@@ -250,6 +250,10 @@ public struct PhotoVoteCast: Codable, Hashable, Sendable {
 /// that both gates already allowed and that committed.
 public struct PhotoWithdrawal: Codable, Hashable, Sendable {
     public let clientUUID: UUID
+    /// The photograph, **as the service can find it**. The phone's own `photos.id`, which is the
+    /// begin's `client_uuid` for anything sent since report F30's fix and is withdrawn by that key;
+    /// or, for a photograph sent by an earlier build, the service's own `photo_id` when a refresh
+    /// matched it (`RoutedAPI.deletePhoto(id:)`) — its local id is one the service never heard of.
     public let photoID: UUID
     public let treeID: UUID
     public let attribution: Attribution

@@ -15,8 +15,13 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
     /// **E264**'s reason a send path could not simply retry. A key the client already holds before
     /// the first attempt is what makes the retry land on the row it created.
     ///
-    /// Distinct from `photos.id`, deliberately. That one names the *local* row the apply wrote and
-    /// is not known until the apply has run; this one exists from the moment the shutter closes.
+    /// **It is also the `photos.id` the apply writes**, since report F30's fix: the apply passes it
+    /// as `PhotoUploadRequest.idempotencyKey` and `LocalAPI.beginPhotoUpload` mints the local row
+    /// under it. It exists from the moment the shutter closes, so the local row can take it; and
+    /// making the two one value is what lets the contributor's phone recognise its own photograph
+    /// when `GET /trees/{id}` echoes this key back under the service's own `photo_id`. A photograph
+    /// applied by an earlier build has a local id unrelated to this one, and
+    /// `RoutedAPI.refreshedTreeProfile` says how those are matched instead.
     public let id: UUID
     /// Where the binary is staged on device. See `VisitPhotoStaging`.
     public let path: String

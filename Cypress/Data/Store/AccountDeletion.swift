@@ -554,6 +554,21 @@ public struct AccountDeletion {
             user, on: connection
         )
 
+        // The refusal keys of photographs that are now gone (`OutboxStore.recordRefusedPhoto`). Each
+        // names one photograph by id, in `app_state` rather than a column, so neither the statement
+        // above nor `AccountDeletionCoverage` reaches it. It goes with its photograph. A key whose
+        // photograph was already gone by some other road goes too: nothing reads it, and erasing is
+        // the door that promises no residue. A key whose photograph survives — another owner's, or
+        // this device's unclaimed work — stays, because it is still true.
+        try run(
+            """
+            DELETE FROM app_state
+             WHERE substr(key, 1, length(:prefix)) = :prefix
+               AND substr(key, length(:prefix) + 1) NOT IN (SELECT upper(id) FROM photos)
+            """,
+            [":prefix": OutboxStore.refusedPhotoKeyPrefix], on: connection
+        )
+
         for table in ["visits", "observations", "measurements"] {
             outcome.deletedContributions += try run(
                 "DELETE FROM \(table) WHERE user_id = :user COLLATE NOCASE", user, on: connection
