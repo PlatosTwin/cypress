@@ -607,7 +607,8 @@ printf '%s\n' "$@" >"$FAKE_XCODEBUILD_ARGV"
 echo "Test Case '-[CypressUITests.MapSearchUITests testTypingNarrows]' started."
 echo "Test Case '-[CypressUITests.MapSearchUITests testTypingNarrows]' passed (1.000 seconds)."
 echo "Executed 1 test, with 0 failures (0 unexpected) in 1.000 (1.001) seconds"
-echo "** TEST SUCCEEDED **"
+# Each action's own terminal marker, as the real xcodebuild prints it (CI run 36655506475).
+if [ "${1:-}" = "test-without-building" ]; then echo "** TEST EXECUTE SUCCEEDED **"; else echo "** TEST SUCCEEDED **"; fi
 FAKE
 chmod +x "$FAKEBIN2/xcrun" "$FAKEBIN2/xcodebuild"
 e2e_prebuilt() {  # <log> <argv-file> [args…]
@@ -873,7 +874,7 @@ if check "prebuilt log: a green run with no compile task passes, and says what i
   write_log "$WORK/prebuilt-green.log" "$PREBUILT_HEADER" "$PREBUILT_COMMIT_LINE" \
     "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
     "Executed 3 tests, with 0 failures (0 unexpected) in 12.0 (12.1) seconds" \
-    "** TEST SUCCEEDED **"
+    "** TEST EXECUTE SUCCEEDED **"
   out="$("$HERE/verify_test_log.sh" "$WORK/prebuilt-green.log" 2>&1)"; rc=$?
   expect_rc "$rc" 0 \
     && expect_contains "$out" "VERIFY-OK" \
@@ -887,12 +888,33 @@ if check "prebuilt log: a compile task in a test-without-building log is refused
   write_log "$WORK/prebuilt-compiled.log" "$PREBUILT_HEADER" "$FAKE_COMPILE" \
     "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
     "Executed 3 tests, with 0 failures (0 unexpected) in 12.0 (12.1) seconds" \
-    "** TEST SUCCEEDED **"
+    "** TEST EXECUTE SUCCEEDED **"
   out="$("$HERE/verify_test_log.sh" "$WORK/prebuilt-compiled.log" 2>&1)"; rc=$?
   expect_rc "$rc" 1 \
     && expect_contains "$out" "the header says test-without-building, and the log holds 1 SwiftCompile tasks" \
     && expect_missing "$out" "VERIFY-OK" \
     && ok
+fi
+
+# `** TEST EXECUTE FAILED **` with no XCTest count at all — a runner that died before counting —
+# must be a red for the marker's own sake, not reach a verdict by some other route.
+if check "prebuilt log: TEST EXECUTE FAILED is a red, named for its marker"; then
+  write_log "$WORK/prebuilt-failed.log" "$PREBUILT_HEADER" \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
+    "Testing failed:" \
+    "** TEST EXECUTE FAILED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/prebuilt-failed.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "VERIFY-FAIL: ** TEST EXECUTE FAILED ** present" \
+    && expect_missing "$out" "VERIFY-OK" \
+    && ok
+fi
+
+# build-for-testing's marker says a build finished and nothing ran. It must not complete a log.
+if check "prebuilt log: control — TEST BUILD SUCCEEDED is not a test result"; then
+  write_log "$WORK/build-only.log" "$FAKE_COMPILE" "** TEST BUILD SUCCEEDED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/build-only.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "no terminal result marker" && ok
 fi
 
 if check "prebuilt log: --warnings refuses it by name, not as a reused DerivedData"; then

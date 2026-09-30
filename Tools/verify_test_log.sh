@@ -244,8 +244,17 @@ if grep -q '^CYPRESS-RUN: action test-without-building' "$LOG"; then
     || fail "the header says test-without-building, and the log holds ${COMPILE_TASKS} SwiftCompile tasks. A run of prebuilt products compiles nothing, so this log did not test only the products it names."
 fi
 
+# The invocation's terminal marker. `xcodebuild test` ends `** TEST SUCCEEDED **` / `** TEST
+# FAILED **`; `xcodebuild test-without-building` ends `** TEST EXECUTE SUCCEEDED **` / `** TEST
+# EXECUTE FAILED **` instead — the build-once round's first CI run (36655506475, ui (3)) executed
+# 27 tests with 0 failures and was refused here as "no terminal result marker", because only the
+# first pair was known. Both pairs mean the same thing and are read the same way everywhere below.
+# `** TEST BUILD SUCCEEDED **` (build-for-testing) is deliberately NOT one: nothing ran.
+TERMINAL_MARKER='\*\* TEST (EXECUTE )?(SUCCEEDED|FAILED) \*\*'
+FAILED_MARKER='\*\* TEST (EXECUTE )?FAILED \*\*'
+
 HAS_TEST_MARKER=0
-grep -qE '\*\* TEST (SUCCEEDED|FAILED) \*\*|Test run with [0-9]+ tests? .*(passed|failed)' "$LOG" && HAS_TEST_MARKER=1
+grep -qE "$TERMINAL_MARKER"'|Test run with [0-9]+ tests? .*(passed|failed)' "$LOG" && HAS_TEST_MARKER=1
 
 # Did an XCTest phase (CypressUITests, or any XCTest target) actually start? Swift Testing's
 # XCTest bridge never emits this line shape for its own specimens — only genuine XCTest suites
@@ -318,8 +327,8 @@ fi
 # XCTest suite mid-test and no `** TEST SUCCEEDED **`/`FAILED` anywhere in the file. A Swift
 # Testing pass earlier in the same log is not evidence about a phase that came after it.
 if [ "$HAS_XCTEST_PHASE" = 1 ]; then
-  grep -qE '\*\* TEST (SUCCEEDED|FAILED) \*\*' "$LOG" || \
-    fail "an XCTest phase started (Test Case lines present) but the log has neither ** TEST SUCCEEDED ** nor ** TEST FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing"
+  grep -qE "$TERMINAL_MARKER" "$LOG" || \
+    fail "an XCTest phase started (Test Case lines present) but the log has neither ** TEST [EXECUTE ]SUCCEEDED ** nor ** TEST [EXECUTE ]FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing"
 fi
 
 # ── An environment refusal is not a red, and it is not a pass either (roadmap item (d)) ──────
@@ -449,10 +458,10 @@ if [ -n "$FAILURE_LINES" ]; then
   fi
 fi
 
-if grep -q '\*\* TEST FAILED \*\*' "$LOG"; then
+if grep -qE "$FAILED_MARKER" "$LOG"; then
   echo "VERIFY-FAIL-DETAIL: what failed, from $LOG —" >&2
   print_test_failures
-  fail "** TEST FAILED ** present"
+  fail "$(grep -oE "$FAILED_MARKER" "$LOG" | tail -1) present"
 fi
 
 # A real pass line: Swift Testing's count is the only meaningful unit-test line —

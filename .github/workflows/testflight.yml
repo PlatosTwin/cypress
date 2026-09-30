@@ -16,13 +16,13 @@
 #
 #   plan     ~10s   reads Tools/ui-test-shards.txt and decides how many UI jobs there are
 #   unit     ~14m   the 1137-test Swift Testing suite, plus the zero-warning certification
-#   ui-build ~10m   builds the app and test bundles once (build-for-testing) for every shard
-#   ui       ~16m   N parallel jobs after ui-build, one shard each, testing ui-build's products
+#   ui-build  ~3m   builds the app and test bundles once (build-for-testing) for every shard
+#   ui     ~15-26m  N parallel jobs after ui-build, one shard each, testing ui-build's products
 #                   (test-without-building); the longest shard sets the pace
 #   release  ~10m   archive, upload, expire, tag -- only after unit AND every ui shard is green
 #
-# (ui-build and the ~16m are the 2026-09-29 build-once round's estimate from run 36635369200;
-# the ~34 below predates both it and the growth of the suite since.)
+# (ui-build is measured on run 36655506475, the build-once round's first; the ui range is main's
+# run 36651464367 less each shard's own build. The ~34 below predates both.)
 #
 # ~34 minutes wall clock for ~60 minutes of runner time, which is free on a public repo.
 #
@@ -800,11 +800,13 @@ jobs:
   # it is where warnings are certified (its comment above, and E203) — moving that onto shared products would
   # change what the certification rests on, which this round does not do.
   #
-  # **The trade-off, stated rather than hidden.** This puts one build (~7-9 min, plus ~1 min to pack
-  # and upload ~75 MB) in series before any shard starts. With a runner free for every job the
-  # slowest path gets ~2 minutes LONGER (build, then the longest shard less its own build). What it
-  # buys is runner time: ~8 minutes off each of four shards for ~10 added once, about 22 of ~108
-  # macOS minutes per run — and on this account runner time is what the queue is made of.
+  # **The trade-off, stated rather than hidden.** This puts one job in series before any shard
+  # starts. Measured on its first run (36655506475): 186 s in all — 13 s of prepare with no boot,
+  # 151 s for all 549 SwiftCompile tasks, 10 s to pack 259 MB into 74 MB, 2 s to upload. The same
+  # build took 5-9 minutes inside each shard's `xcodebuild test` on main (run 36651464367, header
+  # to first test), on a three-core runner sharing its CPU with a booted simulator. That shard's
+  # own gap fell from 421 s to 89 s. So the series step costs ~3 minutes and each shard gives back
+  # 3-8, and the build no longer runs four times over.
   #
   # **Built for a concrete simulator, never `generic/platform=iOS Simulator`.** A generic
   # destination builds every simulator architecture, doubling the compile; a concrete one builds
