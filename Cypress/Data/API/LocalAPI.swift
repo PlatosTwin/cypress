@@ -583,6 +583,119 @@ public actor LocalAPI: CypressAPI {
         return tree
     }
 
+    /// Moves a community tree's pin. `LocationCorrection.swift` states who may, and why.
+    ///
+    /// The order is the service's (`store.applyLocationCorrection`), so the phone refuses what the
+    /// service would and nothing it would not: the position's shape first, then whose the tree is,
+    /// then the 10 m dedupe against every *other* tree — the tree being moved is 0 m from its own
+    /// old position and is not its own duplicate.
+    public func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree {
+        // The service's `validation_failed` checks, verbatim in meaning (`api/sync.go`): a position
+        // off the map, or an accuracy that is not a distance. `!(x >= 0)` and not `x < 0`, so a NaN
+        // is refused as well — the comparison the service makes.
+        guard (-90.0...90.0).contains(coordinate.latitude),
+              (-180.0...180.0).contains(coordinate.longitude)
+        else { throw APIError.validationFailed }
+        if let locationAccuracyM, !(locationAccuracyM >= 0) { throw APIError.validationFailed }
+
+        let mine = attribution
+        let (subject, adder) = try await store.queue.read {
+            connection -> (Tree?, ContributionOwner?) in
+            (
+                try communityTrees.tree(id: treeID, connection: connection),
+                try communityTrees.adder(treeID: treeID, connection: connection)
+            )
+        }
+        guard let subject else {
+            // Not a tree this phone added. A city row or somebody else's cached tree is real and
+            // not this person's to move — `.forbidden`, `claimSpecies`' distinction between "not
+            // allowed" and "no such tree", which the screen says differently.
+            let isSomebodyElses = try await store.queue.read { connection -> Bool in
+                if try treeQueries?.tree(id: treeID, connection: connection) != nil { return true }
+                return try layer.exists(id: treeID, connection: connection)
+            }
+            throw isSomebodyElses ? APIError.forbidden : APIError.notFound
+        }
+        // A tree this phone withdrew is gone, here as on the service (`tree.DeletedAt != nil`).
+        guard subject.deletedAt == nil else { throw APIError.notFound }
+        guard let adder, adder.isOwned(by: mine) else { throw APIError.forbidden }
+
+        let nearby = try await treesNear(
+            coordinate, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 11
+        ).filter { $0.tree.id != treeID }
+        if !nearby.isEmpty {
+            throw ProximityConflict(candidates: Array(nearby.prefix(10)))
+        }
+
+        let moment = now()
+        // Two ids, as the wire has two (`server/testdata/sync_location_correction.json`): the chain
+        // row's own, sent as the payload's `id`, and the act's, which keys the queue row. Neither is
+        // the tree's — the root row already holds that one, and the service refuses a correction
+        // spelled with it.
+        let correctionID = UUID()
+        let clientUUID = UUID()
+        try await store.queue.write { connection in
+            guard let head = try locations.head(treeID: treeID, connection: connection) else {
+                // Every tree has a root: v23's backfill wrote one for every tree before it and
+                // `CommunityTreeStore.insert` writes one for every tree after. A chain with no head
+                // is damage, and papering over it with a new root would erase where the tree was.
+                throw APIError.conflict
+            }
+            // The old head stops being one before the new row exists: the head index is not
+            // deferrable, the foreign key is (`AppSchema` v23 — and the service's order too).
+            guard try locations.supersede(
+                id: head.id, with: correctionID, at: moment, connection: connection
+            ) else { throw APIError.conflict }
+            try locations.insert(
+                TreeLocation(
+                    id: correctionID,
+                    treeID: treeID,
+                    clientUUID: clientUUID,
+                    coordinate: coordinate,
+                    placement: placement,
+                    locationAccuracyM: locationAccuracyM,
+                    owner: ContributionOwner(mine),
+                    occurredAt: moment,
+                    createdAt: moment,
+                    updatedAt: moment
+                ),
+                connection: connection
+            )
+            // The read cache follows its chain's head, in the same transaction — `claimSpecies`'
+            // rule for `species_current`, applied to the position.
+            guard try communityTrees.move(
+                treeID: treeID, to: coordinate, placement: placement, at: moment,
+                connection: connection
+            ) else {
+                // Withdrawn between the read above and this write.
+                throw APIError.notFound
+            }
+            // Spec §3.4, in the same transaction as the move — see `addTree`.
+            try Self.queueAppliedMutation(
+                .locationCorrection(
+                    TreeLocationCorrection(
+                        id: correctionID,
+                        clientUUID: clientUUID,
+                        treeID: treeID,
+                        coordinate: coordinate,
+                        placement: placement,
+                        locationAccuracyM: locationAccuracyM,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
+        return try await treeProfile(id: treeID).tree
+    }
+
     /// Names the species on a community tree that has none. `SpeciesClaim` carries the argument for
     /// why this is the only species write on device and why it refuses the other two cases.
     ///
@@ -1003,9 +1116,12 @@ public actor LocalAPI: CypressAPI {
     /// this flag never enters `openReviews`, and no status can be written by accident.
     ///
     /// Gated on `userRole.canConfirmReviewFlag` (DECISIONS §3.7), and the gate is on the write, so a
-    /// surface drawn in error cannot withdraw a record. There is no author's arm the way the species
-    /// seam has one: `community_trees` records no author at all (R45's finding, unchanged), so there
-    /// is nobody whose own record this is to take back.
+    /// surface drawn in error cannot withdraw a record. There is no author's arm here the way the
+    /// species seam has one. `community_trees` records its adder since `AppSchema` v23, but the
+    /// adder's own withdrawal is a different act — the owner's decision 8, a withdrawal *for
+    /// everyone*, refused once anybody else has built on the tree, and sent as `tree_withdrawal` —
+    /// which this phone does not implement yet. This verb is the lead's answer to a report, and it
+    /// stays one; a tree added before v23 has no recorded adder to give it to (R45 arm 3).
     public func withdrawRecord(flagID: UUID) async throws {
         guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
         let moment = now()

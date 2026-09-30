@@ -270,41 +270,9 @@ public struct CommunityTreeStore {
         return try statement.fetchOne(Self.decode)
     }
 
-    /// The same read for a set of ids, keyed by id — one statement instead of one per tree.
-    ///
-    /// `LocalAPI.grove()` resolves every tree in the grove against the seed and then against this
-    /// table; doing it a tree at a time is what made the Trees tab linear in the size of the grove.
-    ///
-    /// **`COLLATE NOCASE` on the left operand, not on the `IN` list.** Written
-    /// `id IN (…) COLLATE NOCASE` the collation binds to the subquery rather than to the
-    /// comparison, and the whole search silently answers zero — `TreeQueries.speciesRowIDs` records
-    /// the day that was discovered. This table is tens of rows, so the scan the collation costs is
-    /// the scan `tree(id:)` already paid, once instead of N times.
-    ///
-    /// Like `tree(id:)`, this deliberately does **not** filter `deleted_at`: the one caller that
-    /// needs to see a withdrawal is the reason that method does not either.
-    public func trees(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: Tree] {
-        guard !ids.isEmpty else { return [:] }
-        let statement = try connection.cachedStatement(Self.treesSQL)
-        _ = try statement.bind(
-            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
-        )
-        var trees: [UUID: Tree] = [:]
-        for tree in try statement.fetchAll(Self.decode) { trees[tree.id] = tree }
-        return trees
-    }
-
-    /// The text `trees(ids:)` runs, as a property, for `ContributionStore.groveTreeIDsSQL`'s
-    /// reason: `GroveStatementCensusTests` names the statements one grove read is allowed to make,
-    /// and a gate that names a property is a drift gate, while a gate holding its own copy of the
-    /// text is a test agreeing with itself (PR #143's review).
-    ///
-    /// The collation and the missing `deleted_at` filter are both deliberate and both argued in
-    /// `trees(ids:)`' own doc above; this property is the same statement, not a second one.
-    static let treesSQL = """
-        SELECT * FROM community_trees
-         WHERE id COLLATE NOCASE IN (SELECT value FROM json_each(:ids))
-        """
+    // `trees(ids:)` and its `treesSQL` moved to `CommunityLayer` in `AppSchema` v23: the grove
+    // resolves a tree somebody else published as readily as one this phone added, so the set read
+    // is the merged one. The `COLLATE NOCASE`-on-the-left-operand lesson moved with it.
 
     public func exists(id: UUID, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""

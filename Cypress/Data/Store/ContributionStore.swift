@@ -2343,6 +2343,25 @@ public struct ContributionStore {
         try photos.run()
         _ = try photos.reset()
 
+        // The community trees this phone added signed out, and every pin position it set on them
+        // (`AppSchema` v23), adopted on the photograph's terms: at most one owner per row, so the
+        // account gains it and the device link goes in the same statement. The service does the
+        // same at `POST /devices/claim` — after it, the device's own credential is a stranger to
+        // these trees (`TestAClaimedDevicesOwnCredentialNoLongerActsOnItsTrees`) — and adopting here
+        // is what keeps the phone from offering a signed-out move the service would refuse.
+        // `user_id IS NULL` leaves an anonymized row alone, for the photograph's reason: it has no
+        // `device_id` either, so it matches nothing and the next person to sign in here cannot
+        // adopt a tree somebody else left behind.
+        for table in ["community_trees", "tree_locations"] {
+            let adopt = try connection.cachedStatement("""
+                UPDATE main.\(table) SET user_id = :user, device_id = NULL, updated_at = :now
+                 WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
+                """)
+            _ = try adopt.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
+            try adopt.run()
+            _ = try adopt.reset()
+        }
+
         try claimFavorites(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
         try claimPhotoVotes(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
 

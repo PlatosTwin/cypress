@@ -53,6 +53,10 @@ extension AccountDeletion {
         case treeStatusOverrides = "tree_status_overrides"
         case treeDataDisputes = "tree_data_disputes"
         case speciesAssertions = "species_assertions"
+        /// The adder of a tree this phone added (`AppSchema` v23).
+        case communityTrees = "community_trees"
+        /// Whoever set each position a community tree's pin has held (`AppSchema` v23).
+        case treeLocations = "tree_locations"
 
         public var tableName: String { rawValue }
 
@@ -60,7 +64,8 @@ extension AccountDeletion {
         public var accountColumn: String {
             switch self {
             case .device, .visits, .observations, .measurements, .careEvents, .photos, .photoVotes,
-                 .favorites, .privateReminders, .communityNotes, .speciesAssertions:
+                 .favorites, .privateReminders, .communityNotes, .speciesAssertions, .communityTrees,
+                 .treeLocations:
                 return "user_id"
             case .reviewFlags, .treeDataDisputes:
                 return "raised_by"
@@ -84,7 +89,7 @@ extension AccountDeletion {
             case .device:
                 return ["device_uuid"]
             case .visits, .observations, .measurements, .careEvents, .photoVotes, .favorites,
-                 .privateReminders, .speciesAssertions:
+                 .privateReminders, .speciesAssertions, .communityTrees, .treeLocations:
                 return ["device_id"]
             case .photos:
                 return ["device_id", "taken_on_device"]
@@ -125,17 +130,25 @@ extension AccountDeletion {
             case .treeStatusOverrides, .device:
                 (leaving, erasing) = (.anonymized, .anonymized)
 
-            // Written with the account's id by `LocalAPI.addTree`, `claimSpecies` and
-            // `correctSpecies` (`SpeciesAssertionStore.insert`), and named by neither door. Found
-            // while this guard was being written, and measured by it: after either door the claim
-            // still carries the deleted account's id. It is recorded as what the code does, not as
-            // a ruling — the fix is its own change — and the day either door reaches the table,
-            // `AccountDeletionCoverageTests` goes red here and this arm has to change with it.
+            // A species statement, on the tree name's argument. This arm was `.notReached` under
+            // both doors until the community-trees round C1 (`ROADMAP` chip 79, measured by this
+            // guard in #186); the erasing door splices each chain shut around the rows it deletes
+            // (`AccountDeletion.eraseSpeciesAssertions`).
             case .speciesAssertions:
-                (leaving, erasing) = (
-                    .notReached(defect: "neither door names species_assertions; the claim keeps the account's id"),
-                    .notReached(defect: "neither door names species_assertions; the claim keeps the account's id")
-                )
+                (leaving, erasing) = (.anonymized, .deleted)
+
+            // A tree this phone added, under the owner's decision 6: the leaving door keeps it with
+            // no adder, and the erasing door deletes it — unless somebody else has built on it, when
+            // it stays, anonymized (`AccountDeletion.forgetCommunityTrees`). The `.deleted` here is
+            // the case with nobody else on the tree, which is what a row of this table alone is.
+            case .communityTrees:
+                (leaving, erasing) = (.anonymized, .deleted)
+
+            // A pin position stays where it is under both doors and loses its mover, as the service
+            // does to every chain row (`deleteAccountTrees`). A position on a tree the erasing door
+            // deletes goes with its tree; that is the tree's fate, not this row's.
+            case .treeLocations:
+                (leaving, erasing) = (.anonymized, .anonymized)
             }
             switch choice {
             case .leaveRecords: return leaving

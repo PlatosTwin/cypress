@@ -239,6 +239,9 @@ struct BeginPhotoBody: Encodable {
     let visitClientUUID: UUID?
     let shotType: String
     let capturedAt: Date
+    /// The photograph's local calendar date, `YYYY-MM-DD` (decision 14a). `RemoteAPI.beginPhotoBody`
+    /// says whose calendar and which zone.
+    let capturedOn: String?
     let width: Int?
     let height: Int?
     let publicLat: Double?
@@ -251,28 +254,11 @@ struct BeginPhotoBody: Encodable {
         case visitClientUUID = "visit_client_uuid"
         case shotType = "shot_type"
         case capturedAt = "captured_at"
+        case capturedOn = "captured_on"
         case width, height
         case publicLat = "public_lat"
         case publicLon = "public_lon"
         case clientUUID = "client_uuid"
-    }
-}
-
-/// `POST /trees`.
-struct AddTreeBody: Encodable {
-    let clientUUID: UUID
-    let lat: Double
-    let lon: Double
-    let address: String?
-    let placement: String?
-    let speciesID: UUID?
-    let landContext: String?
-
-    enum CodingKeys: String, CodingKey {
-        case clientUUID = "client_uuid"
-        case lat, lon, address, placement
-        case speciesID = "species_id"
-        case landContext = "land_context"
     }
 }
 
@@ -342,12 +328,6 @@ struct PhotoSourceResponse: Decodable {
         case photoID = "photo_id"
         case url
     }
-}
-
-/// `POST /trees` when the dedupe did not trip.
-struct AddTreeResponse: Decodable {
-    let id: UUID
-    let status: String
 }
 
 /// The `conflict` body's sibling of `error` — `{detail: {candidates: [NearbyTree]}}`.

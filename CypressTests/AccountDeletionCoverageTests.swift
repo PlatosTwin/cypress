@@ -49,14 +49,16 @@ struct AccountDeletionCoverageTests {
         "actions", "address", "anonymized_at", "blur_applied", "captured_at", "category",
         "client_uuid", "confidence", "container_path", "created_at", "dbh_city_cm_max",
         "dbh_city_cm_min", "deleted_at", "dispute_id", "external_ref", "fail_count", "field",
-        "foliage", "gps_accuracy_m", "height", "id", "key", "kind", "land_context", "last_error",
-        "last_error_code", "lat", "local_applied", "local_path", "lon", "measurement_height_m",
-        "method", "moderation_state", "name", "next_attempt_at", "note", "notes", "outbox_id", "path",
+        "fetched_at", "foliage", "gps_accuracy_m", "height", "id", "key", "kind", "land_context",
+        "last_error", "last_error_code", "lat", "local_applied", "local_path", "location_accuracy_m",
+        "lon", "measurement_height_m", "method", "moderation_state", "name", "next_attempt_at",
+        "next_cursor", "note", "notes", "occurred_at", "outbox_id", "path",
         "payload", "phenology_tags", "photo_id", "photo_paths", "photos_outstanding", "placement",
         "planted_year", "public_lat", "public_lon", "remote_sent", "sendable", "seq", "shot_type",
         "shown_at", "si_value", "site_lineage", "site_type", "source", "species_current",
         "species_uuid", "stale_at", "state", "status", "storage_key", "structure_flags",
-        "superseded_by", "tree_id", "tree_source", "tree_uuid", "unit_entered", "updated_at", "value",
+        "superseded_by", "tile", "tree_id", "tree_source", "tree_uuid", "unit_entered", "updated_at",
+        "value",
         "verification_state", "vote", "visit_id", "vitality", "width", "window_started_at",
         "withdrawn_at"
     ]
@@ -64,7 +66,7 @@ struct AccountDeletionCoverageTests {
     /// Ordinary names that are shaped like identity ones, each with the reason it is not. A second
     /// check on the list above: a name that reads as "who" cannot be filed as ordinary by reflex.
     static let identityShapedButOrdinary: [String: String] = [
-        "superseded_by": "names the species assertion that replaced this one, not a person"
+        "superseded_by": "names the row that replaced this one in its chain — a species assertion, or a pin position (v23) — not a person"
     ]
 
     /// Whether a column name reads like it names somebody. Deliberately broad; the exceptions above
@@ -383,6 +385,14 @@ struct AccountDeletionCoverageTests {
                     "raised_by": who])
         case .speciesAssertions:
             return timed(["id": fresh(), "tree_uuid": tree, "source": "community", "user_id": who])
+        case .communityTrees:
+            // Nothing else on the tree, so the erasing door's "nobody else has built on it" arm is
+            // the one this row meets — the `.deleted` its classification states.
+            return timed(["id": tree, "client_uuid": fresh(), "lat": "37.76", "lon": "-122.5",
+                    "user_id": who])
+        case .treeLocations:
+            return timed(["id": fresh(), "tree_id": tree, "client_uuid": fresh(), "lat": "37.76",
+                    "lon": "-122.5", "placement": "gps", "occurred_at": stamp, "user_id": who])
         }
     }
 

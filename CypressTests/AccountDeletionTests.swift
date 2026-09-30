@@ -1001,7 +1001,7 @@ struct AccountDeletionTests {
     /// **The hole ERRATA E136 pinned, closed and pinned from the other side.**
     ///
     /// This test used to assert the opposite, and its own note said why: `LocalAPI.addTree` writes a
-    /// photograph with no `visit_id`, `community_trees` records no author, and neither door could
+    /// photograph with no `visit_id`, `community_trees` recorded no author (until v23), and neither door could
     /// tell that photograph from somebody else's. It existed "so that the gap is a failing assertion
     /// the day somebody adds that column and forgets this path, rather than a silence". The column
     /// arrived as `AppSchema` v12 and this path was not forgotten; the assertion is now the sentence

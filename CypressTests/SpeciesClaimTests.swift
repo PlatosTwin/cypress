@@ -521,8 +521,9 @@ struct SpeciesClaimTests {
         }
         // It does name the author, which is the entire point of printing it.
         #expect(line.contains("contributor"))
-        // "a contributor", not "the contributor": `community_trees` records no author, so the line
-        // must not imply which person is meant.
+        // "a contributor", not "the contributor": the species' namer need not be the tree's adder
+        // (v23's column), and the service names neither on somebody else's tree, so the line must
+        // not imply which person is meant.
         #expect(!line.contains("the contributor"), "the line implies an author the row does not record")
     }
 }

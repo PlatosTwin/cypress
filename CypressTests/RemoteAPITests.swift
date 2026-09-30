@@ -557,6 +557,11 @@ struct RemoteAPITests {
         // and this is the last moment the true framing exists to be recorded.
         #expect(sent["shot_type"] as? String == "trunk")
         #expect(sent["captured_at"] as? String == "2026-08-06T07:06:40Z")
+        // Decision 14a: the phone's own calendar date travels beside the instant. Asserted present
+        // and date-shaped here; its value in a zone east of UTC is `LocationCorrectionFixtureTests`'
+        // job, against the service's golden.
+        let capturedOn = try #require(sent["captured_on"] as? String, "no captured_on in the begin")
+        #expect(capturedOn.count == 10 && capturedOn.hasPrefix("2026-08-0"))
         #expect(sent["width"] as? Int == 100)
         // ERRATA E42: not storing a location is the privacy-safe direction, and nothing that ships
         // sets one.
@@ -759,6 +764,11 @@ struct RemoteAPITests {
             // inventories, which under D16 the service cannot know. Class L, no route, same as
             // the two above it that it belongs beside.
             "areaChoices",
+            // The community add and the pin move (the community-trees round C1): both reach the
+            // account through the queue, as `add_tree` and `location_correction`. `addTree` is a
+            // refusal rather than a missing route — `POST /trees` exists and names the tree by the
+            // act's key, not the tree's id (the one-id rule, `CommunityLayer`).
+            "addTree", "correctLocation",
             // Spec §3.4's nine unqueued mutations, plus the export D12 has not built.
             "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
@@ -928,56 +938,39 @@ struct RemoteAPITests {
 
     // MARK: Trees
 
-    /// `POST /trees` sends the draft the service's `addTreeRequest` declares, and the returned
-    /// `Tree` is the draft's own facts under the id the service confirmed.
-    @Test("addTree sends the draft and echoes it under the confirmed id")
-    func addTreeSendsTheDraft() async throws {
-        let clientUUID = UUID()
-        let speciesID = UUID()
-        let draft = TreeDraft(
-            clientUUID: clientUUID,
-            coordinate: Coordinate(latitude: 37.7601, longitude: -122.505),
-            placement: .contributorPlaced,
-            speciesID: speciesID,
-            photoLocalPath: "/tmp/tree.jpg",
-            attribution: .anonymous(deviceID: UUID()),
-            address: "1 Main St",
-            landContext: .street
-        )
-
+    /// **`addTree` does not reach `POST /trees`** (the community-trees round C1). That route keys the
+    /// tree on the act's `client_uuid`, while the phone names it `Tree.id` — one tree under two ids.
+    /// The add reaches the account through `/sync` as `add_tree`, carrying `treeID`; this is the
+    /// refusal that stops a future caller from taking the old road by accident.
+    ///
+    /// Red-proof: restore the old body (encode `AddTreeBody`, send `POST /trees`) and this goes red
+    /// on the thrown-error expectation, with a `POST /trees` in `transport.calls`.
+    @Test("addTree has no route here, and never reaches POST /trees")
+    func addTreeHasNoRoute() async throws {
         let transport = ScriptedTransport()
-        transport.answer("POST /trees", with: #"{"id":"\#(clientUUID.uuidString)","status":"applied"}"#)
-
-        let tree = try await Self.api(transport).addTree(draft)
-        #expect(tree.id == clientUUID, "the tree's id is the client_uuid the service treats as its id")
-        #expect(tree.source == .community)
-        #expect(tree.verificationState == .unverified)
-        #expect(tree.status == .alive)
-        #expect(tree.placement == .contributorPlaced)
-        #expect(tree.statedLandContext == .street)
-        #expect(tree.speciesCurrentID == speciesID)
-        #expect(tree.address == "1 Main St")
-
-        let body = try #require(transport.call("POST /trees")?.body)
-        let sent = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        #expect(sent["client_uuid"] as? String == clientUUID.uuidString)
-        #expect(sent["lat"] as? Double == 37.7601)
-        #expect(sent["lon"] as? Double == -122.505)
-        #expect(sent["placement"] as? String == "contributor_placed")
-        #expect(sent["land_context"] as? String == "street")
-    }
-
-    /// "Community add: requires photo" (BUILD-PLAN §6), refused before the wire rather than after.
-    @Test("a photoless draft is refused without a request")
-    func aPhotolessDraftIsRefused() async throws {
-        let transport = ScriptedTransport()
-        await #expect(throws: APIError.validationFailed) {
+        transport.answer("POST /trees", with: #"{"id":"\#(UUID().uuidString)","status":"applied"}"#)
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
             _ = try await Self.api(transport).addTree(
                 TreeDraft(
-                    coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
-                    photoLocalPath: "",
+                    coordinate: Coordinate(latitude: 37.7601, longitude: -122.505),
+                    photoLocalPath: "/tmp/tree.jpg",
                     attribution: .anonymous(deviceID: UUID())
                 )
+            )
+        }
+        #expect(transport.calls.isEmpty, "addTree reached the wire: \(transport.calls.map(\.path))")
+    }
+
+    /// A pin move is queued, never called: `correctLocation` has no route on the service.
+    @Test("correctLocation has no route here")
+    func correctLocationHasNoRoute() async throws {
+        let transport = ScriptedTransport()
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
+            _ = try await Self.api(transport).correctLocation(
+                treeID: UUID(),
+                to: Coordinate(latitude: 37.7601, longitude: -122.505),
+                placement: .gps,
+                locationAccuracyM: nil
             )
         }
         #expect(transport.calls.isEmpty)

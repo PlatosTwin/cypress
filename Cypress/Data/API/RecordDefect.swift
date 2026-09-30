@@ -94,8 +94,10 @@ public enum RecordDefectOffer: Hashable, Sendable {
     /// This record may be reported as never having held a tree. `flagNeverExisted`.
     case reportable
     /// A report is open. `canResolve` is whether *this* viewer may answer it — a lead, and only a
-    /// lead, because `community_trees` records no author (R45's finding, unchanged) and so there is
-    /// nobody whose own record this is to withdraw.
+    /// lead. `community_trees` records its adder since `AppSchema` v23, and the owner's decision 8
+    /// gives the adder a way to withdraw their own tree for everyone (`tree_withdrawal`, which the
+    /// service accepts); but the phone does not send that verb yet, and a report is not the route
+    /// to it, so resolving one stays a lead's. A tree added before v23 is nobody's (R45 arm 3).
     case underReview(flagID: UUID, canResolve: Bool)
     /// A **city** row, whose record is disputed through R79's surface rather than through this one.
     ///

@@ -103,19 +103,14 @@ public struct CommunityLayer {
 
     /// The proximity dedupe over the whole community layer: `CommunityTreeStore.near`'s rule — box
     /// read unbounded, then the circle and the limit applied in exact meters — over both tables.
-    ///
-    /// - Parameter excluding: a tree that is not its own neighbor. A moved pin is checked against
-    ///   every other tree, and the tree being moved is 0 m from its own old position.
     public func near(
         _ coordinate: Coordinate,
         radiusM: Double,
         limit: Int,
-        excluding: UUID? = nil,
         connection: SQLiteConnection
     ) throws -> [Tree] {
         let bounds = BoundingBox(around: coordinate, radiusM: radiusM)
         return try inBounds(bounds, limit: nil, connection: connection)
-            .filter { $0.id != excluding }
             .filter { coordinate.distance(to: $0.coordinate) <= radiusM }
             .sorted { coordinate.distance(to: $0.coordinate) < coordinate.distance(to: $1.coordinate) }
             .prefix(limit)

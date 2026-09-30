@@ -412,6 +412,20 @@ public struct RoutedAPI: CypressAPI {
         try await local.addTree(draft)
     }
 
+    /// Local, like every write: the move lands on this phone and reaches the account through the
+    /// queue as a `location_correction` (`AppSchema` v23).
+    public func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree {
+        try await local.correctLocation(
+            treeID: treeID, to: coordinate, placement: placement,
+            locationAccuracyM: locationAccuracyM
+        )
+    }
+
     public func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
         try await local.claimSpecies(treeID: treeID, speciesID: speciesID)
     }

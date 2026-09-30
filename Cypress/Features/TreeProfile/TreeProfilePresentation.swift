@@ -481,10 +481,13 @@ struct TreeProfilePresentation {
         return TreeProfilePresentation.speciesNamedByContributor
     }
 
-    /// "a contributor", not "the contributor". `community_trees` records no author — it has no
-    /// `user_id` and no `device_id` — so the record cannot say *which* person, and a line that said
-    /// "the contributor" would imply the one who added the tree and quietly be wrong the moment a
-    /// second person names the species on somebody else's row.
+    /// "a contributor", not "the contributor". The species on a community tree is named by a
+    /// species statement, and the person who made it need not be the one who added the tree:
+    /// `claimSpecies` takes a first name from anybody, and `AppSchema` v23's adder column says who
+    /// added the tree, not who named it. On somebody else's tree the phone does not know either —
+    /// the service serves no actor (the owner's decision 4). So the record cannot say *which*
+    /// person, and a line that said "the contributor" would imply the adder and quietly be wrong
+    /// the moment a second person names the species on somebody else's row.
     static let speciesNamedByContributor = "species named by a contributor"
 
     /// Whether this screen offers to name the species — the "after" half of the owner's request.
@@ -1522,8 +1525,10 @@ enum TreeProfileCopy {
         "Cypress reads the city's record as a tree \(place)."
     }
 
-    /// "A contributor", not "the contributor" — `community_trees` records no author, exactly as
-    /// `speciesNamedByContributor` explains one block up.
+    /// "A contributor", not "the contributor". The land context is stated by whoever added the
+    /// tree, and since `AppSchema` v23 this phone records its own adds' adder — but a tree from the
+    /// service arrives with no actor at all (the owner's decision 4), and the one sentence serves
+    /// both. `speciesNamedByContributor` one block up gives the rest of the argument.
     ///
     /// It states the fact directly, where the inferred arm cites itself, because a contributor
     /// standing at the tree *observed* this. Softening an observation into a reading would be the
