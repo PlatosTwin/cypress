@@ -1812,6 +1812,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `MapLocationProvider.start()` actually decided. And a harness trap for whoever writes the test: a
     provider pinned to `.notAsked` (`CYPRESS_LOCATION`) never prompts, so after a tap the block now
     waits with no ceiling; no current UI test takes that path.
+83. **Pin `run_tests.sh`'s QoS clamp in `Tools/test_harness_guards.sh`.** PR #197 runs local
+    builds under `taskpolicy -c utility` so a booted simulator's audio keeps its deadline, and
+    nothing guards it (review finding 3). Three facts need a calibrated check each: the header
+    stamps `CYPRESS-RUN: qos-clamp utility` locally and `default` with `CI=true`; the empty-array
+    expansion `${QOS_PREFIX[@]+"${QOS_PREFIX[@]}"}` survives `/bin/bash` 3.2 under `set -u` (a
+    bare `"${QOS_PREFIX[@]}"` dies `unbound variable` on the CI path, the red-proof); and
+    `taskpolicy` execs rather than forks, so `ps` shows `xcodebuild test …` and
+    `xcodebuild_line` still sees the run. Use stand-in `xcrun`/`xcodebuild` on PATH; boot nothing.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
