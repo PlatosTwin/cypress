@@ -1752,20 +1752,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     location-permission prompt is up, so a slow answer reads as "couldn't find your location" until
     a fix arrives. Whether the clock should start at the grant is the owner's call.~~ **DONE** —
     #198 (`fix/dispute-fix-clock`): (a) tested, (b) fixed and tested, (c) ruled by the owner
-    2026-09-29 ("Start at the grant") and built; the ruling is pending a number. #198's review
-    left one phone check, item 79.
-79. **Phone checks for the dispute screen's location wait (#198).** Only a device answers these.
-    (a) Whether turning Location off makes CoreLocation report `kCLErrorDenied` to the running
-    update, and when. #198 takes a new error baseline when the block starts waiting again from a
-    state that was not waiting, which holds if the error arrives while the block is off or in the
-    same update as the reading that turns Location back on; an error delivered strictly after that
-    reading still ends the new wait at once (#198's review, finding 4). (b) Whether iOS hands a
-    running app authorization back as `notDetermined` (Allow Once expiring, or "Ask Next Time"
-    picked in Settings); #198 answers it by putting the block back to not asked. (c) Whether the
-    permission prompt can go away unanswered (the app backgrounded while it is up). The owner ruled
-    on 2026-09-29 that an unanswered prompt gets no ceiling, so the block would wait until the
-    reporter asks again or unticks the pin chip.
-
+    2026-09-29 ("Start at the grant") and built; the ruling is pending a number. #198's reviews
+    left the phone checks in item 82.
 79. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
     `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
@@ -1794,6 +1782,26 @@ into this section in the round that finds it, and nowhere else. Each item stands
     photo well and on screen 04, it does not fight the composer's `ScrollView`, and screen 04's pinch
     still arms once the camera session starts (its `isZoomable` is now read inside the modifier). No
     simulator has a camera, so #195's verification could not see any of this. OPEN until done.
+82. **Phone checks for the dispute screen's location wait (#198).** Only a device answers these.
+    (a) Whether turning Location off makes CoreLocation report `kCLErrorDenied` to the running
+    update, and when. #198 takes a new error baseline when the block starts waiting again from a
+    state that was not waiting, which holds if the error arrives while the block is off or in the
+    same update as the reading that turns Location back on; an error delivered strictly after that
+    reading still ends the new wait at once (#198's review, finding 4). (b) Whether iOS hands a
+    running app authorization back as `notDetermined` (Allow Once expiring, or "Ask Next Time"
+    picked in Settings); #198 answers it by putting the block back to not asked, except that a block
+    that already gave up keeps its "couldn't find" sentence. (c) Whether the
+    permission prompt can go away unanswered (the app backgrounded while it is up). The owner ruled
+    on 2026-09-29 that an unanswered prompt gets no ceiling, so the block would wait until the
+    reporter asks again or unticks the pin chip.
+    (d) A narrow race from #198's fix-round verification (proven in the model, the iOS trigger
+    unconfirmed): the reporter comes back from Settings having picked "Ask Next Time" and taps before
+    the authorization callback lands. The prompt goes up, but the ask was read at the stale
+    availability, so the grant that follows is ignored and the block sits at not asked; one more tap
+    recovers it, and Send is never held. A fix would take `promptRequested` from what
+    `MapLocationProvider.start()` actually decided. And a harness trap for whoever writes the test: a
+    provider pinned to `.notAsked` (`CYPRESS_LOCATION`) never prompts, so after a tap the block now
+    waits with no ceiling; no current UI test takes that path.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
