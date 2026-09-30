@@ -531,7 +531,7 @@ Cities-screen reports, D3 (resumable download) shipped in `eba00fc` (a backgroun
 **R84**; D6 was written into RULINGS R43's amendment as "a proposed ticket" and never reached this
 file.
 
-- **F29 — the header squeezes a long title into a column of single words.** Build 60, 2026-08-27,
+- ~~**F29 — the header squeezes a long title into a column of single words.**~~ Build 60, 2026-08-27,
   verbatim: *"Really terrible spacing up top"*. The screenshot is the pin-set map ("Show me where
   this is", ERRATA E144) for `Indian Laurel Fig Tree 'Green Gem'` with the pill
   `Financial District/South Beach`: the title renders six lines deep, one word per line, between
@@ -546,7 +546,16 @@ file.
   comment already states (two rows whenever the title and pill do not fit on one, e.g. with
   `ViewThatFits`), and prove it on a 390 pt screen with this tree and this pill. Small. No owner
   decision needed to fix the defect; the header's one-row layout at the lengths the mocks draw
-  must not change.
+  must not change. **FIXED** by `fix/f29-header-two-rows`. Below the accessibility sizes C1 now
+  offers the one-row layout to a `ViewThatFits` first and falls back to two rows (title beside the
+  back circle, pill on the line below) only when the title cannot fit on one line beside the pill;
+  at the accessibility sizes it stays two rows, as before. `CypressTests/ScreenHeaderRowsTests`
+  proves both halves at 375–440 pt: the reported pair takes two rows at every width (it measured
+  165 pt tall at 390 pt before the fix, the six-line column), and every C1 pair the mocks draw
+  (05, 11, 12, 13, 16, 17) stays on one row. Measure, Growth and Activity can reach the same state
+  with a long tree name as the pill (`Measure` beside `Helene Strybing New Zealand Tea Tree` did at
+  375 and 390 pt) and now take two rows too; `Indian Laurel Fig Tree 'Green Gem'` beside `Measure`
+  still fits one row at 390 pt.
 
 - ~~**F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
   verbatim: *"Pill says two photos but when I click in I see only one. Bug?"* The screenshot is
