@@ -404,6 +404,134 @@ if check "(a) control: bounded_run passes a fast command's own status through"; 
   if [ "$a:$b:$c" = "0:1:7" ]; then ok; else bad "expected 0:1:7, got $a:$b:$c"; fi
 fi
 
+# ───────────────────────────────────────────────────────────────────────────────────────────
+# Prebuilt products (the CI build-once round). `-xctestrun <file>` switches the run to
+# test-without-building, and the products are checked against the worktree before a device is
+# touched. Every refusal is run in a subshell because `refuse` exits, and each asserts the reason
+# it refused, not only that it did.
+# ───────────────────────────────────────────────────────────────────────────────────────────
+echo "run_tests.sh — prebuilt products (-xctestrun)"
+
+PRODUCTS="$WORK/products"
+mkdir -p "$PRODUCTS/Debug-iphonesimulator/Cypress.app"
+XCTESTRUN_FIXTURE="$PRODUCTS/Cypress_iphonesimulator99.0-arm64.xctestrun"
+printf 'fixture xctestrun\n' >"$XCTESTRUN_FIXTURE"
+printf 'seed-bytes\n' >"$PRODUCTS/Debug-iphonesimulator/Cypress.app/cypress-seed.sqlite"
+printf 'seed-bytes\n' >"$WORK/matching-seed.sqlite"
+printf 'another inventory\n' >"$WORK/other-seed.sqlite"
+FIXTURE_COMMIT="1111111111111111111111111111111111111111"
+FIXTURE_XCODE="Xcode 99.0 Build version 99A1"
+write_provenance() {  # <built-commit or -> <xcode> <arch>
+  {
+    [ "$1" = "-" ] || echo "built-commit=$1"
+    echo "built-by=run 1 attempt 1 job fixture"
+    echo "xcode=$2"
+    echo "arch=$3"
+  } >"$PRODUCTS/cypress-products-provenance.txt"
+}
+# The answers the three seams give, fixed. `SEED` is the variable run_tests.sh already reads.
+fixture_seams() {
+  repo_head() { echo "$FIXTURE_COMMIT"; }
+  local_xcode_version() { echo "$FIXTURE_XCODE"; }
+  host_arch() { echo arm64; }
+  SEED="$WORK/matching-seed.sqlite"
+}
+provenance_run() {  # runs check_products_provenance in a subshell; prints its output and header
+  ( fixture_seams; "$@"; XCTESTRUN="$XCTESTRUN_FIXTURE"; check_products_provenance \
+      && printf 'HEADER:\n%s' "$PRODUCTS_HEADER" ) 2>&1
+}
+
+if check "prebuilt: no -xctestrun builds from this worktree's project, as before"; then
+  out="$( ( select_xcodebuild_action -only-testing:CypressUITests/X; echo "action=${XCODEBUILD_ACTION[*]} xctestrun=[$XCTESTRUN]" ) 2>&1)"; rc=$?
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "action=test -project $REPO/Cypress.xcodeproj -scheme Cypress xctestrun=[]" \
+    && ok
+fi
+
+if check "prebuilt: -xctestrun switches to test-without-building, with no -project or -scheme"; then
+  out="$( ( select_xcodebuild_action -xctestrun "$XCTESTRUN_FIXTURE" -only-testing:CypressUITests/X; echo "action=${XCODEBUILD_ACTION[*]} xctestrun=[$XCTESTRUN]" ) 2>&1)"; rc=$?
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "action=test-without-building xctestrun=[$XCTESTRUN_FIXTURE]" \
+    && expect_missing "$out" "-project" \
+    && ok
+fi
+
+if check "prebuilt: refuses an -xctestrun that names no file"; then
+  out="$( ( select_xcodebuild_action -xctestrun "$WORK/nowhere.xctestrun" ) 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "no xctestrun file at $WORK/nowhere.xctestrun" && ok
+fi
+
+if check "prebuilt: refuses -xctestrun with nothing after it"; then
+  out="$( ( select_xcodebuild_action -only-testing:CypressUITests/X -xctestrun ) 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "-xctestrun has no path after it" && ok
+fi
+
+if check "prebuilt: refuses -scheme beside -xctestrun"; then
+  out="$( ( select_xcodebuild_action -xctestrun "$XCTESTRUN_FIXTURE" -scheme Cypress ) 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "-scheme was passed beside -xctestrun" && ok
+fi
+
+if check "prebuilt: refuses two -xctestrun arguments"; then
+  out="$( ( select_xcodebuild_action -xctestrun "$XCTESTRUN_FIXTURE" -xctestrun "$XCTESTRUN_FIXTURE" ) 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "-xctestrun was given 2 times" && ok
+fi
+
+if check "prebuilt: control — products that match are accepted, and the header says what they are"; then
+  write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" arm64
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "CYPRESS-RUN: products xctestrun=$XCTESTRUN_FIXTURE sha256=" \
+    && expect_contains "$out" "CYPRESS-RUN: products built-commit=$FIXTURE_COMMIT" \
+    && expect_contains "$out" "(matches this worktree's)" \
+    && ok
+fi
+
+if check "prebuilt: refuses products built from another commit"; then
+  write_provenance "2222222222222222222222222222222222222222" "$FIXTURE_XCODE" arm64
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "built from 2222222222222222222222222222222222222222, and this worktree is at $FIXTURE_COMMIT" \
+    && ok
+fi
+
+if check "prebuilt: refuses products built by another Xcode"; then
+  write_provenance "$FIXTURE_COMMIT" "Xcode 98.0 Build version 98A1" arm64
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "built by 'Xcode 98.0 Build version 98A1'" && ok
+fi
+
+if check "prebuilt: refuses products built for another architecture"; then
+  write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" x86_64
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "built for x86_64 and this machine is arm64" && ok
+fi
+
+if check "prebuilt: refuses a provenance file that names no commit"; then
+  write_provenance - "$FIXTURE_XCODE" arm64
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "names no built-commit" && ok
+fi
+
+if check "prebuilt: refuses products whose bundled seed is not this worktree's"; then
+  write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" arm64
+  out="$(provenance_run eval 'SEED=$WORK/other-seed.sqlite')"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "is not this worktree's seed" && ok
+fi
+
+if check "prebuilt: refuses products with no seed in the app"; then
+  write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" arm64
+  mv "$PRODUCTS/Debug-iphonesimulator/Cypress.app/cypress-seed.sqlite" "$WORK/seed-aside"
+  out="$(provenance_run true)"; rc=$?
+  mv "$WORK/seed-aside" "$PRODUCTS/Debug-iphonesimulator/Cypress.app/cypress-seed.sqlite"
+  expect_rc "$rc" 1 && expect_contains "$out" "hold no Cypress.app/cypress-seed.sqlite" && ok
+fi
+
+if check "prebuilt: products with no provenance file run, and the header says UNKNOWN"; then
+  rm -f "$PRODUCTS/cypress-products-provenance.txt"
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 0 && expect_contains "$out" "CYPRESS-RUN: products provenance UNKNOWN" && ok
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════════════════════
 # Part 2 — run_tests.sh end to end, as a real process.
 #
@@ -460,6 +588,70 @@ if check "(b) end to end: a caller whose own command line says 'xcodebuild' is n
   expect_contains "$out" "rc=1" \
     && expect_missing "$out" "already live against this simulator" \
     && expect_contains "$out" "bootstatus" \
+    && ok
+fi
+
+# The build-once path, as a real process: a stand-in xcodebuild records the argv it was given and
+# prints a green XCTest run, and a stand-in xcrun answers everything at once. Preflight is skipped
+# (there is no device); the provenance and argument refusals are not preflight and still run.
+FAKEBIN2="$WORK/fakebin-prebuilt"
+mkdir -p "$FAKEBIN2"
+cat >"$FAKEBIN2/xcrun" <<'FAKE'
+#!/bin/bash
+exit 0
+FAKE
+cat >"$FAKEBIN2/xcodebuild" <<'FAKE'
+#!/bin/bash
+if [ "${1:-}" = "-version" ]; then printf 'Xcode 99.0\nBuild version 99A1\n'; exit 0; fi
+printf '%s\n' "$@" >"$FAKE_XCODEBUILD_ARGV"
+echo "Test Case '-[CypressUITests.MapSearchUITests testTypingNarrows]' started."
+echo "Test Case '-[CypressUITests.MapSearchUITests testTypingNarrows]' passed (1.000 seconds)."
+echo "Executed 1 test, with 0 failures (0 unexpected) in 1.000 (1.001) seconds"
+echo "** TEST SUCCEEDED **"
+FAKE
+chmod +x "$FAKEBIN2/xcrun" "$FAKEBIN2/xcodebuild"
+e2e_prebuilt() {  # <log> <argv-file> [args…]
+  local log="$1" argv="$2"; shift 2
+  rm -f "$argv"
+  PATH="$FAKEBIN2:$PATH" FAKE_XCODEBUILD_ARGV="$argv" CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1 \
+    "$HERE/run_tests.sh" "$FAKE_UDID" "$log" "$@" 2>&1
+}
+
+if check "prebuilt end to end: -xctestrun runs test-without-building and the log names the products"; then
+  write_provenance "$(git -C "$REPO" rev-parse HEAD)" "Xcode 99.0 Build version 99A1" "$(uname -m)"
+  out="$(e2e_prebuilt "$WORK/e2e-p.log" "$WORK/e2e-p.argv" \
+          -xctestrun "$XCTESTRUN_FIXTURE" -only-testing:CypressUITests/MapSearchUITests)"; rc=$?
+  argv="$(tr '\n' ' ' <"$WORK/e2e-p.argv" 2>/dev/null)"
+  log="$(cat "$WORK/e2e-p.log" 2>/dev/null)"
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "VERIFY-OK" \
+    && expect_contains "$out" "VERIFY-NOTE: tested prebuilt products" \
+    && expect_contains "$argv" "test-without-building -destination platform=iOS Simulator,id=$FAKE_UDID -xctestrun $XCTESTRUN_FIXTURE -only-testing:CypressUITests/MapSearchUITests" \
+    && expect_missing "$argv" "-project" \
+    && expect_missing "$argv" "-scheme" \
+    && expect_contains "$log" "CYPRESS-RUN: action test-without-building" \
+    && expect_contains "$log" "CYPRESS-RUN: products built-commit=$(git -C "$REPO" rev-parse HEAD)" \
+    && ok
+fi
+
+if check "prebuilt end to end: control — without -xctestrun it still builds from the project"; then
+  out="$(e2e_prebuilt "$WORK/e2e-q.log" "$WORK/e2e-q.argv" -only-testing:CypressUITests/MapSearchUITests)"; rc=$?
+  argv="$(tr '\n' ' ' <"$WORK/e2e-q.argv" 2>/dev/null)"
+  log="$(cat "$WORK/e2e-q.log" 2>/dev/null)"
+  expect_rc "$rc" 0 \
+    && expect_contains "$argv" "test -project $REPO/Cypress.xcodeproj -scheme Cypress -destination platform=iOS Simulator,id=$FAKE_UDID" \
+    && expect_contains "$log" "CYPRESS-RUN: action test (builds from $REPO/Cypress.xcodeproj" \
+    && expect_missing "$out" "prebuilt" \
+    && ok
+fi
+
+if check "prebuilt end to end: products from another commit are refused before xcodebuild runs or a log exists"; then
+  write_provenance "2222222222222222222222222222222222222222" "Xcode 99.0 Build version 99A1" "$(uname -m)"
+  out="$(e2e_prebuilt "$WORK/e2e-r.log" "$WORK/e2e-r.argv" -xctestrun "$XCTESTRUN_FIXTURE")"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "built from 2222222222222222222222222222222222222222" \
+    && { [ ! -e "$WORK/e2e-r.argv" ] || { bad "xcodebuild ran anyway: $(cat "$WORK/e2e-r.argv")"; false; }; } \
+    && { [ ! -e "$WORK/e2e-r.log" ] || { bad "a log was left behind for a refused run"; false; }; } \
     && ok
 fi
 
@@ -669,6 +861,59 @@ if check "(d) control: two timeouts and nothing else is still an environment ref
   expect_rc "$rc" 2 \
     && expect_contains "$out" "VERIFY-ENV-REFUSED" \
     && expect_contains "$out" "All 2 failure line(s)" \
+    && ok
+fi
+
+# ── A log that tested prebuilt products (the CI build-once round) ────────────────────────────
+PREBUILT_HEADER="CYPRESS-RUN: action test-without-building (prebuilt products; this log compiles nothing)"
+PREBUILT_COMMIT_LINE="CYPRESS-RUN: products built-commit=1111111111111111111111111111111111111111"
+FAKE_COMPILE="SwiftCompile normal arm64 /Users/x/Cypress/App/CypressApp.swift (in target 'Cypress' from project 'Cypress')"
+
+if check "prebuilt log: a green run with no compile task passes, and says what it tested"; then
+  write_log "$WORK/prebuilt-green.log" "$PREBUILT_HEADER" "$PREBUILT_COMMIT_LINE" \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
+    "Executed 3 tests, with 0 failures (0 unexpected) in 12.0 (12.1) seconds" \
+    "** TEST SUCCEEDED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/prebuilt-green.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "VERIFY-OK" \
+    && expect_contains "$out" "SwiftCompile tasks=0" \
+    && expect_contains "$out" "VERIFY-NOTE: tested prebuilt products" \
+    && expect_contains "$out" "VERIFY-NOTE: products built-commit=1111111111111111111111111111111111111111" \
+    && ok
+fi
+
+if check "prebuilt log: a compile task in a test-without-building log is refused"; then
+  write_log "$WORK/prebuilt-compiled.log" "$PREBUILT_HEADER" "$FAKE_COMPILE" \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
+    "Executed 3 tests, with 0 failures (0 unexpected) in 12.0 (12.1) seconds" \
+    "** TEST SUCCEEDED **"
+  out="$("$HERE/verify_test_log.sh" "$WORK/prebuilt-compiled.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "the header says test-without-building, and the log holds 1 SwiftCompile tasks" \
+    && expect_missing "$out" "VERIFY-OK" \
+    && ok
+fi
+
+if check "prebuilt log: --warnings refuses it by name, not as a reused DerivedData"; then
+  out="$("$HERE/verify_test_log.sh" --warnings "$WORK/prebuilt-green.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "VERIFY-FAIL: cannot certify a warning count from a log that tested prebuilt products" \
+    && expect_missing "$out" "VERIFY-WARNINGS-OK" \
+    && ok
+fi
+
+if check "prebuilt log: control — --warnings still certifies a build that compiled"; then
+  write_log "$WORK/compiled-green.log" "CYPRESS-RUN: action test (builds from /x/Cypress.xcodeproj, scheme Cypress)" \
+    "$FAKE_COMPILE" \
+    "Test Case '-[CypressUITests.MapSearchTests testTypingNarrows]' started." \
+    "Executed 3 tests, with 0 failures (0 unexpected) in 12.0 (12.1) seconds" \
+    "** TEST SUCCEEDED **"
+  out="$("$HERE/verify_test_log.sh" --warnings "$WORK/compiled-green.log" 2>&1)"; rc=$?
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "VERIFY-WARNINGS: source=0" \
+    && expect_contains "$out" "VERIFY-OK" \
+    && expect_missing "$out" "prebuilt" \
     && ok
 fi
 
