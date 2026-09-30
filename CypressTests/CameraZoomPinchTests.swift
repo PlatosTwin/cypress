@@ -28,7 +28,8 @@
 //  and the composer's `ScrollView` do not fight over the same touches.
 //
 //  05 and 09's `ContributionCameraView` is checked the same way, by its wiring test below: the
-//  pinch is on its viewfinder, on that view's own controller, and armed.
+//  pinch is there once, armed, on that view's own controller, and wrapped around the view that
+//  holds `VisitCameraPreview`.
 //
 
 #if DEBUG
@@ -146,13 +147,16 @@ struct CameraZoomPinchTests {
     /// 05 and 09's camera has no still to wire: every frame goes to `onCapture` and the viewfinder
     /// stays live for the next one, so screen 04's rule ("a live frame to aim") is always met and the
     /// view passes `isAiming: true`. What this can still get wrong is whether the pinch is there at
-    /// all, whether it is armed, and whether it drives *this* view's controller rather than another.
-    /// The first two are `[true]`; the third is the identity check, which a pinch handed a fresh
-    /// `VisitCameraController()` would fail.
+    /// all, whether it is armed, whether it drives *this* view's controller rather than another, and
+    /// whether it is on the viewfinder rather than somewhere else in the screen. The first two are
+    /// `[true]`. The third is the identity check, which a pinch handed a fresh
+    /// `VisitCameraController()` would fail. The fourth reads the type of the view the pinch wraps and
+    /// looks for `VisitCameraPreview` in it. A pinch moved onto the tray, around the Done button,
+    /// kept the other three green (PR #200 review, finding 2).
     ///
     /// Walked from `body`: the viewfinder is a `ZStack` inside a `VStack`, with no `GeometryReader`
     /// or other closure between them.
-    @Test("05 and 09's camera hands the pinch its own controller, armed")
+    @Test("05 and 09's camera hands the pinch its own controller, armed, on its viewfinder")
     func contributionCameraWiresItsAimToThePinch() throws {
         let view = ContributionCameraView(onCapture: { _ in }, onDone: {})
         let camera: VisitCameraController = try #require(
@@ -168,6 +172,13 @@ struct CameraZoomPinchTests {
         #expect(
             pinches.allSatisfy { $0.camera === camera },
             "05 and 09's pinch drives a controller that is not the one the viewfinder shows"
+        )
+
+        let preview = String(reflecting: VisitCameraPreview.self)
+        let wrapped = Self.pinchedContentTypes(in: view.body)
+        #expect(
+            !wrapped.isEmpty && wrapped.allSatisfy { $0.contains(preview) },
+            "05 and 09's pinch wraps a view with no \(preview) in it, so the viewfinder cannot be pinched: \(wrapped)"
         )
     }
 
@@ -225,6 +236,27 @@ struct CameraZoomPinchTests {
             let mirror = Mirror(reflecting: value)
             guard depth < 200, mirror.displayStyle != .class else { return }
             for child in mirror.children { walk(child.value, depth: depth + 1) }
+        }
+        walk(root, depth: 0)
+        return found
+    }
+
+    /// The full type of every view a `VisitCameraZoomPinch` is applied to, anywhere in `root`.
+    ///
+    /// `.visitCameraZoomPinch` builds a `ModifiedContent` whose `modifier` is the pinch and whose
+    /// `content` is the view it was called on. The content's concrete type names every view inside
+    /// it, so it says whether the pinch is on the viewfinder or on something else.
+    private static func pinchedContentTypes(in root: Any) -> [String] {
+        var found: [String] = []
+        func walk(_ value: Any, depth: Int) {
+            let mirror = Mirror(reflecting: value)
+            guard depth < 200, mirror.displayStyle != .class else { return }
+            let children = Array(mirror.children)
+            if children.contains(where: { $0.label == "modifier" && $0.value is VisitCameraZoomPinch }),
+               let content = children.first(where: { $0.label == "content" }) {
+                found.append(String(reflecting: type(of: content.value)))
+            }
+            for child in children { walk(child.value, depth: depth + 1) }
         }
         walk(root, depth: 0)
         return found
