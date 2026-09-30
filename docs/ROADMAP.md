@@ -622,16 +622,27 @@ file.
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record.
 
-- **F33 — zoom while taking the photo on add-a-tree.** Build 77, 2026-09-28, verbatim: *"Need
+- ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
   ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
-  (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on the one camera
-  surface the first two did not reach.** RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
+  (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on a camera
+  surface the first two did not reach.** (Not the only one: check-in 05 and care log 09's
+  `ContributionCameraView` has no pinch either; see chip backlog 80.) RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
   viewer (`PhotoViewerView`, `PhotoZoom`) and on screen 04's viewfinder (`VisitCameraView`'s
   `zoomPinch`, which drives `VisitCameraController.setZoom`). Add-a-tree owns its own
   `VisitCameraController` (`VisitAddTreeModel.camera`), but `VisitAddTreeView` has no zoom
   gesture. Small: the controller already implements the gesture, the lens ceiling
   (`preferredMaxZoom`) and the "not zoomable" gate. **Owner confirmation** that R80 item 5 covers
   this viewfinder as well as screen 04's; it is the same gesture on the same controller.
+  **SHIPPED** by `feat/f33-add-tree-zoom`. The owner confirmed on 2026-09-28
+  (`docs/rulings-pending/f33-add-tree-zoom.md`, unnumbered). The gesture moved out of
+  `VisitCameraView` into `VisitCameraZoomPinch`, which screen 04 and add-a-tree's photo well now
+  both apply, armed by screen 04's rule (a lens to move, and no photograph yet).
+  `CypressTests/CameraZoomPinchTests` proves that add-a-tree carries it, and that each of the two
+  screens hands it `isAiming: false` over a still and `true` again after a retake. That the fingers
+  move the lens can only be seen on the physical phone, because no simulator has a camera; the phone
+  check also covers screen 04's pinch as a regression. **The third camera that owns a controller,
+  `ContributionCameraView` (05 and 09), was not given the pinch and is not covered by the ruling:**
+  chip backlog 80.
 
 - **D6 — search and filter by state on the Cities screen** (re-logged; build 49, 2026-08-23),
   verbatim: *"Eventually we will have 20+ entries here. We need a way to allow search/filtering.
@@ -1670,7 +1681,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ERRATA entries carry the same sentence (`docs/ERRATA.md`, lines 20095 and 20525 at that
     commit). A confident comment is where bugs live here, so re-verify each against the code before
     rewriting it. (From #182.)
-70. **Neither account-deletion door touches `species_assertions`.** The table carries `user_id`, and
+70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **Duplicate of 79**, which #186
+    wrote with the measurement; track it there. The table carries `user_id`, and
     `Cypress/Data/Store/AccountDeletion.swift` never names it, so an owned row survives leaving and
     erasing alike and still points at the deleted account. Fix it on R3's contribution pattern
     (leaving anonymizes, erasing deletes), and decide the tombstone question, since these rows have
@@ -1740,7 +1752,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     location-permission prompt is up, so a slow answer reads as "couldn't find your location" until
     a fix arrives. Whether the clock should start at the grant is the owner's call.
 
-54. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+79. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
     `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
     `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
@@ -1757,6 +1769,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     dealt with first. When a door reaches the table,
     the guard goes red and the arm changes with it. **Slated by the orchestrator for the
     community-trees C1 round.**
+80. **OPEN: decide whether 05 and 09's contribution camera gets pinch-to-zoom.** Found by PR #195's
+    review (F33). `ContributionCameraView`, the camera check-in (05) and care log (09) open to
+    attach photographs, owns a `VisitCameraController` like screen 04 and add-a-tree, and has no
+    pinch. RULINGS R80 item 5 and the F33 ruling (`docs/rulings-pending/f33-add-tree-zoom.md`)
+    name only screen 04 and add-a-tree, so this needs an owner decision, not an inference. If
+    ruled in, it is small: apply `VisitCameraZoomPinch` to its preview, with a wiring test in the
+    shape of `CameraZoomPinchTests`' two `…WiresItsAimToThePinch` tests.
+81. **The F33 phone check (#195).** On the physical phone: the pinch moves the lens on add-a-tree's
+    photo well and on screen 04, it does not fight the composer's `ScrollView`, and screen 04's pinch
+    still arms once the camera session starts (its `isZoomable` is now read inside the modifier). No
+    simulator has a camera, so #195's verification could not see any of this. OPEN until done.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
