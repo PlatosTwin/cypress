@@ -1742,7 +1742,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     each one's cancel action is likely missing and only a tap outside dismisses it; no test taps any
     of those cancel buttons, so nothing goes red. Needs an iOS 26 runtime to confirm; the fix is
     #185's (an alert with the same strings) plus a test per site that taps the cancel.
-78. **#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).** (a) A test gap:
+78. ~~**#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).** (a) A test gap:
     removing the line in `DataDisputeModel` that records the error count at the ask leaves
     "…an older one does not" green; a reading that still carries the old count after the ask would
     catch it (probe kept in the orchestration notes as `v185b-ZZVerify185Tests.swift.keep`). (b) Ask,
@@ -1750,8 +1750,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the location at once instead of waiting; reset the error baseline whenever it starts waiting
     again. Low: the first fix replaces the message. (c) The 15 s clock runs while the system
     location-permission prompt is up, so a slow answer reads as "couldn't find your location" until
-    a fix arrives. Whether the clock should start at the grant is the owner's call.
-
+    a fix arrives. Whether the clock should start at the grant is the owner's call.~~ **DONE** —
+    #198 (`fix/dispute-fix-clock`): (a) tested, (b) fixed and tested, (c) ruled by the owner
+    2026-09-29 ("Start at the grant") and built; the ruling is pending a number. #198's reviews
+    left the phone checks in item 82.
 79. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
     `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
@@ -1780,7 +1782,27 @@ into this section in the round that finds it, and nowhere else. Each item stands
     photo well and on screen 04, it does not fight the composer's `ScrollView`, and screen 04's pinch
     still arms once the camera session starts (its `isZoomable` is now read inside the modifier). No
     simulator has a camera, so #195's verification could not see any of this. OPEN until done.
-82. **Pin `run_tests.sh`'s QoS clamp in `Tools/test_harness_guards.sh`.** PR #197 runs local
+82. **Phone checks for the dispute screen's location wait (#198).** Only a device answers these.
+    (a) Whether turning Location off makes CoreLocation report `kCLErrorDenied` to the running
+    update, and when. #198 takes a new error baseline when the block starts waiting again from a
+    state that was not waiting, which holds if the error arrives while the block is off or in the
+    same update as the reading that turns Location back on; an error delivered strictly after that
+    reading still ends the new wait at once (#198's review, finding 4). (b) Whether iOS hands a
+    running app authorization back as `notDetermined` (Allow Once expiring, or "Ask Next Time"
+    picked in Settings); #198 answers it by putting the block back to not asked, except that a block
+    that already gave up keeps its "couldn't find" sentence. (c) Whether the
+    permission prompt can go away unanswered (the app backgrounded while it is up). The owner ruled
+    on 2026-09-29 that an unanswered prompt gets no ceiling, so the block would wait until the
+    reporter asks again or unticks the pin chip.
+    (d) A narrow race from #198's fix-round verification (proven in the model, the iOS trigger
+    unconfirmed): the reporter comes back from Settings having picked "Ask Next Time" and taps before
+    the authorization callback lands. The prompt goes up, but the ask was read at the stale
+    availability, so the grant that follows is ignored and the block sits at not asked; one more tap
+    recovers it, and Send is never held. A fix would take `promptRequested` from what
+    `MapLocationProvider.start()` actually decided. And a harness trap for whoever writes the test: a
+    provider pinned to `.notAsked` (`CYPRESS_LOCATION`) never prompts, so after a tap the block now
+    waits with no ceiling; no current UI test takes that path.
+83. **Pin `run_tests.sh`'s QoS clamp in `Tools/test_harness_guards.sh`.** PR #197 runs local
     builds under `taskpolicy -c utility` so a booted simulator's audio keeps its deadline, and
     nothing guards it (review finding 3). Three facts need a calibrated check each: the header
     stamps `CYPRESS-RUN: qos-clamp utility` locally and `default` with `CI=true`; the empty-array
