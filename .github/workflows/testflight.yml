@@ -4,7 +4,9 @@
 # (docs/investigations/repeat-failures-postmortem.md), so every job judges its log with
 # Tools/verify_test_log.sh and believes nothing else -- not an exit code, not a step that
 # "succeeded". The two lines that count are `Test run with N tests passed` (Swift Testing) and
-# `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest).
+# `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest) -- or, for the UI shards,
+# which run test-without-building, `** TEST EXECUTE SUCCEEDED **`. `** TEST BUILD SUCCEEDED **`
+# (ui-build's build-for-testing) is not a test result: nothing ran.
 #
 # SHAPE, and why it is four jobs rather than one. Measured on run 30846300488: the whole thing took
 # 50 minutes, of which the UI suite was 28.4 and everything else 21.6. One runner running one job
@@ -839,6 +841,14 @@ jobs:
           log="$RUNNER_TEMP/ui-build.log"
           rm -f "$log"
           [ -n "$UDID" ] || { echo "::error::prepare chose no simulator, so there is no destination to build for"; exit 1; }
+          # The provenance names a commit, and uncommitted changes are not in one. Checked before
+          # the build, on the source it compiles; the seed prepare placed is git-ignored.
+          dirty="$(git status --porcelain)"
+          if [ -n "$dirty" ]; then
+            printf '%s\n' "$dirty"
+            echo "::error::the checkout has uncommitted changes, so built-commit would not describe these products"
+            exit 1
+          fi
           rc=0
           xcodebuild build-for-testing \
             -project "$PROJECT" -scheme "$SCHEME" \
@@ -878,6 +888,7 @@ jobs:
             echo "arch=$(uname -m)"
             echo "destination=$SIMULATOR $UDID"
             echo "runtime=$RUNTIME"
+            echo "tree=clean"
             echo "xctestrun=$(basename "${runs[0]}")"
           } >"$products/cypress-products-provenance.txt"
           cat "$products/cypress-products-provenance.txt"
@@ -930,6 +941,9 @@ jobs:
 
       # From this run only: no run-id is given, so nothing from another run can be fetched. A
       # missing artifact fails this step, and the shard with it; it is never a skip.
+      # A single-shard re-run (attempt 2) reuses attempt 1's artifact. That is accepted: same run,
+      # same commit, and everything else is re-checked below. After the 1-day retention the
+      # download fails red, and the fix is re-running all jobs, which rebuilds it.
       - name: Fetch the products ui-build made for this commit
         uses: actions/download-artifact@v4
         with:
@@ -959,6 +973,8 @@ jobs:
           esac
           # The same image offers the same runtime; a difference means the two jobs landed on
           # different images mid-rollout. Re-run the whole workflow rather than test across them.
+          # Empty on both sides would compare equal and say nothing, so an unknown runtime refuses.
+          [ -n "$RUNTIME" ] && [ -n "$(value runtime)" ] || { echo "::error::a simulator runtime is unknown (products: '$(value runtime)', this shard: '${RUNTIME}'), so the two machines cannot be compared"; exit 1; }
           [ "$(value runtime)" = "$RUNTIME" ] || { echo "::error::the products were built for runtime '$(value runtime)' and this shard's simulator runs '${RUNTIME}'"; exit 1; }
           xctestrun="$dir/$(value xctestrun)"
           [ -f "$xctestrun" ] || { echo "::error::the provenance names $(value xctestrun), which is not in the products"; exit 1; }

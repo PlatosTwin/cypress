@@ -421,12 +421,13 @@ printf 'seed-bytes\n' >"$WORK/matching-seed.sqlite"
 printf 'another inventory\n' >"$WORK/other-seed.sqlite"
 FIXTURE_COMMIT="1111111111111111111111111111111111111111"
 FIXTURE_XCODE="Xcode 99.0 Build version 99A1"
-write_provenance() {  # <built-commit or -> <xcode> <arch>
+write_provenance() {  # <built-commit or -> <xcode> <arch> [tree, default clean]
   {
     [ "$1" = "-" ] || echo "built-commit=$1"
     echo "built-by=run 1 attempt 1 job fixture"
     echo "xcode=$2"
     echo "arch=$3"
+    echo "tree=${4:-clean}"
   } >"$PRODUCTS/cypress-products-provenance.txt"
 }
 # The answers the three seams give, fixed. `SEED` is the variable run_tests.sh already reads.
@@ -480,7 +481,8 @@ if check "prebuilt: control — products that match are accepted, and the header
   write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" arm64
   out="$(provenance_run true)"; rc=$?
   expect_rc "$rc" 0 \
-    && expect_contains "$out" "CYPRESS-RUN: products xctestrun=$XCTESTRUN_FIXTURE sha256=" \
+    && expect_contains "$out" "CYPRESS-RUN: products file=$XCTESTRUN_FIXTURE sha256=" \
+    && expect_contains "$out" "CYPRESS-RUN: products tree=clean" \
     && expect_contains "$out" "CYPRESS-RUN: products built-commit=$FIXTURE_COMMIT" \
     && expect_contains "$out" "(matches this worktree's)" \
     && ok
@@ -526,10 +528,74 @@ if check "prebuilt: refuses products with no seed in the app"; then
   expect_rc "$rc" 1 && expect_contains "$out" "hold no Cypress.app/cypress-seed.sqlite" && ok
 fi
 
-if check "prebuilt: products with no provenance file run, and the header says UNKNOWN"; then
+if check "prebuilt: refuses products built from a tree with uncommitted changes"; then
+  write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" arm64 "dirty (3 paths)"
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "built from a tree with uncommitted changes (tree=dirty (3 paths))" && ok
+fi
+
+# PR #201 review, item 1. Only CI writes a provenance file, so a missing one is the ordinary local
+# case — and the one where a DerivedData from an earlier commit passes for this one.
+if check "prebuilt: refuses products with no provenance file"; then
   rm -f "$PRODUCTS/cypress-products-provenance.txt"
   out="$(provenance_run true)"; rc=$?
-  expect_rc "$rc" 0 && expect_contains "$out" "CYPRESS-RUN: products provenance UNKNOWN" && ok
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "no cypress-products-provenance.txt beside $XCTESTRUN_FIXTURE" \
+    && expect_contains "$out" "CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1" \
+    && ok
+fi
+
+if check "prebuilt: control — the named opt-in accepts them, and the header says it was used"; then
+  rm -f "$PRODUCTS/cypress-products-provenance.txt"
+  out="$(provenance_run eval 'ACCEPT_UNPROVENANCED=1')"; rc=$?
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "CYPRESS-RUN: products provenance UNKNOWN — ACCEPTED by CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1" \
+    && ok
+fi
+
+# PR #201 review, item 3. A test-without-building command line names no project, so the worktree
+# test cannot see it; the DerivedData directory it runs out of is what two runs would share.
+DD_FIXTURE="$WORK/dd"
+mkdir -p "$DD_FIXTURE/Build/Products"
+printf 'x\n' >"$DD_FIXTURE/Build/Products/Cypress_iphonesimulator99.0-arm64.xctestrun"
+DD_XCTESTRUN="$DD_FIXTURE/Build/Products/Cypress_iphonesimulator99.0-arm64.xctestrun"
+# The real `ps` was restored above for the bound's sake, so these checks install the fixture
+# inside their own subshell and leave the real one in force everywhere else.
+fixture_ps() {
+  ps() { printf '%s\n' "$PS_FIXTURE"; }
+  pid_is_live() { case " $DEAD_PIDS " in *" $1 "*) return 1 ;; esac; return 0; }
+}
+
+if check "prebuilt collision: a build into this run's DerivedData refuses a test-without-building run"; then
+  PS_FIXTURE="$(fixture_ancestors)
+9994 1 00:40 $XCB build-for-testing -project /elsewhere/Cypress.xcodeproj -scheme Cypress -derivedDataPath $DD_FIXTURE -destination platform=iOS Simulator,id=SOMEONE-ELSE"
+  DEAD_PIDS=""
+  out="$( ( fixture_ps; select_xcodebuild_action -xctestrun "$DD_XCTESTRUN"; collision_check ) 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "pid 9994" && expect_contains "$out" "same DerivedData ($DD_FIXTURE)" && ok
+fi
+
+if check "prebuilt collision: a test-without-building run out of this DerivedData refuses a build into it"; then
+  PS_FIXTURE="$(fixture_ancestors)
+9995 1 00:40 $XCB test-without-building -xctestrun $DD_XCTESTRUN -destination platform=iOS Simulator,id=SOMEONE-ELSE"
+  DEAD_PIDS=""
+  out="$( ( fixture_ps; select_xcodebuild_action -derivedDataPath "$DD_FIXTURE" -only-testing:CypressTests; collision_check ) 2>&1)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "pid 9995" && expect_contains "$out" "same DerivedData ($DD_FIXTURE)" && ok
+fi
+
+if check "prebuilt collision: control — a sibling DerivedData whose name merely starts the same is not a collision"; then
+  PS_FIXTURE="$(fixture_ancestors)
+9996 1 00:40 $XCB build-for-testing -project /elsewhere/Cypress.xcodeproj -derivedDataPath ${DD_FIXTURE}-other -destination platform=iOS Simulator,id=SOMEONE-ELSE"
+  DEAD_PIDS=""
+  out="$( ( fixture_ps; select_xcodebuild_action -xctestrun "$DD_XCTESTRUN"; collision_check ) 2>&1)"; rc=$?
+  expect_rc "$rc" 0 && expect_empty "$out" && ok
+fi
+
+if check "prebuilt collision: control — a build naming no DerivedData keys on nothing new"; then
+  PS_FIXTURE="$(fixture_ancestors)
+9997 1 00:40 $XCB build-for-testing -project /elsewhere/Cypress.xcodeproj -derivedDataPath $DD_FIXTURE -destination platform=iOS Simulator,id=SOMEONE-ELSE"
+  DEAD_PIDS=""
+  out="$( ( fixture_ps; select_xcodebuild_action -only-testing:CypressTests; collision_check ) 2>&1)"; rc=$?
+  expect_rc "$rc" 0 && expect_empty "$out" && ok
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -654,6 +720,40 @@ if check "prebuilt end to end: products from another commit are refused before x
     && { [ ! -e "$WORK/e2e-r.argv" ] || { bad "xcodebuild ran anyway: $(cat "$WORK/e2e-r.argv")"; false; }; } \
     && { [ ! -e "$WORK/e2e-r.log" ] || { bad "a log was left behind for a refused run"; false; }; } \
     && ok
+fi
+
+if check "prebuilt end to end: products with no provenance are refused before xcodebuild runs"; then
+  rm -f "$PRODUCTS/cypress-products-provenance.txt"
+  out="$(e2e_prebuilt "$WORK/e2e-s.log" "$WORK/e2e-s.argv" -xctestrun "$XCTESTRUN_FIXTURE")"; rc=$?
+  expect_rc "$rc" 1 \
+    && expect_contains "$out" "no cypress-products-provenance.txt beside" \
+    && { [ ! -e "$WORK/e2e-s.argv" ] || { bad "xcodebuild ran anyway"; false; }; } \
+    && ok
+fi
+
+if check "prebuilt end to end: control — the opt-in runs them, and the verdict says the products were unchecked"; then
+  rm -f "$PRODUCTS/cypress-products-provenance.txt"
+  out="$(CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1 e2e_prebuilt "$WORK/e2e-t.log" "$WORK/e2e-t.argv" -xctestrun "$XCTESTRUN_FIXTURE")"; rc=$?
+  expect_rc "$rc" 0 \
+    && expect_contains "$out" "VERIFY-NOTE: PRODUCTS UNCHECKED — CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1 was set" \
+    && expect_contains "$out" "VERIFY-OK" \
+    && ok
+fi
+
+# #197's clamp wraps xcodebuild whichever action it runs, and stays off under CI.
+if command -v taskpolicy >/dev/null 2>&1; then
+  if check "prebuilt end to end: the QoS clamp wraps test-without-building locally"; then
+    write_provenance "$(git -C "$REPO" rev-parse HEAD)" "Xcode 99.0 Build version 99A1" "$(uname -m)"
+    out="$(env -u CI bash -c "$(declare -f e2e_prebuilt); HERE='$HERE' FAKEBIN2='$FAKEBIN2' FAKE_UDID='$FAKE_UDID' e2e_prebuilt '$WORK/e2e-u.log' '$WORK/e2e-u.argv' -xctestrun '$XCTESTRUN_FIXTURE'")"; rc=$?
+    log="$(cat "$WORK/e2e-u.log" 2>/dev/null)"
+    expect_rc "$rc" 0 && expect_contains "$log" "CYPRESS-RUN: qos-clamp utility" \
+      && expect_contains "$log" "CYPRESS-RUN: action test-without-building" && ok
+  fi
+  if check "prebuilt end to end: control — under CI the clamp is off"; then
+    out="$(CI=true e2e_prebuilt "$WORK/e2e-v.log" "$WORK/e2e-v.argv" -xctestrun "$XCTESTRUN_FIXTURE")"; rc=$?
+    log="$(cat "$WORK/e2e-v.log" 2>/dev/null)"
+    expect_rc "$rc" 0 && expect_contains "$log" "CYPRESS-RUN: qos-clamp default" && ok
+  fi
 fi
 
 if check "the lib seam refuses rather than exiting 0 when the file is executed, not sourced"; then

@@ -238,8 +238,12 @@ PREBUILT=0
 if grep -q '^CYPRESS-RUN: action test-without-building' "$LOG"; then
   PREBUILT=1
   note "tested prebuilt products (test-without-building) — this log compiled nothing by design and certifies no warnings"
-  grep -E '^CYPRESS-RUN: products (xctestrun|built-commit|built-by|provenance)' "$LOG" \
+  grep -E '^CYPRESS-RUN: products (file|built-commit|built-by|tree|provenance)' "$LOG" \
     | sed 's/^CYPRESS-RUN: products /VERIFY-NOTE: products /'
+  # The one way past run_tests.sh's provenance refusal, repeated in its own words so a green
+  # verdict over unchecked products cannot read like a checked one.
+  grep -q '^CYPRESS-RUN: products provenance UNKNOWN — ACCEPTED by CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1' "$LOG" && \
+    note "PRODUCTS UNCHECKED — CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1 was set, so nothing tied these products to this commit; this verdict is about whatever they were built from"
   [ "$COMPILE_TASKS" -eq 0 ] \
     || fail "the header says test-without-building, and the log holds ${COMPILE_TASKS} SwiftCompile tasks. A run of prebuilt products compiles nothing, so this log did not test only the products it names."
 fi
