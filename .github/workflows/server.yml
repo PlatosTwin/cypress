@@ -73,8 +73,14 @@ on:
   # these paths (a Go toolchain bump, a Postgres image update) needs the suite run.
   workflow_dispatch:
 
+# On a pull request this runs through `testflight.yml`'s `server` job, and a called workflow sees
+# the CALLER's `github` context, so `event_name` is `pull_request` and `head_ref` and `base_ref`
+# are the pull request's. The group carries the base as well as the head: the same head branch can
+# be open against `main` and `release/**` at once, and with the head alone one pull request's
+# `server` job cancelled the other's and turned its `gate` red ("the Server suite did not succeed
+# (cancelled)"). On a push or a manual run the group is the ref, as before.
 concurrency:
-  group: server-${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+  group: server-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.base_ref, github.head_ref) || github.ref }}
   cancel-in-progress: true
 
 permissions:
