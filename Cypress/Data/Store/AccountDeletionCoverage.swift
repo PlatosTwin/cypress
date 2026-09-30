@@ -29,7 +29,10 @@ import Foundation
 /// **What it cannot see.** An identity held in a *value* rather than in a column of its own. Two
 /// exist today: `app_state`'s `currentUserID` row, which `delete` removes by key, and `outbox.payload`,
 /// whose `userID` is `OutboxStore.forgetAccount`'s and is guarded by `accountDeletionTreatment`.
-/// Neither is a column the schema can be asked about, so neither is here.
+/// Neither is a column the schema can be asked about, so neither is here. Nor is a third thing held
+/// in a key: `app_state`'s `photo_send_refused:<photos.id>` rows (`OutboxStore.recordRefusedPhoto`),
+/// which name a photograph rather than a person. The erasing door removes them with their
+/// photographs, and `AccountDeletionTests` asserts it.
 extension AccountDeletion {
 
     /// A table with at least one column that names a person or an installation. The raw value is

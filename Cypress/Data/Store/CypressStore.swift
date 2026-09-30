@@ -261,6 +261,10 @@ public final class CypressStore: Sendable {
 
 /// The keys `app_state` recognizes. An enum rather than free strings so a typo is a compile error
 /// and the set of persisted settings is enumerable.
+///
+/// Two families of key are written outside this enum, because neither is a setting:
+/// `AccountDeletion.erasureSentinelKey`, which lives only for the length of one transaction, and
+/// one key per photograph whose send was refused for good (`OutboxStore.refusedPhotoKeyPrefix`).
 public enum AppStateKey: String, CaseIterable, Sendable {
     /// Screen 17's toggle. "Sync photos on wifi only"; notes and numbers sync on any connection.
     case syncPhotosOnWifiOnly = "sync_photos_on_wifi_only"

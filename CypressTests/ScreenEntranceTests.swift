@@ -151,6 +151,10 @@ struct ScreenEntranceTests {
             return "03 · the C7 outline button under the primary CTA (invented, E98)"
         case .report:
             return "03 · quad action row, Report"
+        case .dataDispute:
+            // RULINGS R79 part 2. No mock; the owner ruled the entrance on 2026-09-10 — the
+            // record-defect text actions, not the quad row's Report, which stays screen 06's door.
+            return "03 · the record-defect action on a city record (ruled, R79)"
         case .almanac:
             // Still the Journal tab, and now one segment of it rather than the whole of it. The
             // wording keeps "Journal tab" because that is what `theSixFormerlyUnreachableRoutes`
@@ -211,6 +215,7 @@ struct ScreenEntranceTests {
         .growthHistory(treeID),
         .checkIn(treeID),
         .report(treeID),
+        .dataDispute(treeID),
         .almanac,
         .activity(treeID),
         .memorial(treeID),

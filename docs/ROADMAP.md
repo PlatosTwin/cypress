@@ -548,7 +548,7 @@ file.
   decision needed to fix the defect; the header's one-row layout at the lengths the mocks draw
   must not change.
 
-- **F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
+- ~~**F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
   verbatim: *"Pill says two photos but when I click in I see only one. Bug?"* The screenshot is
   screen 03 for a `Ginkgo, Autumn Gold` in SF with `2 photos · since 2026` on the hero pill and one
   `Visit · leaf out` row. **Not reproduced; which tap the tester made is unknown, and the two
@@ -561,7 +561,20 @@ file.
   series (`TreeProfile.visiblePhotos`, E215; `RoutedAPI.refreshedTreeProfile` merges the
   community half by photo id), so the count and the list should not disagree, and the first step
   is to reproduce it on a tree with two photographs from one visit. Small once the reading is
-  known.
+  known.~~
+  **FIXED** by `fix/photo-identity-dedupe`, and the doubling is shown to be its cause. A photograph
+  this phone sent came back from `GET /trees/{id}` under the service's own `photo_id`, which the
+  phone never keeps, and `RoutedAPI.refreshedTreeProfile` deduped by id alone — so the phone's copy
+  and the service's were both counted. Reproduced through the real composition root (one visit,
+  one photograph, sent and read back) as exactly this screenshot: one `Visit` row under
+  `2 photos · since 2026`. The fix makes the phone's `photos.id` the begin's `client_uuid`, has the
+  service echo that key on the caller's own rows only, and folds by id, by key, or — for
+  photographs sent by build 77 and earlier — by framing and capture second on keyed own rows. **It
+  needs a server deploy to take effect.** Which tap the tester made is still unknown; the photo
+  browser also listed the second copy once the refresh landed (in the reproduction it drew as a
+  placeholder tile; whether production's bytes would have filled it was not observed), so "only
+  one" fits either a tap on the photograph (by design, E125) or a browser read before its refresh. The design question of whether anything should point
+  a reader at the pill is not raised by this defect and is not opened here.
 
 - **F31 — move a tree you added, and let other people see it.** Build 77, 2026-09-26, verbatim:
   *"Need to be able to edit location on self-added trees and need self added ones to go to
@@ -1650,7 +1663,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     "built on" (a photograph with no bytes is neither), not for the listing. And the garbage
     collection of a record with no arriving binary after 72 hours, which
     `server/migrations/001_initial.sql` says happens server-side, has no code behind it: only
-    comments name it. (From #182.)
+    comments name it. (From #182.) #194 adds a source of these rows: a photograph whose storage
+    `PUT` or receipt is refused for good after its begin succeeded leaves a live, keyed row with no
+    bytes. Its contributor never sees it, because it pairs with their local photograph, so nothing
+    prompts a delete (review of #194 at `07f5b36`, probe R11).
 68. **Screen 10's first paint is local-only, and its season strip says nothing is public.** The card
     can show an approved photograph only after the network answers, because the first paint reads
     the phone. `ShareView.swift` hard-codes "No month has a public photo yet." as the strip's
@@ -1714,8 +1730,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     already tombstoned and the account's row under the same key is live, a second withdrawal answers
     failed and forbidden although the removal happened, and its comment says it succeeds. Nothing is
     wrongly removed; the phone is told a false failure. #194's own remaining finding (a non-retryable
-    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) is being fixed
-    in #194 and is not listed here.
+    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) was fixed in
+    #194. (b) was re-proved by #194's re-review (probe R10, `server/internal/store/photos.go` doc at
+    `:499` against the code at `:542`); make the second withdrawal answer `applied`, since its own
+    removal happened. (c) Also from that re-review, cosmetic and unproved: `RoutedAPI` reads the
+    phone's withdrawal evidence after the remote fetch, so a withdrawal the drain answers during a
+    refresh can leave that copy deletable for one refresh; read the evidence before the fetch.
 77. **iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
     question failed on CI's iOS 26 shard and became an `.alert`). Seven sites still use a
     `confirmationDialog`: `GrowthHistoryView:45`, `CheckInView:94`, `AccountDeletionSheet:88`,
@@ -1815,7 +1835,21 @@ scheduled pieces, and part 1 is **the record and its two verbs**: `AppSchema` v2
 ceasing to answer `.unavailable` on the tree profile. Client is PR-A; the server's sync vocabulary
 is PR-B; screen 03's dispute **sheet** is PR-C.
 
-Still open after part 1, each its own scheduled PR and none of them started:
+**Part 2 — the dispute screen — shipped** (PR-C, 2026-09-28). A city record this reader may dispute
+draws *Report a mistake in the city's record* where the community flag actions sit on screen 03; it
+pushes a screen modeled on 06 with the owner's four choices (*Pin is in the wrong place* · *Wrong
+species* · *Wrong planted year* · *There's no tree here*), a suggestion under each (the reporter's own
+fix with its accuracy and the 10 m floor explained, the app's species picker, a year field, nothing
+for the empty plot), notes, and a disclosure that the city has not been notified. A standing dispute
+draws *You reported a mistake…* and *Take back your report*. The screen's decisions are in
+`docs/rulings-pending/city-inventory-disputes.md`, part 2. PR #185's fix round implemented the
+owner's and orchestrator's rulings 1–10 after review (no-tree stands alone, *The city has: …* under
+each section, a confirmation before the take-back, a refusal sentence that reads Precise Location
+and never quotes a substituted accuracy, a later fix replacing a refused one, and *Send* waiting for
+a pending fix); ruling 5, that a mistake report does not enroll a tree in *Yours*, is a server PR of
+its own.
+
+Still open after part 2, each its own scheduled PR and none of them started:
 - the flag **badge** on flagged trees, on the map and in the list — and it is the piece that needs a
   server **read** endpoint, because part 1's ruling is that the service records disputes without
   materializing them, so a device knows only its own;
