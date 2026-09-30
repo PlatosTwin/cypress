@@ -1,7 +1,7 @@
 # The setup every CI job that runs Cypress needs, in one place.
 #
-# The release workflow is four jobs now (plan, unit, ui × N shards, release) and each of them has
-# to select a toolchain, fetch the seed and boot a simulator. GitHub Actions has no YAML anchors,
+# The release workflow's macOS jobs (unit, ui-build, ui × N shards, release) each have to select
+# a toolchain and fetch the seed, and most boot a simulator. GitHub Actions has no YAML anchors,
 # so without a composite action those steps get copied five times — and a guard that exists in four
 # copies is a guard that will disagree with itself. Every reason below was paid for once already
 # and should not have to be re-learned per job.
@@ -15,14 +15,27 @@ inputs:
       device to run on, and booting one costs 2.5 minutes for nothing.
     required: false
     default: "true"
+  select-simulator:
+    description: >
+      Choose the simulator and publish its udid and runtime WITHOUT booting it. For the job that
+      runs build-for-testing: a concrete destination builds one architecture (a generic one builds
+      two), it must come from the same candidate list the UI shards use so the products are built
+      for the device they will be tested on, and a build needs no running device. Booting one costs
+      2.5 minutes on the path every shard waits behind. Ignored when boot-simulator is true, which
+      chooses and boots.
+    required: false
+    default: "false"
 
 outputs:
   udid:
-    description: The booted simulator's UDID, empty when boot-simulator was false.
+    description: The chosen simulator's UDID, empty when neither boot-simulator nor select-simulator was true.
     value: ${{ steps.sim.outputs.udid }}
   simulator:
-    description: The booted simulator's model name.
+    description: The chosen simulator's model name.
     value: ${{ steps.sim.outputs.simulator }}
+  runtime:
+    description: The chosen simulator's CoreSimulator runtime identifier.
+    value: ${{ steps.sim.outputs.runtime }}
 
 runs:
   using: composite
@@ -69,10 +82,12 @@ runs:
       run: bash Tools/fetch_seed.sh "$GITHUB_WORKSPACE"
 
     # ── A device ───────────────────────────────────────────────────────────────────────
-    - name: Boot the simulator
+    - name: Choose the simulator, and boot it unless asked only to choose
       id: sim
-      if: inputs.boot-simulator == 'true'
+      if: inputs.boot-simulator == 'true' || inputs.select-simulator == 'true'
       shell: bash
+      env:
+        BOOT: ${{ inputs.boot-simulator }}
       run: |
         set -euo pipefail
         # A CANDIDATE LIST, not one name: the runner image decides which simulators exist, and it
@@ -92,10 +107,25 @@ runs:
           if [ -n "$udid" ]; then simulator="$name"; break; fi
         done
         [ -n "$udid" ] || { echo "::error::none of the candidate iPhone simulators exist on this image"; exit 1; }
-        echo "using $simulator $udid"
-        xcrun simctl boot "$udid" || true
-        xcrun simctl bootstatus "$udid" -b
-        # The unit suite hangs forever on a simulator that never granted camera access.
-        xcrun simctl privacy "$udid" grant camera app.cypress.Cypress || true
-        echo "udid=$udid" >> "$GITHUB_OUTPUT"
-        echo "simulator=$simulator" >> "$GITHUB_OUTPUT"
+        # The runtime too, so a job testing products built on another runner can compare the two.
+        runtime="$(xcrun simctl list devices available -j | python3 -c '
+        import json, sys
+        for rt, devices in json.load(sys.stdin)["devices"].items():
+            if any(d.get("udid") == sys.argv[1] for d in devices):
+                print(rt)
+                break
+        ' "$udid")"
+        echo "using $simulator $udid (${runtime:-runtime unknown})"
+        if [ "$BOOT" = "true" ]; then
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          # The unit suite hangs forever on a simulator that never granted camera access.
+          xcrun simctl privacy "$udid" grant camera app.cypress.Cypress || true
+        else
+          echo "chosen and not booted: a build needs a destination, not a running device"
+        fi
+        {
+          echo "udid=$udid"
+          echo "simulator=$simulator"
+          echo "runtime=$runtime"
+        } >> "$GITHUB_OUTPUT"
