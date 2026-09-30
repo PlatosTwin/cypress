@@ -146,6 +146,15 @@ enum DebugDeepLink {
         /// photograph leaves a record its own creation rule forbids, and the only way to look at
         /// what the app says about that before the tap.
         case communityPhotos
+        /// 03 over a **city** tree whose record this device may dispute (RULINGS R79, part 2), with
+        /// no dispute of this device's standing on it — the `.raisable` state, where the action that
+        /// opens the data-dispute screen draws.
+        ///
+        /// It writes only through the shipping verbs: a dispute a previous run left standing is taken
+        /// back with `withdrawDataDispute`, so every launch opens on the same state and a test that
+        /// raises one does not find the next run already in `.raisedByYou`. Its own slot — see
+        /// `dataDisputeTree` — under this file's standing rule.
+        case dataDispute
         /// Screen 07 with a nearby hero drawn from a photograph **this installation took under an
         /// account it can no longer sign into** — RULINGS **R82**, ERRATA **E277**.
         ///
@@ -410,6 +419,16 @@ enum DebugDeepLink {
                     try await api.flagNeverExisted(treeID: id)
                 } catch APIError.conflict {}
                 try await api.setRole(.coordinator)
+                router.push(.treeProfile(id))
+            case .dataDispute:
+                let id = try await dataDisputeTree(api)
+                // Back to `.raisable` through the shipping take-back, read off the profile's own
+                // offer — the same value the screen draws from, so the harness cannot reset a state
+                // the screen would not have shown.
+                if case .dataDispute(.raisedByYou(let disputeID)) = try await api.treeProfile(id: id)
+                    .recordDefect {
+                    try await api.withdrawDataDispute(disputeID: disputeID)
+                }
                 router.push(.treeProfile(id))
             case .communityPhotos:
                 // A community add with the one photograph that made it addable, opened on screen 20
@@ -856,6 +875,40 @@ enum DebugDeepLink {
         return standing[standing.count * 3 / 4].tree.id
     }
 
+    /// The standing **city** tree seven eighths of the way out — the one `.dataDispute`'s test raises
+    /// and takes back a dispute on (RULINGS R79, part 2).
+    ///
+    /// A slot of its own, under this file's standing rule: a case that writes persistent state must
+    /// not write it onto a tree another case reads, and the test behind this case writes a
+    /// `tree_data_disputes` row. The taken positions are the near end (`.memorial`, marching
+    /// outward), a quarter, three eighths, the middle, five eighths, three quarters and the far end;
+    /// seven eighths is the gap between the last two.
+    ///
+    /// Indexed into `candidates` itself rather than a filtered copy, for `fullyMeasuredTree`'s
+    /// reason: the test opens *this* tree's profile, so the choice has to be a function of the
+    /// pinned seed alone. The record is then checked, not filtered for, so a tree that stopped being
+    /// a standing city row fails loudly and names itself.
+    private static func dataDisputeTree(_ api: LocalAPI) async throws -> UUID {
+        let candidates = try await candidates(api)
+        guard !candidates.isEmpty else {
+            throw Failure(
+                screen: "a city tree to dispute",
+                reason: "no records at all nearest \(center.latitude), \(center.longitude)"
+            )
+        }
+        let chosen = candidates[candidates.count * 7 / 8]
+        guard chosen.tree.source == .cityImport, chosen.tree.status.acceptsNewContributions else {
+            throw Failure(
+                screen: "a city tree to dispute",
+                reason: "the record this case pins (\(chosen.tree.id), seven eighths of "
+                    + "\(candidates.count)) is \(chosen.tree.source.rawValue) and "
+                    + "\(chosen.tree.status.rawValue) on this device — another case has marked it, or "
+                    + "the seed changed"
+            )
+        }
+        return chosen.tree.id
+    }
+
     /// The nearest vacant planting site — a record with no tree in it (E107). 12,413 of them in the
     /// city-sourced seed, 12,518 in a DataSF-sourced one; see `candidateLimit`.
     private static func vacantSite(_ api: LocalAPI) async throws -> UUID {
@@ -929,7 +982,7 @@ enum DebugDeepLink {
     /// same argument `Standalone` makes for the pin screen and `DeepLinkHarness.pin` makes for the
     /// map — a harness that depends on device state inherits whatever the last launch left.
     private static func strandedHeroSubject(_ api: LocalAPI) async throws -> (species: UUID, tree: UUID) {
-        guard case .pinned(.located) = DebugLocationOverride.requested() else {
+        guard case .pinned(.located, _) = DebugLocationOverride.requested() else {
             throw Failure(
                 screen: "strandedPhotoHero",
                 reason: "this case needs a pinned fix — 07 §6 draws the two nearest trees of the "

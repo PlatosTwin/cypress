@@ -1324,9 +1324,17 @@ public struct PhotoUploadRequest: Hashable, Sendable {
     /// begin replayed after a flap created a *second* photograph instead of finding the first. With
     /// it the retry is the same request and lands on the same row.
     ///
-    /// Optional because the **apply** sink has no use for one — `LocalAPI` is a move inside the app
-    /// container and dedupes on nothing — and passing a key there would imply a remote idempotency
-    /// that call does not have.
+    /// **The apply passes it too, and `LocalAPI` mints the phone's `photos.id` from it** (report
+    /// F30). That makes the phone's id and the begin's key one value, which is the only link the
+    /// phone keeps to its own photograph once it is on the service: the service answers its
+    /// contributor under its own `photo_id`, which the phone never stores, and echoes this key
+    /// beside it. Before this the two ids were unrelated, `outbox_photos` — the one row that held
+    /// both — was deleted the moment the send completed, and the contributor's profile drew the one
+    /// photograph twice. It also makes a replayed apply land on the row it already wrote
+    /// (`ContributionStore.insert` is `ON CONFLICT(id) DO NOTHING`) rather than a second one.
+    ///
+    /// Optional because a request with no binary identity of its own — a preview, a test — has
+    /// nothing to key on, and `LocalAPI` then mints a fresh id exactly as it always did.
     public let idempotencyKey: UUID?
 
     public init(

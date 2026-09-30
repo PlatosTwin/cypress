@@ -67,7 +67,8 @@ enum DebugLocationOverride {
     /// nothing would leave a test asserting the denied refusal path against a simulator that has a
     /// perfectly good fix, and the test would fail somewhere else entirely — or worse, pass.
     enum Request: Equatable {
-        case pinned(MapLocationProvider.Availability)
+        /// A pinned state, and — for a fix — what CoreLocation said about it besides its radius.
+        case pinned(MapLocationProvider.Availability, MapLocationProvider.Precision = .ordinary)
         case invalid(raw: String, reason: String)
     }
 
@@ -105,6 +106,14 @@ enum DebugLocationOverride {
     ///     CYPRESS_LOCATION=waitingForFix                allowed, no fix yet
     ///     CYPRESS_LOCATION=37.78485,-122.4215           a fix, at `defaultAccuracyM`
     ///     CYPRESS_LOCATION=37.78485,-122.4215,25        a fix, at a stated accuracy
+    ///     CYPRESS_LOCATION=37.78485,-122.4215,unknown   a fix CoreLocation stated no accuracy for
+    ///     CYPRESS_LOCATION=37.78485,-122.4215,40,reduced   … with Precise Location off
+    ///
+    /// The last two are `MapLocationProvider.Precision`'s two facts (PR #185, orchestrator rulings
+    /// 6 and 9): the data-dispute screen says a different, true sentence for each, and a simulator
+    /// cannot be made to produce either on demand. `unknown` publishes what the real delegate
+    /// publishes for a negative `horizontalAccuracy` — `VisitShortlist.assumedAccuracyM`, marked
+    /// as not stated — so the seam and the device disagree about nothing but the source.
     static func parse(_ raw: String) -> Request {
         switch raw {
         case "denied":        return .pinned(.denied)
@@ -116,10 +125,11 @@ enum DebugLocationOverride {
 
         let parts = raw.split(separator: ",", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
-        guard parts.count == 2 || parts.count == 3 else {
+        guard (2...4).contains(parts.count) else {
             return .invalid(
                 raw: raw,
-                reason: "expected denied | servicesOff | notAsked | waitingForFix | lat,lon[,accuracyM]"
+                reason: "expected denied | servicesOff | notAsked | waitingForFix | "
+                    + "lat,lon[,accuracyM|unknown[,reduced]]"
             )
         }
         guard let latitude = Double(parts[0]), let longitude = Double(parts[1]) else {
@@ -129,14 +139,29 @@ enum DebugLocationOverride {
             return .invalid(raw: raw, reason: "latitude must be within ±90 and longitude within ±180")
         }
         var accuracy = defaultAccuracyM
-        if parts.count == 3 {
-            guard let stated = Double(parts[2]), stated > 0 else {
-                return .invalid(raw: raw, reason: "accuracy must be a positive number of meters")
+        var precision = MapLocationProvider.Precision.ordinary
+        if parts.count >= 3 {
+            if parts[2] == "unknown" {
+                accuracy = VisitShortlist.assumedAccuracyM
+                precision.accuracyIsKnown = false
+            } else {
+                guard let stated = Double(parts[2]), stated > 0 else {
+                    return .invalid(
+                        raw: raw, reason: "accuracy must be a positive number of meters, or unknown"
+                    )
+                }
+                accuracy = stated
             }
-            accuracy = stated
+        }
+        if parts.count == 4 {
+            guard parts[3] == "reduced" else {
+                return .invalid(raw: raw, reason: "the fourth field can only be reduced")
+            }
+            precision.isReduced = true
         }
         return .pinned(
-            .located(Coordinate(latitude: latitude, longitude: longitude), accuracyM: accuracy)
+            .located(Coordinate(latitude: latitude, longitude: longitude), accuracyM: accuracy),
+            precision
         )
     }
 
@@ -153,8 +178,8 @@ enum DebugLocationOverride {
         switch requested(environment) {
         case nil:
             return (nil, nil)
-        case let .pinned(availability):
-            return (MapLocationProvider(pinnedAvailability: availability), nil)
+        case let .pinned(availability, precision):
+            return (MapLocationProvider(pinnedAvailability: availability, precision: precision), nil)
         case let .invalid(raw, reason):
             return (nil, "LOCATION OVERRIDE FAILED · \(raw) · \(reason)")
         }

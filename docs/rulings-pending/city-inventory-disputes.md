@@ -198,3 +198,202 @@ rows, and against `community_trees.source`'s own `CHECK (source = 'community')`.
 text. Nothing outside PR-A depends on the literal: PR-B stores no dispute rows at all (the ruling
 above), and PR-C reads a `TreeSource`. `SchemaV22Tests.theDisputeTablesCarryTheirVocabularies`
 asserts the column refuses `'city'`, so the choice is pinned rather than assumed.
+
+---
+
+# Part 2 — the dispute screen (PR-C, 2026-09-28)
+
+### R??? — The dispute screen's shape: four plain choices, screen 06's chips, a pushed screen
+
+**Date:** 2026-09-28. **Decided by:** owner, via decision round. **Status:** decided.
+
+Three rulings, taken together, on the screen R79 calls "checkboxes":
+
+1. **Four plain options**, not R79's three with a submenu under "wrong other metadata":
+   *Pin is in the wrong place* · *Wrong species* · *Wrong planted year* · *There's no tree here*.
+   **Storage is unchanged** — the last two both file under `wrong_metadata`, the planted year as a
+   `planted_year` suggestion and the empty plot as a `status` suggestion of `vacant_site`.
+   `DataDisputeChoice.issue` is the one place the mapping is written.
+2. **Screen 06's multi-select chips**, not literal checkboxes — the existing `Chip` component, in the
+   neighborly pair (`structureFlagIdle` / `structureFlagOn`) that ERRATA E22 chose as those chips'
+   selected appearance.
+3. **A pushed screen modeled on screen 06** (SCREENS.md §06): C1 header, micro-labelled sections, a
+   C14 dashed disclosure, a C6 primary button pinned under the scrolling form the way screen 05 pins
+   its own. Not a bottom sheet. The route is `Route.dataDispute(UUID)`; its one entrance is the
+   record-defect text action on screen 03, per the 2026-09-10 entry-point ruling above.
+
+## The author's decisions on the screen, which are PR-C's and not the owner's
+
+### R??? — A fix over the 10 m floor is refused out loud and left off the report
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** awaiting review.
+
+The 2026-09-10 ruling keeps `DataDisputeLimits`' floor and requires the refusal to be explained.
+There were two ways to honor that at the moment the reporter taps *Use my current location* with a
+coarse fix: hold the fix in the draft and refuse the whole report at *Send*, or refuse the fix on the
+spot and leave it off. The screen does the second. The location block replaces its hint with the
+refusal sentence — both numbers, "so it was not used", and *Turn on Precise Location for Cypress in
+Settings, then try again* — and offers *Open Settings*. The report stays sendable, because "the pin
+is wrong and my phone cannot say where the tree is" is a report the record model already admits
+(every suggestion is optional).
+
+The sentence is `DataDisputeCopy.refusal(.locationFixTooCoarse)`, computed by asking
+`DataDisputeLimits.refusal` itself about the fix, so the words under the control and the rule the
+API enforces cannot disagree. The alternative would have held a report hostage to a fix the reporter
+may not be able to improve standing where they are.
+
+### R??? — The take-back has no confirmation dialog
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** **overruled** by the owner the same
+day — see "The take-back asks first" below. Kept here as the record of what was proposed.
+
+*Take back your report* withdraws at once, like the record-defect block's other text actions. It is
+recoverable — the offer returns to *Report a mistake in the city's record* and a new report can be
+raised — and a confirmation in front of the one control the owner has said must exist would put a
+step between an author and their own retraction.
+
+### R??? — The number pad gets a keyboard-toolbar *Done*
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** awaiting review.
+
+The planted-year field uses the number pad, which has no return key. Without a way to put it away it
+covers the notes, the disclosure and, on a small phone, the button. A keyboard-toolbar *Done* is the
+platform's own answer; it is one more string for the owner's copy ruling.
+
+---
+
+## PR-C's rulings after review (2026-09-28)
+
+Rulings 1–4 are the owner's, taken on the screenshots before the adversarial review. Ruling 5 is the
+owner's, after it. Rulings 6–10 are the orchestrator's, after the review, implementing the owner's
+standing instruction that the floor's refusal be explained. The numbers are this list's own, for
+cross-reference in PR #185; they are not RULINGS numbers.
+
+### R??? — "There's no tree here" stands alone (ruling 1)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided.
+
+Choosing *There's no tree here* clears the other three chips and disables them; unticking it enables
+them again, unticked. An empty plot has no position, species or planted year to correct, and a report
+claiming both was two contradicting statements (PR #185's own open question). It also closes review
+finding 4: *no tree* plus an empty *Wrong planted year* used to store exactly what *no tree* alone
+stored. **As built:** `DataDisputeDraft.toggle` and `isDisabled`; a value typed under a cleared chip
+is still held and comes back if the chip is chosen again, because `suggestions` reads a value only
+under its own chip.
+
+### R??? — Each opened section says what the city has (ruling 2)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided.
+
+Under each opened section, one quiet line: *The city has: …* — the species, the planted year, the
+position. **As built:** `DataDisputeOnFile`, drawn in `body135` / `textMuted`, the register of the
+notes under screen 03's *What the city has on file*. The species is named as the profile names it
+(common name, else scientific; a stub the ingest never read is quoted in the city's own wording, or
+not at all — R54). The position is the record's street address, else its coordinate.
+
+**A value the record lacks draws no line**, rather than "The city has no planted year". `nil` on this
+phone means the copy of the inventory here carries none, which is not the same statement as the city
+having none — a seed built before a column existed answers `nil` for a city that publishes it — and
+DECISIONS constraint 15 forbids inventing civic content.
+
+### R??? — The take-back asks first (ruling 3)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided. **Overrules** the author's "no
+confirmation dialog" above.
+
+*Take back your report* opens *Take back your report?* before anything is withdrawn. **As built:**
+first as the app's existing take-back question, `GrowthHistoryView`'s `confirmationDialog` — a
+destructive action repeating the link's words, and *Keep it* — and then, in the same PR, as an
+**alert** with the same words. CI's iPhone 17 Pro on iOS 26.2 drew the dialog's title and left
+*Keep it* out of the accessibility tree in two runs, while the 16 Pro on iOS 18.6 drew it. iOS 26
+presents a confirmation dialog as a popover dismissed by tapping outside it, and nothing in this
+design relied on tapping outside: `GrowthHistoryCopy.withdrawCancel` says the button that does
+nothing should say what nothing means. The alert, which `ReportView` already uses, keeps both
+buttons. The other `confirmationDialog`s in the app (growth history, photos, check-in, moderation,
+account deletion) carry the same latent iOS 26 behavior and are left to the roadmap. The owner kept the author's other two calls: a
+coarse fix blocks only the pin part (refined by rulings 6–9 below), and the number pad's *Done*.
+
+### R??? — The copy stands as shown (ruling 4)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided.
+
+The strings in PR #185's copy table are approved as shown in the screenshots. Only rulings 1–10 may
+change or add strings, and every such string is listed in the PR body.
+
+### R??? — A mistake report does not enroll a tree in *Yours* (ruling 5)
+
+**Date:** 2026-09-28. **Decided by:** owner, after the review. **Status:** decided; **server change,
+separate PR.**
+
+Review finding 1 showed the server enrolling a disputed city tree in the reporter's *Yours* filter and
+Grove, and keeping it there after the take-back. The owner ruled the enrolment wrong rather than the
+copy: *Nothing on the map changes* stays, and the server stops counting dispute kinds as membership.
+Until that PR merges, the disclosure's clause is false against the live service.
+
+### R??? — The refusal sentence is true about why (ruling 6)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+The refusal names Precise Location and offers *Open Settings* **only when accuracy is reduced**
+(`CLLocationManager.accuracyAuthorization == .reducedAccuracy`). With Precise Location on, a coarse fix
+is the sky's doing, and the sentence says so: *Try again in the open, or wait a moment.* **As built:**
+`MapLocationProvider.Precision.isReduced`, read in `apply(authorization:)` — which iOS also calls when
+Precise Location changes — and carried to the screen in `DataDisputeFixReading`; the sentence is
+`DataDisputeCopy.locationRefusal`. `CoreLocation` stays in `Features`; nothing in `Data` changed
+(ARCHITECTURE §2). The rule's own `.locationFixTooCoarse` sentence, unreachable from the screen, no
+longer names Settings, because that refusal cannot know whether Precise Location is off.
+
+### R??? — A later, better fix replaces a refused one (ruling 7)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+While the screen is open the location block follows the provider in every state the reporter asked
+for and did not get — waiting, refused, and off — so the coarse first fix after `start()` no longer
+fixes the block on its refusal for good (review finding 2's repro). A **captured** fix is still not
+replaced: it is the position the reporter accepted. **As built:** `DataDisputeLocation
+.followsTheProvider`.
+
+### R??? — No silent drops: Send waits for a pending fix (ruling 8)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+While the pin chip is on and the fix is still pending, *Send report* is disabled and the block says
+*Finding your location…*. Review finding 3: sending then filed "the pin is wrong" without the position
+and popped the screen. Once the fix resolves — captured, or refused out loud — the author's call 1
+holds: a refused fix blocks only the pin part. **As built:** `DataDisputeDraft.isAwaitingFix`,
+`DataDisputeModel.canSend`, and the same guard in `raise()`.
+
+### R??? — An unstated accuracy is refused, and the substitute is never quoted (ruling 9)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+A fix CoreLocation stated no radius for (a negative `horizontalAccuracy`) reaches the app as 25 m,
+`VisitShortlist.assumedAccuracyM`, so that D6 excludes it by arithmetic. The screen treats it as
+refused and says *Your phone couldn't say how accurate your location is* — it never quotes 25 m, which
+is the app's number and not the phone's. **As built:** `MapLocationProvider.Precision.accuracyIsKnown`,
+set by the delegate beside the substitution; `DataDisputeLocationRefusal.accuracyUnknown`.
+
+### R??? — The take-back is guarded against a double tap; the UI tests scroll (ruling 10)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+A second take-back while one is in flight does nothing, rather than reaching the API and drawing
+*That report was already taken back.* beside the restored action (review finding 6). **As built:**
+`TreeProfileModel.isWithdrawingDataDispute`, held across the reload. `DataDisputeUITests` scrolls to
+every control before touching it, so it passes at the accessibility text sizes (review finding 7).
+
+### R??? — The wait for a fix is bounded (ruling 11)
+
+**Date:** 2026-09-29. **Decided by:** owner, after the verifier's pass. **Status:** decided.
+
+Ruling 8 held *Send report* while the pin chip's fix was pending, and a fix that never came held it
+forever. After **15 s** with no fix, or as soon as CoreLocation reports an error after the reporter
+asked (`didFailWithError`, which the provider used to ignore), the pin section says *Your phone
+couldn't find your location, so no position was used. Try again in the open, then use your location
+again.* and *Send* works for the other choices; *Use my current location* asks again, with a fresh
+15 s. **As built:** `DataDisputeLocation.unavailable` and `fixTimeout`; the model's timeout runs on an
+injected sleep so the unit tests assert the 15 s without spending it; `MapLocationProvider
+.failureCount` counts errors, and the screen compares it with the count it saw when the reporter
+asked, so an old error never answers a new request. A late fix still replaces `.unavailable` (ruling
+7's rule); a reading with no fix in it does not put the block back to waiting — asking again does.
+
