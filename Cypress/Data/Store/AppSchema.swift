@@ -52,7 +52,8 @@ public enum AppSchema {
         Migration(version: 19, name: "an index is collated the way its readers ask, and the journal has an order", sql: v19),
         Migration(version: 20, name: "the species chain and the community rows are reachable by the identity their readers bind", sql: v20),
         Migration(version: 21, name: "a reading can be taken back, so the outbox learns measurement_withdrawal", migrate: applyV21),
-        Migration(version: 22, name: "a city record's data can be disputed, and the outbox learns both dispute kinds", migrate: applyV22)
+        Migration(version: 22, name: "a city record's data can be disputed, and the outbox learns both dispute kinds", migrate: applyV22),
+        Migration(version: 23, name: "a community tree has an adder, a location chain and other people's copies", migrate: applyV23)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2717,6 +2718,334 @@ public enum AppSchema {
                    );
 
             DROP TABLE outbox_photos_parked_v22;
+            """)
+    }
+
+    // MARK: - v23
+
+    /// Community trees stop being this phone's private layer (the community-trees round, F31).
+    ///
+    /// ── What was true, and what the owner's decisions of 2026-09-28 made false ────────────────
+    ///
+    /// `community_trees` recorded no author. v12, v14 and RULINGS R45 each built on that fact:
+    /// v12 put the owner on `photos` instead, v14 wrote every pre-existing species claim as
+    /// nobody's, and R45's hinge was that "no species claim on this device is attributable to
+    /// anybody". Two decisions end it. Only the adder may move the pin (decision 5), which is a
+    /// question about *who added this tree* that the table could not answer; and a tree added while
+    /// signed in is visible to everyone (decision 1), which means rows other people added now reach
+    /// this phone. Those comments are historical and are left as written; this one says what
+    /// replaced them.
+    ///
+    /// ── 1. The adder, on the tree ─────────────────────────────────────────────────────────────
+    ///
+    /// `user_id` and `device_id`, with `photos`' at-most-one-owner CHECK (v12) for `photos`'
+    /// reason: the leaving door's promise is that the work stays and the name comes off, so an
+    /// ownerless tree is the rule's terminal state, not a hole in it.
+    ///
+    /// **Backfilled NULL, which is nobody, and that is R45 arm 3 applied rather than overlooked.**
+    /// Every tree already on a phone was added by this installation — `addTree` has always been the
+    /// only writer — and v12 backfilled `photos` on exactly that reasoning. It is refused here for
+    /// v14's reason, not v12's: the fact being written is *who may move this pin without asking*,
+    /// and a pin attributed to this device by assumption hands that authority to whoever holds the
+    /// phone. The service is the one place that recorded the adder at the time (`community_trees`
+    /// has carried `user_id`/`device_id` there since 001), and the community-trees design routes the
+    /// adoption of that recorded fact through `GET /trees/{id}`'s `added_by_you` in the sync-down
+    /// round, which is a reading of a record rather than a guess.
+    ///
+    /// ── 2. `tree_locations`, the pin's chain ──────────────────────────────────────────────────
+    ///
+    /// A pin move supersedes (decision 2): the append-only shape `species_assertions` already has
+    /// (v14), for positions. Nothing is updated in place except `superseded_by`, set once; the
+    /// `community_trees.lat`/`lon`/`placement` columns become the head's read cache, moved in the
+    /// same transaction as the append.
+    ///
+    /// - **The root row's id is the tree's id**, on both sides, which is how the service's
+    ///   `community_tree_locations` and this table agree without a wire field for it. Every tree
+    ///   gets one, backfilled here from the row as it stands (nobody's, at the tree's own
+    ///   `created_at`, keyed on the add's `client_uuid`), and `CommunityTreeStore.insert` writes one
+    ///   for every tree written after this.
+    /// - **The head index is BINARY, and every writer spells the UUID canonically.** v20's finding:
+    ///   a partial UNIQUE index's collation decides which pairs of rows the schema calls a conflict,
+    ///   so recollating it would change the invariant rather than the access path. `tree_id` is
+    ///   written through `UUID`'s binding (uppercase) by the store and through `upper()` by the
+    ///   backfill below, so "one head per tree" is one head however a reader spells the id.
+    ///   Readers compare `COLLATE NOCASE` through `idx_tree_locations_tree`, which is.
+    /// - **No foreign key onto `community_trees`,** although both ends are in `main`. A cascade
+    ///   from the tree would make any future rebuild of `community_trees` delete every chain in the
+    ///   app — v22's warning about `tree_data_disputes`, measured by `SchemaV22Tests`. The two
+    ///   deletion doors name this table themselves (`AccountDeletion`).
+    /// - **`superseded_by` is DEFERRED**, for v14's reason: a move stamps the head and inserts its
+    ///   successor in one transaction, and both orders are refused by an immediate constraint.
+    ///
+    /// ── 3. `community_tree_cache`, other people's trees ───────────────────────────────────────
+    ///
+    /// What `GET /community-trees` answers, held so the map, the shortlist and the profile can read
+    /// it offline. **Only public facts**: no column says whether the viewer added the tree, because
+    /// that goes stale at sign-out and at an account deletion, and the tile route is
+    /// caller-independent for the same reason. `tile` is the tile that last served the row, which is
+    /// what lets a tile whose cursor is refused drop its cursor and the trees fetched through it in
+    /// one statement pair (`server/testdata/README.md`).
+    ///
+    /// **The phone's own row always wins, and the schema holds that rather than the readers.** A
+    /// tree this phone added and the same tree served back by a tile are one tree under one id, and
+    /// two rows for it are two pins, two shortlist rows and a dedupe that finds itself. Two
+    /// triggers make the double unstorable: a cache insert of an id `community_trees` holds is
+    /// ignored, and a `community_trees` insert evicts its cached copy. The merge helper
+    /// (`CommunityLayer`) excludes it again on read, so it is unreadable as well. The id is
+    /// `COLLATE NOCASE` because the service's JSON writes UUIDs lowercase and this phone writes
+    /// them uppercase.
+    ///
+    /// **No eviction except through the service's removal list**, so a visit to a cached tree
+    /// always finds its tree.
+    ///
+    /// ── 4. `outbox.kind` learns `location_correction`, and reserves `tree_withdrawal` ──────────
+    ///
+    /// The seventh rebuild of this table (v4, v15, v17, v18, v21, v22, v23), and v22's block is
+    /// copied verbatim, the parking of `outbox_photos` included, because this migration drops
+    /// `outbox` exactly as that one did.
+    ///
+    /// `tree_withdrawal` is admitted **with no Swift case behind it**, v14's `never_existed`
+    /// precedent: the service already accepts it (decision 8, `sync.go`'s `syncKinds`), the verb
+    /// that writes it is not in this round, and SQLite cannot widen a CHECK in place, so admitting it
+    /// now spares the round that builds the verb a second twelve-step rebuild. Nothing can write the
+    /// value until that round adds `OutboxItem.Kind.treeWithdrawal`: the store binds `Kind.rawValue`.
+    ///
+    /// ── Idempotent by guard, per part ─────────────────────────────────────────────────────────
+    ///
+    /// The two `ALTER TABLE … ADD COLUMN`s are guarded on the column list (v10's shape, since
+    /// `ADD COLUMN` has no `IF NOT EXISTS`); the tables, indexes and triggers are `IF NOT EXISTS`;
+    /// the root backfill is `INSERT OR IGNORE` on a primary key that is the tree's own id; and the
+    /// rebuild is guarded on the stored `CREATE TABLE` text with both quotes, v22's reason.
+    /// `DataGates.sqliteStore` replays the whole ladder from 0 to check it.
+    ///
+    /// **Nothing is enqueued.** v17's ruling holds: a widened vocabulary is permission to write
+    /// future rows, and the `INSERT … SELECT` below reads `outbox` and only `outbox`. R77 is kept:
+    /// a tree added before the sync path existed was never queued, and nothing here queues it.
+    ///
+    /// **Readable by v22 code?** No, the ordinary answer: a v23 file opened by a v22 build refuses on
+    /// `MigrationError.databaseIsAhead`.
+    private static func applyV23(_ connection: SQLiteConnection) throws {
+        if try !connection.columnNames(ofTable: "community_trees").contains("user_id") {
+            try connection.execute("""
+                -- The adder. At most one owner, nobody reachable: `photos`' rule (v12).
+                ALTER TABLE community_trees ADD COLUMN user_id TEXT;
+                ALTER TABLE community_trees ADD COLUMN device_id TEXT
+                    CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL));
+                """)
+        }
+
+        try connection.execute("""
+            -- ─── The pin's chain ─────────────────────────────────────────────────────────────
+            -- Append-only. A move inserts a row and stamps the row it replaces with
+            -- `superseded_by`; nothing else is ever updated and nothing is deleted, except by an
+            -- account deletion that deletes the tree.
+            CREATE TABLE IF NOT EXISTS tree_locations (
+                -- The root row's id is the tree's id; a correction's is its own.
+                id                  TEXT PRIMARY KEY,
+                tree_id             TEXT NOT NULL,
+                -- The act that put the pin here: the add's key for the root, the correction's
+                -- outbox key for every other row.
+                client_uuid         TEXT NOT NULL UNIQUE,
+                -- No range CHECK, deliberately: the backfill below copies every existing tree,
+                -- and a CHECK that refused one legacy row would fail this migration and strand the
+                -- database a version short. `LocalAPI.correctLocation` refuses an off-map position
+                -- before it is written, and so does the service.
+                lat                 REAL NOT NULL,
+                lon                 REAL NOT NULL,
+                placement           TEXT NOT NULL CHECK (placement IN ('gps','contributor_placed')),
+                -- D6: a position without its accuracy cannot be weighed later.
+                location_accuracy_m REAL CHECK (location_accuracy_m IS NULL OR location_accuracy_m >= 0),
+                user_id             TEXT,
+                device_id           TEXT,
+                -- DEFERRED, for `species_assertions`' reason (v14).
+                superseded_by       TEXT REFERENCES tree_locations(id) DEFERRABLE INITIALLY DEFERRED,
+                occurred_at         TEXT NOT NULL,
+                created_at          TEXT NOT NULL,
+                updated_at          TEXT NOT NULL,
+                CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL)),
+                CHECK (superseded_by IS NULL OR superseded_by <> id)
+            );
+            -- How every reader asks: by tree, in the collation every tree-id comparison here uses.
+            CREATE INDEX IF NOT EXISTS idx_tree_locations_tree
+                ON tree_locations(tree_id COLLATE NOCASE, occurred_at DESC);
+            -- One head per tree. BINARY on purpose; see v20 and the doc comment above.
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tree_locations_head
+                ON tree_locations(tree_id) WHERE superseded_by IS NULL;
+
+            -- Every tree already here gets the root it never had, owned by nobody, spelled
+            -- canonically. Withdrawn trees too: the chain is the record, and a withdrawal is not
+            -- an erasure.
+            INSERT OR IGNORE INTO tree_locations
+                (id, tree_id, client_uuid, lat, lon, placement, location_accuracy_m,
+                 user_id, device_id, superseded_by, occurred_at, created_at, updated_at)
+            SELECT upper(id), upper(id), upper(client_uuid), lat, lon, placement, NULL,
+                   NULL, NULL, NULL, created_at, created_at, created_at
+              FROM community_trees;
+
+            -- ─── Other people's trees ────────────────────────────────────────────────────────
+            -- Public facts only: the tile route's `Tree` keys that are not always null there.
+            CREATE TABLE IF NOT EXISTS community_tree_cache (
+                id                 TEXT PRIMARY KEY COLLATE NOCASE,
+                lat                REAL NOT NULL,
+                lon                REAL NOT NULL,
+                placement          TEXT NOT NULL CHECK (placement IN ('gps','contributor_placed')),
+                status             TEXT NOT NULL
+                                   CHECK (status IN ('alive','declining','dead_reported','removed','vacant_site')),
+                species_current    TEXT,
+                land_context       TEXT
+                                   CHECK (land_context IS NULL
+                                          OR land_context IN ('street','city_park','private_property','other_public')),
+                verification_state TEXT NOT NULL
+                                   CHECK (verification_state IN ('unverified','org_verified','city_record')),
+                -- Calendar days at midnight UTC, as the service sends them. Never used to order or
+                -- to detect a change: the tile cursor does that (the S2 day-precision ruling).
+                created_at         TEXT NOT NULL,
+                updated_at         TEXT NOT NULL,
+                -- The tile that last served this row, and when.
+                tile               TEXT NOT NULL,
+                fetched_at         TEXT NOT NULL
+            );
+            -- `CommunityTreeStore`'s bounding-box shape, for the map and the dedupe.
+            CREATE INDEX IF NOT EXISTS idx_community_tree_cache_lat_lon
+                ON community_tree_cache(lat, lon, id);
+            CREATE INDEX IF NOT EXISTS idx_community_tree_cache_tile
+                ON community_tree_cache(tile);
+
+            -- What has been fetched, per tile. The cursor is sealed and opaque; it is stored and
+            -- sent back unchanged, never parsed.
+            CREATE TABLE IF NOT EXISTS community_tree_cache_tiles (
+                tile        TEXT PRIMARY KEY,
+                next_cursor TEXT NOT NULL,
+                fetched_at  TEXT NOT NULL
+            );
+
+            -- ─── The phone's own row wins ────────────────────────────────────────────────────
+            CREATE TRIGGER IF NOT EXISTS community_tree_cache_yields_to_the_added_row
+            BEFORE INSERT ON community_tree_cache
+            WHEN EXISTS (SELECT 1 FROM community_trees WHERE id = NEW.id COLLATE NOCASE)
+            BEGIN
+                SELECT RAISE(IGNORE);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS community_trees_evict_their_cached_copy
+            AFTER INSERT ON community_trees
+            BEGIN
+                DELETE FROM community_tree_cache WHERE id = NEW.id COLLATE NOCASE;
+            END;
+            """)
+
+        let existing = try outboxDefinition(connection: connection)
+        guard !existing.contains("'location_correction'") else { return }
+        try connection.execute("""
+            -- ── 1. Park the staged binaries where no foreign key reaches them ────────────────
+            -- v21's block, verbatim and for its reasons: `outbox_photos.outbox_id` cascades from
+            -- `outbox`, this migration drops `outbox`, and `defer_foreign_keys` defers the check
+            -- rather than the action.
+            CREATE TABLE outbox_photos_parked_v23 (
+                id              TEXT,
+                outbox_id       TEXT,
+                path            TEXT,
+                shot_type       TEXT,
+                photo_id        TEXT,
+                container_path  TEXT,
+                state           TEXT,
+                sendable        INTEGER,
+                fail_count      INTEGER,
+                last_error      TEXT,
+                last_error_code TEXT,
+                created_at      TEXT,
+                updated_at      TEXT
+            );
+            INSERT INTO outbox_photos_parked_v23
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, last_error, last_error_code, created_at, updated_at)
+            SELECT id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                   fail_count, last_error, last_error_code, created_at, updated_at
+              FROM outbox_photos;
+
+            -- An empty child has nothing for the drop below to cascade away.
+            DELETE FROM outbox_photos;
+
+            -- ── 2. The rebuild ──────────────────────────────────────────────────────────────
+            CREATE TABLE outbox_movable_pins (
+                seq               INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                TEXT NOT NULL UNIQUE,
+                kind              TEXT NOT NULL CHECK (kind IN (
+                                      'visit','observation','measurement','care_event',
+                                      'favorite_toggle','private_reminder',
+                                      'add_tree','species_claim','species_correction',
+                                      'wrong_species_report','never_existed_report',
+                                      'species_review_dismissal','record_review_dismissal',
+                                      'photo_vote','photo_withdrawal','hazard_redirect',
+                                      'measurement_withdrawal',
+                                      'data_dispute','data_dispute_withdrawal',
+                                      -- v23. The adder moving a community tree's pin (decision 5),
+                                      -- its own kind for `measurement_withdrawal`'s reason: a move
+                                      -- arriving as an `add_tree` would read as a second tree.
+                                      'location_correction',
+                                      -- v23, reserved. The adder withdrawing the tree for everyone
+                                      -- (decision 8). The service accepts it; no Swift case writes
+                                      -- it yet. See `applyV23`'s doc comment.
+                                      'tree_withdrawal')),
+                client_uuid       TEXT NOT NULL UNIQUE,
+                payload           TEXT NOT NULL CHECK (json_valid(payload)),
+                -- Dead since v18 and still undroppable: v2's body names this column and SQLite
+                -- resolves it at prepare time, so a replay of v2 against a table without it fails
+                -- outright. v18's comment argues it at length.
+                photo_paths       TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(photo_paths)),
+                photos_outstanding INTEGER NOT NULL DEFAULT 0 CHECK (photos_outstanding >= 0),
+                state             TEXT NOT NULL DEFAULT 'pending'
+                                  CHECK (state IN ('pending','uploading','failed','done')),
+                fail_count        INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
+                last_error        TEXT,
+                last_error_code   TEXT,
+                -- v15's two sinks. `location_correction` is born `local_applied = 1` like every
+                -- other kind `LocalAPI` writes inside the transaction that performs the mutation
+                -- (`OutboxPayload.isAppliedBeforeItIsQueued`).
+                local_applied     INTEGER NOT NULL DEFAULT 0 CHECK (local_applied IN (0,1)),
+                remote_sent       INTEGER NOT NULL DEFAULT 0 CHECK (remote_sent IN (0,1)),
+                window_started_at TEXT NOT NULL,
+                next_attempt_at   TEXT,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL,
+                -- v1's sentence against v18's counter. Zero loss is a schema invariant.
+                CHECK (state <> 'done' OR (local_applied = 1 AND photos_outstanding = 0)),
+                -- Apply is first and unconditional (RULINGS R72 §1).
+                CHECK (remote_sent = 0 OR local_applied = 1)
+            );
+
+            INSERT INTO outbox_movable_pins
+                (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding, state,
+                 fail_count, last_error, last_error_code, local_applied, remote_sent,
+                 window_started_at, next_attempt_at, created_at, updated_at)
+            SELECT seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding, state,
+                   fail_count, last_error, last_error_code, local_applied, remote_sent,
+                   window_started_at, next_attempt_at, created_at, updated_at
+              FROM outbox;
+
+            -- ── 3. Swap ─────────────────────────────────────────────────────────────────────
+            DROP TABLE outbox;
+            ALTER TABLE outbox_movable_pins RENAME TO outbox;
+
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain ON outbox(state, next_attempt_at, seq);
+            CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at);
+
+            -- ── 4. The binaries go back, now that their parent is the rebuilt table ─────────
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, last_error, last_error_code, created_at, updated_at)
+            SELECT id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                   fail_count, last_error, last_error_code, created_at, updated_at
+              FROM outbox_photos_parked_v23;
+
+            -- ── 5. The counter is the count, stated rather than reasoned about ─────────────
+            UPDATE outbox
+               SET photos_outstanding = (
+                     SELECT COUNT(*) FROM outbox_photos
+                      WHERE outbox_photos.outbox_id = outbox.id
+                   );
+
+            DROP TABLE outbox_photos_parked_v23;
             """)
     }
 

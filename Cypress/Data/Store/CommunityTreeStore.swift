@@ -1,29 +1,59 @@
 import Foundation
 
-/// Reads and writes over `main.community_trees` — trees the user added (`POST /trees`).
+/// Reads and writes over `main.community_trees` — trees **this phone** added (`addTree`).
 ///
 /// Deliberately a separate type from `TreeQueries` rather than a `UNION` inside it. The seed
-/// queries are tuned against 195,309 rows and a covering index; this table holds tens. Unioning
-/// them would force the whole clustered viewport through a materialized subquery and lose the
-/// covering index for the 99.99 % of rows that come from the city. Merging two small result sets in
-/// Swift costs nothing and keeps both plans optimal.
+/// queries are tuned against 195,309 rows and a covering index; this table holds one row per tree
+/// this installation added. Unioning them would force the whole clustered viewport through a
+/// materialized subquery and lose the covering index for the rows that come from the city. Merging
+/// two small result sets in Swift costs nothing and keeps both plans optimal.
+///
+/// **Since `AppSchema` v23 this is one of two community tables, and the readers that answer "what
+/// community trees are there" do not read it alone.** Other people's published trees arrive in
+/// `community_tree_cache`, and `CommunityLayer` is the merge helper over the two. The reads here
+/// are the *authored* half: they answer "is this a tree this phone added", which is the question
+/// every write in `LocalAPI` that acts on the record itself — a species claim, a correction, a
+/// report, a withdrawal, a moved pin — has to ask, because a cached tree is somebody else's and
+/// none of those are this phone's to make on it.
+///
+/// **The row records its adder since v23**, `photos`' at-most-one-owner pair, and the pin is a chain
+/// (`tree_locations`) whose head `lat`/`lon`/`placement` cache.
 public struct CommunityTreeStore {
     public init() {}
+
+    private let locations = TreeLocationStore()
 
     // MARK: - Writing
 
     /// Idempotent on `clientUUID`, like every other contribution.
+    ///
+    /// **It writes the chain's root in the same call**, so no writer can produce a tree whose pin
+    /// has no chain behind it — the state `correctLocation` could not append to, and exactly the
+    /// state v14 had to backfill for species. The root's id is the tree's id and its key is the
+    /// add's (`AppSchema` v23). Written only when the tree was: a replayed add changes nothing.
+    ///
+    /// - Parameter adder: who added it. `.nobody` is the default because the callers that predate
+    ///   v23 — test fixtures, and `debugAddCommunityTree` through `addTree` passes its own — did not
+    ///   say, and nobody is the honest value for "not said" (R45 arm 3). `LocalAPI.addTree` passes
+    ///   the attribution of the act.
     @discardableResult
-    public func insert(_ tree: Tree, clientUUID: UUID, connection: SQLiteConnection) throws -> ContributionStore.WriteOutcome {
+    public func insert(
+        _ tree: Tree,
+        clientUUID: UUID,
+        adder: ContributionOwner = .nobody,
+        connection: SQLiteConnection
+    ) throws -> ContributionStore.WriteOutcome {
         let statement = try connection.cachedStatement("""
             INSERT INTO community_trees
                 (id, client_uuid, external_ref, source, lat, lon, address, site_type, status,
                  species_current, planted_year, dbh_city_cm_min, dbh_city_cm_max, site_lineage,
-                 verification_state, placement, land_context, created_at, updated_at, deleted_at)
+                 verification_state, placement, land_context, created_at, updated_at, deleted_at,
+                 user_id, device_id)
             VALUES
                 (:id, :client, :ref, 'community', :lat, :lon, :address, :site, :status,
                  :species, :planted, :dbhMin, :dbhMax, :lineage,
-                 :verification, :placement, :landContext, :created, :updated, :deleted)
+                 :verification, :placement, :landContext, :created, :updated, :deleted,
+                 :user, :device)
             ON CONFLICT(client_uuid) DO NOTHING
             """)
         _ = try statement.bind([
@@ -52,12 +82,64 @@ public struct CommunityTreeStore {
             ":landContext": tree.statedLandContext?.rawValue,
             ":created": tree.createdAt,
             ":updated": tree.updatedAt,
-            ":deleted": tree.deletedAt
+            ":deleted": tree.deletedAt,
+            ":user": adder.userID,
+            ":device": adder.deviceID
         ])
         try statement.run()
         let inserted = connection.changes > 0
         _ = try statement.reset()
-        return inserted ? .inserted : .duplicate
+        guard inserted else { return .duplicate }
+
+        try locations.insert(
+            TreeLocation(
+                id: tree.id,
+                treeID: tree.id,
+                clientUUID: clientUUID,
+                coordinate: tree.coordinate,
+                placement: tree.placement,
+                owner: adder,
+                occurredAt: tree.createdAt,
+                createdAt: tree.createdAt,
+                updatedAt: tree.createdAt
+            ),
+            connection: connection
+        )
+        return .inserted
+    }
+
+    /// Moves the read cache to the chain's new head — the second half of a correction, in the
+    /// transaction that appended the head (`LocalAPI.correctLocation`).
+    ///
+    /// **Deliberately not a verb that decides anything**, `setSpecies`' shape: the chain is the
+    /// record and these three columns follow it.
+    ///
+    /// - Returns: whether there was a live row to move. `false` means no such row, or it has been
+    ///   withdrawn.
+    public func move(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET lat = :lat, lon = :lon, placement = :placement, updated_at = :updated
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([
+            ":lat": coordinate.latitude,
+            ":lon": coordinate.longitude,
+            ":placement": placement.rawValue,
+            ":updated": moment,
+            ":id": treeID
+        ])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
     }
 
     /// Names the species on a row that has none. See `SpeciesClaim` for why that is the only species
@@ -157,6 +239,28 @@ public struct CommunityTreeStore {
     }
 
     // MARK: - Reading
+
+    /// Who added this tree, or nil when this phone holds no such row.
+    ///
+    /// `.nobody` is an answer, not an absence: every tree added before `AppSchema` v23, whose adder
+    /// the phone never recorded, and every tree an account deletion anonymized. Nobody may move
+    /// either pin (`LocalAPI.correctLocation`), for R45 arm 3's reason.
+    ///
+    /// Not a field on `Tree`, deliberately. `Tree` is the record every reader and the wire share,
+    /// and the service serves it with no adder at all (history carries no actor, decision 4); an
+    /// owner that rode on it would be one more place for a caller-relative fact to travel where it
+    /// should not.
+    public func adder(treeID: UUID, connection: SQLiteConnection) throws -> ContributionOwner? {
+        let statement = try connection.cachedStatement("""
+            SELECT user_id, device_id FROM community_trees WHERE id = :id COLLATE NOCASE
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":id")
+        return try statement.fetchOne { row -> ContributionOwner in
+            if let user = try row.uuidIfPresent("user_id") { return .user(user) }
+            if let device = try row.uuidIfPresent("device_id") { return .device(device) }
+            return .nobody
+        }
+    }
 
     public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {
         let statement = try connection.cachedStatement("""

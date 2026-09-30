@@ -46,6 +46,34 @@ public protocol CypressAPI: Sendable {
     /// dedupe against any species and returns `.conflict` with the candidate list when it trips.
     func addTree(_ draft: TreeDraft) async throws -> Tree
 
+    /// Moves a community tree's pin — the owner's decisions 2 and 5 of 2026-09-28: the move
+    /// supersedes the position in force, and only the tree's adder may make it.
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint.** It reaches the account through the queue, as outbox kind
+    /// `location_correction` (`AppSchema` v23), exactly as a species correction does.
+    ///
+    /// Appends a row to the tree's `tree_locations` chain, stamps the old head, moves the tree's
+    /// read cache and queues the correction, in one transaction. No distance bound is applied here:
+    /// how far a pin may move, and from where, is the UI round's question to the owner.
+    ///
+    /// - Returns: the tree as it now stands.
+    /// - Throws: `.notFound` when there is no such tree, or this phone withdrew it; `.forbidden`
+    ///   when the tree is real and not this person's to move — a city row, somebody else's tree
+    ///   from the cache, or a tree this phone added whose adder is not whoever is asking, including
+    ///   a tree whose adder is nobody (every tree added before v23, and every tree an account
+    ///   deletion anonymized); `.validationFailed` for a position off the map or a negative
+    ///   accuracy; `ProximityConflict` (`.conflict`) when the new position is within 10 m of another
+    ///   tree.
+    ///
+    /// Defaulted in `LocationCorrection.swift` to `.notFound`. **Declared here and not only in an
+    /// extension**, for the reason `photoData` gives below at length (ERRATA E125).
+    func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree
+
     /// Names the species on a community tree that has none — the "after" half of "add tree species
     /// after/at same time as adding a custom tree".
     ///
