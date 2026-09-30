@@ -1790,8 +1790,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     starts (its `isZoomable` is now read inside the modifier); and on 05 and 09's camera it still
     arms after a frame has been taken, since that viewfinder stays live for the next one. **And the
     1× opening (#200):** pinch 05/09's camera to about 4×, close it, then open screen 04, add-a-tree
-    and 05/09 in turn; each must open at 1×. No simulator has a camera, so neither branch's
-    verification could see any of this. OPEN until done.
+    and 05/09 in turn; each must open at 1×. That check needs a control or it proves nothing
+    (#200's verification, finding 1): do it in one app process with no force-quit, add 04 → close
+    → 04, and first run it on a build without the reset (before #200) to see the zoom actually carry
+    over. If it never carried over, the reset is unproven rather than working. No simulator has a
+    camera, so neither branch's verification could see any of this. OPEN until done.
 82. **Phone checks for the dispute screen's location wait (#198).** Only a device answers these.
     (a) Whether turning Location off makes CoreLocation report `kCLErrorDenied` to the running
     update, and when. #198 takes a new error baseline when the block starts waiting again from a
@@ -1820,6 +1823,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     bare `"${QOS_PREFIX[@]}"` dies `unbound variable` on the CI path, the red-proof); and
     `taskpolicy` execs rather than forks, so `ps` shows `xcodebuild test …` and
     `xcodebuild_line` still sees the run. Use stand-in `xcrun`/`xcodebuild` on PATH; boot nothing.
+84. **`ZoomTests`' stand-in lens cannot see an unlock without a lock.** From #200's verification
+    (finding 2): only `aCameraOpensAtOneX` checks the lens ends unlocked, and the stand-in counts
+    unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
+    green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
+    `aRaisedFloorOpensAtTheFloor` too.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
