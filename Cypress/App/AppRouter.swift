@@ -25,6 +25,11 @@ enum Route: Hashable {
     case growthHistory(UUID)    // 11
     case checkIn(UUID)          // 05
     case report(UUID)           // 06
+    /// Reporting a mistake in a **city** record's data (RULINGS R79, part 2). **No mocked screen** —
+    /// the owner ruled its shape on 2026-09-28: pushed, and modeled on screen 06. Its one entrance is
+    /// the text action screen 03 draws where the community flag actions sit (`TreeProfileView
+    /// .recordDefect`), and only for a city row this viewer may dispute (`DataDisputeOffer.raisable`).
+    case dataDispute(UUID)
     case almanac                // 12
     case activity(UUID)         // 13
     /// 19. Separate from `treeProfile` rather than a variant of it: 14 is a *cold* profile, whose

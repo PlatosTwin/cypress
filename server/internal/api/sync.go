@@ -78,12 +78,113 @@ type addTreePayload struct {
 	Placement   string     `json:"placement"`
 	SpeciesID   *uuid.UUID `json:"speciesID"`
 	LandContext *string    `json:"landContext"`
+	// LocationAccuracyM is the fix's horizontal accuracy in metres (D6), optional. `TreeAddition`
+	// does not carry it at 007; C1 may add it under this name, and until then it is NULL.
+	LocationAccuracyM *float64 `json:"locationAccuracyM"`
+}
+
+// locationCorrectionPayload is `TreeLocationCorrection` as the client encodes it (the community-trees
+// round's §3A; `Cypress/Data/Outbox/CommunityMutations.swift` in C1: keys stay the Swift property
+// names). The pinned shape, which `server/testdata/sync_location_correction.json` holds byte for byte:
+//
+//	{"id":"…","clientUUID":"…","treeID":"…",
+//	 "coordinate":{"latitude":37.77,"longitude":-122.41},"placement":"gps",
+//	 "locationAccuracyM":4.5,"attribution":{"userID":null,"deviceID":"…"},
+//	 "occurredAt":"2026-09-28T17:05:00Z"}
+//
+// **`id` is the correction's own id** — its `tree_locations.id` on the phone, its
+// `community_tree_locations.id` and its event id here — and `treeID` is the pointer at the tree,
+// named for what it points at. The tree pointer must not be `id`, and there is **no top-level
+// `speciesID`**: `store.GroveSpeciesKnown` casts `payload->>'speciesID'` across every kind.
+//
+// `clientUUID`, `attribution` and `occurredAt` are on the wire and not read, for the reason
+// `photoWithdrawalPayload` gives: the envelope is the authority on the key, the sender and the time.
+type locationCorrectionPayload struct {
+	ID                uuid.UUID   `json:"id"`
+	TreeID            uuid.UUID   `json:"treeID"`
+	Coordinate        *wireLatLon `json:"coordinate"`
+	Placement         string      `json:"placement"`
+	LocationAccuracyM *float64    `json:"locationAccuracyM"`
+}
+
+// treeWithdrawalPayload is `TreeWithdrawal` as the client encodes it (decision 8, C1):
+//
+//	{"clientUUID":"…","treeID":"…","attribution":{…},"occurredAt":"…"}
+//
+// The tree is the pointer, `treeID`, and it must equal the envelope's `tree_uuid`. Nothing else is
+// read, for `photoWithdrawalPayload`'s reason.
+type treeWithdrawalPayload struct {
+	TreeID uuid.UUID `json:"treeID"`
+}
+
+// speciesStatementPayload is the two fields of `SpeciesStatement` the server materializes under R45
+// arm 1 (§3B). Read leniently: a body that does not decode, or names another tree, or no species,
+// is recorded exactly as it was before 007 and materializes nothing — a species act was never
+// refused for its shape and is not about to start.
+type speciesStatementPayload struct {
+	TreeID    uuid.UUID `json:"treeID"`
+	SpeciesID uuid.UUID `json:"speciesID"`
 }
 
 // wireLatLon is `Coordinate` as the client's `JSONEncoder` writes it.
 type wireLatLon struct {
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
+}
+
+// speciesStatementSpeciesID reads the one field of `SpeciesStatement` this service checks — the
+// payload of both `species_claim` and `species_correction`
+// (`Cypress/Data/Outbox/CommunityMutations.swift`: keys stay the Swift property names).
+//
+// ── Why a claim with no readable species is refused, when so much else here is lenient ──────────
+//
+// `validation_failed` is terminal for the phone's queue, so tightening a kind is only safe if no
+// client could be refused by it. For this field that is checkable, and it holds twice over:
+//
+//   - `SpeciesStatement.speciesID` is a non-optional Swift `UUID`, and has been since the type was
+//     written. `JSONEncoder` can only write it as the canonical 36-character form (uppercase),
+//     which `uuid.Parse` accepts.
+//   - `RemoteAPI.sync` decodes every queued row through `OutboxPayload.decode(kind:from:)` before
+//     it builds the request, so a row whose `speciesID` is not a UUID never leaves the phone.
+//
+// So this refuses nothing the app sends. What it refuses is a record that is worthless and was
+// dangerous: a claim is *only* a species id and a tree, and the moderation round reads these rows
+// as the record — one that names no species cannot be acted on, which is the reason
+// `data_dispute` requires its `id`. And until this round, one such row carrying a non-UUID id
+// permanently failed its sender's Species tab (see `store.GroveSpeciesKnown`, which no longer
+// reads this kind at all and no longer casts).
+//
+// The same malformation is already refused one kind over: `add_tree` decodes `speciesID` as a
+// `*uuid.UUID`, so a non-UUID value there fails `json.Unmarshal`. With this, the three kinds that
+// carry a `speciesID` agree about what one is.
+//
+// **The sighting kinds are deliberately not given the same check.** They carry no `speciesID`
+// today, their bodies are accepted without a shape for reasons `measurementPayload` gives, and
+// the read now tolerates anything they could hold — a new refusal there would be a terminal
+// failure bought for nothing.
+//
+// **Decoded into a raw map first, not a struct.** `encoding/json` matches a struct field's tag
+// case-insensitively when no exact match exists, so a struct field tagged `json:"speciesID"`
+// would also accept `speciesid` or `SPECIESID` — keys the client never sends and the SQL side
+// never reads (`store.GroveSpeciesKnown` and the disputed-payload rule in `dataDisputePayload`
+// both key on the exact spelling `speciesID`). A case-folded key would then pass this refusal
+// while storing `payload->>'speciesID' IS NULL`, which is a written record this check exists to
+// prevent. `map[string]json.RawMessage` keys are the literal bytes on the wire, so looking up
+// exactly `"speciesID"` is the same strictness `->>'speciesID'` already has.
+func speciesStatementSpeciesID(raw json.RawMessage) (*uuid.UUID, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	value, ok := fields["speciesID"]
+	if !ok {
+		return nil, nil
+	}
+	var speciesID *uuid.UUID
+	if err := json.Unmarshal(value, &speciesID); err != nil {
+		return nil, err
+	}
+	return speciesID, nil
 }
 
 // photoWithdrawalPayload is `PhotoWithdrawal` as the client encodes it
@@ -198,42 +299,44 @@ type measurementPayload struct {
 // serves it back is the round that has to read it. That is also why the shape mismatch recorded
 // above is not a defect on this side — an object this handler never decodes cannot refuse anything.
 //
-// ── The one prohibition on this payload: **no top-level `speciesID`** ──────────────────────────
+// ── Where a suggested species travels: inside `suggestions`, never as a top-level `speciesID` ──
 //
 // A disputed species travels *inside* `suggestions`, where nothing interprets it — on the branch
-// read above that is the `species_id` key of the flat object, and being one level in is the whole of
-// what makes it safe, not the spelling. A top-level `speciesID` is forbidden, and the reason is not
-// tidiness:
-// **nothing in this service obliges a payload read to narrow on `kind` at all, and one of them
-// does not.**
-// `store.GroveSpeciesKnown` runs `(payload->>'speciesID')::uuid` over `contributions` filtered by
-// owner and `deleted_at` and by nothing else, so
+// read above that is the `species_id` key of the flat object. The client keeps that contract
+// (`DataDisputeReport` has no top-level `speciesID`), and it stays the contract.
 //
-//   - a *valid* top-level `speciesID` on a dispute silently enrols that species in the person's
-//     "species you have met" list — recorded because they complained about it;
-//   - an *invalid* one makes their Species tab a permanent 500. The cast errors, the whole query
-//     fails, and the row cannot be un-sent.
-//
-// Both arms were reproduced against a throwaway Postgres for this round. The defect is **not this
-// round's** — a `species_claim` carrying a non-UUID `speciesID` does the same thing today, and it
-// is written up in `docs/errata-pending/grove-species-known-unscoped-cast.md` — but `wrong_species`
-// is one of three issue kinds here, which makes a suggested species the most natural thing for v22
-// to send, and `speciesID` the obvious key to send it under. Nothing in this file could refuse it
-// either: the payload decode is lenient by design, so this is a contract the client keeps — and on
-// `feat/r79-city-disputes` as read it does keep it, `DataDisputeReport` having no top-level
-// `speciesID`.
+// **It is no longer what stands between a dispute and the Species tab.** This paragraph used to
+// forbid the key because `store.GroveSpeciesKnown` ran `(payload->>'speciesID')::uuid` over every
+// kind, so a valid one on a dispute enrolled that species in "species you know" and an invalid one
+// made the sender's Species tab a permanent 500. That read now interprets `speciesID` only on
+// `store.MetSpeciesKinds` — the sighting kinds, of which a dispute is not one — reading it as text,
+// parsing in Go and skipping what does not parse. A top-level `speciesID` on a dispute is
+// therefore neither counted nor able to fail anything. The contract is kept because a second
+// spelling of one suggestion is a second place for it to be wrong, not because anything breaks.
 //
 // The general rule, for whoever adds the next key: before putting a name at the top level of a
 // payload, grep `internal/store` for `payload ->>` and check whether an existing read already
-// interprets that name. Four functions in `internal/store` do: `withdrawMeasurement` and
+// interprets that name. Five functions in `internal/store` do: `withdrawMeasurement` and
 // `disputeIsThisIdentitys` read `payload ->> 'id'`, `measurementWasWithdrawn` reads
-// `payload ->> 'measurementID'`, and `GroveSpeciesKnown` reads `payload ->> 'speciesID'`. The first
-// three cannot fail on a value they were not meant to read, and the reason is not that they narrow
-// on `kind`, though all three do: it is that they **compare the extracted text** under `upper()`
-// and never cast it, so a payload of any kind carrying a non-UUID value simply misses. Do not lean
-// on the `kind` qual as the safe-making part — `store.disputeIsThisIdentitys` records exactly what
-// is and is not known about that. `GroveSpeciesKnown` both casts *and* reads every kind, and one
-// is enough.
+// `payload ->> 'measurementID'`, `GroveSpeciesKnown` reads `payload ->> 'speciesID'`, and
+// `PublicTreeCommunityHalf` (`store/public.go:195-206`) reads the top-level `kind` and `quantity`
+// of a measurement. None of the five can fail on a value it was not meant to read, and the reason
+// is not that they narrow on `kind`, though all five do: none of them ever casts the extracted
+// value to a SQL type. That works out differently for each:
+//
+//   - `withdrawMeasurement`, `disputeIsThisIdentitys` and `measurementWasWithdrawn` **compare the
+//     extracted text** against a caller-supplied id, so a payload of any kind carrying an
+//     unexpected value there simply fails to match.
+//   - `GroveSpeciesKnown` does not compare the text to anything. It groups the extracted text and
+//     parses each group in Go with `uuid.Parse`, so a value that is not a canonical UUID is
+//     skipped rather than failing the query.
+//   - `PublicTreeCommunityHalf` neither compares nor parses: it filters `kind` against a fixed
+//     two-value allow-list and serves the extracted text of `kind` and `quantity` straight back to
+//     the client as opaque strings.
+//
+// Do not lean on the `kind` qual as the safe-making part — `store.disputeIsThisIdentitys` records
+// exactly what is and is not known about that. A new read that casts a payload value to `uuid` in
+// SQL puts back the defect `GroveSpeciesKnown` was fixed for.
 type dataDisputePayload struct {
 	ID         uuid.UUID `json:"id"`
 	TreeID     uuid.UUID `json:"treeID"`
@@ -380,12 +483,24 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     they are different sizes; conflating them is how this comment went wrong before.
 //
 //     The **residue** — the withdrawal's own row surfacing in the journal, and the tree kept in
-//     `GET /me/grove` with zero tallies and in `GET /me/map-membership?kind=yours` — is
-//     `photo_withdrawal`'s and `measurement_withdrawal`'s today, from one root cause: no reader
-//     here filters on kind (`Grove`'s `mine` CTE and `MapMembership` exclude only
-//     `private_reminder`). It is already open and already measured, as `docs/ROADMAP.md`'s chip
-//     backlog item "Answer what a withdrawn-to-empty tree should look like, before
-//     `GET /me/journal` goes remote". A dispute lands in that item unchanged.
+//     `GET /me/grove` with zero tallies and in `GET /me/map-membership?kind=yours` — was
+//     `photo_withdrawal`'s and `measurement_withdrawal`'s, and, until 2026-09-28, a dispute's too,
+//     all from one root cause: no reader filtered on kind beyond `private_reminder`. It is still
+//     open for those first two, and already measured, as `docs/ROADMAP.md`'s chip backlog item
+//     "Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
+//     remote".
+//
+//     **A dispute no longer lands in that item — it left it, rather than joining it.** Owner
+//     ruling, 2026-09-28: reporting a mistake in a tree's record is not meeting the tree, and the
+//     report screen's own copy promises "Nothing on the map changes." `store.TreeMembershipKinds`
+//     (`internal/store/reads.go`) is now an explicit allow-list of the kinds `Grove`'s `mine` CTE
+//     and `MapMembership`'s `yours` arm read, and `data_dispute` / `data_dispute_withdrawal` are
+//     not on it — so a dispute never enrolls the tree in either read in the first place, whether or
+//     not it is later withdrawn. That is a larger fix than closing the residue would have been:
+//     the roadmap item is about what a *withdrawn* contribution leaves behind, and an unwithdrawn
+//     dispute was residue too. `GET /me/journal` is unaffected and unchanged — it is a personal
+//     history and still serves a dispute back, and goes on serving it after the withdrawal applies,
+//     for the reasons below.
 //
 //     What is **larger** for a dispute is that the withdrawn thing itself goes on being served:
 //     those two kinds tombstone what they take back — `photos.deleted_at` and
@@ -421,6 +536,18 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //
 //     What *is* checked is the payload — see `dataDisputePayload` for which fields and, more
 //     usefully, for why the suggested-value vocabulary is recorded rather than checked.
+//
+//   - **`location_correction` and `tree_withdrawal` are the twentieth and twenty-first, and both
+//     materialize** (the community-trees round, `007_community_trees.sql`, client `AppSchema` v23).
+//     The first is the adder moving a community tree's pin (decision 5): a new row on the tree's
+//     location chain, and a refusal the client must be able to act on — `forbidden` for anybody but
+//     the adder on a tree they can see, `conflict` within 10 m of another tree the caller can see,
+//     `not_found` for a tree this service does not hold **or one the caller cannot see** (no
+//     existence oracle: a stranger's act on a withdrawn, taken-down, unpublished or erased tree is
+//     answered as the same act on an unknown id). The second is the adder withdrawing the tree for everyone while
+//     nobody else has built on it (decision 8), `conflict` otherwise. `species_claim` and
+//     `species_correction` also materialize from 007 on, for a community tree's adder only, and
+//     never refuse — see `store.materializeSpecies`.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,
@@ -430,6 +557,7 @@ var syncKinds = map[string]bool{
 	"photo_vote": true, "photo_withdrawal": true, "hazard_redirect": true,
 	"measurement_withdrawal": true,
 	"data_dispute":           true, "data_dispute_withdrawal": true,
+	"location_correction": true, "tree_withdrawal": true,
 }
 
 // maxSyncBatch caps one request. A drain sends what is due, and a phone that has been in a drawer
@@ -609,6 +737,9 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		if payload.LandContext != nil && !landContexts[*payload.LandContext] {
 			return failed(apierr.ValidationFailed, "That land context is not one this service accepts.")
 		}
+		if payload.LocationAccuracyM != nil && !(*payload.LocationAccuracyM >= 0) {
+			return failed(apierr.ValidationFailed, "That location accuracy is not a distance.")
+		}
 
 		existing, err := s.Store.CommunityTreeExists(r.Context(), item.TreeUUID)
 		if err != nil {
@@ -616,7 +747,10 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 			return failed(apierr.ServerError, "Something went wrong on our end.")
 		}
 		if !existing {
-			candidates, err := s.Store.TreesWithin(r.Context(), lat, lon, store.ProximityDedupeRadiusM)
+			// Scoped to what this caller can see (§3F): a tree somebody else has not published is
+			// not a reason to refuse this one, and refusing over it told the refused person where
+			// it was.
+			candidates, err := s.Store.TreesWithin(r.Context(), lat, lon, store.ProximityDedupeRadiusM, owner)
 			if err != nil {
 				s.Log.Error("running the proximity dedupe", "tree_uuid", item.TreeUUID, "cause", err)
 				return failed(apierr.ServerError, "Something went wrong on our end.")
@@ -634,6 +768,91 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 			SpeciesID:   payload.SpeciesID,
 			Placement:   placement,
 			LandContext: payload.LandContext,
+
+			LocationAccuracyM: payload.LocationAccuracyM,
+		}
+	}
+
+	// ── `location_correction` — the adder moves the pin (decision 5, §3A) ───────────────────────
+	//
+	// Everything checkable from the item alone is checked here and answered `validation_failed`;
+	// everything that needs the tree's row — whose it is, whether it is here, what is near the new
+	// position — is asked in `store.applyLocationCorrection`, inside the transaction that records it.
+	var correction *store.LocationCorrection
+	if item.Kind == "location_correction" {
+		var payload locationCorrectionPayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.ID.IsNil() {
+			return failed(apierr.ValidationFailed, "That item named no correction.")
+		}
+		if payload.TreeID != item.TreeUUID {
+			return failed(apierr.ValidationFailed,
+				"That item disagrees with itself about which tree it moves.")
+		}
+		// A correction's `id` names the correction, and the chain's root row already carries the
+		// tree's id. A payload that sends the tree's id as its own is the drift §3A warns against
+		// (the tree pointer spelled `id`); it would collide with the root and be read as a replay,
+		// answering `applied` for a move that never happened (review of #187, F3).
+		if payload.ID == payload.TreeID {
+			return failed(apierr.ValidationFailed,
+				"That correction's identifier is the tree's; a correction needs its own.")
+		}
+		if payload.Coordinate == nil {
+			return failed(apierr.ValidationFailed, "That item named no location.")
+		}
+		lat, lon := payload.Coordinate.Latitude, payload.Coordinate.Longitude
+		if lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+			return failed(apierr.ValidationFailed, "That location is not on the map.")
+		}
+		if !treePlacements[payload.Placement] {
+			return failed(apierr.ValidationFailed, "That placement is not one this service accepts.")
+		}
+		if payload.LocationAccuracyM != nil && !(*payload.LocationAccuracyM >= 0) {
+			return failed(apierr.ValidationFailed, "That location accuracy is not a distance.")
+		}
+		correction = &store.LocationCorrection{
+			ID: payload.ID, TreeID: payload.TreeID, Lat: lat, Lon: lon,
+			Placement: payload.Placement, AccuracyM: payload.LocationAccuracyM,
+		}
+	}
+
+	// ── `tree_withdrawal` — the adder withdraws the tree for everyone (decision 8) ──────────────
+	var withdrawnTreeID *uuid.UUID
+	if item.Kind == "tree_withdrawal" {
+		var payload treeWithdrawalPayload
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if payload.TreeID != item.TreeUUID {
+			return failed(apierr.ValidationFailed,
+				"That item disagrees with itself about which tree it withdraws.")
+		}
+		withdrawnTreeID = &payload.TreeID
+	}
+
+	// ── Species, arm 1 (§3B): read leniently, never refused ─────────────────────────────────────
+	var speciesStatement *store.SpeciesStatement
+	if item.Kind == "species_claim" || item.Kind == "species_correction" {
+		var payload speciesStatementPayload
+		if err := json.Unmarshal(item.Payload, &payload); err == nil &&
+			payload.TreeID == item.TreeUUID && !payload.SpeciesID.IsNil() {
+			speciesStatement = &store.SpeciesStatement{TreeID: payload.TreeID, SpeciesID: payload.SpeciesID}
+		}
+	}
+
+	// ── `species_claim` and `species_correction` must name a species ──────────────────────────
+	//
+	// See `speciesStatementSpeciesID` for why this refusal is safe, why it is here, and why the
+	// key it reads is matched exactly rather than case-folded.
+	if item.Kind == "species_claim" || item.Kind == "species_correction" {
+		speciesID, err := speciesStatementSpeciesID(item.Payload)
+		if err != nil {
+			return failed(apierr.ValidationFailed, "That item's body could not be read.")
+		}
+		if speciesID == nil {
+			return failed(apierr.ValidationFailed, "That item named no species.")
 		}
 	}
 
@@ -785,6 +1004,11 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		WithdrawnMeasurementID: withdrawnMeasurementID,
 		WithdrawnDisputeID:     withdrawnDisputeID,
 		RecordedMeasurementID:  recordedMeasurementID,
+
+		Actor:              who.actor(),
+		LocationCorrection: correction,
+		SpeciesStatement:   speciesStatement,
+		WithdrawnTreeID:    withdrawnTreeID,
 	}, owner)
 
 	switch {
@@ -809,6 +1033,24 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		// fails now rather than spending 48 h on an answer that will not change. See
 		// `store.ErrDisputeNotOwned`.
 		return failed(apierr.Forbidden, "That dispute belongs to a different contributor.")
+	case errors.Is(err, store.ErrTreeNotFound):
+		// §3A: the tree never reached this service (its `add_tree` went red), or it was withdrawn,
+		// taken down or erased, or it is somebody else's tree the caller cannot see — one message
+		// for all of them, so the answer says nothing about which. Non-retryable: nothing the
+		// client re-sends will bring it back.
+		return failed(apierr.NotFound, "That tree is not on the map any more.")
+	case errors.Is(err, store.ErrNotTheAdder):
+		// Decision 5 and §4: only the adder moves the pin or withdraws the tree, and nobody does
+		// once it is anonymized. The client never enqueues this for a tree it does not own, so
+		// reaching it means the two halves disagree about who added the tree.
+		return failed(apierr.Forbidden, "Only the person who added this tree can change it.")
+	case errors.Is(err, store.ErrTooCloseToAnotherTree):
+		return failed(apierr.Conflict, "There is already a tree recorded there.")
+	case errors.Is(err, store.ErrOthersBuiltOnTree):
+		// Decision 8: after somebody else has built on it, only an operator takedown removes it.
+		return failed(apierr.Conflict, "Other people have added to this tree, so it stays on the map.")
+	case errors.Is(err, store.ErrCorrectionIDReused):
+		return failed(apierr.ValidationFailed, "That correction's identifier already belongs to another tree.")
 	case errors.Is(err, store.ErrTombstoned):
 		// The tombstone, answering exactly as the dedupe does. An item accepted after its account
 		// was deleted must not resurrect it, and it must not be an *error* either: a retryable code
@@ -934,7 +1176,9 @@ func (s *Server) addTree(w http.ResponseWriter, r *http.Request, who caller) err
 		return nil
 	}
 
-	candidates, err := s.Store.TreesWithin(r.Context(), request.Lat, request.Lon, store.ProximityDedupeRadiusM)
+	// Scoped to trees the caller can see (§3F): the candidate list used to carry the positions of
+	// other devices' unpublished trees to anybody who asked about a nearby point.
+	candidates, err := s.Store.TreesWithin(r.Context(), request.Lat, request.Lon, store.ProximityDedupeRadiusM, who.owner())
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
@@ -956,7 +1200,7 @@ func (s *Server) addTree(w http.ResponseWriter, r *http.Request, who caller) err
 		SpeciesID:   request.SpeciesID,
 		Placement:   placement,
 		LandContext: request.LandContext,
-	}, who.owner())
+	}, who.owner(), who.actor())
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}

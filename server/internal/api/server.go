@@ -43,6 +43,14 @@ type Server struct {
 	// OperatorToken authorizes the takedown route. Operator surfaces are a web deliverable by
 	// ARCHITECTURE §8, so this service exposes the action and not a console.
 	OperatorToken string
+	// CursorKey seals the community tile's `next_cursor` (AES-256-GCM, tile_cursor.go). main.go
+	// derives it from `SESSION_SIGNING_KEY` with `DeriveCursorKey`; a server without one refuses to
+	// hand out a tile cursor at all rather than hand out a readable one.
+	CursorKey []byte
+	// cursorNonces is where a cursor's GCM nonce comes from: nil is `crypto/rand`, always, in
+	// production. Only the golden-fixture tests set it, so the fixture's sealed cursor is the same
+	// bytes on every run. Unexported, so nothing outside this package can weaken it.
+	cursorNonces io.Reader
 
 	limiter *ratelimit.Limiter
 	// readLimiter is the public read's own bucket, at its own budget.
@@ -90,6 +98,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET "+Prefix+"/me/journal", s.authenticated(s.journal))
 	mux.Handle("GET "+Prefix+"/me/map-membership", s.authenticated(s.mapMembership))
 	mux.Handle("GET "+Prefix+"/trees/{id}", s.authenticated(s.treeProfile))
+	// The community layer (S2, §3C and §3E). A device credential is enough for both: a phone that
+	// has never signed in still draws, and opens, everybody's published trees.
+	mux.Handle("GET "+Prefix+"/community-trees", s.authenticated(s.communityTrees))
+	mux.Handle("GET "+Prefix+"/trees/{id}/history", s.authenticated(s.treeHistory))
 	mux.Handle("GET "+Prefix+"/photos/{id}", s.authenticated(s.photoData))
 
 	// ── The public read ────────────────────────────────────────────────────────────────────────
@@ -102,6 +114,9 @@ func (s *Server) Handler() http.Handler {
 	// R72 ruling 5's non-negotiable half: "Auto-approve without a takedown is the version of this
 	// rule that must not ship."
 	mux.Handle("POST "+Prefix+"/operator/photos/{id}/reject", s.operator(s.rejectPhoto))
+	// The same rule for the community layer this round publishes: a tree somebody else has built on
+	// can no longer be withdrawn by its adder (decision 8), so this is the only way it comes down.
+	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/take-down", s.operator(s.takeDownCommunityTree))
 
 	return withTimeout(s.recoverPanics(mux))
 }
@@ -133,6 +148,22 @@ type caller struct {
 	// `ClaimDevice` do this translation with `WHERE device_uuid = $1`; this field is the same
 	// translation, done once per request on the credential rather than once per item.
 	DeviceUUID *uuid.UUID
+	// SessionDeviceID is, for a signed-in caller, the device its session was bound to at
+	// `POST /auth/oidc` (`sessions.device_id`, `devices.id` vocabulary), nil when the sign-in named
+	// none. It is **not** an owner and authorizes nothing: `owner()` ignores it. It exists for the
+	// audit log of community trees, which records the device a signed-in act came from — the
+	// device the session proved, not the one an item claims (the orchestrator's ruling of
+	// 2026-09-28).
+	SessionDeviceID *uuid.UUID
+}
+
+// actor is who performed an act, for `community_tree_events`: the owner, plus the session's bound
+// device for an account.
+func (c caller) actor() store.Actor {
+	if c.UserID != nil {
+		return store.Actor{UserID: c.UserID, DeviceID: c.SessionDeviceID}
+	}
+	return store.Actor{DeviceID: c.DeviceID}
 }
 
 func (c caller) owner() store.Owner {
@@ -254,14 +285,14 @@ func (s *Server) resolveCaller(r *http.Request) (caller, error) {
 			if sessionErr != nil {
 				return caller{}, errNoSession
 			}
-			live, lookupErr := s.Store.SessionIsLive(r.Context(), sessionID)
+			live, sessionDevice, lookupErr := s.Store.SessionIsLive(r.Context(), sessionID)
 			if lookupErr != nil {
 				return caller{}, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", lookupErr)
 			}
 			if !live {
 				return caller{}, errNoSession
 			}
-			return caller{UserID: &id}, nil
+			return caller{UserID: &id, SessionDeviceID: sessionDevice}, nil
 		case tokens.SubjectDevice:
 			// **No `DeviceUUID`, and that is deliberate rather than an omission.** Nothing mints a
 			// signed device token — `registerDevice` issues an opaque one and this branch is

@@ -13,9 +13,10 @@
 //  values** for whatever is disputed and a free-text **notes** field beside them.
 //
 //  Part 1 builds the record, the two verbs, and the offer the profile payload carries. Deliberately
-//  **not** here, each its own scheduled PR: the dispute sheet itself, the flag badge on the map and
-//  the list, the "trees with data issues" filter, and the missing-tree entry point (a defect the
-//  profile screen cannot host, because there is no record to open).
+//  **not** here, each its own scheduled PR: the dispute screen itself (since built, in
+//  `Features/DataDispute`), the flag badge on the map and the list, the "trees with data issues"
+//  filter, and the missing-tree entry point (a defect the profile screen cannot host, because there
+//  is no record to open).
 //
 //  ── City rows only, this round, and the refusal is not the old one ────────────────────────────
 //
@@ -104,8 +105,8 @@ public enum DataDisputeOffer: Hashable, Sendable {
 /// The rules a raise has to satisfy before anything is written.
 ///
 /// Pure functions over the arguments, kept out of `LocalAPI` so they can be exercised without a
-/// database and so the sheet in a later round can pre-check exactly what the API will enforce
-/// rather than a paraphrase of it.
+/// database and so the dispute screen (`DataDisputeDraft.problem`, part 2) pre-checks exactly what
+/// the API will enforce rather than a paraphrase of it.
 public enum DataDisputeLimits {
 
     /// The radius a suggested position has to be able to resolve, in meters.

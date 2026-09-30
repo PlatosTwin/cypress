@@ -578,6 +578,26 @@ public struct OutboxStore {
         return try statement.fetchAll(Self.decodePhotoRow)
     }
 
+    /// The photographs this phone's **still-queued** withdrawals on one tree name, as each names it
+    /// — the phone's id, which is the begin's key, or the service's row (`PhotoWithdrawal.photoID`).
+    ///
+    /// `RoutedAPI.photoIdentityMatch` hides a service row named here from its contributor, because
+    /// the withdrawal that will take it down has not reached the service yet. Only while it is
+    /// queued (`pending`, or `uploading` mid-drain): once it has been answered — `done`, or
+    /// `failed` because the service refused it — a copy the service still serves is still public,
+    /// and showing it to its contributor is the only sign of that they get (orchestrator ruling on
+    /// #194's review, finding 3).
+    public func queuedPhotoWithdrawals(treeID: UUID, connection: SQLiteConnection) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT json_extract(payload, '$.photoID') AS photo FROM outbox
+             WHERE kind = 'photo_withdrawal'
+               AND state IN ('pending', 'uploading')
+               AND json_extract(payload, '$.treeID') = :tree COLLATE NOCASE
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":tree")
+        return Set(try statement.fetchAll { try $0.uuidIfPresent("photo") }.compactMap { $0 })
+    }
+
     /// Drops the queue rows of binaries whose photograph has been withdrawn.
     ///
     /// **The drain's own half of the F1 repair, and the half that does not depend on which door the
@@ -761,6 +781,49 @@ public struct OutboxStore {
         _ = try statement.bind(id, forName: ":id")
         try statement.run()
         _ = try statement.reset()
+    }
+
+    /// The `app_state` key prefix that marks a photograph whose send the service refused for good.
+    /// The full key is this followed by the local `photos.id`'s upper-case `uuidString`.
+    public static let refusedPhotoKeyPrefix = "photo_send_refused:"
+
+    /// Gives up one binary whose send the service refused in a way that will not change, and
+    /// **records that the service keeps no copy of it**.
+    ///
+    /// The row goes, as `completePhoto` removes it, and for the reason `OutboxQueue`'s phase B3
+    /// gives: holding it would wedge the item. But deleting it alone made the photograph look sent.
+    /// `ContributionStore.sentPhotoIDs` reads "no `outbox_photos` row" as "has left the phone", and
+    /// a photograph whose begin was refused is still only on the phone. That let photo identity's
+    /// inexact link pair it with the same account's other phone's photograph, which hid that one
+    /// and named it in this one's withdrawal (review of #194, finding 1, reached through a refusal
+    /// rather than a retryable failure).
+    ///
+    /// A refusal after the begin (the storage `PUT`, or the receipt) is recorded the same way. The
+    /// service's row for it is never marked received. Nothing on the service collects such a row
+    /// (the 72 h collection `RemoteAPI.uploadPhoto` and migration 001 describe has no code behind
+    /// it; `docs/ROADMAP.md` chip backlog 67), so it stays, listed to strangers. It carries this
+    /// photograph's own key, which photo identity's exact link matches without consulting this
+    /// record.
+    ///
+    /// **Why `app_state` and not a column.** Nothing on `photos` or `outbox_photos` can carry the
+    /// fact without a migration, and the row that could have carried it is the one being deleted.
+    /// `app_state` is the existing key/value table: one key per refused photograph, written in the
+    /// same transaction as the delete, so there is no moment at which the photograph reads as sent.
+    /// The key outlives the send, because a refused binary is never offered again, even after
+    /// retry. `sentPhotoIDs` reads live rows only, so a withdrawn photograph's key is inert. Account
+    /// deletion's erasing door removes the key with its photograph (`AccountDeletion`), because that
+    /// door promises no residue.
+    public func recordRefusedPhoto(_ photo: PhotoRow, code: APIError, connection: SQLiteConnection) throws {
+        if let photoID = photo.photoID {
+            let mark = try connection.cachedStatement("""
+                INSERT INTO app_state (key, value) VALUES (:key, :code)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """)
+            _ = try mark.bind([":key": Self.refusedPhotoKeyPrefix + photoID.uuidString, ":code": code.rawValue])
+            try mark.run()
+            _ = try mark.reset()
+        }
+        try completePhoto(id: photo.id, connection: connection)
     }
 
     /// Records a failed send attempt against one binary.

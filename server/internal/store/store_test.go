@@ -72,7 +72,8 @@ func testStore(t *testing.T) *Store {
 
 	_, err = store.pool.Exec(context.Background(), `
 		TRUNCATE anonymized_contributions, favorites, contributions, community_trees, photos,
-		         device_tokens, sessions, devices, users RESTART IDENTITY CASCADE
+		         withdrawn_community_trees, device_tokens, sessions, devices, users
+		         RESTART IDENTITY CASCADE
 	`)
 	if err != nil {
 		t.Fatalf("truncating: %v", err)
@@ -523,12 +524,12 @@ func TestProximityDedupeTripsWithinTenMetres(t *testing.T) {
 	const lat, lon = 37.7601, -122.5050
 	if _, err := store.AddTree(context.Background(), NewCommunityTree{
 		ID: uuid.New(), Lat: lat, Lon: lon, Placement: "gps",
-	}, DeviceOwner(deviceID)); err != nil {
+	}, DeviceOwner(deviceID), Actor{}); err != nil {
 		t.Fatal(err)
 	}
 
 	fiveMetresNorth := lat + 5.0/111_320.0
-	near, err := store.TreesWithin(context.Background(), fiveMetresNorth, lon, ProximityDedupeRadiusM)
+	near, err := store.TreesWithin(context.Background(), fiveMetresNorth, lon, ProximityDedupeRadiusM, DeviceOwner(deviceID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +543,7 @@ func TestProximityDedupeTripsWithinTenMetres(t *testing.T) {
 	// And 25 m away does not trip it, which is the half that proves the query is measuring
 	// distance rather than returning everything.
 	twentyFiveMetresNorth := lat + 25.0/111_320.0
-	far, err := store.TreesWithin(context.Background(), twentyFiveMetresNorth, lon, ProximityDedupeRadiusM)
+	far, err := store.TreesWithin(context.Background(), twentyFiveMetresNorth, lon, ProximityDedupeRadiusM, DeviceOwner(deviceID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +563,7 @@ func TestRefreshTokenRotatesAndTheOldOneIsSpent(t *testing.T) {
 	third := []byte("hash-three-----------------------")
 	expiry := time.Now().UTC().Add(time.Hour)
 
-	if _, err := store.CreateSession(context.Background(), user.ID, first, expiry); err != nil {
+	if _, err := store.CreateSession(context.Background(), user.ID, nil, first, expiry); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := store.RotateSession(context.Background(), first, second, expiry); err != nil {

@@ -1,13 +1,16 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/apierr"
+	"github.com/PlatosTwin/cypress/server/internal/store"
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
 )
 
@@ -178,15 +181,42 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 	if err != nil {
 		return err
 	}
-	community, storeErr := s.Store.TreeCommunityHalf(r.Context(), id)
+	community, storeErr := s.Store.TreeCommunityHalf(r.Context(), id, who.owner())
 	if storeErr != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", storeErr)
 	}
 
-	photos := make([]map[string]any, 0, len(community.Photos))
-	ownPhotoIDs := make([]uuid.UUID, 0)
-	deletablePhotoIDs := make([]uuid.UUID, 0)
+	writeJSON(w, s.Log, http.StatusOK, treeProfileBody(id, community, who))
+	return nil
+}
 
+// treeProfileBody is `GET /trees/{id}`'s answer, built apart from the handler so that the golden
+// fixture (`server/testdata/tree_profile.json`) is written by this function and not by a test's
+// transcription of it — the two cross-half breaks this contract has already had were each invisible
+// to a test that restated the shape.
+//
+// ── `client_uuid`, and who is told it ──────────────────────────────────────────────────────────
+//
+// A photograph its contributor took has three ids: the phone's own `photos.id`, the begin's
+// `client_uuid`, and the `photo_id` this service mints. The phone never keeps the third, so a
+// profile that answered its contributor with `photo_id` alone was answering in an id the phone could
+// not match — and the phone, merging this half with its own, drew the one photograph twice (report
+// F30). The key is the link: the phone's `photos.id` is the key it sends (`LocalAPI.beginPhotoUpload`
+// mints the local row under it), so the contributor can recognise its own row. A phone that sent a
+// photograph before that change holds a different local id and matches it another way — see
+// `RoutedAPI.refreshedTreeProfile`.
+//
+// It is sent **only on the caller's own rows** — the `own` predicate the two id sets below already
+// use — and on everybody else's the key is **absent**, not null. A stranger's `client_uuid` is a
+// second identifier for somebody else's contribution, and nothing a stranger's phone could do with
+// it is legitimate. `null` on an own row means the begin carried no key.
+func treeProfileBody(id uuid.UUID, community store.TreeCommunity, who caller) map[string]any {
+	type shown struct {
+		photo store.PhotoRecord
+		own   bool
+		at    Timestamp
+	}
+	visible := make([]shown, 0, len(community.Photos))
 	for _, photo := range community.Photos {
 		own := ownsPhoto(photo, who)
 		// The single predicate, server side: publicly visible to anyone, or visible to its own
@@ -194,29 +224,73 @@ func (s *Server) treeProfile(w http.ResponseWriter, r *http.Request, who caller)
 		if !photo.IsPubliclyVisible() && !(own && photo.IsVisibleToItsContributor()) {
 			continue
 		}
-		photos = append(photos, map[string]any{
-			"photo_id":    photo.ID,
-			"shot_type":   photo.ShotType,
-			"captured_at": stamp(photo.CapturedAt),
+		visible = append(visible, shown{photo: photo, own: own, at: servedCapturedAt(photo, own)})
+	}
+	// **Listed by what this caller is served, not by the stored time** (the #190 verification's N1).
+	// The store reads the photographs in `captured_at` order, and `captured_at` is a value any caller
+	// chooses for their own photographs at begin. Listed in that order, a stranger who is served only
+	// a date could place their own photographs at chosen times and read, from which side of each one
+	// another person's photograph fell, the time the served value hides — to the minute in eleven
+	// begins. Sorted by the served value, then the id, the order says nothing the values do not.
+	sort.SliceStable(visible, func(i, j int) bool {
+		a, b := time.Time(visible[i].at), time.Time(visible[j].at)
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return bytes.Compare(visible[i].photo.ID[:], visible[j].photo.ID[:]) > 0
+	})
+
+	photos := make([]map[string]any, 0, len(visible))
+	ownPhotoIDs := make([]uuid.UUID, 0)
+	deletablePhotoIDs := make([]uuid.UUID, 0)
+	for _, row := range visible {
+		body := servedPhotoFields(row.photo, row.at, map[string]any{
+			"photo_id":  row.photo.ID,
+			"shot_type": row.photo.ShotType,
 			// Sent so the client can tell "everyone sees this" from "only you do" without
 			// re-deriving it — which is what makes screen 15's promise legible on screen.
-			"is_publicly_visible": photo.IsPubliclyVisible(),
+			"is_publicly_visible": row.photo.IsPubliclyVisible(),
 		})
-		if own {
-			ownPhotoIDs = append(ownPhotoIDs, photo.ID)
+		if row.own {
+			body["client_uuid"] = row.photo.ClientUUID
+			ownPhotoIDs = append(ownPhotoIDs, row.photo.ID)
 			// `deletePhoto` must be reachable wherever a photograph is shown (R72 ruling 5), so the
 			// set that drives that affordance ships with the photographs rather than after them.
-			deletablePhotoIDs = append(deletablePhotoIDs, photo.ID)
+			deletablePhotoIDs = append(deletablePhotoIDs, row.photo.ID)
 		}
+		photos = append(photos, body)
 	}
 
-	writeJSON(w, s.Log, http.StatusOK, map[string]any{
+	// ── S2's three additions (§3D), additive: every key above is unchanged ─────────────────────
+	//
+	// `community_tree` is the tree itself when the id names a community tree this caller may see —
+	// published, or added by the caller, and not withdrawn, taken down or erased — and null
+	// otherwise. It is the only way a phone can open the profile of a tree somebody else added: the
+	// tree is in no city pack and in none of this phone's own tables (§0). A community tree hidden
+	// from this caller produced a zero `community` above, so everything in this body is byte-for-byte
+	// what an id this service has never heard of produces.
+	//
+	// `added_by_you` is §4's rule, answered by the service because the phone cannot always answer it
+	// (a tree added on the same account's other phone). `is_published` is whether anybody but the
+	// adder can see it — false for the adder's own tree under a declined license, or added signed out
+	// and not yet claimed.
+	var tree *wireTree
+	addedByYou, isPublished := false, false
+	if community.Tree != nil {
+		served := communityWireTree(*community.Tree, community.Tree.AddedByViewer)
+		tree = &served
+		addedByYou, isPublished = community.Tree.AddedByViewer, community.Tree.Published
+	}
+
+	return map[string]any{
 		"tree_uuid":           id,
 		"photos":              photos,
 		"photo_count":         len(photos),
 		"visit_count":         community.VisitCount,
 		"own_photo_ids":       ownPhotoIDs,
 		"deletable_photo_ids": deletablePhotoIDs,
-	})
-	return nil
+		"community_tree":      tree,
+		"added_by_you":        addedByYou,
+		"is_published":        isPublished,
+	}
 }

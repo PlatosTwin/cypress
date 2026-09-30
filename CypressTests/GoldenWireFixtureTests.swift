@@ -161,4 +161,59 @@ struct GoldenWireFixtureTests {
         #expect(conflict.candidates.count == 1)
         #expect(conflict.candidates[0].id == conflict.candidates[0].tree.id)
     }
+
+    // MARK: tree_profile.json
+
+    /// `GET /trees/{id}`, decoded by **the client's own read** — `RemoteAPI.treeCommunityHalf`, over
+    /// a transport that answers with this file's bytes — rather than by a model this test chose.
+    ///
+    /// The file is written by `treeProfileBody` in `reads.go`, the function the handler itself calls
+    /// (`TestTreeProfileGolden`), so the bytes here are what the service emits. Report F30's link
+    /// between the halves is `client_uuid`, and it is the field a break would lose silently: it is
+    /// optional on the client, so a renamed key decodes as nil **without throwing**, and the
+    /// contributor's profile goes back to drawing every photograph they sent twice. So the key is
+    /// asserted by value, on the row that carries it and on the rows that must not.
+    @Test("tree_profile.json decodes through RemoteAPI, and the key reaches only the owner's rows")
+    func treeProfileJSONDecodesThroughTheClient() async throws {
+        let data = try Self.fixture("tree_profile.json")
+        #expect(data.count > 0, "server/testdata/tree_profile.json is empty")
+
+        let tree = try #require(UUID(uuidString: "5a1e7c0d-0000-4000-8000-00000000f030"))
+        let transport = ScriptedTransport()
+        transport.answer("GET /trees/\(tree.uuidString)", with: String(decoding: data, as: UTF8.self))
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared
+        )
+
+        let half = try await remote.treeCommunityHalf(id: tree)
+
+        let ownApproved = try #require(UUID(uuidString: "11111111-0000-4000-8000-0000000000a1"))
+        let ownPending = try #require(UUID(uuidString: "22222222-0000-4000-8000-0000000000b2"))
+        let strangers = try #require(UUID(uuidString: "33333333-0000-4000-8000-0000000000c3"))
+
+        #expect(half.treeID == tree)
+        #expect(Set(half.photos.map(\.id)) == [ownApproved, ownPending, strangers])
+        #expect(half.ownPhotoIDs == [ownApproved, ownPending])
+
+        // The link, by value, on the one row that carries it.
+        #expect(
+            half.clientUUIDs[ownApproved] == UUID(uuidString: "11111111-0000-4000-8000-00000000c1e1"),
+            "the contributor's own row lost its client_uuid in the decode: \(half.clientUUIDs)"
+        )
+        // `null` on an own row from a keyless begin, and absent on a stranger's: both decode to no
+        // entry, and the stranger's is the one that must never gain one.
+        #expect(half.clientUUIDs[ownPending] == nil)
+        #expect(half.clientUUIDs[strangers] == nil)
+        #expect(half.clientUUIDs.count == 1)
+
+        // The rest of the row, so a decode that dropped the photographs cannot pass on the key alone.
+        let approved = try #require(half.photos.first { $0.id == ownApproved })
+        #expect(approved.shotType == .fullTree)
+        #expect(approved.isPubliclyVisible)
+        let pending = try #require(half.photos.first { $0.id == ownPending })
+        #expect(pending.shotType == .leaf)
+        #expect(!pending.isPubliclyVisible)
+    }
 }

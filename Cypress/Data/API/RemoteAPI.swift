@@ -776,6 +776,12 @@ public extension RemoteAPI {
         public let photos: [Photo]
         public let ownPhotoIDs: Set<UUID>
         public let deletablePhotoIDs: Set<UUID>
+        /// The begin's key for each of the caller's own photographs, by the service's `photo_id`.
+        ///
+        /// A dictionary beside `photos` rather than a field on `Photo`, because it is a fact about
+        /// the wire and not about a photograph: the phone's own rows have no such value (their id
+        /// *is* the key), and a stranger's rows never carry one.
+        public let clientUUIDs: [UUID: UUID]
     }
 
     /// `GET /me/grove`.
@@ -832,7 +838,11 @@ public extension RemoteAPI {
                 )
             },
             ownPhotoIDs: Set(response.ownPhotoIDs),
-            deletablePhotoIDs: Set(response.deletablePhotoIDs)
+            deletablePhotoIDs: Set(response.deletablePhotoIDs),
+            clientUUIDs: Dictionary(
+                response.photos.compactMap { row in row.clientUUID.map { (row.photoID, $0) } },
+                uniquingKeysWith: { first, _ in first }
+            )
         )
     }
 

@@ -34,6 +34,33 @@ type beginPhotoRequest struct {
 	// idempotency, and behaves exactly as it did. A begin with no key is not an error, it is the old
 	// contract.
 	ClientUUID *uuid.UUID `json:"client_uuid"`
+	// CapturedOn is the photograph's **local** capture date, `YYYY-MM-DD` (decision 14a): what
+	// other people are shown instead of `captured_at`'s time (decision 14). Optional — a build that
+	// predates it sends nothing and keeps today's behaviour. The wire name is pinned by
+	// `server/testdata/photos_begin.json`.
+	CapturedOn *string `json:"captured_on"`
+}
+
+// capturedOnLayout is `captured_on`'s one accepted spelling.
+const capturedOnLayout = "2006-01-02"
+
+// validCapturedOn is decision 14a's check: a real calendar date in exactly `YYYY-MM-DD`, at most
+// one day from the UTC date of `capturedAt`. A phone's local date can differ from the UTC date of
+// the same instant by one day either way and never more, so a date further off is not this
+// photograph's day, and storing it would show strangers a date the photograph was not taken on.
+func validCapturedOn(capturedOn string, capturedAt time.Time) bool {
+	// `time.Parse` with this layout is already exact: it wants four-digit years and two-digit months
+	// and days, refuses anything around them, and refuses a day the month does not have (the
+	// validation test's "2026-9-29", " 2026-09-29" and "2026-09-31"). A round-trip comparison here
+	// was tried and red-proofed as dead code.
+	day, err := time.Parse(capturedOnLayout, capturedOn)
+	if err != nil {
+		return false
+	}
+	utc := capturedAt.UTC()
+	utcDay := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+	gap := day.Sub(utcDay)
+	return gap >= -24*time.Hour && gap <= 24*time.Hour
 }
 
 // beginPhotoResponse is `PhotoUploadTicket`: `{photo_id, presigned_put_url}` (BUILD-PLAN §6).
@@ -67,6 +94,10 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 	if request.CapturedAt.IsZero() {
 		return apierr.New(apierr.ValidationFailed, "That photo had no capture time.")
 	}
+	if request.CapturedOn != nil && !validCapturedOn(*request.CapturedOn, request.CapturedAt) {
+		return apierr.New(apierr.ValidationFailed,
+			"That photo's capture date is not a date within a day of its capture time.")
+	}
 
 	photoID := uuid.New()
 	// The key is the id, so nothing about a contributor, a tree's real position or a filename from
@@ -91,6 +122,7 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 		PublicLon:       request.PublicLon,
 		StorageKey:      storageKey,
 		ClientUUID:      request.ClientUUID,
+		CapturedOn:      request.CapturedOn,
 	}, who.owner())
 	if errors.Is(err, store.ErrPhotoWithdrawn) {
 		// Non-retryable, so a client still holding this upload stops asking rather than spending
@@ -110,9 +142,11 @@ func (s *Server) beginPhoto(w http.ResponseWriter, r *http.Request, who caller) 
 	}
 
 	// **The row's verdict, not a recomputation from the caller.** Synthesizing it here was right for
-	// an insert and wrong for a replay: `ClaimDevice` re-homes a device's photographs onto an account
-	// without touching `moderation_state`, so device-begin → sign-in-with-claim → replay answered
-	// `approved` about a row still holding `pending`.
+	// an insert and wrong for a replay whenever the row and the caller disagree. #116 r3's case: at
+	// the time `ClaimDevice` re-homed a device's photographs onto an account without touching
+	// `moderation_state`, so device-begin → sign-in-with-claim → replay answered `approved` about a
+	// row still holding `pending`. The claim now approves what it adopts, so that case agrees; the
+	// row is still the only authority on which rule published it.
 	//
 	// The client does not read these — see the two fields' own comment above — so the cost is to the
 	// purpose they exist for: the upload's log would name the rule that applied to the *caller*
@@ -191,6 +225,19 @@ func (s *Server) photoData(w http.ResponseWriter, r *http.Request, who caller) e
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
+	// A photograph of a community tree hidden from this caller is not here, whoever took it and
+	// whatever its moderation state (S2). Without this, the photo ids a stranger read off a tree's
+	// profile before its adder withdrew it, or before an operator took it down, went on fetching the
+	// photographs by id — the takedown would have removed the tree and left its pictures standing.
+	// `not_found` for this route's own reason: a refusal would confirm the row exists.
+	hidden, err := s.Store.TreeIsHiddenFrom(r.Context(), photo.TreeUUID, who.owner())
+	if err != nil {
+		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+	}
+	if hidden {
+		return apierr.New(apierr.NotFound, "That photo is not here.")
+	}
+
 	own := ownsPhoto(photo, who)
 	switch {
 	case photo.IsPubliclyVisible():
@@ -208,13 +255,12 @@ func (s *Server) photoData(w http.ResponseWriter, r *http.Request, who caller) e
 	if err != nil {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
-	writeJSON(w, s.Log, http.StatusOK, map[string]any{
-		"photo_id":    photo.ID,
-		"url":         source,
-		"expires_in":  int(presignLifetime.Seconds()),
-		"shot_type":   photo.ShotType,
-		"captured_at": stamp(photo.CapturedAt),
-	})
+	writeJSON(w, s.Log, http.StatusOK, servedPhotoFields(photo, servedCapturedAt(photo, own), map[string]any{
+		"photo_id":   photo.ID,
+		"url":        source,
+		"expires_in": int(presignLifetime.Seconds()),
+		"shot_type":  photo.ShotType,
+	}))
 	return nil
 }
 
@@ -263,6 +309,54 @@ func (s *Server) rejectPhoto(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, s.Log, http.StatusOK, map[string]any{"moderation_state": "rejected"})
 	return nil
+}
+
+// servedCapturedAt is a photograph's `captured_at` as one caller may see it (the owner's decision
+// 14, served as decision 14a rules).
+//
+// **The owner gets the exact time.** Everybody else gets the **date** the phone recorded
+// (`captured_on`), sent as **noon UTC** of that date, and never the time. Noon rather than midnight,
+// and not a date-only field, because of what the shipped client does with the value: it decodes an
+// instant (`.iso8601`) and formats it **date-only in the reader's own zone** on every surface that
+// shows a photograph's date. Noon UTC is the same calendar date for every reader from UTC−11 to
+// UTC+11; midnight UTC is the day before anywhere in the Americas; and a date-only string would fail
+// the shipped decoder outright. Measured through that decoder and those formatters in the pending
+// errata file's decision-14a table.
+//
+// A photograph with no `captured_on` (from a build that did not send it) keeps the exact time: the
+// service does not know the local day, and every server-only guess showed a wrong day for some
+// photographs (the decision-14 erratum). Decision 14a keeps today's behavior for them.
+func servedCapturedAt(photo store.PhotoRecord, own bool) Timestamp {
+	if own || photo.CapturedOn == nil {
+		return stamp(photo.CapturedAt)
+	}
+	day := photo.CapturedOn.UTC()
+	return stamp(time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, time.UTC))
+}
+
+// servedPhotoFields adds a photograph's two date keys to a response body: `captured_at` as this
+// caller is served it (`servedCapturedAt`), and `captured_on`, the phone's own local date, whenever
+// the phone sent one (the orchestrator's ruling on the #190 verification's N2).
+//
+// **Why `captured_on` travels as well.** `captured_at` has two forms for a non-owner, the exact
+// time (a photograph from a build that sent no date) and noon UTC of the phone's date, and a client
+// cannot tell them apart. Formatted in the reader's zone (the shipped client), noon UTC is the
+// phone's day from UTC−11 to UTC+11; formatted in UTC, it is the phone's day everywhere, but an exact
+// time is then the UTC day, a day off for an evening in the Americas. A date-only field says which
+// form this is: a client that knows it renders `captured_on` as a calendar date, and falls back to
+// `captured_at` in the reader's zone when it is absent. The shipped client ignores a key it does not
+// name, so the addition changes nothing for it.
+//
+// **Served to everybody, the owner included, and omitted — never null — when there is none.** For
+// the owner it adds nothing they lack: it is the date their own phone recorded and sent. One rule
+// for every caller is one less branch for the client to get wrong, and "absent" has one meaning:
+// the phone did not send it.
+func servedPhotoFields(photo store.PhotoRecord, at Timestamp, body map[string]any) map[string]any {
+	body["captured_at"] = at
+	if photo.CapturedOn != nil {
+		body["captured_on"] = photo.CapturedOn.UTC().Format(time.DateOnly)
+	}
+	return body
 }
 
 func ownsPhoto(photo store.PhotoRecord, who caller) bool {

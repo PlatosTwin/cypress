@@ -34,12 +34,16 @@ import (
 // below is the ruling written as a test, and it is what a later round has to go red against before it
 // can quietly start moving city data from here.
 //
-// What no test in this file asserts is that the **reads** are unchanged, and that is a limit worth
-// stating where somebody will look for it. A dispute enrols its tree in `GET /me/grove` and in
-// `GET /me/map-membership?kind=yours`, and `GET /me/journal` serves a dispute back and goes on
-// serving it after the withdrawal applies. All three are inherited — no reader here filters on kind
-// — and all three belong to `docs/ROADMAP.md`'s chip "Answer what a withdrawn-to-empty tree should
-// look like", not to this round. See the `data_dispute` paragraph beside `syncKinds`.
+// **This file used to say the reads were untested and inherited an enrollment defect; both are now
+// wrong, on purpose.** Until 2026-09-28 a dispute enrolled its tree in `GET /me/grove` and in
+// `GET /me/map-membership?kind=yours`, the same "no reader filters on kind" root cause as
+// `docs/ROADMAP.md`'s chip "Answer what a withdrawn-to-empty tree should look like". Owner ruling
+// that day: a report is not meeting the tree, and the report screen's own copy promises "Nothing on
+// the map changes." `store.TreeMembershipKinds` now excludes `data_dispute` and
+// `data_dispute_withdrawal`, and `dispute_enrollment_test.go` in this package is what asserts it —
+// alone and combined with a visit, and across a withdrawal. See the `data_dispute` paragraph beside
+// `syncKinds` for the fix and for what is still open: `GET /me/journal` is unaffected by design —
+// it is a personal history, and still serves a dispute back after its own withdrawal applies.
 
 // disputePayload builds `DataDispute`'s body. Written as a struct and marshalled, rather than as a
 // string, only because the suggestions map has to be a real JSON object in every case.
@@ -340,14 +344,20 @@ func TestADisputeIsDedupedOnItsOwnKey(t *testing.T) {
 // `TestADisputeMaterializesNothing`, which reads as "nothing this service serves changes" and is
 // broader than anything it measures: it lists `pg_tables`, counts `pg_tables` a second time to
 // calibrate that listing, and takes five row counts — four tables that must be empty and
-// `contributions`, which must hold two — and never issues a single read. Two reads *do* change — a
-// dispute puts the tree into `GET /me/grove` with an all-zero tally and into
-// `GET /me/map-membership?kind=yours`, because `Grove`'s `mine` CTE and
-// `MapMembership` filter only `kind <> 'private_reminder'`. That is inherited rather than introduced
-// here (a `species_claim` does the same), it is the same root cause as the journal serving a
-// withdrawn dispute, and it belongs to `docs/ROADMAP.md`'s chip "Answer what a withdrawn-to-empty
-// tree should look like". A test that asserts more than it measures is this repo's most expensive
-// defect shape, so the name says tables, because tables are what it reads.
+// `contributions`, which must hold two — and never issues a single read. Two reads *did* change,
+// until 2026-09-28 — a dispute put the tree into `GET /me/grove` with an all-zero tally and into
+// `GET /me/map-membership?kind=yours`, because `Grove`'s `mine` CTE and `MapMembership` filtered
+// only `kind <> 'private_reminder'`. A test that asserts more than it measures is this repo's most
+// expensive defect shape, so the name said tables, because tables were what it read.
+//
+// **That enrollment is now fixed, and this test still does not measure it.** Owner ruling the same
+// day: a report is not meeting the tree, and `store.TreeMembershipKinds` (`internal/store/reads.go`)
+// now excludes `data_dispute` and `data_dispute_withdrawal` from both reads — see
+// `dispute_enrollment_test.go` for the assertions this file still leaves out. A `species_claim`
+// still enrolls, deliberately: naming a species on a tree you claimed is real contact with that
+// tree, which a report about the city's own record is not. `GET /me/journal` is untouched by the
+// fix and still serves a withdrawn dispute back, which belongs to `docs/ROADMAP.md`'s chip "Answer
+// what a withdrawn-to-empty tree should look like" the same as it did before.
 func TestADisputeWritesNoTableAndNoRowOutsideContributions(t *testing.T) {
 	h := newHarness(t)
 	session := h.signIn(t, nil)

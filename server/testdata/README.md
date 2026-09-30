@@ -25,6 +25,14 @@ these files, read off disk, so the two halves cannot drift.
 |---|---|---|
 | `proximity_conflict.json` | the whole error body; `detail.candidates` is `[NearbyTree]` | the shape `ProximityConflict` is built from |
 | `grove.json` | `entries[].record` is `GroveRecord` | the rest of the object is server-owned and snake_case |
+| `community_trees_tile.json` | `trees` is `[Tree]` | `GET /community-trees`, a first fetch (no cursor). The envelope (`tile`, `withdrawn_tree_ids`, `next_cursor`, `has_more`) is server-owned and snake_case. Tree `5b0c3f1e-…-1f2a3b4c5d01` has a species: assert its `speciesCurrentID` is **non-nil**, because a key drift decodes it as a silent nil. Find it by id, not by position: the order is `(updated_at, id)` and two trees here share a day. `address` is null for everyone on this route. `createdAt` and `updatedAt` are midnight UTC, because community-tree dates travel at day precision. |
+| `community_trees_tile_delta.json` | `trees` is `[Tree]`; `withdrawn_tree_ids` is `[UUID]` | the same route, from the first fetch's cursor: one tree moved and renamed, one new, one withdrawn, one erased (a tombstone). Both lists are non-empty. A tree in `trees` can lie outside the tile (a pin moved out of it), so the cache keys on `id`. `next_cursor` is opaque, sealed, and always present: store it as a string and send it back unchanged, never parse it. |
+| `tree_profile_community.json` | `community_tree` is `Tree?` | `GET /trees/{id}` for a published community tree, asked by a stranger. The six keys that existed before, plus `community_tree`, `added_by_you` and `is_published`. Assert `community_tree.speciesCurrentID` non-nil, and that `added_by_you` is false and `is_published` true. |
+| `tree_history.json` | server-owned, snake_case; `from_coordinate` / `to_coordinate` are `Coordinate?` | `GET /trees/{id}/history`, newest first, dates truncated to the day, no actor field. `kind` and `placement` must decode tolerantly (an unknown case), because the vocabulary is an allow-list that can widen. The oldest event is `added`, at the position the tree went live at: the tree was moved while private, and neither that move nor its first position is served (decision 13). |
+| `tree_profile_city.json` | `community_tree` is `Tree?` | `GET /trees/{id}` for a **city** tree with community data (photos, visits). `community_tree` is **null** and `added_by_you` / `is_published` are false. This is the ordinary case for most ids, not an error. |
+| `tree_profile_unknown.json` | same | `GET /trees/{id}` for an id nobody has ever sent: the empty answer, `community_tree` null. |
+| `tree_profile_hidden.json` | same | `GET /trees/{id}` for a community tree hidden from the caller (somebody else's unpublished tree, withdrawn, taken down or erased). **Byte-for-byte `tree_profile_unknown.json` with the id replaced**; the Go test asserts it, so the answer is not an oracle. |
+| `tree_profile.json` | `TreeCommunityHalfResponse`, through `RemoteAPI.treeCommunityHalf` (`GoldenWireFixtureTests`) | `GET /trees/{id}` asked by a signed-in contributor, written by `treeProfileBody` itself. `client_uuid` is on the caller's **own** rows only (a key on the approved one, `null` on the keyless pending one) and **absent** on the stranger's. Both approved rows carry `captured_on`: the owner's is served its exact `captured_at`, the stranger's noon UTC of that date. Assert the key by value, and that the stranger's row has none. |
 
 ## The two public-read fixtures decode into **nothing Swift**, and that is the point
 
@@ -65,3 +73,78 @@ match `speciesCurrentID`, and because that property is optional the mismatch dec
 
 Timestamps are RFC3339 at second precision in UTC, because `JSONDecoder`'s `.iso8601` uses
 `.withInternetDateTime` and rejects fractional seconds.
+
+## Request fixtures: the direction reversed
+
+Two files are **requests** the client sends, not responses it decodes. The Go test posts each file's
+bytes unchanged to the real handler. The client's half must **encode through production code** and
+compare against the file.
+
+| File | The client encodes | Go test |
+|---|---|---|
+| `sync_location_correction.json` | a `location_correction` outbox item (`SyncItemBody` wrapping `TreeLocationCorrection`) | `TestTheLocationCorrectionFixtureMovesThePin` |
+| `photos_begin.json` | the `POST /photos/begin` body, including decision 14a's `captured_on` | `TestThePhotosBeginFixtureStoresItsLocalCaptureDate` |
+
+`photos_begin.json` is deliberately the east-of-UTC case. `captured_at` is 23:30 UTC on the 28th, and
+`captured_on` is the phone's local date, the 29th. A client that sent the UTC date would still pass a
+shape check, so C1's test must also compare the value.
+
+## The community-tree reads: what the client must not infer
+
+These are contract, not incidental behavior. C1 and C2 build on them.
+
+- **`community_tree: null` does not mean deleted.** It means "not a community tree this caller may
+  see": a city tree, an unknown id, **or** a hidden one. The adder's own tree answers null to
+  everybody else until it is published, including when the adder declined the open license (the
+  claim then leaves it unpublished). And one phone can get both answers for one tree: after a
+  device signs in and its trees are claimed by an account that declined, the account's credential
+  sees the tree (`added_by_you: true`) while the device's own credential gets the unknown-id body.
+  **Never evict a local row on a null.** A cached community tree
+  leaves the cache only through `withdrawn_tree_ids`.
+- **`withdrawn_tree_ids` can name ids from anywhere in the world.** Erase-door tombstones carry no
+  position, so every tile's delta reports every once-public tombstone after its cursor. Drop each id
+  from the **whole** cache, whichever tile it came through, and ignore the ones you never held; do not treat an unknown id as an error or as belonging to this tile.
+- **A tree in `trees` can lie outside the tile** it came from (a pin moved out of it after going
+  live). Key the cache on `id`.
+- **A first fetch (no cursor) can report removals** from the last 25 seconds: a tree withdrawn while
+  the snapshot was being paged, or just before it began. Apply them like any other.
+- **The tile's `validation_failed` means the cursor is no longer good** (a server key rotated, a
+  corrupted store, a cursor from another tile). Drop the stored cursor **and** the trees fetched
+  through it, fall back to what is local, and take a fresh snapshot. It is not a reason to retry the
+  same cursor.
+- **The history's 404 means "no history"**, not an error to surface: a city tree, an unknown id, and
+  a hidden tree all answer it alike. The adder's own unpublished tree answers 200 with no events: its
+  private life is on the phone, not the server.
+- **`createdAt` is the day the tree went live**, for everyone but its adder (the tile always; the
+  profile unless `added_by_you`). The adder's own profile carries the day they really added it.
+  In `community_trees_tile.json`, tree `…5d01` was added on 2026-09-20 and went live on 2026-09-21,
+  so its `createdAt` is `2026-09-21T00:00:00Z`.
+- **Every community-tree date is a calendar day, sent as midnight UTC** (`createdAt`,
+  `updatedAt`, the history's `occurred_at`). **Format them with a UTC calendar**, as screen 03's
+  inventory date does. Formatted in the reader's zone, midnight UTC is the previous day everywhere
+  in the Americas. The day is the UTC day of the event.
+- **A photograph's `captured_at` depends on who asks (decisions 14 and 14a).** It is still an
+  instant on the wire, so keep decoding it with `.iso8601`.
+  - **The photograph's owner** (its id is in `own_photo_ids`) gets the exact time.
+  - **Everybody else**, when the phone sent `captured_on`, gets **noon UTC of that local date**,
+    never the time. `tree_profile_community.json` pins it: a photograph taken at 19:30 on the 22nd in
+    San Francisco (`02:30Z` on the 23rd) is served as `2026-09-22T12:00:00Z`.
+  - **A photograph from a build that sent no `captured_on`** keeps the exact time for everyone.
+    `tree_profile_city.json` pins that form (`2026-09-23T10:00:00Z`).
+  - **`captured_on`** (`YYYY-MM-DD`) travels beside `captured_at` whenever the phone sent it, to
+    **everybody**, the owner included, on `photos[]` and on `GET /photos/{id}`. It is **absent**,
+    never null, when the phone sent none. `tree_profile_community.json` carries
+    `"captured_on": "2026-09-22"`, and `tree_profile_city.json` pins the absence.
+  - **How C2 renders a photograph's date:** show `captured_on` as a calendar date when it is present,
+    with no time zone involved. When it is absent, format `captured_at` in the reader's zone, as the
+    shipped client does. Do **not** format `captured_at` with a UTC calendar: a photograph without
+    `captured_on` is served its exact time, and its UTC date is a day off for an evening in the
+    Americas or a morning in Asia (the #190 verification's N2).
+  - **The shipped client** ignores `captured_on` and formats `captured_at` in the reader's zone. That
+    shows the phone's day from UTC−11 to UTC+11, and the next day at UTC+12 and beyond.
+  - **Order.** `photos[]` is listed newest first **by the value this caller is served**, then by
+    `photo_id` descending, so the order says nothing the served dates do not (N1). A client that
+    re-sorts by `captured_at` gets the same order.
+- **History starts at going live** (decision 13). The oldest event is `added`, at the position and on
+  the day the tree was published. A move made while the tree was private is never served, in the
+  history or in any tile.
