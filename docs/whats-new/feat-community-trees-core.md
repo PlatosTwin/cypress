@@ -1,0 +1,1 @@
+internal: the phone learns a community tree's adder, its pin as a chain of positions, and a cache for other people's trees (migration 23), plus the pin-move verb and its queue kind; nothing is drawn yet, so no tester-visible change until the sync-down and UI rounds land.

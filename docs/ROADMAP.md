@@ -683,7 +683,8 @@ a service that refuses it. That deploy happened on 2026-09-29: `cypress-sync` bo
 (#190 merged) at server schema 7. Still check its release before C1 merges, because a later revert
 or redeploy would change that (chip 12: merging server work changes nothing in production).
 
-- **C1 — the core (`feat/community-trees-core`). Open, and next.** The one client migration author
+- **C1 — the core (`feat/community-trees-core`). Built; in review once its PR opens.** Migration v23
+  is C1's. The one client migration author
   of the round: the writable database's next migration (the design proposal names v23; read
   `AppSchema.migrations`, not this line). It carries the new stores and the merge helper; a
   location-correction verb with its outbox kind and `accountDeletionTreatment`; `addTree` writing
@@ -695,7 +696,10 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   it, so their photographs keep today's behavior). It **neutralizes `RemoteAPI.addTree`**, which
   would key the tree on `client_uuid`. And it **rewrites the comments R45 made false** — "no
   author" and "nothing syncs anyone else's rows down" — re-verifying them rather than trusting this
-  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it.
+  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it. **Left for the
+  rounds after it, and stated rather than implied:** the `tree_withdrawal` verb (the queue's CHECK
+  already admits the kind), a location-correction offer on the profile (C3), and the cache's
+  fetching (C2; the store and its schema are in C1, unwired).
 - **C2 — sync down (`feat/community-trees-sync-down`). Open; no migration; merges after C1.**
   `RemoteAPI` decoders and tile-delta accessors; `GoldenWireFixtureTests` over the new wire files;
   the `RoutedAPI` merge (history, `added_by_you`, adopting the adder from the service); the
@@ -1697,7 +1701,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     (leaving anonymizes, erasing deletes), and decide the tombstone question, since these rows have
     no `client_uuid`. **Fold it into community trees C1**, which touches the table anyway. (From the
     community-trees design and #186.)
-71. **`ContributionStore.claimDevice` is another hand-kept table list.** It adopts `visits`,
+71. **`ContributionStore.claimDevice` is another hand-kept table list.** *(Community-trees C1 added
+    `community_trees`, `tree_locations` and `species_assertions` to the adoption, which closes this
+    item's `species_assertions` half; the guard it asks for is still open.)* It adopts `visits`,
     `observations`, `measurements`, `care_events`, reminders, photographs, favorites, and photo
     votes, and nothing else. `species_assertions` carries a `device_id`, so a species claim made
     before sign-in is never adopted into the account, and nothing guards the list. (`tree_data_disputes`
@@ -1763,7 +1769,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     #198 (`fix/dispute-fix-clock`): (a) tested, (b) fixed and tested, (c) ruled by the owner
     2026-09-29 ("Start at the grant") and built; the ruling is pending a number. #198's reviews
     left the phone checks in item 82.
-79. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+79. ~~**Neither account-deletion door reaches `species_assertions`.**~~ **FIXED in community-trees C1**
+    (the leaving door anonymizes, the erasing door deletes and splices each chain shut, and
+    `claimDevice` now adopts the table, which also closes chip 71's `species_assertions` half). The
+    original entry follows as the record. OPEN (when written). `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
     `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
     `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no

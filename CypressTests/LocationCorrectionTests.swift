@@ -217,8 +217,19 @@ struct LocationCorrectionTests {
         let tree = try await Self.add(signedOut)
         #expect(try await Self.adder(store, tree.id) == .device(Self.deviceID), "fixture: the add was not the device's")
 
+        // A species claim this installation made on it, signed out (chip 71).
+        let claim = SpeciesAssertion(
+            treeID: tree.id, speciesID: UUID(), source: .community, owner: .device(Self.deviceID)
+        )
+        try await store.queue.write { try SpeciesAssertionStore().insert(claim, connection: $0) }
+
         let account = LocalAPI(store: store, deviceID: Self.deviceID)
         try await account.claimDevice(deviceUUID: Self.deviceID, userID: Self.userID)
+
+        let claims = try await store.queue.read {
+            try SpeciesAssertionStore().chain(treeID: tree.id, connection: $0)
+        }
+        #expect(claims.first?.owner == .user(Self.userID), "the claim did not adopt the species claim: \(claims.map(\.owner))")
 
         let adopted = try await Self.adder(store, tree.id)
         #expect(adopted == .user(Self.userID), "the claim did not adopt the tree: \(String(describing: adopted))")

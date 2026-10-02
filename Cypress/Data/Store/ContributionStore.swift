@@ -2352,7 +2352,10 @@ public struct ContributionStore {
         // `user_id IS NULL` leaves an anonymized row alone, for the photograph's reason: it has no
         // `device_id` either, so it matches nothing and the next person to sign in here cannot
         // adopt a tree somebody else left behind.
-        for table in ["community_trees", "tree_locations"] {
+        // `species_assertions` rides the same loop (`ROADMAP` chip 71): a tree adopted without the claims
+        // on it would leave the account unable to correct its own species, because
+        // `SpeciesAssertion.isSupersedable(by:)` reads the claim's owner, not the tree's.
+        for table in ["community_trees", "tree_locations", "species_assertions"] {
             let adopt = try connection.cachedStatement("""
                 UPDATE main.\(table) SET user_id = :user, device_id = NULL, updated_at = :now
                  WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
