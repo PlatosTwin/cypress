@@ -2,24 +2,21 @@
 //  VisitCameraZoomPinch.swift
 //  Cypress — Features/Visit
 //
-//  Pinch to zoom the lens behind a live viewfinder. RULINGS R80 item 5 put it on screen 04, and the
-//  owner ruled on 2026-09-28 (F33) that the same item covers add-a-tree's viewfinder.
+//  Pinch to zoom the lens behind a live viewfinder. RULINGS R80 item 5 put it on screen 04, the
+//  owner ruled on 2026-09-28 (F33) that the same item covers add-a-tree's viewfinder, and on
+//  2026-09-29 that check-in (05) and care log (09)'s camera gets the same pinch.
 //
 
 import SwiftUI
 
 /// The pinch that drives a `VisitCameraController`'s `AVCaptureDevice.videoZoomFactor`.
 ///
-/// **One gesture, used by two of the three viewfinders that own a controller:** screen 04
-/// (`VisitCameraView`) and add-a-tree (`VisitAddTreeView`, F33). It was written inline on screen 04
-/// first. Add-a-tree owns its own `VisitCameraController` (`VisitAddTreeModel.camera`) and had no
-/// zoom, so the gesture moved here rather than being copied. A second copy would have been a second
-/// set of rules for the same lens: where a pinch starts, how it multiplies, and when it is off.
-///
-/// **The third does not apply it.** `ContributionCameraView`, the camera check-in (05) and care log
-/// (09) open, owns a `VisitCameraController` too and has no pinch. R80 item 5 and the F33 ruling
-/// name screen 04 and add-a-tree, and nothing has ruled on 05 and 09's camera, so it is an open item
-/// in `docs/ROADMAP.md`'s chip backlog rather than something this file decided.
+/// **One gesture, used by all three viewfinders that own a controller:** screen 04
+/// (`VisitCameraView`), add-a-tree (`VisitAddTreeView`, F33), and the camera check-in (05) and care
+/// log (09) open (`ContributionCameraView`, owner ruling of 2026-09-29). It was written inline on
+/// screen 04 first. Add-a-tree owns its own `VisitCameraController` (`VisitAddTreeModel.camera`) and
+/// had no zoom, so the gesture moved here rather than being copied. A second copy would have been a
+/// second set of rules for the same lens: where a pinch starts, how it multiplies, and when it is off.
 ///
 /// See `VisitCameraController.setZoom` for why this moves the *device* and not the preview, and
 /// `VisitCameraZoom` for the arithmetic, which is where the testable part of a pinch lives.
@@ -29,6 +26,7 @@ struct VisitCameraZoomPinch: ViewModifier {
 
     /// Whether the viewfinder is live rather than showing a still, so there is something to aim.
     /// Screen 04 passes `!hasSnapped`. Add-a-tree passes `VisitAddTreeModel.isAimingCamera`.
+    /// `ContributionCameraView` passes `true`, because its viewfinder never shows a still.
     let isAiming: Bool
 
     /// Where the lens was when the current pinch began; `nil` between pinches.
