@@ -4,7 +4,9 @@
 # (docs/investigations/repeat-failures-postmortem.md), so every job judges its log with
 # Tools/verify_test_log.sh and believes nothing else -- not an exit code, not a step that
 # "succeeded". The two lines that count are `Test run with N tests passed` (Swift Testing) and
-# `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest).
+# `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest) -- or, for the UI shards,
+# which run test-without-building, `** TEST EXECUTE SUCCEEDED **`. `** TEST BUILD SUCCEEDED **`
+# (ui-build's build-for-testing) is not a test result: nothing ran.
 #
 # SHAPE, and why it is four jobs rather than one. Measured on run 30846300488: the whole thing took
 # 50 minutes, of which the UI suite was 28.4 and everything else 21.6. One runner running one job
@@ -16,8 +18,13 @@
 #
 #   plan     ~10s   reads Tools/ui-test-shards.txt and decides how many UI jobs there are
 #   unit     ~14m   the 1137-test Swift Testing suite, plus the zero-warning certification
-#   ui       ~24m   N parallel jobs, one shard each; the longest shard sets the pace
+#   ui-build  ~3m   builds the app and test bundles once (build-for-testing) for every shard
+#   ui     ~15-26m  N parallel jobs after ui-build, one shard each, testing ui-build's products
+#                   (test-without-building); the longest shard sets the pace
 #   release  ~10m   archive, upload, expire, tag -- only after unit AND every ui shard is green
+#
+# (ui-build is measured on run 36655506475, the build-once round's first; the ui range is main's
+# run 36651464367 less each shard's own build. The ~34 below predates both.)
 #
 # ~34 minutes wall clock for ~60 minutes of runner time, which is free on a public repo.
 #
@@ -781,9 +788,143 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # ── The UI suite, one shard per runner ────────────────────────────────────────────────
-  ui:
+  # ── Build the app and both test bundles ONCE, for every UI shard ──────────────────────
+  # Until 2026-09-29 each shard compiled everything itself before running its slice: in run
+  # 36635369200 all four shards and the unit job each ran the same 540 SwiftCompile tasks, and in
+  # ui (3) the build took ~520 s of a 1273 s step whose tests took 686 s. Four copies of one build,
+  # on an account with a small concurrent-macOS cap where ui (2) and ui (3) then queued 32 and 36
+  # minutes for a runner. So one job runs `xcodebuild build-for-testing`, and the shards download
+  # what it made and run `test-without-building` (Tools/run_tests.sh -xctestrun).
+  #
+  # **Its own job, not a step of `unit`, and not in place of unit's build.** `needs:` is
+  # job-granular: products built inside `unit` would reach the shards only when the whole unit
+  # suite had finished, ~6 minutes of tests later. And `unit` keeps its own fresh build because
+  # it is where warnings are certified (its comment above, and E203) — moving that onto shared products would
+  # change what the certification rests on, which this round does not do.
+  #
+  # **The trade-off, stated rather than hidden.** This puts one job in series before any shard
+  # starts. Measured on its first run (36655506475): 186 s in all — 13 s of prepare with no boot,
+  # 151 s for all 549 SwiftCompile tasks, 10 s to pack 259 MB into 74 MB, 2 s to upload. The same
+  # build took 5-9 minutes inside each shard's `xcodebuild test` on main (run 36651464367, header
+  # to first test), on a three-core runner sharing its CPU with a booted simulator. That shard's
+  # own gap fell from 421 s to 89 s. So the series step costs ~3 minutes and each shard gives back
+  # 3-8, and the build no longer runs four times over.
+  #
+  # **Built for a concrete simulator, never `generic/platform=iOS Simulator`.** A generic
+  # destination builds every simulator architecture, doubling the compile; a concrete one builds
+  # the runner's. `prepare` chooses it from the same candidate list the shards boot from, and does
+  # not boot it — a build needs a destination, not a running device.
+  #
+  # **Products are refused unless they are this run's.** The artifact name carries the commit, the
+  # provenance file inside it carries commit, run, Xcode, architecture and runtime, and each shard
+  # checks all of it (below, and in Tools/run_tests.sh) before a test runs.
+  ui-build:
     needs: plan
+    if: needs.plan.outputs.tests == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/prepare
+        id: prep
+        with:
+          boot-simulator: "false"
+          select-simulator: "true"
+
+      # Judged by the terminal marker AND the exit status AND a nonzero compile count, the same way
+      # every test log here is judged — never by the exit code alone.
+      - name: Build for testing, once
+        env:
+          UDID: ${{ steps.prep.outputs.udid }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/ui-build.log"
+          rm -f "$log"
+          [ -n "$UDID" ] || { echo "::error::prepare chose no simulator, so there is no destination to build for"; exit 1; }
+          # The provenance names a commit, and uncommitted changes are not in one. Checked before
+          # the build, on the source it compiles; the seed prepare placed is git-ignored.
+          dirty="$(git status --porcelain)"
+          if [ -n "$dirty" ]; then
+            printf '%s\n' "$dirty"
+            echo "::error::the checkout has uncommitted changes, so built-commit would not describe these products"
+            exit 1
+          fi
+          rc=0
+          xcodebuild build-for-testing \
+            -project "$PROJECT" -scheme "$SCHEME" \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/dd" >"$log" 2>&1 || rc=$?
+          compiles="$(grep -c '^[[:space:]]*SwiftCompile ' "$log" || true)"
+          echo "build-for-testing exited $rc after ${compiles} SwiftCompile tasks"
+          if [ "$rc" -ne 0 ] || ! grep -q '^\*\* TEST BUILD SUCCEEDED \*\*' "$log"; then
+            grep -E ': error: |\*\* TEST BUILD FAILED \*\*' "$log" | head -40 || true
+            echo "::error::build-for-testing did not succeed (exit $rc), so no UI shard can run. Its log is the ui-build-log artifact."
+            exit 1
+          fi
+          # A fresh DerivedData cannot compile nothing today. The check is what keeps it true: a
+          # build that compiled nothing did not build this commit (E203).
+          [ "${compiles:-0}" -gt 0 ] || { echo "::error::build-for-testing compiled nothing, so these are not products of this commit"; exit 1; }
+
+      - name: Pack the products, and write down where they came from
+        env:
+          UDID: ${{ steps.prep.outputs.udid }}
+          SIMULATOR: ${{ steps.prep.outputs.simulator }}
+          RUNTIME: ${{ steps.prep.outputs.runtime }}
+        run: |
+          set -euo pipefail
+          products="$RUNNER_TEMP/dd/Build/Products"
+          head="$(git rev-parse HEAD)"
+          [ "$head" = "$GITHUB_SHA" ] || { echo "::error::checked out $head, but this run is for $GITHUB_SHA"; exit 1; }
+          shopt -s nullglob
+          runs=("$products"/*.xctestrun)
+          [ "${#runs[@]}" -eq 1 ] || { echo "::error::expected exactly one .xctestrun in $products, found ${#runs[@]}"; ls -la "$products"; exit 1; }
+          # Read by Tools/run_tests.sh (built-commit, xcode, arch) and by the shards' unpack step
+          # (built-by, runtime, xctestrun). One key per line, key=value.
+          {
+            echo "built-commit=$head"
+            echo "built-by=run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT job $GITHUB_JOB image ${ImageOS:-?} ${ImageVersion:-?}"
+            echo "xcode=$(xcodebuild -version | paste -sd ' ' -)"
+            echo "sdk=iphonesimulator$(xcrun --sdk iphonesimulator --show-sdk-version)"
+            echo "arch=$(uname -m)"
+            echo "destination=$SIMULATOR $UDID"
+            echo "runtime=$RUNTIME"
+            echo "tree=clean"
+            echo "xctestrun=$(basename "${runs[0]}")"
+          } >"$products/cypress-products-provenance.txt"
+          cat "$products/cypress-products-provenance.txt"
+          du -sh "$products"
+          # A tarball because an artifact does not keep the executable bit, and an app whose binary
+          # lost it does not launch. Compressed here, so the upload below does not compress again.
+          tar -czf "$RUNNER_TEMP/ui-products.tar.gz" -C "$products" .
+          ls -l "$RUNNER_TEMP/ui-products.tar.gz"
+
+      # Named for the commit, so a shard can only ever fetch the products of the commit it checked
+      # out. One day's retention: the shards read it within the hour and nothing else does.
+      - name: Hand the products to the shards
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-products-${{ github.sha }}
+          path: ${{ runner.temp }}/ui-products.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
+      - name: Keep the build log, whatever happened
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-build-log
+          path: ${{ runner.temp }}/ui-build.log
+          if-no-files-found: warn
+          retention-days: 30
+          overwrite: true
+
+  # ── The UI suite, one shard per runner ────────────────────────────────────────────────
+  # `needs: ui-build`, so a failed or skipped build skips every shard, and the gate job refuses a
+  # skipped shard when plan said the suite runs. A shard never falls back to building for itself.
+  ui:
+    needs: [plan, ui-build]
     if: needs.plan.outputs.tests == 'true'
     runs-on: macos-26
     timeout-minutes: 60
@@ -798,7 +939,51 @@ jobs:
       - uses: ./.github/actions/prepare
         id: prep
 
+      # From this run only: no run-id is given, so nothing from another run can be fetched. A
+      # missing artifact fails this step, and the shard with it; it is never a skip.
+      # A single-shard re-run (attempt 2) reuses attempt 1's artifact. That is accepted: same run,
+      # same commit, and everything else is re-checked below. After the 1-day retention the
+      # download fails red, and the fix is re-running all jobs, which rebuilds it.
+      - name: Fetch the products ui-build made for this commit
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-products-${{ github.sha }}
+          path: ${{ runner.temp }}/ui-products-download
+
+      - name: Unpack the products, and refuse any that are not this run's
+        id: products
+        env:
+          RUNTIME: ${{ steps.prep.outputs.runtime }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/ui-products"
+          mkdir -p "$dir"
+          tar -xzf "$RUNNER_TEMP/ui-products-download/ui-products.tar.gz" -C "$dir"
+          prov="$dir/cypress-products-provenance.txt"
+          [ -f "$prov" ] || { echo "::error::the products carry no provenance file"; exit 1; }
+          cat "$prov"
+          value() { sed -n "s/^$1=//p" "$prov" | head -1; }
+          # Commit and Xcode are checked again by Tools/run_tests.sh against this checkout; these
+          # are the facts only the workflow can see.
+          built="$(value built-commit)"
+          [ "$built" = "$GITHUB_SHA" ] || { echo "::error::these products were built from ${built:-nothing}, and this run is for $GITHUB_SHA"; exit 1; }
+          case "$(value built-by)" in
+            "run $GITHUB_RUN_ID "*) ;;
+            *) echo "::error::these products were not built by run $GITHUB_RUN_ID: $(value built-by)"; exit 1 ;;
+          esac
+          # The same image offers the same runtime; a difference means the two jobs landed on
+          # different images mid-rollout. Re-run the whole workflow rather than test across them.
+          # Empty on both sides would compare equal and say nothing, so an unknown runtime refuses.
+          [ -n "$RUNTIME" ] && [ -n "$(value runtime)" ] || { echo "::error::a simulator runtime is unknown (products: '$(value runtime)', this shard: '${RUNTIME}'), so the two machines cannot be compared"; exit 1; }
+          [ "$(value runtime)" = "$RUNTIME" ] || { echo "::error::the products were built for runtime '$(value runtime)' and this shard's simulator runs '${RUNTIME}'"; exit 1; }
+          xctestrun="$dir/$(value xctestrun)"
+          [ -f "$xctestrun" ] || { echo "::error::the provenance names $(value xctestrun), which is not in the products"; exit 1; }
+          echo "testing $xctestrun"
+          echo "xctestrun=$xctestrun" >> "$GITHUB_OUTPUT"
+
       - name: Run UI shard ${{ matrix.shard }}
+        env:
+          XCTESTRUN: ${{ steps.products.outputs.xctestrun }}
         run: |
           set -euo pipefail
           line="$(grep -vE '^[[:space:]]*(#|$)' Tools/ui-test-shards.txt | sed -n "${{ matrix.shard }}p")"
@@ -826,12 +1011,19 @@ jobs:
           # everything would pass while taking 28 minutes and telling nobody why.
           [ "${#args[@]}" -ge 1 ] || { echo "::error::shard ${{ matrix.shard }} parsed to no test classes"; exit 1; }
           echo "shard ${{ matrix.shard }} runs ${#args[@]} class(es): $line"
+          [ -n "$XCTESTRUN" ] || { echo "::error::the unpack step published no xctestrun"; exit 1; }
+          # `-xctestrun` makes run_tests.sh run test-without-building against ui-build's products,
+          # after checking them against this checkout. No -derivedDataPath: nothing is built here.
           Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/ui-${{ matrix.shard }}.log" \
+            -xctestrun "$XCTESTRUN" \
             "${args[@]}" \
-            -resultBundlePath "$RUNNER_TEMP/ui-${{ matrix.shard }}.xcresult" \
-            -derivedDataPath "$RUNNER_TEMP/dd"
+            -resultBundlePath "$RUNNER_TEMP/ui-${{ matrix.shard }}.xcresult"
           Tools/verify_test_log.sh --expect-width "$GATE_SCREEN_WIDTH_PT" \
             "$RUNNER_TEMP/ui-${{ matrix.shard }}.log"
+          # And that it was the prebuilt products, not a quiet fallback to building: the verifier
+          # refuses a compile task in such a log, and this refuses a log that is not one.
+          grep -q '^CYPRESS-RUN: action test-without-building' "$RUNNER_TEMP/ui-${{ matrix.shard }}.log" \
+            || { echo "::error::shard ${{ matrix.shard }} did not run test-without-building; it built for itself"; exit 1; }
 
       - name: Keep the log, whatever happened
         if: always()
@@ -905,7 +1097,7 @@ jobs:
   # decision. And since the Go suite runs here too (the `server` job above), it holds that job to
   # plan's `server` answer in the same way.
   gate:
-    needs: [plan, unit, ui, server]
+    needs: [plan, unit, ui-build, ui, server]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -919,10 +1111,12 @@ jobs:
           decision="${{ needs.plan.outputs.decision }}"
           server_needed="${{ needs.plan.outputs.server }}"
           unit="${{ needs.unit.result }}"
+          ui_build="${{ needs.ui-build.result }}"
           ui="${{ needs.ui.result }}"
           server="${{ needs.server.result }}"
           echo "plan:   $plan_result (decision=${decision:-<none>}, tests=${tests:-<none>}, server=${server_needed:-<none>}, notes=${notes:-<none>})"
           echo "unit:   $unit"
+          echo "ui-build: $ui_build"
           echo "ui:     $ui"
           echo "server: $server"
 
@@ -960,6 +1154,9 @@ jobs:
             # Explicit equality, not `!= failure`: a cancelled or skipped dependency is also not a
             # pass, and "did not fail" would let both through.
             [ "$unit" = "success" ] || { echo "::error::unit did not succeed ($unit)"; exit 1; }
+            # Checked by name although ui implies it: a failed build SKIPS every shard, and the
+            # line that says why should name the build, not the shards it never let start.
+            [ "$ui_build" = "success" ] || { echo "::error::ui-build did not succeed ($ui_build), so no UI shard tested anything"; exit 1; }
             [ "$ui" = "success" ] || { echo "::error::ui did not succeed ($ui)"; exit 1; }
             echo "every test job succeeded"
           else
@@ -969,6 +1166,8 @@ jobs:
             # disagree about what ran.
             [ "$unit" = "skipped" ] \
               || { echo "::error::plan said tests=false but unit is '$unit', not 'skipped'"; exit 1; }
+            [ "$ui_build" = "skipped" ] \
+              || { echo "::error::plan said tests=false but ui-build is '$ui_build', not 'skipped'"; exit 1; }
             [ "$ui" = "skipped" ] \
               || { echo "::error::plan said tests=false but ui is '$ui', not 'skipped'"; exit 1; }
             echo "plan said nothing here is exercisable by the iOS suite ($decision — see plan's notice): the suite was skipped, and skipped for that reason"

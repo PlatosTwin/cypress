@@ -6,6 +6,12 @@
 # Usage: Tools/run_tests.sh <udid> <log-path> [extra xcodebuild args…]
 #   e.g. Tools/run_tests.sh EA0AD796-… /path/dd-me/unit.log -only-testing:CypressTests
 #
+# With `-xctestrun <file>` among the args it runs `test-without-building` against products that
+# `xcodebuild build-for-testing` already made, instead of building — how CI's UI shards run. The
+# products are checked against this worktree first; see `select_xcodebuild_action`.
+#   e.g. Tools/run_tests.sh EA0AD796-… /path/ui.log -xctestrun /path/Products/Cypress_….xctestrun \
+#          -only-testing:CypressUITests/MapSearchUITests
+#
 # A Swift Testing FUNCTION needs its trailing () inside an -only-testing: filter —
 # -only-testing:CypressTests/SomeSuite/someTest matches nothing at all and the run reports
 # "Swift Testing ran 0 tests", not an error. Write …/someTest(). A suite takes no parentheses.
@@ -217,6 +223,14 @@ collision_check() {
       *"$UDID"*)                   why="same simulator ($UDID)" ;;
       *"$REPO/Cypress.xcodeproj"*) why="same worktree ($REPO)" ;;
     esac
+    # The DerivedData this run builds into or tests out of (see PRODUCTS_KEY). Matched as a whole
+    # path component — followed by `/`, a space, or the end — so `…/dd` does not match `…/dd-other`,
+    # the same prefix trap the worktree test above is written around.
+    if [ -z "$why" ] && [ -n "${PRODUCTS_KEY:-}" ]; then
+      case "$cmd" in
+        *"$PRODUCTS_KEY/"*|*"$PRODUCTS_KEY "*|*"$PRODUCTS_KEY") why="same DerivedData ($PRODUCTS_KEY)" ;;
+      esac
+    fi
     [ -n "$why" ] || continue
     # Ask again whether it is still there. Three of E283's refusals named a pid that had already
     # exited; ancestry above removes the shape that caused those, and this removes the general
@@ -1053,6 +1067,155 @@ device_state_check() {
 }
 
 # ---------------------------------------------------------------------------
+# Build here, or test products somebody else built (the CI build-once round).
+#
+# Until this round every run compiled the app and both test bundles before testing, and in CI
+# that was four identical builds, one per UI shard: 540 SwiftCompile tasks and about 500 s each
+# (run 36635369200). CI now builds once, with `xcodebuild build-for-testing`, and each shard runs
+# `test-without-building -xctestrun <file>` against the products that build left. That makes
+# `-xctestrun <path>` the one argument that changes what this script does:
+#
+#   no -xctestrun   →  xcodebuild test -project <this worktree> -scheme Cypress …   (as before)
+#   -xctestrun F    →  xcodebuild test-without-building -xctestrun F …
+#
+# `test-without-building` takes its targets, host app and runner from the file, so `-project`,
+# `-workspace` and `-scheme` are refused beside it rather than passed along to be half-honoured.
+#
+# **A prebuilt product is an artifact this run did not watch being produced** (CLAUDE.md), so it
+# is not taken on trust. `check_products_provenance` below refuses products built from another
+# commit, by another Xcode or for another architecture, and products whose bundled seed is not the
+# seed in this worktree — the last because `compute_safe_camera` reads THIS worktree's seed to
+# choose a covered camera, on the assumption that the installed app bundles the same file. With a
+# local build that is true by construction; with prebuilt products it has to be checked. What it
+# found goes into the log header, so a shard's log says which products it tested.
+#
+# **Products with no provenance file are refused** (PR #201 review). Only CI writes one, so without
+# this every local `-xctestrun` run would be unchecked — and the shape that matters is ordinary:
+# build-for-testing at commit A, commit B, re-run against the same DerivedData, and B is reported
+# green on A's binaries (CLAUDE.md, stale DerivedData). Someone who knows the products are this
+# commit's can say so with CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1, and the log header says they
+# did, so verify_test_log.sh can quote it.
+#
+# **The products key** (same review). A test-without-building command line names no
+# `$REPO/Cypress.xcodeproj`, so the collision guard's worktree test cannot see it. Two runs sharing
+# one DerivedData are the same hazard by another route: a build rewrites the products a running
+# test-without-building is executing, or the reverse. So each run names the DerivedData it uses —
+# the xctestrun's `…/Build/Products` less that suffix, or `-derivedDataPath` for a build — and
+# `collision_check` refuses another xcodebuild whose command line names the same directory.
+#
+# `repo_head`, `local_xcode_version` and `host_arch` are called through these names for the same
+# reason `ps` is: `Tools/test_harness_guards.sh` substitutes answers it already knows.
+# ---------------------------------------------------------------------------
+PRODUCTS_PROVENANCE_NAME="cypress-products-provenance.txt"
+ACCEPT_UNPROVENANCED="${CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS:-0}"
+XCTESTRUN=""
+XCODEBUILD_ACTION=()
+PRODUCTS_HEADER=""
+PRODUCTS_KEY=""
+
+# An absolute spelling of a directory, whether or not it exists yet (a build's -derivedDataPath
+# may not). No trailing slash, so `…/dd` and `…/dd/` are one key.
+absolute_dir() {
+  local d="${1%/}"
+  if [ -d "$d" ]; then (cd "$d" && pwd); return; fi
+  case "$d" in /*) printf '%s\n' "$d" ;; *) printf '%s/%s\n' "$PWD" "$d" ;; esac
+}
+
+repo_head() { git -C "$REPO" rev-parse HEAD 2>/dev/null; }
+local_xcode_version() { xcodebuild -version 2>/dev/null | paste -sd ' ' -; }
+host_arch() { uname -m; }
+
+select_xcodebuild_action() {
+  local a prev="" count=0 dd=""
+  XCTESTRUN=""
+  PRODUCTS_KEY=""
+  for a in "$@"; do
+    [ "$prev" = "-xctestrun" ] && XCTESTRUN="$a"
+    [ "$prev" = "-derivedDataPath" ] && dd="$a"
+    [ "$a" = "-xctestrun" ] && count=$((count + 1))
+    prev="$a"
+  done
+  if [ "$count" -eq 0 ]; then
+    XCODEBUILD_ACTION=(test -project "$REPO/Cypress.xcodeproj" -scheme Cypress)
+    [ -n "$dd" ] && PRODUCTS_KEY="$(absolute_dir "$dd")"
+    return 0
+  fi
+  [ "$count" -eq 1 ] \
+    || refuse "-xctestrun was given $count times. One run tests one set of products; say which."
+  [ "$prev" != "-xctestrun" ] && [ -n "$XCTESTRUN" ] \
+    || refuse "-xctestrun has no path after it."
+  for a in "$@"; do
+    case "$a" in
+      -project|-workspace|-scheme)
+        refuse "$a was passed beside -xctestrun. test-without-building takes its targets from the xctestrun file; drop $a, or drop -xctestrun to build from source." ;;
+    esac
+  done
+  [ -f "$XCTESTRUN" ] \
+    || refuse "no xctestrun file at $XCTESTRUN — nothing was built there, or it was unpacked somewhere else. Refusing rather than letting xcodebuild fail after the device is booted."
+  XCODEBUILD_ACTION=(test-without-building)
+  PRODUCTS_KEY="$(absolute_dir "$(dirname "$XCTESTRUN")")"
+  PRODUCTS_KEY="${PRODUCTS_KEY%/Build/Products}"
+}
+
+# Only called when `select_xcodebuild_action` chose test-without-building.
+check_products_provenance() {
+  local dir file key value built="" head xcode="" arch="" tree="" app_seed app_sha repo_sha
+  dir="$(cd "$(dirname "$XCTESTRUN")" && pwd)"
+  file="$dir/$PRODUCTS_PROVENANCE_NAME"
+  PRODUCTS_HEADER="CYPRESS-RUN: products file=$dir/$(basename "$XCTESTRUN") sha256=$(shasum -a 256 "$XCTESTRUN" | cut -d' ' -f1)"$'\n'
+
+  if [ -f "$file" ]; then
+    while IFS='=' read -r key value; do
+      [ -n "$key" ] || continue
+      case "$key" in
+        built-commit) built="$value" ;;
+        xcode)        xcode="$value" ;;
+        arch)         arch="$value" ;;
+        tree)         tree="$value" ;;
+      esac
+      PRODUCTS_HEADER="${PRODUCTS_HEADER}CYPRESS-RUN: products ${key}=${value}"$'\n'
+    done <"$file"
+    # A provenance file that does not name the commit is not provenance. Refused rather than
+    # treated like a missing file, because it means the thing that writes it is broken.
+    [ -n "$built" ] \
+      || refuse "$file names no built-commit, so nothing says which source these products are. Rebuild them."
+    head="$(repo_head)"
+    [ "$built" = "$head" ] \
+      || refuse "these products were built from ${built}, and this worktree is at ${head:-an unreadable HEAD}. Tests from one commit run against an app from another prove nothing about either. Rebuild with build-for-testing, or check out ${built}."
+    if [ -n "$xcode" ] && [ "$xcode" != "$(local_xcode_version)" ]; then
+      refuse "these products were built by '${xcode}' and this machine's xcodebuild is '$(local_xcode_version)'. The runner image moved between the build and this run; re-run the build rather than mixing toolchains."
+    fi
+    if [ -n "$arch" ] && [ "$arch" != "$(host_arch)" ]; then
+      refuse "these products were built for ${arch} and this machine is $(host_arch)."
+    fi
+    # Uncommitted changes are not in the commit SHA, so products built from a dirty tree are not
+    # described by their built-commit at all.
+    case "$tree" in
+      dirty*) refuse "these products were built from a tree with uncommitted changes (tree=${tree}), so built-commit does not say what is in them. Rebuild from a clean checkout." ;;
+    esac
+  elif [ "$ACCEPT_UNPROVENANCED" = "1" ]; then
+    PRODUCTS_HEADER="${PRODUCTS_HEADER}CYPRESS-RUN: products provenance UNKNOWN — ACCEPTED by CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1: no $PRODUCTS_PROVENANCE_NAME, so nothing checked which commit or Xcode built them"$'\n'
+  else
+    refuse "no $PRODUCTS_PROVENANCE_NAME beside $XCTESTRUN, so nothing says which commit built these products. A DerivedData left from an earlier commit would test that commit's app under this one's name — the stale-DerivedData false green. Build from source (drop -xctestrun), or, only if you know these products are this commit's, set CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1; the log header will say you did."
+  fi
+
+  # The seed, computed rather than read from the file: it is the one fact this script itself rests
+  # on (see the block comment above), so it is measured here, whoever wrote the provenance.
+  app_seed="$(find "$dir" -maxdepth 3 -path '*/Cypress.app/cypress-seed.sqlite' 2>/dev/null | head -1)"
+  [ -n "$app_seed" ] \
+    || refuse "the products beside $XCTESTRUN hold no Cypress.app/cypress-seed.sqlite. An app built without its seed ships empty; these products are broken."
+  app_sha="$(shasum -a 256 "$app_seed" | cut -d' ' -f1)"
+  if [ -f "$SEED" ]; then
+    repo_sha="$(shasum -a 256 "$SEED" | cut -d' ' -f1)"
+    [ "$app_sha" = "$repo_sha" ] \
+      || refuse "the products' bundled seed (sha256 $app_sha) is not this worktree's seed (sha256 $repo_sha, $SEED). The camera this script chooses is read from the worktree's seed, and would be chosen for an inventory the installed app does not have."
+    PRODUCTS_HEADER="${PRODUCTS_HEADER}CYPRESS-RUN: products seed sha256=$app_sha (matches this worktree's)"$'\n'
+  else
+    PRODUCTS_HEADER="${PRODUCTS_HEADER}CYPRESS-RUN: products seed sha256=$app_sha (this worktree has no seed to compare it with)"$'\n'
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Test seam. `CYPRESS_RUN_TESTS_LIB_ONLY=1 . Tools/run_tests.sh <udid> <log>` defines every
 # function above and stops here, so `Tools/test_harness_guards.sh` can call the guards directly
 # with a fixed process table in place of `ps`. Shell scripts have no test target in this repo;
@@ -1070,7 +1233,13 @@ fi
 
 rm -f "$LOG"
 
+# Argument mistakes first: they cost nothing to find and need no device. Neither of these is a
+# device or collision guard, so CYPRESS_RUN_TESTS_SKIP_PREFLIGHT does not skip them.
+select_xcodebuild_action "$@"
+
 [ "$SKIP_PREFLIGHT" = "1" ] || collision_check
+
+[ -n "$XCTESTRUN" ] && check_products_provenance
 
 boot_device
 # Grant is idempotent when already granted and the app is not yet running for this test pass.
@@ -1144,15 +1313,22 @@ fi
   echo "CYPRESS-RUN: concurrent-xcodebuilds ${OTHER_XCODEBUILDS} (besides this run; the cap is 3 machine-wide)"
   echo "CYPRESS-RUN: qos-clamp ${QOS_LABEL} (utility locally so audio keeps its deadline; CYPRESS_RUN_TESTS_QOS=default for timing runs)"
   echo "CYPRESS-RUN: args $*"
+  # Which of the two things this run is (see `select_xcodebuild_action`). verify_test_log.sh reads
+  # this line: a test-without-building log must compile nothing, and can never certify warnings.
+  if [ -n "$XCTESTRUN" ]; then
+    echo "CYPRESS-RUN: action test-without-building (prebuilt products; this log compiles nothing)"
+    printf '%s' "$PRODUCTS_HEADER"
+  else
+    echo "CYPRESS-RUN: action test (builds from $REPO/Cypress.xcodeproj, scheme Cypress)"
+  fi
   [ "$SKIP_PREFLIGHT" = "1" ] && echo "CYPRESS-RUN: PREFLIGHT SKIPPED (CYPRESS_RUN_TESTS_SKIP_PREFLIGHT=1) — guards did not run"
   echo "CYPRESS-RUN: ---"
 } >"$LOG"
 
 # The `+` form, not a bare "${QOS_PREFIX[@]}": bash 3.2 under `set -u` treats an empty array as
-# unbound and dies before xcodebuild starts, which is exactly the CI path.
-${QOS_PREFIX[@]+"${QOS_PREFIX[@]}"} xcodebuild test \
-  -project "$REPO/Cypress.xcodeproj" \
-  -scheme Cypress \
+# unbound and dies before xcodebuild starts, which is exactly the CI path. The clamp wraps both
+# actions: a test-without-building run still boots and drives a simulator locally.
+${QOS_PREFIX[@]+"${QOS_PREFIX[@]}"} xcodebuild "${XCODEBUILD_ACTION[@]}" \
   -destination "platform=iOS Simulator,id=$UDID" \
   "$@" >>"$LOG" 2>&1
 XCODE_EXIT=$?
