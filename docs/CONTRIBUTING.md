@@ -159,13 +159,18 @@ Guard the deploy so a pull request cannot ship:
 ```
 
 And split the concurrency group, or every PR run queues in front of a deploy that is already
-waiting:
+waiting. A new push to a pull request also cancels that pull request's older run; the release path
+(push to main, `workflow_dispatch`) never does, because it takes a TestFlight build number:
 
 ```yaml
 concurrency:
-  group: testflight-${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
-  cancel-in-progress: false
+  group: >-
+    testflight-${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.base_ref, github.head_ref) || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
+
+(This snippet matches `testflight.yml` as of 2026-09-29, PR #199. The live file is the source of
+truth; its comment above `concurrency:` says why the group carries the base branch.)
 
 Add one job whose name never changes, for the ruleset to require:
 
