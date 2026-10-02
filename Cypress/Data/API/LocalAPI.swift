@@ -526,7 +526,7 @@ public actor LocalAPI: CypressAPI {
             try communityTrees.insert(
                 tree,
                 clientUUID: draft.clientUUID,
-                adder: ContributionOwner(attribution),
+                adder: .nobody,
                 connection: connection
             )
             // The "at the same time" half of the species request opens the chain, exactly as
