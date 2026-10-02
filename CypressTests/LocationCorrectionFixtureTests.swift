@@ -132,14 +132,16 @@ struct LocationCorrectionFixtureTests {
     /// on the service the field arrives as nil.
     @Test("a queued location correction is sent exactly as the service's golden holds it")
     func theCorrectionMatchesTheGolden() throws {
-        let ours = try Self.object(try Self.syncBody())
-        let golden = try Self.object(try Self.fixture("sync_location_correction.json"))
+        let oursData = try Self.syncBody()
+        let goldenData = try Self.fixture("sync_location_correction.json")
+        let ours = try Self.object(oursData)
+        let golden = try Self.object(goldenData)
         #expect(
             ours.isEqual(golden),
             """
             the phone's POST /sync body is not the golden.
-            ours:   \(String(decoding: try Self.syncBody(), as: UTF8.self))
-            golden: \(String(decoding: try Self.fixture("sync_location_correction.json"), as: UTF8.self))
+            ours:   \(String(decoding: oursData, as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
             """
         )
     }
@@ -158,14 +160,15 @@ struct LocationCorrectionFixtureTests {
         #expect(body.capturedOn == "2026-09-29", "captured_on is \(body.capturedOn ?? "nil") in Berlin")
 
         let encoded = try RemoteCoding.encoder.encode(body)
+        let goldenData = try Self.fixture("photos_begin.json")
         let ours = try Self.object(encoded)
-        let golden = try Self.object(try Self.fixture("photos_begin.json"))
+        let golden = try Self.object(goldenData)
         #expect(
             ours.isEqual(golden),
             """
             the phone's POST /photos/begin body is not the golden.
             ours:   \(String(decoding: encoded, as: UTF8.self))
-            golden: \(String(decoding: try Self.fixture("photos_begin.json"), as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
             """
         )
     }

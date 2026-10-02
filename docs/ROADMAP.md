@@ -1846,6 +1846,38 @@ into this section in the round that finds it, and nowhere else. Each item stands
     unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
     green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
     `aRaisedFloorOpensAtTheFloor` too.
+85. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
+    community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
+    doors, `leaveRecords` included. Publication is the service's fact (decisions 7 and 10: it turns
+    on the license the account held when the tree went live), and C1's phone does not hold it, so
+    `AccountDeletion.forgetCommunityTrees` anonymizes every tree the account added under
+    `leaveRecords` and the service deletes the ones that were never public. The phone then keeps a
+    pin the service has dropped. **Close it in C2**: the tile's withdrawn-ids list is what drops the
+    stale row from `community_tree_cache`, but the stale row is in `community_trees` (the authored
+    table), so C2 has to decide how a phone learns an authored tree was deleted for it — most
+    likely by reading the service's answer to the account's own trees at sign-out or on the next
+    tile — and then delete the local row and its chain. Until then the gap is visible only to the
+    deleted account's own phone.
+86. **C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
+    community-trees C1. Decision 6 keeps a tree the erasing account added if another identity has
+    built on it; the service decides that from all the rows it holds, and
+    `AccountDeletion.forgetCommunityTrees` decides it from this phone's `visits`, `observations`,
+    `measurements`, `care_events` and `photos` with `deleted_at IS NULL` (`builtOnTables`). Two
+    edges differ. (a) Somebody else's contribution to the tree that never reached this phone
+    does not count locally, so the phone can delete a tree the service keeps, anonymized; the
+    next sync-down would bring it back as somebody else's tree. (b) A row by this same
+    installation but not yet claimed (device-owned) counts locally as "somebody else"; the service
+    reads it as the account's after the claim. C2 should make the service's answer the one the
+    phone acts on, or at least reconcile the two after the deletion lands.
+87. **Owner question: deletion copy for the new erasing-door behavior (decision 6).** From
+    community-trees C1. The erasing door now deletes a tree the account added unless somebody else
+    has built on it, and the owner's decision 6 says "deletion copy must say so".
+    `AccountDeletionCopy` says nothing about trees the account added: it names visits, check-ins,
+    measurements, care notes, photo votes, tree names and photographs. Copy is the owner's under
+    constraint 21, and C1 has no UI, so none was written. Needs the sentence for both doors (the
+    leaving door keeps the tree and takes the name off; the erasing door deletes it or, where
+    somebody else has built on it, keeps it anonymized), and the confirmation screen's count line
+    if it should report trees.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

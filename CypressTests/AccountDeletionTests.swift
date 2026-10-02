@@ -937,8 +937,15 @@ struct AccountDeletionTests {
         #expect(try await Self.scalar(
             "SELECT COUNT(*) AS n FROM photos WHERE id = '\(fixture.photo.id.uuidString)'", in: store
         ) == 0)
-        // The tree is still there. "Everything I have added" is the person's rows, not the forest.
-        #expect(try await api.treeProfile(id: fixture.tree.id).tree.id == fixture.tree.id)
+        // The tree is gone too, and **this assertion used to say the opposite** ("the person's rows,
+        // not the forest"). The owner's decision 6 of 2026-09-28 changed it: a tree the erasing
+        // account added is deleted unless somebody else has built on it, and nobody has here — the
+        // only other rows on it are a stranger's *vote*, which is not building on a tree.
+        // `CommunityTreeDeletionTests` has the arm where somebody has.
+        #expect(outcome.deletedCommunityTrees == 1, "\(outcome)")
+        await #expect(throws: APIError.notFound, "the erasing door left a tree nobody else had met") {
+            _ = try await api.treeProfile(id: fixture.tree.id)
+        }
     }
 
     /// The `app_state` keys that mark a photograph whose send was refused for good
@@ -1066,9 +1073,17 @@ struct AccountDeletionTests {
                     in: store
                 ) == 1, "the leaving door left the account's name on the photograph")
             }
-            // Under both doors the tree itself stays: "everything I have added" is the person's
-            // rows, not the forest.
-            #expect(try await api.treeProfile(id: tree.id).tree.id == tree.id, "\(choice)")
+            // The leaving door keeps the tree, anonymized; the erasing door deletes it, because
+            // nobody else has built on it (the owner's decision 6 of 2026-09-28 — this used to
+            // read "under both doors the tree itself stays").
+            switch choice {
+            case .leaveRecords:
+                #expect(try await api.treeProfile(id: tree.id).tree.id == tree.id, "\(choice)")
+            case .eraseEverything:
+                await #expect(throws: APIError.notFound, "\(choice): a tree nobody else met survived") {
+                    _ = try await api.treeProfile(id: tree.id)
+                }
+            }
             try? FileManager.default.removeItem(at: staged)
         }
     }

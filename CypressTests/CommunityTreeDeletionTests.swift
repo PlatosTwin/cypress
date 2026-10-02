@@ -14,6 +14,15 @@ struct CommunityTreeDeletionTests {
 
     private typealias Fixture = LocationCorrectionTests
 
+    /// **With the city file attached**, for the species tests: the attached seed carries a
+    /// `species_assertions` *view*, so an unqualified `UPDATE species_assertions` fails with
+    /// "cannot modify species_assertions because it is a view" — which a store with no seed never
+    /// shows. `SpeciesAssertionStore` writes `main.` for this reason, and so does `AccountDeletion`.
+    private static func seededStore() async throws -> CypressStore {
+        let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        return try await CypressStore.inMemory(seedURL: seedURL)
+    }
+
     private static func signedIn(_ store: CypressStore) -> LocalAPI {
         LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
     }
@@ -119,7 +128,7 @@ struct CommunityTreeDeletionTests {
     /// Delete the resync instead — red on `species_current`.
     @Test("the erasing door removes the account's species statements and splices each chain shut")
     func theErasingDoorSplicesSpeciesChains() async throws {
-        let store = try await CypressStore.inMemory()
+        let store = try await Self.seededStore()
         let api = Self.signedIn(store)
         let stranger = ContributionOwner.device(Fixture.otherDeviceID)
         let account = ContributionOwner.user(Fixture.userID)
@@ -198,7 +207,7 @@ struct CommunityTreeDeletionTests {
     /// Red-proof: delete the `UPDATE species_assertions` in `anonymizeContributions` — red on the owner.
     @Test("the leaving door keeps the account's species statements with no author")
     func theLeavingDoorAnonymizesSpeciesStatements() async throws {
-        let store = try await CypressStore.inMemory()
+        let store = try await Self.seededStore()
         let api = Self.signedIn(store)
         let tree = Tree(source: .community, coordinate: Fixture.offshore)
         let statement = SpeciesAssertion(

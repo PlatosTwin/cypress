@@ -167,7 +167,10 @@ struct CommunityLayerTests {
         #expect(page.stored == 0)
         let near = try await api.treesNear(Fixture.offshore, radiusM: 5, limit: 5)
         #expect(near.isEmpty, "a withdrawn tree came back through the cache")
-        #expect(try await api.treeProfile(id: tree.id).tree.deletedAt != nil)
+        // The profile treats a withdrawn tree as no tree at all (task #125), so the proof that the
+        // phone's own row still wins is the layer's read, which does not filter a withdrawal.
+        let row = try await store.queue.read { try CommunityLayer().row(id: tree.id, connection: $0) }
+        #expect(row?.isAddedHere == true && row?.tree.deletedAt != nil, "\(String(describing: row))")
     }
 
     // MARK: - The cache store's own contract

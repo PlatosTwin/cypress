@@ -514,7 +514,7 @@ public struct AccountDeletion {
         // mistake for this phone's unclaimed work.
         outcome.anonymizedAttributions += try run(
             """
-            UPDATE species_assertions SET user_id = NULL, updated_at = :now
+            UPDATE main.species_assertions SET user_id = NULL, updated_at = :now
              WHERE user_id = :user COLLATE NOCASE
             """,
             userAndNow, on: connection
@@ -661,7 +661,7 @@ public struct AccountDeletion {
     /// other statement, ends unnamed — "erase everything I contributed" includes the name.
     private func eraseSpeciesAssertions(userID: UUID, on connection: SQLiteConnection) throws -> Int {
         let doomedStatement = try connection.cachedStatement("""
-            SELECT id, tree_uuid, superseded_by FROM species_assertions
+            SELECT id, tree_uuid, superseded_by FROM main.species_assertions
              WHERE user_id = :user COLLATE NOCASE
             """)
         _ = try doomedStatement.bind([":user": userID.uuidString])
@@ -694,13 +694,13 @@ public struct AccountDeletion {
         var deleted = 0
         for row in doomed {
             deleted += try run(
-                "DELETE FROM species_assertions WHERE id = :id", [":id": row.id], on: connection
+                "DELETE FROM main.species_assertions WHERE id = :id", [":id": row.id], on: connection
             )
         }
         for row in doomed {
             try run(
                 """
-                UPDATE species_assertions SET superseded_by = :survivor
+                UPDATE main.species_assertions SET superseded_by = :survivor
                  WHERE superseded_by = :id COLLATE NOCASE
                 """,
                 [":survivor": survivor(after: row.id), ":id": row.id], on: connection
@@ -709,9 +709,9 @@ public struct AccountDeletion {
         for tree in Set(doomed.map { $0.tree.uppercased() }) {
             try run(
                 """
-                UPDATE community_trees
+                UPDATE main.community_trees
                    SET species_current = (
-                       SELECT species_uuid FROM species_assertions
+                       SELECT species_uuid FROM main.species_assertions
                         WHERE tree_uuid = :tree COLLATE NOCASE AND superseded_by IS NULL
                         LIMIT 1
                    )
@@ -747,8 +747,7 @@ public struct AccountDeletion {
     /// fact — it depends on the license the account held when the tree went live (decisions 7 and
     /// 10) — and this round's phone does not hold it, so the leaving door anonymizes every tree here
     /// and the service deletes the unpublished ones. The phone keeps a pin the service has dropped
-    /// until the round that syncs the layer down can tell it otherwise; the pending erratum for this
-    /// round records the gap.
+    /// until the round that syncs the layer down can tell it otherwise (`ROADMAP` chip backlog 85).
     ///
     /// Nothing references `community_trees(id)` by foreign key: visits and photographs name a tree
     /// by `tree_uuid`, which may be a city row. A visit by somebody else on a deleted tree cannot
@@ -768,13 +767,13 @@ public struct AccountDeletion {
             // seeking its `idx_<table>_tree` index.
             let unbuilt = Self.builtOnTables.map { table in
                 """
-                NOT EXISTS (SELECT 1 FROM \(table) x
-                             WHERE x.tree_uuid = community_trees.id COLLATE NOCASE
+                NOT EXISTS (SELECT 1 FROM main.\(table) x
+                             WHERE x.tree_uuid = main.community_trees.id COLLATE NOCASE
                                AND x.deleted_at IS NULL)
                 """
             }.joined(separator: "\n   AND ")
             let doomed = try connection.cachedStatement("""
-                SELECT id FROM community_trees
+                SELECT id FROM main.community_trees
                  WHERE user_id = :user COLLATE NOCASE
                    AND \(unbuilt)
                 """)
@@ -786,25 +785,25 @@ public struct AccountDeletion {
                 // The chain first: its rows name the tree, not the other way round, and a deleted
                 // tree's positions are not the forest's to keep.
                 try run(
-                    "DELETE FROM tree_locations WHERE tree_id = :tree COLLATE NOCASE",
+                    "DELETE FROM main.tree_locations WHERE tree_id = :tree COLLATE NOCASE",
                     [":tree": id], on: connection
                 )
                 outcome.deletedCommunityTrees += try run(
-                    "DELETE FROM community_trees WHERE id = :tree", [":tree": id], on: connection
+                    "DELETE FROM main.community_trees WHERE id = :tree", [":tree": id], on: connection
                 )
             }
         }
 
         outcome.anonymizedCommunityTrees += try run(
             """
-            UPDATE community_trees SET user_id = NULL, updated_at = :now
+            UPDATE main.community_trees SET user_id = NULL, updated_at = :now
              WHERE user_id = :user COLLATE NOCASE
             """,
             userAndNow, on: connection
         )
         outcome.anonymizedTreeLocations += try run(
             """
-            UPDATE tree_locations SET user_id = NULL, updated_at = :now
+            UPDATE main.tree_locations SET user_id = NULL, updated_at = :now
              WHERE user_id = :user COLLATE NOCASE
             """,
             userAndNow, on: connection

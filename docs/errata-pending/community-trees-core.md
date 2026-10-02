@@ -39,7 +39,7 @@ decisions 7 and 10), and the phone does not hold it this round. `AccountDeletion
 therefore anonymizes every tree the account added under `leaveRecords` and the service deletes the
 ones that were never public. The phone keeps a pin the service has dropped until the sync-down round
 can tell it otherwise. Visible only to the account's own phone, and only after it has left. Closing it
-is C2's: the tile's withdrawn-ids list is what would drop the stale row.
+is C2's (`ROADMAP` chip backlog 85).
 
 ### E??? — `captured_on` is the date in the phone's zone when the begin is built, not when the shutter fired
 
