@@ -635,7 +635,7 @@ file.
   ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
   (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on a camera
   surface the first two did not reach.** (Not the only one: check-in 05 and care log 09's
-  `ContributionCameraView` has no pinch either; see chip backlog 80.) RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
+  `ContributionCameraView` had no pinch either when this was filed; chip backlog 80 ruled it in.) RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
   viewer (`PhotoViewerView`, `PhotoZoom`) and on screen 04's viewfinder (`VisitCameraView`'s
   `zoomPinch`, which drives `VisitCameraController.setZoom`). Add-a-tree owns its own
   `VisitCameraController` (`VisitAddTreeModel.camera`), but `VisitAddTreeView` has no zoom
@@ -649,9 +649,9 @@ file.
   `CypressTests/CameraZoomPinchTests` proves that add-a-tree carries it, and that each of the two
   screens hands it `isAiming: false` over a still and `true` again after a retake. That the fingers
   move the lens can only be seen on the physical phone, because no simulator has a camera; the phone
-  check also covers screen 04's pinch as a regression. **The third camera that owns a controller,
-  `ContributionCameraView` (05 and 09), was not given the pinch and is not covered by the ruling:**
-  chip backlog 80.
+  check also covers screen 04's pinch as a regression. The third camera that owns a controller,
+  `ContributionCameraView` (05 and 09), was outside this round and this ruling. The owner ruled it in
+  separately on 2026-09-29 and `feat/contribution-camera-zoom` shipped it; see chip backlog 80.
 
 - **D6 — search and filter by state on the Cities screen** (re-logged; build 49, 2026-08-23),
   verbatim: *"Eventually we will have 20+ entries here. We need a way to allow search/filtering.
@@ -1780,17 +1780,30 @@ into this section in the round that finds it, and nowhere else. Each item stands
     dealt with first. When a door reaches the table,
     the guard goes red and the arm changes with it. **Slated by the orchestrator for the
     community-trees C1 round.**
-80. **OPEN: decide whether 05 and 09's contribution camera gets pinch-to-zoom.** Found by PR #195's
-    review (F33). `ContributionCameraView`, the camera check-in (05) and care log (09) open to
-    attach photographs, owns a `VisitCameraController` like screen 04 and add-a-tree, and has no
-    pinch. RULINGS R80 item 5 and the F33 ruling (`docs/rulings-pending/f33-add-tree-zoom.md`)
-    name only screen 04 and add-a-tree, so this needs an owner decision, not an inference. If
-    ruled in, it is small: apply `VisitCameraZoomPinch` to its preview, with a wiring test in the
-    shape of `CameraZoomPinchTests`' two `…WiresItsAimToThePinch` tests.
-81. **The F33 phone check (#195).** On the physical phone: the pinch moves the lens on add-a-tree's
-    photo well and on screen 04, it does not fight the composer's `ScrollView`, and screen 04's pinch
-    still arms once the camera session starts (its `isZoomable` is now read inside the modifier). No
-    simulator has a camera, so #195's verification could not see any of this. OPEN until done.
+80. ~~**OPEN: decide whether 05 and 09's contribution camera gets pinch-to-zoom.**~~ **RULED AND
+    SHIPPED** by `feat/contribution-camera-zoom` (#200). Found by PR #195's review (F33):
+    `ContributionCameraView`, the camera check-in (05) and care log (09) open to attach photographs,
+    owned a `VisitCameraController` like screen 04 and add-a-tree but had no pinch, and neither R80
+    item 5 nor the F33 ruling named it. The owner ruled on 2026-09-29, verbatim: *"Yes, same pinch
+    (Recommended)"* (`docs/rulings-pending/contribution-camera-zoom.md`, unnumbered). It now applies
+    `VisitCameraZoomPinch` to its viewfinder with `isAiming: true`, because that viewfinder never
+    shows a still and so always has something to aim; `isZoomable` still gates it.
+    `CameraZoomPinchTests.contributionCameraWiresItsAimToThePinch` proves the pinch is there once,
+    armed, on the view's own controller, and wrapped around the view that holds `VisitCameraPreview`.
+    The same PR carries a second owner ruling of 2026-09-29, verbatim: *"Always start at 1×
+    (Recommended)"*: every camera opens at 1×, whatever zoom the last one closed at
+    (`VisitCameraZoom.openAtOneX`, called when the session starts). The phone checks are in 81.
+81. **The F33 phone check (#195, and #200).** On the physical phone: the pinch moves the lens on
+    add-a-tree's photo well, on screen 04, and on the camera check-in (05) and care log (09) open; it
+    does not fight the composer's `ScrollView`; screen 04's pinch still arms once the camera session
+    starts (its `isZoomable` is now read inside the modifier); and on 05 and 09's camera it still
+    arms after a frame has been taken, since that viewfinder stays live for the next one. **And the
+    1× opening (#200):** pinch 05/09's camera to about 4×, close it, then open screen 04, add-a-tree
+    and 05/09 in turn; each must open at 1×. That check needs a control or it proves nothing
+    (#200's verification, finding 1): do it in one app process with no force-quit, add 04 → close
+    → 04, and first run it on a build without the reset (before #200) to see the zoom actually carry
+    over. If it never carried over, the reset is unproven rather than working. No simulator has a
+    camera, so neither branch's verification could see any of this. OPEN until done.
 82. **Phone checks for the dispute screen's location wait (#198).** Only a device answers these.
     (a) Whether turning Location off makes CoreLocation report `kCLErrorDenied` to the running
     update, and when. #198 takes a new error baseline when the block starts waiting again from a
@@ -1819,6 +1832,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     bare `"${QOS_PREFIX[@]}"` dies `unbound variable` on the CI path, the red-proof); and
     `taskpolicy` execs rather than forks, so `ps` shows `xcodebuild test …` and
     `xcodebuild_line` still sees the run. Use stand-in `xcrun`/`xcodebuild` on PATH; boot nothing.
+84. **`ZoomTests`' stand-in lens cannot see an unlock without a lock.** From #200's verification
+    (finding 2): only `aCameraOpensAtOneX` checks the lens ends unlocked, and the stand-in counts
+    unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
+    green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
+    `aRaisedFloorOpensAtTheFloor` too.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

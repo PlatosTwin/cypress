@@ -82,6 +82,18 @@ struct ContributionCameraView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        // **Pinch to zoom the lens.** The owner ruled on 2026-09-29 that 05 and 09's camera gets
+        // the same pinch as screen 04 and add-a-tree. It is the same gesture on the same controller,
+        // `VisitCameraZoomPinch`. It sits before the overlays so the ✕ and the shutter keep their own
+        // touches, which is where screen 04 puts it.
+        //
+        // **`isAiming` is always true here, and that is screen 04's rule, not an exception to it.**
+        // Screen 04 turns the pinch off once its viewfinder shows the still it just took, because
+        // there is nothing left to aim. This viewfinder never shows a still: each frame goes to
+        // `onCapture` and the preview stays live for the next one. So there is always something to
+        // aim. What still turns the pinch off is the other half of the rule, `camera.isZoomable`,
+        // which is false on every simulator and whenever the camera is refused.
+        .visitCameraZoomPinch(camera, isAiming: true)
         .overlay(alignment: .topLeading) { closeButton }
         .overlay(alignment: .bottom) { shutterBlock }
         .overlay { shutterFlash }
