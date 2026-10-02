@@ -322,7 +322,8 @@ public actor LocalAPI: CypressAPI {
             // somebody else's tree gets no species or record control this round, because every
             // verb behind one acts only on a tree this phone added (the round's orchestrator
             // ruling: "Others' trees: no species/report/dispute controls this round").
-            let community = record == nil ? try layer.row(id: id, connection: connection) : nil
+            let cityTree = record?.tree
+            let community = try cityTree == nil ? layer.row(id: id, connection: connection) : nil
             let addedHere = community?.isAddedHere ?? false
             guard var tree = record?.tree ?? community?.tree else { throw APIError.notFound }
 
@@ -616,7 +617,10 @@ public actor LocalAPI: CypressAPI {
             // not this person's to move — `.forbidden`, `claimSpecies`' distinction between "not
             // allowed" and "no such tree", which the screen says differently.
             let isSomebodyElses = try await store.queue.read { connection -> Bool in
-                if try treeQueries?.tree(id: treeID, connection: connection) != nil { return true }
+                // `flatMap` on the optional store, for `raiseDataDispute`'s reason: a chained
+                // `treeQueries?.tree(…) != nil` is true whenever a seed is attached at all.
+                let city = try treeQueries.flatMap { try $0.tree(id: treeID, connection: connection) }
+                if city != nil { return true }
                 return try layer.exists(id: treeID, connection: connection)
             }
             throw isSomebodyElses ? APIError.forbidden : APIError.notFound
