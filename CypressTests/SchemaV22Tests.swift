@@ -43,6 +43,13 @@ struct SchemaV22Tests {
     /// The version this file is about, read from the code rather than written down twice.
     private static var version: Int32 { 22 }
 
+    /// The ladder this suite runs, which stops at v22.
+    ///
+    /// **Filtered since v23 landed**, which is what this file's own header told the next author to
+    /// do, for `SchemaV21Tests.ladder`'s reason: unfiltered, every test here would run v23's rebuild
+    /// on top of v22's and then assert v22's shape against a table v23 replaced.
+    private static var ladder: [Migration] { AppSchema.migrations.filter { $0.version <= version } }
+
     // MARK: - The fixture
 
     /// One queued item as it sits in a v21 database, and the binaries it still owes.
@@ -243,16 +250,17 @@ struct SchemaV22Tests {
 
     /// **v22 runs, alone, on a database that already holds a queue.**
     ///
-    /// This file is the newest version's, so it carries the claim `SchemaV21Tests` handed on: that
-    /// `AppSchema.currentVersion` is what this file is written about. **When v23 lands, filter this
-    /// suite's ladder to `<= 22` the way `SchemaV21Tests.ladder` is filtered, and move the
-    /// `currentVersion` expectation below into v23's own file.**
+    /// This file **used** to be the newest version's and carried the claim `SchemaV21Tests` handed
+    /// on: that `AppSchema.currentVersion` is what it is written about. v23 landed, so it did what
+    /// its own instruction said — the ladder is filtered to `<= 22` (`Self.ladder`) and the
+    /// `currentVersion` expectation now lives in `SchemaV23Tests`, which repeats the instruction for
+    /// whoever writes v24.
     @Test("a v21 database with a queue in it is carried to 22 by exactly one migration")
     func aV21DatabaseRunsOnlyV22() async throws {
         let store = try await Self.v21Database(Self.fixture())
 
         let applied = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
         #expect(
             applied == [Self.version],
@@ -265,13 +273,11 @@ struct SchemaV22Tests {
         )
 
         let version = try await store.queue.read { try $0.userVersion }
-        #expect(version == AppSchema.currentVersion, "user_version is \(version)")
         #expect(
-            AppSchema.currentVersion == Self.version,
+            version == Self.version,
             """
-            `AppSchema.currentVersion` is \(AppSchema.currentVersion) and this file is written \
-            about \(Self.version). One of the two moved without the other — the fixture above still \
-            opens at 21 and no longer proves what it says it proves
+            a v21 database run up this suite's ladder reports user_version \(version), not \
+            \(Self.version)
             """
         )
     }
@@ -298,7 +304,7 @@ struct SchemaV22Tests {
         #expect(before.count == 3, "the fixture staged \(before.count) binaries, not 3")
 
         _ = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
 
         let after = try await Self.binaries(store)
@@ -336,7 +342,7 @@ struct SchemaV22Tests {
         #expect(before.count == 5, "the fixture queued \(before.count) rows, not 5")
 
         _ = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
 
         let after = try await Self.queue(store)
@@ -377,7 +383,7 @@ struct SchemaV22Tests {
         }
 
         _ = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
 
         for kind in ["data_dispute", "data_dispute_withdrawal"] {
@@ -415,7 +421,7 @@ struct SchemaV22Tests {
         let store = try await Self.v21Database(items)
 
         _ = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
 
         let queued = try await Self.queue(store)
@@ -436,7 +442,7 @@ struct SchemaV22Tests {
     func theDisputeTablesCarryTheirVocabularies() async throws {
         let store = try await Self.v21Database([])
         _ = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
 
         for table in ["tree_data_disputes", "tree_dispute_issues", "tree_dispute_suggestions"] {
@@ -539,7 +545,7 @@ struct SchemaV22Tests {
     func theCascadeIsRealOnThisSQLite() async throws {
         let store = try await Self.v21Database([])
         _ = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
 
         let parent = UUID()

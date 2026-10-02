@@ -765,6 +765,9 @@ private struct ProbeAPI: CypressAPI {
     func treesNear(_ c: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] { throw log.reached("treesNear") }
     func treeProfile(id: UUID) async throws -> TreeProfile { throw log.reached("treeProfile") }
     func addTree(_ draft: TreeDraft) async throws -> Tree { throw log.reached("addTree") }
+    func correctLocation(
+        treeID: UUID, to coordinate: Coordinate, placement: TreePlacement, locationAccuracyM: Double?
+    ) async throws -> Tree { throw log.reached("correctLocation") }
     func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree { throw log.reached("claimSpecies") }
     func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree { throw log.reached("correctSpecies") }
     func flagWrongSpecies(treeID: UUID) async throws { throw log.reached("flagWrongSpecies") }
@@ -1101,6 +1104,11 @@ struct APIConformanceGuardTests {
                     photoLocalPath: "/dev/null",
                     attribution: Attribution(userID: nil, deviceID: id)
                 )
+            )
+        }
+        await check("correctLocation") {
+            _ = try await api.correctLocation(
+                treeID: id, to: coordinate, placement: .gps, locationAccuracyM: nil
             )
         }
         await check("claimSpecies") { _ = try await api.claimSpecies(treeID: id, speciesID: id) }
