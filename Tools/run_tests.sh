@@ -223,6 +223,9 @@ collision_check() {
       *"$UDID"*)                   why="same simulator ($UDID)" ;;
       *"$REPO/Cypress.xcodeproj"*) why="same worktree ($REPO)" ;;
     esac
+    # KNOWN GAP (PR #201 review, F4): this compares spellings, not directories. A relative path, a
+    # `..` path, or a symlinked spelling of the same directory is not caught; CLAUDE.md's
+    # convention is an absolute `<scratchpad>/dd-<suffix>`, which is.
     # The DerivedData this run builds into or tests out of (see PRODUCTS_KEY). Matched as a whole
     # path component — followed by `/`, a space, or the end — so `…/dd` does not match `…/dd-other`,
     # the same prefix trap the worktree test above is written around.
@@ -1190,8 +1193,12 @@ check_products_provenance() {
     fi
     # Uncommitted changes are not in the commit SHA, so products built from a dirty tree are not
     # described by their built-commit at all.
+    # An allow-list: a file that says nothing about the tree, or something this script does not
+    # know, is not evidence that the tree was clean (PR #201 review, F2).
     case "$tree" in
+      clean) ;;
       dirty*) refuse "these products were built from a tree with uncommitted changes (tree=${tree}), so built-commit does not say what is in them. Rebuild from a clean checkout." ;;
+      *) refuse "$file does not say the tree was clean (tree='${tree}'), so built-commit may not describe what is in these products. The build writes tree=clean after checking; rebuild them." ;;
     esac
   elif [ "$ACCEPT_UNPROVENANCED" = "1" ]; then
     PRODUCTS_HEADER="${PRODUCTS_HEADER}CYPRESS-RUN: products provenance UNKNOWN — ACCEPTED by CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1: no $PRODUCTS_PROVENANCE_NAME, so nothing checked which commit or Xcode built them"$'\n'

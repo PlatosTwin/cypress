@@ -534,6 +534,24 @@ if check "prebuilt: refuses products built from a tree with uncommitted changes"
   expect_rc "$rc" 1 && expect_contains "$out" "built from a tree with uncommitted changes (tree=dirty (3 paths))" && ok
 fi
 
+# PR #201 review, F2: the tree value is an allow-list. A provenance file that exists but does not
+# say tree=clean is not evidence of a clean tree.
+if check "prebuilt: refuses a provenance file that has no tree line"; then
+  { echo "built-commit=$FIXTURE_COMMIT"; echo "xcode=$FIXTURE_XCODE"; echo "arch=arm64"; } >"$PRODUCTS/cypress-products-provenance.txt"
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "does not say the tree was clean (tree='')" && ok
+fi
+if check "prebuilt: refuses a tree value this script does not know"; then
+  write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" arm64 "Clean-ish"
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 1 && expect_contains "$out" "does not say the tree was clean (tree='Clean-ish')" && ok
+fi
+if check "prebuilt: control — tree=clean passes the allow-list"; then
+  write_provenance "$FIXTURE_COMMIT" "$FIXTURE_XCODE" arm64 clean
+  out="$(provenance_run true)"; rc=$?
+  expect_rc "$rc" 0 && expect_missing "$out" "does not say the tree was clean" && ok
+fi
+
 # PR #201 review, item 1. Only CI writes a provenance file, so a missing one is the ordinary local
 # case — and the one where a DerivedData from an earlier commit passes for this one.
 if check "prebuilt: refuses products with no provenance file"; then
@@ -676,7 +694,16 @@ echo "Executed 1 test, with 0 failures (0 unexpected) in 1.000 (1.001) seconds"
 # Each action's own terminal marker, as the real xcodebuild prints it (CI run 36655506475).
 if [ "${1:-}" = "test-without-building" ]; then echo "** TEST EXECUTE SUCCEEDED **"; else echo "** TEST SUCCEEDED **"; fi
 FAKE
-chmod +x "$FAKEBIN2/xcrun" "$FAKEBIN2/xcodebuild"
+# A stand-in taskpolicy: records what the clamp was called with, then runs the rest as the real one
+# does (it execs). The clamp's header line only reports a label, so asserting the header alone is
+# not asserting the clamp (PR #201 review, F1).
+cat >"$FAKEBIN2/taskpolicy" <<'FAKE'
+#!/bin/bash
+[ -n "${FAKE_TASKPOLICY_ARGV:-}" ] && printf '%s\n' "$@" >"$FAKE_TASKPOLICY_ARGV"
+[ "${1:-}" = "-c" ] && shift 2
+exec "$@"
+FAKE
+chmod +x "$FAKEBIN2/xcrun" "$FAKEBIN2/xcodebuild" "$FAKEBIN2/taskpolicy"
 e2e_prebuilt() {  # <log> <argv-file> [args…]
   local log="$1" argv="$2"; shift 2
   rm -f "$argv"
@@ -740,20 +767,36 @@ if check "prebuilt end to end: control — the opt-in runs them, and the verdict
     && ok
 fi
 
-# #197's clamp wraps xcodebuild whichever action it runs, and stays off under CI.
-if command -v taskpolicy >/dev/null 2>&1; then
-  if check "prebuilt end to end: the QoS clamp wraps test-without-building locally"; then
-    write_provenance "$(git -C "$REPO" rev-parse HEAD)" "Xcode 99.0 Build version 99A1" "$(uname -m)"
-    out="$(env -u CI bash -c "$(declare -f e2e_prebuilt); HERE='$HERE' FAKEBIN2='$FAKEBIN2' FAKE_UDID='$FAKE_UDID' e2e_prebuilt '$WORK/e2e-u.log' '$WORK/e2e-u.argv' -xctestrun '$XCTESTRUN_FIXTURE'")"; rc=$?
-    log="$(cat "$WORK/e2e-u.log" 2>/dev/null)"
-    expect_rc "$rc" 0 && expect_contains "$log" "CYPRESS-RUN: qos-clamp utility" \
-      && expect_contains "$log" "CYPRESS-RUN: action test-without-building" && ok
-  fi
-  if check "prebuilt end to end: control — under CI the clamp is off"; then
-    out="$(CI=true e2e_prebuilt "$WORK/e2e-v.log" "$WORK/e2e-v.argv" -xctestrun "$XCTESTRUN_FIXTURE")"; rc=$?
-    log="$(cat "$WORK/e2e-v.log" 2>/dev/null)"
-    expect_rc "$rc" 0 && expect_contains "$log" "CYPRESS-RUN: qos-clamp default" && ok
-  fi
+# #197's clamp wraps xcodebuild whichever action it runs, and stays off under CI or on request.
+# The first version asserted only the header line and stayed green with the prefix deleted from the
+# xcodebuild line; these read the argv the stand-in taskpolicy was actually called with.
+if check "prebuilt end to end: the QoS clamp wraps test-without-building locally"; then
+  write_provenance "$(git -C "$REPO" rev-parse HEAD)" "Xcode 99.0 Build version 99A1" "$(uname -m)"
+  rm -f "$WORK/e2e-u.tp"
+  out="$(env -u CI bash -c "$(declare -f e2e_prebuilt); HERE='$HERE' FAKEBIN2='$FAKEBIN2' FAKE_UDID='$FAKE_UDID' FAKE_TASKPOLICY_ARGV='$WORK/e2e-u.tp' e2e_prebuilt '$WORK/e2e-u.log' '$WORK/e2e-u.argv' -xctestrun '$XCTESTRUN_FIXTURE'")"; rc=$?
+  log="$(cat "$WORK/e2e-u.log" 2>/dev/null)"
+  tp="$(cat "$WORK/e2e-u.tp" 2>/dev/null | tr '\n' ' ')"
+  expect_rc "$rc" 0 \
+    && expect_contains "$tp" "-c utility xcodebuild test-without-building" \
+    && expect_contains "$log" "CYPRESS-RUN: qos-clamp utility" \
+    && expect_contains "$log" "CYPRESS-RUN: action test-without-building" && ok
+fi
+if check "prebuilt end to end: control — under CI the clamp is off, and xcodebuild still runs"; then
+  write_provenance "$(git -C "$REPO" rev-parse HEAD)" "Xcode 99.0 Build version 99A1" "$(uname -m)"
+  rm -f "$WORK/e2e-v.tp"
+  out="$(CI=true FAKE_TASKPOLICY_ARGV="$WORK/e2e-v.tp" e2e_prebuilt "$WORK/e2e-v.log" "$WORK/e2e-v.argv" -xctestrun "$XCTESTRUN_FIXTURE")"; rc=$?
+  log="$(cat "$WORK/e2e-v.log" 2>/dev/null)"
+  expect_rc "$rc" 0 && expect_contains "$log" "CYPRESS-RUN: qos-clamp default" \
+    && { [ ! -e "$WORK/e2e-v.tp" ] || { bad "taskpolicy was called under CI: $(tr '\n' ' ' <"$WORK/e2e-v.tp")"; false; }; } \
+    && { [ -e "$WORK/e2e-v.argv" ] || { bad "xcodebuild never ran"; false; }; } && ok
+fi
+if check "prebuilt end to end: control — CYPRESS_RUN_TESTS_QOS=default turns the clamp off locally"; then
+  write_provenance "$(git -C "$REPO" rev-parse HEAD)" "Xcode 99.0 Build version 99A1" "$(uname -m)"
+  rm -f "$WORK/e2e-w.tp"
+  out="$(env -u CI CYPRESS_RUN_TESTS_QOS=default FAKE_TASKPOLICY_ARGV="$WORK/e2e-w.tp" bash -c "$(declare -f e2e_prebuilt); HERE='$HERE' FAKEBIN2='$FAKEBIN2' FAKE_UDID='$FAKE_UDID' e2e_prebuilt '$WORK/e2e-w.log' '$WORK/e2e-w.argv' -xctestrun '$XCTESTRUN_FIXTURE'")"; rc=$?
+  log="$(cat "$WORK/e2e-w.log" 2>/dev/null)"
+  expect_rc "$rc" 0 && expect_contains "$log" "CYPRESS-RUN: qos-clamp default" \
+    && { [ ! -e "$WORK/e2e-w.tp" ] || { bad "taskpolicy was called despite the opt-out"; false; }; } && ok
 fi
 
 if check "the lib seam refuses rather than exiting 0 when the file is executed, not sourced"; then

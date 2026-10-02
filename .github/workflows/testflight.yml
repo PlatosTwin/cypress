@@ -8,7 +8,7 @@
 # which run test-without-building, `** TEST EXECUTE SUCCEEDED **`. `** TEST BUILD SUCCEEDED **`
 # (ui-build's build-for-testing) is not a test result: nothing ran.
 #
-# SHAPE, and why it is four jobs rather than one. Measured on run 30846300488: the whole thing took
+# SHAPE, and why it is five jobs rather than one. Measured on run 30846300488: the whole thing took
 # 50 minutes, of which the UI suite was 28.4 and everything else 21.6. One runner running one job
 # could only ever be as fast as the sum. So the UI suite is split across runners -- separate
 # machines, not separate simulators on one machine. That distinction is the whole design: a
@@ -878,6 +878,14 @@ jobs:
           shopt -s nullglob
           runs=("$products"/*.xctestrun)
           [ "${#runs[@]}" -eq 1 ] || { echo "::error::expected exactly one .xctestrun in $products, found ${#runs[@]}"; ls -la "$products"; exit 1; }
+          # The tree is measured again here, after the build, and not echoed as a literal: a build
+          # phase that rewrote a tracked file would otherwise still be stamped clean (PR #201 review, F3).
+          dirty="$(git status --porcelain)"
+          if [ -n "$dirty" ]; then
+            printf '%s\n' "$dirty"
+            echo "::error::the build changed the checkout, so built-commit does not describe these products"
+            exit 1
+          fi
           # Read by Tools/run_tests.sh (built-commit, xcode, arch) and by the shards' unpack step
           # (built-by, runtime, xctestrun). One key per line, key=value.
           {
