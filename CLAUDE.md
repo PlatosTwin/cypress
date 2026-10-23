@@ -26,7 +26,9 @@ conflicts with convenience, the rule wins.
   trailing `echo` in an `&&` chain lies.
 - The only meaningful unit-test line is **`Test run with N tests passed`** (Swift Testing).
   `Executed 0 tests / All tests passed` is XCTest reporting on a suite it cannot see. UI tests
-  (XCTest) need `** TEST SUCCEEDED **` **and** a nonzero executed count.
+  (XCTest) need `** TEST SUCCEEDED **` **and** a nonzero executed count. CI's UI shards run
+  `test-without-building`, which ends `** TEST EXECUTE SUCCEEDED **` instead; the verifier reads
+  both. `** TEST BUILD SUCCEEDED **` (build-for-testing) is not a test result: nothing ran.
 - **Never trust an artifact you did not watch being produced.** Before reading a log, screenshot,
   or build as evidence, check its mtime, its provenance (which build, worktree, simulator), and
   its content. Stale DerivedData, stale logs at a reused path, an uncommitted asset, an empty

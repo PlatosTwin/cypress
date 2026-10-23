@@ -1837,6 +1837,35 @@ into this section in the round that finds it, and nowhere else. Each item stands
     unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
     green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
     `aRaisedFloorOpensAtTheFloor` too.
+85. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
+    "choosing a suggestion narrows the map to that one species and puts its name in the field" failed
+    after 105 s with two issues (`MapSuggestionTests.swift:265` and `:268`), on the unit job of the
+    build-once PR's run 36665812582. That PR changes no app or test source. (b) The day before, on
+    another PR's run 36609447255, `MapRecenterTests`' "moving the camera keeps the species the
+    search narrowed to" and "zooming in on the recenter's second step keeps the narrowing too" failed
+    in the same area. Both are map-narrowing tests, which is the only thing the two sightings share.
+    A green re-run proves a failure was intermittent, never why, so this is a flake-watch entry
+    until one recurs with a cause (item 75 is its UI-side neighbor).
+86. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
+    save about 7 more minutes a run, but only if warning certification moves to `ui-build`'s fresh
+    build log: the owner's call, since `unit` is where the zero-warning line is certified today.
+    (b) The shards could boot their simulators while `ui-build` runs; `prepare` is 2 to 3.5 minutes per
+    shard and is now the largest cost that is not tests. (c) Item 2 (rebalance the shards) is worth
+    doing now: shard time is almost all test time, and `ui (1)` at about 18 minutes of tests sets the
+    pace. (d) The account's concurrent macOS runner cap is untouched: on run 36635369200 three shards
+    waited 32, 36 and 74 minutes for a runner, and no workflow change fixes that. (e) The build artifact
+    is kept one day, so re-running one shard later than that needs a re-run of all jobs.
+87. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
+    runs by head branch alone (`web-<head_ref>`, cancel on), so two pull requests from one head branch
+    against different bases that both touch `web/` cancel each other's web run; `testflight.yml` and
+    `server.yml` were given the base as well. (b) A fork pull request whose head branch name equals an
+    in-repo branch's, against the same base, shares its run group and can cancel it. (c) `Tools/run_tests.sh`'s
+    DerivedData collision key compares path spellings, not directories: a relative, `..` or symlinked
+    spelling of the same directory is not caught. (d) `verify_test_log.sh` trusts a prebuilt log's header
+    completely: a log with no `CYPRESS-RUN: products` lines, or with a `** TEST SUCCEEDED **` where only
+    `** TEST EXECUTE SUCCEEDED **` can come from `test-without-building`, still ends VERIFY-OK. Reachable
+    only by hand-editing a log or running a pre-fix script, which CLAUDE.md already treats as unknown
+    provenance.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
