@@ -38,7 +38,8 @@ reached. It was not the only one: see "What this does not cover" below.
 **What this does not cover.** A third viewfinder owns a `VisitCameraController`:
 `ContributionCameraView`, which check-in (05) and care log (09) open to attach photographs. It has
 no pinch. Neither R80 item 5 nor this ruling names it, so this ruling does not extend to it. Whether
-it gets pinch zoom is an open item in `docs/ROADMAP.md`'s chip backlog.
+it gets pinch zoom is an open item in `docs/ROADMAP.md`'s chip backlog. (The owner ruled it in the
+next day, 2026-09-29, as a ruling of its own: `docs/rulings-pending/contribution-camera-zoom.md`.)
 
 **Not seen on a phone.** No simulator has a camera, so the gesture never arms on one. Three things
 are still to be checked on the physical phone:
