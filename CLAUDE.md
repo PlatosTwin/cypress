@@ -24,8 +24,9 @@ conflicts with convenience, the rule wins.
   `Tools/verify_test_log.sh <log>`. Never conclude from an exit code: `nohup … &` returns the
   shell's success, a killed build leaves a truncated log under a wrapper claiming success, and a
   trailing `echo` in an `&&` chain lies.
-- The only meaningful unit-test line is **`Test run with N tests passed`** (Swift Testing).
-  `Executed 0 tests / All tests passed` is XCTest reporting on a suite it cannot see. UI tests
+- The only meaningful unit-test line is **`Test run with N tests in M suites passed`** (Swift
+  Testing). Let `Tools/verify_test_log.sh` judge it, or find it with `grep -aE 'Test run with'`; a
+  grep for `tests passed` matches nothing on a green log. `Executed 0 tests / All tests passed` is XCTest reporting on a suite it cannot see. UI tests
   (XCTest) need `** TEST SUCCEEDED **` **and** a nonzero executed count.
 - **Never trust an artifact you did not watch being produced.** Before reading a log, screenshot,
   or build as evidence, check its mtime, its provenance (which build, worktree, simulator), and
@@ -62,8 +63,9 @@ conflicts with convenience, the rule wins.
   This project's tooling is gated — `run_tests.sh`, `verify_test_log.sh`,
   `UITestShardCoverageTests`, `DragGestureGateTests`. **The commands you type to make claims about
   that tooling are not.** They are the least guarded thing you touch and the easiest to believe.
-- Prove every new test can fail: break the code, watch red, restore. Assert presence, not
-  absence; assert facts, not phrasing.
+- Prove every new test can fail: break the code, watch red, restore. Restore by copying back the
+  fixed file you saved before you broke it, never with `git checkout --`, which once threw away a
+  session's uncommitted fix. Assert presence, not absence; assert facts, not phrasing.
 - **A red-proof must go red for the reason you expect — read the failure message, not just the
   colour.** Tests here have gone red on the wrong assertion, exempted the thing they were guarding
   as its own wrapper, and run their specimens before their rule under
@@ -273,11 +275,12 @@ conflicts with convenience, the rule wins.
 - Use a private DerivedData directory named for yourself (`<scratchpad>/dd-<your-suffix>/`).
   The scratchpad is shared by every agent: never `rm -rf` at its root, and never reuse another
   run's log path — `rm -f` your own log before each run.
-- **Run `Tools/run_tests.sh` in the foreground and wait for it.** Do not background it, and never
-  end your turn "waiting for a monitor" — a monitor is not a process, nothing will wake you, and
-  an agent that stops waiting for one has simply stopped. If you must wait on a pid you already
-  have, use a bounded foreground watcher (`for i in $(seq 1 40)`, not `until`), print a line each
-  iteration, and kill the previous watcher before starting a new build.
+- **Do not end your turn while a test run is pending.** Never end it "waiting for a monitor" — a
+  monitor is not a process, nothing will wake you, and an agent that stops waiting for one has
+  simply stopped. A foreground shell command is capped at 10 minutes and a full run can take
+  longer. If a run can exceed the shell's time limit, start `Tools/run_tests.sh` in the background
+  and poll it with a bounded loop (`for i in $(seq 1 40)`, not `until`) that prints a line on each
+  pass. Stop your previous watcher before you start a new build.
 - Never edit `Cypress.xcodeproj/project.pbxproj` — the tree is a
   `PBXFileSystemSynchronizedRootGroup`.
 - **Facts in your brief may be wrong.** Agents have correctly refuted brief premises many times.
