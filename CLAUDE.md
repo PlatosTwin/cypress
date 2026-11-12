@@ -24,9 +24,10 @@ conflicts with convenience, the rule wins.
   `Tools/verify_test_log.sh <log>`. Never conclude from an exit code: `nohup … &` returns the
   shell's success, a killed build leaves a truncated log under a wrapper claiming success, and a
   trailing `echo` in an `&&` chain lies.
-- The only meaningful unit-test line is **`Test run with N tests in M suites passed`** (Swift
-  Testing). Let `Tools/verify_test_log.sh` judge it, or find it with `grep -aE 'Test run with'`; a
-  grep for `tests passed` matches nothing on a green log. `Executed 0 tests / All tests passed` is XCTest reporting on a suite it cannot see. UI tests
+- The only meaningful unit-test line is **`Test run with N tests in M suites passed`** (or
+  `in 1 suite`) (Swift Testing). Let `Tools/verify_test_log.sh` judge it, or find it with
+  `grep -aE 'Test run with'`; a grep for `tests passed` matches nothing on a green log.
+  `Executed 0 tests / All tests passed` is XCTest reporting on a suite it cannot see. UI tests
   (XCTest) need `** TEST SUCCEEDED **` **and** a nonzero executed count.
 - **Never trust an artifact you did not watch being produced.** Before reading a log, screenshot,
   or build as evidence, check its mtime, its provenance (which build, worktree, simulator), and
@@ -64,8 +65,10 @@ conflicts with convenience, the rule wins.
   `UITestShardCoverageTests`, `DragGestureGateTests`. **The commands you type to make claims about
   that tooling are not.** They are the least guarded thing you touch and the easiest to believe.
 - Prove every new test can fail: break the code, watch red, restore. Restore by copying back the
-  fixed file you saved before you broke it, never with `git checkout --`, which once threw away a
-  session's uncommitted fix. Assert presence, not absence; assert facts, not phrasing.
+  copy of the file that you saved in your scratchpad before you broke it (never save it inside the
+  worktree: a copy under a synchronized folder gets compiled, and any copy there can be committed).
+  Never restore with `git checkout -- <file>` or `git restore <file>`: either one throws away any
+  uncommitted change in that file. Assert presence, not absence; assert facts, not phrasing.
 - **A red-proof must go red for the reason you expect — read the failure message, not just the
   colour.** Tests here have gone red on the wrong assertion, exempted the thing they were guarding
   as its own wrapper, and run their specimens before their rule under
@@ -277,10 +280,17 @@ conflicts with convenience, the rule wins.
   run's log path — `rm -f` your own log before each run.
 - **Do not end your turn while a test run is pending.** Never end it "waiting for a monitor" — a
   monitor is not a process, nothing will wake you, and an agent that stops waiting for one has
-  simply stopped. A foreground shell command is capped at 10 minutes and a full run can take
-  longer. If a run can exceed the shell's time limit, start `Tools/run_tests.sh` in the background
-  and poll it with a bounded loop (`for i in $(seq 1 40)`, not `until`) that prints a line on each
-  pass. Stop your previous watcher before you start a new build.
+  simply stopped. A foreground shell command times out after 2 minutes by default and after at
+  most 10 minutes; pass the 10-minute timeout for any foreground run. A full run can take longer.
+  If a run can exceed the shell's time limit, start `Tools/run_tests.sh` in the background with its
+  stdout **and** stderr sent to a file next to your log (`VERIFY-OK` goes to stdout, `VERIFY-FAIL`
+  and `VERIFY-ENV-REFUSED` to stderr), and record its pid. Poll with a bounded loop
+  (`for i in $(seq 1 40)`, not `until`) that checks whether that pid is alive and prints a line on
+  each pass. When the pid is gone, judge the run only from the `VERIFY-` line in that file and from
+  `Tools/verify_test_log.sh <log>`, never from an exit status. If the log has not grown for 10
+  minutes, treat the run as hung (see **Known hangs**): stop your own pid, never another agent's,
+  and report the hang. Do not start a second run while the first one's pid is alive. Stop your
+  previous watcher before you start a new build.
 - Never edit `Cypress.xcodeproj/project.pbxproj` — the tree is a
   `PBXFileSystemSynchronizedRootGroup`.
 - **Facts in your brief may be wrong.** Agents have correctly refuted brief premises many times.
