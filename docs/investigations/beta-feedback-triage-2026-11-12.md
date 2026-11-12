@@ -1,34 +1,44 @@
-# Cypress TestFlight feedback triage, 2026-11-12
+# Cypress TestFlight feedback triage, 2026-11-12 (v2)
 
-Read-only pass made by an agent on 2026-11-12, against main at `30eac915` (#203, D.C.). The
-queue itself lives in `docs/ROADMAP.md`; this file is the record of how it was ranked that day.
+Read-only pass. Nothing in the repo was edited. Main checkout fast-forwarded to `0479f2f4` (#204, which
+added the first triage as `docs/investigations/beta-feedback-triage-2026-11-12.md` and ROADMAP 94-97).
+This version replaces v1's ranking with the fresh pull folded in.
+
+## New since 2026-09-28
+
+Run **43331239955** (dispatched 2026-11-12T23:43:29Z, success), artifact `generatedAt`
+2026-11-12T23:45:21Z: **38 screenshot submissions, 0 crash submissions, 0 customer reviews,
+`notes: []`**, 82 builds. All 33 ids from the 2026-09-28 set are present, so **5 are new**. All 5 are
+build 82, iPhone17_5, iOS 26.6.1, 390 pt, on mobile data. `testerId` is still empty (chip 53), and the
+JSON still holds zero `@` characters.
+
+| # | Date (UTC) | Summary | Outage window? | Status, with evidence | Roadmap |
+|---|---|---|---|---|---|
+| **F34** | 09-30 22:03 | *"Strange empty white space has appeared below bottom menu after browsing the tabs for City and Neighborhood"*. Screenshot: My Grove > Trees with a white band about 60 pt tall under the tab bar. "City and Neighborhood" are the Journal's two stats segments | No | **Open**, defect, not reproduced. Same visual family as F8 (white area around the keyboard, shipped). Likely a safe-area or keyboard inset left behind by the Journal's area picker; unconfirmed | **Not in roadmap** |
+| **F35** | 09-30 22:04 | *"Does sync on WiFi actually work on WiFi only? Just took a bunch of photos and am not on WiFi and they appear synced here"*. Screenshot: screen 17, `Sync photos on wifi only` ON, visits marked synced Sep 30 | No | **Open, confirmed in code: the toggle does nothing outside screen 17's `syncNow`.** Every feature writer (`VisitOutboxWriter:132`, `CheckIn`, `CareLog`, `Measure`, `Reminder`, `Favorite`) and `OutboxViewState.retry/retryAll` call `drain()`, whose `photoUploadsAllowed` defaults to `true`. `syncNow(isOnWifi:)` is the only gated call and, by its own comment, has no caller, because the app has no reachability source (ERRATA **E81**). So photo bytes upload on cellular while the switch says they will not | **Not in roadmap** (E81 names the missing source, not this effect) |
+| **F36** | 10-02 02:00 | *"Took this photo yesterday on a tree I added and now it says can't be opened…"*. Screenshot: `PhotoViewerView` showing `That photograph could not be opened`, caption `Full tree · Sep 28, 2026`, on a self-added tree | No | **Open, not reproduced, cause unknown.** Two suspects on main, neither proven: chip **67** (a keyed photo row with no bytes, which #194 can create and which pairs with the phone's own copy) and chip **76(a)** (photo identity after adoption). The caption's Sep 28 date against the tester's "yesterday" (Oct 1) suggests the viewer opened a different copy than the one just taken | Nearest: chips 67, 76 |
+| **F37** | 10-31 20:29 | *"Put the pin in the wrong place. Need an edit feature"*. Screenshot: map with a dashed community pin a few meters from the blue dot | No (before Nov 2) | **Open.** Second report of F31(a), relocation. The location-correction verb is in C1; the control is C3 | Community trees C1, C3 (F31) |
+| **F38** | 11-12 23:01 | *"I am in DC. Why the fuck does this say Castro market still???"*. Screenshot: My Grove > Species, `47 of 187 species · you can recognize in the Castro/Upper Market` | Ends at the outage's last day; **not a sync symptom** | **Open; behaves as built, reads as a bug.** The ring's area is the reader's most-visited neighborhood (`LocalAPI.groveSpecies`, RULINGS **R29**), never their location, and the caption does not say so. F17 fixed the same complaint on the Journal's stats (picker plus accuracy rule) but not on screen 08. D.C. also ships no neighborhoods (chip 88), so a location rule would find none there | **Not in roadmap**; family of F17; touches chip 88 |
+
+**Sync outage (Nov 2-12):** no new item reports a sign-in, sync or upload symptom. F38 is the only item
+in the window, and it is about area naming. Nothing in this pull is attributable to the outage.
+
+**Items that change the top 10:** F35 enters at #2 (P0: a drawn control that does nothing, costing
+cellular data). F36 enters at #4 and F38 at #5 (P1). F37 raises C1 from one report to two. The agreement
+item (ROADMAP 94) is done and dropped; "re-pull feedback" is done by this run.
 
 ## Summary
 
-- **No new feedback could be pulled today.** Run **43328447485** of `asc-feedback.yml` failed with
-  HTTP 403 `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` ("A required agreement is missing or
-  has expired", link `/business`). This is an Apple account matter: the Account Holder must accept
-  the updated agreement in App Store Connect, under Business. No key is needed or was asked for.
-- **The same 403 has blocked every TestFlight upload since 2026-10-02.** The `release` job of run
-  36968512685 (#200's merge) failed on this exact error. **Build 82** (2026-09-30, main at #191) is
-  the last build testers have. TestFlight builds expire 90 days after upload, so build 82 stops
-  working around **2026-12-29** unless the agreement is renewed and a new build ships.
-- The triage therefore uses the newest artifact that exists: run **36494988293** (2026-09-28),
-  **33 screenshot submissions, 0 crash submissions, 0 customer reviews, `notes: []`**. All 33 come
-  from one device (iPhone17_5, 390 x 844 pt). `testerId` is empty on all 33 (chip 53), so the number
-  of testers cannot be counted. Treat it as one tester.
-- **Of the 33: 23 fixed on main, 1 refused by the owner (F16), 9 still open.** Every fixed item is in
-  build 82 or earlier, except #200 (contribution-camera zoom), which is on main and in no build.
-- **Nov 2-12 sync outage:** no feedback from that window is visible, because the API has refused
-  every call since 2026-10-02. Nothing here can be attributed to the outage, and nothing rules it out.
-- **New finds with no roadmap entry:** (1) the expired Apple agreement and its two effects;
-  (2) F1's leftover owner decision on the ghost caption's width and copy (ERRATA E254 §2), which the
-  2026-08-28 reconciliation counted as shipped; (3) chip-number collisions: the C1 branch and PR #201
-  each add their own chips 85-87, and main now uses 85-93 for D.C.
-- **Owner priorities checked:** "performance outranks the feature queue" (2026-09-01) closed with the
-  perf campaign on 2026-09-04 (ROADMAP "Perf campaign close"; memory note says treat it as closed
-  unless the owner repeats it). The standing decisions that still shape the order are the F31
-  community-trees decisions of 2026-09-28 (C1, then C2, then C3) and "one migration author per round".
+- Feedback through 2026-11-12 is now read: **38 submissions** from one device. **23 fixed on main,
+  1 refused (F16), 14 open** (the 9 from v1 plus the 5 new). Every fixed item is in build 82 or
+  earlier, except #200 (contribution-camera zoom), which is on main and in no build.
+- **Build 82 (2026-09-30) is still the newest build testers have.** The agreement is accepted, but
+  the TestFlight upload for the D.C. merge is still pending. Build 82 expires around 2026-12-29.
+- **New finds with no roadmap entry:** F35 (wifi-only toggle ignored, confirmed in code), F34 (white
+  band under the tab bar), F38 (Grove ring names a neighborhood the reader is far from). F36 has
+  only a nearest guess (chips 67, 76).
+- **Owner priorities:** "performance first" (2026-09-01) closed on 2026-09-04. The community-trees
+  order C1, then C2, then C3 still stands, and F37 adds a second report behind it.
 
 ## Ranked to-do list
 
@@ -38,53 +48,56 @@ Factors per item: reports (R), severity (Sev), half-built (HB), dependencies (De
 
 | # | Item | Why | R | Sev | HB | Dep | Size |
 |---|---|---|---|---|---|---|---|
-| 1 | **Accept the expired Apple agreement** (App Store Connect, Business) | Blocks feedback pulls, every TestFlight upload since 2026-10-02, and testers lose build 82 near 2026-12-29 | 0 (ops) | High | n/a | Owner only (Account Holder) | S |
-| 2 | **Ship a new TestFlight build once #1 is done**, then re-pull feedback | #200 is stranded on main; any fix below cannot reach testers; Oct-Nov feedback is unread | 0 | High | Pipeline ready | #1 | S |
-| 3 | **Re-pull feedback and re-run this triage** for 2026-09-28 to now | Six weeks of feedback, including the Nov 2-12 outage window, are unseen | ? | Unknown | n/a | #1 | S |
+| 1 | **Ship a new TestFlight build** (the pending D.C.-merge upload) | #200 is stranded; nothing below reaches testers without it; build 82 expires near 2026-12-29 | 0 (ops) | High | Pipeline ready | Upload in progress | S |
+| 2 | **F35: honor the wifi-only toggle** | The switch on screen 17 does nothing; photos upload on cellular. An untrue label of the ARCHITECTURE §5.4 class | 1 | High | Gate exists in `OutboxQueue`; only the caller side is missing | A reachability source (E81), e.g. `NWPathMonitor`; pass it to every `drain()` | S-M |
 
 ### P1: frequent friction, the main open tester requests, or tester-visible defects
 
 | # | Item | Why | R | Sev | HB | Dep | Size |
 |---|---|---|---|---|---|---|---|
-| 4 | **C1, community trees core** (`feat/community-trees-core`) | The owner's decided answer to F31; also fixes chip 79 on the branch | 1 (F31) | Med | **Yes**: last commit 2026-10-01 is "wip, unverified"; 19 commits behind main | Migration seat; server deploy check before merge | L |
-| 5 | **C2, sync down** | Second half of F31 ("go to everyone") | 1 (F31) | Med | No | C1 | M |
-| 6 | **F32 part 3: the 10 m add-a-tree refusal** | Tester cannot log trees where no inventory exists; owner decision (constraint 16) | 1 | Med | No | Owner ruling | S after ruling |
-| 7 | **F32 part 2: sentence-case species names** + chip 91 (one source of common names) | Owner ruled sentence case 2026-09-28; not done; D.C. pack added more disagreement ("Trident maple" vs "trident maple") | 1 | Low-Med | No | Next seed publish (Fly worker go-ahead) | S-M |
-| 8 | **Chip 77: iOS 26 hides `confirmationDialog` cancel buttons** at 7 sites | Testers run iOS 26.6.1; take-back and delete sheets lack a cancel | 0 | Med | Fix pattern exists (#185) | iOS 26 runtime to confirm | S-M |
-| 9 | **Chip 89: `dim_region` id collision across packs** | A phone mid-update can hold two packs sharing a region id; the second is refused | 0 | Med (data) | No | Own round + test | M |
-| 10 | **Chip 76(a): photos can double again on a signed-out device** after adoption | Same symptom as F30 on a narrower path | 0 (F30 family) | Low-Med | No | None | S |
-| 11 | **Chips 62, 13, 59, 16: privacy and security on the sync service** | 62: proximity conflict shows another adder's address and exact second; 13: per-tree counts of user acts vs D1/R27.1; 59: device claim needs no proof; 16: spoofable `Fly-Client-IP`. C2 makes community trees public, which raises the stakes | 0 | Med | No | 13 and 16 need rulings | S each |
-| 12 | **C3, community trees UI** | Strikes F31; every surface is unmocked | 1 (F31) | Med | No | Owner answers (C3 question list), C1, C2 | L |
-| 13 | **Chip 87: recheck DDOT GLOBALID stability, early December** | If ids churn, every D.C. tree's identity churns | 0 | Med | n/a | Dated | S |
+| 3 | **C1, community trees core** | Owner's decided answer to F31; F37 is a second report; also fixes chip 79 | **2** (F31, F37) | Med | **Yes**: last commit 2026-10-01 "wip, unverified", 19+ behind main | Migration seat; server deploy check | L |
+| 4 | **F36: a contributor's own photo "could not be opened"** | The tester cannot see a photo they just took; unreproduced | 1 | Med-High | No | Reproduce first; check chips 67 and 76 | S-M |
+| 5 | **F38: Grove ring names the most-visited neighborhood, not where you are** | Reads as broken on D.C.'s launch day; F17 is the same complaint on another screen | 2 (F17 family) | Med | F17's picker exists to reuse | Owner choice under R29 / constraint 21: say "your most-visited neighborhood", add F17's picker, or follow location; D.C. has no neighborhoods (chip 88) | S-M |
+| 6 | **C2, sync down** | Second half of F31 | 1 | Med | No | C1 | M |
+| 7 | **F32 part 3: the 10 m add-a-tree refusal** | Blocks logging where no inventory exists | 1 | Med | No | Owner ruling (constraint 16) | S after ruling |
+| 8 | **F32 part 2: sentence-case species names** + chip 91 | Owner ruled 2026-09-28; D.C. added more disagreement | 1 | Low-Med | No | Next seed publish | S-M |
+| 9 | **Chip 77: iOS 26 hides `confirmationDialog` cancel buttons** (7 sites) | Testers run iOS 26.6.1 | 0 | Med | Fix pattern exists (#185) | iOS 26 runtime | S-M |
+| 10 | **Chip 89: `dim_region` id collision across packs** | Second pack refused on a phone mid-update | 0 | Med | No | Own round | M |
+| 11 | **Chip 76(a): photos double again on a signed-out device** | F30 family; possibly behind F36 | 0 | Low-Med | No | None | S |
+| 12 | **Chips 62, 13, 59, 16: sync-service privacy and security** | C2 makes community trees public | 0 | Med | No | 13 and 16 need rulings | S each |
+| 13 | **C3, community trees UI** | Strikes F31 and F37 | 2 | Med | No | Owner answers, C1, C2 | L |
+| 14 | **Chip 87: recheck DDOT GLOBALID, early December** | D.C. ids may churn | 0 | Med | n/a | Dated | S |
 
 ### P2: polish, design rounds, and content
 
 | # | Item | R | Notes | Size |
 |---|---|---|---|---|
-| 14 | **F32 part 1: vernacular synonyms** ("cook pine" is in the seed as "Coral reef araucaria") | 1 | Sourcing round, cited aliases only (constraint 15) | M |
-| 15 | **F4: a time filter** | 1 | **New evidence:** the screenshot is My Grove's Species tab (screen 08). The open question becomes only the vocabulary | S-M after design |
-| 16 | **F22: species distribution map on screen 07** | 1 | Design round; C18 reduced map exists | M |
-| 17 | **F25: You tab UI/UX pass** | 1 | Design round; no You screen in the spec | M |
-| 18 | **F15: enrich the tree profile** (ID help, history, edibility) | 1 | Content work with citations | L |
-| 19 | **D.C. species round** (chip 85) and planting-date UTC fix (chip 92) | 0 | D.C. coverage 86.27%, waived | M + S |
-| 20 | **City disputes, remaining parts**: badge, "trees with data issues" filter, missing-tree entry, community-flagging redesign | 0 | Badge needs a server read; flagging redesign overlaps C3 | M-L |
-| 21 | **Chip 81 and 82: physical-phone checks** (F33 pinch, dispute location wait) | 0 (F33 follow-up) | Only a device answers them | S |
-| 22 | **Chip 53: feedback artifact has empty `testerId`** | 0 | Without it, "how many testers" cannot be answered | S |
-| 23 | **Chip 90: `upload.sh` should refuse a stale manifest**; chip 93: serve D.C. on the web | 0 | Both small, both D.C. follow-ups | S + S |
+| 15 | **F34: white band under the tab bar** after the Journal's City/Neighborhood tabs | 1 | Reproduce on device; inset leak suspected | S |
+| 16 | **F32 part 1: vernacular synonyms** ("cook pine") | 1 | Cited sourcing round | M |
+| 17 | **F4: a time filter** on My Grove > Species (ROADMAP 96) | 1 | Waits on the period vocabulary | S-M after design |
+| 18 | **F22: species distribution map on screen 07** | 1 | Design round | M |
+| 19 | **F25: You tab UI/UX pass** | 1 | Design round | M |
+| 20 | **F15: enrich the tree profile** | 1 | Cited content | L |
+| 21 | **D.C. species round** (chip 85), UTC planting day (chip 92), D.C. neighborhoods (chip 88, now also behind F38) | 0 | | M + S + M |
+| 22 | **City disputes, remaining parts** | 0 | Badge needs a server read | M-L |
+| 23 | **Chips 81 and 82: physical-phone checks** | 0 | | S |
+| 24 | **Chip 53: empty `testerId`** | 0 | Still empty on all 38 | S |
+| 25 | **Chip 90** (`upload.sh` stale manifest), **chip 93** (D.C. on the web) | 0 | | S + S |
 
 ### P3: later
 
 | # | Item | R | Notes |
 |---|---|---|---|
-| 24 | **F1 leftover: the no-ghost caption's width or copy** (E254 §2, three options) | 1 | **Not in roadmap.** Leading was fixed in d7fdbd4a; width 80 and copy `no ghost yet · first photo` are unchanged |
-| 25 | **D6: Cities search and filter by state** | 1 | Trigger is the catalog near 20 packs; it holds 8 now. Needs a publisher `state` field |
-| 26 | **F9: Marin / Sausalito / Mill Valley coverage** | 1 | Folded into "Seed inventory expansion" (R80 deferral); not scheduled |
-| 27 | Owner backlog: photos through the seasons; root README | 0 | Design round; scope is the owner's |
-| 28 | Remaining chips (tooling, CI, web, server hygiene) | 0 | Listed below by group |
+| 26 | **F1 leftover** (ROADMAP 95) | 1 | Owner call on width or copy |
+| 27 | **D6: Cities search and state filter** | 1 | Catalog holds 8 packs |
+| 28 | **F9: Marin / Sausalito / Mill Valley** | 1 | Seed expansion, not scheduled |
+| 29 | Owner backlog: photos through the seasons; root README | 0 | |
+| 30 | Chip renumbering (ROADMAP 97) at the next merge of C1 or PR #201 | 0 | Bookkeeping |
+| 31 | Remaining chips (tooling, CI, web, server hygiene) | 0 | Grouped below |
 
 ## Feedback to roadmap
 
-All 33 are iPhone17_5 at 390 x 844 pt. Builds 18 and 25 ran iOS 26.5.2; builds 37-60 iOS 26.6; build 77
+All 38 are iPhone17_5 at 390 x 844 pt. Builds 18 and 25 ran iOS 26.5.2; builds 37-60 iOS 26.6; builds 77 and 82
 iOS 26.6.1. F-numbers are the chronological position, as PR #118 and the roadmap number them; D-numbers
 are PR #118's Cities-screen labels.
 
@@ -123,68 +136,55 @@ are PR #118's Cities-screen labels.
 | F31 | 09-26 | 77 | Move a self-added tree; share added trees with everyone | **Open**, decided, C1 half-built | Community trees C1, C2, C3 |
 | F32 | 09-26 | 77 | Cook pine missing; lowercase names; 10 m refusal | **Open**, three parts | F32 (1, 2, 3); chip 91 |
 | F33 | 09-28 | 77 | Zoom on add-a-tree's viewfinder | Fixed, #195, in build 82. Sibling #200 (05 and 09 camera) is on main and in **no build** | F33, struck; chips 80, 81 |
+| F34 | 09-30 | 82 | White band under the tab bar after the Journal's area tabs | **Open**, defect, unreproduced | **Not in roadmap** |
+| F35 | 09-30 | 82 | Wifi-only photo sync does not hold | **Open**, confirmed in code (all writers call `drain()` with the default `true`; E81) | **Not in roadmap** |
+| F36 | 10-02 | 82 | Own photo on a self-added tree "could not be opened" | **Open**, unreproduced | Nearest chips 67, 76 |
+| F37 | 10-31 | 82 | Pin placed wrong, need to edit it | **Open** (second F31(a) report) | C1, C3 |
+| F38 | 11-12 | 82 | In D.C., Grove ring still says Castro/Upper Market | **Open**, as built (R29), reads as a bug | **Not in roadmap**; F17 family; chip 88 |
 
 ## Open roadmap items with no feedback behind them
 
-Grouped. Chip numbers are from `docs/ROADMAP.md` on main at `30eac915`.
+Unchanged from v1, except: ROADMAP 94 is done; 95 (F1) and 96 (F4) now carry feedback; 97 (chip
+renumbering) joins "Docs and paperwork". Chips 67, 76 and 88 now have possible feedback behind them
+(F36, F38) and are ranked above.
 
-- **Community trees and sync service:** C1 (also chip 79), C2, C3; chips 9 (reading vs withdrawal
-  race), 10 (what a signed-out phone can take back), 11 (withdrawn-to-empty tree), 54, 58, 60, 61,
-  64, 65, 66, 67, 68, 69, 71, 76; perf leftover "post-drain favorite reconcile and replica lag".
-- **Privacy and security:** chips 13, 16, 59, 62, 63; "iNaturalist licensing" (needs an answer
-  before launch).
+- **Community trees and sync service:** chips 9, 10, 11, 54, 58, 60, 61, 64, 65, 66, 68, 69, 71;
+  perf leftover "post-drain favorite reconcile and replica lag".
+- **Privacy and security:** chips 13, 16, 59, 62, 63; iNaturalist licensing (answer before launch).
 - **City disputes:** badge, filter, missing-tree entry point, community-flagging redesign.
-- **D.C. and data pipeline:** chips 85-93 (89 and 87 most urgent), 3, 17, 18, 33, 34, 35, 36, 37;
-  seed inventory expansion (Oakland, Los Angeles and 12 more).
-- **App UI and correctness:** chip 77 (iOS 26 cancel buttons), `cypressHitArea` overhang audit,
-  chip 42, chip 15 (one current height per tree), chip 19 (beloved floor), "MapKit road-color
-  inversion", chips 81 and 82 (phone checks), chip 84.
-- **Web (W):** W-B, W-D, W-G remainders; open questions 2-5 (withdrawn records on indexed pages,
-  CORS and Sign in with Apple JS, Coordinator dashboard, moderation console); chips 21, 22, 25, 27,
-  28, 29, 30, 31, 32, 39, 45, 46, 47, 48, 51, 93.
+- **D.C. and data pipeline:** chips 85-93, 3, 17, 18, 33, 34, 35, 36, 37; seed inventory expansion.
+- **App UI and correctness:** chip 77, `cypressHitArea` overhang audit, chips 15, 19, 42, 81, 82, 84;
+  MapKit road-color inversion.
+- **Web (W):** W-B, W-D, W-G remainders; open questions 2-5; chips 21, 22, 25, 27-32, 39, 45-48,
+  51, 93.
 - **CI, tooling, test harness:** chips 1, 2, 5, 6, 8, 12, 20, 23, 38, 40, 41, 43, 44, 49, 53, 55, 57,
-  72, 73, 74, 75, 83; exit-code taxonomy left half-applied; `assertEveryControlIsLabeled` scope;
-  UI test classes that inherit the opening camera; PR #201 (open, `ci/build-once-for-ui-shards`);
-  branch `tools/fetch-seed-diagnostics` (one commit, no PR, 455 commits behind main).
-- **Docs and paperwork:** chip 56 (splice 33 pending files, orchestrator only); copy-audit questions
-  7-9; F23 placement, F26 copy, F28 affordance, R85 awaiting owner ratification; root README.
+  72-75, 83; the half-applied exit-code taxonomy; `assertEveryControlIsLabeled` scope; UI classes
+  that inherit the opening camera; PR #201; branch `tools/fetch-seed-diagnostics` (no PR).
+- **Docs and paperwork:** chips 56 and 97; copy-audit questions 7-9; F23, F26, F28 and R85 awaiting
+  ratification; root README.
 
 ## Method
 
-- Repo: main checkout, `git pull --ff-only` from 12 behind to `30eac915`. Read CLAUDE.md, the
-  workflow header, ERRATA E254, ROADMAP (all sections), PR #118's body, and the memory notes.
-- Pull: `gh workflow run asc-feedback.yml` at 2026-11-12T23:23:27Z, run 43328447485, failed in about
-  4 s with the 403 above. No artifact was uploaded.
-- Fallback: downloaded run 36494988293's artifact (created 2026-09-28T22:53:51Z, `generatedAt`
-  22:53:35Z, expires on GitHub 2026-12-27) and run 32649153871's (2026-08-23, 28 items). Every
-  August id is in the September set, so the September file is the full record.
-- Open vs fixed: the 2026-08-28 and 2026-09-28 roadmap reconciliations, checked against
-  `git log origin/main` for each named PR (#118, #130, #132, #135, #154, #156, #191, #194, #195,
-  #200), the TestFlight `release` job logs (build 82 on 2026-09-30; the 403 on 2026-10-02), `fly
-  releases -a cypress-sync` (v13 on 2026-09-29 23:33), and code greps for F1, F2 and F32.
-- Screenshots: looked at F4's (My Grove > Species), which settles the roadmap's "which screen".
-- **What the API cannot tell us:** how many testers (empty `testerId`, chip 53); whether a report
-  is resolved (no such flag); crashes no one submitted; anything since 2026-09-28. Customer reviews
-  are empty because version 1.0 is still `PREPARE_FOR_SUBMISSION`.
-- **Not verified:** that the Apple agreement is the only blocker (the API names no specific
-  agreement); the exact commit behind server release v13 (inferred from timing); the current health
-  of `cypress-sync` after the outage (`fly status` showed its one machine `stopped` at 22:26Z, which
-  may be auto-stop); whether F5-F8 and F10 still behave on build 82 (taken from the 08-28 audit's
-  receipts, not re-read).
+- Repo: main checkout fast-forwarded to `0479f2f4`. Read ROADMAP 94-97 and the sections v1 read.
+- Pull: run 43331239955 (success). Compared ids against run 36494988293's 33: 0 missing, 5 new.
+- Looked at all 5 new screenshots.
+- Code checks: `OutboxQueue.drain(photoUploadsAllowed:)` and every caller (grep of `.drain(` under
+  `Cypress/`); `OutboxViewState.syncNow` and its comment; ERRATA E81; `LocalAPI.groveSpecies` and
+  `GrovePresentation` for the ring's area; `PhotoViewerView.unavailable`; chips 67, 76, 88.
+- v1's status calls for F1-F33 are kept (evidence in v1 and in
+  `docs/investigations/beta-feedback-triage-2026-11-12.md`).
+- **What the API cannot tell us:** tester count (empty `testerId`); resolution state; unsubmitted
+  crashes; reviews (version 1.0 is still `PREPARE_FOR_SUBMISSION`).
+- **Not verified:** F34 and F36 are unreproduced, and their causes are suspects only. F35's effect
+  is read from code, not measured on a phone on cellular. Whether F38's tester had the D.C. pack
+  installed is unknown; the ring's rule does not depend on it.
 
 ## Sources
 
-- Feedback: the `asc-feedback` artifact of run 36494988293 (2026-09-28, 33 items, screenshots
-  included). GitHub keeps it until 2026-12-27; re-run the workflow after the agreement is accepted
-  for anything newer.
-- Failed pull: run 43328447485. Failed upload: run 36968512685, `release` job.
-
-## Corrections after the pass
-
-- `cypress-sync` was down from 2026-11-12 02:47 UTC because `cypress-sync-db` had been stopped by a
-  user request on 2026-11-02. The owner approved restarting both on 2026-11-12, and `/health`
-  answered `status: ok` at about 22:15 UTC. The `stopped` state the pass saw at 22:26Z is the app's
-  ordinary auto-stop (min 0 machines, auto-start on request).
-- Item 2's "pipeline ready" assumes the agreement is the only blocker; the TestFlight run for
-  #203's merge (30eac915) is the first upload attempt after the pass and will show it.
+- Feedback: the `asc-feedback` artifact of run 43331239955 (generated 2026-11-12T23:45:21Z, 38
+  items with screenshots). The first pass used run 36494988293 (2026-09-28, 33 items), all of which
+  are in this set. GitHub keeps artifacts for 90 days; re-run the workflow for anything newer.
+- F35 was confirmed against main by the orchestrator: `OutboxViewState.syncNow(isOnWifi:)` is the
+  only call that passes the switch to `OutboxQueue.drain`, nothing calls `syncNow`, and nothing in
+  `Cypress/` uses `NWPathMonitor`.
 

@@ -1892,7 +1892,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
 93. **The web does not serve D.C. yet.** `web/src/lib/idSpaces.ts` now knows `us-dc-dc` (#203), but
     the `cypress-web` volume holds only the seven August packs and is sized for 713 MB; D.C. adds
     120 MB. Copy the pack to the volume (and restart the machine, chip 47) in its own round.
-94. **P0, owner only: accept the expired Apple agreement (App Store Connect, Business).** Every
+94. **DONE 2026-11-12: the owner accepted the agreement; run 43331239955 pulled feedback again.** ~~**P0, owner only: accept the expired Apple agreement (App Store Connect, Business).**~~ Every
     App Store Connect API call has answered HTTP 403 `REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` since
     2026-10-02. The `release` job of run 36968512685 (#200's merge) failed on it, so **build 82
     (2026-09-30) is the last build testers have**: #200 and #203's release note are on main and in
@@ -1908,6 +1908,30 @@ into this section in the round that finds it, and nowhere else. Each item stands
 97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
     (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
     D.C. Whoever merges either branch renumbers its chips past the highest on main.
+98. **P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).** A tester saw
+    photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
+    `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
+    the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
+    source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
+    source, passed to every `drain()`, with a test that fails if a writer drains without it.
+99. **The Grove ring names the most-visited neighborhood, not where the reader is (F38,
+    2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
+    `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
+    F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
+    "your most-visited neighborhood", reuse F17's picker, or follow location. D.C. ships no
+    neighborhoods yet (chip 88).
+100. **A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
+    on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
+    chip 76(a). Reproduce first.
+101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
+    Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
+102. **F37 (2026-10-31) is a second report of F31(a), moving a pin.** C1 and C3 cover it; it adds
+    weight to C1, not a new item.
+103. **`PhotoDeletionReachabilityTests.testTheHeroPhotographReachesADeleteThatWorks` failed once on
+    main** (run 43327553492, ui shard 4, #203's merge, 2026-11-12): "the delete is in the viewer's
+    tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
+    merge changed no Swift. A re-run is evidence it is intermittent, not of why. Watch for a second
+    occurrence before chasing it.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
