@@ -912,6 +912,20 @@ REGIONS: dict[str, list[dict]] = {
             "source_names": (),
         },
     ],
+    # Washington, D.C.: one city-level region, San Jose's shape. `pack_id` is
+    # FROZEN at first publish (R37.2, R103): it is the immutable object path and
+    # the install key on every reader's device. Placed between San Jose and New York
+    # because REGIONS' keys are kept in `sorted()` order, the order build_seed
+    # inserts in; see test_build_seed_status.py for what that does to the
+    # borough rowids of a build holding all four cities.
+    "us-dc-dc": [
+        {
+            "pack_id": "us-dc-dc",
+            "display_name": "Washington, D.C.",
+            "level": "city",
+            "source_names": (),
+        },
+    ],
     # ── New York City: five borough-level regions in one id space ────────────
     # RULING D1 makes the borough the published unit, which is the reason
     # `dim_region` exists at all. This is the first id space with more than one
@@ -985,17 +999,6 @@ REGIONS: dict[str, list[dict]] = {
             "display_name": "Staten Island",
             "level": "borough",
             "source_names": ("Staten Island",),
-        },
-    ],
-    # Washington, D.C.: one city-level region, San Jose's shape. `pack_id` is
-    # FROZEN at first publish (R37.2, R103): it is the immutable object path and
-    # the install key on every reader's device.
-    "us-dc-dc": [
-        {
-            "pack_id": "us-dc-dc",
-            "display_name": "Washington, D.C.",
-            "level": "city",
-            "source_names": (),
         },
     ],
 }
