@@ -70,7 +70,7 @@ describe('the registry is the Python’s', () => {
         + `URL in it — so a disagreement here is the web resolving /‹space›/tree/‹uuid› to a `
         + `different tree than the one the seed minted.`,
     );
-    assert.equal(inPython.size, 3, `the Python registers ${inPython.size} spaces, not 3`);
+    assert.equal(inPython.size, 4, `the Python registers ${inPython.size} spaces, not 4`);
   });
 
   it('the separator and the uuid namespace are the ones the seed builder uses', () => {
@@ -83,7 +83,7 @@ describe('the registry is the Python’s', () => {
     for (const inventory of Object.values(inventories)) {
       assert.doesNotThrow(() => requireInventory(inventory.id));
     }
-    assert.equal(Object.keys(inventories).length, 5, 'the Python registers five inventories');
+    assert.equal(Object.keys(inventories).length, 6, 'the Python registers six inventories');
   });
 });
 

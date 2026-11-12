@@ -84,7 +84,7 @@ export type InventoryRegistry = Readonly<Record<string, Inventory>>;
  *
  * The `note` on each is shortened to its load-bearing sentence; the Python carries the full
  * measurement record and is the place to read it. What is NOT shortened is `identityPrefix`, and
- * `web/test/idSpaces.test.ts` parses the Python to prove these three prefixes are still what it
+ * `web/test/idSpaces.test.ts` parses the Python to prove these four prefixes are still what it
  * says — a transcribed constant with no guard is how the vitality rubric forked for two weeks.
  */
 export const idSpaces: IdSpaceRegistry = {
@@ -107,6 +107,12 @@ export const idSpaces: IdSpaceRegistry = {
     identityPrefix: 'us-ny-nyc:',
     note: 'City of New York, NYC Parks’ ForMS 2.0. The numbering is GlobalID on the '
       + 'Forestry Tree Points layer.',
+  },
+  'us-dc-dc': {
+    id: 'us-dc-dc',
+    identityPrefix: 'us-dc-dc:',
+    note: 'District of Columbia, DDOT Urban Forestry Division. The numbering is GLOBALID on the '
+      + 'UFA Street Trees layer, braces stripped.',
   },
 };
 
@@ -146,6 +152,13 @@ export const inventories: InventoryRegistry = {
     idSpace: 'us-ny-nyc',
     name: 'NYC Parks Forestry Planting Spaces',
     url: 'https://data.cityofnewyork.us/resource/82zj-84is',
+  },
+  dc_street_trees: {
+    id: 'dc_street_trees',
+    idSpace: 'us-dc-dc',
+    name: 'DDOT Urban Forestry street tree inventory',
+    url:
+      'https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/Urban_Tree_Canopy/MapServer/23',
   },
 };
 

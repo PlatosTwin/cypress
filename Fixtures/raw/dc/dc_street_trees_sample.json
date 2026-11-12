@@ -1,0 +1,1016 @@
+{
+ "licence": "CC-BY-4.0; credit: District Department of Transportation",
+ "note": "Rows are verbatim as Tools/fetch_dc_trees.py cached them (attributes + geometry), with a 'case' label added. Chosen to cover every case DCStreetTreeAdapter has a rule for.",
+ "rows": [
+  {
+   "attributes": {
+    "CMMN_NM": "Red maple",
+    "CONDITION": "Good",
+    "DATE_PLANT": 1268854087000,
+    "DBH": 14.7,
+    "FACILITYID": "21625-390-3001-0361-000",
+    "FAM_NAME": "Sapindaceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{00580B10-D1C5-4F77-9FAE-97F54198EC8A}",
+    "LAST_EDITED_DATE": 1706053601000,
+    "OBJECTID": 108353714,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Acer rubrum",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 5.0,
+    "VICINITY": "3936 BLAINE ST NE",
+    "WARD": 7
+   },
+   "case": "plant good named",
+   "geometry": {
+    "x": -76.94908798185726,
+    "y": 38.891958515039136
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Red maple",
+    "CONDITION": "Good",
+    "DATE_PLANT": 1381160707000,
+    "DBH": 17.2,
+    "FACILITYID": "23745-310-3001-0249-000",
+    "FAM_NAME": "Sapindaceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{0070C1AD-74D5-4E3D-9E31-A3AFDE200F31}",
+    "LAST_EDITED_DATE": 1706559496000,
+    "OBJECTID": 108366138,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Acer rubrum",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 5.0,
+    "VICINITY": "3400 blk FORT LINCOLN DR NE",
+    "WARD": 5
+   },
+   "case": "plant good named",
+   "geometry": {
+    "x": -76.95857692175892,
+    "y": 38.92769837016407
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Red maple",
+    "CONDITION": "Good",
+    "DATE_PLANT": 1077598800000,
+    "DBH": 9.0,
+    "FACILITYID": "24589-140-3005-0178-000",
+    "FAM_NAME": "Sapindaceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{00871A2D-DCDA-4058-99CA-FB340D83E111}",
+    "LAST_EDITED_DATE": 1644877181000,
+    "OBJECTID": 108336393,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Acer rubrum",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 4.0,
+    "VICINITY": "1417 HOLBROOK ST NE",
+    "WARD": 5
+   },
+   "case": "plant good named",
+   "geometry": {
+    "x": -76.98297422889105,
+    "y": 38.90381436710611
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Willow oak",
+    "CONDITION": "Excellent",
+    "DATE_PLANT": null,
+    "DBH": 18.4,
+    "FACILITYID": "12099-230-3005-0129-000",
+    "FAM_NAME": "Fagaceae",
+    "GENUS_NAME": "Quercus",
+    "GLOBALID": "{00AF6796-CB06-4F79-A521-4D3069D0C455}",
+    "LAST_EDITED_DATE": 1793740864000,
+    "OBJECTID": 108345819,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Quercus phellos",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 3.0,
+    "VICINITY": "2301 CATHEDRAL AVE NW",
+    "WARD": 3
+   },
+   "case": "plant excellent named",
+   "geometry": {
+    "x": -77.05307582771205,
+    "y": 38.927936881912835
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Pin oak",
+    "CONDITION": "Fair",
+    "DATE_PLANT": 1046149200000,
+    "DBH": 13.0,
+    "FACILITYID": "20150-040-3005-0101-000",
+    "FAM_NAME": "Fagaceae",
+    "GENUS_NAME": "Quercus",
+    "GLOBALID": "{0011C674-CC03-4CC5-A49F-C60A90C3111C}",
+    "LAST_EDITED_DATE": 1722018495000,
+    "OBJECTID": 108287604,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Quercus palustris",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 3.0,
+    "VICINITY": "OPP 406 15TH ST NE",
+    "WARD": 7
+   },
+   "case": "plant fair named",
+   "geometry": {
+    "x": -76.98358726829501,
+    "y": 38.8950673359727
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Norway maple",
+    "CONDITION": "Poor",
+    "DATE_PLANT": null,
+    "DBH": 9.1,
+    "FACILITYID": "13347-155-3005-0099-000",
+    "FAM_NAME": "Sapindaceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{0012BCF4-ED64-41C9-8438-B5CD42AAF26B}",
+    "LAST_EDITED_DATE": 1781208647000,
+    "OBJECTID": 108282165,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Acer platanoides",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 5.0,
+    "VICINITY": "OPP 1514 EMERSON ST NW",
+    "WARD": 4
+   },
+   "case": "plant poor named",
+   "geometry": {
+    "x": -77.03544163836354,
+    "y": 38.94978867841584
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "American linden",
+    "CONDITION": "Dead",
+    "DATE_PLANT": 1485894895000,
+    "DBH": 2.5,
+    "FACILITYID": null,
+    "FAM_NAME": "Tiliaceae",
+    "GENUS_NAME": "Tilia",
+    "GLOBALID": "{001A5293-0AA2-4603-A188-99362598F2A0}",
+    "LAST_EDITED_DATE": 1680206669000,
+    "OBJECTID": 108374935,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Tilia americana",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 12.0,
+    "VICINITY": "3100 BLK M ST SE",
+    "WARD": 7
+   },
+   "case": "plant dead standing",
+   "geometry": {
+    "x": -76.96209908612553,
+    "y": 38.87546009618371
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Chinese pistache",
+    "CONDITION": "Dead",
+    "DATE_PLANT": 1417410000000,
+    "DBH": 7.1,
+    "FACILITYID": "27956-135-3001-0251-000",
+    "FAM_NAME": "Anacardiaceae",
+    "GENUS_NAME": "Pistacia",
+    "GLOBALID": "{001A653F-0DBD-436B-8B9C-E25B34B83B01}",
+    "LAST_EDITED_DATE": 1747765544000,
+    "OBJECTID": 108326755,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Pistacia chinensis",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 4.0,
+    "VICINITY": "1344 SHEPHERD ST NE",
+    "WARD": 5
+   },
+   "case": "plant dead standing",
+   "geometry": {
+    "x": -76.98626455745679,
+    "y": 38.939712973281196
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Black walnut",
+    "CONDITION": null,
+    "DATE_PLANT": null,
+    "DBH": 22.0,
+    "FACILITYID": null,
+    "FAM_NAME": "Juglandaceae",
+    "GENUS_NAME": "Juglans",
+    "GLOBALID": "{00206F5A-D3C5-413B-93A1-50A8ABDFB705}",
+    "LAST_EDITED_DATE": 1774375375000,
+    "OBJECTID": 108412938,
+    "OWNERSHIP": "Private",
+    "SCI_NM": "Juglans nigra",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": "ALLEY behind 4107 5TH ST NW",
+    "WARD": 4
+   },
+   "case": "plant condition null",
+   "geometry": {
+    "x": -77.01874646204215,
+    "y": 38.94132476088269
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Water oak",
+    "CONDITION": "Fair",
+    "DATE_PLANT": null,
+    "DBH": 39.0,
+    "FACILITYID": null,
+    "FAM_NAME": "Null",
+    "GENUS_NAME": "Quercus",
+    "GLOBALID": "{00933295-3855-4C77-9588-846F200AC410}",
+    "LAST_EDITED_DATE": 1761935873000,
+    "OBJECTID": 108392283,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": null,
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 99.0,
+    "VICINITY": "1600 9th ST NW",
+    "WARD": 2
+   },
+   "case": "plant species null",
+   "geometry": {
+    "x": -77.02606007698947,
+    "y": 38.91114549614791
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Other (See Notes)",
+    "CONDITION": "Good",
+    "DATE_PLANT": 1579819079000,
+    "DBH": 0.5,
+    "FACILITYID": null,
+    "FAM_NAME": "Null",
+    "GENUS_NAME": "Other",
+    "GLOBALID": "{0025E584-C49C-45BD-A70E-4CD95C1EB6C2}",
+    "LAST_EDITED_DATE": 1779383295000,
+    "OBJECTID": 108402528,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Other (See Notes)",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 99.0,
+    "VICINITY": "O & 12th St SE slope",
+    "WARD": 6
+   },
+   "case": "plant species other see notes",
+   "geometry": {
+    "x": -76.99044894110862,
+    "y": 38.87361913320499
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Other (See Notes)",
+    "CONDITION": null,
+    "DATE_PLANT": null,
+    "DBH": 9.5,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{1FC038F3-534C-4B39-88EA-378C01EA3E68}",
+    "LAST_EDITED_DATE": 1766606748000,
+    "OBJECTID": 108437067,
+    "OWNERSHIP": "DCPS",
+    "SCI_NM": "Robinia pseudoacacia",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": "Rear of 425 Chesapeake Street SE",
+    "WARD": 8
+   },
+   "case": "plant common other see notes beside a real name",
+   "geometry": {
+    "x": -76.99981801303504,
+    "y": 38.82838816724078
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Bradford callery pear",
+    "CONDITION": "Fair",
+    "DATE_PLANT": null,
+    "DBH": 10.3,
+    "FACILITYID": "38062-230-3005-0163-000",
+    "FAM_NAME": "Rosaceae",
+    "GENUS_NAME": "Pyrus",
+    "GLOBALID": "{0124638F-C047-45A9-888F-BF03191380E7}",
+    "LAST_EDITED_DATE": 1697821131000,
+    "OBJECTID": 108318650,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Pyrus calleryana 'Bradford'",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 4.0,
+    "VICINITY": "2304 SKYLAND TER SE",
+    "WARD": 8
+   },
+   "case": "plant cultivar",
+   "geometry": {
+    "x": -76.9734100082709,
+    "y": 38.86029305486137
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Hardy Rubber Tree",
+    "CONDITION": "Excellent",
+    "DATE_PLANT": 1513374536000,
+    "DBH": 4.1,
+    "FACILITYID": "19425-380-3005-0510-000",
+    "FAM_NAME": "Eucommiaceae",
+    "GENUS_NAME": "Eucommia",
+    "GLOBALID": "{01081349-EE15-490B-8CF6-D38B716C5B98}",
+    "LAST_EDITED_DATE": 1772481692000,
+    "OBJECTID": 108225617,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Eucommia ulmoides",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 3.0,
+    "VICINITY": "3831 WOODLEY RD NW",
+    "WARD": 3
+   },
+   "case": "plant nbsp in name",
+   "geometry": {
+    "x": -77.07606513679085,
+    "y": 38.93225717882996
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Freeman maple",
+    "CONDITION": "Good",
+    "DATE_PLANT": 1572026209000,
+    "DBH": 4.3,
+    "FACILITYID": "20080-505-3005-0536-000",
+    "FAM_NAME": "Sapindaceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{0000008C-37C4-4D63-BE17-648CEBDAA385}",
+    "LAST_EDITED_DATE": 1790972618000,
+    "OBJECTID": 108356460,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Acer x freemanii",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 4.0,
+    "VICINITY": "opp 5078 8th St NE/S. Dakota Ave",
+    "WARD": 5
+   },
+   "case": "plant hybrid x",
+   "geometry": {
+    "x": -76.99388787753308,
+    "y": 38.9521000099406
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Cherry",
+    "CONDITION": "Good",
+    "DATE_PLANT": null,
+    "DBH": 7.5,
+    "FACILITYID": null,
+    "FAM_NAME": "Rosaceae",
+    "GENUS_NAME": "Prunus",
+    "GLOBALID": "{00397252-8D8F-45EB-97E7-6A2E3A04BC42}",
+    "LAST_EDITED_DATE": 1641848676000,
+    "OBJECTID": 108415123,
+    "OWNERSHIP": "DPR",
+    "SCI_NM": "Prunus species",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": "Spring Valley Park",
+    "WARD": 3
+   },
+   "case": "plant genus species spelled species",
+   "geometry": {
+    "x": -77.0975361339247,
+    "y": 38.93760117562415
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Mulberry",
+    "CONDITION": "Dead",
+    "DATE_PLANT": null,
+    "DBH": 20.0,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{06DF6A5B-5F2D-41B8-858E-4004B393B075}",
+    "LAST_EDITED_DATE": 1793761999000,
+    "OBJECTID": 108442491,
+    "OWNERSHIP": "DPR",
+    "SCI_NM": "Morus spp",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": "1812 ERIE ST SE",
+    "WARD": 8
+   },
+   "case": "plant genus spp",
+   "geometry": {
+    "x": -76.97944771489114,
+    "y": 38.85927632182753
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Ginkgo (male)",
+    "CONDITION": "Good",
+    "DATE_PLANT": 1513176088000,
+    "DBH": 3.5,
+    "FACILITYID": "20100-060-3001-0367-000",
+    "FAM_NAME": "Ginkgoaceae",
+    "GENUS_NAME": "Ginkgo",
+    "GLOBALID": "{00322E91-2FC2-48CB-9A80-09724F4DBD5B}",
+    "LAST_EDITED_DATE": 1747083193000,
+    "OBJECTID": 108335251,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Ginkgo biloba (male)",
+    "TBOX_L": 12.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 6.0,
+    "VICINITY": "opp 637 10TH ST NE",
+    "WARD": 6
+   },
+   "case": "plant sex suffix",
+   "geometry": {
+    "x": -76.99270510126496,
+    "y": 38.89838333957515
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Other (See Notes)",
+    "CONDITION": "Good",
+    "DATE_PLANT": null,
+    "DBH": 0.0,
+    "FACILITYID": "99999-999-9999-9428-7",
+    "FAM_NAME": "Null",
+    "GENUS_NAME": "Other",
+    "GLOBALID": "{07E7EFFE-DC76-428B-ABD2-6449F9606331}",
+    "LAST_EDITED_DATE": 1523438481000,
+    "OBJECTID": 108272438,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Other (See Notes)",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 99.0,
+    "VICINITY": "0 42ND ST NE",
+    "WARD": 7
+   },
+   "case": "plant dbh zero",
+   "geometry": {
+    "x": -76.94266194205545,
+    "y": 38.89887396532492
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "American elm",
+    "CONDITION": "Good",
+    "DATE_PLANT": null,
+    "DBH": -25.0,
+    "FACILITYID": null,
+    "FAM_NAME": "Ulmaceae",
+    "GENUS_NAME": "Ulmus",
+    "GLOBALID": "{BAA28F9F-7B8C-4FD4-B1E8-3A1E2599DEFF}",
+    "LAST_EDITED_DATE": 1703793763000,
+    "OBJECTID": 108425204,
+    "OWNERSHIP": "Private",
+    "SCI_NM": "Ulmus americana",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": "2128 CATHEDRAL AVE NW",
+    "WARD": 3
+   },
+   "case": "plant dbh negative",
+   "geometry": {
+    "x": -77.04984416261614,
+    "y": 38.92435299416061
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Red maple",
+    "CONDITION": "Good",
+    "DATE_PLANT": null,
+    "DBH": 1471.0,
+    "FACILITYID": "15629-380-3001-0703-000",
+    "FAM_NAME": "Sapindaceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{48069095-B138-430B-B6F2-E127ECEAA071}",
+    "LAST_EDITED_DATE": 1775080711000,
+    "OBJECTID": 108235247,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Acer rubrum",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 3.0,
+    "VICINITY": "3830 LIVINGSTON ST NW",
+    "WARD": 3
+   },
+   "case": "plant dbh over ceiling",
+   "geometry": {
+    "x": -77.07697492644509,
+    "y": 38.963055904041454
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Red maple",
+    "CONDITION": "Good",
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{03B9CA39-13CF-46F8-A854-F49193DFDFBD}",
+    "LAST_EDITED_DATE": 1787081498000,
+    "OBJECTID": 108440858,
+    "OWNERSHIP": "DCPS",
+    "SCI_NM": "Acer rubrum",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": "1335 FARRAGUT ST NW",
+    "WARD": 4
+   },
+   "case": "plant dbh null",
+   "geometry": {
+    "x": -77.03310032836738,
+    "y": 38.95096944898007
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Red maple",
+    "CONDITION": "Fair",
+    "DATE_PLANT": -2209143600000,
+    "DBH": 14.5,
+    "FACILITYID": "16838-270-3005-0090-000",
+    "FAM_NAME": "Sapindaceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{035D05EB-195F-4DB8-97D1-F55DC54A4DFF}",
+    "LAST_EDITED_DATE": 1779915082000,
+    "OBJECTID": 108341296,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Acer rubrum",
+    "TBOX_L": 8.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 3.0,
+    "VICINITY": "2711 P ST NW",
+    "WARD": 2
+   },
+   "case": "plant date sentinel 1899-12-30",
+   "geometry": {
+    "x": -77.05594448770067,
+    "y": 38.90943243134089
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Japanese zelkova",
+    "CONDITION": "Good",
+    "DATE_PLANT": 33272568000000,
+    "DBH": 2.0,
+    "FACILITYID": "10230-110-3005-0332-000",
+    "FAM_NAME": "Ulmaceae",
+    "GENUS_NAME": "Zelkova",
+    "GLOBALID": "{56B14FDF-B93F-4D14-BF66-67B25C634564}",
+    "LAST_EDITED_DATE": 1717096392000,
+    "OBJECTID": 108286384,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Zelkova serrata",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": 4.0,
+    "VICINITY": "1145 23RD ST NW",
+    "WARD": 2
+   },
+   "case": "plant date in the future",
+   "geometry": {
+    "x": -77.0500379161458,
+    "y": 38.9046516763396
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Pin oak",
+    "CONDITION": "Good",
+    "DATE_PLANT": null,
+    "DBH": 8.3,
+    "FACILITYID": null,
+    "FAM_NAME": "Fagaceae",
+    "GENUS_NAME": "Quercus",
+    "GLOBALID": "{0058A81B-14C1-43AB-A773-5C0E4962B54C}",
+    "LAST_EDITED_DATE": 1728584238000,
+    "OBJECTID": 108430393,
+    "OWNERSHIP": "DGS",
+    "SCI_NM": "Quercus palustris",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": "ROW WORK",
+    "WARD": null
+   },
+   "case": "plant outside district (Oak hill Dr, Laurel MD)",
+   "geometry": {
+    "x": -76.78532594256846,
+    "y": 39.10239331957992
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": 1459483200000,
+    "DBH": 0.0,
+    "FACILITYID": "40020-390-3001-0083-000",
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{00007F7F-FC3A-4734-BAFD-751E602BFDEE}",
+    "LAST_EDITED_DATE": 1732065034000,
+    "OBJECTID": 108289890,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": null,
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Open",
+    "TBOX_W": 3.0,
+    "VICINITY": "3904 2ND ST SW",
+    "WARD": 8
+   },
+   "case": "open plain",
+   "geometry": {
+    "x": -77.01012624233394,
+    "y": 38.83432430607679
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": "31748-060-3001-0507-000",
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{00108502-F432-4AE4-9427-5A03B1A8E3E2}",
+    "LAST_EDITED_DATE": 1707944240000,
+    "OBJECTID": 108246331,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": null,
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Open",
+    "TBOX_W": 4.0,
+    "VICINITY": "662 BRANDYWINE ST SE",
+    "WARD": 8
+   },
+   "case": "open plain",
+   "geometry": {
+    "x": -76.99665085638564,
+    "y": 38.83014477055602
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Bald cypress",
+    "CONDITION": "Dead",
+    "DATE_PLANT": 1603728048000,
+    "DBH": 2.0,
+    "FACILITYID": "23198-445-3005-0288-000",
+    "FAM_NAME": "Cupressaceae",
+    "GENUS_NAME": "Taxodium",
+    "GLOBALID": "{0077FEC7-6E3C-435F-A13D-B98F8DAB8E68}",
+    "LAST_EDITED_DATE": 1776972127000,
+    "OBJECTID": 108311840,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Taxodium distichum",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Open",
+    "TBOX_W": 99.0,
+    "VICINITY": "opp 4522 EASTERN AVE NE",
+    "WARD": 5
+   },
+   "case": "open naming a taxon with a trunk and a condition",
+   "geometry": {
+    "x": -76.97650451175318,
+    "y": 38.94505333492037
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{007279A1-6683-4822-A97E-26D9E39AC1E5}",
+    "LAST_EDITED_DATE": 1745259146000,
+    "OBJECTID": 108433090,
+    "OWNERSHIP": "DGS",
+    "SCI_NM": null,
+    "TBOX_L": null,
+    "TBOX_STAT": "Open",
+    "TBOX_W": null,
+    "VICINITY": "Old Portland rd",
+    "WARD": null
+   },
+   "case": "open outside district (Oak hill Dr, Laurel MD)",
+   "geometry": {
+    "x": -76.78831418760781,
+    "y": 39.09666065575177
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Cherry (Snowgoose)",
+    "CONDITION": "Fair",
+    "DATE_PLANT": 1372689804000,
+    "DBH": 4.0,
+    "FACILITYID": "15895-080-3001-0289-000",
+    "FAM_NAME": "Rosaceae",
+    "GENUS_NAME": "Prunus",
+    "GLOBALID": "{00094CD4-23AF-45F7-846D-9A46058BDCFD}",
+    "LAST_EDITED_DATE": 1523441393000,
+    "OBJECTID": 108364455,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Prunus 'Snow Goose'",
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Retired",
+    "TBOX_W": 6.0,
+    "VICINITY": "820 MARIETTA PL NW",
+    "WARD": 4
+   },
+   "case": "retired with leftover species",
+   "geometry": {
+    "x": -77.02518922909742,
+    "y": 38.95916894484949
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Mulberry",
+    "CONDITION": "Dead",
+    "DATE_PLANT": null,
+    "DBH": 20.0,
+    "FACILITYID": "17163-270-3001-0482-000",
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{003AF83A-C322-4EC2-8B81-820FDE54C198}",
+    "LAST_EDITED_DATE": 1743704047000,
+    "OBJECTID": 108362692,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Morus alba",
+    "TBOX_L": null,
+    "TBOX_STAT": "Retired",
+    "TBOX_W": null,
+    "VICINITY": "opp 2501 PORTER ST NW",
+    "WARD": 3
+   },
+   "case": "retired dead",
+   "geometry": {
+    "x": -77.05393448134049,
+    "y": 38.934854870757576
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{000229EB-5A8A-42D3-A097-68EA86D92002}",
+    "LAST_EDITED_DATE": 1518143324000,
+    "OBJECTID": 108385846,
+    "OWNERSHIP": "DPR",
+    "SCI_NM": null,
+    "TBOX_L": null,
+    "TBOX_STAT": "Proposed",
+    "TBOX_W": null,
+    "VICINITY": "Ft. Lincoln Dr. and 31st Pl., NE",
+    "WARD": 5
+   },
+   "case": "proposed",
+   "geometry": {
+    "x": -76.95871560066352,
+    "y": 38.92720296185841
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": 1307376397000,
+    "DBH": null,
+    "FACILITYID": "38456-130-3005-0265-000",
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{0000DD92-006B-44D9-859A-47568A5B0302}",
+    "LAST_EDITED_DATE": 1699029191000,
+    "OBJECTID": 108357750,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": null,
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Conflict",
+    "TBOX_W": 3.0,
+    "VICINITY": "1323 T ST SE",
+    "WARD": 8
+   },
+   "case": "conflict",
+   "geometry": {
+    "x": -76.98609407731229,
+    "y": 38.86754702981935
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{0052AF11-9D7B-4C15-AD8D-301C5796B6C8}",
+    "LAST_EDITED_DATE": 1776109486000,
+    "OBJECTID": 108438667,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": null,
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Delete",
+    "TBOX_W": 99.0,
+    "VICINITY": "3200 BLK RODMAN ST NW",
+    "WARD": 3
+   },
+   "case": "delete",
+   "geometry": {
+    "x": -77.06614127403525,
+    "y": 38.93916357656956
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": "Aceraceae",
+    "GENUS_NAME": "Acer",
+    "GLOBALID": "{01B95B8B-5128-42F2-88CE-8E395A269B06}",
+    "LAST_EDITED_DATE": 1778607676000,
+    "OBJECTID": 108412245,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": null,
+    "TBOX_L": 99.0,
+    "TBOX_STAT": "Utility Conflic",
+    "TBOX_W": 3.0,
+    "VICINITY": "1813 37TH ST NW",
+    "WARD": 2
+   },
+   "case": "utility conflic (truncated)",
+   "geometry": {
+    "x": -77.07273741355877,
+    "y": 38.91497232299999
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Swamp white oak",
+    "CONDITION": "Excellent",
+    "DATE_PLANT": 1393390800000,
+    "DBH": 7.7,
+    "FACILITYID": "16890-170-3005-0265-000",
+    "FAM_NAME": "Fagaceae",
+    "GENUS_NAME": "Quercus",
+    "GLOBALID": "{006B224D-C4F8-4F1A-8C6B-C3A438A7D186}",
+    "LAST_EDITED_DATE": 1789153563000,
+    "OBJECTID": 108263123,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Quercus bicolor",
+    "TBOX_L": 11.0,
+    "TBOX_STAT": "Under Construct",
+    "TBOX_W": 5.0,
+    "VICINITY": "OPP 1728 PARK RD NW",
+    "WARD": 1
+   },
+   "case": "under construct (truncated)",
+   "geometry": {
+    "x": -77.03978120062929,
+    "y": 38.932581443841535
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": null,
+    "CONDITION": null,
+    "DATE_PLANT": 1509641466000,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{5CBED391-7E8E-4621-AF14-C1D840C50B9E}",
+    "LAST_EDITED_DATE": 1781116632000,
+    "OBJECTID": 108380249,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": null,
+    "TBOX_L": 99.0,
+    "TBOX_STAT": null,
+    "TBOX_W": 3.0,
+    "VICINITY": "3945 4TH ST SE",
+    "WARD": 8
+   },
+   "case": "status null",
+   "geometry": {
+    "x": -77.00064723778604,
+    "y": 38.8313699680441
+   }
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Other (See Notes)",
+    "CONDITION": "Excellent",
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": null,
+    "GENUS_NAME": null,
+    "GLOBALID": "{033A4ED3-5032-4F65-97AA-1CC24BF8138D}",
+    "LAST_EDITED_DATE": 1793388725000,
+    "OBJECTID": 108442464,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Other (See Notes)",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": null,
+    "WARD": null
+   },
+   "case": "no geometry",
+   "geometry": null
+  },
+  {
+   "attributes": {
+    "CMMN_NM": "Other (See Notes)",
+    "CONDITION": "Excellent",
+    "DATE_PLANT": null,
+    "DBH": null,
+    "FACILITYID": null,
+    "FAM_NAME": "Null",
+    "GENUS_NAME": "Other",
+    "GLOBALID": "{9B112201-858C-430B-BE2D-BE5C608963F8}",
+    "LAST_EDITED_DATE": 1523439787000,
+    "OBJECTID": 108353080,
+    "OWNERSHIP": "UFA",
+    "SCI_NM": "Other (See Notes)",
+    "TBOX_L": null,
+    "TBOX_STAT": "Plant",
+    "TBOX_W": null,
+    "VICINITY": null,
+    "WARD": null
+   },
+   "case": "no geometry",
+   "geometry": null
+  }
+ ],
+ "sampled_utc": "2026-11-12",
+ "source": "DDOT Urban Forestry Division, UFA Street Trees, maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/Urban_Tree_Canopy/MapServer/23 (outSR=4326)"
+}

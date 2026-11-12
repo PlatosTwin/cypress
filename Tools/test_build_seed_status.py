@@ -255,9 +255,21 @@ for _space, _entries in REGIONS.items():
 # The check below turns that argument into a measurement rather than leaving it
 # as reasoning in a comment. An INSERTION anywhere but the end, or a reorder
 # within a space, is still the breaking edit this line exists to catch.
+#
+# UPDATED BY THE D.C. ROUND (2026-11-12), and here the argument above does NOT
+# carry over, which is stated rather than hidden. `us-dc-dc` sorts BEFORE
+# `us-ny-nyc`, and REGIONS is kept in sorted order because `build_seed`
+# iterates `sorted(spaces)`. So a build holding all four cities would assign New York's
+# boroughs 4..8 instead of 3..7. No published pack changes: the five borough
+# packs carry 3..7 inside their own files and are not rebuilt by this round,
+# and D.C. publishes alone through `publish_cities.py --add-pack`, which
+# renumbers its region to 8 (`next_region_id`). The 7b check below still pins
+# `sf` and `us-ca-sj` at 1 and 2, and both still hold. A future FULL rebuild
+# that includes D.C. moves the borough ids, which is a ROADMAP follow-up.
 check([(s, [e["pack_id"] for e in es]) for s, es in REGIONS.items()]
       == [("sf", ["sf"]),
           ("us-ca-sj", ["us-ca-sj"]),
+          ("us-dc-dc", ["us-dc-dc"]),
           ("us-ny-nyc", ["us-ny-nyc-manhattan", "us-ny-nyc-brooklyn", "us-ny-nyc-queens",
                          "us-ny-nyc-bronx", "us-ny-nyc-staten-island"])],
       f"REGIONS' declared order changed to "
