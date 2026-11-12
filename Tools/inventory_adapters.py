@@ -1828,3 +1828,346 @@ class NYCTreePointAdapter:
                 f"sum exactly to the whole city, so this is a stop rather than a "
                 f"row with no borough. Re-check the boundary file and the extract."
             )
+
+
+# ---------------------------------------------------------------------------
+# Washington, D.C.
+# ---------------------------------------------------------------------------
+# DDOT Urban Forestry Division's `UFA Street Trees` layer (DCGIS_DATA/
+# Urban_Tree_Canopy/MapServer/23), CC BY 4.0. One layer, one id space, one
+# region, no neighborhoods -- San Jose's shape, not New York's. Profile and
+# decisions: docs/investigations/dc-street-trees.md.
+
+#: `TBOX_STAT` is the layer's status field for a tree box (a planting site). It
+#: is the field that decides what ships, and it is read FIRST, before species or
+#: DBH, because many non-`Plant` rows still carry a leftover species name and
+#: trunk diameter from the tree that used to stand there. Filtering on "has a
+#: species" would ship 12,264 `Retired` boxes as living trees.
+#:
+#: Measured on the live layer, 2026-11-12 (223,777 rows):
+#:
+#:     Plant            198,167   a tree stands in the box       -> KIND_TREE
+#:     Retired           12,264   the tree was removed            -> not shipped
+#:     Proposed           4,933   a box DDOT plans to plant       -> not shipped
+#:     Conflict           4,346   a box blocked by a conflict     -> not shipped
+#:     Open               3,468   an empty box, plantable         -> KIND_PLANTING_SITE
+#:     Delete               279   an editor's delete marker       -> not shipped
+#:     Utility Conflic      162   (truncated upstream)            -> not shipped
+#:     Under Construct      154   (truncated upstream)            -> not shipped
+#:     null                   4                                   -> not shipped
+#:
+#: `Open` ships as a vacant site the way San Jose's `VACANTSITE = 'Yes'` does.
+#: `Proposed` and `Conflict` boxes are not plantable today or not real yet, and
+#: shipping them as vacant sites would claim an empty, plantable hole the source
+#: does not claim. Every status that does not ship is counted by name in
+#: `stats["status_not_shipped"]`, so the drop is a number, not a silence.
+DC_STATUS_TREE = "plant"
+DC_STATUS_PLANTING_SITE = "open"
+
+#: `CONDITION` -> the contract's condition vocabulary, matched to NYC's mapping
+#: (RULINGS R19, R101): `Dead` on a standing tree is `dead_reported`; every
+#: other rated value, `Poor` included, is `alive` -- `declining` is a status no
+#: source produces, and this adapter does not start producing it. A blank is no
+#: claim (`None`). DDOT's word rides into `city_record['permit_notes']`
+#: verbatim, which is where NYC's and San Jose's condition words go too.
+#:
+#: The scale is closed. A new value stops the build rather than shipping a row
+#: with no condition claim, the same rule as `NYC_CONDITIONS`.
+DC_CONDITIONS = {
+    "excellent": CONDITION_ALIVE,
+    "good": CONDITION_ALIVE,
+    "fair": CONDITION_ALIVE,
+    "poor": CONDITION_ALIVE,
+    "dead": CONDITION_DEAD,
+}
+
+#: `SCI_NM` values that name no taxon. `Other (See Notes)` is DDOT's
+#: placeholder for a tree whose species is written in a notes field this layer
+#: does not publish usefully: 5,595 rows on the whole layer. Under R18 a tree
+#: of unknown species is a tree, so it ships with no species, exactly like
+#: San Jose's and New York's `Unknown`. Keyed case-folded with whitespace
+#: collapsed.
+DC_NON_TAXON_SPECIES = {"other (see notes)"}
+
+#: `CMMN_NM` values that name nothing. The same placeholder, in the common-name
+#: column, also appears beside real scientific names (`Robinia pseudoacacia` /
+#: `Other (See Notes)`), so it is resolved here independently of `SCI_NM`.
+DC_NON_NAME_COMMON = {"other (see notes)"}
+
+#: The same 400 in ceiling as `SJ_DBH_CEILING_IN`, `NYC_DBH_CEILING_IN` and
+#: `parse_dbh_inches`, for the reason `NYC_DBH_CEILING_IN` gives: one meaning for
+#: a present `dbh_in` across every city. D.C.'s DBH is a double with no unit in
+#: its metadata; INCHES IS INFERRED from the distribution (median 6.6, p99 42.1
+#: over the positive values, 2026-11-12), which is a street tree in inches and
+#: not in centimetres. Range on the layer is -25 to 1,471; 2,390 rows are 0 and
+#: 17,398 are null.
+DC_DBH_CEILING_IN = 400.0
+
+#: `DATE_PLANT` earlier than this is a sentinel, not a date. 225 rows on the
+#: live layer read 1899-12-30, which is the OLE Automation / spreadsheet day
+#: zero, and a scatter of others fall in 1170..1899. The upper bound is the seed
+#: epoch's horizon year, which the builder passes in, as for NYC.
+DC_PLANTED_MIN_YEAR = 1900
+
+
+def _dc_text(value) -> Optional[str]:
+    """Whitespace-normalised text, or None. Collapses U+00A0 and runs of spaces.
+
+    `str.split()` with no argument splits on every Unicode whitespace character,
+    which includes the non-breaking space DDOT writes inside some names
+    (`Eucommia\\xa0ulmoides`, 266 rows). Without this, that row and a clean
+    `Eucommia ulmoides` would be two species.
+    """
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    return text or None
+
+
+class DCStreetTreeAdapter:
+    """DDOT's `UFA Street Trees` layer -- 223,777 rows, CC BY 4.0.
+
+    `rows` are the layer's own features as `Tools/fetch_dc_trees.py` caches
+    them: `{"attributes": {...}, "geometry": {"x": lon, "y": lat}}`.
+
+    WHAT SHIPS is decided by `TBOX_STAT` alone (see `DC_STATUS_TREE`). A `Plant`
+    row is a tree with its species, DBH, planting date and condition. An `Open`
+    row is an empty planting site and carries none of those, whatever leftovers
+    the row holds: a planting site that names a species or a trunk is one of the
+    records the contract forbids, so the leftovers are dropped and counted.
+
+    WHAT IS NOT READ: `WARD` (civic geography the app has no slot for), `GENUS_NAME`
+    and `FAM_NAME` (botanical content comes from the cited species fixtures, never
+    from an adapter -- DECISIONS constraint 15), `FACILITYID` (a planting-site id
+    that is null on 67,033 rows), and the DISEASE/PESTS/SIGN/WARRANTY/RETIREDDT/
+    CONDITIODT columns, which on this layer do not hold what their names say.
+    """
+
+    inventory_id = "dc_street_trees"
+
+    def __init__(self, rows, horizon_year: int, limit: int = 0) -> None:
+        self.rows = rows
+        self.horizon_year = horizon_year
+        self.limit = limit
+        self.stats = {
+            "source_rows": 0,
+            "dropped_no_coords": 0,
+            # TBOX_STAT values that do not ship, by DDOT's own word ("(null)" for
+            # a blank). Every source row lands in exactly one of: this, the
+            # coordinate drop, or a yielded record.
+            "status_not_shipped": {},
+            "kind_tree": 0,
+            "kind_planting_site": 0,
+            # Condition, on trees only.
+            "condition_stated": 0,
+            "condition_not_stated": 0,
+            "standing_dead": 0,
+            # Species, on trees only.
+            "species_named": 0,
+            "species_placeholder": 0,
+            "species_blank": 0,
+            # Leftovers on an `Open` box, dropped because an empty site has no
+            # species, no trunk and no condition.
+            "open_sites_naming_a_taxon": 0,
+            "open_sites_with_a_trunk_diameter": 0,
+            "open_sites_with_a_condition": 0,
+            # Value-level resolutions on shipped trees.
+            "dbh_zero_or_negative": 0,
+            "dbh_over_ceiling": 0,
+            "planted_date_out_of_range": 0,
+        }
+
+    # ------------------------------------------------------------------ parts
+
+    @staticmethod
+    def source_ref_of(raw) -> Optional[str]:
+        """`{926038DA-...}` -> `926038DA-...`. Braces stripped, case kept as published."""
+        text = _clean(raw)
+        if text is None:
+            return None
+        if text.startswith("{") and text.endswith("}"):
+            text = text[1:-1].strip()
+        return text or None
+
+    def parse_dbh(self, raw) -> Optional[float]:
+        """`DBH` -> inches measured, or None. See `DC_DBH_CEILING_IN`."""
+        if raw is None:
+            return None
+        try:
+            inches = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if inches != inches:  # NaN
+            return None
+        if inches <= 0:
+            self.stats["dbh_zero_or_negative"] += 1
+            return None
+        if inches > DC_DBH_CEILING_IN:
+            self.stats["dbh_over_ceiling"] += 1
+            return None
+        return inches
+
+    def parse_planted_date(self, raw) -> Optional[_datetime.date]:
+        """`DATE_PLANT` (epoch milliseconds) -> a date, or None. See `DC_PLANTED_MIN_YEAR`."""
+        if raw is None:
+            return None
+        try:
+            millis = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if millis != millis:
+            return None
+        try:
+            parsed = (
+                _datetime.datetime(1970, 1, 1) + _datetime.timedelta(milliseconds=millis)
+            ).date()
+        except (OverflowError, ValueError):
+            self.stats["planted_date_out_of_range"] += 1
+            return None
+        if DC_PLANTED_MIN_YEAR <= parsed.year <= self.horizon_year:
+            return parsed
+        self.stats["planted_date_out_of_range"] += 1
+        return None
+
+    def condition_of(self, raw):
+        """`(condition, condition_text)` for a tree. See `DC_CONDITIONS`."""
+        text = _dc_text(raw)
+        if text is None:
+            self.stats["condition_not_stated"] += 1
+            return None, None
+        key = text.lower()
+        if key not in DC_CONDITIONS:
+            raise ValueError(
+                f"DDOT CONDITION {text!r} is not one of {sorted(DC_CONDITIONS)}. The rating "
+                f"scale is closed, so a new value means it changed -- map it deliberately in "
+                f"DC_CONDITIONS rather than letting this row ship with no condition claim."
+            )
+        self.stats["condition_stated"] += 1
+        return DC_CONDITIONS[key], text
+
+    @staticmethod
+    def confidence_for(scientific_name: Optional[str]) -> Optional[float]:
+        """The SF/SJ/NYC confidence scale, with DDOT's `species` spelled like `spp`.
+
+        `Prunus species` (2,346 rows) is DDOT's way of writing `Prunus spp`; on
+        the shared scale a genus with an indeterminate marker is 0.75, and
+        reading the literal word `species` as an epithet would score it 1.0, a
+        confident binomial. Only the CONFIDENCE changes; the name is kept as
+        published.
+        """
+        if scientific_name is None:
+            return None
+        tokens = scientific_name.split()
+        genus = tokens[0]
+        if not genus[:1].isupper() or not genus.replace("-", "").isalpha():
+            return 0.2
+        if len(tokens) == 1:
+            return 0.7
+        if tokens[1].lower() in {"sp.", "spp.", "sp", "spp", "species", "x", "hybrid"}:
+            return 0.75
+        if tokens[1][:1].islower() and tokens[1].replace("-", "").isalpha():
+            return 1.0 if len(tokens) == 2 else 0.9
+        return 0.6
+
+    # ----------------------------------------------------------------- records
+
+    def records(self) -> Iterator[InventoryRecord]:
+        for feature in self.rows:
+            self.stats["source_rows"] += 1
+            if self.limit and self.stats["source_rows"] > self.limit:
+                self.stats["source_rows"] -= 1
+                break
+
+            attributes = feature.get("attributes") or {}
+            status_text = _dc_text(attributes.get("TBOX_STAT"))
+            status = (status_text or "").lower()
+            if status not in (DC_STATUS_TREE, DC_STATUS_PLANTING_SITE):
+                label = status_text or "(null)"
+                bucket = self.stats["status_not_shipped"]
+                bucket[label] = bucket.get(label, 0) + 1
+                continue
+
+            geometry = feature.get("geometry") or {}
+            lat, lon = geometry.get("y"), geometry.get("x")
+            if lat is None or lon is None or lat != lat or lon != lon:
+                self.stats["dropped_no_coords"] += 1
+                continue
+
+            species_raw = attributes.get("SCI_NM")
+            species_text = _dc_text(species_raw)
+            common_text = _dc_text(attributes.get("CMMN_NM"))
+            condition_raw = attributes.get("CONDITION")
+
+            if status == DC_STATUS_PLANTING_SITE:
+                # An empty box. Leftovers from the tree that used to stand here
+                # are counted and dropped; the contract forbids a planting site
+                # that names a species or states a condition.
+                self.stats["kind_planting_site"] += 1
+                if species_text and species_text.lower() not in DC_NON_TAXON_SPECIES:
+                    self.stats["open_sites_naming_a_taxon"] += 1
+                raw_dbh = attributes.get("DBH")
+                if isinstance(raw_dbh, (int, float)) and raw_dbh == raw_dbh and raw_dbh > 0:
+                    self.stats["open_sites_with_a_trunk_diameter"] += 1
+                if _dc_text(condition_raw):
+                    self.stats["open_sites_with_a_condition"] += 1
+                yield InventoryRecord(
+                    inventory=self.inventory_id,
+                    kind=KIND_PLANTING_SITE,
+                    kind_basis=KindBasis.STATED,
+                    lat=float(lat),
+                    lon=float(lon),
+                    source_ref=self.source_ref_of(attributes.get("GLOBALID")),
+                    species_text=species_text,
+                    address=_dc_text(attributes.get("VICINITY")),
+                    city_record={},
+                )
+                continue
+
+            # ---- a tree.
+            self.stats["kind_tree"] += 1
+            scientific = species_text
+            if scientific is None:
+                self.stats["species_blank"] += 1
+            elif scientific.lower() in DC_NON_TAXON_SPECIES:
+                # R18: a tree of unknown species is a tree with no species.
+                self.stats["species_placeholder"] += 1
+                scientific = None
+            else:
+                self.stats["species_named"] += 1
+            common = common_text
+            if common is not None and common.lower() in DC_NON_NAME_COMMON:
+                common = None
+            if scientific is None:
+                # No taxon to attach a vernacular to. `emit` would drop it anyway;
+                # dropping it here keeps the record saying one thing.
+                common = None
+
+            condition, condition_text = self.condition_of(condition_raw)
+            if condition == CONDITION_DEAD:
+                self.stats["standing_dead"] += 1
+
+            yield InventoryRecord(
+                inventory=self.inventory_id,
+                # `TBOX_STAT = 'Plant'` is the layer's category field placing this
+                # record in the ordinary category -- STATED_CATEGORY, as for San
+                # Jose's `VACANTSITE = 'No'`.
+                kind=KIND_TREE,
+                kind_basis=KindBasis.STATED_CATEGORY,
+                lat=float(lat),
+                lon=float(lon),
+                source_ref=self.source_ref_of(attributes.get("GLOBALID")),
+                scientific_name=scientific,
+                common_name=common,
+                species_confidence=self.confidence_for(scientific),
+                species_text=species_text,
+                species_is_stub=False,
+                condition=condition,
+                condition_text=condition_text,
+                # The block string DDOT publishes (`3218 18TH ST NW`,
+                # `2900 BLK M PL SE`), whitespace collapsed. San Jose and New York
+                # both put a number-and-street string here.
+                address=_dc_text(attributes.get("VICINITY")),
+                planted_on=self.parse_planted_date(attributes.get("DATE_PLANT")),
+                dbh_in=self.parse_dbh(attributes.get("DBH")),
+                city_record={"permit_notes": condition_text},
+            )

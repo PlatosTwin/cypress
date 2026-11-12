@@ -234,6 +234,19 @@ NYC_BBOX = {
     "max_lon": -73.65,
 }
 
+# Washington, D.C. MEASURED on the full 2026-11-12 extract of DDOT's layer
+# (see `DC_BBOX_MEASURED` in docs/investigations/dc-street-trees.md): every
+# shipped row sits inside lat [38.79, 39.00], lon [-77.12, -76.91], the
+# District's own diamond. The box pads that slightly. As for NYC it is also a
+# check against a coordinate parsed in the wrong order, or an un-projected
+# Maryland State Plane value, both of which land far outside it.
+DC_BBOX = {
+    "min_lat": 38.78,
+    "max_lat": 39.01,
+    "min_lon": -77.13,
+    "max_lon": -76.90,
+}
+
 # The admission box for each id space. `accepts()` reads this rather than
 # SF_BBOX: a bounding box is a fact about a city, and applying San Francisco's to
 # San Jose's rows would reject all 344,879 of them without a word.
@@ -241,6 +254,7 @@ BBOX_BY_ID_SPACE = {
     "sf": SF_BBOX,
     "us-ca-sj": SJ_BBOX,
     "us-ny-nyc": NYC_BBOX,
+    "us-dc-dc": DC_BBOX,
 }
 
 # `--source` names one of SAN FRANCISCO'S two inventories and is unchanged; the
@@ -262,6 +276,7 @@ SPECIES_MAP_FILES = {
     "sf": "sf_species_map.csv",
     "us-ca-sj": "sj_species_map.csv",
     "us-ny-nyc": "nyc_species_map.csv",
+    "us-dc-dc": "dc_species_map.csv",
 }
 
 # ---------------------------------------------------------------------------
@@ -368,6 +383,50 @@ def _nyc_parse_point(raw):
     return lat, lon
 
 
+# The D.C. cache written by `Tools/fetch_dc_trees.py`. Like New York's it lives
+# OUTSIDE the repo (~100 MB), so its directory is a required argument.
+DC_NDJSON = "dc_street_trees.ndjson"
+DC_META = "dc_street_trees.meta.json"
+
+
+def load_dc_layer(cache_dir: str):
+    """`<cache>/dc_street_trees.{ndjson,meta.json}` -> (features, meta).
+
+    Cache-only, exactly like `load_san_jose_layer`: the fetch is
+    `Tools/fetch_dc_trees.py`'s job. If the cache is absent or inconsistent the
+    build stops and says how to make it.
+    """
+    ndjson_path = os.path.join(cache_dir, DC_NDJSON)
+    meta_path = os.path.join(cache_dir, DC_META)
+    if not os.path.exists(ndjson_path):
+        die(
+            f"{ndjson_path} is absent. Run:\n"
+            f"    python3 Tools/fetch_dc_trees.py --cache-dir {cache_dir} --verify\n"
+            f"It pages DDOT's public layer sequentially and caches it; a page "
+            f"already on disk is never re-fetched."
+        )
+    features = []
+    with open(ndjson_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                features.append(json.loads(line))
+    meta = {}
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    written = meta.get("rows_written")
+    if written is None or written != len(features):
+        die(
+            f"{DC_META} says {written} rows and {DC_NDJSON} holds {len(features)}; "
+            f"the cache is inconsistent or has no meta. Re-run Tools/fetch_dc_trees.py."
+        )
+    log(f"d.c. cache: {len(features):,} features, extracted "
+        f"{meta.get('extracted_on', 'unknown')}, newest edit "
+        f"{meta.get('max_last_edited_date', 'unknown')}")
+    return features, meta
+
+
 def load_san_jose_layer(raw_dir: str):
     """`Fixtures/raw/sj_street_trees.{ndjson,meta.json}` -> (features, meta).
 
@@ -445,6 +504,7 @@ from inventory_adapters import (  # noqa: E402
     SFCityLayerAdapter,
     SFDataSFAdapter,
     BoroughResolver,
+    DCStreetTreeAdapter,
     NYCTreePointAdapter,
     SanJoseStreetTreeAdapter,
     normalise_species_key,
@@ -758,6 +818,27 @@ DIM_CITY: dict[str, dict[str, str]] = {
         "county": "New York City",
         "urban_forestry_url": "https://www.nyc.gov/parks",
     },
+    # Washington, D.C. Two fields are flagged rather than guessed, as for NYC.
+    #
+    # `county`: the District has no county. "District of Columbia" names the
+    # jurisdiction the data comes from, the same choice NYC's row made.
+    #
+    # `urban_forestry_url` is the DEPARTMENT home page. Fetched 2026-11-12:
+    #   https://ddot.dc.gov/                         200, "| ddot"  <- entered
+    #   https://ddot.dc.gov/page/trees               404
+    #   https://ddot.dc.gov/service/trees            redirects to
+    #       /service/trees-district, 403 "Access denied" to a non-browser
+    #       agent. NOT retried with a spoofed agent (bot detection).
+    #   https://trees.dc.gov/                        200, "Urban Forestry", but
+    #       a script-only page whose owner could not be confirmed from its HTML.
+    # `state` is "DC", the postal abbreviation, matching the "CA"/"NY" rows.
+    "us-dc-dc": {
+        "slug": "us-dc-dc",
+        "display_name": "Washington, D.C.",
+        "state": "DC",
+        "county": "District of Columbia",
+        "urban_forestry_url": "https://ddot.dc.gov/",
+    },
 }
 
 
@@ -904,6 +985,17 @@ REGIONS: dict[str, list[dict]] = {
             "display_name": "Staten Island",
             "level": "borough",
             "source_names": ("Staten Island",),
+        },
+    ],
+    # Washington, D.C.: one city-level region, San Jose's shape. `pack_id` is
+    # FROZEN at first publish (R37.2, R103): it is the immutable object path and
+    # the install key on every reader's device.
+    "us-dc-dc": [
+        {
+            "pack_id": "us-dc-dc",
+            "display_name": "Washington, D.C.",
+            "level": "city",
+            "source_names": (),
         },
     ],
 }
@@ -2090,7 +2182,8 @@ def species_map_csv(rows) -> str:
 def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
           source: str = DEFAULT_SOURCE, sj_extent: str = "none",
           write_species_map: bool = False,
-          nyc_cache: str = "", nyc_borough: str = "", nyc_structures: str = "Full") -> int:
+          nyc_cache: str = "", nyc_borough: str = "", nyc_structures: str = "Full",
+          dc_cache: str = "") -> int:
     if source not in SOURCES:
         die(f"--source must be one of {', '.join(SOURCES)}, got {source!r}")
     if sj_extent not in SJ_EXTENTS:
@@ -2139,6 +2232,10 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             nyc_boroughs = BoroughResolver(json.load(fh))
         log(f"nyc: {len(nyc_rows):,} tree points, {len(nyc_spaces):,} planting spaces, "
             f"extracted {nyc_meta.get('extracted_on')}")
+
+    dc_rows, dc_meta = None, {}
+    if dc_cache:
+        dc_rows, dc_meta = load_dc_layer(dc_cache)
 
     sj_rows, sj_meta, sj_window = None, {}, None
     if sj_extent != "none":
@@ -2238,6 +2335,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         "sj_kept": 0,
         "nyc_kept": 0,
         "nyc_source_rows": 0,
+        "dc_kept": 0,
+        "dc_source_rows": 0,
         # Records read and validated but deliberately not shipped, because they
         # fall outside `SJ_SHIP_WINDOW`. This is the one drop counter in the
         # build that is a PRODUCT decision rather than a data defect, and it is
@@ -2724,6 +2823,37 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             if key not in ("source_rows", "dropped_no_coords"):
                 stats["nyc_" + key] = value
 
+    # ---- Washington, D.C. ---------------------------------------------------
+    # San Jose's shape: one layer, one id space, one region. What ships is
+    # decided inside the adapter by DDOT's `TBOX_STAT` (`Plant` -> tree, `Open`
+    # -> vacant site); every other status is counted there and never reaches
+    # `accepts`. The bounding box below is `DC_BBOX`, applied by `accepts`.
+    if dc_rows is not None:
+        dc = DCStreetTreeAdapter(dc_rows, horizon_year, limit=limit)
+        dc_out_of_bbox_before = stats["dropped_out_of_bbox"]
+        dc_dupes_before = stats["dropped_dupe_treeid"]
+        for record in dc.records():
+            if not accepts(record):
+                continue
+            if record.source_ref is not None:
+                if already_seen(record):
+                    stats["dropped_dupe_treeid"] += 1
+                    continue
+                mark_seen(record)
+            emit(record)
+            stats["dc_kept"] += 1
+        stats["dc_source_rows"] = dc.stats["source_rows"]
+        stats["dropped_no_coords"] += dc.stats["dropped_no_coords"]
+        stats["dc_dropped_out_of_bbox"] = stats["dropped_out_of_bbox"] - dc_out_of_bbox_before
+        stats["dc_dropped_dupe_ref"] = stats["dropped_dupe_treeid"] - dc_dupes_before
+        for key, value in dc.stats.items():
+            if key not in ("source_rows",):
+                stats["dc_" + key] = value
+        log(f"d.c.: {dc.stats['source_rows']:,} rows read, {stats['dc_kept']:,} shipped, "
+            f"not shipped by status {dc.stats['status_not_shipped']}, "
+            f"{dc.stats['dropped_no_coords']:,} with no point, "
+            f"{stats['dc_dropped_out_of_bbox']:,} outside DC_BBOX")
+
     # ---- #95, applied. One spelling per case-folded value in the columns the app
     # compares against a literal. `WHERE plant_type = 'Tree'` used to drop three
     # rows spelled `tree`; the seed contract now fails if any such pair returns.
@@ -2845,8 +2975,16 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     # rather than swallowed. The name-mismatch check stays strict on both paths --
     # a fixture claiming a different name for a uuid the seed does carry is still a
     # build failure.
+    # `nyc_species.yaml` is offered whenever NYC OR D.C. is in the build. It is
+    # keyed by species uuid -- uuid5 of the normalised scientific name -- and
+    # read with `allow_absent`, so it attaches cited family / leaf-retention
+    # values only to a species whose name is EXACTLY one NYC curated, and to
+    # nothing else. D.C.'s Eastern-seaboard flora overlaps New York's; reusing
+    # those cited rows is the existing mechanism, not new botanical content
+    # (DECISIONS constraint 15). Without it a phone holding both a New York and
+    # a D.C. pack would carry two different contents for one species uuid.
     nyc_fixtures = ()
-    if nyc_rows is not None:
+    if nyc_rows is not None or dc_rows is not None:
         nyc_fixtures = ((os.path.join(fixtures_dir, "species", "nyc_species.yaml"), False),)
     species_content, content_stats = load_species_content(
         fixtures_dir, species_by_key, strict=(source == "datasf" and not limit),
@@ -3045,7 +3183,7 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # inventories the file holds rows from and sum to its own total.
             "rows_from_sf_city":
                 str(stats["kept"] - stats["export_vacant_carried"] - stats["sj_kept"]
-                    - stats["nyc_kept"]),
+                    - stats["nyc_kept"] - stats["dc_kept"]),
             "rows_from_sf_datasf": str(stats["export_vacant_carried"]),
             "export_vacant_sites_excluded_city_lists_tree":
                 str(stats["export_vacant_city_lists_tree"]),
@@ -3084,7 +3222,8 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             # is the dataset's own last update, which is what SEED_EPOCH is set to
             # (ERRATA E1). Stated rather than left to be inferred from `generated_at`.
             "trees_snapshot_on": NOW[:10],
-            "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"] - stats["nyc_kept"]),
+            "rows_from_sf_datasf": str(stats["kept"] - stats["sj_kept"] - stats["nyc_kept"]
+                                       - stats["dc_kept"]),
             "inventory_sf_datasf_name": INVENTORIES["sf_datasf"].name,
             "inventory_sf_datasf_url": INVENTORIES["sf_datasf"].url,
             "inventory_sf_datasf_snapshot_on": NOW[:10],
@@ -3190,7 +3329,45 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                 str(stats.get("nyc_planted_date_beyond_horizon", 0)),
         }
 
-    source_meta = {**source_meta, **sj_meta_keys, **nyc_meta_keys}
+    # Washington, D.C.'s receipt keys, written only when D.C. contributed rows.
+    # Same `inventory_<id>_*` shape as every other inventory.
+    dc_meta_keys = {}
+    if dc_rows is not None:
+        not_shipped = stats.get("dc_status_not_shipped", {})
+        dc_meta_keys = {
+            "inventory_dc_street_trees_name": INVENTORIES["dc_street_trees"].name,
+            "inventory_dc_street_trees_url": INVENTORIES["dc_street_trees"].url,
+            "inventory_dc_street_trees_snapshot_on": dc_meta.get("extracted_on", ""),
+            "inventory_dc_street_trees_id_space": INVENTORIES["dc_street_trees"].id_space,
+            # San Jose's style. The grant is CC BY 4.0 and the credit line is
+            # the publisher's own name.
+            "inventory_dc_street_trees_licence":
+                "CC-BY-4.0; credit: District Department of Transportation",
+            "rows_from_dc_street_trees": str(stats["dc_kept"]),
+            "dc_rows_read": str(stats["dc_source_rows"]),
+            "dc_rows_shipped": str(stats["dc_kept"]),
+            "dc_rows_shipped_as_trees": str(stats.get("dc_kind_tree", 0)),
+            "dc_rows_shipped_as_vacant_sites": str(stats.get("dc_kind_planting_site", 0)),
+            # Every TBOX_STAT that does not ship, by DDOT's own word.
+            "dc_rows_not_shipped_by_status": json.dumps(not_shipped, sort_keys=True),
+            "dc_rows_no_point": str(stats.get("dc_dropped_no_coords", 0)),
+            "dc_rows_outside_bbox": str(stats.get("dc_dropped_out_of_bbox", 0)),
+            "dc_rows_duplicate_ref": str(stats.get("dc_dropped_dupe_ref", 0)),
+            "dc_standing_dead": str(stats.get("dc_standing_dead", 0)),
+            "dc_condition_stated": str(stats.get("dc_condition_stated", 0)),
+            "dc_condition_not_stated": str(stats.get("dc_condition_not_stated", 0)),
+            "dc_species_placeholder": str(stats.get("dc_species_placeholder", 0)),
+            "dc_species_blank": str(stats.get("dc_species_blank", 0)),
+            "dc_open_sites_naming_a_taxon": str(stats.get("dc_open_sites_naming_a_taxon", 0)),
+            "dc_open_sites_with_a_trunk_diameter":
+                str(stats.get("dc_open_sites_with_a_trunk_diameter", 0)),
+            "dc_dbh_zero_or_negative": str(stats.get("dc_dbh_zero_or_negative", 0)),
+            "dc_dbh_over_ceiling": str(stats.get("dc_dbh_over_ceiling", 0)),
+            "dc_planted_date_out_of_range": str(stats.get("dc_planted_date_out_of_range", 0)),
+            "dc_max_last_edited_date": str(dc_meta.get("max_last_edited_date", "")),
+        }
+
+    source_meta = {**source_meta, **sj_meta_keys, **nyc_meta_keys, **dc_meta_keys}
 
     # ---- coverage, standardised (s17) -----------------------------------
     # WHAT R37'S TRAILING CLAUSE ASKED FOR, PAID NOW. It reads: "manifest
@@ -3251,6 +3428,9 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     if sj_rows is not None and sj_meta.get("server_feature_count"):
         completeness_keys["inventory_sj_street_tree_source_feature_count"] = \
             str(sj_meta["server_feature_count"])
+    if dc_rows is not None and dc_meta.get("server_feature_count"):
+        completeness_keys["inventory_dc_street_trees_source_feature_count"] = \
+            str(dc_meta["server_feature_count"])
 
     source_meta = {**source_meta, **coverage_keys, **completeness_keys}
 
@@ -3385,9 +3565,11 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
     print(f"  trees written          {stats['kept']:,}")
     if sj_rows is not None:
         print(f"    from san jose        {stats['sj_kept']:,}")
+    if dc_rows is not None:
+        print(f"    from d.c.            {stats['dc_kept']:,}")
     if source == "city":
         print(f"    from city layer      "
-              f"{stats['kept'] - stats['export_vacant_carried'] - stats['sj_kept']:,}")
+              f"{stats['kept'] - stats['export_vacant_carried'] - stats['sj_kept'] - stats['nyc_kept'] - stats['dc_kept']:,}")
         print(f"    from datasf export   {stats['export_vacant_carried']:,}")
     # Every status the build produced, in the CHECK constraint's own order, and
     # only the ones that happened. A zero line for `dead_reported` would read as
@@ -3553,10 +3735,17 @@ def main() -> int:
              "Retired, Stump, Shaft and Stump - Uprooted records, which are real "
              "history the contract's not_a_tree can hold.",
     )
+    ap.add_argument(
+        "--dc-cache", default="",
+        help="directory holding dc_street_trees.ndjson and its meta, as written by "
+             "Tools/fetch_dc_trees.py. Empty (the default) means no Washington, D.C. "
+             "at all. The cache lives OUTSIDE the repo, like New York's.",
+    )
     args = ap.parse_args()
     return build(args.repo_root, args.fetch, args.limit, args.with_city_raw, args.source,
                  args.sj_extent, args.write_species_map,
-                 args.nyc_cache, args.nyc_borough, args.nyc_structures)
+                 args.nyc_cache, args.nyc_borough, args.nyc_structures,
+                 args.dc_cache)
 
 
 if __name__ == "__main__":
