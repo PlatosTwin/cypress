@@ -16,8 +16,11 @@ Tools/build_seed.py writes to Fixtures/seed/cypress-seed.sqlite -- and never
 talks to any upstream source itself.
 
     python3 Tools/publish_cities.py --previous-manifest live|none|PATH|URL
-                                   [--republish]
+                                   [--republish] [--add-pack PACK_ID]
                                    [--db PATH] [--out DIR] [--base-url URL]
+
+    --add-pack  publish ONE new pack beside an existing catalogue instead of
+                replacing the catalogue. See `ADD-ONE-PACK MODE` below.
 
     --previous-manifest
                 REQUIRED. The catalogue this publish follows, so that a
@@ -127,6 +130,31 @@ which is deterministic for a given input file and SQLite build. Two runs over
 the same seed produce byte-identical city files (verify: run twice, compare
 sha256 -- the manifest's `generated_at` is the one wall-clock field, and it
 lives only in the manifest, which is content-addressed by nothing).
+
+ADD-ONE-PACK MODE (`--add-pack PACK_ID`, added for Washington, D.C.,
+2026-11-12). The ordinary run writes a manifest from the packs in the seed it
+reads, so a seed holding San Francisco and D.C. would publish a catalogue
+without San Jose and New York, and every tester would lose them. This mode
+builds and verifies ONLY the named pack and writes a manifest that is the
+previous one plus that pack:
+
+  * every previous entry is copied unchanged, as the same JSON object in the
+    same order, and the new entry is appended last;
+  * the previous top-level `source_seed` is kept unchanged -- CI's
+    `Tools/fetch_seed.sh` reads it, and this mode does not replace the fused
+    seed object, so the seed is neither copied to --out nor uploaded;
+  * `upload.sh` names the new pack and manifest-v2.json, and nothing else;
+  * it refuses when the pack id is already in the previous manifest, when the
+    previous manifest is not format 2 or lists no entries, with
+    `--previous-manifest none`, and with `--republish`;
+  * the new pack's `dim_region.id` (and its trees' `region_id`) is renumbered
+    to one no published pack uses. The app's `InventoryUnionSQL` mirrors
+    `dim_region` across installed packs with `id` as PRIMARY KEY and inserts
+    each pack's rows filtered only by `pack_id`, so two packs that share a
+    region id collide and the second is refused. See `next_region_id`.
+
+The checks above are verified against the manifest as written to disk, before
+`upload.sh` is written (`verify_add_pack_manifest`).
 
 UPLOAD. This script never touches credentials. It writes dist/upload.sh, which
 authenticates to Tigris via a NAMED AWS CLI PROFILE (default `cypress-tigris`,
@@ -293,6 +321,10 @@ DISPLAY_NAMES = {
     "us-ny-nyc-queens": "Queens",
     "us-ny-nyc-bronx": "Bronx",
     "us-ny-nyc-staten-island": "Staten Island",
+    # Washington, D.C.: one city-level pack, so one key is both the pack and its
+    # parent city, as for `sf` and `us-ca-sj`. Agrees with
+    # `build_seed.DIM_CITY` / `REGIONS`, which the drift checks below enforce.
+    "us-dc-dc": "Washington, D.C.",
 }
 
 # seed_meta keys that state a city's ship coverage. The v14-era ingest wrote
@@ -548,6 +580,16 @@ LIVE_MANIFEST_URL = "https://cypress-cities.t3.tigrisbucket.io/manifest-v2.json"
 def load_previous_entries(source: str) -> dict[str, dict]:
     """The previous publish's manifest entries, keyed by pack id.
 
+    A thin wrapper over `load_previous_manifest`, kept because the ordinary
+    publish needs only the entries.
+    """
+    previous = load_previous_manifest(source)
+    return {e["id"]: e for e in previous.get("cities", [])}
+
+
+def load_previous_manifest(source: str) -> dict:
+    """The previous publish's whole manifest, or `{}` for `none`.
+
     `source` is one of:
 
       `live`  fetch the catalogue that is actually serving readers right now
@@ -589,16 +631,95 @@ def load_previous_entries(source: str) -> dict[str, dict]:
             fail(f"no previous manifest at {source}", 3)
         with open(source) as f:
             previous = json.load(f)
-    entries = {e["id"]: e for e in previous.get("cities", [])}
-    print(f"previous manifest: {source} ({len(entries)} pack(s), generated "
+    print(f"previous manifest: {source} ({len(previous.get('cities', []))} pack(s), generated "
           f"{previous.get('generated_at', 'at an unstated time')})")
-    return entries
+    return previous
 
 
-def build_city_file(src: str, dest: str, region: dict, rev: str) -> dict:
+def check_add_pack_preconditions(previous: dict, pack: str) -> None:
+    """Refuse an add-one-pack publish that cannot be a pure addition. Exits 3."""
+    if not previous:
+        fail("--add-pack adds a pack to an existing catalogue, and this run has none "
+             "(--previous-manifest none). Point it at the live catalogue.", 3)
+    if previous.get("manifest_format") != MANIFEST_FORMAT:
+        fail(f"--add-pack: the previous manifest is format "
+             f"{previous.get('manifest_format')!r}, not {MANIFEST_FORMAT}. This mode copies "
+             f"previous entries unchanged and cannot convert them.", 3)
+    cities = previous.get("cities") or []
+    if not cities:
+        fail("--add-pack: the previous manifest lists no entries. Adding one pack to an "
+             "empty catalogue is a first publish; run without --add-pack.", 3)
+    if not isinstance(previous.get("source_seed"), dict):
+        fail("--add-pack: the previous manifest has no source_seed object to keep. CI's "
+             "Tools/fetch_seed.sh reads it; this mode will not invent one.", 3)
+    ids = [e.get("id") for e in cities]
+    if pack in ids:
+        fail(f"--add-pack: {pack!r} is already in the previous manifest. This mode only "
+             f"adds a pack that has never published; republishing an existing pack is the "
+             f"ordinary run's job.", 3)
+    if len(set(ids)) != len(ids):
+        fail(f"--add-pack: the previous manifest lists a pack id twice ({ids}); refusing "
+             f"to build on it.", 3)
+
+
+def next_region_id(previous: dict) -> int:
+    """The `dim_region.id` a pack added by `--add-pack` takes: one past every published pack.
+
+    WHY A NEW PACK NEEDS ITS OWN REGION ID AT ALL. `InventoryUnionSQL.mirrorFirstWins`
+    (Cypress/Data/Store/InventoryUnionSQL.swift) copies `dim_region` from every
+    installed pack into one table whose `id` is PRIMARY KEY, inserting rows whose
+    `pack_id` is not already there. It does not renumber `id` (it does renumber
+    `dim_city`). So two packs that carry the same `dim_region.id` under different
+    `pack_id`s collide on insert, and the app refuses the second pack.
+
+    WHY `len(cities) + 1` IS UNUSED. An ordinary publish cuts every pack from one
+    fused seed, whose `dim_region` ids are 1..N in insertion order, and it refuses
+    to publish an empty region -- so all N are published, in id order, and the
+    manifest lists exactly N entries. A pack added by this mode takes N + 1 by this
+    same rule, which keeps "the ids in use are 1..len(cities)" true for the next
+    addition. A later ORDINARY publish replaces the whole catalogue from one seed
+    and starts again from 1..N, which is consistent within itself.
+    """
+    return len(previous.get("cities") or []) + 1
+
+
+def verify_add_pack_manifest(previous: dict, written: dict, pack: str) -> None:
+    """The add-one-pack promises, checked against the manifest as written. Exits 1.
+
+    Compared as serialised JSON with the same settings the writer uses, so a
+    change of one byte in a previous entry -- a value, a key order, a type --
+    fails here rather than reaching the bucket.
+    """
+    def dump(value) -> str:
+        return json.dumps(value, indent=2, sort_keys=False)
+
+    before = previous.get("cities") or []
+    after = written.get("cities") or []
+    if len(after) != len(before) + 1:
+        fail(f"--add-pack: the written manifest lists {len(after)} pack(s); expected the "
+             f"previous {len(before)} plus one")
+    for index, (old, new) in enumerate(zip(before, after)):
+        if dump(old) != dump(new):
+            fail(f"--add-pack: previous entry #{index} ({old.get('id')!r}) changed in the "
+                 f"written manifest. Every previous entry must be copied unchanged.")
+    if after[-1].get("id") != pack:
+        fail(f"--add-pack: the appended entry is {after[-1].get('id')!r}, not {pack!r}")
+    if dump(written.get("source_seed")) != dump(previous.get("source_seed")):
+        fail("--add-pack: source_seed changed. This mode keeps the previous fused seed "
+             "object, which CI's Tools/fetch_seed.sh reads.")
+    if written.get("manifest_format") != previous.get("manifest_format"):
+        fail("--add-pack: manifest_format changed")
+
+
+def build_city_file(src: str, dest: str, region: dict, rev: str,
+                    region_id_override: int | None = None) -> dict:
     """Copy the fused seed to dest, narrow it to one region, verify, and measure.
 
     Returns the measured facts for the manifest entry. Any failed check exits.
+
+    `region_id_override`, when given, renumbers the pack's one surviving
+    `dim_region` row and its trees' `region_id` to that value after the narrow.
+    Only `--add-pack` passes it; see `next_region_id` for why.
 
     `rev` is the content revision this pack publishes under -- `content_rev_for`'s
     derived date, possibly carrying a same-day counter (`bump_content_rev`). It
@@ -677,6 +798,15 @@ def build_city_file(src: str, dest: str, region: dict, rev: str) -> dict:
         # dim_city delete, because dim_region.city_id references it and the
         # subquery there reads the surviving id_spaces row.
         cur.execute("DELETE FROM dim_region WHERE id != ?", (region_id,))
+        if region_id_override is not None and region_id_override != region_id:
+            # One row left, so the new id cannot collide inside this file. This
+            # connection does not enforce foreign keys; the foreign_key_check
+            # below is what proves the two updates agree.
+            cur.execute("UPDATE dim_region SET id = ? WHERE id = ?",
+                        (region_id_override, region_id))
+            cur.execute("UPDATE trees SET region_id = ? WHERE region_id = ?",
+                        (region_id_override, region_id))
+            region_id = region_id_override
         # dim_city AFTER id_spaces: narrowed to the one row the surviving
         # id_spaces row still references (task #237), the same reason
         # inventories/id_spaces above are narrowed to this city alone. The
@@ -884,7 +1014,15 @@ def main() -> None:
                     help="advance content_rev even though the source seed is unchanged "
                          "(un-sticks devices installed from a superseded publish of the "
                          "same record date)")
+    ap.add_argument("--add-pack", default="", metavar="PACK_ID",
+                    help="publish only this pack, appended to the previous manifest; every "
+                         "previous entry and source_seed are kept unchanged and the seed is "
+                         "not uploaded (see ADD-ONE-PACK MODE in this file's header)")
     args = ap.parse_args()
+    add_pack = args.add_pack.strip()
+    if add_pack and args.republish:
+        fail("--add-pack publishes a pack that has never published, and --republish "
+             "re-advances one that has. They cannot both apply.", 3)
 
     # BEFORE ANYTHING IS WRITTEN, and deliberately before the input checks too.
     # The same guard runs again after the manifest is written, and the two catch
@@ -1011,7 +1149,10 @@ def main() -> None:
 
     # WHAT IS ALREADY LIVE, read before a single pack is written, because it
     # decides every pack's version string and therefore every pack's path.
-    previous_entries = load_previous_entries(args.previous_manifest)
+    previous_manifest = load_previous_manifest(args.previous_manifest)
+    previous_entries = {e["id"]: e for e in previous_manifest.get("cities", [])}
+    if add_pack:
+        check_add_pack_preconditions(previous_manifest, add_pack)
     if args.republish and not previous_entries:
         fail("--republish advances content_rev past the previous publish, and this run "
              "has no previous publish to advance past (--previous-manifest resolved to "
@@ -1050,6 +1191,14 @@ def main() -> None:
     # every key the loop will index. Both sets are collected from the data and
     # checked together, so adding a third kind of name to an entry cannot quietly
     # escape this.
+    if add_pack:
+        # From here on only the named pack is built, named and verified. The
+        # whole-seed checks above (orphans, empty regions) have already run.
+        chosen = [r for r in regions if r["pack_id"] == add_pack]
+        if not chosen:
+            fail(f"--add-pack {add_pack!r}: the seed declares no such region "
+                 f"(it declares {[r['pack_id'] for r in regions]})", 3)
+        regions = chosen
     needed_names = {r["pack_id"] for r in regions} | {r["id_space"] for r in regions}
     # F9's ambiguity, refused rather than guessed. `coverage` describes how much
     # of a CITY shipped and every pack of that city inherits it, which is exact
@@ -1184,7 +1333,10 @@ def main() -> None:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
 
         print(f"building {rel_path} ...")
-        facts = build_city_file(args.db, dest, region, rev_preview)
+        facts = build_city_file(
+            args.db, dest, region, rev_preview,
+            region_id_override=next_region_id(previous_manifest) if add_pack else None,
+        )
         if facts["content_rev"] != rev_preview:
             fail(f"{pack}: content_rev drifted during the build")
         if facts["tree_count"] != fused_counts[region["id"]]:
@@ -1241,8 +1393,16 @@ def main() -> None:
         })
 
     total_split = sum(e["tree_count"] for e in entries)
-    if total_split != fused_total:
+    if add_pack:
+        # One pack, so the whole-seed total is not this run's to match; the
+        # per-region count check inside the loop already held.
+        pass
+    elif total_split != fused_total:
         fail(f"per-region counts sum to {total_split}, fused seed holds {fused_total}")
+
+    if add_pack:
+        write_add_pack_outputs(args, previous_manifest, entries, add_pack)
+        return
 
     # ── The fused seed itself, published as a build input (task #196) ──────────────────
     # The per-city files above are what the APP downloads at runtime. This is what a
@@ -1319,6 +1479,47 @@ def main() -> None:
     print("OK")
 
 
+def write_add_pack_outputs(args, previous: dict, entries: list[dict], pack: str) -> None:
+    """Write and verify the add-one-pack manifest and its upload.sh.
+
+    `entries` holds exactly the new pack's entry. The previous entries and
+    `source_seed` are taken from `previous` as parsed, never rebuilt.
+    """
+    if len(entries) != 1 or entries[0]["id"] != pack:
+        fail(f"--add-pack {pack!r}: built {[e['id'] for e in entries]}, expected exactly it")
+    manifest = {
+        "manifest_format": MANIFEST_FORMAT,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "generator": "Tools/publish_cities.py",
+        "base_url_hint": args.base_url,
+        "source_seed": previous["source_seed"],
+        "cities": list(previous["cities"]) + entries,
+    }
+    manifest_path = os.path.join(args.out, MANIFEST_V2_NAME)
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2, sort_keys=False)
+        f.write("\n")
+
+    with open(manifest_path) as f:
+        readback = json.load(f)
+    verify_add_pack_manifest(previous, readback, pack)
+    new = readback["cities"][-1]
+    full = os.path.join(args.out, new["path"])
+    if sha256_of(full) != new["sha256"]:
+        fail(f"{MANIFEST_V2_NAME}: {pack}: manifest sha256 does not match the file")
+    if os.path.getsize(full) != new["bytes"]:
+        fail(f"{MANIFEST_V2_NAME}: {pack}: manifest byte size does not match the file")
+
+    assert_no_legacy_manifest(args.out, when="after")
+    upload_sh = write_upload_sh(args.out, entries, seed_rel=None)
+
+    print(f"\nmanifest: {manifest_path}  (format {MANIFEST_FORMAT}, "
+          f"{len(readback['cities'])} pack(s): {len(previous['cities'])} unchanged + {pack})")
+    print(f"upload:   {upload_sh}  (uploads {new['path']} and {MANIFEST_V2_NAME} only; "
+          f"the seed is NOT uploaded)")
+    print("OK")
+
+
 def assert_no_legacy_manifest(out_dir: str, when: str = "before") -> None:
     """Refuse a publish whose output directory holds a format-1 manifest.
 
@@ -1363,7 +1564,7 @@ def assert_no_legacy_manifest(out_dir: str, when: str = "before") -> None:
          f"by a newer run's idea of a format-1 catalogue.")
 
 
-def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,
+def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str | None,
                     manifest_name: str = MANIFEST_V2_NAME) -> str:
     """Write dist/upload.sh. Pulled out of main() so it can be exercised (and
     red-proofed -- #248) against synthetic entries without rebuilding the seed.
@@ -1372,6 +1573,9 @@ def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,
     immutable files it names -- the ordering below, and R37.2's rule. It was a
     tuple of two during RULING D8's dual-publish window; format 1 is retired and
     the frozen object in the bucket is never uploaded again.
+
+    `seed_rel` is None under `--add-pack`: that mode keeps the previous fused
+    seed, so the script names no seed object at all.
     """
     upload_sh = os.path.join(out_dir, "upload.sh")
     with open(upload_sh, "w") as f:
@@ -1432,8 +1636,9 @@ def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,
         for entry in entries:
             f.write(f'aws s3 cp "{entry["path"]}" "$BUCKET/{entry["path"]}" '
                     f'--endpoint-url "$ENDPOINT" --profile "$PROFILE"\n')
-        f.write(f'aws s3 cp "{seed_rel}" "$BUCKET/{seed_rel}" '
-                f'--endpoint-url "$ENDPOINT" --profile "$PROFILE"\n')
+        if seed_rel is not None:
+            f.write(f'aws s3 cp "{seed_rel}" "$BUCKET/{seed_rel}" '
+                    f'--endpoint-url "$ENDPOINT" --profile "$PROFILE"\n')
         # LAST. R37.2: files upload before the manifest that names them. One
         # catalogue again since format 1 retired, so there is no ordering between
         # manifests left to get wrong.
@@ -1445,7 +1650,8 @@ def write_upload_sh(out_dir: str, entries: list[dict], seed_rel: str,
         f.write("# public domain; -f fails the script on any non-2xx.\n")
         for entry in entries:
             f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{entry["path"]}"\n')
-        f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{seed_rel}"\n')
+        if seed_rel is not None:
+            f.write(f'curl -fsS -r 0-0 -o /dev/null "$PUBLIC/{seed_rel}"\n')
         f.write(f'curl -fsS "$PUBLIC/{manifest_name}" | cmp - {manifest_name}\n')
         f.write('echo "anonymous GET verified on $PUBLIC"\n')
     os.chmod(upload_sh, 0o755)
