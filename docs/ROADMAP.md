@@ -1837,6 +1837,40 @@ into this section in the round that finds it, and nowhere else. Each item stands
     unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
     green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
     `aRaisedFloorOpensAtTheFloor` too.
+85. **Washington, D.C.: what shipped, and the species follow-up.** The D.C. round (2026-11-12,
+    `feat/dc-street-trees`) built the `us-dc-dc` pack from DDOT's street tree layer: 200,313 rows
+    (194,086 alive, 3,332 standing dead, 2,895 vacant sites), published beside the seven live packs
+    by `publish_cities.py --add-pack`. Detail: `docs/investigations/dc-street-trees.md`. Species
+    coverage under D20 is 86.27% and was waived for D.C. (`docs/rulings-pending/dc-species-gate.md`).
+    Follow-up: a D.C. species round, the way `nyc_species.yaml` was built. Two parts. First, cited
+    rules for the notation the R0 to R3 cascade misses (`Ginkgo biloba (male)`/`(female)` 3,682 rows,
+    `Genus species` 12,000+ rows, curly-quoted cultivars, `Liquidambar Stryaciflua`). Second, a
+    `dc_species.yaml` content fixture for the D.C. taxa no fixture covers (`Cladrastis lutea`,
+    `Liquidambar rotundiloba`, `Quercus shumardi` and others). No content may be written by hand
+    (DECISIONS constraint 15).
+86. **D.C. in the bundle and the data gates.** The D.C. pack is download-only. If D.C. joins the
+    bundled seed, `Cypress/Data/Tests/DataGates.swift` needs a D.C. bounding box, and
+    `Fixtures/seed/pinned-seed.json` plus `CypressTests/SeedCorpus.swift` need a deliberate bump
+    (the pin's own "HOW TO BUMP IT" steps). `Tools/verify_seed.py` checks are SF-shaped (nyc-ingest
+    §7) and were not extended for D.C.
+87. **Recheck that DDOT's GLOBALID is stable, in early December 2026.** The D.C. uuids are
+    uuid5 over `us-dc-dc:<GLOBALID>`, and nobody has shown that GLOBALID survives a DDOT republish
+    of the live layer. Re-fetch with `Tools/fetch_dc_trees.py` into a new cache and join on
+    GLOBALID against the 2026-11-12 cache: count kept, gone and new ids. If ids churn, every D.C.
+    tree's public identity churns with them, and the id choice needs a decision before more
+    community data attaches to D.C. trees.
+88. **D.C. neighborhoods.** None ship (San Jose's shape). The District publishes neighborhood
+    boundaries; adding them is a schema-free change to the neighborhood stamp, but the polygons are
+    civic content and need a cited source.
+89. **`dim_region` ids collide across packs built from different seeds.** The app's
+    `InventoryUnionSQL.mirrorFirstWins` copies `dim_region` with `id` as PRIMARY KEY and filters only
+    on `pack_id`, so two packs that carry the same region id under different pack ids collide and
+    the second is refused. Every pack before D.C. came from one fused seed, so this never fired.
+    `publish_cities.py --add-pack` works around it by giving the new pack an unused id (D.C. is 8).
+    It is still a trap: a full rebuild that includes D.C. assigns New York's boroughs 4..8 instead
+    of 3..7 (`us-dc-dc` sorts first), so a phone mid-update can hold an old pack and a new pack
+    that share an id. Fix in the app (renumber `dim_region` on mirror, as `dim_city` already is) or
+    freeze region ids in `build_seed.REGIONS`; either needs its own round and a test.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
