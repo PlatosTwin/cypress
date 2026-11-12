@@ -2340,6 +2340,9 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
         "nyc_source_rows": 0,
         "dc_kept": 0,
         "dc_source_rows": 0,
+        "dc_kept_trees": 0,
+        "dc_kept_vacant_sites": 0,
+        "dc_kept_standing_dead": 0,
         # Records read and validated but deliberately not shipped, because they
         # fall outside `SJ_SHIP_WINDOW`. This is the one drop counter in the
         # build that is a PRODUCT decision rather than a data defect, and it is
@@ -2845,6 +2848,15 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
                 mark_seen(record)
             emit(record)
             stats["dc_kept"] += 1
+            # Counted HERE, after `accepts`, so they describe the file. The
+            # adapter's own kind counters run before the bounding box and
+            # include the 1,320 Laurel, Maryland rows `DC_BBOX` drops.
+            if record.kind == KIND_TREE:
+                stats["dc_kept_trees"] += 1
+                if record.condition == CONDITION_DEAD:
+                    stats["dc_kept_standing_dead"] += 1
+            elif record.kind == KIND_PLANTING_SITE:
+                stats["dc_kept_vacant_sites"] += 1
         stats["dc_source_rows"] = dc.stats["source_rows"]
         stats["dropped_no_coords"] += dc.stats["dropped_no_coords"]
         stats["dc_dropped_out_of_bbox"] = stats["dropped_out_of_bbox"] - dc_out_of_bbox_before
@@ -3349,14 +3361,17 @@ def build(repo_root: str, do_fetch: bool, limit: int, with_city_raw: bool,
             "rows_from_dc_street_trees": str(stats["dc_kept"]),
             "dc_rows_read": str(stats["dc_source_rows"]),
             "dc_rows_shipped": str(stats["dc_kept"]),
-            "dc_rows_shipped_as_trees": str(stats.get("dc_kind_tree", 0)),
-            "dc_rows_shipped_as_vacant_sites": str(stats.get("dc_kind_planting_site", 0)),
+            "dc_rows_shipped_as_trees": str(stats["dc_kept_trees"]),
+            "dc_rows_shipped_as_vacant_sites": str(stats["dc_kept_vacant_sites"]),
+            "dc_standing_dead_shipped": str(stats["dc_kept_standing_dead"]),
             # Every TBOX_STAT that does not ship, by DDOT's own word.
             "dc_rows_not_shipped_by_status": json.dumps(not_shipped, sort_keys=True),
             "dc_rows_no_point": str(stats.get("dc_dropped_no_coords", 0)),
             "dc_rows_outside_bbox": str(stats.get("dc_dropped_out_of_bbox", 0)),
             "dc_rows_duplicate_ref": str(stats.get("dc_dropped_dupe_ref", 0)),
-            "dc_standing_dead": str(stats.get("dc_standing_dead", 0)),
+            # From here down: the ADAPTER's counts, over every Plant/Open row it
+            # yielded, BEFORE `DC_BBOX` -- so they include the Laurel rows.
+            "dc_standing_dead_read": str(stats.get("dc_standing_dead", 0)),
             "dc_condition_stated": str(stats.get("dc_condition_stated", 0)),
             "dc_condition_not_stated": str(stats.get("dc_condition_not_stated", 0)),
             "dc_species_placeholder": str(stats.get("dc_species_placeholder", 0)),
