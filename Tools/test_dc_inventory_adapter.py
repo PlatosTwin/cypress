@@ -121,6 +121,18 @@ def test_source_ref_is_globalid_without_braces_case_kept():
           f"identity seed is {seed!r}")
 
 
+def test_source_ref_case_is_frozen_uppercase():
+    """FAILS IF: a lowercase GLOBALID mints a different source_ref than its uppercase twin.
+
+    DDOT published every GLOBALID in uppercase on 2026-11-12. If a later republish
+    lowercased them, the same tree would get a second uuid unless the case is pinned.
+    """
+    upper = DCStreetTreeAdapter.source_ref_of("{926038DA-AB12-4C3D-9E8F-0123456789AB}")
+    lower = DCStreetTreeAdapter.source_ref_of("{926038da-ab12-4c3d-9e8f-0123456789ab}")
+    check(upper == "926038DA-AB12-4C3D-9E8F-0123456789AB", f"uppercase input gave {upper!r}")
+    check(lower == upper, f"lowercase input gave {lower!r}, not {upper!r}")
+
+
 def test_globalid_uuid_is_pinned():
     """FAILS IF: the prefix, the brace stripping or the namespace changes.
 

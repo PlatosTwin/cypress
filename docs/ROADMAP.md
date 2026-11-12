@@ -1871,6 +1871,27 @@ into this section in the round that finds it, and nowhere else. Each item stands
     of 3..7 (`us-dc-dc` sorts first), so a phone mid-update can hold an old pack and a new pack
     that share an id. Fix in the app (renumber `dim_region` on mirror, as `dim_city` already is) or
     freeze region ids in `build_seed.REGIONS`; either needs its own round and a test.
+    The same copy leaves `dim_region.city_id` pointing at the pack's own `dim_city` numbering,
+    which the app renumbers: in a merged union the boroughs' `city_id` 3 points at `us-dc-dc` and
+    D.C.'s `city_id` 2 points at `us-ca-sj` (#203 review). Nothing reads it today
+    (`SeedCities.swift` reads `dim_region.display_name` by `pack_id` only); re-point it through
+    `dim_city.slug` in the same fix. `Tools/test_publish_cities.py`'s region-id test checks
+    `len(cities) + 1` against its own fixture, not the ids live packs use, so it would stay green
+    if an entry were ever removed from the manifest.
+90. **`upload.sh` should refuse a stale previous manifest.** It replaces `manifest-v2.json`
+    whole, so a publish by someone else between the build and the upload is undone silently. The
+    D.C. publish (2026-11-12) re-fetched and compared by hand. Make `upload.sh` compare the live
+    manifest's sha256 with the one `--previous-manifest` read, and refuse on a mismatch.
+91. **Merged species content depends on which packs are installed.** 98 species carry different
+    common names in the D.C. pack and the August packs ("Trident maple" vs "trident maple",
+    "Cherry (Snowgoose)"), and the first installed pack wins. `species_map.species_id` is copied
+    into the union untranslated (only `DataGates` reads it). Decide one source of common names.
+92. **D.C. planting dates use the UTC day.** About 1.7% of dated D.C. trees (1,711 of 102,067)
+    were stamped 00:00-03:59 UTC, the evening before in D.C., so `parse_planted_date` lands them
+    one day late. Convert with America/New_York at the next D.C. build.
+93. **The web does not serve D.C. yet.** `web/src/lib/idSpaces.ts` now knows `us-dc-dc` (#203), but
+    the `cypress-web` volume holds only the seven August packs and is sized for 713 MB; D.C. adds
+    120 MB. Copy the pack to the volume (and restart the machine, chip 47) in its own round.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

@@ -1981,13 +1981,18 @@ class DCStreetTreeAdapter:
 
     @staticmethod
     def source_ref_of(raw) -> Optional[str]:
-        """`{926038DA-...}` -> `926038DA-...`. Braces stripped, case kept as published."""
+        """`{926038DA-...}` -> `926038DA-...`. Braces stripped, uppercased.
+
+        Every GLOBALID DDOT published on 2026-11-12 was already uppercase (223,777 of 223,777),
+        so `.upper()` changed no shipped uuid. It is here so that a republish in lowercase cannot
+        mint a second uuid for the same tree: the case is frozen with the prefix (R103).
+        """
         text = _clean(raw)
         if text is None:
             return None
         if text.startswith("{") and text.endswith("}"):
             text = text[1:-1].strip()
-        return text or None
+        return text.upper() or None
 
     def parse_dbh(self, raw) -> Optional[float]:
         """`DBH` -> inches measured, or None. See `DC_DBH_CEILING_IN`."""
