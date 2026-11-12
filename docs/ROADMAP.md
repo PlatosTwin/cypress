@@ -1892,6 +1892,22 @@ into this section in the round that finds it, and nowhere else. Each item stands
 93. **The web does not serve D.C. yet.** `web/src/lib/idSpaces.ts` now knows `us-dc-dc` (#203), but
     the `cypress-web` volume holds only the seven August packs and is sized for 713 MB; D.C. adds
     120 MB. Copy the pack to the volume (and restart the machine, chip 47) in its own round.
+94. **P0, owner only: accept the expired Apple agreement (App Store Connect, Business).** Every
+    App Store Connect API call has answered HTTP 403 `REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` since
+    2026-10-02. The `release` job of run 36968512685 (#200's merge) failed on it, so **build 82
+    (2026-09-30) is the last build testers have**: #200 and #203's release note are on main and in
+    no build, and build 82 expires around **2026-12-29**. The feedback pull (run 43328447485) fails
+    the same way, so no tester feedback after 2026-09-28 has been read. The Account Holder accepts it
+    at App Store Connect > Business; no key is involved. Then re-run the failed `release` job, re-pull
+    feedback, and redo `docs/investigations/beta-feedback-triage-2026-11-12.md` for 2026-09-28 on.
+95. **F1's leftover owner decision.** The leading fix shipped (d7fdbd4a), but ERRATA E254 §2's choice
+    for the no-ghost caption (its 80 pt width, or the copy `no ghost yet · first photo`) was never
+    made; the 2026-08-28 reconciliation counted F1 as fully shipped. Owner call; P3.
+96. **F4 was filed on My Grove > Species (screen 08).** The tester's screenshot answers the "which
+    screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
+97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
+    (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
+    D.C. Whoever merges either branch renumbers its chips past the highest on main.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
