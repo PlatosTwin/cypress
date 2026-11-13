@@ -57,7 +57,8 @@ struct SchemaV23Tests {
     private static func v22Database(
         deviceUUID: UUID? = device,
         signedInAs userID: UUID? = nil,
-        everyKind: Bool = false
+        everyKind: Bool = false,
+        addedAs addAttribution: Attribution? = nil
     ) async throws -> CypressStore {
         let store = try await CypressStore.inMemory(
             migrations: AppSchema.migrations.filter { $0.version <= 22 }
@@ -95,6 +96,33 @@ struct SchemaV23Tests {
             if let userID {
                 try connection.execute("""
                     INSERT INTO app_state (key, value) VALUES ('current_user_id', '\(userID.uuidString)');
+                    """)
+            }
+            // The legacy tree's own `add_tree` row, keyed on the tree's `client_uuid` as `addTree`
+            // queues it, carrying the attribution the add was made under. Encoded through the
+            // shipping payload so the keys are the ones the migration's `json_extract` reads.
+            if let addAttribution {
+                let addition = TreeAddition(
+                    clientUUID: legacyKey,
+                    treeID: legacyTree,
+                    attribution: addAttribution,
+                    coordinate: Coordinate(latitude: 37.7601, longitude: -122.5401),
+                    address: nil,
+                    placement: .contributorPlaced,
+                    speciesID: nil,
+                    landContext: nil,
+                    occurredAt: moment
+                )
+                let payload = try #require(
+                    String(data: try OutboxPayload.addTree(addition).encoded(), encoding: .utf8)
+                )
+                try connection.execute("""
+                    INSERT INTO outbox
+                        (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding,
+                         state, fail_count, local_applied, remote_sent, window_started_at,
+                         created_at, updated_at)
+                    VALUES (11, '\(UUID().uuidString)', 'add_tree', '\(legacyKey.uuidString)',
+                            '\(payload)', '[]', 0, 'done', 0, 1, 1, '\(stamp)', '\(stamp)', '\(stamp)');
                     """)
             }
             if everyKind {
@@ -211,10 +239,11 @@ struct SchemaV23Tests {
         #expect(adder == .device(Self.device), "the adder is \(String(describing: adder)), not this device")
     }
 
-    /// The account arm: a phone signed in when it migrates names the account, as `addTree`'s
-    /// `ContributionOwner(attribution)` does. Red-proof: swap the two `UPDATE`s' keys in `applyV23`
-    /// — red on "the adder is .device(…), not the account".
-    @Test("a phone signed in when it migrates gives its trees to the account, as addTree would")
+    /// The fallback's account arm, for a tree whose `add_tree` row was pruned: a phone signed in
+    /// when it migrates names the account, as `addTree`'s `ContributionOwner(attribution)` does
+    /// now. Red-proof: swap the fallback `UPDATE`s' `app_state` keys in `applyV23` — red on "the
+    /// adder is .device(…), not the account".
+    @Test("a pruned add row falls back to the account signed in when the phone migrates")
     func aSignedInPhoneGivesItsTreesToTheAccount() async throws {
         let store = try await Self.v22Database(signedInAs: Self.account)
         _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
@@ -226,6 +255,61 @@ struct SchemaV23Tests {
             try TreeLocationStore().chain(treeID: Self.legacyTree, connection: $0)
         }.first)
         #expect(root.owner == .user(Self.account), "the root's owner is \(root.owner), not the account")
+    }
+
+    /// **The owner's ruling of 2026-11-13, the case it was made for.** The tree was added while
+    /// signed in as an account, and the phone signed out before the update. Its `add_tree` row
+    /// still says the account, which is what the service recorded as the adder, so the migration
+    /// names the account and not the device the phone is signed out on.
+    ///
+    /// Fails with the defect present: a backfill that reads only `app_state` finds no
+    /// `current_user_id` and writes `.device(device)`, and the test goes red on "the adder is
+    /// .device(…), not the account the add was made under". That is the tree for which Move pin
+    /// was offered and the service's `isAddedBy` refused the move for good.
+    @Test("a tree added while signed in, then signed out before the update, still belongs to the account")
+    func theAddRowNamesTheAccountAfterASignOut() async throws {
+        let store = try await Self.v22Database(
+            addedAs: Attribution(userID: Self.account, deviceID: Self.device)
+        )
+        _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
+        let adder = try await store.queue.read {
+            try CommunityTreeStore().adder(treeID: Self.legacyTree, connection: $0)
+        }
+        #expect(
+            adder == .user(Self.account),
+            "the adder is \(String(describing: adder)), not the account the add was made under"
+        )
+        let root = try #require(try await store.queue.read {
+            try TreeLocationStore().chain(treeID: Self.legacyTree, connection: $0)
+        }.first)
+        #expect(root.owner == .user(Self.account), "the root's owner is \(root.owner), not the account")
+
+        // And the signed-out phone is not offered the move: the account owns the tree now.
+        let api = LocalAPI(store: store, deviceID: Self.device)
+        let profile = try await api.treeProfile(id: Self.legacyTree)
+        #expect(!profile.canMovePin, "a signed-out phone is offered a move the service would refuse")
+    }
+
+    /// The add row wins over whoever is signed in at migration time: a tree added signed out (by
+    /// the device) stays the device's even after an account signs in on the phone, because that is
+    /// what the add sent. `claimDevice` is what moves it to the account, and it runs on sign-in.
+    ///
+    /// Fails with the defect present: a backfill that reads only `app_state` writes the account,
+    /// and the test goes red on "the adder is .user(…), not the device the add was made under".
+    @Test("the add row's attribution wins over the account signed in at migration time")
+    func theAddRowWinsOverTheCurrentOwner() async throws {
+        let store = try await Self.v22Database(
+            signedInAs: Self.account,
+            addedAs: Attribution(userID: nil, deviceID: Self.device)
+        )
+        _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
+        let adder = try await store.queue.read {
+            try CommunityTreeStore().adder(treeID: Self.legacyTree, connection: $0)
+        }
+        #expect(
+            adder == .device(Self.device),
+            "the adder is \(String(describing: adder)), not the device the add was made under"
+        )
     }
 
     /// v12's third case: a database with no identity at all has never run `addTree`, so there is

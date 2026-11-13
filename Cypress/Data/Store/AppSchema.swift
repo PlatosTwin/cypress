@@ -2742,22 +2742,28 @@ public enum AppSchema {
     /// reason: the leaving door's promise is that the work stays and the name comes off, so an
     /// ownerless tree is the rule's terminal state, not a hole in it.
     ///
-    /// **Backfilled with this installation's own owner (owner's ruling of 2026-11-12).** The first
-    /// draft of this migration backfilled nobody, on R45 arm 3, and the owner reversed it. The fact
-    /// that makes the backfill safe is a fact about writers, not an assumption about people:
-    /// `LocalAPI.addTree` is the only code that has ever inserted into `community_trees` (the
-    /// insert lives in `CommunityTreeStore.insert`, and `addTree` is its one caller), and nothing
-    /// before v23 synced anybody else's tree down. So every row this migration finds was added on
-    /// this phone, and its adder is whoever `addTree`'s `ContributionOwner(attribution)` would have
-    /// named: the signed-in account if `app_state.current_user_id` holds one, and
-    /// `app_state.device_uuid` otherwise. That is v12's backfill of `photos`, applied for the same
-    /// reason, and it matches the service, whose `community_trees` has recorded the adder since 001
-    /// and whose 007 gave each root position that adder.
+    /// **Backfilled from the add itself, then from this installation's owner (the owner's rulings
+    /// of 2026-11-12 and 2026-11-13).** The first draft of this migration backfilled nobody, on R45
+    /// arm 3, and the owner reversed it. The fact that makes a backfill safe is a fact about
+    /// writers: `LocalAPI.addTree` is the only code that has ever inserted into `community_trees`
+    /// (through `CommunityTreeStore.insert`), and nothing before v23 synced anybody else's tree
+    /// down. So every row this migration finds was added on this phone.
     ///
-    /// What it can get wrong is v12's case: a tree added while one account was signed in, followed
-    /// by a sign-out, lands on the device, and the next account to sign in on this phone adopts it
-    /// through `claimDevice` (ERRATA E136's over-attribution, which the owner rules on, not a new
-    /// hole). A database with no `device_uuid` has never run `addTree`, so a row left over stays
+    /// **Which owner, in order.**
+    ///
+    /// 1. The tree's own `add_tree` outbox row, matched on the tree's `client_uuid` (`addTree`
+    ///    queues the add under the same key). Its payload's `attribution` is who the add was made
+    ///    as, and it is what the service recorded as the adder when the row was sent. This is the
+    ///    case that matters: a tree added while signed in and then signed out before the update
+    ///    belongs to that account, and naming the device instead would offer a move the service
+    ///    refuses for good (`isAddedBy`, `server/internal/store/community_trees.go`).
+    /// 2. Only when that row is gone, this installation's current owner: `app_state
+    ///    .current_user_id` if there is one, else `device_uuid`. A row is gone because
+    ///    `OutboxStore.pruneCompleted` swept it after it was `done`, or because the tree predates
+    ///    the sync path and was never queued (R77). This arm can still be wrong in the sign-out case
+    ///    above, and for an R77 tree the service has no record at all; the pending ruling says so.
+    ///
+    /// A database with no `device_uuid` has never run `addTree`, so a row left over stays
     /// nobody's, which the CHECK permits.
     ///
     /// **Only on the first run.** The backfill sits inside the guard that adds the columns, so a
@@ -2843,14 +2849,44 @@ public enum AppSchema {
                 ALTER TABLE community_trees ADD COLUMN device_id TEXT
                     CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL));
 
-                -- Every tree here was added on this phone (`addTree` is the only writer), so its
-                -- adder is what `ContributionOwner(attribution)` names: the account first, the
-                -- device otherwise. Owner's ruling of 2026-11-12; see the doc comment.
+                -- Every tree here was added on this phone (`addTree` is the only writer). Its
+                -- adder is read from its own `add_tree` row first, which recorded the attribution
+                -- the add was made under and sent to the service (the owner's ruling of
+                -- 2026-11-13). The row shares the tree's `client_uuid`.
                 UPDATE community_trees
-                   SET user_id = (SELECT upper(value) FROM app_state WHERE key = 'current_user_id');
+                   SET user_id = (
+                         SELECT upper(json_extract(o.payload, '$.attribution.userID'))
+                           FROM outbox o
+                          WHERE o.kind = 'add_tree'
+                            AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE
+                          LIMIT 1),
+                       device_id = (
+                         SELECT CASE WHEN json_extract(o.payload, '$.attribution.userID') IS NULL
+                                     THEN upper(json_extract(o.payload, '$.attribution.deviceID'))
+                                END
+                           FROM outbox o
+                          WHERE o.kind = 'add_tree'
+                            AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE
+                          LIMIT 1)
+                 WHERE EXISTS (SELECT 1 FROM outbox o
+                                WHERE o.kind = 'add_tree'
+                                  AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE);
+
+                -- Only where that row is gone (`OutboxStore.pruneCompleted` sweeps `done` rows, and
+                -- a tree from before the sync path was never queued, R77): the installation's
+                -- current owner, as `ContributionOwner(attribution)` would name it now, the
+                -- account first and the device otherwise (the owner's ruling of 2026-11-12).
+                UPDATE community_trees
+                   SET user_id = (SELECT upper(value) FROM app_state WHERE key = 'current_user_id')
+                 WHERE NOT EXISTS (SELECT 1 FROM outbox o
+                                    WHERE o.kind = 'add_tree'
+                                      AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE);
                 UPDATE community_trees
                    SET device_id = (SELECT upper(value) FROM app_state WHERE key = 'device_uuid')
-                 WHERE user_id IS NULL;
+                 WHERE user_id IS NULL AND device_id IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM outbox o
+                                    WHERE o.kind = 'add_tree'
+                                      AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE);
                 """)
         }
 

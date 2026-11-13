@@ -1,34 +1,58 @@
-# Rulings pending: community trees C1, the adder backfill (owner's ruling, 2026-11-12)
+# Rulings pending: community trees C1, the adder backfill (owner's rulings, 2026-11-12 and 2026-11-13)
 
 Unnumbered, per CLAUDE.md "Numbering and shared files". The orchestrator splices it at merge. No code
 comment cites this filename.
 
 ---
 
-### R??? — Every tree added before v23 belongs to this installation's own owner
+### R??? — Every tree added before v23 gets an adder: from its own add first, then from this installation
 
-**The owner's ruling of 2026-11-12.** It replaces the author's pending ruling "Every tree added before
-v23 has an adder of nobody" in `community-trees-core.md`.
+**The owner's rulings of 2026-11-12 and 2026-11-13.** They replace the author's pending ruling "Every
+tree added before v23 has an adder of nobody" in `community-trees-core.md`.
 
 Migration v23 sets the adder of every community tree already on the phone, and the owner of its root
-position, to the same value `LocalAPI.addTree` writes for a new tree: the signed-in account
-(`app_state.current_user_id`) when there is one, and this device (`app_state.device_uuid`) when there
-is not. The owner can then move the pin of a tree they added before the update.
+position, in this order:
 
-- **Why it is safe.** `LocalAPI.addTree` is the only code that has ever inserted into
+1. **From the tree's own `add_tree` outbox row**, when that row still exists (ruling of 2026-11-13,
+   "Read add record first"). The row shares the tree's `client_uuid`, and its payload's `attribution`
+   is the account (`userID`) or device (`deviceID`) the add was made as. That is also what the
+   service recorded as the adder when the row was sent.
+2. **Otherwise, from this installation's current owner** (ruling of 2026-11-12): the signed-in
+   account (`app_state.current_user_id`) if there is one, else this device (`app_state.device_uuid`).
+   This is the value `LocalAPI.addTree` would write for a new tree today.
+
+The owner can then move the pin of a tree they added before the update.
+
+- **Why a backfill is safe at all.** `LocalAPI.addTree` is the only code that has ever inserted into
   `community_trees` (through `CommunityTreeStore.insert`), and before v23 nothing synced another
   person's tree down. So every pre-v23 row was added on this phone. v12 backfilled `photos` on the
   same fact.
-- **It matches the service.** The service's `community_trees` has recorded the adder since migration
-  001, and its migration 007 gave each tree's root position that adder.
-- **What it can get wrong.** A tree added while one account was signed in, followed by a sign-out
-  before the update, goes to the device. The next account that signs in on this phone adopts it
-  through `claimDevice`. This is the over-attribution ERRATA E136 already records for visits.
+- **Why the add row comes first.** A tree added while signed in as an account, followed by a sign-out
+  before the update, would otherwise go to the device. The phone would then offer Move pin, and the
+  service, which holds the account as the adder, refuses the move with a terminal `forbidden` or
+  `not_found` (`isAddedBy`, `server/internal/store/community_trees.go`). The queue would keep a
+  permanent red row, and the phone and the service would disagree about where the tree is. The add
+  row records the account, so the tree goes to the account and the signed-out phone is not offered
+  the move.
 - **Only once.** The backfill runs only when v23 first adds the columns. A replay of the migration
   ladder never gives an anonymized tree an owner again.
 - **No identity, no owner.** A database with no `device_uuid` has never added a tree. Any row left
   over stays nobody's, which the schema permits.
 
-Tested in `SchemaV23Tests`: the device case, the signed-in case, the no-identity case, and a v22
-database with a tree and a pending item of every kind that migrates, keeps every item, and lets the
-owner move the pin.
+**What is still wrong, stated rather than hidden.**
+
+- **A pruned add row falls back to a guess.** `OutboxStore.pruneCompleted` deletes `done` rows after a
+  while. For such a tree the phone cannot read who added it, and the fallback can name the wrong
+  owner in the sign-out case above. Then the phone offers a move the service refuses. The phone and
+  the service agree only where the add row survived, or where the current owner happens to be the
+  one the add was made as.
+- **A tree the service never received (R77).** A tree added before the sync path existed was never
+  queued, so it has no add row and falls back to the current owner. It gets an adder and shows Move
+  pin, but the service has no such tree, and the move is answered with a terminal `not_found`. See
+  ROADMAP chip 107 for a proposed rule that would hide Move pin for these trees; it is not built.
+
+Tested in `SchemaV23Tests`: an add row made while signed in, migrated signed out, names the account; an
+add row made signed out wins over an account signed in at migration time; a pruned add row falls back
+to the device, or to the account signed in at migration time; no identity leaves nobody; and a v22
+database with a tree and a pending item of every kind migrates, keeps every item, and lets the owner
+move the pin.

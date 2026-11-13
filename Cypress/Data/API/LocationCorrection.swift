@@ -16,9 +16,12 @@
 //
 //  - **A tree whose adder is nobody cannot be moved.** That is every tree an account deletion
 //    anonymized; the service answers `forbidden` to everybody for one of those. A tree added before
-//    `AppSchema` v23 is not one of them: v23 gave it this installation's own owner as its adder,
-//    because `addTree` is the only writer that table has ever had (the owner's ruling of
-//    2026-11-12; see `AppSchema.applyV23`).
+//    `AppSchema` v23 is not one of them: v23 gave it an adder, read from its own `add_tree` row
+//    where that row survives and from this installation's current owner where it was pruned (the
+//    owner's rulings of 2026-11-12 and 2026-11-13; see `AppSchema.applyV23`). The second arm is
+//    a best guess, and where it guesses wrong, or where the service never received the tree (R77),
+//    the phone can offer a move the service refuses. The pending ruling on the backfill records
+//    both cases.
 //  - **A signed-out phone cannot move a tree its account added.** After sign-in the account owns the
 //    tree, and the service treats the device's own credential as a stranger to it — `forbidden` if
 //    the tree is published, `not_found` if it is not. The phone never queues an act the service
