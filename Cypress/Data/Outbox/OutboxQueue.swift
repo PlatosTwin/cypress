@@ -925,7 +925,9 @@ public struct APIOutboxTransport: OutboxTransport {
         // `photos.width`/`height` was NULL, so `Photo.resolution` was 0 for every row and A3's
         // "ties broken by resolution" never ran — on a series where several photos share a capture
         // date, which is the only case the tie-break exists for (ERRATA E41).
-        let size = PhotoBinary.pixelSize(atPath: photo.path)
+        // Resolved, because a photo queued before an app update holds the old container's path
+        // (report F36). `uploadPhoto` resolves its own copy of the same string.
+        let size = PhotoBinary.pixelSize(atPath: api.resolvedPhotoPath(photo.path))
 
         // `publicCoordinate` is deliberately not set. See ERRATA E42: the tree's own pin is already
         // exact and public, so a photo location adds nothing a public surface needs and does add a
@@ -980,9 +982,15 @@ public struct APIOutboxTransport: OutboxTransport {
 /// holds the invariant; `DataLayerWiringTests` is what holds this wiring.
 public struct APIOutboxSendSink: OutboxSendSink {
     private let remote: RemoteAPI
+    /// This container's Application Support folder, as it is now. `containerPath` is an absolute
+    /// path stored when the apply ran; an app update can move the container before the send runs
+    /// (report F36; see `StoredPhotoPath`). Injected so a test can stand in a container of its own.
+    private let applicationSupportDirectory: URL
 
-    public init(remote: RemoteAPI) {
+    public init(remote: RemoteAPI, applicationSupportDirectory: URL? = nil) {
         self.remote = remote
+        self.applicationSupportDirectory = applicationSupportDirectory
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     }
 
     public func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
@@ -1005,13 +1013,19 @@ public struct APIOutboxSendSink: OutboxSendSink {
     /// (server migration 003). Without it this method could not be retried at all, and every
     /// failure would be terminal for the picture.
     public func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {
-        guard let containerPath = photo.containerPath else {
+        guard let storedPath = photo.containerPath else {
             // `sendablePhotos` already refuses a row with no container copy, so this is unreachable
             // through the drain. Written closed anyway: the alternative reading of "no bytes" is to
             // begin an upload for a photograph that does not exist, which reserves a row the 72 h
             // sweep would then have to collect.
             throw APIError.notFound
         }
+        // Resolved before both reads below: a photo held for the send (offline, or waiting for
+        // Wi-Fi) across an app update holds the old container's path, and the file moved with the
+        // container (report F36). Without this the send fails on every attempt.
+        let containerPath = StoredPhotoPath.resolve(
+            storedPath, applicationSupport: applicationSupportDirectory
+        ).path
         let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
         let size = PhotoBinary.pixelSize(atPath: containerPath)
 

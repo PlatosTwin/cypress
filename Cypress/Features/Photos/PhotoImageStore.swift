@@ -63,6 +63,9 @@ final class PhotoImageStore {
     /// Photographs whose bytes are gone or unreadable. Kept so a broken row is asked for once and
     /// draws its placeholder from then on, rather than retrying on every scroll.
     private var missing: Set<UUID> = []
+    /// Photographs deleted in this session (`forget`). Unlike a failed read, this never clears: a
+    /// deleted picture must not come back because a screen asked for it again.
+    private var forgotten: Set<UUID> = []
     private var inFlight: Set<UUID> = []
 
     /// `nil` stands a screen up from fixtures with no bytes behind it — the same seam
@@ -114,13 +117,21 @@ final class PhotoImageStore {
     ///
     /// Takes the slot even when the browsing cache already holds the photograph: that copy is a
     /// 1,400 px thumbnail and the whole point here is the pixels it does not have.
+    ///
+    /// **A row in `missing` is asked for again here, once per time the viewer opens it** (report
+    /// F36). `missing` exists so a scroll does not retry a broken row on every frame; the viewer
+    /// opens on a tap, so a retry here costs one read per tap. Without it, one failed read (the
+    /// network, or a file the device could not find at that moment) said "That photograph could
+    /// not be opened" until the app was killed. A deleted photograph is never retried.
     func loadViewer(_ id: UUID) async {
-        guard let api, viewerSlot?.id != id, !missing.contains(id) else { return }
+        guard let api, viewerSlot?.id != id, !forgotten.contains(id) else { return }
 
         guard let data = try? await api.photoData(id: id) else {
             missing.insert(id)
             return
         }
+        // The bytes read, so this row is not missing; the browsing cache may now load it too.
+        missing.remove(id)
         let edge = Self.viewerMaximumEdge
         let decoded = await Task.detached(priority: .userInitiated) {
             Self.downsample(data, maximumEdge: edge)
@@ -149,6 +160,7 @@ final class PhotoImageStore {
         if viewerSlot?.id == id { viewerSlot = nil }
         inFlight.remove(id)
         missing.insert(id)
+        forgotten.insert(id)
     }
 
     /// Decodes at the size wanted rather than decoding and then shrinking.
