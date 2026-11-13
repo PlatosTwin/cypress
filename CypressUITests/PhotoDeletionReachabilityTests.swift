@@ -111,7 +111,7 @@ final class PhotoDeletionReachabilityTests: XCTestCase {
             // second tap that works means the first touch was dropped, and a hittable pill that
             // ignores two taps means the push itself was lost.
             let stillOnTheProfile = app.buttons[Self.hero].exists
-            let pillHittable = pill.exists && pill.isHittable
+            let pillHittable = pill.isHittableWithoutRaising(in: app)
             var secondTap = "was not tried"
             if stillOnTheProfile, pill.exists {
                 pill.tap()
