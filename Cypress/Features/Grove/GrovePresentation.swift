@@ -348,8 +348,8 @@ enum GroveCopy {
     /// covers anything this contributor has touched.
     ///
     /// **F38 (owner decision 2026-11-12): the ring follows the reader's location**, so the caption
-    /// also says what the area was resolved *from*. These strings are drafted for ratification in
-    /// `docs/rulings-pending/grove-ring-follows-location.md` (a constraint-21 exception):
+    /// also says what the area was resolved *from*. The owner granted a constraint-21 exception
+    /// for this change on condition that these strings are drafted for ratification (ROADMAP 99):
     ///
     /// - a fix inside a polygon keeps the mock's words, because that place is where the reader is;
     /// - a fix outside every polygon (all of Washington, D.C. today) states R29's distance and
