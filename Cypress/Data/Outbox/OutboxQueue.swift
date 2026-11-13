@@ -952,7 +952,9 @@ public struct APIOutboxSendSink: OutboxSendSink {
         // Resolved before both reads below: a photo held for the send (offline, or waiting for
         // Wi-Fi) across an app update holds the old container's path, and the file moved with the
         // container (report F36). Without this the send fails on every attempt.
-        let containerPath = storedPath // RED-PROOF
+        let containerPath = StoredPhotoPath.resolve(
+            storedPath, applicationSupport: applicationSupportDirectory
+        ).path
         let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
         let size = PhotoBinary.pixelSize(atPath: containerPath)
 
