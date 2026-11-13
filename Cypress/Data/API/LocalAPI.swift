@@ -366,6 +366,9 @@ public actor LocalAPI: CypressAPI {
             // agree is a way for them to stop agreeing.
             let observations = try contributions.observations(treeID: id, connection: connection)
 
+            let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
+            let canMovePin = adder?.isOwned(by: attribution) ?? false
+
             return TreeProfile(
                 tree: tree,
                 activeName: try contributions.activeName(treeID: id, connection: connection),
@@ -448,9 +451,7 @@ public actor LocalAPI: CypressAPI {
                 // `correctLocation`'s own test, read in the same transaction as the tree: a tree
                 // this phone added (a cached or city row is never movable from here), and an adder
                 // who is the reader. A withdrawn tree never reaches this line (it threw above).
-                canMovePin: addedHere
-                    && (try communityTrees.adder(treeID: id, connection: connection)?
-                        .isOwned(by: attribution) ?? false)
+                canMovePin: canMovePin
             )
         }
     }
