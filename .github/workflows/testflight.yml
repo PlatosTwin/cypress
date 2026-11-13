@@ -129,14 +129,39 @@ on:
 # One release at a time. Two concurrent runs would race for the same build number and the
 # loser's archive would be rejected as a duplicate.
 #
-# **Pull requests get their own group, one per branch.** With a single group a PR run would queue
-# ahead of a deploy that was already waiting — `cancel-in-progress: false` means it waits its full
-# turn — and a release would sit behind however many pull requests happened to be open. Only the
-# release path needs the mutual exclusion, because only it takes a build number.
+# **Pull requests get their own group, one per branch and base.** With a single group a PR run
+# would queue ahead of a deploy that was already waiting, and a release would sit behind however
+# many pull requests happened to be open. Only the release path needs the mutual exclusion,
+# because only it takes a build number.
+#
+# **A new push to a pull request cancels that pull request's older in-progress run, and no
+# in-progress run on the release path is ever cancelled.** The account has a small cap on
+# concurrent macOS runners and one run holds five of them (`unit` plus `ui (1..4)`); an outdated
+# run kept them until it finished. On run 36635369200, measured from when `unit` and `ui (1)`
+# started, `ui (2)`, `ui (3)` and `ui (4)` waited 32, 36 and 74 minutes for a runner.
+# `cancel-in-progress` is true ONLY when the event is a pull request. A push to main and
+# workflow_dispatch are the release path, they take the build number, and cancelling one
+# mid-release could burn or race it, so they keep false and queue as before. (GitHub still
+# replaces a PENDING run in a group when a newer one queues, whatever `cancel-in-progress` says;
+# that is old behavior and is not what this setting changes.)
+#
+# Why this is safe for the required check: `gate` is required on the PR's head commit, and the
+# superseded run belongs to an older commit, so its cancelled contexts are never the ones the
+# ruleset reads. Why the group carries the base branch and a `pr-` prefix: the same head branch
+# can be open against `main` and `release/**` at once, and without the base one PR's newer run
+# would cancel the other's run on the SAME commit and leave that PR's `gate` cancelled; and a
+# fork's branch named `main` would otherwise land in the release group and could cancel a release.
+# `server.yml`, which this workflow calls, keys its own group the same way (base and head) for
+# the same reason.
+#
+# **Two ways one PR's run can still cancel another's, known and accepted.** (1) A fork PR whose
+# head branch name equals an in-repo branch's, against the same base, lands in the same group.
+# (2) Re-running an old, superseded run joins the CURRENT group for that PR and cancels the new
+# head's in-progress run; if that happens, re-run the new head's run.
 concurrency:
   group: >-
-    testflight-${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
-  cancel-in-progress: false
+    testflight-${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.base_ref, github.head_ref) || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The tag step pushes, and the default GITHUB_TOKEN is read-only. Scoped to the one
 # permission that needs raising rather than left at the workflow default.

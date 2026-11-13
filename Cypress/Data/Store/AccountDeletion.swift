@@ -747,7 +747,7 @@ public struct AccountDeletion {
     /// fact — it depends on the license the account held when the tree went live (decisions 7 and
     /// 10) — and this round's phone does not hold it, so the leaving door anonymizes every tree here
     /// and the service deletes the unpublished ones. The phone keeps a pin the service has dropped
-    /// until the round that syncs the layer down can tell it otherwise (`ROADMAP` chip backlog 85).
+    /// until the round that syncs the layer down can tell it otherwise (`ROADMAP` chip backlog 104).
     ///
     /// Nothing references `community_trees(id)` by foreign key: visits and photographs name a tree
     /// by `tree_uuid`, which may be a city row. A visit by somebody else on a deleted tree cannot

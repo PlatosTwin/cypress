@@ -270,6 +270,25 @@ ID_SPACES = {
             "attribute columns for tree points and lists no trees of its own."
         ),
     ),
+    "us-dc-dc": IdSpace(
+        id="us-dc-dc",
+        identity_prefix="us-dc-dc:",
+        note=(
+            "District of Columbia, DDOT Urban Forestry Division. The numbering is GLOBALID on "
+            "the UFA Street Trees layer (DCGIS_DATA/Urban_Tree_Canopy/MapServer/23) -- the "
+            "geodatabase's own row UUID. Measured against the live layer on 2026-11-12: 223,777 "
+            "rows, 223,777 distinct GLOBALID, zero null. The published form is braced and "
+            "uppercase ('{926038DA-...}'); source_ref is that UUID with the braces stripped and "
+            "the case kept as published, so it can never contain ':'. "
+            "NOT keyed on OBJECTID (the service's row number, which moves on republish), NOT on "
+            "FACILITYID (a planting-site id: null on 67,033 rows and repeated on others), and NOT "
+            "on GIS_ID (empty on every row). "
+            "KNOWN RISK, UNPROVEN EITHER WAY: whether GLOBALID survives a DDOT republish of the "
+            "live layer. DDOT's separate Street Tree Archive layer carries regenerated GLOBALIDs, "
+            "but that layer is a copy, not the live one, so it does not settle the question. "
+            "Recheck by re-fetching after a few weeks and joining on GLOBALID."
+        ),
+    ),
 }
 
 
@@ -335,6 +354,15 @@ INVENTORIES = {
         id_space="us-ny-nyc",
         name="NYC Parks Forestry Planting Spaces",
         url="https://data.cityofnewyork.us/resource/82zj-84is",
+    ),
+    "dc_street_trees": Inventory(
+        id="dc_street_trees",
+        id_space="us-dc-dc",
+        name="DDOT Urban Forestry street tree inventory",
+        url=(
+            "https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/Urban_Tree_Canopy/"
+            "MapServer/23"
+        ),
     ),
 }
 

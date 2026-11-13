@@ -1846,7 +1846,102 @@ into this section in the round that finds it, and nowhere else. Each item stands
     unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
     green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
     `aRaisedFloorOpensAtTheFloor` too.
-85. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
+85. **Washington, D.C.: what shipped, and the species follow-up.** The D.C. round (2026-11-12,
+    `feat/dc-street-trees`) built the `us-dc-dc` pack from DDOT's street tree layer: 200,313 rows
+    (194,086 alive, 3,332 standing dead, 2,895 vacant sites), published beside the seven live packs
+    by `publish_cities.py --add-pack`. Detail: `docs/investigations/dc-street-trees.md`. Species
+    coverage under D20 is 86.27% and was waived for D.C. (`docs/rulings-pending/dc-species-gate.md`).
+    Follow-up: a D.C. species round, the way `nyc_species.yaml` was built. Two parts. First, cited
+    rules for the notation the R0 to R3 cascade misses (`Ginkgo biloba (male)`/`(female)` 3,682 rows,
+    `Genus species` 12,000+ rows, curly-quoted cultivars, `Liquidambar Stryaciflua`). Second, a
+    `dc_species.yaml` content fixture for the D.C. taxa no fixture covers (`Cladrastis lutea`,
+    `Liquidambar rotundiloba`, `Quercus shumardi` and others). No content may be written by hand
+    (DECISIONS constraint 15).
+86. **D.C. in the bundle and the data gates.** The D.C. pack is download-only. If D.C. joins the
+    bundled seed, `Cypress/Data/Tests/DataGates.swift` needs a D.C. bounding box, and
+    `Fixtures/seed/pinned-seed.json` plus `CypressTests/SeedCorpus.swift` need a deliberate bump
+    (the pin's own "HOW TO BUMP IT" steps). `Tools/verify_seed.py` checks are SF-shaped (nyc-ingest
+    §7) and were not extended for D.C.
+87. **Recheck that DDOT's GLOBALID is stable, in early December 2026.** The D.C. uuids are
+    uuid5 over `us-dc-dc:<GLOBALID>`, and nobody has shown that GLOBALID survives a DDOT republish
+    of the live layer. Re-fetch with `Tools/fetch_dc_trees.py` into a new cache and join on
+    GLOBALID against the 2026-11-12 cache: count kept, gone and new ids. If ids churn, every D.C.
+    tree's public identity churns with them, and the id choice needs a decision before more
+    community data attaches to D.C. trees.
+88. **D.C. neighborhoods.** None ship (San Jose's shape). The District publishes neighborhood
+    boundaries; adding them is a schema-free change to the neighborhood stamp, but the polygons are
+    civic content and need a cited source.
+89. **`dim_region` ids collide across packs built from different seeds.** The app's
+    `InventoryUnionSQL.mirrorFirstWins` copies `dim_region` with `id` as PRIMARY KEY and filters only
+    on `pack_id`, so two packs that carry the same region id under different pack ids collide and
+    the second is refused. Every pack before D.C. came from one fused seed, so this never fired.
+    `publish_cities.py --add-pack` works around it by giving the new pack an unused id (D.C. is 8).
+    It is still a trap: a full rebuild that includes D.C. assigns New York's boroughs 4..8 instead
+    of 3..7 (`us-dc-dc` sorts first), so a phone mid-update can hold an old pack and a new pack
+    that share an id. Fix in the app (renumber `dim_region` on mirror, as `dim_city` already is) or
+    freeze region ids in `build_seed.REGIONS`; either needs its own round and a test.
+    The same copy leaves `dim_region.city_id` pointing at the pack's own `dim_city` numbering,
+    which the app renumbers: in a merged union the boroughs' `city_id` 3 points at `us-dc-dc` and
+    D.C.'s `city_id` 2 points at `us-ca-sj` (#203 review). Nothing reads it today
+    (`SeedCities.swift` reads `dim_region.display_name` by `pack_id` only); re-point it through
+    `dim_city.slug` in the same fix. `Tools/test_publish_cities.py`'s region-id test checks
+    `len(cities) + 1` against its own fixture, not the ids live packs use, so it would stay green
+    if an entry were ever removed from the manifest.
+90. **`upload.sh` should refuse a stale previous manifest.** It replaces `manifest-v2.json`
+    whole, so a publish by someone else between the build and the upload is undone silently. The
+    D.C. publish (2026-11-12) re-fetched and compared by hand. Make `upload.sh` compare the live
+    manifest's sha256 with the one `--previous-manifest` read, and refuse on a mismatch.
+91. **Merged species content depends on which packs are installed.** 98 species carry different
+    common names in the D.C. pack and the August packs ("Trident maple" vs "trident maple",
+    "Cherry (Snowgoose)"), and the first installed pack wins. `species_map.species_id` is copied
+    into the union untranslated (only `DataGates` reads it). Decide one source of common names.
+92. **D.C. planting dates use the UTC day.** About 1.7% of dated D.C. trees (1,711 of 102,067)
+    were stamped 00:00-03:59 UTC, the evening before in D.C., so `parse_planted_date` lands them
+    one day late. Convert with America/New_York at the next D.C. build.
+93. **The web does not serve D.C. yet.** `web/src/lib/idSpaces.ts` now knows `us-dc-dc` (#203), but
+    the `cypress-web` volume holds only the seven August packs and is sized for 713 MB; D.C. adds
+    120 MB. Copy the pack to the volume (and restart the machine, chip 47) in its own round.
+94. **DONE 2026-11-12: the owner accepted the agreement; run 43331239955 pulled feedback again.** ~~**P0, owner only: accept the expired Apple agreement (App Store Connect, Business).**~~ Every
+    App Store Connect API call has answered HTTP 403 `REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` since
+    2026-10-02. The `release` job of run 36968512685 (#200's merge) failed on it, so **build 82
+    (2026-09-30) is the last build testers have**: #200 and #203's release note are on main and in
+    no build, and build 82 expires around **2026-12-29**. The feedback pull (run 43328447485) fails
+    the same way, so no tester feedback after 2026-09-28 has been read. The Account Holder accepts it
+    at App Store Connect > Business; no key is involved. Then re-run the failed `release` job, re-pull
+    feedback, and redo `docs/investigations/beta-feedback-triage-2026-11-12.md` for 2026-09-28 on.
+95. **F1's leftover owner decision.** The leading fix shipped (d7fdbd4a), but ERRATA E254 §2's choice
+    for the no-ghost caption (its 80 pt width, or the copy `no ghost yet · first photo`) was never
+    made; the 2026-08-28 reconciliation counted F1 as fully shipped. Owner call; P3.
+96. **F4 was filed on My Grove > Species (screen 08).** The tester's screenshot answers the "which
+    screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
+97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
+    (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
+    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106.
+98. **P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).** A tester saw
+    photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
+    `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
+    the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
+    source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
+    source, passed to every `drain()`, with a test that fails if a writer drains without it.
+99. **The Grove ring names the most-visited neighborhood, not where the reader is (F38,
+    2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
+    `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
+    F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
+    "your most-visited neighborhood", reuse F17's picker, or follow location. D.C. ships no
+    neighborhoods yet (chip 88).
+100. **A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
+    on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
+    chip 76(a). Reproduce first.
+101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
+    Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
+102. **F37 (2026-10-31) is a second report of F31(a), moving a pin.** C1 and C3 cover it; it adds
+    weight to C1, not a new item.
+103. **`PhotoDeletionReachabilityTests.testTheHeroPhotographReachesADeleteThatWorks` failed once on
+    main** (run 43327553492, ui shard 4, #203's merge, 2026-11-12): "the delete is in the viewer's
+    tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
+    merge changed no Swift. A re-run is evidence it is intermittent, not of why. Watch for a second
+    occurrence before chasing it.
+104. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
     community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
     doors, `leaveRecords` included. Publication is the service's fact (decisions 7 and 10: it turns
     on the license the account held when the tree went live), and C1's phone does not hold it, so
@@ -1858,7 +1953,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     likely by reading the service's answer to the account's own trees at sign-out or on the next
     tile — and then delete the local row and its chain. Until then the gap is visible only to the
     deleted account's own phone.
-86. **C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
+105. **C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
     community-trees C1. Decision 6 keeps a tree the erasing account added if another identity has
     built on it; the service decides that from all the rows it holds, and
     `AccountDeletion.forgetCommunityTrees` decides it from this phone's `visits`, `observations`,
@@ -1869,7 +1964,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     installation but not yet claimed (device-owned) counts locally as "somebody else"; the service
     reads it as the account's after the claim. C2 should make the service's answer the one the
     phone acts on, or at least reconcile the two after the deletion lands.
-87. **Owner question: deletion copy for the new erasing-door behavior (decision 6).** From
+106. **Owner question: deletion copy for the new erasing-door behavior (decision 6).** From
     community-trees C1. The erasing door now deletes a tree the account added unless somebody else
     has built on it, and the owner's decision 6 says "deletion copy must say so".
     `AccountDeletionCopy` says nothing about trees the account added: it names visits, check-ins,
