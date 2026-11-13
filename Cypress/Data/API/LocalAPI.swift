@@ -2855,37 +2855,47 @@ public actor LocalAPI: CypressAPI {
                 deviceID: deviceID,
                 connection: connection
             )
-            // --- Which area the ring is about (F38, owner decision 2026-11-12: the ring follows the
-            // reader's location; RULINGS R29 for the shapes).
+            // --- Which area the ring is about (F38: the ring follows the reader's location, owner
+            // decisions of 2026-11-12 and 2026-11-13; RULINGS R29 for the shapes).
             //
             // **With a usable fix, the ring is about where the reader is**, resolved exactly as
             // `almanac` resolves `.here`: the polygon at the fix first, then R29's stated radius
-            // around the reader if that circle holds any record, then nothing — and "nothing" is
-            // said on screen (`readerIsOutsideRecord`) rather than replaced by a ring about some
-            // other place. Before F38 this read never looked at location, so a reader in
-            // Washington, D.C. was told "in the Castro/Upper Market", their most-visited area.
+            // around the reader if that circle holds any record. Before F38 this read never looked
+            // at location, so a reader in Washington, D.C. was told "in the Castro/Upper Market",
+            // their most-visited area, as if that were where they stood.
             //
-            // This arm runs even when the phone has met no species: the account's half may still
-            // arrive through `RoutedAPI.refreshedGroveSpecies(near:)`, which keeps this area.
+            // Two cases fall through to the most-visited ring below, by the owner's ruling of
+            // 2026-11-13, and its caption says "most-visited", so neither is presented as the
+            // reader's location:
+            // (a) no inventory on this phone covers the reader, so there is no area here at all;
+            // (b) the area holds a record, but the reader has met none of its species, so the ring
+            //     would read zero. The test is against this phone's species; the account's half
+            //     arrives later through `RoutedAPI.refreshedGroveSpecies(near:)`, which keeps the
+            //     area this read chose.
             if let coordinate, let speciesQueries, let almanacQueries {
-                let scope: AlmanacScope
+                var located: AlmanacScope?
                 if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
-                    scope = .neighborhood(id: polygon.id, name: polygon.name)
+                    located = .neighborhood(id: polygon.id, name: polygon.name)
                 } else {
-                    let fallback = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
-                    guard try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection) else {
-                        return GroveSpecies(neighborhood: nil, known: known, readerIsOutsideRecord: true)
+                    let around = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
+                    if try almanacQueries.holdsAnyRecord(scope: around, connection: connection) {
+                        located = around
                     }
-                    scope = fallback
                 }
-                let species = try groveQueries.speciesIDs(scope: scope, connection: connection)
-                return GroveSpecies(
-                    neighborhood: GroveNeighborhood(area: scope.area, species: species, basis: .whereYouAre),
-                    known: known
-                )
+                if let located {
+                    let species = try groveQueries.speciesIDs(scope: located, connection: connection)
+                    let growsHere = Set(species.items)
+                    if known.items.contains(where: { growsHere.contains($0.speciesID) }) {
+                        return GroveSpecies(
+                            neighborhood: GroveNeighborhood(area: located.area, species: species, basis: .whereYouAre),
+                            known: known
+                        )
+                    }
+                }
             }
 
-            // --- No usable fix: A4's inference, in R29's order, and labeled as most-visited.
+            // --- No usable fix, or (a) or (b) above: A4's inference, in R29's order, labeled as
+            // most-visited.
             //
             // A4's inference reads the same contributions, so a contributor with none has no
             // area at all and the ring has nothing to be a fraction of. The polygon first — the

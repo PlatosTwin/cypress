@@ -286,17 +286,6 @@ struct GroveView: View {
             .padding(.horizontal, CypressSpacing.gutterLabel)
             // One element, one sentence: a ring and a fraction read twice otherwise.
             .accessibilityElement(children: .combine)
-        } else if let note = presentation.areaNote {
-            // F38: the reader's location holds no record, so there is no area for a ring. The
-            // sentence takes the caption's type and color and the ring block's padding, so it sits
-            // where the ring would be rather than adding a new kind of element to the screen.
-            Text(note)
-                .font(CypressFont.body13)
-                .foregroundStyle(CypressColor.textMuted)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, GroveMetrics.progressTop)
-                .padding(.horizontal, CypressSpacing.gutterLabel)
         }
     }
 

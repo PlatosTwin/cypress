@@ -134,9 +134,6 @@ struct GrovePresentation: Equatable {
     }
 
     let progress: Progress?
-    /// The sentence drawn where the ring would be when the reader's location holds no record
-    /// (F38). Nil whenever there is a ring, and nil on an empty grove, which has its own sentence.
-    let areaNote: String?
     let celebration: Celebration?
     let tiles: [Tile]
 
@@ -174,8 +171,6 @@ struct GrovePresentation: Equatable {
             recognizedHere: recognizedHere,
             neighborhood: grove.neighborhood
         )
-        self.areaNote = grove.readerIsOutsideRecord && grove.neighborhood == nil && !known.items.isEmpty
-            ? GroveCopy.readerOutsideRecord : nil
         self.tiles = Self.tiles(known: known, neighborhood: grove.neighborhood, recognizedHere: recognizedHere)
         self.celebration = Self.celebration(known: known, now: now, calendar: calendar)
     }
@@ -351,12 +346,14 @@ enum GroveCopy {
     /// also says what the area was resolved *from*. The owner granted a constraint-21 exception
     /// for this change on condition that these strings are drafted for ratification (ROADMAP 99):
     ///
-    /// - a fix inside a polygon keeps the mock's words, because that place is where the reader is;
+    /// - a fix inside a polygon keeps the mock's words, because that place is where the reader is
+    ///   (owner ruling 2026-11-13);
     /// - a fix outside every polygon (all of Washington, D.C. today) states R29's distance and
     ///   measures it from the reader, "of where you are", in the existing radius sentence's form;
-    /// - with no usable fix the area is A4's most-visited inference, and the caption says so, so
-    ///   it is never read as the reader's location (the F38 report: "in the Castro/Upper Market"
-    ///   for a reader in D.C.).
+    /// - otherwise the area is A4's most-visited inference, and the caption says so, so it is
+    ///   never read as the reader's location (the F38 report: "in the Castro/Upper Market" for a
+    ///   reader in D.C.). That covers no usable fix, a fix no inventory covers, and a fix whose
+    ///   area holds none of the reader's species (owner ruling 2026-11-13).
     static func caption(area: AlmanacArea, basis: GroveAreaBasis) -> String {
         switch (area, basis) {
         case let (.named(name), .whereYouAre):
@@ -369,12 +366,6 @@ enum GroveCopy {
             return "you can recognize within a 15-minute walk of your most-visited tree"
         }
     }
-
-    /// F38: the reader has a usable fix and no city inventory on this phone covers it, so there is
-    /// no area to draw a ring about (R29: "where the area holds no record, say so"). Drafted for
-    /// ratification with the captions above. "Yet" is D16(b)'s rule that a degraded state says
-    /// what would change: a city pack that covers the spot.
-    static let readerOutsideRecord = "No city tree inventory on this phone covers where you are yet."
 
     /// C27's inner label, `30%`. Rounded down, so a ring that is not yet full never says it is.
     static func ringLabel(fraction: Double) -> String {

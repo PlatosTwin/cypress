@@ -865,8 +865,7 @@ public struct RoutedAPI: CypressAPI {
         // is the mistake `Series` exists to make unwritable (ERRATA E38).
         return GroveSpecies(
             neighborhood: mine.neighborhood,
-            known: Series(complete: bySpecies.values.sorted { $0.firstMetAt < $1.firstMetAt }),
-            readerIsOutsideRecord: mine.readerIsOutsideRecord
+            known: Series(complete: bySpecies.values.sorted { $0.firstMetAt < $1.firstMetAt })
         )
     }
 
