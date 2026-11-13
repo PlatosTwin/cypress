@@ -2742,15 +2742,26 @@ public enum AppSchema {
     /// reason: the leaving door's promise is that the work stays and the name comes off, so an
     /// ownerless tree is the rule's terminal state, not a hole in it.
     ///
-    /// **Backfilled NULL, which is nobody, and that is R45 arm 3 applied rather than overlooked.**
-    /// Every tree already on a phone was added by this installation — `addTree` has always been the
-    /// only writer — and v12 backfilled `photos` on exactly that reasoning. It is refused here for
-    /// v14's reason, not v12's: the fact being written is *who may move this pin without asking*,
-    /// and a pin attributed to this device by assumption hands that authority to whoever holds the
-    /// phone. The service is the one place that recorded the adder at the time (`community_trees`
-    /// has carried `user_id`/`device_id` there since 001), and the community-trees design routes the
-    /// adoption of that recorded fact through `GET /trees/{id}`'s `added_by_you` in the sync-down
-    /// round, which is a reading of a record rather than a guess.
+    /// **Backfilled with this installation's own owner (owner's ruling of 2026-11-12).** The first
+    /// draft of this migration backfilled nobody, on R45 arm 3, and the owner reversed it. The fact
+    /// that makes the backfill safe is a fact about writers, not an assumption about people:
+    /// `LocalAPI.addTree` is the only code that has ever inserted into `community_trees` (the
+    /// insert lives in `CommunityTreeStore.insert`, and `addTree` is its one caller), and nothing
+    /// before v23 synced anybody else's tree down. So every row this migration finds was added on
+    /// this phone, and its adder is whoever `addTree`'s `ContributionOwner(attribution)` would have
+    /// named: the signed-in account if `app_state.current_user_id` holds one, and
+    /// `app_state.device_uuid` otherwise. That is v12's backfill of `photos`, applied for the same
+    /// reason, and it matches the service, whose `community_trees` has recorded the adder since 001
+    /// and whose 007 gave each root position that adder.
+    ///
+    /// What it can get wrong is v12's case: a tree added while one account was signed in, followed
+    /// by a sign-out, lands on the device, and the next account to sign in on this phone adopts it
+    /// through `claimDevice` (ERRATA E136's over-attribution, which the owner rules on, not a new
+    /// hole). A database with no `device_uuid` has never run `addTree`, so a row left over stays
+    /// nobody's, which the CHECK permits.
+    ///
+    /// **Only on the first run.** The backfill sits inside the guard that adds the columns, so a
+    /// replay of the ladder never re-attributes a tree an account deletion has since made nobody's.
     ///
     /// ── 2. `tree_locations`, the pin's chain ──────────────────────────────────────────────────
     ///
@@ -2761,9 +2772,9 @@ public enum AppSchema {
     ///
     /// - **The root row's id is the tree's id**, on both sides, which is how the service's
     ///   `community_tree_locations` and this table agree without a wire field for it. Every tree
-    ///   gets one, backfilled here from the row as it stands (nobody's, at the tree's own
-    ///   `created_at`, keyed on the add's `client_uuid`), and `CommunityTreeStore.insert` writes one
-    ///   for every tree written after this.
+    ///   gets one, backfilled here from the row as it stands (owned by the tree's adder, at the
+    ///   tree's own `created_at`, keyed on the add's `client_uuid`), and `CommunityTreeStore.insert`
+    ///   writes one for every tree written after this.
     /// - **The head index is BINARY, and every writer spells the UUID canonically.** v20's finding:
     ///   a partial UNIQUE index's collation decides which pairs of rows the schema calls a conflict,
     ///   so recollating it would change the invariant rather than the access path. `tree_id` is
@@ -2831,6 +2842,15 @@ public enum AppSchema {
                 ALTER TABLE community_trees ADD COLUMN user_id TEXT;
                 ALTER TABLE community_trees ADD COLUMN device_id TEXT
                     CHECK (NOT (user_id IS NOT NULL AND device_id IS NOT NULL));
+
+                -- Every tree here was added on this phone (`addTree` is the only writer), so its
+                -- adder is what `ContributionOwner(attribution)` names: the account first, the
+                -- device otherwise. Owner's ruling of 2026-11-12; see the doc comment.
+                UPDATE community_trees
+                   SET user_id = (SELECT upper(value) FROM app_state WHERE key = 'current_user_id');
+                UPDATE community_trees
+                   SET device_id = (SELECT upper(value) FROM app_state WHERE key = 'device_uuid')
+                 WHERE user_id IS NULL;
                 """)
         }
 
@@ -2872,14 +2892,14 @@ public enum AppSchema {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_tree_locations_head
                 ON tree_locations(tree_id) WHERE superseded_by IS NULL;
 
-            -- Every tree already here gets the root it never had, owned by nobody, spelled
-            -- canonically. Withdrawn trees too: the chain is the record, and a withdrawal is not
-            -- an erasure.
+            -- Every tree already here gets the root it never had, owned by the tree's adder (the
+            -- service's 007 does the same), spelled canonically. Withdrawn trees too: the chain is
+            -- the record, and a withdrawal is not an erasure.
             INSERT OR IGNORE INTO tree_locations
                 (id, tree_id, client_uuid, lat, lon, placement, location_accuracy_m,
                  user_id, device_id, superseded_by, occurred_at, created_at, updated_at)
             SELECT upper(id), upper(id), upper(client_uuid), lat, lon, placement, NULL,
-                   NULL, NULL, NULL, created_at, created_at, created_at
+                   user_id, device_id, NULL, created_at, created_at, created_at
               FROM community_trees;
 
             -- ─── Other people's trees ────────────────────────────────────────────────────────

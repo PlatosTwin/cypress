@@ -14,8 +14,11 @@ import Testing
 ///
 /// 1. a v22 database reaches 23 by exactly one step, and 23 is the newest;
 /// 2. the staged binaries survive the rebuild, and the counter still counts them;
-/// 3. every tree already here gets a root — the tree's own id, uppercase whatever the row held, at
-///    the tree's position, owned by nobody (R45 arm 3: the phone never recorded who added it);
+/// 3. every tree already here gets an adder and a root — this installation's own owner, the account
+///    when one is signed in and the device otherwise, because `addTree` is the only writer the
+///    table has ever had (owner's ruling of 2026-11-12) — and the root is the tree's own id,
+///    uppercase whatever the row held, at the tree's position; the owner can move the pin, and a
+///    queued item of every kind survives the outbox rebuild;
 /// 4. the vocabulary widened, both values, and still refuses a value it does not know;
 /// 5. the schema's own rules hold: one head per chain, at most one adder, and a cached copy of a
 ///    tree this phone added cannot be stored.
@@ -34,10 +37,28 @@ struct SchemaV23Tests {
     private static let legacyKey = UUID(uuidString: "5A000000-0000-4000-8000-0000000C2302")!
     private static let queuedItem = UUID(uuidString: "5A000000-0000-4000-8000-0000000C2303")!
     private static let binary = UUID(uuidString: "5A000000-0000-4000-8000-0000000C2304")!
+    /// This installation, as `app_state.device_uuid` names it, and an account signed in on it.
+    private static let device = UUID(uuidString: "5A000000-0000-4000-8000-0000000C2305")!
+    private static let account = UUID(uuidString: "5A000000-0000-4000-8000-0000000C2306")!
+
+    /// Every kind a v22 queue admits (v22's CHECK, copied into v23's), one pending item each.
+    private static let v22Kinds = [
+        "visit", "observation", "measurement", "care_event", "favorite_toggle", "private_reminder",
+        "add_tree", "species_claim", "species_correction", "wrong_species_report",
+        "never_existed_report", "species_review_dismissal", "record_review_dismissal", "photo_vote",
+        "photo_withdrawal", "hazard_redirect", "measurement_withdrawal", "data_dispute",
+        "data_dispute_withdrawal",
+    ]
 
     /// A v22 database holding one community tree and one queued visit with one staged binary,
-    /// written **as rows** for `SchemaV21Tests.v20Database`'s reason.
-    private static func v22Database() async throws -> CypressStore {
+    /// written **as rows** for `SchemaV21Tests.v20Database`'s reason. `deviceUUID` and
+    /// `signedInAs` are the installation's identity in `app_state`, which is what the adder
+    /// backfill reads; `everyKind` adds one more pending item of every kind a v22 queue admits.
+    private static func v22Database(
+        deviceUUID: UUID? = device,
+        signedInAs userID: UUID? = nil,
+        everyKind: Bool = false
+    ) async throws -> CypressStore {
         let store = try await CypressStore.inMemory(
             migrations: AppSchema.migrations.filter { $0.version <= 22 }
         )
@@ -66,8 +87,36 @@ struct SchemaV23Tests {
                 VALUES ('\(binary.uuidString)', '\(queuedItem.uuidString)', '/staged/one.jpg',
                         'full_tree', 'pending', 1, 0, '\(stamp)', '\(stamp)');
                 """)
+            if let deviceUUID {
+                try connection.execute("""
+                    INSERT INTO app_state (key, value) VALUES ('device_uuid', '\(deviceUUID.uuidString)');
+                    """)
+            }
+            if let userID {
+                try connection.execute("""
+                    INSERT INTO app_state (key, value) VALUES ('current_user_id', '\(userID.uuidString)');
+                    """)
+            }
+            if everyKind {
+                for (offset, kind) in v22Kinds.enumerated() {
+                    try connection.execute("""
+                        INSERT INTO outbox
+                            (seq, id, kind, client_uuid, payload, photo_paths, photos_outstanding,
+                             state, fail_count, local_applied, remote_sent, window_started_at,
+                             created_at, updated_at)
+                        VALUES (\(100 + offset), '\(kindItem(offset).uuidString)', '\(kind)',
+                                '\(UUID().uuidString)', '{"kind":"\(kind)"}', '[]', 0, 'pending', 0,
+                                1, 0, '\(stamp)', '\(stamp)', '\(stamp)');
+                        """)
+                }
+            }
         }
         return store
+    }
+
+    /// The queue key of `v22Kinds[offset]`'s item.
+    private static func kindItem(_ offset: Int) -> UUID {
+        UUID(uuidString: String(format: "5A000000-0000-4000-8000-0000000C24%02d", offset))!
     }
 
     private static func scalar(_ sql: String, _ connection: SQLiteConnection) throws -> String? {
@@ -129,9 +178,11 @@ struct SchemaV23Tests {
 
     // MARK: - 3. The roots
 
-    /// Red-proof: drop `upper()` from the backfill's id — red on the root's id, which keeps the
-    /// lowercase spelling and no longer equals `tree.id` under the BINARY head index.
-    @Test("every tree already here gets a root: its own id, uppercase, at its position, owned by nobody")
+    /// Red-proofs, each read by its message: drop `upper()` from the backfill's id — red on the
+    /// root's id, which keeps the lowercase spelling and no longer equals `tree.id` under the BINARY
+    /// head index; delete the two `UPDATE community_trees` statements from `applyV23` — red on
+    /// "the migration gave a pre-v23 tree nobody", and on the root's owner.
+    @Test("every tree already here gets this device as its adder and a root: its own id, uppercase, at its position")
     func everyTreeGetsARoot() async throws {
         let store = try await Self.v22Database()
         _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
@@ -145,7 +196,7 @@ struct SchemaV23Tests {
         #expect(root.clientUUID == Self.legacyKey, "the root is not keyed on the add")
         #expect(root.coordinate == Coordinate(latitude: 37.7601, longitude: -122.5401))
         #expect(root.placement == .contributorPlaced)
-        #expect(root.owner == .nobody, "the backfill guessed an adder: \(root.owner)")
+        #expect(root.owner == .device(Self.device), "the root's owner is \(root.owner), not this device")
         #expect(root.occurredAt == Self.moment && root.isCurrent)
 
         let stored = try await store.queue.read { connection in
@@ -156,7 +207,76 @@ struct SchemaV23Tests {
         let adder = try await store.queue.read {
             try CommunityTreeStore().adder(treeID: Self.legacyTree, connection: $0)
         }
-        #expect(adder == .nobody, "the migration gave a pre-v23 tree an adder")
+        #expect(adder != .nobody, "the migration gave a pre-v23 tree nobody")
+        #expect(adder == .device(Self.device), "the adder is \(String(describing: adder)), not this device")
+    }
+
+    /// The account arm: a phone signed in when it migrates names the account, as `addTree`'s
+    /// `ContributionOwner(attribution)` does. Red-proof: swap the two `UPDATE`s' keys in `applyV23`
+    /// — red on "the adder is .device(…), not the account".
+    @Test("a phone signed in when it migrates gives its trees to the account, as addTree would")
+    func aSignedInPhoneGivesItsTreesToTheAccount() async throws {
+        let store = try await Self.v22Database(signedInAs: Self.account)
+        _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
+        let adder = try await store.queue.read {
+            try CommunityTreeStore().adder(treeID: Self.legacyTree, connection: $0)
+        }
+        #expect(adder == .user(Self.account), "the adder is \(String(describing: adder)), not the account")
+        let root = try #require(try await store.queue.read {
+            try TreeLocationStore().chain(treeID: Self.legacyTree, connection: $0)
+        }.first)
+        #expect(root.owner == .user(Self.account), "the root's owner is \(root.owner), not the account")
+    }
+
+    /// v12's third case: a database with no identity at all has never run `addTree`, so there is
+    /// nobody to name, and the CHECK admits nobody.
+    @Test("a database with no installation identity leaves the tree nobody's")
+    func noIdentityLeavesNobody() async throws {
+        let store = try await Self.v22Database(deviceUUID: nil)
+        _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
+        let adder = try await store.queue.read {
+            try CommunityTreeStore().adder(treeID: Self.legacyTree, connection: $0)
+        }
+        #expect(adder == .nobody, "the adder is \(String(describing: adder)) with no identity to give")
+    }
+
+    /// The point of the backfill, end to end: after the migration the tree's owner moves its pin,
+    /// and every item that was waiting in the v22 queue, of every kind, is still waiting, unchanged.
+    ///
+    /// Red-proofs: delete the two `UPDATE community_trees` statements — red on the move, which
+    /// throws `forbidden`; drop one kind (say `photo_vote`) from v23's CHECK — the migration's
+    /// `INSERT … SELECT` fails, and the test fails on that throw.
+    @Test("after v23 the owner moves a pre-v23 tree's pin, and a queued item of every kind survives")
+    func theOwnerMovesAPreV23TreeAndTheQueueSurvives() async throws {
+        let store = try await Self.v22Database(everyKind: true)
+        _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
+
+        let survivors = try await store.queue.read { connection -> [String: String] in
+            let statement = try connection.prepare(
+                "SELECT id, kind || '|' || payload || '|' || state || '|' || seq AS v FROM outbox"
+            )
+            defer { statement.finalize() }
+            let pairs = try statement.fetchAll { (try $0.string("id"), try $0.string("v")) }
+            return Dictionary(uniqueKeysWithValues: pairs)
+        }
+        #expect(survivors.count == Self.v22Kinds.count + 1, "the rebuild kept \(survivors.count) items")
+        for (offset, kind) in Self.v22Kinds.enumerated() {
+            let row = survivors[Self.kindItem(offset).uuidString]
+            #expect(
+                row == "\(kind)|{\"kind\":\"\(kind)\"}|pending|\(100 + offset)",
+                "the queued \(kind) item came out of the rebuild as \(row ?? "nothing")"
+            )
+        }
+
+        let api = LocalAPI(store: store, deviceID: Self.device)
+        let destination = Coordinate(latitude: 37.7604, longitude: -122.5401)
+        let moved = try await api.correctLocation(
+            treeID: Self.legacyTree, to: destination, placement: .contributorPlaced, locationAccuracyM: nil
+        )
+        #expect(moved.coordinate == destination, "the pre-v23 tree did not move: \(moved.coordinate)")
+        let queued = try await store.queue.read { try OutboxStore().allItems(connection: $0) }
+            .filter { $0.item.kind == .locationCorrection }
+        #expect(queued.count == 1, "the move queued \(queued.count) corrections")
     }
 
     // MARK: - 4. The vocabulary

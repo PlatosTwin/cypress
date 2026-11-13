@@ -14,7 +14,11 @@ verb has to answer: the service refuses a withdrawal once another identity has b
 (`othersHaveBuiltOn`) and answers `conflict` after the phone has soft-deleted it locally, so whether
 the phone withdraws first and reconciles, or waits for the answer, is a product call. Not made here.
 
-### R??? — Every tree added before v23 has an adder of nobody, and a root position owned by nobody
+### ~~R??? — Every tree added before v23 has an adder of nobody, and a root position owned by nobody~~
+
+**Replaced by the owner's ruling of 2026-11-12, in `community-trees-adder-backfill.md`: every
+pre-v23 tree belongs to this installation's own owner.** Do not splice this entry. The original text
+follows for the record.
 
 The phone never recorded who added a tree. The migration declines to guess (R45 arm 3): the backfilled
 root of each existing tree is owned by nobody, so nobody can move those pins, and the service agrees —
