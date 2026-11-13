@@ -1122,6 +1122,14 @@ public struct TreeProfile: Hashable, Sendable {
     /// community reviewer confirmed anything. See `TreeStatusProvenance`.
     public let statusProvenance: TreeStatusProvenance
 
+    /// Whether this reader may move the tree's pin: a community tree this phone added, not
+    /// withdrawn, whose adder is the reader (the owner's decision 5 of 2026-09-28, and the Move pin
+    /// control of 2026-11-12). The same test `LocalAPI.correctLocation` applies before it writes, so
+    /// the control is drawn only where the verb would accept it.
+    ///
+    /// `false` for every stub and preview, the safe direction: it offers nothing.
+    public let canMovePin: Bool
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -1144,7 +1152,8 @@ public struct TreeProfile: Hashable, Sendable {
         inventorySource: InventorySource? = nil,
         speciesCorrection: SpeciesCorrectionOffer = .unavailable,
         recordDefect: RecordDefectOffer = .unavailable,
-        statusProvenance: TreeStatusProvenance = .record
+        statusProvenance: TreeStatusProvenance = .record,
+        canMovePin: Bool = false
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -1168,6 +1177,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.speciesCorrection = speciesCorrection
         self.recordDefect = recordDefect
         self.statusProvenance = statusProvenance
+        self.canMovePin = canMovePin
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took

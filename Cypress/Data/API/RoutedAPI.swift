@@ -1106,7 +1106,10 @@ public struct RoutedAPI: CypressAPI {
             // The local answer, like `tree` itself: `tree_status_overrides` is this device's table
             // and the service has no view of it. Taking the remote half's value here would let a
             // merge quietly un-attribute a death this phone's reviewer confirmed.
-            statusProvenance: mine.statusProvenance
+            statusProvenance: mine.statusProvenance,
+            // The local answer: who added a tree is this phone's `community_trees` row, and the
+            // move it gates is a local write.
+            canMovePin: mine.canMovePin
         )
     }
 

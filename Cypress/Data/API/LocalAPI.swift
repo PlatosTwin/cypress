@@ -444,7 +444,13 @@ public actor LocalAPI: CypressAPI {
                     tree: tree, addedHere: addedHere, connection: connection
                 ),
                 // Set above, beside the overwrite it describes, so the two cannot be changed apart.
-                statusProvenance: statusProvenance
+                statusProvenance: statusProvenance,
+                // `correctLocation`'s own test, read in the same transaction as the tree: a tree
+                // this phone added (a cached or city row is never movable from here), and an adder
+                // who is the reader. A withdrawn tree never reaches this line (it threw above).
+                canMovePin: addedHere
+                    && (try communityTrees.adder(treeID: id, connection: connection)?
+                        .isOwned(by: attribution) ?? false)
             )
         }
     }

@@ -541,6 +541,7 @@ struct TreeProfileView: View {
             }
 
             showWhere(presentation)
+            movePin(presentation)
             speciesClaim(presentation)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -561,6 +562,32 @@ struct TreeProfileView: View {
     /// nobody may contribute to is still somewhere.
     private func showWhere(_ presentation: TreeProfilePresentation) -> some View {
         ShowWhereButton { router?.push(.pinSet(presentation.locateSet)) }
+    }
+
+    /// The owner's Move pin control (2026-11-12), under `showWhere`, which is the other control
+    /// about where the tree is. Drawn only for a tree the reader added (`offersMovePin`).
+    ///
+    /// Built like `showWhere`. **A full tap target of space on both sides**, for `addReadingLink`'s
+    /// reason: `cypressHitArea` is a background that overhangs a 13 pt label by about 17 pt, so two
+    /// such links closer than 44 pt center to center steal each other's taps.
+    @ViewBuilder
+    private func movePin(_ presentation: TreeProfilePresentation) -> some View {
+        if presentation.offersMovePin {
+            Button {
+                router?.push(.movePin(model.treeID, presentation.profile.tree.coordinate))
+            } label: {
+                Text(MovePinCopy.action)
+                    .font(CypressFont.body13Bold)
+                    .foregroundStyle(CypressColor.ctaFill)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .cypressHitArea()
+            // `addReadingLink`'s construction: a padding of a whole tap target makes the distance
+            // between this label's center and a neighbor's at least 44 pt at any text size.
+            .padding(.vertical, CypressSpacing.minTapTarget)
+        }
     }
 
     /// The "after" half of "add tree species after/at same time as adding a custom tree".

@@ -546,6 +546,13 @@ struct TreeProfilePresentation {
     /// state R46 exists to prevent.
     var recordDefect: RecordDefectOffer { profile.recordDefect }
 
+    /// Whether this screen offers to move the tree's pin: the owner's Move pin control of
+    /// 2026-11-12, **NOT SPECIFIED** in SCREENS.md. Read straight off the payload for
+    /// `speciesCorrection`'s reason: "the reader added this tree" is an `Attribution` question, and
+    /// `LocalAPI` answers it with the same test `correctLocation` applies before it writes. Hidden
+    /// for every tree the reader did not add, a city record included.
+    var offersMovePin: Bool { profile.canMovePin }
+
     /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
     /// one, because it is the finest-grained provenance fact the row carries.
     ///
