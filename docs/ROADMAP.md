@@ -2017,6 +2017,41 @@ into this section in the round that finds it, and nowhere else. Each item stands
     every R77 tree and keeps every tree the service has. It does not fix a pruned row with a wrong
     guess; C2's `added_by_you` from `GET /trees/{id}` is the real answer, and should replace the local
     adder test once it lands. Owner call: build the cheap rule in C2, or wait for `added_by_you`.
+    **Owner, 2026-11-13: not an issue today**, because every tree added so far was added by the
+    owner. Revisit before other people add trees.
+108. **Test wait limits now trip on many CI runs (2026-11-13).** In one day: three `MapSearchTests`
+    timed out at `TestWait.ceiling` (90 s, each failed after 102 s) on #208's run 43495993786;
+    `MapRecenterTests` on a main run; `CityDownloadTests`' 60 s time limit on #207; and
+    `AppleSignInUITests`' 30 s reachability wait on #210. Each passed on a re-run. `TestWait.swift`
+    says a 90 s timeout means to check whether the model settles at all, so investigate before
+    raising any limit. The unit suite has grown to 2,134 tests, which is the first thing to measure.
+109. **`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
+    is the race that #210 fixed in `PhotoDeletionReachabilityTests` (item 103). Move both asserts to
+    `UIWait.assertReachable`.
+110. **E81's "offline" state for the outbox pill can now be built.** #208 added `NetworkPathSource`
+    (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.
+111. **The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
+    "Simulators" is on the owner's Mac (checked with `xcrun simctl list devices`, 2026-11-13). This
+    round's agents made their own. Update the list, or say how an agent makes its device.
+112. **Owner action: local test runs hang on this Mac.** `xcodebuild test` stops with "test runner
+    hung before establishing connection" and "DTServiceHubClient failed to bless service hub". The
+    usual fix is `sudo xcodebuild -runFirstLaunch`, which needs the owner's password. Until then,
+    CI is the only test evidence.
+113. **F36 follow-up: thumbnails do not retry a failed read.** #206 made the photo viewer retry;
+    a thumbnail's `load()` still keeps its first failure for the session.
+114. **F38 follow-ups (#207).** The ring reads the location once, when the tab opens, and does not
+    follow the reader while the tab stays open. It does not check how old the fix is. Two reads that
+    overlap can finish out of order, and the older one can win.
+115. **C1 follow-up: other community kinds can reach the service before their tree's add.** #209
+    holds a pin move until its tree's add is sent. A species claim, a report or a photo vote on a
+    tree whose add is in backoff can still arrive first, and the service answers `not_found`, which
+    is terminal. Hold them the same way, or make the answer retryable.
+116. **C1 follow-up: a pin move's time held behind its tree's add counts toward its 48 h window.**
+    The held move has no reason on its row, so the F35 credit (`OutboxStore.window`) does not
+    leave the held time out. If the add is in backoff for 47 h and then sends, the released move
+    has about 1 h left, and one transient failure expires it. Give the held move a hold reason that
+    `window` credits, or restart its window when the hold releases. Found by the review of #209's
+    merge with F35.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
