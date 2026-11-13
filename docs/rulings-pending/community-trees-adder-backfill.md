@@ -53,6 +53,11 @@ The owner can then move the pin of a tree they added before the update.
   pin, but the service has no such tree, and the move is answered with a terminal `not_found`. See
   ROADMAP chip 107 for a proposed rule that would hide Move pin for these trees; it is not built.
 
+**The owner accepted both cases on 2026-11-13.** Asked whether to narrow Move pin for a guessed adder
+or an R77 tree, the owner answered that every tree added so far was added by the owner, so neither
+case reaches another person. C1 ships as described. Chip 107 stays logged for when other people add
+trees.
+
 Tested in `SchemaV23Tests`: an add row made while signed in, migrated signed out, names the account; an
 add row made signed out wins over an account signed in at migration time; a pruned add row falls back
 to the device, or to the account signed in at migration time; no identity leaves nobody; and a v22
