@@ -23,6 +23,13 @@ is gone. By the owner's decision of 2026-11-13, waiting photographs also go by t
 layer's `OutboxWifiWatcher` drains when the path turns unmetered and a photograph is waiting, and
 `RootView` drains when the app comes to the front. Turning the toggle off drains too.
 
+**The 48 h cap, which F35 made reachable.** The drain's expiry phase failed any due row whose
+window was older than 48 h. Nothing had ever held a photograph back, so no waiting row could reach
+it. Once the toggle works, a photograph held back on a two-day trip without wi-fi would have
+expired as "Tried for 48 hours without getting through", on a note saved the whole time. The
+expiry phase now skips a row whose reason is `awaitingWifi`. Any real failure overwrites that
+reason, and the cap applies again.
+
 **Why no test saw it.** Every test of the deferral called `drain(photoUploadsAllowed: false)`
 itself, so each one proved the queue could hold a photograph back and none asked whether anything
 in the app ever told it to. `OutboxWifiOnlyTests` now saves through a real feature writer, and it

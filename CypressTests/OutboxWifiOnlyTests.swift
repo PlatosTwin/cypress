@@ -19,6 +19,7 @@ struct OutboxWifiOnlyTests {
         let queue: OutboxQueue
         let transport: OutboxTestSupport.ScriptedTransport
         let path: OutboxTestSupport.ManualNetworkPath
+        let clock: OutboxTestSupport.Clock
     }
 
     /// - Parameter wifiOnly: what `app_state` holds for the toggle; `nil` leaves it unset, which is
@@ -30,8 +31,11 @@ struct OutboxWifiOnlyTests {
         }
         let transport = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
         let path = OutboxTestSupport.ManualNetworkPath(unmetered: unmetered)
-        let queue = OutboxQueue(queue: store.queue, apply: transport, networkPath: path)
-        return Rig(store: store, queue: queue, transport: transport, path: path)
+        let clock = OutboxTestSupport.Clock()
+        let queue = OutboxQueue(
+            queue: store.queue, apply: transport, networkPath: path, now: clock.closure
+        )
+        return Rig(store: store, queue: queue, transport: transport, path: path, clock: clock)
     }
 
     /// One care event with one photograph, saved the way screen 10 saves it.
@@ -42,7 +46,8 @@ struct OutboxWifiOnlyTests {
             draft,
             treeID: UUID(),
             attribution: OutboxTestSupport.attribution,
-            outbox: rig.queue
+            outbox: rig.queue,
+            now: rig.clock.now
         )
     }
 
@@ -109,6 +114,33 @@ struct OutboxWifiOnlyTests {
         withExtendedLifetime(watcher) {}
 
         #expect(state == .done, "wi-fi returned and the waiting photo was never drained")
+        #expect(await rig.transport.uploadedPhotos.count == 1)
+    }
+
+    // MARK: - 3b. A photo waiting for wi-fi does not expire
+
+    /// The 48 h cap is for an item that keeps failing. A photograph held back by the toggle is not
+    /// failing, and before F35 nothing ever held one back, so the cap never met this case. Without
+    /// the exemption a two-day trip on cellular ends with "Tried for 48 hours without getting
+    /// through" on a note that was saved the whole time.
+    @Test("a photo waiting on cellular for more than 48 h is still waiting, and sends when wi-fi returns")
+    func waitingPhotoDoesNotExpire() async throws {
+        let rig = try await Self.rig(unmetered: false, wifiOnly: true)
+        let receipt = try await Self.saveCareWithPhoto(rig)
+
+        rig.clock.advance(by: 49 * 60 * 60)
+        _ = try await rig.queue.drain()
+
+        var record = try await Self.record(rig, id: receipt.item.id)
+        #expect(record.item.state == .pending, "a photo waiting for wi-fi expired after 48 h: \(record.item.lastError ?? "nil")")
+        #expect(record.item.lastError == OutboxFailureReason.awaitingWifi(photoCount: 1))
+        #expect(await rig.transport.uploadedPhotos.isEmpty)
+
+        rig.path.set(unmetered: true)
+        _ = try await rig.queue.drain()
+
+        record = try await Self.record(rig, id: receipt.item.id)
+        #expect(record.item.state == .done, "the long-waiting photo did not send on wi-fi")
         #expect(await rig.transport.uploadedPhotos.count == 1)
     }
 

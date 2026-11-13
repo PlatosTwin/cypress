@@ -321,7 +321,15 @@ public actor OutboxQueue {
         // request on it.
         var live: [OutboxStore.Record] = []
         for record in due {
-            if OutboxRetryPolicy.hasExpired(createdAt: record.windowStartedAt, now: startedAt) {
+            // **A row held back only by the wi-fi toggle is not trying, so it cannot expire (F35).**
+            // Its note is saved, and its photograph is waiting by the volunteer's own choice. Before
+            // F35 nothing held a photograph back, so this case never arose; after it, a photograph
+            // taken on a two-day trip without wi-fi would read "Tried for 48 hours without getting
+            // through". Recognized by its reason, as `OutboxPresentation` recognizes it. Any real
+            // failure later overwrites that reason, and the 48 h cap applies again.
+            let heldForWifi = record.item.lastError
+                == OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count)
+            if !heldForWifi, OutboxRetryPolicy.hasExpired(createdAt: record.windowStartedAt, now: startedAt) {
                 try await settle(
                     record,
                     state: .failed,
