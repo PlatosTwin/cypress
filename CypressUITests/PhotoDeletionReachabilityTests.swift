@@ -49,10 +49,12 @@ final class PhotoDeletionReachabilityTests: XCTestCase {
             "the viewer opened over a photograph this device owns and offered no way to delete it — "
                 + "which is the whole of the owner's report on #78"
         )
-        XCTAssertTrue(
-            delete.isHittable,
-            "the delete is in the viewer's tree but nothing could press it"
-        )
+        // Waited for, not read once. `UIWait.assertReachable` says why a one-shot `isHittable`
+        // after `waitForExistence` is a race, and CI run 43327553492 lost it here: the
+        // cover had stopped moving 2.1 s before the read, the read said "not hittable", and the tap
+        // on the next line still opened the confirmation. The claim is unchanged: the delete must
+        // become hittable. Only "on the first read" is dropped.
+        assertReachable(delete, "the viewer's delete")
 
         // Presence is not the claim. Pressing it is.
         delete.tap()
@@ -96,14 +98,34 @@ final class PhotoDeletionReachabilityTests: XCTestCase {
             XCTFail("screen 03 drew no photo-count pill, so the browser has no door")
             return
         }
+        // Reachable before it is pressed, for the reason the delete above is. CI run 43421121135
+        // tapped the pill 1.1 s after the hero appeared, at the pill's own center,
+        // and nothing happened: no browser, no viewer, and the profile unchanged for ten seconds.
+        assertReachable(pill, "the photo-count pill")
         pill.tap()
         let row = app.images
             .matching(NSPredicate(format: "label BEGINSWITH %@", "Photo · "))
             .firstMatch
         guard row.waitForExistence(timeout: 10) else {
-            XCTFail("the metadata pill did not open the photo browser")
+            // Still a failure. What it adds is which of the two open explanations this run was: a
+            // second tap that works means the first touch was dropped, and a hittable pill that
+            // ignores two taps means the push itself was lost.
+            let stillOnTheProfile = app.buttons[Self.hero].exists
+            let pillHittable = pill.exists && pill.isHittable
+            var secondTap = "was not tried"
+            if stillOnTheProfile, pill.exists {
+                pill.tap()
+                secondTap = row.waitForExistence(timeout: 10)
+                    ? "opened the browser" : "did nothing either"
+            }
+            XCTFail(
+                "the metadata pill did not open the photo browser (still on screen 03: "
+                    + "\(stillOnTheProfile); pill hittable: \(pillHittable); a second tap "
+                    + "\(secondTap))"
+            )
             return
         }
+        assertReachable(row, "the browser's first photograph")
         row.tap()
         guard openedTheViewer(app) else { return }
 
