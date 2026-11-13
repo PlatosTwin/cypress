@@ -527,8 +527,10 @@ public struct OutboxStore {
     /// not total. `ORDER BY seq` gives that.
     ///
     /// **One exception: a pin move waits for its tree's add** (review of #209, F2). A
-    /// `location_correction` is held while the same tree's `add_tree` row is still here and has not
-    /// reached the service (not `done`, not `remote_sent`). Without the hold, an add in backoff lets
+    /// `location_correction` is held while the same tree's `add_tree` row is still trying to reach
+    /// the service (`pending` or `uploading`, and not `remote_sent`). A `failed` add holds nothing:
+    /// it will not be sent again unless the volunteer retries it, so holding its move would leave
+    /// the move pending forever with no reason shown. Released, the move goes and fails out loud. Without the hold, an add in backoff lets
     /// the move go first, the service answers `not_found` for a tree it has not received, and that
     /// answer is terminal: "add a tree offline, then fix its pin" would lose the move on the service.
     /// The tree is matched on the payloads' `treeID`, which both kinds carry. A pruned add row holds
@@ -557,7 +559,7 @@ public struct OutboxStore {
                          AND EXISTS (
                              SELECT 1 FROM outbox AS addition
                               WHERE addition.kind = 'add_tree'
-                                AND addition.state <> 'done'
+                                AND addition.state IN ('pending', 'uploading')
                                 AND addition.remote_sent = 0
                                 AND upper(json_extract(addition.payload, '$.treeID'))
                                     = upper(json_extract(outbox.payload, '$.treeID'))
@@ -579,7 +581,7 @@ public struct OutboxStore {
                          AND EXISTS (
                              SELECT 1 FROM outbox AS addition
                               WHERE addition.kind = 'add_tree'
-                                AND addition.state <> 'done'
+                                AND addition.state IN ('pending', 'uploading')
                                 AND addition.remote_sent = 0
                                 AND upper(json_extract(addition.payload, '$.treeID'))
                                     = upper(json_extract(outbox.payload, '$.treeID'))

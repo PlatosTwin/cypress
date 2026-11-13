@@ -137,4 +137,106 @@ struct LocationCorrectionOrderTests {
             "a move was held by another tree's add"
         )
     }
+
+    /// A failed add holds nothing. It will not be sent again unless the volunteer retries it, so a
+    /// move held behind it would stay pending forever with no reason shown (review of #209's
+    /// merge with F35).
+    ///
+    /// Fails if the hold matched any add that is not `done`: the move is held behind the failed
+    /// add, and the test goes red on "a move was held behind a failed add".
+    @Test("a failed add releases its tree's move")
+    func aFailedAddHoldsNothing() async throws {
+        let store = try await CypressStore.inMemory()
+        let clock = Clock()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, now: { clock.now })
+
+        let tree = try await Fixture.add(api)
+        _ = try await api.correctLocation(
+            treeID: tree.id,
+            to: VisitPinAdjust.offset(tree.coordinate, northM: 10, eastM: 0),
+            placement: .contributorPlaced,
+            locationAccuracyM: nil
+        )
+        let heldWhilePending = try await store.queue.read {
+            try OutboxStore().dueItems(now: clock.now, limit: 50, connection: $0)
+        }
+        #expect(
+            !heldWhilePending.contains { $0.item.kind == .locationCorrection },
+            "control: the move was not held while its add was pending"
+        )
+
+        // The add gives up, as the 48 h cap or a terminal refusal would leave it.
+        try await store.queue.write {
+            try $0.execute("UPDATE outbox SET state = 'failed' WHERE kind = 'add_tree'")
+        }
+        let due = try await store.queue.read {
+            try OutboxStore().dueItems(now: clock.now, limit: 50, connection: $0)
+        }
+        #expect(
+            due.contains { $0.item.kind == .locationCorrection },
+            "a move was held behind a failed add"
+        )
+    }
+
+    /// A drain asked for while another runs still sends a move its pass released (review of #209's
+    /// merge with F35).
+    ///
+    /// The running drain's first pass sends one tree. While it sends, a second tree and its move
+    /// are saved, and their drain is folded into the running one. The drain-again pass sends the
+    /// second tree's add, which releases the move. Fails if the drain-again pass makes no extra
+    /// pass: the move waits for some later drain, and the test goes red on "the released move was
+    /// not sent by the drain that released it".
+    @Test("a drain asked for mid-drain sends the move its pass released")
+    func aDrainAskedForMidDrainReleasesMoves() async throws {
+        let store = try await CypressStore.inMemory()
+        let clock = Clock()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, now: { clock.now })
+        let service = MidDrainService()
+        let queue = OutboxQueue(
+            queue: store.queue, apply: APIOutboxTransport(api: api), send: service, now: { clock.now }
+        )
+
+        let first = try await Fixture.add(api)
+        let secondSpot = VisitPinAdjust.offset(first.coordinate, northM: 100, eastM: 0)
+        await service.onFirstSync {
+            let second = try await Fixture.add(api, at: secondSpot)
+            _ = try await api.correctLocation(
+                treeID: second.id,
+                to: VisitPinAdjust.offset(second.coordinate, northM: 10, eastM: 0),
+                placement: .contributorPlaced,
+                locationAccuracyM: nil
+            )
+            // The running drain is busy, so this one is folded into it.
+            _ = try await queue.drain()
+        }
+
+        _ = try await queue.drain()
+        let offered = await service.offered
+        #expect(
+            offered == [.addTree, .addTree, .locationCorrection],
+            "the released move was not sent by the drain that released it: \(offered)"
+        )
+        #expect(await service.hookRan, "fixture: nothing was saved while the first drain ran")
+    }
+
+    /// Accepts everything, and runs a hook once, during its first `sync`.
+    private actor MidDrainService: OutboxSendSink {
+        private(set) var offered: [OutboxItem.Kind] = []
+        private(set) var hookRan = false
+        private var hook: (@Sendable () async throws -> Void)?
+
+        func onFirstSync(_ hook: @escaping @Sendable () async throws -> Void) { self.hook = hook }
+
+        func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
+            offered.append(contentsOf: items.map(\.kind))
+            if let hook {
+                self.hook = nil
+                try await hook()
+                hookRan = true
+            }
+            return items.map { SyncResult(clientUUID: $0.clientUUID, status: .applied) }
+        }
+
+        func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {}
+    }
 }
