@@ -124,7 +124,7 @@ final class PhotoImageStore {
     /// network, or a file the device could not find at that moment) said "That photograph could
     /// not be opened" until the app was killed. A deleted photograph is never retried.
     func loadViewer(_ id: UUID) async {
-        guard let api, viewerSlot?.id != id, !missing.contains(id) else { return } // RED-PROOF
+        guard let api, viewerSlot?.id != id, !forgotten.contains(id) else { return }
 
         guard let data = try? await api.photoData(id: id) else {
             missing.insert(id)
