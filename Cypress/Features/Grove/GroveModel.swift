@@ -102,7 +102,7 @@ final class GroveModel {
     /// Asked at every `load()` rather than followed, because `load()` already runs on every return
     /// to the tab: a reader who walks somewhere else and opens My Grove again is read where they now
     /// are. A fix that arrives while the tab is already open is picked up on the next visit.
-    @ObservationIgnored private let currentFix: (@MainActor () -> MapLocationProvider.Availability)?
+    private let currentFix: (@MainActor () -> MapLocationProvider.Availability)?
 
     /// The Trees read again, on the same terms.
     private let refreshTrees: (@Sendable () async -> [GroveEntry]?)?
