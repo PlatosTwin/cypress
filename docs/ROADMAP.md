@@ -1990,6 +1990,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
     somebody else has built on it, keeps it anonymized), and the confirmation screen's count line
     if it should report trees.
 
+107. **Move pin is offered on trees the service never received (R77), and on trees whose adder the
+    backfill guessed.** From #209's review (F1) and the owner's ruling of 2026-11-13. A tree added
+    before the sync path existed was never queued, so v23 gives it this installation's current owner
+    and the profile offers Move pin; the service has no such tree and answers the move with a
+    terminal `not_found`, a permanent red row on screen 17. The same happens where the `add_tree` row
+    was pruned (24 h after `done`) and the current owner is not the one the add was made as
+    (`forbidden`). **A cheap rule, proposed and not built:** offer Move pin only when the tree's
+    `add_tree` row is still in the outbox, or the tree's `created_at` is on or after the first build
+    that queued adds (#s34, merged 2026-08-21; read the `build-N` tag for the exact date). That hides
+    every R77 tree and keeps every tree the service has. It does not fix a pruned row with a wrong
+    guess; C2's `added_by_you` from `GET /trees/{id}` is the real answer, and should replace the local
+    adder test once it lands. Owner call: build the cheap rule in C2, or wait for `added_by_you`.
+
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full

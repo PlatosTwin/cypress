@@ -41,9 +41,11 @@ The owner can then move the pin of a tree they added before the update.
 
 **What is still wrong, stated rather than hidden.**
 
-- **A pruned add row falls back to a guess.** `OutboxStore.pruneCompleted` deletes `done` rows after a
-  while. For such a tree the phone cannot read who added it, and the fallback can name the wrong
-  owner in the sign-out case above. Then the phone offers a move the service refuses. The phone and
+- **A pruned add row falls back to a guess, and that is most trees.** `OutboxStore.pruneCompleted`
+  deletes a row 24 hours after it is `done` (`OutboxQueue.completedRetention`), so the add row
+  survives only for a tree added within a day of the update, or one whose add has not been sent.
+  For a tree whose row is gone, the phone cannot read who added it, and the fallback can name the
+  wrong owner in the sign-out case above. Then the phone offers a move the service refuses. The phone and
   the service agree only where the add row survived, or where the current owner happens to be the
   one the add was made as.
 - **A tree the service never received (R77).** A tree added before the sync path existed was never

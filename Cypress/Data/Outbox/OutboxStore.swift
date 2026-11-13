@@ -444,11 +444,30 @@ public struct OutboxStore {
     /// item behind it for up to an hour, which loses nothing but delays everything; contributions
     /// are independent and the server dedupes on `client_uuid`, so ordering only has to be stable,
     /// not total. `ORDER BY seq` gives that.
+    ///
+    /// **One exception: a pin move waits for its tree's add** (review of #209, F2). A
+    /// `location_correction` is held while the same tree's `add_tree` row is still here and has not
+    /// reached the service (not `done`, not `remote_sent`). Without the hold, an add in backoff lets
+    /// the move go first, the service answers `not_found` for a tree it has not received, and that
+    /// answer is terminal: "add a tree offline, then fix its pin" would lose the move on the service.
+    /// The tree is matched on the payloads' `treeID`, which both kinds carry. A pruned add row holds
+    /// nothing, because a pruned row was `done`.
     public func dueItems(now: Date, limit: Int, connection: SQLiteConnection) throws -> [Record] {
         let statement = try connection.cachedStatement("""
             SELECT * FROM outbox
              WHERE state = 'pending'
                AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+               AND NOT (
+                     kind = 'location_correction'
+                     AND EXISTS (
+                         SELECT 1 FROM outbox AS addition
+                          WHERE addition.kind = 'add_tree'
+                            AND addition.state <> 'done'
+                            AND addition.remote_sent = 0
+                            AND upper(json_extract(addition.payload, '$.treeID'))
+                                = upper(json_extract(outbox.payload, '$.treeID'))
+                     )
+                   )
              ORDER BY seq
              LIMIT :limit
             """)

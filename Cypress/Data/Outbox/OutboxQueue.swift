@@ -108,6 +108,18 @@ public struct DrainReport: Sendable, Equatable {
     /// Binaries whose send was refused or unreachable on this pass. Their rows stay outstanding, so
     /// their item stays out of `done`.
     public var photosFailed = 0
+
+    /// Adds a later pass's counts to this one (`OutboxQueue.drain`).
+    mutating func absorb(_ other: DrainReport) {
+        attempted += other.attempted
+        synced += other.synced
+        failedTemporarily += other.failedTemporarily
+        failedTerminally += other.failedTerminally
+        awaitingWifi += other.awaitingWifi
+        sent += other.sent
+        photosSent += other.photosSent
+        photosFailed += other.photosFailed
+    }
 }
 
 /// The local-first mutation queue.
@@ -240,6 +252,32 @@ public actor OutboxQueue {
         isDraining = true
         defer { isDraining = false }
 
+        var report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+        // A pin move held behind its tree's add (`OutboxStore.dueItems`) becomes due the moment
+        // this pass sends that add. One more pass sends it now, rather than at whatever next asks
+        // for a drain. Bounded: one add releases its moves in one pass, and a pass that sent
+        // nothing released nothing.
+        for _ in 0..<2 {
+            guard report.sent > 0, try await hasDueLocationCorrection() else { break }
+            let next = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+            report.absorb(next)
+            if next.sent == 0 { break }
+        }
+        return report
+    }
+
+    /// Whether a `location_correction` is due right now, which after a pass that sent something
+    /// means a move its tree's add was holding has been released.
+    private func hasDueLocationCorrection() async throws -> Bool {
+        let at = now()
+        return try await queue.read { connection in
+            try store.dueItems(now: at, limit: Self.batchSize, connection: connection)
+                .contains { $0.item.kind == .locationCorrection }
+        }
+    }
+
+    /// One read of the due items, and everything done to them. `drain` runs it.
+    private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {
         var report = DrainReport()
         let startedAt = now()
 
