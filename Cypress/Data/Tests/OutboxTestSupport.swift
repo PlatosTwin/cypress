@@ -352,3 +352,32 @@ public enum OutboxTestSupport {
         return result
     }
 }
+
+extension OutboxTestSupport {
+
+    /// A connection a test can move between metered and unmetered (F35).
+    ///
+    /// Built on `NetworkPathState`, the same state the real `SystemNetworkPath` uses, so it follows
+    /// the same rules: a change is heard only when the answer changes, and the first reading of a
+    /// source that started unknown counts as a change.
+    public final class ManualNetworkPath: NetworkPathSource, @unchecked Sendable {
+        private let state: NetworkPathState
+
+        public init(unmetered: Bool) {
+            state = NetworkPathState(initial: unmetered)
+        }
+
+        /// Moves the phone onto (or off) an unmetered connection, as `NWPathMonitor` would report.
+        public func set(unmetered: Bool) {
+            state.publish(unmetered)
+        }
+
+        public func isUnmetered() async -> Bool {
+            await state.value(waitingUpTo: .seconds(1))
+        }
+
+        public func unmeteredChanges() -> AsyncStream<Bool> {
+            state.changes()
+        }
+    }
+}

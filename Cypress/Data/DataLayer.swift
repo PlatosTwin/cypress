@@ -125,6 +125,13 @@ public struct DataLayer: Sendable {
     /// `RoutedAPI.refreshedMapMembership(_:)`, on the same terms as the two above.
     public let refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
 
+    /// Drains the outbox when wi-fi returns and a photograph is waiting for it (F35). The layer
+    /// owns it so that a replaced layer stops listening; see `OutboxWifiWatcher`.
+    ///
+    /// A `var` with a default only so that the two suites which assemble a layer by hand
+    /// (`AccountSurfaceTests`, `AccountLinkTests`) still compile. `boot` always sets it.
+    var outboxWifiWatcher: OutboxWifiWatcher? = nil
+
     /// Opens the store, runs migrations, attaches the seed, and wires the router and both outbox
     /// sinks.
     ///
@@ -170,6 +177,10 @@ public struct DataLayer: Sendable {
     ///     §1.1 step 4), so it is the one call in the send path that does not go through
     ///     `transport` — and a test of the photo send that could not supply this would be reaching
     ///     the real network for every `PUT`, from the suite, on whoever's machine ran it.
+    ///   - networkPath: whether the connection is unmetered, for screen 17's "Sync photos on wifi
+    ///     only" (F35). Defaults to the process's one `NWPathMonitor`, which is what ships. The
+    ///     outbox reads it on every drain, and the layer's `OutboxWifiWatcher` drains when it turns
+    ///     unmetered. A parameter so a test can say which connection the phone is on.
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
@@ -179,7 +190,8 @@ public struct DataLayer: Sendable {
         authHTTP: (any AuthHTTP)? = nil,
         remoteAccess: RemoteAccess = .resolved,
         credentials: any CredentialStore = KeychainCredentialStore(),
-        storageSession: URLSession = .shared
+        storageSession: URLSession = .shared,
+        networkPath: any NetworkPathSource = SystemNetworkPath.shared
     ) async throws -> DataLayer {
         // **`inventories` wins when it is given**, and `seedURL` remains the one-file spelling
         // every caller that predates the union still uses. They are separate parameters rather than
@@ -448,7 +460,10 @@ public struct DataLayer: Sendable {
         let outbox = OutboxQueue(
             queue: store.queue,
             apply: APIOutboxTransport(api: local),
-            send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil
+            send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil,
+            // The wi-fi toggle's other half (F35). Without it the queue cannot call a connection
+            // metered, and every photograph goes on whatever connection there is.
+            networkPath: networkPath
         )
 
         // Anything left `uploading` belongs to a previous launch that was killed mid-drain. It is
@@ -471,7 +486,8 @@ public struct DataLayer: Sendable {
             refreshGrove: refreshGrove,
             refreshTreeProfile: refreshTreeProfile,
             reconcileFavorite: reconcileFavorite,
-            refreshMapMembership: refreshMapMembership
+            refreshMapMembership: refreshMapMembership,
+            outboxWifiWatcher: OutboxWifiWatcher(queue: outbox, networkPath: networkPath)
         )
     }
 
@@ -500,7 +516,8 @@ public struct DataLayer: Sendable {
     /// tree's union-wide id equal to the id it has always had.
     public static func bootOverInstalledCities(
         databaseURL: URL? = nil,
-        library: CityLibrary
+        library: CityLibrary,
+        networkPath: any NetworkPathSource = SystemNetworkPath.shared
     ) async throws -> DataLayer {
         // A device upgrading from a build that recorded an active choice still carries the marker.
         // Nothing reads it any more, and this is the one place that runs on every launch.
@@ -509,7 +526,8 @@ public struct DataLayer: Sendable {
         let bundled = SeedDatabase.urlInBundle().map { [InventoryFile.bundled(url: $0)] } ?? []
         return try await boot(
             databaseURL: databaseURL,
-            inventories: bundled + library.installedInventoryFiles()
+            inventories: bundled + library.installedInventoryFiles(),
+            networkPath: networkPath
         )
     }
 

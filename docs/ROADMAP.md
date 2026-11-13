@@ -1925,7 +1925,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
 97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
     (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
     D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106.
-98. **P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).** A tester saw
+98. **DONE by #208: the queue now decides with an `NWPathMonitor` source, and waiting photos upload when wi-fi returns.** ~~**P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).**~~ A tester saw
     photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
     `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
     the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
