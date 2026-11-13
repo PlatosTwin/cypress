@@ -155,6 +155,12 @@ enum DebugDeepLink {
         /// raises one does not find the next run already in `.raisedByYou`. Its own slot — see
         /// `dataDisputeTree` — under this file's standing rule.
         case dataDispute
+        /// 03 over a **fresh** community tree this installation just added, where the owner's Move
+        /// pin control (2026-11-12) draws. Fresh on every launch, unlike `.speciesClaim`: the test
+        /// that drives it moves the pin, so a tree a previous run left would already be "placed by
+        /// hand" and the first half of that test could not be told from the second. Each launch
+        /// takes the first free slot on its own line (`movePinSpot`).
+        case movePin
         /// Screen 07 with a nearby hero drawn from a photograph **this installation took under an
         /// account it can no longer sign into** — RULINGS **R82**, ERRATA **E277**.
         ///
@@ -396,6 +402,24 @@ enum DebugDeepLink {
                     speciesQuery: screen == .speciesClaim ? "Platanus" : nil
                 )
                 router.push(.treeProfile(id))
+            case .movePin:
+                // The first slot along the line with nothing within the dedupe radius, so a re-run
+                // adds a tree instead of being refused by the one the last run moved.
+                var id: UUID?
+                for step in 0..<Self.movePinSlots {
+                    let slot = VisitPinAdjust.offset(
+                        Self.movePinSpot, northM: 0, eastM: -Self.movePinSlotSpacingM * Double(step)
+                    )
+                    let taken = try await api.treesNear(
+                        slot, radiusM: Self.movePinSlotSpacingM, limit: 1
+                    )
+                    if taken.isEmpty {
+                        id = try await api.debugAddCommunityTree(near: slot, speciesQuery: "Platanus")
+                        break
+                    }
+                }
+                guard let id else { throw APIError.conflict }
+                router.push(.treeProfile(id))
             case .recordDefect:
                 // Resolved-then-added, like `.communityPhotos` and unlike `.speciesClaim`, because
                 // this case is meant to be *run twice*: the second run is how the withdrawal is
@@ -556,6 +580,12 @@ enum DebugDeepLink {
     private static let unclaimedSpot = Coordinate(latitude: 37.7618, longitude: -122.5300)
     /// The fourth, ~200 m off the third, under the same rule (task #125).
     private static let recordDefectSpot = Coordinate(latitude: 37.7654, longitude: -122.5300)
+    /// The fifth, ~200 m north of the fourth, and the start of a line of slots running **west**,
+    /// further out to sea, 30 m apart. A slot is free when nothing is within 30 m of it, so a pin a
+    /// test moved 10 m north never makes the next slot refuse its add.
+    private static let movePinSpot = Coordinate(latitude: 37.7672, longitude: -122.5300)
+    private static let movePinSlotSpacingM: Double = 30
+    private static let movePinSlots = 60
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///
