@@ -27,12 +27,16 @@ layer's `OutboxWifiWatcher` drains when the path turns unmetered and a photograp
 window was older than 48 h. Nothing had ever held a photograph back, so no waiting row could reach
 it. Once the toggle works, a photograph held back on a two-day trip without wi-fi would have
 expired as "Tried for 48 hours without getting through", on a note saved the whole time. The
-expiry phase now skips a row whose reason is `awaitingWifi`, and every hold restarts the row's
-48 h window. The restart matters: the first real failure after wi-fi returns overwrites the
-`awaitingWifi` reason, and without it the cap would count from the save and fail the row at once.
-With it, the cap counts from the last hold.
+48 h cap now counts only time spent trying. At the start of each drain, a row whose reason is
+a wi-fi hold has the held stretch (from the hold's `updated_at` to the drain) added to its
+window, and that pass judges both expiry and any failure against the moved window. So a
+photograph held for two days and failing once on wi-fi is not expired, and a row whose send keeps
+failing still expires once it has spent 48 h failing, however often a cellular drain holds it in
+between. (Two earlier drafts in this PR got this wrong: skipping expiry while the reason said
+`awaitingWifi` expired the row on its first failure after wi-fi returned, and restarting the
+window at each hold both missed a row never re-held and forgave failing time.)
 
-**Two more holes, found in review of the same PR.**
+**More holes, found in review of the same PR.**
 
 - A photograph applied on wi-fi whose send then waited had no staged file. The hold's sentence
   counted staged files and read "0 photos are waiting for wi-fi", and screen 17's waiting count
@@ -41,6 +45,9 @@ With it, the cap counts from the last hold.
 - A drain asked for while another runs returned at once and did nothing more. If wi-fi returned
   mid-drain, the running pass had already decided "cellular", so the photograph waited. The
   running drain now makes one more pass before it returns.
+- The hold's sentence was recognized by matching its exact photo count. A withdrawn photograph
+  lowers the count a row owes, and every check then missed the row. It is now recognized by kind
+  (`OutboxFailureReason.isAwaitingWifi`).
 
 **Why no test saw it.** Every test of the deferral called `drain(photoUploadsAllowed: false)`
 itself, so each one proved the queue could hold a photograph back and none asked whether anything

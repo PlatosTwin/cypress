@@ -323,6 +323,38 @@ public actor OutboxQueue {
         return report
     }
 
+    /// Leaves the time a row spent held for wi-fi out of its 48 h window, in the database and in
+    /// the record this pass works from.
+    ///
+    /// **The owner's rule (2026-11-13): a photograph held only by the wi-fi toggle does not
+    /// expire.** The 48 h cap measures time spent *trying*; a hold is the volunteer's own choice.
+    /// A row's reason says it is held (`OutboxFailureReason.isAwaitingWifi`), and its `updated_at`
+    /// is when the hold began, because the hold's `reschedule` stamped it. So the held time is
+    /// `startedAt - updated_at`, and the window moves forward by exactly that much.
+    ///
+    /// **Why here, and not by restarting the window at each hold.** A restart only happens if a
+    /// drain re-holds the row. Saved on cellular and next drained at home on wi-fi two days later,
+    /// the row was never re-held, and its first transient failure then expired it against the
+    /// window from the save. And a restart forgives too much: a row whose send keeps failing,
+    /// re-held on every cellular drain, would restart its window each time and never expire.
+    /// Crediting only the held stretch answers both (F35 review).
+    ///
+    /// `updated_at` is read from the record, which `dueItems` returns before `markUploading`
+    /// overwrites the column.
+    private static func leavingOutWifiHold(
+        _ record: OutboxStore.Record,
+        at startedAt: Date,
+        store: OutboxStore,
+        connection: SQLiteConnection
+    ) throws -> OutboxStore.Record {
+        guard OutboxFailureReason.isAwaitingWifi(record.item.lastError) else { return record }
+        let held = max(0, startedAt.timeIntervalSince(record.item.updatedAt))
+        guard held > 0 else { return record }
+        let window = record.windowStartedAt.addingTimeInterval(held)
+        try store.setWindowStart(record.id, to: window, connection: connection)
+        return record.withWindowStarted(at: window)
+    }
+
     /// One pass over the due items. Only `drain(photoUploadsAllowed:)` calls it, under
     /// `isDraining`.
     private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {
@@ -334,6 +366,7 @@ public actor OutboxQueue {
         let due: [OutboxStore.Record] = try await queue.write { connection in
             _ = try store.recoverInterrupted(at: startedAt, connection: connection)
             let records = try store.dueItems(now: startedAt, limit: Self.batchSize, connection: connection)
+                .map { try Self.leavingOutWifiHold($0, at: startedAt, store: store, connection: connection) }
             try store.markUploading(records.map(\.id), at: startedAt, connection: connection)
             return records
         }
@@ -344,15 +377,10 @@ public actor OutboxQueue {
         // request on it.
         var live: [OutboxStore.Record] = []
         for record in due {
-            // **A row held back only by the wi-fi toggle is not trying, so it cannot expire (F35).**
-            // Its note is saved, and its photograph is waiting by the volunteer's own choice. Before
-            // F35 nothing held a photograph back, so this case never arose; after it, a photograph
-            // taken on a two-day trip without wi-fi would read "Tried for 48 hours without getting
-            // through". Recognized by its reason, as `OutboxPresentation` recognizes it. Any real
-            // failure later overwrites that reason, and the 48 h cap applies again.
-            let heldForWifi = record.item.lastError
-                == OutboxFailureReason.awaitingWifi(photoCount: record.owedPhotoCount)
-            if !heldForWifi, OutboxRetryPolicy.hasExpired(createdAt: record.windowStartedAt, now: startedAt) {
+            // The window here already leaves out any time the row spent held for wi-fi
+            // (`leavingOutWifiHold`), so a photograph held on a two-day trip does not expire, and
+            // one that is also failing still does once it has spent 48 h actually trying (F35).
+            if OutboxRetryPolicy.hasExpired(createdAt: record.windowStartedAt, now: startedAt) {
                 try await settle(
                     record,
                     state: .failed,
@@ -670,15 +698,13 @@ public actor OutboxQueue {
                     // photograph applied on wi-fi whose send then waited has no staged file, and
                     // counting staged files alone wrote "0 photos are waiting" (F35 review, S1).
                     //
-                    // `restartWindow`: the 48 h cap counts from the last hold, not from the save.
-                    // The hold is the volunteer's own choice, and without the restart a photograph
-                    // held for two days failed for good on its first transient failure after
-                    // wi-fi returned (F35 review, B1).
+                    // The hold starts here: `reschedule` stamps `updated_at`, and the next pass
+                    // leaves the time from then until it starts out of the 48 h window
+                    // (`leavingOutWifiHold`).
                     try store.reschedule(
                         record.id,
                         reason: OutboxFailureReason.awaitingWifi(photoCount: record.owedPhotoCount),
                         at: settledAt,
-                        restartWindow: true,
                         connection: connection
                     )
                 }

@@ -116,6 +116,17 @@ public enum OutboxFailureReason {
             : "The note is saved. \(photoCount) photos are waiting for wi-fi."
     }
 
+    /// Whether a stored reason is an `awaitingWifi` sentence, **for any count**.
+    ///
+    /// Recognized by kind and not by matching `awaitingWifi(photoCount:)` for the current count:
+    /// a withdrawn photograph lowers the count a row owes after the sentence was written, and an
+    /// exact match then missed the row everywhere at once. The watcher skipped it, screen 17
+    /// miscounted it, and its held time stopped being exempt from the 48 h cap (F35 review).
+    public static func isAwaitingWifi(_ reason: String?) -> Bool {
+        guard let reason else { return false }
+        return reason.hasPrefix("The note is saved. ") && reason.hasSuffix(" waiting for wi-fi.")
+    }
+
     /// Narrows any thrown error to the §6 taxonomy, or `nil` when it did not come from the API at
     /// all (a dropped connection, a file that vanished).
     public static func apiError(from error: Error) -> APIError? {
@@ -320,8 +331,7 @@ public struct OutboxSnapshot: Sendable, Equatable {
                     // saying so would be E32 again.
                     && (!$0.item.photos.isEmpty
                         || ($0.unsentPhotoCount > 0
-                            && $0.item.lastError
-                                == OutboxFailureReason.awaitingWifi(photoCount: $0.owedPhotoCount)))
+                            && OutboxFailureReason.isAwaitingWifi($0.item.lastError)))
                     && ($0.item.state == .pending || $0.item.state == .uploading)
             }
             : []

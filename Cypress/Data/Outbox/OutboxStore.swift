@@ -26,9 +26,10 @@ public struct OutboxStore {
         /// Start of the 48 h cap window. Equal to `createdAt` until the user taps retry.
         public let windowStartedAt: Date
         public let nextAttemptAt: Date?
-        /// Binaries this device has committed but no send sink has accepted yet: `outbox_photos`
-        /// rows in state `applied` and still `sendable`. Filled by `allItems`/`item(id:)`, and zero
-        /// wherever a record is built without them.
+        /// Binaries this device has committed but no send sink has accepted yet: exactly the rows
+        /// `sendablePhotos(for:)` would offer, counted by the same predicate. Filled by every read
+        /// that attaches staged photos (`dueItems`, `allItems`, `item(id:)`), and zero wherever a
+        /// record is built without them.
         ///
         /// Counted apart from `item.photos`, which holds only the **staged** binaries an apply
         /// still owes. A photograph applied on wi-fi whose send then waited for wi-fi has no staged
@@ -37,6 +38,19 @@ public struct OutboxStore {
 
         /// Every binary this row still owes: staged for the apply, plus applied and not yet sent.
         public var owedPhotoCount: Int { item.photos.count + unsentPhotoCount }
+
+        /// This record with its 48 h window moved, for the pass that moved it in the database.
+        public func withWindowStarted(at window: Date) -> Record {
+            Record(
+                sequence: sequence,
+                item: item,
+                locallyApplied: locallyApplied,
+                remoteSent: remoteSent,
+                windowStartedAt: window,
+                nextAttemptAt: nextAttemptAt,
+                unsentPhotoCount: unsentPhotoCount
+            )
+        }
     }
 
     // MARK: - Writing
@@ -384,25 +398,24 @@ public struct OutboxStore {
     ///
     /// Used when nothing was tried — the photo phase deferred for wi-fi — so the backoff does not
     /// advance for a decision the user made on purpose.
-    ///
-    /// - Parameter restartWindow: also restart the 48 h cap window at `date`. Only a row held back
-    ///   for wi-fi passes `true`: the cap measures time spent *trying*, and a hold by the
-    ///   volunteer's own toggle is not trying. Without it, a photograph held for two days failed
-    ///   for good on its first transient failure after wi-fi returned (F35 review, B1).
-    public func reschedule(
-        _ id: UUID,
-        reason: String?,
-        at date: Date,
-        restartWindow: Bool = false,
-        connection: SQLiteConnection
-    ) throws {
+    public func reschedule(_ id: UUID, reason: String?, at date: Date, connection: SQLiteConnection) throws {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
-               SET state = 'pending', last_error = :reason, next_attempt_at = NULL, updated_at = :now,
-                   window_started_at = CASE WHEN :restart = 1 THEN :now ELSE window_started_at END
+               SET state = 'pending', last_error = :reason, next_attempt_at = NULL, updated_at = :now
              WHERE id = :id
             """)
-        _ = try statement.bind([":reason": reason, ":now": date, ":id": id, ":restart": restartWindow ? 1 : 0])
+        _ = try statement.bind([":reason": reason, ":now": date, ":id": id])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
+    /// Moves a row's 48 h window. `OutboxQueue.drain` uses it to leave out the time a row spent
+    /// held for wi-fi (F35): the cap measures time spent trying, and a hold is not trying.
+    public func setWindowStart(_ id: UUID, to window: Date, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox SET window_started_at = :window WHERE id = :id
+            """)
+        _ = try statement.bind([":window": window, ":id": id])
         try statement.run()
         _ = try statement.reset()
     }
@@ -513,9 +526,16 @@ public struct OutboxStore {
             """)
         // Applied and not yet accepted by a send sink: `completePhoto` deletes a row once it is
         // sent, so what is left in `applied` and `sendable` is still owed.
+        // The predicate is `sendablePhotos(for:)`'s, clause for clause, so the count a row reports
+        // is the number of binaries a send would actually be offered.
         let unsent = try connection.cachedStatement("""
             SELECT COUNT(*) AS n FROM outbox_photos
              WHERE outbox_id = :item AND state = 'applied' AND sendable = 1
+               AND photo_id IS NOT NULL AND container_path IS NOT NULL
+               AND NOT EXISTS (
+                     SELECT 1 FROM photos
+                      WHERE photos.id = outbox_photos.photo_id AND photos.deleted_at IS NOT NULL
+                   )
             """)
         return try records.map { record in
             _ = try statement.reset()

@@ -154,32 +154,123 @@ struct OutboxWifiOnlyTests {
 
     // MARK: - 3c. After a long hold, one transient failure is not the end (review B1)
 
-    /// The 48 h cap counts from the last hold, not from the save.
+    /// Saved on cellular, and not drained again until home on wi-fi two days later.
     ///
-    /// **Why this fails with the defect present:** `reschedule` kept `window_started_at` at the
-    /// save. The exemption covers a row only while its reason is still `awaitingWifi`; the first
-    /// failure after wi-fi returns overwrites that reason, so the next drain measured the window
-    /// from the save, found 49 h, and settled the row `failed` as "Tried for 48 hours".
-    @Test("a photo held 49 h that fails once after wi-fi returns is still pending")
+    /// **Why this fails with the defect present:** the window moved only when a drain re-held the
+    /// row, and nothing did. The wi-fi drain skipped expiry (the reason still said `awaitingWifi`),
+    /// then the binary failed once and `recordFailure` judged it against the window from the save:
+    /// 49 h, so the row settled `failed` as "Tried for 48 hours" on its first failure.
+    @Test("a photo held 49 h with no drain in between, that fails once on wi-fi, is still pending")
     func longHoldThenTransientFailureStaysPending() async throws {
         let rig = try await Self.rig(unmetered: false, wifiOnly: true)
-        let receipt = try await Self.saveCareWithPhoto(rig)
+        let receipt = try await Self.saveCareWithPhoto(rig)    // held at the save
 
-        rig.clock.advance(by: 49 * 60 * 60)
-        _ = try await rig.queue.drain()          // still on cellular: held again
-
+        rig.clock.advance(by: 49 * 60 * 60)                    // no drain until home
         rig.path.set(unmetered: true)
         await rig.transport.setScript(.photosFail)
-        _ = try await rig.queue.drain()          // wi-fi: the binary fails, retryably
-        rig.clock.advance(by: 60 * 60)           // past the first backoff step
-        _ = try await rig.queue.drain()          // and fails again
+        _ = try await rig.queue.drain()                        // wi-fi: the binary fails, retryably
 
-        let record = try await Self.record(rig, id: receipt.item.id)
+        var record = try await Self.record(rig, id: receipt.item.id)
         #expect(
             record.item.state == .pending,
             "one transient failure after a long wi-fi hold expired the row: \(record.item.lastError ?? "nil")"
         )
+        #expect(record.item.failCount == 1, "set-up: the binary was supposed to fail once")
+
+        rig.clock.advance(by: 60 * 60)                         // past the first backoff step
+        _ = try await rig.queue.drain()
+        record = try await Self.record(rig, id: receipt.item.id)
+        #expect(record.item.state == .pending)
         #expect(record.item.lastError != OutboxFailureReason.expired)
+    }
+
+    // MARK: - 3c2. Held time is forgiven; failing time is not (review, second pass)
+
+    /// A row whose binary keeps failing to send, and which is also held whenever the phone is on
+    /// cellular. Only the held stretches leave the window; the time spent failing still counts.
+    ///
+    /// Timeline: save on wi-fi at t0, the send fails (trying). t0+30 h on wi-fi: fails again.
+    /// t0+31 h on cellular: held. t0+32 h on wi-fi: fails (1 h held, forgiven). t0+52 h: 51 h of
+    /// trying, so it expires.
+    ///
+    /// **Why this fails with the defect present:** each hold restarted the window outright, at
+    /// t0+31 h, so at t0+52 h the row had 21 h on the clock and stayed pending. A server that never
+    /// accepts the photograph then kept the row alive forever, as long as the phone visited
+    /// cellular once every two days.
+    @Test("a row that keeps failing while sometimes held still expires after 48 h of trying")
+    func failingTimeStillCounts() async throws {
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
+        let rig = try await Self.rig(unmetered: true, wifiOnly: true, send: send)
+        let receipt = try await Self.saveCareWithPhoto(rig)    // t0: applied, send fails
+
+        rig.clock.advance(by: 30 * 60 * 60)                    // t0+30 h, wi-fi
+        _ = try await rig.queue.drain()
+        rig.clock.advance(by: 60 * 60)                         // t0+31 h, cellular: held
+        rig.path.set(unmetered: false)
+        _ = try await rig.queue.drain()
+        #expect(OutboxFailureReason.isAwaitingWifi(try await Self.record(rig, id: receipt.item.id).item.lastError))
+        rig.clock.advance(by: 60 * 60)                         // t0+32 h, wi-fi: fails again
+        rig.path.set(unmetered: true)
+        _ = try await rig.queue.drain()
+        rig.clock.advance(by: 20 * 60 * 60)                    // t0+52 h: 51 h of trying
+        _ = try await rig.queue.drain()
+
+        let record = try await Self.record(rig, id: receipt.item.id)
+        #expect(record.item.state == .failed, "a row that spent 51 h failing never expired")
+        #expect(record.item.lastError == OutboxFailureReason.expired)
+    }
+
+    // MARK: - 3c3. A withdrawn photograph changes the count (review, second pass)
+
+    /// Two photographs applied here and held for wi-fi before they were sent; one is then withdrawn.
+    /// The stored sentence still says "2 photos" while the row owes 1.
+    ///
+    /// **Why this fails with the defect present:** the reason was recognized only by an exact match
+    /// against the count the row owes now. "2 photos are waiting" no longer matched 1, so screen
+    /// 17's waiting count was 0, `hasPhotosAwaitingWifi()` was false (the watcher skipped the row),
+    /// and the held time was not forgiven, so the row expired at 49 h.
+    @Test("a held row whose owed count drops is still recognized as waiting for wi-fi")
+    func withdrawnPhotoKeepsTheHold() async throws {
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
+        let rig = try await Self.rig(unmetered: true, wifiOnly: true, send: send)
+        var draft = CareLogDraft(actions: [.watered])
+        draft.photos = [
+            OutboxPhoto(path: "/tmp/cypress-f35-\(UUID().uuidString).jpg", shotType: .leaf),
+            OutboxPhoto(path: "/tmp/cypress-f35-\(UUID().uuidString).jpg", shotType: .trunk)
+        ]
+        let receipt = try await CareLogOutboxWriter.save(        // applied; both sends fail
+            draft, treeID: UUID(), attribution: OutboxTestSupport.attribution,
+            outbox: rig.queue, now: rig.clock.now
+        )
+        rig.path.set(unmetered: false)
+        await send.setScript(.allSucceed)
+        _ = try await rig.queue.drain()                          // cellular: both held
+        #expect(try await Self.record(rig, id: receipt.item.id).item.lastError
+            == OutboxFailureReason.awaitingWifi(photoCount: 2))
+
+        // One photograph is withdrawn: its binary row goes, and the row's sentence is not
+        // rewritten until the next drain.
+        try await rig.store.queue.write { connection in
+            let statement = try connection.cachedStatement("""
+                DELETE FROM outbox_photos WHERE rowid = (
+                    SELECT MIN(rowid) FROM outbox_photos WHERE outbox_id = :item
+                )
+                """)
+            _ = try statement.bind(receipt.item.id, forName: ":item")
+            try statement.run()
+            _ = try statement.reset()
+        }
+        #expect(try await Self.record(rig, id: receipt.item.id).owedPhotoCount == 1)
+
+        let snapshot = try await rig.queue.snapshot(syncPhotosOnWifiOnly: true)
+        #expect(snapshot.awaitingWifiCount == 1, "a held row with a stale count dropped off screen 17")
+        #expect(snapshot.awaitingWifiPhotoCount == 1)
+        #expect(try await rig.queue.hasPhotosAwaitingWifi(), "the watcher would skip this row")
+
+        rig.clock.advance(by: 49 * 60 * 60)
+        _ = try await rig.queue.drain()                          // still on cellular
+        let record = try await Self.record(rig, id: receipt.item.id)
+        #expect(record.item.state == .pending, "the held row expired: \(record.item.lastError ?? "nil")")
     }
 
     // MARK: - 3d. A photograph applied here and waiting to be sent (review S1)
@@ -236,7 +327,12 @@ struct OutboxWifiOnlyTests {
         )
 
         let first = Task { try await queue.drain() }   // decides "cellular", then blocks in apply
-        await transport.waitUntilBlocked()
+        // Never leave the first drain parked in the gate, whatever happens below.
+        defer { Task { await transport.open() } }
+        // Bounded: if the first drain throws or never reaches `sync`, this answers false after
+        // 10 s instead of hanging the suite.
+        let blocked = await transport.waitUntilBlocked(timeout: .seconds(10))
+        try #require(blocked, "set-up: the first drain never reached the apply sink")
         path.set(unmetered: true)
         let second = try await queue.drain()           // overlaps: returns at once
         #expect(second.attempted == 0, "set-up: the second drain did not overlap the first")
@@ -254,13 +350,13 @@ struct OutboxWifiOnlyTests {
         let inner = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
         private var isOpen = false
         private var gate: CheckedContinuation<Void, Never>?
-        private var blockedWaiter: CheckedContinuation<Void, Never>?
+        private var blockedWaiter: CheckedContinuation<Bool, Never>?
 
         func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
             if !isOpen {
                 await withCheckedContinuation { continuation in
                     gate = continuation
-                    blockedWaiter?.resume()
+                    blockedWaiter?.resume(returning: true)
                     blockedWaiter = nil
                 }
             }
@@ -271,9 +367,21 @@ struct OutboxWifiOnlyTests {
             try await inner.uploadPhoto(photo, for: item)
         }
 
-        func waitUntilBlocked() async {
-            guard gate == nil else { return }
-            await withCheckedContinuation { blockedWaiter = $0 }
+        /// True once a drain is parked in `sync`; false if none arrives within `timeout`.
+        func waitUntilBlocked(timeout: Duration) async -> Bool {
+            guard gate == nil else { return true }
+            return await withCheckedContinuation { continuation in
+                blockedWaiter = continuation
+                Task {
+                    try? await Task.sleep(for: timeout)
+                    await self.giveUpWaiting()
+                }
+            }
+        }
+
+        private func giveUpWaiting() {
+            blockedWaiter?.resume(returning: false)
+            blockedWaiter = nil
         }
 
         func open() {
@@ -313,53 +421,60 @@ struct OutboxWifiOnlyTests {
 
     // MARK: - 5. Nothing in the app bypasses the queue's decision
 
-    /// The sanctioned call: `drain()` passing the queue's own answer. The scanner must find it, or
-    /// it is not reading the source it claims to check.
-    private static let sanctionedCall = "drain(photoUploadsAllowed: await photoUploadsAllowedNow())"
+    /// The only lines in the app allowed to name `drain(photoUploadsAllowed:` or
+    /// `drainPass(photoUploadsAllowed:`, each exactly as written and each exactly once, all in
+    /// `OutboxQueue.swift`: the public drain's own decision, the two declarations, and the two
+    /// internal passes. They double as controls: if the scanner stops seeing any of them, it is not
+    /// reading the source it claims to check.
+    private static let exempt: [String] = [
+        "try await drain(photoUploadsAllowed: await photoUploadsAllowedNow())",
+        "public func drain(photoUploadsAllowed: Bool) async throws -> DrainReport {",
+        "let report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)",
+        "_ = try await drainPass(photoUploadsAllowed: await photoUploadsAllowedNow())",
+        "private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {",
+    ]
 
-    /// The declaration, which the scanner must see and must not count as a call.
-    private static let declaration = "func drain(photoUploadsAllowed: Bool)"
-
-    /// Each non-comment line under `Cypress/` that names `drain(photoUploadsAllowed:`, the
-    /// declaration included. `Cypress/Data/Tests/` is test support compiled into the app target,
-    /// and pins the flag on purpose, so it is left out.
-    private static func explicitDrains() throws -> (calls: [String], files: Int) {
+    /// Each non-comment line under `Cypress/` that names `drain(` or `drainPass(` with a
+    /// `photoUploadsAllowed:` argument, as (file name, line number, trimmed code).
+    /// `Cypress/Data/Tests/` is test support compiled into the app target, and pins the flag on
+    /// purpose, so it is left out.
+    private static func explicitDrains() throws -> (lines: [(file: String, line: Int, code: String)], files: Int) {
         let root = AppSourceLiterals.repositoryRoot()
         let files = AppSourceLiterals.sourceFiles(root: root)
             .filter { !$0.path.contains("/Cypress/Data/Tests/") }
-        var calls: [String] = []
+        var found: [(file: String, line: Int, code: String)] = []
         for file in files {
             let source = try String(contentsOf: file, encoding: .utf8)
             for (index, line) in source.components(separatedBy: "\n").enumerated() {
-                let code = line.components(separatedBy: "//").first ?? ""
-                guard code.range(of: #"drain\(\s*photoUploadsAllowed\s*:"#, options: .regularExpression) != nil
+                let code = (line.components(separatedBy: "//").first ?? "")
+                    .trimmingCharacters(in: .whitespaces)
+                guard code.range(of: #"drain(Pass)?\(\s*photoUploadsAllowed\s*:"#, options: .regularExpression) != nil
                 else { continue }
-                calls.append("\(file.lastPathComponent):\(index + 1): \(code.trimmingCharacters(in: .whitespaces))")
+                found.append((file.lastPathComponent, index + 1, code))
             }
         }
-        return (calls, files.count)
+        return (found, files.count)
     }
 
     @Test("no app source passes its own photo decision to drain")
     func noCallerBypassesTheQueue() throws {
-        let (calls, files) = try Self.explicitDrains()
+        let (found, files) = try Self.explicitDrains()
         #expect(files >= AppSourceLiterals.swiftFileCountFloor, "the guard swept \(files) files")
 
-        // Two controls, each a line the scanner must see: the queue's own call, and the
-        // declaration. Neither is a bypass; everything else is.
-        let sanctioned = calls.filter { $0.hasPrefix("OutboxQueue.swift:") && $0.contains(Self.sanctionedCall) }
-        #expect(sanctioned.count == 1, "the scanner did not find the queue's own call, so it saw nothing")
-        let declarations = calls.filter { $0.hasPrefix("OutboxQueue.swift:") && $0.contains(Self.declaration) }
-        #expect(declarations.count == 1, "the scanner did not find the declaration, so it saw nothing")
+        for line in Self.exempt {
+            let hits = found.filter { $0.file == "OutboxQueue.swift" && $0.code == line }
+            #expect(hits.count == 1, "the scanner saw \(hits.count) of the exempt line `\(line)`, so it is not seeing the source it checks")
+        }
 
-        let bypasses = calls.filter { !sanctioned.contains($0) && !declarations.contains($0) }
+        let bypasses = found.filter { !($0.file == "OutboxQueue.swift" && Self.exempt.contains($0.code)) }
         #expect(
             bypasses.isEmpty,
             """
-            App code passes its own answer to `drain(photoUploadsAllowed:)`. That is how F35 \
-            happened: the caller's answer ignored the wi-fi toggle. Call `drain()`, which decides \
-            from the stored toggle and the network path.
-            \(bypasses.joined(separator: "\n"))
+            App code passes its own answer to `drain(photoUploadsAllowed:)` or \
+            `drainPass(photoUploadsAllowed:)`. That is how F35 happened: the caller's answer \
+            ignored the wi-fi toggle. Call `drain()`, which decides from the stored toggle and the \
+            network path.
+            \(bypasses.map { "\($0.file):\($0.line): \($0.code)" }.joined(separator: "\n"))
             """
         )
     }

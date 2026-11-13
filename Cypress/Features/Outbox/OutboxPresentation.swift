@@ -184,7 +184,9 @@ struct OutboxPresentation {
     /// it in both places on a queue of one is the screen telling somebody the same thing twice.
     private func reason(for item: OutboxItemSnapshot) -> String? {
         guard let reason = item.reason else { return nil }
-        return reason == OutboxFailureReason.awaitingWifi(photoCount: item.photoCount) ? nil : reason
+        // By kind, not by count: a withdrawn photograph changes the count after the sentence was
+        // written (F35 review).
+        return OutboxFailureReason.isAwaitingWifi(reason) ? nil : reason
     }
 
     /// `waiting` / `retry`.
