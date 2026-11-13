@@ -324,7 +324,7 @@ struct RemoteAPITests {
         let api = Self.api(transport)
 
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.grove() }
-        await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.groveSpecies() }
+        await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.groveSpecies(near: nil) }
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.journal(cursor: nil, limit: 20) }
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.treeProfile(id: treeID) }
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.deletePhoto(id: UUID()) }

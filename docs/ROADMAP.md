@@ -1931,12 +1931,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
     source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
     source, passed to every `drain()`, with a test that fails if a writer drains without it.
-99. **The Grove ring names the most-visited neighborhood, not where the reader is (F38,
+99. **DONE (PR #207): the ring follows the reader's location, owner decision 2026-11-12; strings
+    in `docs/rulings-pending/grove-ring-follows-location.md`.** ~~**The Grove ring names the most-visited neighborhood, not where the reader is (F38,
     2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
     `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
     F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
     "your most-visited neighborhood", reuse F17's picker, or follow location. D.C. ships no
-    neighborhoods yet (chip 88).
+    neighborhoods yet (chip 88).~~
 100. ~~**A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
     on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
     chip 76(a). Reproduce first.~~ **DONE in #206.** Cause: a photo row stores an absolute
@@ -1957,6 +1958,20 @@ into this section in the round that finds it, and nowhere else. Each item stands
     tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
     merge changed no Swift. A re-run is evidence it is intermittent, not of why. Watch for a second
     occurrence before chasing it.
+    **Second occurrence, in the sibling test** (run 43421121135, ui shard 4, #206's merge,
+    2026-11-13): `testAPhotographOpenedFromTheBrowserReachesTheSameDelete`, "the metadata pill did
+    not open the photo browser" (line 104). Read from the two runs' recordings and snapshots:
+    - **The first is the race `UIWait.assertReachable` documents.** The viewer stopped moving at
+      6.85 s; the one-shot `isHittable` at 8.99 s said false; the tap at 9.21 s still opened the
+      confirmation. Fixed by waiting for reachability (this PR).
+    - **The second is not explained.** The tap landed at the pill's center (318, 202), and for ten
+      seconds after it nothing changed: no browser, no viewer, the same pixels. Screen 20 was never
+      reached, so F36's changes to `PhotoImageStore` were not on the failing path, and the first
+      failure predates F36. The candidates are a touch dropped while the pushed profile was settling
+      on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
+      reachable before tapping it, and on failure it reports whether a second tap works, which
+      separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
+
 104. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
     community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
     doors, `leaveRecords` included. Publication is the service's fact (decisions 7 and 10: it turns

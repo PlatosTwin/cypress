@@ -804,7 +804,7 @@ private struct ProbeAPI: CypressAPI {
     func grove() async throws -> [GroveEntry] { throw log.reached("grove") }
     func grovePage(cursor: String?, limit: Int) async throws -> Page<GroveEntry> { throw log.reached("grovePage") }
     func isFavorite(treeID: UUID) async throws -> Bool { throw log.reached("isFavorite") }
-    func groveSpecies() async throws -> GroveSpecies { throw log.reached("groveSpecies") }
+    func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies { throw log.reached("groveSpecies") }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { throw log.reached("journal") }
     func claimDevice(deviceUUID: UUID, userID: UUID) async throws { throw log.reached("claimDevice") }
     func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
@@ -1145,7 +1145,7 @@ struct APIConformanceGuardTests {
         await check("grove") { _ = try await api.grove() }
         await check("grovePage") { _ = try await api.grovePage(cursor: nil, limit: 1) }
         await check("isFavorite") { _ = try await api.isFavorite(treeID: id) }
-        await check("groveSpecies") { _ = try await api.groveSpecies() }
+        await check("groveSpecies") { _ = try await api.groveSpecies(near: nil) }
         await check("journal") { _ = try await api.journal(cursor: nil, limit: 1) }
         await check("claimDevice") { try await api.claimDevice(deviceUUID: id, userID: id) }
         await check("deleteAccount") { _ = try await api.deleteAccount(.leaveRecords) }

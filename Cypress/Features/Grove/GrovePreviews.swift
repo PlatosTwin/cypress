@@ -48,7 +48,7 @@ struct GrovePreviewAPI: CypressAPI {
     var treesFail = false
     var groveReads: GroveReadCounter?
 
-    func groveSpecies() async throws -> GroveSpecies {
+    func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
         if fails { throw APIError.serverError }
         return grove
     }
@@ -126,7 +126,9 @@ private enum GroveFixtures {
     static func neighborhood(complete: Bool = true) -> GroveNeighborhood {
         GroveNeighborhood(
             area: .named("Sunset/Parkside"),
-            species: Series(items: neighborhoodSpeciesIDs, isComplete: complete)
+            species: Series(items: neighborhoodSpeciesIDs, isComplete: complete),
+            // The mock's case: the reader is standing in the neighborhood the caption names.
+            basis: .whereYouAre
         )
     }
 
