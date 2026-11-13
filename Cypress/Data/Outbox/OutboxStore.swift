@@ -574,16 +574,7 @@ public struct OutboxStore {
                 SELECT * FROM outbox
                  WHERE state = 'pending'
                    AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
-                   AND NOT (
-                         kind = 'location_correction'
-                         AND EXISTS (
-                             SELECT 1 FROM outbox AS addition
-                              WHERE addition.kind = 'add_tree'
-                                AND addition.state <> 'done'
-                                AND addition.remote_sent = 0
-                                AND upper(json_extract(addition.payload, '$.treeID'))
-                                    = upper(json_extract(outbox.payload, '$.treeID'))
-                         )
+                   -- RED-PROOF C: hold removed
                        )
                  ORDER BY seq
                  LIMIT :limit
