@@ -2032,7 +2032,7 @@ public actor LocalAPI: CypressAPI {
     public func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
         // Resolved rather than trusted: a photo queued before an app update holds the old
         // container's path, and the file has moved with the container (report F36).
-        let source = StoredPhotoPath.resolve(localPath, applicationSupport: applicationSupportDirectory)
+        let source = URL(fileURLWithPath: localPath) // RED-PROOF
         let manager = FileManager.default
         guard manager.fileExists(atPath: source.path) else {
             // The binary is gone. Not retryable: no amount of waiting brings a deleted file back.
@@ -2097,7 +2097,7 @@ public actor LocalAPI: CypressAPI {
         let candidates = [
             location.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
             // A path stored before an app update can name the old container (report F36).
-            location.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
+            location.localPath.map { URL(fileURLWithPath: $0) } // RED-PROOF
         ].compactMap { $0 }
 
         for url in candidates {
