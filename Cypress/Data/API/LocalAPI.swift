@@ -36,6 +36,10 @@ public actor LocalAPI: CypressAPI {
     /// Where photo binaries live once "uploaded". `LocalAPI`'s upload is a move into this
     /// directory, which is what makes the outbox's photo phase exercisable with no network.
     private let photoDirectory: URL
+    /// This container's Application Support folder, as it is now. A stored photograph path that an
+    /// app update left pointing at an old container is re-rooted onto it (report F36; see
+    /// `StoredPhotoPath`). Injected so a test can stand in a container of its own.
+    private let applicationSupportDirectory: URL
 
     /// `tree_status_overrides`, held between the writes that can change it.
     ///
@@ -57,8 +61,11 @@ public actor LocalAPI: CypressAPI {
         userID: UUID? = nil,
         role: UserRole = .member,
         photoDirectory: URL? = nil,
+        applicationSupportDirectory: URL? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.applicationSupportDirectory = applicationSupportDirectory
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.store = store
         self.deviceID = deviceID
         self.userID = userID
@@ -2022,8 +2029,16 @@ public actor LocalAPI: CypressAPI {
         return PhotoUploadTicket(photoID: photo.id, destination: destination)
     }
 
+    /// Where a stored photograph path names a file today, for a caller outside this actor that reads
+    /// the file itself (the apply sink's size read). See `StoredPhotoPath` and report F36.
+    nonisolated func resolvedPhotoPath(_ stored: String) -> String {
+        StoredPhotoPath.resolve(stored, applicationSupport: applicationSupportDirectory).path
+    }
+
     public func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
-        let source = URL(fileURLWithPath: localPath)
+        // Resolved rather than trusted: a photo queued before an app update holds the old
+        // container's path, and the file has moved with the container (report F36).
+        let source = StoredPhotoPath.resolve(localPath, applicationSupport: applicationSupportDirectory)
         let manager = FileManager.default
         guard manager.fileExists(atPath: source.path) else {
             // The binary is gone. Not retryable: no amount of waiting brings a deleted file back.
@@ -2087,7 +2102,8 @@ public actor LocalAPI: CypressAPI {
 
         let candidates = [
             location.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
-            location.localPath.map { URL(fileURLWithPath: $0) }
+            // A path stored before an app update can name the old container (report F36).
+            location.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
         ].compactMap { $0 }
 
         for url in candidates {
@@ -2225,7 +2241,9 @@ public actor LocalAPI: CypressAPI {
         let manager = FileManager.default
         let files = [
             subject.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
-            subject.localPath.map { URL(fileURLWithPath: $0) }
+            // Resolved as `photoData` resolves it, or a delete after an app update would miss the
+            // moved file and leave the deleted picture on the device (report F36).
+            subject.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
         ].compactMap { $0 }
 
         // 4. The rows, then the bytes, in one transaction. The order inside it is the point: the
@@ -3848,7 +3866,9 @@ public actor LocalAPI: CypressAPI {
                 )
             }
             for path in bytes.absolutePaths {
-                try? manager.removeItem(at: URL(fileURLWithPath: path))
+                try? manager.removeItem(
+                    at: StoredPhotoPath.resolve(path, applicationSupport: applicationSupportDirectory)
+                )
             }
         }
 
