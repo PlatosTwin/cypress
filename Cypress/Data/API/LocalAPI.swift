@@ -2872,7 +2872,7 @@ public actor LocalAPI: CypressAPI {
             //     would read zero. The test is against this phone's species; the account's half
             //     arrives later through `RoutedAPI.refreshedGroveSpecies(near:)`, which keeps the
             //     area this read chose.
-            if let coordinate, let speciesQueries, let almanacQueries {
+            if let coordinate = Optional<Coordinate>.none, let speciesQueries, let almanacQueries {
                 var located: AlmanacScope?
                 if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
                     located = .neighborhood(id: polygon.id, name: polygon.name)
