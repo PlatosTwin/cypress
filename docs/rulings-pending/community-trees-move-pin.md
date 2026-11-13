@@ -34,6 +34,14 @@ the move through `RoutedAPI.correctLocation`: on this phone first, then queued a
   because no instrument measured the new position. The profile's provenance line then reads
   "position placed by hand".
 
+- **A move waits for its tree** (review of #209, F2). The queue holds a `location_correction` while
+  the same tree's `add_tree` has not reached the service (`OutboxStore.dueItems`), and the drain that
+  sends the add sends the move right after it. Without the hold, a tree added offline and then moved
+  could send the move first, and the service's `not_found` for it is terminal.
+- **Where the offer is still wrong** (review of #209, F1). A tree the service never received (R77),
+  or one whose adder the v23 backfill had to guess, can show Move pin for a move the service refuses.
+  ROADMAP chip 107 proposes a rule; it is not built.
+
 ### R??? — No distance limit on a pin move, because the service has none
 
 The brief asked to read the limit from the server and enforce the same one. The service has none.
