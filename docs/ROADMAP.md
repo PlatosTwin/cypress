@@ -683,7 +683,14 @@ a service that refuses it. That deploy happened on 2026-09-29: `cypress-sync` bo
 (#190 merged) at server schema 7. Still check its release before C1 merges, because a later revert
 or redeploy would change that (chip 12: merging server work changes nothing in production).
 
-- **C1 — the core (`feat/community-trees-core`). Built; in review once its PR opens.** Migration v23
+- ~~**C1 — the core (`feat/community-trees-core`). Built; in review once its PR opens.**~~ **DONE in
+  `feat/community-trees-c1`** (the PR titled "Community trees C1: location chain, adder backfill, and
+  Move pin"). Two owner decisions of 2026-11-12 rode with it: v23 gives every pre-v23 tree this
+  install's own owner as its adder (not nobody), and a minimal **Move pin** control on the profile of
+  a tree the reader added, with no distance bound because the service has none
+  (`docs/rulings-pending/community-trees-adder-backfill.md`, `community-trees-move-pin.md`). **F37
+  ("Put the pin in the wrong place") is answered for trees the reader added.** What follows is the
+  round's original scope, kept for the record. Migration v23
   is C1's. The one client migration author
   of the round: the writable database's next migration (the design proposal names v23; read
   `AppSchema.migrations`, not this line). It carries the new stores and the merge helper; a
@@ -1694,7 +1701,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ERRATA entries carry the same sentence (`docs/ERRATA.md`, lines 20095 and 20525 at that
     commit). A confident comment is where bugs live here, so re-verify each against the code before
     rewriting it. (From #182.)
-70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **Duplicate of 79**, which #186
+70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **DONE in community-trees C1
+    (with 79).** **Duplicate of 79**, which #186
     wrote with the measurement; track it there. The table carries `user_id`, and
     `Cypress/Data/Store/AccountDeletion.swift` never names it, so an owned row survives leaving and
     erasing alike and still points at the deleted account. Fix it on R3's contribution pattern
@@ -1934,8 +1942,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     chip 76(a). Reproduce first.
 101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
     Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
-102. **F37 (2026-10-31) is a second report of F31(a), moving a pin.** C1 and C3 cover it; it adds
-    weight to C1, not a new item.
+102. ~~**F37 (2026-10-31) is a second report of F31(a), moving a pin.**~~ **Answered by C1's Move pin
+    control for trees the reader added** (owner decision 2026-11-12). C3 still owns the rest of F31.
 103. **`PhotoDeletionReachabilityTests.testTheHeroPhotographReachesADeleteThatWorks` failed once on
     main** (run 43327553492, ui shard 4, #203's merge, 2026-11-12): "the delete is in the viewer's
     tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
