@@ -59,11 +59,12 @@ struct StoredPhotoPathTests {
         return Container(root: root, before: before, after: after, staged: staged)
     }
 
-    private static func api(for container: Container) async throws -> LocalAPI {
+    private static func api(for container: Container, userID: UUID? = nil) async throws -> LocalAPI {
         let store = try await CypressStore.inMemory()
         return LocalAPI(
             store: store,
             deviceID: deviceID,
+            userID: userID,
             photoDirectory: container.root.appendingPathComponent("Photos", isDirectory: true),
             applicationSupportDirectory: container.applicationSupportAfter,
             now: { moment }
@@ -145,6 +146,98 @@ struct StoredPhotoPathTests {
         #expect(PhotoImageStore.downsample(data, maximumEdge: 200) != nil)
     }
 
+    @Test("a queued photo still sends to the server after an update moves the container")
+    func sendSinkSurvivesAContainerMove() async throws {
+        let bytes = try Self.jpeg()
+        let container = try Self.container(bytes: bytes)
+        defer { container.remove() }
+
+        // The service's half, scripted the way `RemoteAPITests` scripts it: a begin that names a
+        // presigned destination, the storage PUT, then the receipt.
+        let photoID = UUID()
+        let destination = URL(string: "https://storage.invalid/photos/\(photoID.uuidString).jpg?sig=f36")!
+        StubStorageProtocol.park(destination, status: 200)
+        let transport = ScriptedTransport()
+        transport.answer(
+            "POST /photos/begin",
+            with: """
+            {"photo_id":"\(photoID.uuidString)",
+             "presigned_put_url":"\(destination.absoluteString)",
+             "moderation_state":"approved","approval_reason":"auto_approved_launch"}
+            """
+        )
+        transport.answer("POST /photos/\(photoID.uuidString)/received", with: #"{"received":true}"#)
+        let sink = APIOutboxSendSink(
+            remote: RemoteAPITests.api(transport, session: StubStorageProtocol.session()),
+            applicationSupportDirectory: container.applicationSupportAfter
+        )
+
+        // A photograph the apply already moved into the container, held for the send (offline, or
+        // waiting for Wi-Fi) while the app updated. `containerPath` is the path stored before.
+        let row = OutboxStore.PhotoRow(
+            id: UUID(), outboxID: UUID(), path: nil, shotType: .trunk, photoID: UUID(),
+            containerPath: container.staged.path, isApplied: true, isSendable: true, failCount: 0
+        )
+        let toggle = FavoriteToggle(owner: .device(Self.deviceID), treeID: UUID(), isFavorite: true)
+        let item = OutboxItem(
+            kind: .favoriteToggle, clientUUID: UUID(),
+            payload: try OutboxPayload.favoriteToggle(toggle).encoded()
+        )
+
+        try container.move()
+
+        try await sink.uploadPhoto(row, for: item)
+        let put = try #require(StubStorageProtocol.requests(to: destination).first { $0.method == "PUT" })
+        #expect(put.body == bytes, "the moved file's bytes must be the ones sent")
+    }
+
+    @Test("deleting a photograph after an update removes the moved file")
+    func deletingAfterAContainerMoveRemovesTheMovedFile() async throws {
+        let container = try Self.container(bytes: try Self.jpeg())
+        defer { container.remove() }
+        let api = try await Self.api(for: container)
+        let tree = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            photoLocalPath: container.staged.path,
+            attribution: .anonymous(deviceID: Self.deviceID)
+        ))
+        let profile = try await api.treeProfile(id: tree.id)
+        let photoID = try #require(profile.photos.items.first?.id)
+
+        try container.move()
+        let moved = container.after.appendingPathComponent(
+            "Library/Application Support/VisitCaptures/\(container.staged.lastPathComponent)"
+        )
+        #expect(FileManager.default.fileExists(atPath: moved.path), "the fixture must move the file")
+
+        let outcome = try await api.deletePhoto(id: photoID)
+        #expect(outcome.removedFiles == 1)
+        #expect(!FileManager.default.fileExists(atPath: moved.path),
+                "a deleted photograph must not stay on the device under the new container")
+    }
+
+    @Test("erasing an account after an update removes the moved photographs")
+    func erasingAnAccountAfterAContainerMoveRemovesTheMovedFile() async throws {
+        let container = try Self.container(bytes: try Self.jpeg())
+        defer { container.remove() }
+        let api = try await Self.api(for: container, userID: UUID())
+        _ = try await api.addTree(TreeDraft(
+            coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
+            photoLocalPath: container.staged.path,
+            attribution: .anonymous(deviceID: Self.deviceID)
+        ))
+
+        try container.move()
+        let moved = container.after.appendingPathComponent(
+            "Library/Application Support/VisitCaptures/\(container.staged.lastPathComponent)"
+        )
+        #expect(FileManager.default.fileExists(atPath: moved.path), "the fixture must move the file")
+
+        _ = try await api.deleteAccount(.eraseEverything)
+        #expect(!FileManager.default.fileExists(atPath: moved.path),
+                "an erased account's photograph must not stay on the device under the new container")
+    }
+
     // MARK: - The resolver itself
 
     @Test("the part after Application Support is re-rooted onto the current folder")
@@ -178,8 +271,9 @@ struct StoredPhotoPathTests {
     }
 
     /// `photoData` fails on its first call and answers on every later one, as a network blip or a
-    /// file found after a fix would. Every access is from the `@MainActor` store, so the counter is
-    /// only touched on one thread; `@unchecked` records that, as `FailedReadTests.FailsOnce` does.
+    /// file found after a fix would. `photoData` is nonisolated, so no actor protects the counter.
+    /// It is safe because each test awaits one `loadViewer` call before it starts the next, so the
+    /// calls never overlap. `@unchecked` records that.
     private struct PhotoFailsOnce: CypressAPI {
         let attempts: Attempts
         let bytes: Data

@@ -2029,6 +2029,12 @@ public actor LocalAPI: CypressAPI {
         return PhotoUploadTicket(photoID: photo.id, destination: destination)
     }
 
+    /// Where a stored photograph path names a file today, for a caller outside this actor that reads
+    /// the file itself (the apply sink's size read). See `StoredPhotoPath` and report F36.
+    nonisolated func resolvedPhotoPath(_ stored: String) -> String {
+        StoredPhotoPath.resolve(stored, applicationSupport: applicationSupportDirectory).path
+    }
+
     public func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
         // Resolved rather than trusted: a photo queued before an app update holds the old
         // container's path, and the file has moved with the container (report F36).
