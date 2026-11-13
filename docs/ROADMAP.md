@@ -1922,7 +1922,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     neighborhoods yet (chip 88).
 100. ~~**A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
     on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
-    chip 76(a). Reproduce first.~~ **DONE in #PRNUM.** Cause: a photo row stores an absolute
+    chip 76(a). Reproduce first.~~ **DONE in #206.** Cause: a photo row stores an absolute
     `local_path` into the app's data container, and an add-tree photo keeps it for good because it
     is never uploaded. An app update can move the container (the tester went from build 77 to 82),
     so the stored prefix named a folder that no longer existed and the server had no copy. iOS
