@@ -1009,6 +1009,10 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
 3. **Progress block** — `padding:2px 18px 0`, `HStack(spacing:16)`:
    ProgressRing (C27, `30%`) + `12 of 40 species` (Serif 19px/600) and
    `you can recognize in the Outer Sunset` (13px, `#66735F`).
+   *F38 (owner decisions 2026-11-12 and 2026-11-13, strings pending ratification):* the area
+   follows the reader's location and keeps this wording there; otherwise the ring falls back to the
+   most-visited area and its caption says "most-visited". The captions are in
+   `docs/rulings-pending/grove-ring-follows-location.md`.
 4. **Celebration callout** (C14 gradient) — `margin:14px 16px 0`:
    **`New species!`** ` First Victorian Box, spotted yesterday on Noriega.`
 5. **Species grid** (C29) — `grid-template-columns:repeat(3,1fr); gap:9px; padding:14px 16px 0`:

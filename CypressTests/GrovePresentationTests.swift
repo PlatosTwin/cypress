@@ -58,7 +58,10 @@ struct GrovePresentationTests {
     ) -> GroveNeighborhood {
         GroveNeighborhood(
             area: .named(name),
-            species: Series(items: (1...count).map(speciesID), isComplete: complete)
+            species: Series(items: (1...count).map(speciesID), isComplete: complete),
+            // The mock's case (SCREENS 08 §3): the reader is in the neighborhood it names. The
+            // most-visited captions are F38's and have their own tests below.
+            basis: .whereYouAre
         )
     }
 
@@ -168,7 +171,7 @@ struct GrovePresentationTests {
             Self.presentation(known: [Self.known(1)], neighborhood: Self.neighborhood(totalling: 40)),
             Self.presentation(
                 known: [Self.known(1)],
-                neighborhood: GroveNeighborhood(area: .named("Treasure Island"), species: .empty)
+                neighborhood: GroveNeighborhood(area: .named("Treasure Island"), species: .empty, basis: .whereYouAre)
             )
         ] {
             #expect(!subject.isEmpty)
@@ -209,7 +212,7 @@ struct GrovePresentationTests {
     func emptyNeighborhoodRendersNothing() {
         let subject = Self.presentation(
             known: [Self.known(1)],
-            neighborhood: GroveNeighborhood(area: .named("Treasure Island"), species: .empty)
+            neighborhood: GroveNeighborhood(area: .named("Treasure Island"), species: .empty, basis: .whereYouAre)
         )
         #expect(subject.progress == nil)
     }
