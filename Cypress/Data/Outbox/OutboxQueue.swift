@@ -144,6 +144,11 @@ public actor OutboxQueue {
     /// about the local half alone wires.
     private let send: (any OutboxSendSink)?
     private let now: @Sendable () -> Date
+    /// What `drain()` asks before it lets a photo binary go (F35). `nil` means nothing here can
+    /// call a connection metered, so every binary goes, which is how the queue behaved before F35.
+    /// Tests about other things and previews wire `nil`; `DataLayer.boot` never does, and
+    /// `OutboxWifiOnlyTests` fails if it stops passing one.
+    private let networkPath: (any NetworkPathSource)?
     private var observers: [UUID: @Sendable () async -> Void] = [:]
     private var isDraining = false
 
@@ -175,16 +180,60 @@ public actor OutboxQueue {
     ///   - send: the sink that forwards it to a server. `DataLayer.boot` wires `APIOutboxSendSink`
     ///     over `RemoteAPI` here; `nil` leaves the drain behaving exactly as it did before the
     ///     split, which is what a test about the local half alone wants.
+    ///   - networkPath: whether the connection is unmetered, for the wi-fi toggle. See the
+    ///     property of the same name.
     public init(
         queue: DatabaseQueue,
         apply: any OutboxTransport,
         send: (any OutboxSendSink)? = nil,
+        networkPath: (any NetworkPathSource)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.queue = queue
         self.apply = apply
         self.send = send
+        self.networkPath = networkPath
         self.now = now
+    }
+
+    // MARK: - The wi-fi toggle (F35)
+
+    /// How the stored toggle reads. Absent means on: the toggle exists to respect a volunteer's
+    /// data plan (screen 17 §3), and an install that never touched it has not waived that.
+    public static func syncPhotosOnWifiOnly(fromStored stored: String?) -> Bool {
+        guard let stored else { return true }
+        return (stored as NSString).boolValue
+    }
+
+    /// Whether a drain may send photo binaries now: the connection is unmetered, or the volunteer
+    /// turned the toggle off.
+    ///
+    /// **The queue decides this, not its callers.** Before F35 the decision was a parameter on
+    /// `drain`, every caller left it at its default of `true`, and the one caller that resolved it
+    /// (`OutboxViewState.syncNow`) was never called. The toggle is read from `app_state` on every
+    /// drain, so it is right before screen 17 has ever been opened.
+    public func photoUploadsAllowedNow() async -> Bool {
+        guard let networkPath else { return true }
+        let stored = try? await queue.read { connection in
+            try CypressStore.appState(.syncPhotosOnWifiOnly, connection: connection)
+        }
+        // `try?` flattens, so a failed read is `nil` and reads as the default: on.
+        guard Self.syncPhotosOnWifiOnly(fromStored: stored) else { return true }
+        return await networkPath.isUnmetered()
+    }
+
+    /// Whether any item is saved with photographs still held back for wi-fi. The same predicate
+    /// as `OutboxSnapshot.awaitingWifiCount`, with the toggle taken as on.
+    public func hasPhotosAwaitingWifi() async throws -> Bool {
+        try await snapshot(syncPhotosOnWifiOnly: true).awaitingWifiCount > 0
+    }
+
+    /// Drains if a photograph is waiting for wi-fi. What `OutboxWifiWatcher` calls when the
+    /// connection becomes unmetered.
+    @discardableResult
+    public func drainIfPhotosAwaitWifi() async throws -> DrainReport? {
+        guard try await hasPhotosAwaitingWifi() else { return nil }
+        return try await drain()
     }
 
     // MARK: - TreeObservation
@@ -229,13 +278,27 @@ public actor OutboxQueue {
 
     // MARK: - Drain
 
-    /// Attempts every due item, oldest first.
+    /// Attempts every due item, oldest first, honoring the wi-fi toggle.
+    ///
+    /// **This is the drain every production caller makes.** It resolves the toggle against the
+    /// current connection itself (`photoUploadsAllowedNow()`), so no caller can forget to.
+    @discardableResult
+    public func drain() async throws -> DrainReport {
+        try await drain(photoUploadsAllowed: await photoUploadsAllowedNow())
+    }
+
+    /// Attempts every due item, oldest first, with the photo decision already made.
     ///
     /// - Parameter photoUploadsAllowed: the wifi-only toggle, already resolved against the current
     ///   connection type. It gates **photo binaries only**; the JSON item syncs on any connection
     ///   (BUILD-PLAN §4, screen 17's "Notes and numbers sync on any connection").
+    ///
+    /// **No default, on purpose.** It defaulted to `true`, and that default was F35: every caller
+    /// took it, and photographs went over cellular with the toggle on. Tests that pin one side of
+    /// the decision call this; shipping code calls `drain()`, and `OutboxWifiOnlyTests` fails if a
+    /// source file under `Cypress/` passes a literal here.
     @discardableResult
-    public func drain(photoUploadsAllowed: Bool = true) async throws -> DrainReport {
+    public func drain(photoUploadsAllowed: Bool) async throws -> DrainReport {
         guard !isDraining else { return DrainReport() }
         isDraining = true
         defer { isDraining = false }
@@ -717,9 +780,9 @@ public actor OutboxQueue {
 
     /// Screen 17's whole model, in one read.
     ///
-    /// The queue does not own the wi-fi preference — `OutboxViewState` does, and the store behind
-    /// it — so the toggle arrives as an argument. It has no default here for the reason
-    /// `OutboxSnapshot.init` gives (ERRATA E38).
+    /// The toggle arrives as an argument because screen 17 draws the toggle as it stands on screen,
+    /// which can be a moment ahead of `app_state` while the write lands. `drain()` reads the stored
+    /// value itself. It has no default here for the reason `OutboxSnapshot.init` gives (ERRATA E38).
     public func snapshot(
         treeNames: [UUID: String] = [:],
         syncPhotosOnWifiOnly: Bool

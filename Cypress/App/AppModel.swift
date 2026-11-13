@@ -63,7 +63,16 @@ final class AppModel {
         makeLayer: (@MainActor () async throws -> DataLayer)? = nil
     ) {
         self.makeLayer = makeLayer ?? {
-            try await DataLayer.bootOverInstalledCities(library: CityLibrary.default())
+            #if DEBUG
+            // A DEBUG launch can pin the connection (`DebugNetworkPathOverride`, F35).
+            if let pinned = DebugNetworkPathOverride.requested() {
+                return try await DataLayer.bootOverInstalledCities(
+                    library: CityLibrary.default(),
+                    networkPath: pinned
+                )
+            }
+            #endif
+            return try await DataLayer.bootOverInstalledCities(library: CityLibrary.default())
         }
         let library = (try? CityLibrary.default())
             ?? CityLibrary(rootURL: URL(fileURLWithPath: NSTemporaryDirectory())
