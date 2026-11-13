@@ -108,6 +108,18 @@ public struct DrainReport: Sendable, Equatable {
     /// Binaries whose send was refused or unreachable on this pass. Their rows stay outstanding, so
     /// their item stays out of `done`.
     public var photosFailed = 0
+
+    /// Adds a later pass's counts to this one (`OutboxQueue.drain`).
+    mutating func absorb(_ other: DrainReport) {
+        attempted += other.attempted
+        synced += other.synced
+        failedTemporarily += other.failedTemporarily
+        failedTerminally += other.failedTerminally
+        awaitingWifi += other.awaitingWifi
+        sent += other.sent
+        photosSent += other.photosSent
+        photosFailed += other.photosFailed
+    }
 }
 
 /// The local-first mutation queue.
@@ -315,12 +327,54 @@ public actor OutboxQueue {
         isDraining = true
         defer { isDraining = false }
 
-        let report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+        let report = try await passReleasingMoves(photoUploadsAllowed: photoUploadsAllowed)
+        // A drain asked for while this one ran gets its pass now, deciding about photographs
+        // afresh (F35 review, S2). It releases pin moves the same way, because the add it sends
+        // may be the one a move was waiting for.
         while drainRequested {
             drainRequested = false
-            _ = try await drainPass(photoUploadsAllowed: await photoUploadsAllowedNow())
+            _ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
         }
         return report
+    }
+
+    /// One pass, and up to two more if it released a pin move.
+    ///
+    /// A pin move held behind its tree's add (`OutboxStore.dueItems`) becomes due the moment a
+    /// pass settles that add. One more pass sends it now, rather than at whatever next asks for a
+    /// drain. Bounded: one add releases its moves in one pass, and a pass that settled nothing
+    /// released nothing. "Settled" is sent or synced, because with no send sink wired an add
+    /// releases its move by reaching `done`, which counts as synced.
+    private func passReleasingMoves(photoUploadsAllowed: Bool) async throws -> DrainReport {
+        var report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+        var settled = report.sent + report.synced
+        for _ in 0..<2 {
+            guard settled > 0,
+                  try await hasDueLocationCorrection(photoUploadsAllowed: photoUploadsAllowed)
+            else { break }
+            let next = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+            report.absorb(next)
+            settled = next.sent + next.synced
+        }
+        return report
+    }
+
+    /// Whether a `location_correction` is due right now, which after a pass that sent something
+    /// means a move its tree's add was holding has been released.
+    ///
+    /// It uses the same filters and limit as the next pass (`excludingHeldForWifi`), so on
+    /// cellular a batch full of rows held for wi-fi cannot hide a due move.
+    private func hasDueLocationCorrection(photoUploadsAllowed: Bool) async throws -> Bool {
+        let at = now()
+        return try await queue.read { connection in
+            try store.dueItems(
+                now: at,
+                limit: Self.batchSize,
+                excludingHeldForWifi: !photoUploadsAllowed,
+                connection: connection
+            )
+                .contains { $0.item.kind == .locationCorrection }
+        }
     }
 
     /// Leaves the time a row spent held for wi-fi out of its 48 h window, in the database and in
@@ -359,8 +413,7 @@ public actor OutboxQueue {
         return record.withWindowStarted(at: window)
     }
 
-    /// One pass over the due items. Only `drain(photoUploadsAllowed:)` calls it, under
-    /// `isDraining`.
+    /// One pass over the due items. Only `passReleasingMoves` calls it, under `isDraining`.
     private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {
         var report = DrainReport()
         let startedAt = now()

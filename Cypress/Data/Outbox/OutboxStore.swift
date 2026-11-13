@@ -526,6 +526,16 @@ public struct OutboxStore {
     /// are independent and the server dedupes on `client_uuid`, so ordering only has to be stable,
     /// not total. `ORDER BY seq` gives that.
     ///
+    /// **One exception: a pin move waits for its tree's add** (review of #209, F2). A
+    /// `location_correction` is held while the same tree's `add_tree` row is still trying to reach
+    /// the service (`pending` or `uploading`, and not `remote_sent`). A `failed` add holds nothing:
+    /// it will not be sent again unless the volunteer retries it, so holding its move would leave
+    /// the move pending forever with no reason shown. Released, the move goes and fails out loud. Without the hold, an add in backoff lets
+    /// the move go first, the service answers `not_found` for a tree it has not received, and that
+    /// answer is terminal: "add a tree offline, then fix its pin" would lose the move on the service.
+    /// The tree is matched on the payloads' `treeID`, which both kinds carry. A pruned add row holds
+    /// nothing, because a pruned row was `done`.
+    ///
     /// - Parameter excludingHeldForWifi: leave out rows held for wi-fi. The drain passes `true`
     ///   when photographs may not go. A held row's note is already applied, and sent when a sink is
     ///   wired (a failure on the note writes a different reason), so such a pass has nothing to do
@@ -544,6 +554,17 @@ public struct OutboxStore {
                  WHERE state = 'pending'
                    AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
                    AND (last_error IS NULL OR last_error NOT LIKE :held)
+                   AND NOT (
+                         kind = 'location_correction'
+                         AND EXISTS (
+                             SELECT 1 FROM outbox AS addition
+                              WHERE addition.kind = 'add_tree'
+                                AND addition.state IN ('pending', 'uploading')
+                                AND addition.remote_sent = 0
+                                AND upper(json_extract(addition.payload, '$.treeID'))
+                                    = upper(json_extract(outbox.payload, '$.treeID'))
+                         )
+                       )
                  ORDER BY seq
                  LIMIT :limit
                 """)
@@ -555,6 +576,17 @@ public struct OutboxStore {
                 SELECT * FROM outbox
                  WHERE state = 'pending'
                    AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+                   AND NOT (
+                         kind = 'location_correction'
+                         AND EXISTS (
+                             SELECT 1 FROM outbox AS addition
+                              WHERE addition.kind = 'add_tree'
+                                AND addition.state IN ('pending', 'uploading')
+                                AND addition.remote_sent = 0
+                                AND upper(json_extract(addition.payload, '$.treeID'))
+                                    = upper(json_extract(outbox.payload, '$.treeID'))
+                         )
+                       )
                  ORDER BY seq
                  LIMIT :limit
                 """)

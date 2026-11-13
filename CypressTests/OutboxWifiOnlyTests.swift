@@ -483,20 +483,25 @@ struct OutboxWifiOnlyTests {
 
     // MARK: - 5. Nothing in the app bypasses the queue's decision
 
-    /// The only lines in the app allowed to name `drain(photoUploadsAllowed:` or
-    /// `drainPass(photoUploadsAllowed:`, each exactly as written and each exactly once, all in
-    /// `OutboxQueue.swift`: the public drain's own decision, the two declarations, and the two
-    /// internal passes. They double as controls: if the scanner stops seeing any of them, it is not
-    /// reading the source it claims to check.
+    /// The only lines in the app allowed to name `drain(photoUploadsAllowed:`,
+    /// `drainPass(photoUploadsAllowed:` or `passReleasingMoves(photoUploadsAllowed:`, each exactly
+    /// as written and each exactly once, all in `OutboxQueue.swift`: the public drain's own decision,
+    /// the three declarations, the two passes the drain makes (the first, which reuses its decision,
+    /// and the drain-again pass, which decides afresh), and the two passes inside
+    /// `passReleasingMoves` (its first, and its extra pass for a released pin move). They double as
+    /// controls: if the scanner stops seeing any of them, it is not reading the source it checks.
     private static let exempt: [String] = [
         "try await drain(photoUploadsAllowed: await photoUploadsAllowedNow())",
         "public func drain(photoUploadsAllowed: Bool) async throws -> DrainReport {",
-        "let report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)",
-        "_ = try await drainPass(photoUploadsAllowed: await photoUploadsAllowedNow())",
+        "let report = try await passReleasingMoves(photoUploadsAllowed: photoUploadsAllowed)",
+        "_ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())",
+        "private func passReleasingMoves(photoUploadsAllowed: Bool) async throws -> DrainReport {",
+        "var report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)",
+        "let next = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)",
         "private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {",
     ]
 
-    /// Each non-comment line under `Cypress/` that names `drain(` or `drainPass(` with a
+    /// Each non-comment line under `Cypress/` that names `drain(`, `drainPass(` or `passReleasingMoves(` with a
     /// `photoUploadsAllowed:` argument, as (file name, line number, trimmed code).
     /// `Cypress/Data/Tests/` is test support compiled into the app target, and pins the flag on
     /// purpose, so it is left out.
@@ -510,7 +515,7 @@ struct OutboxWifiOnlyTests {
             for (index, line) in source.components(separatedBy: "\n").enumerated() {
                 let code = (line.components(separatedBy: "//").first ?? "")
                     .trimmingCharacters(in: .whitespaces)
-                guard code.range(of: #"drain(Pass)?\(\s*photoUploadsAllowed\s*:"#, options: .regularExpression) != nil
+                guard code.range(of: #"(drain(Pass)?|passReleasingMoves)\(\s*photoUploadsAllowed\s*:"#, options: .regularExpression) != nil
                 else { continue }
                 found.append((file.lastPathComponent, index + 1, code))
             }

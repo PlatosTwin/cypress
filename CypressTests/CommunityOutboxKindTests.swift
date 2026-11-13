@@ -853,6 +853,7 @@ struct CommunityOutboxKindTests {
     private static let specimenSpecies = UUID(uuidString: "7E000000-0000-4000-8000-00000000B004")!
     private static let specimenReading = UUID(uuidString: "7E000000-0000-4000-8000-00000000B005")!
     private static let specimenDispute = UUID(uuidString: "7E000000-0000-4000-8000-00000000B006")!
+    private static let specimenCorrection = UUID(uuidString: "7E000000-0000-4000-8000-00000000B007")!
     private static let specimenMoment = Date(timeIntervalSince1970: 1_700_000_000)
 
     private static let signedInUserID = UUID(uuidString: "7E000000-0000-4000-8000-0000000A0001")!
@@ -968,6 +969,14 @@ struct CommunityOutboxKindTests {
             )),
             .dataDisputeWithdrawal(DataDisputeWithdrawal(
                 clientUUID: UUID(), disputeID: specimenDispute, treeID: tree,
+                attribution: who, occurredAt: moment
+            )),
+            // `AppSchema` v23's pin move. Every optional set, for the dispute specimen's reason: an
+            // accuracy left nil would round-trip through any encoder at all.
+            .locationCorrection(TreeLocationCorrection(
+                id: specimenCorrection, clientUUID: UUID(), treeID: tree,
+                coordinate: Coordinate(latitude: 37.76015, longitude: -122.50505),
+                placement: .contributorPlaced, locationAccuracyM: 4.5,
                 attribution: who, occurredAt: moment
             ))
         ]

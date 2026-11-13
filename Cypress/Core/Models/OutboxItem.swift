@@ -168,6 +168,23 @@ public struct OutboxItem: CoreEntity {
         /// and the `CHECK` above is one statement whether it admits one value or two.
         case dataDisputeWithdrawal = "data_dispute_withdrawal"
 
+        // ── The community-trees round's one, and the one it reserves ──────────────────────────
+
+        /// The adder moving a community tree's pin (`correctLocation`, `AppSchema` v23). See
+        /// `TreeLocationCorrection`.
+        ///
+        /// **Its own kind and not an `add_tree` carrying a new coordinate**, for the reason
+        /// `measurementWithdrawal` above gives: `outbox.kind` is what screen 17 groups by and what
+        /// the service dispatches on, and a move arriving as an add would be a second tree.
+        ///
+        /// `tree_withdrawal` — the adder withdrawing a tree for everyone, the owner's decision 8 — is
+        /// admitted by v23's `CHECK` and accepted by the service, and **has no case here**: the verb
+        /// that would write it is not in this round. The store binds `rawValue`, so nothing can
+        /// write the reserved value until a case exists.
+        ///
+        /// Carries no photo binary. A position is two numbers.
+        case locationCorrection = "location_correction"
+
         /// What a deletion of the account that queued a row of this kind has to do to it (R3).
         ///
         /// **This exists because the enumeration below used to be typed out in SQL, and went stale
@@ -214,7 +231,11 @@ public struct OutboxItem: CoreEntity {
                  .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
                  .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
                  .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal,
-                 .dataDispute, .dataDisputeWithdrawal:
+                 .dataDispute, .dataDisputeWithdrawal,
+                 // A moved pin is the adder's contribution to a public object, like the add it
+                 // follows: the leaving door keeps it and takes the name off, and the erasing door
+                 // discards it with the tree it would have moved (`AccountDeletion`).
+                 .locationCorrection:
                 return .contribution
             }
         }

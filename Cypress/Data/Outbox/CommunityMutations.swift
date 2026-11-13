@@ -457,3 +457,56 @@ public struct DataDisputeWithdrawal: Codable, Hashable, Sendable {
         self.occurredAt = occurredAt
     }
 }
+
+/// The adder moving a community tree's pin — the owner's decisions 2 and 5 of 2026-09-28: a move
+/// supersedes the position in force, and only the adder may make one.
+///
+/// **`id` is the correction's own id, and `treeID` is the pointer.** `DataDisputeReport.id`'s
+/// convention: a record's own id travels as `id`, and a pointer is named for what it points at. The
+/// correction *is* a record — the new row of `tree_locations` on this phone, of
+/// `community_tree_locations` and of the audit log on the service — so all three carry this value.
+/// The service refuses an `id` equal to `treeID` (`validation_failed`), because the chain's root row
+/// already carries the tree's id and a tree pointer sent as `id` would read as a replay of the root.
+///
+/// **No top-level `speciesID`, and none may be added.** `store.GroveSpeciesKnown` on the service
+/// casts `payload->>'speciesID'` across every kind, so a field of that name here would be read as a
+/// species this contributor has met.
+///
+/// The shape is pinned by `server/testdata/sync_location_correction.json`, which the service's own
+/// test posts byte for byte and `LocationCorrectionFixtureTests` encodes this type against through
+/// `RemoteAPI.syncItemBody(for:)`.
+public struct TreeLocationCorrection: Codable, Hashable, Sendable {
+    /// The new chain row's id.
+    public let id: UUID
+    public let clientUUID: UUID
+    public let treeID: UUID
+    public let coordinate: Coordinate
+    /// How the new position was arrived at. Required on the wire: a moved pin is placed by hand or
+    /// taken from a fix, and the service will not guess which.
+    public let placement: TreePlacement
+    /// The fix's horizontal accuracy (D6), or nil when the act did not say. Omitted from the JSON
+    /// when nil, which the service reads as nil.
+    public let locationAccuracyM: Double?
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        id: UUID,
+        clientUUID: UUID,
+        treeID: UUID,
+        coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.id = id
+        self.clientUUID = clientUUID
+        self.treeID = treeID
+        self.coordinate = coordinate
+        self.placement = placement
+        self.locationAccuracyM = locationAccuracyM
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}

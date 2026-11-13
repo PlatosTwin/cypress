@@ -993,6 +993,18 @@ struct RootView: View {
                 }
             )
 
+        case let .movePin(id, coordinate):
+            // The owner's Move pin control (2026-11-12). The move is local first and queued, through
+            // `RoutedAPI.correctLocation`; both exits pop back to the profile, which re-reads itself
+            // on reappearing (ERRATA E127) and so draws the tree where it now is.
+            MovePinView(
+                treeID: id,
+                coordinate: coordinate,
+                api: data.api,
+                onSaved: { router.pop() },
+                onCancel: { router.pop() }
+            )
+
         case .dataDispute(let id):
             // The data-dispute screen (RULINGS R79, part 2). It gets the provider itself rather than a
             // coordinate, because "use my current location" is a question asked at the tap: a value

@@ -93,8 +93,9 @@ public struct SpeciesAssertion: CoreEntity {
     /// `ContributionOwner.isOwned(by:)` decides, and its `.nobody` arm is load-bearing rather than
     /// incidental: an assertion with no recorded author is **nobody's**, so it is nobody's to
     /// overwrite either. Every claim this database held before AppSchema v14 is in exactly that
-    /// state — `community_trees` has never had an author column — and the migration declines to
-    /// guess one. Those claims are corrected through the review route, like a stranger's.
+    /// state — `community_trees` had no author column then, and the adder column v23 added is the
+    /// tree's, not the claim's — and the migration declines to guess one. Those claims are
+    /// corrected through the review route, like a stranger's.
     public func isSupersedable(by attribution: Attribution) -> Bool {
         owner.isOwned(by: attribution)
     }

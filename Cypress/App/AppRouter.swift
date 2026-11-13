@@ -30,6 +30,12 @@ enum Route: Hashable {
     /// the text action screen 03 draws where the community flag actions sit (`TreeProfileView
     /// .recordDefect`), and only for a city row this viewer may dispute (`DataDisputeOffer.raisable`).
     case dataDispute(UUID)
+    /// Moving the pin of a community tree the reader added. **No mocked screen**: the owner approved
+    /// a minimal control on 2026-11-12 as an exception to constraint 21 (`MovePinPresentation`). Its
+    /// one entrance is the profile's `Move pin` action, drawn only when `TreeProfile.canMovePin`.
+    /// Carries the tree's position for `pinSet`'s reason: the screen opens on the spot the profile
+    /// just read, and a second read could open somewhere else.
+    case movePin(UUID, Coordinate)
     case almanac                // 12
     case activity(UUID)         // 13
     /// 19. Separate from `treeProfile` rather than a variant of it: 14 is a *cold* profile, whose

@@ -353,7 +353,10 @@
 # there: no one machine has measured all four shards in one sitting, so a rebalance would be
 # arithmetic on numbers from different devices. That re-measure is owed (ROADMAP).
 
+# `MovePinUITests` (community trees C1, the owner's Move pin control of 2026-11-12): two tests, each
+# one launch. PLACED ON SHARD 2 by line count, for the reason the entry above gives.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests
-MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests
+MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests MovePinUITests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests DataDisputeUITests

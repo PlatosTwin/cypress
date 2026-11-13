@@ -88,6 +88,9 @@ public enum OutboxPayload: Sendable, Hashable {
     /// A dispute its author took back (`withdrawDataDispute`).
     case dataDisputeWithdrawal(DataDisputeWithdrawal)
 
+    /// The adder moving a community tree's pin (`correctLocation`, `AppSchema` v23).
+    case locationCorrection(TreeLocationCorrection)
+
     public var kind: OutboxItem.Kind {
         switch self {
         case .visit: return .visit
@@ -109,6 +112,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case .measurementWithdrawal: return .measurementWithdrawal
         case .dataDispute: return .dataDispute
         case .dataDisputeWithdrawal: return .dataDisputeWithdrawal
+        case .locationCorrection: return .locationCorrection
         }
     }
 
@@ -132,7 +136,10 @@ public enum OutboxPayload: Sendable, Hashable {
              // mutation, so both are born `local_applied = 1` and re-applying one would be a second
              // dispute against a record that already carries one, or a second retraction of a
              // dispute already withdrawn.
-             .dataDispute, .dataDisputeWithdrawal:
+             .dataDispute, .dataDisputeWithdrawal,
+             // Written by `correctLocation` inside the transaction that appended the chain's new
+             // head; re-applying it would be a second move.
+             .locationCorrection:
             return true
         }
     }
@@ -161,6 +168,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .measurementWithdrawal(value): return value.clientUUID
         case let .dataDispute(value): return value.clientUUID
         case let .dataDisputeWithdrawal(value): return value.clientUUID
+        case let .locationCorrection(value): return value.clientUUID
         }
     }
 
@@ -193,6 +201,9 @@ public enum OutboxPayload: Sendable, Hashable {
         // materializing has no dispute row to join against.
         case let .dataDispute(value): return value.treeID
         case let .dataDisputeWithdrawal(value): return value.treeID
+        // The tree moved, never the correction's own `id`: `POST /sync` requires the two to
+        // differ, and names the tree on every item.
+        case let .locationCorrection(value): return value.treeID
         }
     }
 
@@ -232,6 +243,7 @@ public enum OutboxPayload: Sendable, Hashable {
         // withdrawal's is never the raise's, which is the fact a queue row has to be able to say.
         case let .dataDispute(value): return value.occurredAt
         case let .dataDisputeWithdrawal(value): return value.occurredAt
+        case let .locationCorrection(value): return value.occurredAt
         }
     }
 
@@ -266,6 +278,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .measurementWithdrawal(value): return value.attribution.userID
         case let .dataDispute(value): return value.attribution.userID
         case let .dataDisputeWithdrawal(value): return value.attribution.userID
+        case let .locationCorrection(value): return value.attribution.userID
         }
     }
 
@@ -300,6 +313,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .measurementWithdrawal(value): return value.attribution.deviceID
         case let .dataDispute(value): return value.attribution.deviceID
         case let .dataDisputeWithdrawal(value): return value.attribution.deviceID
+        case let .locationCorrection(value): return value.attribution.deviceID
         }
     }
 
@@ -352,6 +366,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .measurementWithdrawal(value): return try encoder.encode(value)
         case let .dataDispute(value): return try encoder.encode(value)
         case let .dataDisputeWithdrawal(value): return try encoder.encode(value)
+        case let .locationCorrection(value): return try encoder.encode(value)
         }
     }
 
@@ -387,6 +402,8 @@ public enum OutboxPayload: Sendable, Hashable {
             return .dataDispute(try decoder.decode(DataDisputeReport.self, from: data))
         case .dataDisputeWithdrawal:
             return .dataDisputeWithdrawal(try decoder.decode(DataDisputeWithdrawal.self, from: data))
+        case .locationCorrection:
+            return .locationCorrection(try decoder.decode(TreeLocationCorrection.self, from: data))
         }
     }
 

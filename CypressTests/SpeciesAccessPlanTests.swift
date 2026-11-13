@@ -192,9 +192,13 @@ struct SpeciesAccessPlanTests {
     /// SQLite's own, BINARY, with no `CREATE INDEX` text to recollate. v20 puts a NOCASE index
     /// beside it rather than rebuilding the table.
     ///
-    /// **Six, and the count is asserted.** These are three writes and three reads; a seventh
-    /// statement appearing means a new `community_trees` path nobody planned, and a sixth going
+    /// **Seven, and the count is asserted.** These are four writes and three reads; an eighth
+    /// statement appearing means a new `community_trees` path nobody planned, and a seventh going
     /// missing means a reader stopped being exercised and its plan stopped being gated.
+    ///
+    /// `AppSchema` v23 changed the roster: `move` and `adder` joined (the pin move and the question
+    /// it asks first), and `trees(ids:)` left for `CommunityLayer`, whose statements are gated in
+    /// `theCommunityLayerSeeks` below because they read two tables.
     @Test("every community-tree statement that names an id seeks the id index")
     func theCommunityRowsSeek() async throws {
         let store = try await Self.store()
@@ -209,16 +213,23 @@ struct SpeciesAccessPlanTests {
                     treeID: tree, speciesID: species, at: Self.moment, connection: connection
                 )
                 _ = try community.withdraw(treeID: tree, at: Self.moment, connection: connection)
+                _ = try community.move(
+                    treeID: tree,
+                    to: Coordinate(latitude: 37.7694, longitude: -122.4862),
+                    placement: .contributorPlaced,
+                    at: Self.moment,
+                    connection: connection
+                )
                 _ = try community.tree(id: tree, connection: connection)
-                _ = try community.trees(ids: [tree], connection: connection)
+                _ = try community.adder(treeID: tree, connection: connection)
                 _ = try community.exists(id: tree, connection: connection)
             }
         }
         try #require(
-            statements.count == 6,
+            statements.count == 7,
             """
-            expected the six id-predicated community statements, got \(statements.count). A \
-            seventh is a path nobody planned; a fifth means a reader stopped being exercised and \
+            expected the seven id-predicated community statements, got \(statements.count). An \
+            eighth is a path nobody planned; a sixth means a reader stopped being exercised and \
             its plan stopped being gated: \(statements)
             """
         )
@@ -228,6 +239,46 @@ struct SpeciesAccessPlanTests {
             table: "community_trees",
             was: "SCAN community_trees",
             gain: "a walk of every community row the contributor has added, per lookup"
+        )
+    }
+
+    /// **The merged community reads seek both tables' id indexes** (`AppSchema` v23).
+    ///
+    /// `CommunityLayer.rowSQL` and `treesSQL` read `community_trees` and then the cache rows whose
+    /// id `community_trees` does not hold. Both arms and the exclusion are id-predicated, so each
+    /// has an index to reach: `idx_community_trees_id` for the added arm and for the `NOT EXISTS`
+    /// (its `COLLATE NOCASE` is what lets a lowercase cached id find an uppercase added one), and
+    /// the cache's own primary key, declared `COLLATE NOCASE` so SQLite's autoindex is NOCASE too.
+    /// A plan that walks either table per lookup is a profile open that grows with the layer.
+    @Test("the merged community reads seek both tables' id indexes")
+    func theCommunityLayerSeeks() async throws {
+        let store = try await Self.store()
+        let tree = UUID()
+        let statements = try await Self.captured(store) { store in
+            try await store.queue.read { connection in
+                let layer = CommunityLayer()
+                _ = try layer.row(id: tree, connection: connection)
+                _ = try layer.trees(ids: [tree], connection: connection)
+            }
+        }
+        try #require(
+            statements.count == 2,
+            "expected the two id-predicated layer statements, got \(statements.count): \(statements)"
+        )
+        let planned = try await Self.plans(statements, store)
+        Self.expectSeeks(
+            planned,
+            index: "idx_community_trees_id",
+            table: "community_trees",
+            was: "SCAN community_trees",
+            gain: "a walk of every community row the contributor has added, per lookup"
+        )
+        Self.expectSeeks(
+            planned,
+            index: "sqlite_autoindex_community_tree_cache_1",
+            table: "k",
+            was: "SCAN k",
+            gain: "a walk of every cached tree, per lookup"
         )
     }
 

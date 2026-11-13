@@ -683,7 +683,15 @@ a service that refuses it. That deploy happened on 2026-09-29: `cypress-sync` bo
 (#190 merged) at server schema 7. Still check its release before C1 merges, because a later revert
 or redeploy would change that (chip 12: merging server work changes nothing in production).
 
-- **C1 — the core (`feat/community-trees-core`). Open, and next.** The one client migration author
+- ~~**C1 — the core (`feat/community-trees-core`). Built; in review once its PR opens.**~~ **DONE in
+  `feat/community-trees-c1`** (the PR titled "Community trees C1: location chain, adder backfill, and
+  Move pin"). Two owner decisions of 2026-11-12 rode with it: v23 gives every pre-v23 tree this
+  install's own owner as its adder (not nobody), and a minimal **Move pin** control on the profile of
+  a tree the reader added, with no distance bound because the service has none
+  (`docs/rulings-pending/community-trees-adder-backfill.md`, `community-trees-move-pin.md`). **F37
+  ("Put the pin in the wrong place") is answered for trees the reader added.** What follows is the
+  round's original scope, kept for the record. Migration v23
+  is C1's. The one client migration author
   of the round: the writable database's next migration (the design proposal names v23; read
   `AppSchema.migrations`, not this line). It carries the new stores and the merge helper; a
   location-correction verb with its outbox kind and `accountDeletionTreatment`; `addTree` writing
@@ -695,7 +703,10 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   it, so their photographs keep today's behavior). It **neutralizes `RemoteAPI.addTree`**, which
   would key the tree on `client_uuid`. And it **rewrites the comments R45 made false** — "no
   author" and "nothing syncs anyone else's rows down" — re-verifying them rather than trusting this
-  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it.
+  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it. **Left for the
+  rounds after it, and stated rather than implied:** the `tree_withdrawal` verb (the queue's CHECK
+  already admits the kind), a location-correction offer on the profile (C3), and the cache's
+  fetching (C2; the store and its schema are in C1, unwired).
 - **C2 — sync down (`feat/community-trees-sync-down`). Open; no migration; merges after C1.**
   `RemoteAPI` decoders and tile-delta accessors; `GoldenWireFixtureTests` over the new wire files;
   the `RoutedAPI` merge (history, `added_by_you`, adopting the adder from the service); the
@@ -1690,14 +1701,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ERRATA entries carry the same sentence (`docs/ERRATA.md`, lines 20095 and 20525 at that
     commit). A confident comment is where bugs live here, so re-verify each against the code before
     rewriting it. (From #182.)
-70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **Duplicate of 79**, which #186
+70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **DONE in community-trees C1
+    (with 79).** **Duplicate of 79**, which #186
     wrote with the measurement; track it there. The table carries `user_id`, and
     `Cypress/Data/Store/AccountDeletion.swift` never names it, so an owned row survives leaving and
     erasing alike and still points at the deleted account. Fix it on R3's contribution pattern
     (leaving anonymizes, erasing deletes), and decide the tombstone question, since these rows have
     no `client_uuid`. **Fold it into community trees C1**, which touches the table anyway. (From the
     community-trees design and #186.)
-71. **`ContributionStore.claimDevice` is another hand-kept table list.** It adopts `visits`,
+71. **`ContributionStore.claimDevice` is another hand-kept table list.** *(Community-trees C1 added
+    `community_trees`, `tree_locations` and `species_assertions` to the adoption, which closes this
+    item's `species_assertions` half; the guard it asks for is still open.)* It adopts `visits`,
     `observations`, `measurements`, `care_events`, reminders, photographs, favorites, and photo
     votes, and nothing else. `species_assertions` carries a `device_id`, so a species claim made
     before sign-in is never adopted into the account, and nothing guards the list. (`tree_data_disputes`
@@ -1763,7 +1777,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     #198 (`fix/dispute-fix-clock`): (a) tested, (b) fixed and tested, (c) ruled by the owner
     2026-09-29 ("Start at the grant") and built; the ruling is pending a number. #198's reviews
     left the phone checks in item 82.
-79. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+79. ~~**Neither account-deletion door reaches `species_assertions`.**~~ **FIXED in community-trees C1**
+    (the leaving door anonymizes, the erasing door deletes and splices each chain shut, and
+    `claimDevice` now adopts the table, which also closes chip 71's `species_assertions` half). The
+    original entry follows as the record. OPEN (when written). `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
     `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
     `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
@@ -1907,7 +1924,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
 97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
     (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
-    D.C. Whoever merges either branch renumbers its chips past the highest on main.
+    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106.
 98. **DONE by #208: the queue now decides with an `NWPathMonitor` source, and waiting photos upload when wi-fi returns.** ~~**P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).**~~ A tester saw
     photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
     `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
@@ -1934,8 +1951,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     relative paths in `addTree` (after C1 merges, since C1 edits those lines).
 101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
     Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
-102. **F37 (2026-10-31) is a second report of F31(a), moving a pin.** C1 and C3 cover it; it adds
-    weight to C1, not a new item.
+102. ~~**F37 (2026-10-31) is a second report of F31(a), moving a pin.**~~ **Answered by C1's Move pin
+    control for trees the reader added** (owner decision 2026-11-12). C3 still owns the rest of F31.
 103. **`PhotoDeletionReachabilityTests.testTheHeroPhotographReachesADeleteThatWorks` failed once on
     main** (run 43327553492, ui shard 4, #203's merge, 2026-11-12): "the delete is in the viewer's
     tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
@@ -1954,6 +1971,52 @@ into this section in the round that finds it, and nowhere else. Each item stands
       on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
       reachable before tapping it, and on failure it reports whether a second tap works, which
       separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
+
+104. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
+    community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
+    doors, `leaveRecords` included. Publication is the service's fact (decisions 7 and 10: it turns
+    on the license the account held when the tree went live), and C1's phone does not hold it, so
+    `AccountDeletion.forgetCommunityTrees` anonymizes every tree the account added under
+    `leaveRecords` and the service deletes the ones that were never public. The phone then keeps a
+    pin the service has dropped. **Close it in C2**: the tile's withdrawn-ids list is what drops the
+    stale row from `community_tree_cache`, but the stale row is in `community_trees` (the authored
+    table), so C2 has to decide how a phone learns an authored tree was deleted for it — most
+    likely by reading the service's answer to the account's own trees at sign-out or on the next
+    tile — and then delete the local row and its chain. Until then the gap is visible only to the
+    deleted account's own phone.
+105. **C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
+    community-trees C1. Decision 6 keeps a tree the erasing account added if another identity has
+    built on it; the service decides that from all the rows it holds, and
+    `AccountDeletion.forgetCommunityTrees` decides it from this phone's `visits`, `observations`,
+    `measurements`, `care_events` and `photos` with `deleted_at IS NULL` (`builtOnTables`). Two
+    edges differ. (a) Somebody else's contribution to the tree that never reached this phone
+    does not count locally, so the phone can delete a tree the service keeps, anonymized; the
+    next sync-down would bring it back as somebody else's tree. (b) A row by this same
+    installation but not yet claimed (device-owned) counts locally as "somebody else"; the service
+    reads it as the account's after the claim. C2 should make the service's answer the one the
+    phone acts on, or at least reconcile the two after the deletion lands.
+106. **Owner question: deletion copy for the new erasing-door behavior (decision 6).** From
+    community-trees C1. The erasing door now deletes a tree the account added unless somebody else
+    has built on it, and the owner's decision 6 says "deletion copy must say so".
+    `AccountDeletionCopy` says nothing about trees the account added: it names visits, check-ins,
+    measurements, care notes, photo votes, tree names and photographs. Copy is the owner's under
+    constraint 21, and C1 has no UI, so none was written. Needs the sentence for both doors (the
+    leaving door keeps the tree and takes the name off; the erasing door deletes it or, where
+    somebody else has built on it, keeps it anonymized), and the confirmation screen's count line
+    if it should report trees.
+
+107. **Move pin is offered on trees the service never received (R77), and on trees whose adder the
+    backfill guessed.** From #209's review (F1) and the owner's ruling of 2026-11-13. A tree added
+    before the sync path existed was never queued, so v23 gives it this installation's current owner
+    and the profile offers Move pin; the service has no such tree and answers the move with a
+    terminal `not_found`, a permanent red row on screen 17. The same happens where the `add_tree` row
+    was pruned (24 h after `done`) and the current owner is not the one the add was made as
+    (`forbidden`). **A cheap rule, proposed and not built:** offer Move pin only when the tree's
+    `add_tree` row is still in the outbox, or the tree's `created_at` is on or after the first build
+    that queued adds (#s34, merged 2026-08-21; read the `build-N` tag for the exact date). That hides
+    every R77 tree and keeps every tree the service has. It does not fix a pruned row with a wrong
+    guess; C2's `added_by_you` from `GET /trees/{id}` is the real answer, and should replace the local
+    adder test once it lands. Owner call: build the cheap rule in C2, or wait for `added_by_you`.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
