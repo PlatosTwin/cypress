@@ -222,15 +222,15 @@ struct OutboxWifiOnlyTests {
 
     // MARK: - 3c3. A withdrawn photograph changes the count (review, second pass)
 
-    /// Two photographs applied here and held for wi-fi before they were sent; one is then withdrawn.
-    /// The stored sentence still says "2 photos" while the row owes 1.
+    /// Two photographs applied here and held for wi-fi before they were sent; one binary row then
+    /// goes. The stored sentence still says "2 photos" while the row owes 1.
     ///
     /// **Why this fails with the defect present:** the reason was recognized only by an exact match
     /// against the count the row owes now. "2 photos are waiting" no longer matched 1, so screen
-    /// 17's waiting count was 0, `hasPhotosAwaitingWifi()` was false (the watcher skipped the row),
-    /// and the held time was not forgiven, so the row expired at 49 h.
+    /// 17's waiting count was 0 and `hasPhotosAwaitingWifi()` was false: the watcher skipped the row.
+    /// (The 48 h side of a withdrawal is `withdrawalLateInHoldKeepsTheCredit`, below.)
     @Test("a held row whose owed count drops is still recognized as waiting for wi-fi")
-    func withdrawnPhotoKeepsTheHold() async throws {
+    func heldCountDropStillRecognized() async throws {
         let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
         let rig = try await Self.rig(unmetered: true, wifiOnly: true, send: send)
         var draft = CareLogDraft(actions: [.watered])
@@ -266,11 +266,73 @@ struct OutboxWifiOnlyTests {
         #expect(snapshot.awaitingWifiCount == 1, "a held row with a stale count dropped off screen 17")
         #expect(snapshot.awaitingWifiPhotoCount == 1)
         #expect(try await rig.queue.hasPhotosAwaitingWifi(), "the watcher would skip this row")
+    }
+
+    // MARK: - 3c4. A withdrawal late in a hold keeps the hold's credit (review, third pass)
+
+    /// Held at t0 with two photographs; one is withdrawn at t0+49 h through `discardPhoto`, which is
+    /// what `LocalAPI.deletePhoto` calls; then wi-fi returns and the remaining binary fails once.
+    ///
+    /// **Why this fails with the defect present:** `discardPhoto` touches the row, which set
+    /// `updated_at` to t0+49 h while the reason still said it was held. `updated_at` is the only
+    /// record of when the hold began, so the wi-fi drain credited 0 s of hold, measured 49 h from
+    /// the save, and expired the row as "Tried for 48 hours" before trying anything.
+    @Test("withdrawing a photo late in a wi-fi hold does not erase the hold")
+    func withdrawalLateInHoldKeepsTheCredit() async throws {
+        let rig = try await Self.rig(unmetered: false, wifiOnly: true)
+        let withdrawn = "/tmp/cypress-f35-\(UUID().uuidString).jpg"
+        var draft = CareLogDraft(actions: [.watered])
+        draft.photos = [
+            OutboxPhoto(path: withdrawn, shotType: .leaf),
+            OutboxPhoto(path: "/tmp/cypress-f35-\(UUID().uuidString).jpg", shotType: .trunk)
+        ]
+        let receipt = try await CareLogOutboxWriter.save(         // held at t0
+            draft, treeID: UUID(), attribution: OutboxTestSupport.attribution,
+            outbox: rig.queue, now: rig.clock.now
+        )
 
         rig.clock.advance(by: 49 * 60 * 60)
-        _ = try await rig.queue.drain()                          // still on cellular
+        let now = rig.clock.now
+        let discarded = try await rig.store.queue.write { connection in
+            try OutboxStore().discardPhoto(id: UUID(), stagedPath: withdrawn, at: now, connection: connection)
+        }
+        #expect(discarded == 1, "set-up: the withdrawal did not reach the held row")
+
+        rig.path.set(unmetered: true)
+        await rig.transport.setScript(.photosFail)
+        _ = try await rig.queue.drain()                           // wi-fi: the binary fails once
+
         let record = try await Self.record(rig, id: receipt.item.id)
-        #expect(record.item.state == .pending, "the held row expired: \(record.item.lastError ?? "nil")")
+        #expect(
+            record.item.state == .pending,
+            "a withdrawal two days into a hold expired the row: \(record.item.lastError ?? "nil")"
+        )
+        #expect(record.item.failCount == 1, "the row was settled before its binary was even tried")
+    }
+
+    // MARK: - 3c5. Held rows cannot starve a new note (review, third pass)
+
+    /// Thirty saves with photographs on cellular, all held, then a note with no photograph.
+    ///
+    /// **Why this fails with the defect present:** a held row has `next_attempt_at = NULL`, so it is
+    /// always due, and a batch is the oldest 25 due rows. Every cellular pass took the same 25 held
+    /// rows, held them again, and never reached anything newer, so the new note never synced. That
+    /// breaks "notes and numbers sync on any connection".
+    @Test("thirty held rows on cellular do not stop a new note from syncing")
+    func heldRowsDoNotStarveANewNote() async throws {
+        let rig = try await Self.rig(unmetered: false, wifiOnly: true)
+        for _ in 0..<30 { _ = try await Self.saveCareWithPhoto(rig) }
+        let held = try await rig.queue.snapshot(syncPhotosOnWifiOnly: true).awaitingWifiCount
+        #expect(held == 30, "set-up: \(held) of 30 rows were held")
+
+        let note = try await CareLogOutboxWriter.save(            // one drain, on cellular
+            CareLogDraft(actions: [.watered]), treeID: UUID(),
+            attribution: OutboxTestSupport.attribution, outbox: rig.queue, now: rig.clock.now
+        )
+
+        let record = try await Self.record(rig, id: note.item.id)
+        #expect(record.item.state == .done, "a new note sat behind \(held) held rows on cellular")
+        #expect(await rig.transport.applied.contains(note.item.clientUUID))
     }
 
     // MARK: - 3d. A photograph applied here and waiting to be sent (review S1)

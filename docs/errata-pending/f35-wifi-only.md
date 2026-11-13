@@ -48,6 +48,15 @@ window at each hold both missed a row never re-held and forgave failing time.)
 - The hold's sentence was recognized by matching its exact photo count. A withdrawn photograph
   lowers the count a row owes, and every check then missed the row. It is now recognized by kind
   (`OutboxFailureReason.isAwaitingWifi`).
+- `updated_at` is the only record of when a hold began, and writes outside the drain bump it: a
+  withdrawn photograph (`discardPhoto`, `removePhoto`), a settled binary, an anonymized account.
+  A withdrawal two days into a hold made the hold look new, and the next drain expired the row
+  without its having tried. Each of those writes now banks the held time first
+  (`OutboxStore.creditHold`), with the same formula the drain uses.
+- A held row is always due, and a batch is the oldest 25 due rows. With 25 rows held on cellular,
+  every pass took the same 25 and a newer note never synced, which broke "notes and numbers sync on
+  any connection". A pass that may not send photographs now leaves held rows out of its batch:
+  their notes are already applied and sent, so there is nothing to do for them on that pass.
 
 **Why no test saw it.** Every test of the deferral called `drain(photoUploadsAllowed: false)`
 itself, so each one proved the queue could hold a photograph back and none asked whether anything

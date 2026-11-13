@@ -347,10 +347,14 @@ public actor OutboxQueue {
         store: OutboxStore,
         connection: SQLiteConnection
     ) throws -> OutboxStore.Record {
-        guard OutboxFailureReason.isAwaitingWifi(record.item.lastError) else { return record }
-        let held = max(0, startedAt.timeIntervalSince(record.item.updatedAt))
-        guard held > 0 else { return record }
-        let window = record.windowStartedAt.addingTimeInterval(held)
+        // The same formula every other write uses (`OutboxStore.creditHold`).
+        let window = OutboxStore.window(
+            record.windowStartedAt,
+            leavingOutHoldSince: record.item.updatedAt,
+            lastError: record.item.lastError,
+            now: startedAt
+        )
+        guard window != record.windowStartedAt else { return record }
         try store.setWindowStart(record.id, to: window, connection: connection)
         return record.withWindowStarted(at: window)
     }
@@ -365,7 +369,14 @@ public actor OutboxQueue {
         // what keeps "nothing disappears silently" true across a crash.
         let due: [OutboxStore.Record] = try await queue.write { connection in
             _ = try store.recoverInterrupted(at: startedAt, connection: connection)
-            let records = try store.dueItems(now: startedAt, limit: Self.batchSize, connection: connection)
+            // On a pass that may not send photographs, rows held for wi-fi have nothing to do, and
+            // taking them would let them fill the batch ahead of newer notes (`dueItems`).
+            let records = try store.dueItems(
+                now: startedAt,
+                limit: Self.batchSize,
+                excludingHeldForWifi: !photoUploadsAllowed,
+                connection: connection
+            )
                 .map { try Self.leavingOutWifiHold($0, at: startedAt, store: store, connection: connection) }
             try store.markUploading(records.map(\.id), at: startedAt, connection: connection)
             return records

@@ -214,6 +214,9 @@ public struct OutboxStore {
     /// Bumps an item's `updated_at` without changing anything else, for the changes that now happen
     /// in `outbox_photos` and would otherwise leave the item looking untouched on screen 17.
     private func touch(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        // `updated_at` is when a wi-fi hold began; bumping it without banking the held time
+        // would erase it (F35 review). See `creditHold`.
+        try creditHold(id, at: date, connection: connection)
         let statement = try connection.cachedStatement(
             "UPDATE outbox SET updated_at = :now WHERE id = :id"
         )
@@ -409,6 +412,48 @@ public struct OutboxStore {
         _ = try statement.reset()
     }
 
+    /// Where a row's 48 h window moves to once the time it has spent held for wi-fi is left out.
+    ///
+    /// **The one formula, for the drain and for every other write.** A row's reason says it is
+    /// held (`OutboxFailureReason.isAwaitingWifi`), and its `updated_at` says since when, because
+    /// the hold's `reschedule` stamped it. The window moves forward by `now - updated_at`. Anything
+    /// else returns the window unchanged.
+    public static func window(
+        _ window: Date,
+        leavingOutHoldSince updatedAt: Date,
+        lastError: String?,
+        now: Date
+    ) -> Date {
+        guard OutboxFailureReason.isAwaitingWifi(lastError) else { return window }
+        return window.addingTimeInterval(max(0, now.timeIntervalSince(updatedAt)))
+    }
+
+    /// Banks the held time of a **pending** row before a write outside the drain moves its
+    /// `updated_at`.
+    ///
+    /// `updated_at` is the only record of when a wi-fi hold began, and several writes bump it for
+    /// their own reasons: a photograph withdrawn (`discardPhoto`, `removePhoto`), a binary settled,
+    /// an account anonymized. Without this, withdrawing one of two held photographs two days into a
+    /// hold made the hold look one second old, and the next drain expired the row as "Tried for 48
+    /// hours" without its having tried at all (F35 review).
+    ///
+    /// Pending rows only: a row in a drain is `uploading`, and the drain has already banked its
+    /// hold at the start of the pass (`OutboxQueue.leavingOutWifiHold`).
+    func creditHold(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        let read = try connection.cachedStatement(
+            "SELECT last_error, updated_at, window_started_at FROM outbox WHERE id = :id AND state = 'pending'"
+        )
+        _ = try read.bind(id, forName: ":id")
+        let row = try read.fetchOne { row in
+            (try row.stringIfPresent("last_error"), try row.date("updated_at"), try row.date("window_started_at"))
+        }
+        _ = try read.reset()
+        guard let row else { return }
+        let moved = Self.window(row.2, leavingOutHoldSince: row.1, lastError: row.0, now: date)
+        guard moved != row.2 else { return }
+        try setWindowStart(id, to: moved, connection: connection)
+    }
+
     /// Moves a row's 48 h window. `OutboxQueue.drain` uses it to leave out the time a row spent
     /// held for wi-fi (F35): the cap measures time spent trying, and a hold is not trying.
     public func setWindowStart(_ id: UUID, to window: Date, connection: SQLiteConnection) throws {
@@ -480,15 +525,41 @@ public struct OutboxStore {
     /// item behind it for up to an hour, which loses nothing but delays everything; contributions
     /// are independent and the server dedupes on `client_uuid`, so ordering only has to be stable,
     /// not total. `ORDER BY seq` gives that.
-    public func dueItems(now: Date, limit: Int, connection: SQLiteConnection) throws -> [Record] {
-        let statement = try connection.cachedStatement("""
-            SELECT * FROM outbox
-             WHERE state = 'pending'
-               AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
-             ORDER BY seq
-             LIMIT :limit
-            """)
-        _ = try statement.bind([":now": now, ":limit": limit])
+    ///
+    /// - Parameter excludingHeldForWifi: leave out rows held for wi-fi. The drain passes `true`
+    ///   when photographs may not go. A held row's note is already applied, and sent when a sink is
+    ///   wired (a failure on the note writes a different reason), so such a pass has nothing to do
+    ///   for it. Taking it anyway let 25 held rows fill every batch on cellular, and a newer note
+    ///   behind them never synced: "notes and numbers sync on any connection" broke (F35 review).
+    public func dueItems(
+        now: Date,
+        limit: Int,
+        excludingHeldForWifi: Bool = false,
+        connection: SQLiteConnection
+    ) throws -> [Record] {
+        let statement: SQLiteStatement
+        if excludingHeldForWifi {
+            statement = try connection.cachedStatement("""
+                SELECT * FROM outbox
+                 WHERE state = 'pending'
+                   AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+                   AND (last_error IS NULL OR last_error NOT LIKE :held)
+                 ORDER BY seq
+                 LIMIT :limit
+                """)
+            _ = try statement.bind([
+                ":now": now, ":limit": limit, ":held": OutboxFailureReason.awaitingWifiLikePattern
+            ])
+        } else {
+            statement = try connection.cachedStatement("""
+                SELECT * FROM outbox
+                 WHERE state = 'pending'
+                   AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+                 ORDER BY seq
+                 LIMIT :limit
+                """)
+            _ = try statement.bind([":now": now, ":limit": limit])
+        }
         return try attachStagedPhotos(to: statement.fetchAll(Self.decode), connection: connection)
     }
 
@@ -815,6 +886,13 @@ public struct OutboxStore {
     /// resolves the owner itself only while the row still exists; callers that already deleted the
     /// row pass the item id to `touch` instead.
     private func touchItem(forPhoto id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        let owner = try connection.cachedStatement(
+            "SELECT outbox_id FROM outbox_photos WHERE id = :id"
+        )
+        _ = try owner.bind(id, forName: ":id")
+        let ownerID = try owner.fetchOne { try $0.uuid("outbox_id") }
+        _ = try owner.reset()
+        if let ownerID { try creditHold(ownerID, at: date, connection: connection) }
         let statement = try connection.cachedStatement(
             "UPDATE outbox SET updated_at = :now WHERE id = (SELECT outbox_id FROM outbox_photos WHERE id = :id)"
         )
@@ -1041,6 +1119,15 @@ public struct OutboxStore {
             // Both keys, in one statement, because a row has one of them and `json_remove` is a
             // no-op on a path that is not there. Naming only the one a kind "should" have would put
             // the mapping from kind to payload shape in a second place, and the two would drift.
+            // The rows about to have `updated_at` bumped bank any wi-fi hold first (`creditHold`).
+            let held = try connection.cachedStatement(
+                "SELECT id FROM outbox WHERE \(contributions) AND \(mine)"
+            )
+            _ = try held.bind([":user": userID.uuidString])
+            let heldIDs = try held.fetchAll { try $0.uuid("id") }
+            _ = try held.reset()
+            for id in heldIDs { try creditHold(id, at: date, connection: connection) }
+
             let anonymize = try connection.cachedStatement("""
                 UPDATE outbox
                    SET payload = json_remove(json_remove(payload, '$.userID'), '$.attribution.userID'),

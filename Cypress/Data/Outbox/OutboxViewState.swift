@@ -124,8 +124,17 @@ public enum OutboxFailureReason {
     /// miscounted it, and its held time stopped being exempt from the 48 h cap (F35 review).
     public static func isAwaitingWifi(_ reason: String?) -> Bool {
         guard let reason else { return false }
-        return reason.hasPrefix("The note is saved. ") && reason.hasSuffix(" waiting for wi-fi.")
+        return reason.hasPrefix(awaitingWifiPrefix) && reason.hasSuffix(awaitingWifiSuffix)
     }
+
+    /// The fixed parts of both `awaitingWifi` sentences. The `photoCount == 1` and plural forms
+    /// share them, which is what lets the reason be recognized by kind.
+    static let awaitingWifiPrefix = "The note is saved. "
+    static let awaitingWifiSuffix = " waiting for wi-fi."
+
+    /// `isAwaitingWifi` as an SQL `LIKE` pattern, for `OutboxStore.dueItems`. Neither fixed part
+    /// contains `%` or `_`, so nothing in them needs escaping.
+    static var awaitingWifiLikePattern: String { awaitingWifiPrefix + "%" + awaitingWifiSuffix }
 
     /// Narrows any thrown error to the §6 taxonomy, or `nil` when it did not come from the API at
     /// all (a dropped connection, a file that vanished).
