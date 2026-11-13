@@ -151,6 +151,9 @@ public actor OutboxQueue {
     private let networkPath: (any NetworkPathSource)?
     private var observers: [UUID: @Sendable () async -> Void] = [:]
     private var isDraining = false
+    /// Set when a drain is asked for while one is running; the running drain passes again before
+    /// it returns. See `drain(photoUploadsAllowed:)`.
+    private var drainRequested = false
 
     /// One row's progress through a single drain.
     ///
@@ -297,12 +300,32 @@ public actor OutboxQueue {
     /// took it, and photographs went over cellular with the toggle on. Tests that pin one side of
     /// the decision call this; shipping code calls `drain()`, and `OutboxWifiOnlyTests` fails if a
     /// source file under `Cypress/` passes a literal here.
+    ///
+    /// **A drain asked for while one is running is not dropped (F35 review, S2).** It returns an
+    /// empty report at once, as it always has, and the running drain makes one more pass before it
+    /// returns, deciding about photographs afresh. Without that, wi-fi returning in the middle of a
+    /// drain was lost: the watcher's drain returned empty, and the running pass had already decided
+    /// to hold the photograph.
     @discardableResult
     public func drain(photoUploadsAllowed: Bool) async throws -> DrainReport {
-        guard !isDraining else { return DrainReport() }
+        guard !isDraining else {
+            drainRequested = true
+            return DrainReport()
+        }
         isDraining = true
         defer { isDraining = false }
 
+        let report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+        while drainRequested {
+            drainRequested = false
+            _ = try await drainPass(photoUploadsAllowed: await photoUploadsAllowedNow())
+        }
+        return report
+    }
+
+    /// One pass over the due items. Only `drain(photoUploadsAllowed:)` calls it, under
+    /// `isDraining`.
+    private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {
         var report = DrainReport()
         let startedAt = now()
 
@@ -328,7 +351,7 @@ public actor OutboxQueue {
             // through". Recognized by its reason, as `OutboxPresentation` recognizes it. Any real
             // failure later overwrites that reason, and the 48 h cap applies again.
             let heldForWifi = record.item.lastError
-                == OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count)
+                == OutboxFailureReason.awaitingWifi(photoCount: record.owedPhotoCount)
             if !heldForWifi, OutboxRetryPolicy.hasExpired(createdAt: record.windowStartedAt, now: startedAt) {
                 try await settle(
                     record,
@@ -643,10 +666,19 @@ public actor OutboxQueue {
             // what is waiting is the photograph.
             if entry.photosAwaitingWifi {
                 try await queue.write { connection in
+                    // The count is every binary still owed, staged or applied and unsent: a
+                    // photograph applied on wi-fi whose send then waited has no staged file, and
+                    // counting staged files alone wrote "0 photos are waiting" (F35 review, S1).
+                    //
+                    // `restartWindow`: the 48 h cap counts from the last hold, not from the save.
+                    // The hold is the volunteer's own choice, and without the restart a photograph
+                    // held for two days failed for good on its first transient failure after
+                    // wi-fi returned (F35 review, B1).
                     try store.reschedule(
                         record.id,
-                        reason: OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count),
+                        reason: OutboxFailureReason.awaitingWifi(photoCount: record.owedPhotoCount),
                         at: settledAt,
+                        restartWindow: true,
                         connection: connection
                     )
                 }

@@ -288,7 +288,9 @@ public struct OutboxSnapshot: Sendable, Equatable {
                 treeID: treeID,
                 treeName: treeNames[treeID],
                 payload: payload,
-                photoCount: record.item.photos.count,
+                // Every binary still owed, so a row whose photograph is applied and waiting to be
+                // sent says so too (F35 review, S1).
+                photoCount: record.owedPhotoCount,
                 createdAt: record.item.createdAt,
                 updatedAt: record.item.updatedAt,
                 nextAttemptAt: record.nextAttemptAt
@@ -310,12 +312,15 @@ public struct OutboxSnapshot: Sendable, Equatable {
         let awaitingWifi = syncPhotosOnWifiOnly
             ? records.filter {
                 $0.locallyApplied
-                    && !$0.item.photos.isEmpty
+                    // Staged binaries, or binaries applied and not yet sent. Counting staged files
+                    // alone missed a photograph applied on wi-fi whose send then waited, so the
+                    // watcher never drained it (F35 review, S1).
+                    && $0.owedPhotoCount > 0
                     && ($0.item.state == .pending || $0.item.state == .uploading)
             }
             : []
         awaitingWifiCount = awaitingWifi.count
-        awaitingWifiPhotoCount = awaitingWifi.reduce(0) { $0 + $1.item.photos.count }
+        awaitingWifiPhotoCount = awaitingWifi.reduce(0) { $0 + $1.owedPhotoCount }
         // A row that is neither waiting, failed, nor done has no state left to be in. The outbox's
         // four states are exhaustive, so this is structurally zero; it is here because the screen
         // claims it out loud.

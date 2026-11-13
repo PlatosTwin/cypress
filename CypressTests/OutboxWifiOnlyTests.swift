@@ -20,11 +20,17 @@ struct OutboxWifiOnlyTests {
         let transport: OutboxTestSupport.ScriptedTransport
         let path: OutboxTestSupport.ManualNetworkPath
         let clock: OutboxTestSupport.Clock
+        let send: OutboxTestSupport.ScriptedSendSink?
     }
 
     /// - Parameter wifiOnly: what `app_state` holds for the toggle; `nil` leaves it unset, which is
     ///   every install that never opened screen 17.
-    private static func rig(unmetered: Bool, wifiOnly: Bool?) async throws -> Rig {
+    ///   - send: a send sink, for the cases about a photograph applied here and not yet sent.
+    private static func rig(
+        unmetered: Bool,
+        wifiOnly: Bool?,
+        send: OutboxTestSupport.ScriptedSendSink? = nil
+    ) async throws -> Rig {
         let store = try await CypressStore.inMemory()
         if let wifiOnly {
             try await store.setAppState(.syncPhotosOnWifiOnly, to: wifiOnly ? "true" : "false")
@@ -33,9 +39,11 @@ struct OutboxWifiOnlyTests {
         let path = OutboxTestSupport.ManualNetworkPath(unmetered: unmetered)
         let clock = OutboxTestSupport.Clock()
         let queue = OutboxQueue(
-            queue: store.queue, apply: transport, networkPath: path, now: clock.closure
+            queue: store.queue, apply: transport, send: send, networkPath: path, now: clock.closure
         )
-        return Rig(store: store, queue: queue, transport: transport, path: path, clock: clock)
+        return Rig(
+            store: store, queue: queue, transport: transport, path: path, clock: clock, send: send
+        )
     }
 
     /// One care event with one photograph, saved the way screen 10 saves it.
@@ -144,6 +152,137 @@ struct OutboxWifiOnlyTests {
         #expect(await rig.transport.uploadedPhotos.count == 1)
     }
 
+    // MARK: - 3c. After a long hold, one transient failure is not the end (review B1)
+
+    /// The 48 h cap counts from the last hold, not from the save.
+    ///
+    /// **Why this fails with the defect present:** `reschedule` kept `window_started_at` at the
+    /// save. The exemption covers a row only while its reason is still `awaitingWifi`; the first
+    /// failure after wi-fi returns overwrites that reason, so the next drain measured the window
+    /// from the save, found 49 h, and settled the row `failed` as "Tried for 48 hours".
+    @Test("a photo held 49 h that fails once after wi-fi returns is still pending")
+    func longHoldThenTransientFailureStaysPending() async throws {
+        let rig = try await Self.rig(unmetered: false, wifiOnly: true)
+        let receipt = try await Self.saveCareWithPhoto(rig)
+
+        rig.clock.advance(by: 49 * 60 * 60)
+        _ = try await rig.queue.drain()          // still on cellular: held again
+
+        rig.path.set(unmetered: true)
+        await rig.transport.setScript(.photosFail)
+        _ = try await rig.queue.drain()          // wi-fi: the binary fails, retryably
+        rig.clock.advance(by: 60 * 60)           // past the first backoff step
+        _ = try await rig.queue.drain()          // and fails again
+
+        let record = try await Self.record(rig, id: receipt.item.id)
+        #expect(
+            record.item.state == .pending,
+            "one transient failure after a long wi-fi hold expired the row: \(record.item.lastError ?? "nil")"
+        )
+        #expect(record.item.lastError != OutboxFailureReason.expired)
+    }
+
+    // MARK: - 3d. A photograph applied here and waiting to be sent (review S1)
+
+    /// A photograph applied on wi-fi whose send failed, then held when the phone moved to cellular.
+    /// It has no staged file any more; it is an `outbox_photos` row in state `applied`.
+    ///
+    /// **Why this fails with the defect present:** the reason was built from `item.photos.count`,
+    /// the staged files, which is 0 here, so the row read "0 photos are waiting for wi-fi". The
+    /// snapshot's predicate required staged files too, so `awaitingWifiCount` was 0 and
+    /// `drainIfPhotosAwaitWifi()` returned nil: the watcher never drained it.
+    @Test("a photo applied but not yet sent counts as waiting for wi-fi, and the watcher's drain sends it")
+    func appliedUnsentPhotoCountsAsWaiting() async throws {
+        let send = OutboxTestSupport.ScriptedSendSink(script: .photosFail)
+        let rig = try await Self.rig(unmetered: true, wifiOnly: true, send: send)
+        let receipt = try await Self.saveCareWithPhoto(rig)   // applied, note sent, binary send failed
+
+        rig.path.set(unmetered: false)
+        await send.setScript(.allSucceed)
+        _ = try await rig.queue.drain()                        // cellular: the send is held
+
+        let record = try await Self.record(rig, id: receipt.item.id)
+        #expect(record.item.photos.isEmpty, "set-up: the binary should already be applied")
+        #expect(record.unsentPhotoCount == 1)
+        #expect(record.item.lastError == OutboxFailureReason.awaitingWifi(photoCount: 1))
+        let snapshot = try await rig.queue.snapshot(syncPhotosOnWifiOnly: true)
+        #expect(snapshot.awaitingWifiCount == 1)
+        #expect(snapshot.awaitingWifiPhotoCount == 1)
+
+        rig.path.set(unmetered: true)
+        let report = try await rig.queue.drainIfPhotosAwaitWifi()
+        #expect(report != nil, "wi-fi returned and the watcher's check found nothing waiting")
+        #expect(await send.sentPhotoPaths.count == 1)
+        #expect(try await Self.record(rig, id: receipt.item.id).item.state == .done)
+    }
+
+    // MARK: - 3e. Wi-fi returning during a drain (review S2)
+
+    /// **Why this fails with the defect present:** a drain asked for while another runs returned an
+    /// empty report and did nothing else. The running drain had decided "cellular" when it began,
+    /// held the photograph, and returned; nothing drained again, so the photograph waited on wi-fi.
+    @Test("a drain asked for while one is running is not lost")
+    func drainDuringDrainIsNotLost() async throws {
+        let store = try await CypressStore.inMemory()
+        try await store.setAppState(.syncPhotosOnWifiOnly, to: "true")
+        let transport = GatedTransport()
+        let path = OutboxTestSupport.ManualNetworkPath(unmetered: false)
+        let queue = OutboxQueue(queue: store.queue, apply: transport, networkPath: path)
+
+        var draft = CareLogDraft(actions: [.watered])
+        draft.photos = [OutboxPhoto(path: "/tmp/cypress-f35-\(UUID().uuidString).jpg", shotType: .leaf)]
+        let (_, item) = try await CareLogOutboxWriter.enqueue(
+            draft, treeID: UUID(), attribution: OutboxTestSupport.attribution, outbox: queue
+        )
+
+        let first = Task { try await queue.drain() }   // decides "cellular", then blocks in apply
+        await transport.waitUntilBlocked()
+        path.set(unmetered: true)
+        let second = try await queue.drain()           // overlaps: returns at once
+        #expect(second.attempted == 0, "set-up: the second drain did not overlap the first")
+        await transport.open()
+        _ = try await first.value
+
+        let record = try #require(try await queue.records().first { $0.id == item.id })
+        #expect(record.item.state == .done, "wi-fi returned during a drain and the photo was left waiting")
+        #expect(await transport.inner.uploadedPhotos.count == 1)
+    }
+
+    /// An apply sink whose `sync` blocks until the test opens it, so a second drain can be asked
+    /// for while the first is provably inside its pass.
+    private actor GatedTransport: OutboxTransport {
+        let inner = OutboxTestSupport.ScriptedTransport(script: .allSucceed)
+        private var isOpen = false
+        private var gate: CheckedContinuation<Void, Never>?
+        private var blockedWaiter: CheckedContinuation<Void, Never>?
+
+        func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
+            if !isOpen {
+                await withCheckedContinuation { continuation in
+                    gate = continuation
+                    blockedWaiter?.resume()
+                    blockedWaiter = nil
+                }
+            }
+            return try await inner.sync(items)
+        }
+
+        func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
+            try await inner.uploadPhoto(photo, for: item)
+        }
+
+        func waitUntilBlocked() async {
+            guard gate == nil else { return }
+            await withCheckedContinuation { blockedWaiter = $0 }
+        }
+
+        func open() {
+            isOpen = true
+            gate?.resume()
+            gate = nil
+        }
+    }
+
     // MARK: - 4. The composition root hands the queue its path
 
     /// `DataLayer.boot` is where a missing argument would quietly bring F35 back: `OutboxQueue`'s
@@ -153,6 +292,14 @@ struct OutboxWifiOnlyTests {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("cypress-f35-boot-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Removed after the layer is released, so the database is not unlinked under an open
+        // handle (the hazard `DataLayerWiringTests.databaseURL()` describes).
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await Self.checkBootWiring(directory: directory, unmetered: unmetered)
+    }
+
+    /// The layer lives only inside this call, so it is gone before the caller removes its folder.
+    private static func checkBootWiring(directory: URL, unmetered: Bool) async throws {
         let data = try await DataLayer.boot(
             databaseURL: directory.appendingPathComponent("cypress.sqlite"),
             seedURL: nil,
@@ -170,9 +317,12 @@ struct OutboxWifiOnlyTests {
     /// it is not reading the source it claims to check.
     private static let sanctionedCall = "drain(photoUploadsAllowed: await photoUploadsAllowedNow())"
 
-    /// Each non-comment line under `Cypress/` that calls `drain(photoUploadsAllowed:`.
-    /// `Cypress/Data/Tests/` is test support compiled into the app target, and pins the flag on
-    /// purpose, so it is left out.
+    /// The declaration, which the scanner must see and must not count as a call.
+    private static let declaration = "func drain(photoUploadsAllowed: Bool)"
+
+    /// Each non-comment line under `Cypress/` that names `drain(photoUploadsAllowed:`, the
+    /// declaration included. `Cypress/Data/Tests/` is test support compiled into the app target,
+    /// and pins the flag on purpose, so it is left out.
     private static func explicitDrains() throws -> (calls: [String], files: Int) {
         let root = AppSourceLiterals.repositoryRoot()
         let files = AppSourceLiterals.sourceFiles(root: root)
@@ -195,10 +345,14 @@ struct OutboxWifiOnlyTests {
         let (calls, files) = try Self.explicitDrains()
         #expect(files >= AppSourceLiterals.swiftFileCountFloor, "the guard swept \(files) files")
 
+        // Two controls, each a line the scanner must see: the queue's own call, and the
+        // declaration. Neither is a bypass; everything else is.
         let sanctioned = calls.filter { $0.hasPrefix("OutboxQueue.swift:") && $0.contains(Self.sanctionedCall) }
         #expect(sanctioned.count == 1, "the scanner did not find the queue's own call, so it saw nothing")
+        let declarations = calls.filter { $0.hasPrefix("OutboxQueue.swift:") && $0.contains(Self.declaration) }
+        #expect(declarations.count == 1, "the scanner did not find the declaration, so it saw nothing")
 
-        let bypasses = calls.filter { !sanctioned.contains($0) }
+        let bypasses = calls.filter { !sanctioned.contains($0) && !declarations.contains($0) }
         #expect(
             bypasses.isEmpty,
             """

@@ -27,8 +27,20 @@ layer's `OutboxWifiWatcher` drains when the path turns unmetered and a photograp
 window was older than 48 h. Nothing had ever held a photograph back, so no waiting row could reach
 it. Once the toggle works, a photograph held back on a two-day trip without wi-fi would have
 expired as "Tried for 48 hours without getting through", on a note saved the whole time. The
-expiry phase now skips a row whose reason is `awaitingWifi`. Any real failure overwrites that
-reason, and the cap applies again.
+expiry phase now skips a row whose reason is `awaitingWifi`, and every hold restarts the row's
+48 h window. The restart matters: the first real failure after wi-fi returns overwrites the
+`awaitingWifi` reason, and without it the cap would count from the save and fail the row at once.
+With it, the cap counts from the last hold.
+
+**Two more holes, found in review of the same PR.**
+
+- A photograph applied on wi-fi whose send then waited had no staged file. The hold's sentence
+  counted staged files and read "0 photos are waiting for wi-fi", and screen 17's waiting count
+  (and so the watcher) missed the row. Both now count every binary still owed: staged, or applied
+  and not yet sent (`OutboxStore.Record.unsentPhotoCount`).
+- A drain asked for while another runs returned at once and did nothing more. If wi-fi returned
+  mid-drain, the running pass had already decided "cellular", so the photograph waited. The
+  running drain now makes one more pass before it returns.
 
 **Why no test saw it.** Every test of the deferral called `drain(photoUploadsAllowed: false)`
 itself, so each one proved the queue could hold a photograph back and none asked whether anything

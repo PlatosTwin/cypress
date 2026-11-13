@@ -26,6 +26,17 @@ public struct OutboxStore {
         /// Start of the 48 h cap window. Equal to `createdAt` until the user taps retry.
         public let windowStartedAt: Date
         public let nextAttemptAt: Date?
+        /// Binaries this device has committed but no send sink has accepted yet: `outbox_photos`
+        /// rows in state `applied` and still `sendable`. Filled by `allItems`/`item(id:)`, and zero
+        /// wherever a record is built without them.
+        ///
+        /// Counted apart from `item.photos`, which holds only the **staged** binaries an apply
+        /// still owes. A photograph applied on wi-fi whose send then waited for wi-fi has no staged
+        /// file, so `item.photos` says 0 while a photograph is still owed (F35 review, S1).
+        public var unsentPhotoCount: Int = 0
+
+        /// Every binary this row still owes: staged for the apply, plus applied and not yet sent.
+        public var owedPhotoCount: Int { item.photos.count + unsentPhotoCount }
     }
 
     // MARK: - Writing
@@ -373,13 +384,25 @@ public struct OutboxStore {
     ///
     /// Used when nothing was tried — the photo phase deferred for wi-fi — so the backoff does not
     /// advance for a decision the user made on purpose.
-    public func reschedule(_ id: UUID, reason: String?, at date: Date, connection: SQLiteConnection) throws {
+    ///
+    /// - Parameter restartWindow: also restart the 48 h cap window at `date`. Only a row held back
+    ///   for wi-fi passes `true`: the cap measures time spent *trying*, and a hold by the
+    ///   volunteer's own toggle is not trying. Without it, a photograph held for two days failed
+    ///   for good on its first transient failure after wi-fi returned (F35 review, B1).
+    public func reschedule(
+        _ id: UUID,
+        reason: String?,
+        at date: Date,
+        restartWindow: Bool = false,
+        connection: SQLiteConnection
+    ) throws {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
-               SET state = 'pending', last_error = :reason, next_attempt_at = NULL, updated_at = :now
+               SET state = 'pending', last_error = :reason, next_attempt_at = NULL, updated_at = :now,
+                   window_started_at = CASE WHEN :restart = 1 THEN :now ELSE window_started_at END
              WHERE id = :id
             """)
-        _ = try statement.bind([":reason": reason, ":now": date, ":id": id])
+        _ = try statement.bind([":reason": reason, ":now": date, ":id": id, ":restart": restartWindow ? 1 : 0])
         try statement.run()
         _ = try statement.reset()
     }
@@ -488,6 +511,12 @@ public struct OutboxStore {
              WHERE outbox_id = :item AND state = 'pending'
              ORDER BY rowid
             """)
+        // Applied and not yet accepted by a send sink: `completePhoto` deletes a row once it is
+        // sent, so what is left in `applied` and `sendable` is still owed.
+        let unsent = try connection.cachedStatement("""
+            SELECT COUNT(*) AS n FROM outbox_photos
+             WHERE outbox_id = :item AND state = 'applied' AND sendable = 1
+            """)
         return try records.map { record in
             _ = try statement.reset()
             _ = try statement.bind(record.id, forName: ":item")
@@ -500,13 +529,17 @@ public struct OutboxStore {
             }
             var item = record.item
             item.photos = photos
+            _ = try unsent.reset()
+            _ = try unsent.bind(record.id, forName: ":item")
+            let unsentCount = try unsent.fetchOne { try $0.int("n") } ?? 0
             return Record(
                 sequence: record.sequence,
                 item: item,
                 locallyApplied: record.locallyApplied,
                 remoteSent: record.remoteSent,
                 windowStartedAt: record.windowStartedAt,
-                nextAttemptAt: record.nextAttemptAt
+                nextAttemptAt: record.nextAttemptAt,
+                unsentPhotoCount: unsentCount
             )
         }
     }
