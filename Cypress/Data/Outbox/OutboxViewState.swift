@@ -312,10 +312,16 @@ public struct OutboxSnapshot: Sendable, Equatable {
         let awaitingWifi = syncPhotosOnWifiOnly
             ? records.filter {
                 $0.locallyApplied
-                    // Staged binaries, or binaries applied and not yet sent. Counting staged files
-                    // alone missed a photograph applied on wi-fi whose send then waited, so the
-                    // watcher never drained it (F35 review, S1).
-                    && $0.owedPhotoCount > 0
+                    // Staged binaries, or binaries applied and not yet sent **because the drain
+                    // held them for wi-fi**. Counting staged files alone missed a photograph
+                    // applied on wi-fi whose send then waited, so the watcher never drained it
+                    // (F35 review, S1). The unsent half is narrowed by its reason: a binary whose
+                    // send merely failed ("hasn't gone through yet") is not waiting for wi-fi, and
+                    // saying so would be E32 again.
+                    && (!$0.item.photos.isEmpty
+                        || ($0.unsentPhotoCount > 0
+                            && $0.item.lastError
+                                == OutboxFailureReason.awaitingWifi(photoCount: $0.owedPhotoCount)))
                     && ($0.item.state == .pending || $0.item.state == .uploading)
             }
             : []
