@@ -460,7 +460,7 @@ public struct DataLayer: Sendable {
             send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil,
             // The wi-fi toggle's other half (F35). Without it the queue cannot call a connection
             // metered, and every photograph goes on whatever connection there is.
-            networkPath: networkPath
+            networkPath: nil
         )
 
         // Anything left `uploading` belongs to a previous launch that was killed mid-drain. It is

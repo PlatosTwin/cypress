@@ -64,7 +64,7 @@ public enum FavoriteOutboxWriter {
         let item = try await outbox.enqueue(.favoriteToggle(toggle))
 
         // ── 2. Best effort, after. ────────────────────────────────────────────────────────────
-        _ = try? await outbox.drain()
+        _ = try? await outbox.drain(photoUploadsAllowed: true)
 
         return FavoriteSaveReceipt(toggle: toggle, item: item)
     }
