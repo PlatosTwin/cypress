@@ -75,8 +75,8 @@ public struct DataLayer: Sendable {
     /// ── Why the composition root hands this over as a closure ──────────────────────────────────
     ///
     /// The owner ruled on 2026-09-01 that My Grove paints from the phone and merges the account's
-    /// half when it arrives. `RoutedAPI.groveSpecies()` is therefore the paint and
-    /// `RoutedAPI.refreshedGroveSpecies()` is the merge — and the merge is not on `CypressAPI`,
+    /// half when it arrives. `RoutedAPI.groveSpecies(near:)` is therefore the paint and
+    /// `RoutedAPI.refreshedGroveSpecies(near:)` is the merge — and the merge is not on `CypressAPI`,
     /// because a second read of the same question is a property of *this router*, not of the
     /// protocol every preview double implements. `GroveModel` is handed the one operation it needs
     /// rather than the router, which is the same shape `makeOutboxViewState`'s `treeNameResolver`
@@ -96,7 +96,10 @@ public struct DataLayer: Sendable {
     /// painted answer standing: there is a whole grove on the glass, and replacing it with a failure
     /// state because the second read did not land is drawing an empty claim over data this phone
     /// has (R72 ruling 1).
-    public let refreshGroveSpecies: (@Sendable () async -> GroveSpecies?)?
+    ///
+    /// It takes the reader's fix (or nil) because the paint does: the merge must be about the same
+    /// area as the ring it repaints (F38).
+    public let refreshGroveSpecies: (@Sendable (Coordinate?) async -> GroveSpecies?)?
 
     /// The Trees pill's read again, on `refreshGroveSpecies`' terms exactly.
     public let refreshGrove: (@Sendable () async -> [GroveEntry]?)?
@@ -423,13 +426,13 @@ public struct DataLayer: Sendable {
         // Nil when the gate is shut, for the reason on the properties: a refresh with no service
         // behind it re-reads the phone and republishes what is already drawn. `GroveModel` starts no
         // task when they are nil.
-        var refreshGroveSpecies: (@Sendable () async -> GroveSpecies?)?
+        var refreshGroveSpecies: (@Sendable (Coordinate?) async -> GroveSpecies?)?
         var refreshGrove: (@Sendable () async -> [GroveEntry]?)?
         var refreshTreeProfile: (@Sendable (UUID) async -> TreeProfile?)?
         var reconcileFavorite: (@Sendable (UUID) async -> Bool?)?
         var refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
         if access.allowsNetwork {
-            refreshGroveSpecies = { try? await api.refreshedGroveSpecies() }
+            refreshGroveSpecies = { coordinate in try? await api.refreshedGroveSpecies(near: coordinate) }
             refreshGrove = { try? await api.refreshedGrove() }
             refreshTreeProfile = { id in try? await api.refreshedTreeProfile(id: id) }
             reconcileFavorite = { id in try? await api.reconciledIsFavorite(treeID: id) }

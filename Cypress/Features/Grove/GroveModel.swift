@@ -8,7 +8,7 @@
 //
 //  ── Two reads, kept apart ─────────────────────────────────────────────────────────────────────
 //  The screen's two pills each have data behind them and they are two different endpoints:
-//  `groveSpecies()` for the species grid and `grovePage(cursor:limit:)` for the list of trees, which
+//  `groveSpecies(near:)` for the species grid and `grovePage(cursor:limit:)` for the list of trees, which
 //  is paged. Each therefore has its
 //  own way to fail, and a single `phase` would mean one failing read blanked the other pill — a
 //  reader whose species read failed would find an empty-looking Trees list and conclude they had no
@@ -93,7 +93,16 @@ final class GroveModel {
     /// Nil is the default and nil means *no background task at all*: every preview, every
     /// screenshot fixture and every unit test that builds this model passes nothing and gets the
     /// pure-local model they have always had.
-    private let refreshSpecies: (@Sendable () async -> GroveSpecies?)?
+    private let refreshSpecies: (@Sendable (Coordinate?) async -> GroveSpecies?)?
+
+    /// Where the reader is right now, asked at each read — the composition root passes
+    /// `MapLocationProvider.availability` (F38, owner decision 2026-11-12: the ring follows the
+    /// reader's location). Nil in previews and in tests that do not care, which reads as "no fix".
+    ///
+    /// Asked at every `load()` rather than followed, because `load()` already runs on every return
+    /// to the tab: a reader who walks somewhere else and opens My Grove again is read where they now
+    /// are. A fix that arrives while the tab is already open is picked up on the next visit.
+    private let currentFix: (@MainActor () -> MapLocationProvider.Availability)?
 
     /// The Trees read again, on the same terms.
     private let refreshTrees: (@Sendable () async -> [GroveEntry]?)?
@@ -114,10 +123,12 @@ final class GroveModel {
         api: any CypressAPI,
         now: @escaping @Sendable () -> Date = { Date() },
         tab: GroveTab = .species,
-        refreshSpecies: (@Sendable () async -> GroveSpecies?)? = nil,
-        refreshTrees: (@Sendable () async -> [GroveEntry]?)? = nil
+        refreshSpecies: (@Sendable (Coordinate?) async -> GroveSpecies?)? = nil,
+        refreshTrees: (@Sendable () async -> [GroveEntry]?)? = nil,
+        currentFix: (@MainActor () -> MapLocationProvider.Availability)? = nil
     ) {
         self.api = api
+        self.currentFix = currentFix
         self.now = now
         self.tab = tab
         self.refreshSpecies = refreshSpecies
@@ -168,18 +179,19 @@ final class GroveModel {
     /// reader did not ask for must not take down a screen that is already showing them their grove
     /// (R72 ruling 1) — the same reasoning `JournalModel.refresh()` states for its own failure path.
     func load() async {
+        let coordinate = Self.ringCoordinate(currentFix?())
         switch phase {
         case .loading:
             do {
-                phase = .loaded(try await api.groveSpecies())
+                phase = .loaded(try await api.groveSpecies(near: coordinate))
             } catch {
                 phase = .failed
                 return
             }
-            startSpeciesRefresh()
+            startSpeciesRefresh(near: coordinate)
         case .loaded:
-            if let fresh = try? await api.groveSpecies() { phase = .loaded(fresh) }
-            startSpeciesRefresh()
+            if let fresh = try? await api.groveSpecies(near: coordinate) { phase = .loaded(fresh) }
+            startSpeciesRefresh(near: coordinate)
         case .failed:
             break
         }
@@ -192,6 +204,23 @@ final class GroveModel {
         await load()
     }
 
+    /// The fix the ring may be drawn around, or nil to fall back to the most-visited area.
+    ///
+    /// The Almanac's rule for `.here`, reused rather than restated: a fix whose own error circle
+    /// is wider than the 400 m `SpeciesQueries.resolveNeighborhood` searches cannot pick out the
+    /// reader's neighborhood (`AlmanacLimits.fixCanResolveAnArea`, F17). Such a fix, a denied
+    /// grant and no fix at all all read as nil, and the payload then says the area is the
+    /// most-visited one, so it is never presented as where the reader is (F38).
+    static func ringCoordinate(_ availability: MapLocationProvider.Availability?) -> Coordinate? {
+        guard let availability, let coordinate = availability.coordinate,
+              AlmanacLimits.fixCanResolveAnArea(
+                  accuracyM: availability.accuracyM,
+                  withinM: AlmanacLimits.neighborhoodResolutionRadiusM
+              )
+        else { return nil }
+        return coordinate
+    }
+
     /// Merges the account's half in behind the painted screen.
     ///
     /// Nothing here can blank the grove. The refresh answers nil when it could not reach the
@@ -201,11 +230,11 @@ final class GroveModel {
     /// The guard on `.loaded` before assigning is not ceremony: `retry()` can move the phase back to
     /// `.loading` while a refresh is in flight, and a merge landing after that would paint a grove
     /// over a screen that is deliberately reading again.
-    private func startSpeciesRefresh() {
+    private func startSpeciesRefresh(near coordinate: Coordinate?) {
         guard let refreshSpecies else { return }
         speciesRefresh?.cancel()
         speciesRefresh = Task { [weak self] in
-            let merged = await refreshSpecies()
+            let merged = await refreshSpecies(coordinate)
             guard !Task.isCancelled, let self, let merged, case .loaded = self.phase else { return }
             self.phase = .loaded(merged)
         }

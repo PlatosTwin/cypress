@@ -66,7 +66,7 @@ struct GroveLocalFirstTests {
     static func localDouble() throws -> LocalDouble {
         var local = LocalDouble()
         local.speciesKnown = GroveSpecies(
-            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID])),
+            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID]), basis: .mostVisited),
             known: Series(complete: [
                 KnownSpecies(
                     speciesID: speciesID,
@@ -122,7 +122,7 @@ struct GroveLocalFirstTests {
     /// repeat visit has to pick up.
     static func twoSpeciesLocally() throws -> GroveSpecies {
         GroveSpecies(
-            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID])),
+            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID]), basis: .mostVisited),
             known: Series(complete: [
                 KnownSpecies(
                     speciesID: speciesID,
@@ -204,9 +204,9 @@ struct GroveLocalFirstTests {
         let log = RemoteReadLog()
         let router = Self.router(try Self.localDouble(), transport, log: log)
 
-        #expect(try await router.groveSpecies().known.items.count == 1, "the phone's half is not one species")
+        #expect(try await router.groveSpecies(near: nil).known.items.count == 1, "the phone's half is not one species")
 
-        let merged = try await router.refreshedGroveSpecies()
+        let merged = try await router.refreshedGroveSpecies(near: nil)
 
         #expect(merged.known.items.count == 2, "the route did not decode, or the merge dropped a row")
         #expect(transport.calls.count == 1, "the refresh asked the service \(transport.calls.count) times")
@@ -231,7 +231,7 @@ struct GroveLocalFirstTests {
         let log = RemoteReadLog()
         let router = Self.router(try Self.localDouble(), transport, log: log)
 
-        let painted = try await router.groveSpecies()
+        let painted = try await router.groveSpecies(near: nil)
 
         #expect(painted.known.items.count == 1, "the paint did not answer with the phone's grove")
         #expect(painted.known.items.first?.speciesID == Self.speciesID)
@@ -277,7 +277,7 @@ struct GroveLocalFirstTests {
         let model = GroveModel(
             api: router,
             now: { GroveFirstClock.laterMet },
-            refreshSpecies: { try? await router.refreshedGroveSpecies() }
+            refreshSpecies: { _ in try? await router.refreshedGroveSpecies(near: nil) }
         )
 
         await model.load()
@@ -350,7 +350,7 @@ struct GroveLocalFirstTests {
             api: router,
             now: { GroveFirstClock.laterMet },
             // What `DataLayer.boot` builds: the throw is swallowed to nil.
-            refreshSpecies: { nil }
+            refreshSpecies: { _ in nil }
         )
 
         await model.load()
@@ -384,7 +384,7 @@ struct GroveLocalFirstTests {
     func aCancelledRefreshRecordsNothing() async throws {
         let cancelledLog = RemoteReadLog()
         let cancelledRouter = Self.router(try Self.localDouble(), ScriptedTransport(), log: cancelledLog)
-        let task = Task { _ = try? await cancelledRouter.refreshedGroveSpecies() }
+        let task = Task { _ = try? await cancelledRouter.refreshedGroveSpecies(near: nil) }
         task.cancel()
         await task.value
 
@@ -397,7 +397,7 @@ struct GroveLocalFirstTests {
         // Calibration: the same unreachable service, not cancelled, still marks the read.
         let refusedLog = RemoteReadLog()
         let refusedRouter = Self.router(try Self.localDouble(), ScriptedTransport(), log: refusedLog)
-        _ = try await refusedRouter.refreshedGroveSpecies()
+        _ = try await refusedRouter.refreshedGroveSpecies(near: nil)
         let refused = await refusedLog.outcome(of: .groveSpecies)
         #expect(
             refused == .fellBackToLocal,
@@ -487,7 +487,7 @@ struct GroveLocalFirstTests {
         let model = GroveModel(
             api: router,
             now: { GroveFirstClock.laterMet },
-            refreshSpecies: { try? await router.refreshedGroveSpecies() }
+            refreshSpecies: { _ in try? await router.refreshedGroveSpecies(near: nil) }
         )
 
         await model.load()

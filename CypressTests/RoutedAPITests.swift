@@ -124,7 +124,7 @@ struct LocalDouble: CypressAPI, @unchecked Sendable {
         reads?.takeTrees(or: groveEntries) ?? groveEntries
     }
     func isFavorite(treeID: UUID) async throws -> Bool { favorite }
-    func groveSpecies() async throws -> GroveSpecies {
+    func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
         reads?.takeSpecies(or: speciesKnown) ?? speciesKnown
     }
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { journalPage }
@@ -602,7 +602,7 @@ struct RoutedAPITests {
             onlyOnTheAccount: try Self.species(onlyOnTheAccount, scientific: "Quercus agrifolia", common: "Coast Live Oak")
         ]
         local.speciesKnown = GroveSpecies(
-            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [known])),
+            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [known]), basis: .mostVisited),
             known: Series(complete: [
                 KnownSpecies(
                     speciesID: known,
@@ -625,7 +625,7 @@ struct RoutedAPITests {
         )
 
         let log = RemoteReadLog()
-        let grove = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGroveSpecies()
+        let grove = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGroveSpecies(near: nil)
 
         #expect(grove.known.items.count == 2)
         #expect(grove.neighborhood?.species.items == [known], "the denominator came from somewhere other than the phone")

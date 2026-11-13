@@ -761,7 +761,8 @@ enum SweepFixtures {
         return GroveSpecies(
             neighborhood: GroveNeighborhood(
                 area: .named("Outer Sunset"),
-                species: Series(complete: neighborhoodIDs)
+                species: Series(complete: neighborhoodIDs),
+                basis: .whereYouAre
             ),
             known: Series(complete: known)
         )
