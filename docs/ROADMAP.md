@@ -1914,7 +1914,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
     source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
     source, passed to every `drain()`, with a test that fails if a writer drains without it.
-99. **DONE (PR #PRNUM): the ring follows the reader's location, owner decision 2026-11-12; strings
+99. **DONE (PR #207): the ring follows the reader's location, owner decision 2026-11-12; strings
     in `docs/rulings-pending/grove-ring-follows-location.md`.** ~~**The Grove ring names the most-visited neighborhood, not where the reader is (F38,
     2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
     `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
