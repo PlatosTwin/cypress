@@ -436,7 +436,7 @@ struct OutboxWifiOnlyTests {
                 blockedWaiter = continuation
                 Task {
                     try? await Task.sleep(for: timeout)
-                    await self.giveUpWaiting()
+                    self.giveUpWaiting()
                 }
             }
         }
