@@ -574,8 +574,7 @@ public struct OutboxStore {
                 SELECT * FROM outbox
                  WHERE state = 'pending'
                    AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
-                   -- RED-PROOF C: hold removed
-                       )
+                   -- RED-PROOF C: the pin-move hold is removed
                  ORDER BY seq
                  LIMIT :limit
                 """)

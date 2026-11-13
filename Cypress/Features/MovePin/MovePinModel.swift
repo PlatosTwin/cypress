@@ -55,7 +55,7 @@ final class MovePinModel {
             )
             didSave = true
         } catch is ProximityConflict {
-            didSave = true // RED-PROOF B
+            failure = MovePinCopy.tooClose
         } catch let error as APIError where error == .forbidden || error == .notFound {
             failure = MovePinCopy.notYours
         } catch {

@@ -374,7 +374,7 @@ public actor LocalAPI: CypressAPI {
             let observations = try contributions.observations(treeID: id, connection: connection)
 
             let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
-            let canMovePin = addedHere // RED-PROOF A
+            let canMovePin = adder?.isOwned(by: attribution) ?? false
 
             return TreeProfile(
                 tree: tree,

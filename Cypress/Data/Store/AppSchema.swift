@@ -2869,7 +2869,7 @@ public enum AppSchema {
                           WHERE o.kind = 'add_tree'
                             AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE
                           LIMIT 1)
-                 WHERE 0 AND EXISTS (SELECT 1 FROM outbox o -- RED-PROOF D
+                 WHERE EXISTS (SELECT 1 FROM outbox o
                                 WHERE o.kind = 'add_tree'
                                   AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE);
 
