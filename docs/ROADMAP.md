@@ -1914,12 +1914,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
     source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
     source, passed to every `drain()`, with a test that fails if a writer drains without it.
-99. **The Grove ring names the most-visited neighborhood, not where the reader is (F38,
+99. **DONE (PR #207): the ring follows the reader's location, owner decision 2026-11-12; strings
+    in `docs/rulings-pending/grove-ring-follows-location.md`.** ~~**The Grove ring names the most-visited neighborhood, not where the reader is (F38,
     2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
     `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
     F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
     "your most-visited neighborhood", reuse F17's picker, or follow location. D.C. ships no
-    neighborhoods yet (chip 88).
+    neighborhoods yet (chip 88).~~
 100. ~~**A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
     on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
     chip 76(a). Reproduce first.~~ **DONE in #206.** Cause: a photo row stores an absolute

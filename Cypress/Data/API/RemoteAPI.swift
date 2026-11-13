@@ -576,7 +576,7 @@ public struct RemoteAPI: CypressAPI {
     ///
     /// Overrides the protocol's `.empty` default: an empty grove would draw a contributor's real
     /// collection as a cold start.
-    public func groveSpecies() async throws -> GroveSpecies {
+    public func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
         throw RemoteSurface.communityHalfOnly
     }
 

@@ -69,10 +69,27 @@ public struct GroveNeighborhood: Hashable, Sendable {
     /// same reason.
     public let species: Series<UUID>
 
-    public init(area: AlmanacArea, species: Series<UUID>) {
+    /// What the area was resolved from: the reader's own location, or A4's most-visited inference.
+    /// The caption says which, so a most-visited area is never presented as where the reader is
+    /// (F38: a tester in Washington, D.C. was told "in the Castro/Upper Market").
+    public let basis: GroveAreaBasis
+
+    public init(area: AlmanacArea, species: Series<UUID>, basis: GroveAreaBasis) {
         self.area = area
         self.species = species
+        self.basis = basis
     }
+}
+
+/// Where screen 08's ring area came from (F38, owner decision 2026-11-12: the ring follows the
+/// reader's location).
+public enum GroveAreaBasis: Hashable, Sendable {
+    /// A location fix accurate enough to name an area (`AlmanacLimits.fixCanResolveAnArea`).
+    case whereYouAre
+    /// A4's inference: the contributor's most-visited neighborhood or tree. Used with no usable
+    /// fix, and also when a fix's area is uncovered or holds none of the reader's species (owner
+    /// ruling 2026-11-13).
+    case mostVisited
 }
 
 public extension CypressAPI {
@@ -85,7 +102,7 @@ public extension CypressAPI {
     /// invent a grove to compile. `LocalAPI` overrides it with the real read and `RemoteAPI`
     /// overrides it to throw, because a server that is not built yet has no answer at all — which
     /// is a different thing from an empty one.
-    func groveSpecies() async throws -> GroveSpecies { .empty }
+    func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies { .empty }
 }
 
 /// One species this contributor has met, and the first time they met it.
