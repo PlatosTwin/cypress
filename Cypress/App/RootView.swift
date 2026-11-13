@@ -46,6 +46,11 @@ struct RootView: View {
     /// A failure costs the reader the two buttons and not the page, so it is swallowed to `.none`.
     @State private var areaChoices: AreaChoices = .none
 
+    /// Read for one reason: the outbox drains when the app comes to the front (F35). A photograph
+    /// held back on cellular goes as soon as the app is opened on wi-fi, even if the connection
+    /// changed while the app was suspended and the path watcher could not run.
+    @Environment(\.scenePhase) private var scenePhase
+
     /// Screen 17's model, owned here because **two screens now show the same preference**.
     ///
     /// The You tab draws the wi-fi toggle beside the outbox row, and screen 17 draws it in its own
@@ -249,6 +254,13 @@ struct RootView: View {
         // its own dimming and the live screen behind it — none of which is what the mocks draw.
         // `AppRouter.sheet` already distinguishes these from `path` for exactly this reason.
         .task { areaChoices = (try? await data.api.areaChoices()) ?? .none }
+        // The one foreground drain (F35). `drain()` decides about photographs itself, and returns at
+        // once when another drain is running, so this cannot double-send.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            let outbox = data.outbox
+            Task { _ = try? await outbox.drain() }
+        }
         .fullScreenCover(isPresented: presentingSheet) {
             // ══════════════════════════════════════════════════════════════════════════════════
             // **The environment is handed over explicitly, and it has to be.**
