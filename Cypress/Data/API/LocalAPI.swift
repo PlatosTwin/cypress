@@ -2872,7 +2872,7 @@ public actor LocalAPI: CypressAPI {
             //     would read zero. The test is against this phone's species; the account's half
             //     arrives later through `RoutedAPI.refreshedGroveSpecies(near:)`, which keeps the
             //     area this read chose.
-            if let coordinate = Optional<Coordinate>.none, let speciesQueries, let almanacQueries {
+            if let coordinate, let speciesQueries, let almanacQueries {
                 var located: AlmanacScope?
                 if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
                     located = .neighborhood(id: polygon.id, name: polygon.name)
@@ -2882,16 +2882,14 @@ public actor LocalAPI: CypressAPI {
                         located = around
                     }
                 }
-                if let located {
-                    let species = try groveQueries.speciesIDs(scope: located, connection: connection)
-                    let growsHere = Set(species.items)
-                    if known.items.contains(where: { growsHere.contains($0.speciesID) }) {
-                        return GroveSpecies(
-                            neighborhood: GroveNeighborhood(area: located.area, species: species, basis: .whereYouAre),
-                            known: known
-                        )
-                    }
-                }
+                // RED-PROOF B: rules (a) and (b) removed - an uncovered fix draws no ring, and an
+                // area with none of the reader's species is drawn anyway.
+                guard let located else { return GroveSpecies(neighborhood: nil, known: known) }
+                let species = try groveQueries.speciesIDs(scope: located, connection: connection)
+                return GroveSpecies(
+                    neighborhood: GroveNeighborhood(area: located.area, species: species, basis: .whereYouAre),
+                    known: known
+                )
             }
 
             // --- No usable fix, or (a) or (b) above: A4's inference, in R29's order, labeled as
