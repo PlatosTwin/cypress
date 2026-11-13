@@ -342,7 +342,12 @@ public protocol CypressAPI: Sendable {
     /// different things — one on the contributor's trees, one on the species they have come to know
     /// — and because the ring's denominator is a fact about the city's inventory that no list of
     /// the contributor's own trees contains. See `GroveSpecies`.
-    func groveSpecies() async throws -> GroveSpecies
+    ///
+    /// `coordinate` is the reader's fix, already checked by the caller against
+    /// `AlmanacLimits.fixCanResolveAnArea`, or nil when there is no usable fix. With a fix the ring
+    /// is about where the reader is; without one it is about their most-visited area, and the
+    /// payload says which (`GroveAreaBasis`, F38).
+    func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies
 
     /// `GET /me/journal`, cursor-paginated (`?cursor`, `?limit` max 100).
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry>

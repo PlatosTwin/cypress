@@ -2825,17 +2825,49 @@ public actor LocalAPI: CypressAPI {
     ///
     /// A device with no seed attached has no city inventory to compare against and no tree to
     /// resolve a species from, so it has an empty grove rather than a wrong one.
-    public func groveSpecies() async throws -> GroveSpecies {
+    public func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
         guard let groveQueries else { return .empty }
         let userID = userID
         let deviceID = deviceID
+        let speciesQueries = speciesQueries
+        let almanacQueries = almanacQueries
         return try await store.queue.read { connection -> GroveSpecies in
             let known = try groveQueries.knownSpecies(
                 userID: userID,
                 deviceID: deviceID,
                 connection: connection
             )
-            // --- Which area the ring is about (RULINGS R29, the same order `almanac` resolves in).
+            // --- Which area the ring is about (F38, owner decision 2026-11-12: the ring follows the
+            // reader's location; RULINGS R29 for the shapes).
+            //
+            // **With a usable fix, the ring is about where the reader is**, resolved exactly as
+            // `almanac` resolves `.here`: the polygon at the fix first, then R29's stated radius
+            // around the reader if that circle holds any record, then nothing — and "nothing" is
+            // said on screen (`readerIsOutsideRecord`) rather than replaced by a ring about some
+            // other place. Before F38 this read never looked at location, so a reader in
+            // Washington, D.C. was told "in the Castro/Upper Market", their most-visited area.
+            //
+            // This arm runs even when the phone has met no species: the account's half may still
+            // arrive through `RoutedAPI.refreshedGroveSpecies(near:)`, which keeps this area.
+            if let coordinate, let speciesQueries, let almanacQueries {
+                let scope: AlmanacScope
+                if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+                    scope = .neighborhood(id: polygon.id, name: polygon.name)
+                } else {
+                    let fallback = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
+                    guard try almanacQueries.holdsAnyRecord(scope: fallback, connection: connection) else {
+                        return GroveSpecies(neighborhood: nil, known: known, readerIsOutsideRecord: true)
+                    }
+                    scope = fallback
+                }
+                let species = try groveQueries.speciesIDs(scope: scope, connection: connection)
+                return GroveSpecies(
+                    neighborhood: GroveNeighborhood(area: scope.area, species: species, basis: .whereYouAre),
+                    known: known
+                )
+            }
+
+            // --- No usable fix: A4's inference, in R29's order, and labeled as most-visited.
             //
             // A4's inference reads the same contributions, so a contributor with none has no
             // area at all and the ring has nothing to be a fraction of. The polygon first — the
@@ -2863,7 +2895,7 @@ public actor LocalAPI: CypressAPI {
             }
             let species = try groveQueries.speciesIDs(scope: scope, connection: connection)
             return GroveSpecies(
-                neighborhood: GroveNeighborhood(area: scope.area, species: species),
+                neighborhood: GroveNeighborhood(area: scope.area, species: species, basis: .mostVisited),
                 known: known
             )
         }
