@@ -143,6 +143,22 @@ struct GroveRingLocationTests {
         let total = try #require(neighborhood.species.totalCount, "an incomplete denominator (E38)")
         #expect(total > 0, "the circle around downtown San Jose holds no species")
 
+        // The circle is centered on the reader, not on the most-visited tree: its species are
+        // exactly the ones R29's radius around downtown San Jose holds. A circle drawn around the
+        // contributor's Sunset tree has the same radius and a nonzero total, so the two lines above
+        // cannot tell the two apart; this one can.
+        let queries = GroveQueries(schema: try #require(store.seed, "no seed attached"))
+        let aroundTheReader = try await store.queue.read { connection -> Series<UUID> in
+            try queries.speciesIDs(
+                scope: .radius(center: Self.downtownSanJose, meters: AlmanacLimits.fallbackRadiusM),
+                connection: connection
+            )
+        }
+        #expect(
+            Set(neighborhood.species.items) == Set(aroundTheReader.items),
+            "the radius is not centered on the reader"
+        )
+
         let caption = GroveCopy.caption(area: neighborhood.area, basis: neighborhood.basis)
         #expect(caption == "you can recognize within a 15-minute walk of where you are")
         #expect(!caption.contains("Sunset"), "the caption named the most-visited place (F38)")
@@ -161,6 +177,51 @@ struct GroveRingLocationTests {
         #expect(presentation.progress == nil)
         #expect(presentation.areaNote == "No city tree inventory on this phone covers where you are yet.")
         #expect(!presentation.isEmpty, "the grid of known species should still draw")
+    }
+
+    // MARK: - The background merge keeps the paint's area
+
+    /// A router over the real seed-backed phone and a service that knows the contributor's one
+    /// species, so `refreshedGroveSpecies(near:)` takes its merge path, not its fallback.
+    private static func router(
+        _ store: CypressStore,
+        log: RemoteReadLog
+    ) async throws -> RoutedAPI {
+        let local = api(store)
+        let met = try #require(try await local.groveSpecies(near: nil).known.items.first, "no species met")
+        let transport = ScriptedTransport()
+        transport.answer(
+            "GET /me/grove/species",
+            with: """
+            {"known":[{"species_id":"\(met.speciesID.uuidString)","first_met":"\(ISO8601DateFormatter().string(from: now))"}],
+             "total":1}
+            """
+        )
+        return RoutedAPI(local: local, remote: RoutedAPITests.remote(transport), log: log)
+    }
+
+    @Test("the merge is read where the reader is, not around the most-visited neighborhood")
+    func theMergeKeepsTheReadersArea() async throws {
+        let store = try await Self.sunsetContributor()
+        let mission = try await Self.tree(in: "Mission", on: store)
+        let log = RemoteReadLog()
+
+        let merged = try await Self.router(store, log: log).refreshedGroveSpecies(near: mission.coordinate)
+        #expect(await log.outcome(of: .groveSpecies) == .live, "the merge path did not run")
+        let neighborhood = try #require(merged.neighborhood, "the merge lost the area")
+        #expect(neighborhood.area == .named("Mission"), "the merge repainted a different area")
+        #expect(neighborhood.basis == .whereYouAre)
+    }
+
+    @Test("the merge keeps the sentence for a reader outside every inventory")
+    func theMergeKeepsOutsideRecord() async throws {
+        let store = try await Self.sunsetContributor()
+        let log = RemoteReadLog()
+
+        let merged = try await Self.router(store, log: log).refreshedGroveSpecies(near: Self.sacramento)
+        #expect(await log.outcome(of: .groveSpecies) == .live, "the merge path did not run")
+        #expect(merged.neighborhood == nil)
+        #expect(merged.readerIsOutsideRecord, "the merge dropped the outside-the-record state")
     }
 
     // MARK: - 3. No usable fix: most-visited, and said so
