@@ -23,7 +23,7 @@ public final class OutboxWifiWatcher: Sendable {
         task = Task.detached(priority: .utility) {
             for await unmetered in changes {
                 guard unmetered else { continue }
-                _ = try? await queue.hasPhotosAwaitingWifi()
+                _ = try? await queue.drainIfPhotosAwaitWifi()
             }
         }
     }

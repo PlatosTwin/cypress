@@ -340,8 +340,7 @@ public struct OutboxSnapshot: Sendable, Equatable {
                     // saying so would be E32 again.
                     && (!$0.item.photos.isEmpty
                         || ($0.unsentPhotoCount > 0
-                            && $0.item.lastError
-                                == OutboxFailureReason.awaitingWifi(photoCount: $0.owedPhotoCount)))
+                            && OutboxFailureReason.isAwaitingWifi($0.item.lastError)))
                     && ($0.item.state == .pending || $0.item.state == .uploading)
             }
             : []

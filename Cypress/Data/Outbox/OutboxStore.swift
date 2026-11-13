@@ -441,7 +441,7 @@ public struct OutboxStore {
     /// hold at the start of the pass (`OutboxQueue.leavingOutWifiHold`).
     func creditHold(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
         let read = try connection.cachedStatement(
-            "SELECT last_error, updated_at, window_started_at FROM outbox WHERE id = :id AND state = 'red-proof'"
+            "SELECT last_error, updated_at, window_started_at FROM outbox WHERE id = :id AND state = 'pending'"
         )
         _ = try read.bind(id, forName: ":id")
         let row = try read.fetchOne { row in
