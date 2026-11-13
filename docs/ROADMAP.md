@@ -1920,9 +1920,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
     "your most-visited neighborhood", reuse F17's picker, or follow location. D.C. ships no
     neighborhoods yet (chip 88).
-100. **A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
+100. ~~**A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
     on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
-    chip 76(a). Reproduce first.
+    chip 76(a). Reproduce first.~~ **DONE in #PRNUM.** Cause: a photo row stores an absolute
+    `local_path` into the app's data container, and an add-tree photo keeps it for good because it
+    is never uploaded. An app update can move the container (the tester went from build 77 to 82),
+    so the stored prefix named a folder that no longer existed and the server had no copy. iOS
+    moves the files with the container, so `StoredPhotoPath` now re-roots the part after
+    `Library/Application Support/` onto the current folder when the stored path is missing; no
+    migration. `uploadPhoto` and both deletes use it too, and the viewer now retries a failed read
+    when it opens again. Chips 67 and 76(a) stay open as separate suspects. Follow-up: store
+    relative paths in `addTree` (after C1 merges, since C1 edits those lines).
 101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
     Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
 102. **F37 (2026-10-31) is a second report of F31(a), moving a pin.** C1 and C3 cover it; it adds
