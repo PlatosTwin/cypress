@@ -485,13 +485,15 @@ struct OutboxWifiOnlyTests {
 
     /// The only lines in the app allowed to name `drain(photoUploadsAllowed:` or
     /// `drainPass(photoUploadsAllowed:`, each exactly as written and each exactly once, all in
-    /// `OutboxQueue.swift`: the public drain's own decision, the two declarations, and the two
-    /// internal passes. They double as controls: if the scanner stops seeing any of them, it is not
-    /// reading the source it claims to check.
+    /// `OutboxQueue.swift`: the public drain's own decision, the two declarations, and the three
+    /// internal passes (the first, community trees' extra pass for a released pin move, which reuses
+    /// the same decision, and the drain-again pass, which decides afresh). They double as controls:
+    /// if the scanner stops seeing any of them, it is not reading the source it claims to check.
     private static let exempt: [String] = [
         "try await drain(photoUploadsAllowed: await photoUploadsAllowedNow())",
         "public func drain(photoUploadsAllowed: Bool) async throws -> DrainReport {",
-        "let report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)",
+        "var report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)",
+        "let next = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)",
         "_ = try await drainPass(photoUploadsAllowed: await photoUploadsAllowedNow())",
         "private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {",
     ]
