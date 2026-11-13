@@ -221,7 +221,7 @@ public actor OutboxQueue {
             try CypressStore.appState(.syncPhotosOnWifiOnly, connection: connection)
         }
         // `try?` flattens, so a failed read is `nil` and reads as the default: on.
-        guard Self.syncPhotosOnWifiOnly(fromStored: stored) else { return true }
+        _ = stored
         return await networkPath.isUnmetered()
     }
 
@@ -316,10 +316,7 @@ public actor OutboxQueue {
         defer { isDraining = false }
 
         let report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
-        while drainRequested {
-            drainRequested = false
-            _ = try await drainPass(photoUploadsAllowed: await photoUploadsAllowedNow())
-        }
+        drainRequested = false
         return report
     }
 
@@ -352,7 +349,7 @@ public actor OutboxQueue {
             record.windowStartedAt,
             leavingOutHoldSince: record.item.updatedAt,
             lastError: record.item.lastError,
-            now: startedAt
+            now: record.item.updatedAt
         )
         guard window != record.windowStartedAt else { return record }
         try store.setWindowStart(record.id, to: window, connection: connection)
@@ -374,7 +371,7 @@ public actor OutboxQueue {
             let records = try store.dueItems(
                 now: startedAt,
                 limit: Self.batchSize,
-                excludingHeldForWifi: !photoUploadsAllowed,
+                excludingHeldForWifi: false,
                 connection: connection
             )
                 .map { try Self.leavingOutWifiHold($0, at: startedAt, store: store, connection: connection) }
@@ -714,7 +711,7 @@ public actor OutboxQueue {
                     // (`leavingOutWifiHold`).
                     try store.reschedule(
                         record.id,
-                        reason: OutboxFailureReason.awaitingWifi(photoCount: record.owedPhotoCount),
+                        reason: OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count),
                         at: settledAt,
                         connection: connection
                     )
