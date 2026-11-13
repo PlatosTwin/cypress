@@ -559,7 +559,7 @@ public struct OutboxStore {
                          AND EXISTS (
                              SELECT 1 FROM outbox AS addition
                               WHERE addition.kind = 'add_tree'
-                                AND addition.state IN ('pending', 'uploading')
+                                AND addition.state <> 'done' -- RED-PROOF E
                                 AND addition.remote_sent = 0
                                 AND upper(json_extract(addition.payload, '$.treeID'))
                                     = upper(json_extract(outbox.payload, '$.treeID'))
@@ -581,7 +581,7 @@ public struct OutboxStore {
                          AND EXISTS (
                              SELECT 1 FROM outbox AS addition
                               WHERE addition.kind = 'add_tree'
-                                AND addition.state IN ('pending', 'uploading')
+                                AND addition.state <> 'done' -- RED-PROOF E
                                 AND addition.remote_sent = 0
                                 AND upper(json_extract(addition.payload, '$.treeID'))
                                     = upper(json_extract(outbox.payload, '$.treeID'))

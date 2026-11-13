@@ -333,9 +333,14 @@ public actor OutboxQueue {
         // may be the one a move was waiting for.
         while drainRequested {
             drainRequested = false
-            _ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
+            _ = try await passReleasingMovesRedProof(photoUploadsAllowed: await photoUploadsAllowedNow())
         }
         return report
+    }
+
+    // RED-PROOF F: the drain-again pass makes one plain pass.
+    private func passReleasingMovesRedProof(photoUploadsAllowed: Bool) async throws -> DrainReport {
+        try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
     }
 
     /// One pass, and up to two more if it released a pin move.
