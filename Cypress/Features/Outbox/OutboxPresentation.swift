@@ -124,8 +124,10 @@ struct OutboxPresentation {
     /// `3 waiting`, or nil.
     ///
     /// **The mock's second clause is dropped.** §1 draws `3 waiting · offline`, and nothing in this
-    /// app knows whether it is offline: there is no reachability monitor, and a failure sentence
-    /// reading "No connection." is a record of the last attempt rather than a statement about now.
+    /// app is wired to say whether it is offline. The one reachability source (`NetworkPathSource`,
+    /// added for F35) answers "is this connection unmetered" for the wi-fi toggle and nothing else,
+    /// and a failure sentence reading "No connection." is a record of the last attempt rather than a
+    /// statement about now.
     /// Printing `offline` beside a live connection would be the same class of untrue label as
     /// "sent to the city" (ARCHITECTURE §5.4). See ERRATA.
     ///
