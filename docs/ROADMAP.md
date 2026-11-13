@@ -1941,6 +1941,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
     tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
     merge changed no Swift. A re-run is evidence it is intermittent, not of why. Watch for a second
     occurrence before chasing it.
+    **Second occurrence, in the sibling test** (run 43421121135, ui shard 4, #206's merge,
+    2026-11-13): `testAPhotographOpenedFromTheBrowserReachesTheSameDelete`, "the metadata pill did
+    not open the photo browser" (line 104). Read from the two runs' recordings and snapshots:
+    - **The first is the race `UIWait.assertReachable` documents.** The viewer stopped moving at
+      6.85 s; the one-shot `isHittable` at 8.99 s said false; the tap at 9.21 s still opened the
+      confirmation. Fixed by waiting for reachability (this PR).
+    - **The second is not explained.** The tap landed at the pill's center (318, 202), and for ten
+      seconds after it nothing changed: no browser, no viewer, the same pixels. Screen 20 was never
+      reached, so F36's changes to `PhotoImageStore` were not on the failing path, and the first
+      failure predates F36. The candidates are a touch dropped while the pushed profile was settling
+      on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
+      reachable before tapping it, and on failure it reports whether a second tap works, which
+      separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
