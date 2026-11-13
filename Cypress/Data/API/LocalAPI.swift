@@ -2243,7 +2243,7 @@ public actor LocalAPI: CypressAPI {
             subject.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
             // Resolved as `photoData` resolves it, or a delete after an app update would miss the
             // moved file and leave the deleted picture on the device (report F36).
-            subject.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
+            subject.localPath.map { URL(fileURLWithPath: $0) } // RED-PROOF
         ].compactMap { $0 }
 
         // 4. The rows, then the bytes, in one transaction. The order inside it is the point: the
@@ -3866,9 +3866,7 @@ public actor LocalAPI: CypressAPI {
                 )
             }
             for path in bytes.absolutePaths {
-                try? manager.removeItem(
-                    at: StoredPhotoPath.resolve(path, applicationSupport: applicationSupportDirectory)
-                )
+                try? manager.removeItem(at: URL(fileURLWithPath: path)) // RED-PROOF
             }
         }
 
