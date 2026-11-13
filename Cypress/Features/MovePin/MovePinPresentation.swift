@@ -5,8 +5,7 @@
 //  **NOT SPECIFIED.** No mock draws this screen. The owner approved a minimal Move pin control on
 //  2026-11-12 as an exception to DECISIONS constraint 21: on the profile of a community tree the
 //  reader added, a "Move pin" action opens a map centered on the tree, the reader moves the pin, and
-//  then saves or cancels. Every string below is a draft for the owner to ratify (the pending ruling
-//  on the Move pin control).
+//  then saves or cancels. Every string below is a draft the owner has yet to ratify.
 //
 //  ── No distance limit, because the service has none ───────────────────────────────────────────
 //  The service's `location_correction` checks only that the position is on the map, that the

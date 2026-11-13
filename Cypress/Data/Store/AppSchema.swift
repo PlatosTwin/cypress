@@ -2761,7 +2761,8 @@ public enum AppSchema {
     ///    .current_user_id` if there is one, else `device_uuid`. A row is gone because
     ///    `OutboxStore.pruneCompleted` swept it after it was `done`, or because the tree predates
     ///    the sync path and was never queued (R77). This arm can still be wrong in the sign-out case
-    ///    above, and for an R77 tree the service has no record at all; the pending ruling says so.
+    ///    above, and for an R77 tree the service has no record at all. The owner accepted both cases
+    ///    on 2026-11-13: every tree added so far was added by the owner.
     ///
     /// A database with no `device_uuid` has never run `addTree`, so a row left over stays
     /// nobody's, which the CHECK permits.
