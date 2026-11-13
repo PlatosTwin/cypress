@@ -40,7 +40,7 @@ public struct CommunityLayer {
     /// One community tree, and whether this phone added it.
     ///
     /// The flag is provenance, not ownership: "added here" is `community_trees`, whoever the adder
-    /// was — a tree added before v23 is nobody's and still added here. A caller that needs the adder
+    /// was — a tree an account deletion anonymized is nobody's and still added here. A caller that needs the adder
     /// asks `CommunityTreeStore.adder(treeID:)`.
     public struct Row: Sendable, Equatable {
         public let tree: Tree

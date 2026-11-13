@@ -1131,7 +1131,7 @@ public actor LocalAPI: CypressAPI {
     /// adder's own withdrawal is a different act — the owner's decision 8, a withdrawal *for
     /// everyone*, refused once anybody else has built on the tree, and sent as `tree_withdrawal` —
     /// which this phone does not implement yet. This verb is the lead's answer to a report, and it
-    /// stays one; a tree added before v23 has no recorded adder to give it to (R45 arm 3).
+    /// stays one.
     public func withdrawRecord(flagID: UUID) async throws {
         guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
         let moment = now()

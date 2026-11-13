@@ -162,7 +162,7 @@ struct LocationCorrectionTests {
     func nobodysTreeCannotBeMoved() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
-        // Written the way every pre-v23 tree reads: through the store, with no adder.
+        // Written the way an anonymized tree reads: through the store, with no adder.
         let tree = Tree(source: .community, coordinate: Self.offshore)
         try await store.queue.write { connection in
             try CommunityTreeStore().insert(tree, clientUUID: UUID(), connection: connection)

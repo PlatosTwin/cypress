@@ -60,8 +60,8 @@ public protocol CypressAPI: Sendable {
     /// - Throws: `.notFound` when there is no such tree, or this phone withdrew it; `.forbidden`
     ///   when the tree is real and not this person's to move — a city row, somebody else's tree
     ///   from the cache, or a tree this phone added whose adder is not whoever is asking, including
-    ///   a tree whose adder is nobody (every tree added before v23, and every tree an account
-    ///   deletion anonymized); `.validationFailed` for a position off the map or a negative
+    ///   a tree whose adder is nobody (every tree an account deletion anonymized);
+    ///   `.validationFailed` for a position off the map or a negative
     ///   accuracy; `ProximityConflict` (`.conflict`) when the new position is within 10 m of another
     ///   tree.
     ///

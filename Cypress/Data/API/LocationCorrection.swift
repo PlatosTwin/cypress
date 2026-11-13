@@ -14,10 +14,11 @@
 //  Three consequences follow from the predicate rather than from extra code, and each is a rule the
 //  service applies too:
 //
-//  - **A tree whose adder is nobody cannot be moved.** Every tree added before `AppSchema` v23 is
-//    nobody's, because the phone never recorded who added it and the migration declines to guess
-//    (R45 arm 3). So is every tree an account deletion anonymized; the service answers `forbidden`
-//    to everybody for one of those.
+//  - **A tree whose adder is nobody cannot be moved.** That is every tree an account deletion
+//    anonymized; the service answers `forbidden` to everybody for one of those. A tree added before
+//    `AppSchema` v23 is not one of them: v23 gave it this installation's own owner as its adder,
+//    because `addTree` is the only writer that table has ever had (the owner's ruling of
+//    2026-11-12; see `AppSchema.applyV23`).
 //  - **A signed-out phone cannot move a tree its account added.** After sign-in the account owns the
 //    tree, and the service treats the device's own credential as a stranger to it — `forbidden` if
 //    the tree is published, `not_found` if it is not. The phone never queues an act the service
