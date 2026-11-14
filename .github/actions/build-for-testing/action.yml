@@ -1,0 +1,117 @@
+# Build the app and both test bundles for one concrete simulator, and write down where they came
+# from. Used by `ui-build` (whose products every UI shard tests) and by `unit` (which tests its own
+# fresh copy, and certifies the zero-warning line from this build's log).
+#
+# One copy of these two steps, not two: they hold the provenance checks Tools/run_tests.sh relies
+# on (built-commit, a clean tree measured before AND after the build, Xcode, architecture), and a
+# guard kept in two copies is a guard that will disagree with itself.
+#
+# Judged by the terminal marker AND the exit status AND a nonzero compile count, the same way
+# every test log here is judged, never by the exit code alone.
+name: Build for testing, with provenance
+description: xcodebuild build-for-testing into a fresh DerivedData, then a provenance file beside the products.
+
+inputs:
+  udid:
+    description: The simulator to build for (prepare's `udid`). It need not be booted.
+    required: true
+  simulator:
+    description: The simulator's model name (prepare's `simulator`).
+    required: true
+  runtime:
+    description: The simulator's runtime identifier (prepare's `runtime`).
+    required: true
+  log:
+    description: Where to write the build log.
+    required: true
+  derived-data:
+    description: A DerivedData directory that must not exist yet, so the build compiles everything (E203).
+    required: true
+
+outputs:
+  products:
+    description: The Build/Products directory.
+    value: ${{ steps.pack.outputs.products }}
+  xctestrun:
+    description: The one .xctestrun file in it.
+    value: ${{ steps.pack.outputs.xctestrun }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build for testing
+      shell: bash
+      env:
+        UDID: ${{ inputs.udid }}
+        LOG: ${{ inputs.log }}
+        DD: ${{ inputs.derived-data }}
+      run: |
+        set -euo pipefail
+        rm -f "$LOG"
+        [ -n "$UDID" ] || { echo "::error::prepare chose no simulator, so there is no destination to build for"; exit 1; }
+        [ ! -e "$DD" ] || { echo "::error::$DD already exists; a reused DerivedData recompiles nothing (E203)"; exit 1; }
+        # The provenance names a commit, and uncommitted changes are not in one. Checked before
+        # the build, on the source it compiles; the seed prepare placed is git-ignored.
+        dirty="$(git status --porcelain)"
+        if [ -n "$dirty" ]; then
+          printf '%s\n' "$dirty"
+          echo "::error::the checkout has uncommitted changes, so built-commit would not describe these products"
+          exit 1
+        fi
+        rc=0
+        xcodebuild build-for-testing \
+          -project "$PROJECT" -scheme "$SCHEME" \
+          -destination "platform=iOS Simulator,id=$UDID" \
+          -derivedDataPath "$DD" >"$LOG" 2>&1 || rc=$?
+        compiles="$(grep -c '^[[:space:]]*SwiftCompile ' "$LOG" || true)"
+        echo "build-for-testing exited $rc after ${compiles} SwiftCompile tasks"
+        if [ "$rc" -ne 0 ] || ! grep -q '^\*\* TEST BUILD SUCCEEDED \*\*' "$LOG"; then
+          grep -E ': error: |\*\* TEST BUILD FAILED \*\*' "$LOG" | head -40 || true
+          echo "::error::build-for-testing did not succeed (exit $rc). Its log is kept as this job's build-log artifact."
+          exit 1
+        fi
+        # A fresh DerivedData cannot compile nothing today. The check is what keeps it true: a
+        # build that compiled nothing did not build this commit (E203).
+        [ "${compiles:-0}" -gt 0 ] || { echo "::error::build-for-testing compiled nothing, so these are not products of this commit"; exit 1; }
+
+    - name: Write down where the products came from
+      id: pack
+      shell: bash
+      env:
+        UDID: ${{ inputs.udid }}
+        SIMULATOR: ${{ inputs.simulator }}
+        RUNTIME: ${{ inputs.runtime }}
+        DD: ${{ inputs.derived-data }}
+      run: |
+        set -euo pipefail
+        products="$DD/Build/Products"
+        head="$(git rev-parse HEAD)"
+        [ "$head" = "$GITHUB_SHA" ] || { echo "::error::checked out $head, but this run is for $GITHUB_SHA"; exit 1; }
+        shopt -s nullglob
+        runs=("$products"/*.xctestrun)
+        [ "${#runs[@]}" -eq 1 ] || { echo "::error::expected exactly one .xctestrun in $products, found ${#runs[@]}"; ls -la "$products"; exit 1; }
+        # The tree is measured again here, after the build, and not echoed as a literal: a build
+        # phase that rewrote a tracked file would otherwise still be stamped clean (PR #201 review, F3).
+        dirty="$(git status --porcelain)"
+        if [ -n "$dirty" ]; then
+          printf '%s\n' "$dirty"
+          echo "::error::the build changed the checkout, so built-commit does not describe these products"
+          exit 1
+        fi
+        # Read by Tools/run_tests.sh (built-commit, xcode, arch, tree) and by the shards' unpack
+        # step (built-by, runtime, xctestrun). One key per line, key=value.
+        {
+          echo "built-commit=$head"
+          echo "built-by=run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT job $GITHUB_JOB image ${ImageOS:-?} ${ImageVersion:-?}"
+          echo "xcode=$(xcodebuild -version | paste -sd ' ' -)"
+          echo "sdk=iphonesimulator$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          echo "arch=$(uname -m)"
+          echo "destination=$SIMULATOR $UDID"
+          echo "runtime=$RUNTIME"
+          echo "tree=clean"
+          echo "xctestrun=$(basename "${runs[0]}")"
+        } >"$products/cypress-products-provenance.txt"
+        cat "$products/cypress-products-provenance.txt"
+        du -sh "$products"
+        echo "products=$products" >> "$GITHUB_OUTPUT"
+        echo "xctestrun=${runs[0]}" >> "$GITHUB_OUTPUT"

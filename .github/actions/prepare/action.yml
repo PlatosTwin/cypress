@@ -6,13 +6,15 @@
 # copies is a guard that will disagree with itself. Every reason below was paid for once already
 # and should not have to be re-learned per job.
 name: Prepare a Cypress runner
-description: Select the newest Xcode, refuse an old SDK, fetch and verify the seed, boot a simulator.
+description: Select the newest Xcode, refuse an old SDK, fetch and verify the seed, boot a simulator (now or in the background).
 
 inputs:
   boot-simulator:
     description: >
-      Boot a simulator and grant it camera. Set false for jobs that only archive — there is no
-      device to run on, and booting one costs 2.5 minutes for nothing.
+      "true": boot a simulator, wait for it and grant it camera. "background": start the boot and
+      return at once, so the job can build while the simulator boots; the job must run
+      ./.github/actions/await-simulator before anything uses the device. "false": no simulator, for
+      jobs that only archive (booting one costs 2.5 minutes for nothing).
     required: false
     default: "true"
   select-simulator:
@@ -84,7 +86,7 @@ runs:
     # ── A device ───────────────────────────────────────────────────────────────────────
     - name: Choose the simulator, and boot it unless asked only to choose
       id: sim
-      if: inputs.boot-simulator == 'true' || inputs.select-simulator == 'true'
+      if: inputs.boot-simulator == 'true' || inputs.boot-simulator == 'background' || inputs.select-simulator == 'true'
       shell: bash
       env:
         BOOT: ${{ inputs.boot-simulator }}
@@ -121,6 +123,21 @@ runs:
           xcrun simctl bootstatus "$udid" -b
           # The unit suite hangs forever on a simulator that never granted camera access.
           xcrun simctl privacy "$udid" grant camera app.cypress.Cypress || true
+        elif [ "$BOOT" = "background" ]; then
+          # Measured on run 40006144625: the boot is 2 to 3.5 minutes per job, nearly all of it
+          # the device's first-boot data migration, and every job used to wait for it before
+          # doing anything else. Started here and waited for by ./.github/actions/await-simulator,
+          # which bounds the wait and checks the result.
+          #
+          # Every stream goes to a file, stdin included: a background process that holds the
+          # step's stdout keeps the step from ending. The status file is written last, so its
+          # presence means the boot finished, and its content says how.
+          dir="$RUNNER_TEMP/cypress-sim-boot"
+          rm -rf "$dir"; mkdir -p "$dir"
+          nohup bash -c 'xcrun simctl boot "$1" || true; xcrun simctl bootstatus "$1" -b; echo $? > "$2/status.tmp"; mv "$2/status.tmp" "$2/status"' \
+            _ "$udid" "$dir" </dev/null >"$dir/boot.log" 2>&1 &
+          echo $! > "$dir/pid"
+          echo "boot of $udid started in the background (pid $!); await-simulator waits for it"
         else
           echo "chosen and not booted: a build needs a destination, not a running device"
         fi

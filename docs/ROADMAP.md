@@ -2092,7 +2092,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     save about 7 more minutes a run, but only if warning certification moves to `ui-build`'s fresh
     build log: the owner's call, since `unit` is where the zero-warning line is certified today.
     (b) The shards could boot their simulators while `ui-build` runs; `prepare` is 2 to 3.5 minutes per
-    shard and is now the largest cost that is not tests. (c) Item 2 (rebalance the shards) is worth
+    shard and is now the largest cost that is not tests. Partly done by item 124: each job now boots
+    in the background, which hides the boot behind `unit`'s build but only about 30 s of it in a shard.
+    Starting the shards before `ui-build` ends would hide the rest, at the cost of runners held idle
+    under the five-job cap. (c) Item 2 (rebalance the shards) is worth
     doing now: shard time is almost all test time, and `ui (1)` at about 18 minutes of tests sets the
     pace. (d) The account's concurrent macOS runner cap is untouched: on run 36635369200 three shards
     waited 32, 36 and 74 minutes for a runner, and no workflow change fixes that. (e) The build artifact
@@ -2108,6 +2111,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `** TEST EXECUTE SUCCEEDED **` can come from `test-without-building`, still ends VERIFY-OK. Reachable
     only by hand-editing a log or running a pre-fix script, which CLAUDE.md already treats as unknown
     provenance.
+124. **DONE by #201: CI asks for fewer macOS runner-minutes.** Measured over 14 runs: the account runs
+    at most five macOS jobs at once and each TestFlight run asked for five, so overlapping runs waited
+    20 to 70 minutes for runners; each job built the app itself; and pushes to main used about a
+    quarter of the runner-minutes re-running the suite the pull request had just passed. #201 builds
+    once for the UI shards (`ui-build`), boots each job's simulator in the background while it builds
+    (`unit` now builds with `build-for-testing`, certifies warnings from that fresh build, then tests
+    the products), and skips `unit`, `ui-build` and `ui` on a push to main whose tree already passed
+    on its pull request (decision `tested-on-pr`, CLAUDE.md's fifth string; `release` still runs). No
+    billed or self-hosted runners (owner, 2026-11-13). The first live use of the main-push skip is the
+    merge of #201 itself.
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full

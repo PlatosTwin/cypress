@@ -86,8 +86,8 @@ conflicts with convenience, the rule wins.
   it is guarded (`gate` reads `plan` first, so a crashed `plan` cannot masquerade as a prose-only
   run), but it changes what the badge means: **a green check is now evidence about the diff, not
   evidence about the code.** Before citing CI as proof that a change is safe, read `plan`'s
-  decision. **There are now FOUR decisions and the run's own log says which**, so look for one of
-  these four strings and treat anything else as a fifth case nobody told you about:
+  decision. **There are now FIVE decisions and the run's own log says which**, so look for one of
+  these five strings and treat anything else as a sixth case nobody told you about:
   - `the suite runs — these are not prose:` — the suite ran; the green means what you think.
   - `only prose changed` — nothing was tested, because there was nothing here to test.
   - `this diff is web-only` — added by the web round. **Not prose and not untested**: `web/` and
@@ -110,6 +110,14 @@ conflicts with convenience, the rule wins.
 
     `server/testdata/` and any server-plus-app mix still get `the suite runs`, as does a diff with
     both web and server paths, or a path git could print only in quotes.
+  - `this tree already passed the suite on its pull request` — added by #201, **on a push to main
+    only**. Not untested: the pull request's own TestFlight run passed the whole suite on the
+    merge commit it tested, and that commit's tree is byte-for-byte this push's tree (the
+    ruleset requires an up-to-date branch, and pull requests are squash-merged). So `unit`,
+    `ui-build` and `ui` are skipped, `release` still runs if the push ships, and the notice names
+    the run: **go and read that pull request run** for the test results. The proof is a record
+    `gate` writes only after every test job succeeded; `.github/scripts/pr_tested_tree.py` reads
+    it and answers "run the suite" on any doubt. A pull request can never get this decision.
 
   A one-minute run did not test anything, and it does not claim to.
 

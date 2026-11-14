@@ -1,0 +1,65 @@
+# Wait for the simulator that ./.github/actions/prepare started booting in the background.
+#
+# A job that passes `boot-simulator: background` to prepare builds while the device boots, and
+# runs this before anything uses the device. Three things make it safe:
+#
+# - **Bounded.** `simctl bootstatus` has no timeout of its own and a wedged CoreSimulator leaves it
+#   waiting forever (run_tests.sh's `boot_device` comment has the history). This waits at most
+#   `timeout-seconds`, prints a line every 15 seconds, and fails red when the bound is reached.
+# - **It waits for the background `bootstatus` to END, not only for the device to say Booted.**
+#   Tools/run_tests.sh refuses to start while any other `simctl bootstatus` watches the same
+#   device (it is how four wedged ones once piled up). Returning while ours still ran would turn
+#   every run into that refusal.
+# - **It checks the result.** The background job's exit status must be 0 and `simctl list` must
+#   show the device Booted. Then camera is granted: the unit suite hangs forever without it, and
+#   no app is running yet, so the grant kills nothing.
+name: Wait for the background simulator boot
+description: Wait, with a bound, for the boot that prepare started in the background, then grant camera.
+
+inputs:
+  udid:
+    description: The simulator prepare chose (its `udid` output).
+    required: true
+  timeout-seconds:
+    description: How long to wait for the boot to finish before failing.
+    required: false
+    default: "420"
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for the simulator to finish booting
+      shell: bash
+      env:
+        UDID: ${{ inputs.udid }}
+        LIMIT: ${{ inputs.timeout-seconds }}
+      run: |
+        set -euo pipefail
+        dir="$RUNNER_TEMP/cypress-sim-boot"
+        [ -n "$UDID" ] || { echo "::error::await-simulator was given no udid"; exit 1; }
+        [ -f "$dir/pid" ] || { echo "::error::no background boot was started (no $dir/pid); pass boot-simulator: background to prepare"; exit 1; }
+        pid="$(cat "$dir/pid")"
+        waited=0
+        while kill -0 "$pid" 2>/dev/null; do
+          if [ "$waited" -ge "$LIMIT" ]; then
+            echo "boot log so far:"; sed 's/^/  /' "$dir/boot.log" || true
+            echo "::error::the simulator boot did not finish within ${LIMIT}s (pid $pid still running)"
+            exit 1
+          fi
+          [ $((waited % 15)) -eq 0 ] && echo "waiting for the simulator boot (pid $pid), ${waited}s so far"
+          sleep 5
+          waited=$((waited + 5))
+        done
+        echo "the background boot ended after about ${waited}s of waiting here"
+        echo "boot log:"; sed 's/^/  /' "$dir/boot.log" || true
+        [ -f "$dir/status" ] || { echo "::error::the background boot ended without writing its status, so it did not finish"; exit 1; }
+        status="$(cat "$dir/status")"
+        [ "$status" = "0" ] || { echo "::error::simctl bootstatus exited $status"; exit 1; }
+        state="$(xcrun simctl list devices | grep -F "$UDID" | head -1 || true)"
+        echo "device: ${state:-not listed}"
+        case "$state" in
+          *"(Booted)"*) ;;
+          *) echo "::error::the boot finished but the device is not Booted: ${state:-not listed}"; exit 1 ;;
+        esac
+        # The unit suite hangs forever on a simulator that never granted camera access.
+        xcrun simctl privacy "$UDID" grant camera app.cypress.Cypress || true
