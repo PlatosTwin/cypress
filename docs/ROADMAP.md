@@ -2086,6 +2086,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
+121. **DONE in `test/pin-nudge-waits`: the pin-adjust UI test lost a tap.** Main run 43551707747
+    (ui shard 1) failed `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes`: fifteen
+    north nudges sent back to back left the pin at 70 m, not 75. The same lost second tap failed
+    `MovePinUITests` on run 43536693607. Both tests now wait for each nudge to land.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
